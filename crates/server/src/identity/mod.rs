@@ -6,8 +6,9 @@ mod routes;
 mod service;
 
 pub use model::{
-    DisplayName, Email, HashedPassword, ModelError, NewSession, NewUser, Password, PasswordPolicy,
-    Role, SessionInfo, SessionKind, SessionToken, TemporaryPassword, User, UserStatus,
+    DisplayName, Email, HashedPassword, ModelError, NewSession, NewUser, Page, PageParams,
+    Password, PasswordPolicy, Role, SessionInfo, SessionKind, SessionToken, TemporaryPassword,
+    User, UserStatus,
 };
 pub use routes::{COOKIE_NAME, SetupError, router};
 pub use service::{IdentityError, LoginThrottle, create_user, hash_password};

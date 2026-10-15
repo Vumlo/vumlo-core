@@ -2,6 +2,7 @@
 
 mod auth;
 mod extract;
+mod me;
 
 use std::sync::Arc;
 
@@ -84,6 +85,10 @@ pub fn router(settings: &Settings) -> Result<OpenApiRouter<AppState>, SetupError
                 .layer(GovernorLayer::new(login_limit)),
         )
         .routes(routes!(auth::logout))
+        .routes(routes!(me::get_me))
+        .routes(routes!(me::change_password))
+        .routes(routes!(me::list_sessions))
+        .routes(routes!(me::revoke_session))
         .layer(Extension(Arc::new(LoginThrottle::default()))))
 }
 
@@ -108,6 +113,10 @@ impl From<IdentityError> for ApiError {
                 Self::invalid_field("new_password", "must differ from the current password")
             }
             IdentityError::EmailTaken => Self::Conflict("the email is already in use"),
+            IdentityError::ConcurrentChange => {
+                Self::Conflict("the account changed while the request was running, try again")
+            }
+            IdentityError::UserNotFound | IdentityError::SessionNotFound => Self::NotFound,
             IdentityError::Hashing => Self::Internal,
             IdentityError::Db(e) => {
                 tracing::error!(error = %e, "identity: database error");
@@ -123,6 +132,7 @@ impl From<super::model::ModelError> for ApiError {
         match error {
             ModelError::Email => Self::invalid_field("email", error.to_string()),
             ModelError::DisplayName => Self::invalid_field("display_name", error.to_string()),
+            ModelError::Cursor => Self::invalid_field("cursor", error.to_string()),
             ModelError::Password(reasons) => Self::Unprocessable {
                 detail: "the password does not meet the policy".to_owned(),
                 errors: reasons
@@ -149,6 +159,15 @@ pub(super) fn api_status(status: UserStatus) -> api_types::UserStatus {
     match status {
         UserStatus::Active => api_types::UserStatus::Active,
         UserStatus::Disabled => api_types::UserStatus::Disabled,
+    }
+}
+
+pub(super) fn api_kind(kind: SessionKind) -> api_types::SessionKind {
+    match kind {
+        SessionKind::Web => api_types::SessionKind::Web,
+        SessionKind::App => api_types::SessionKind::App,
+        SessionKind::Cli => api_types::SessionKind::Cli,
+        SessionKind::Pat => api_types::SessionKind::Pat,
     }
 }
 

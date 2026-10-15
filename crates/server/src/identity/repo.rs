@@ -4,7 +4,7 @@ use chrono::{DateTime, Utc};
 use sqlx::PgConnection;
 use uuid::Uuid;
 
-use super::model::{NewUser, Role, SessionKind, User, UserStatus};
+use super::model::{NewUser, Role, SessionInfo, SessionKind, User, UserStatus};
 
 pub struct LoginRecord {
     pub user: User,
@@ -175,4 +175,103 @@ pub async fn delete_session(
     .execute(conn)
     .await?;
     Ok(result.rows_affected())
+}
+
+pub async fn find_user(conn: &mut PgConnection, id: Uuid) -> Result<Option<User>, sqlx::Error> {
+    sqlx::query_as!(
+        User,
+        r#"SELECT id, email, display_name,
+                  role AS "role: Role", status AS "status: UserStatus",
+                  must_change_password, created_at
+           FROM identity.users WHERE id = $1"#,
+        id
+    )
+    .fetch_optional(conn)
+    .await
+}
+
+pub async fn find_password_hash(
+    conn: &mut PgConnection,
+    user_id: Uuid,
+) -> Result<Option<String>, sqlx::Error> {
+    sqlx::query_scalar!(
+        "SELECT password_hash FROM identity.identities
+         WHERE user_id = $1 AND provider = 'password'",
+        user_id
+    )
+    .fetch_optional(conn)
+    .await
+    .map(Option::flatten)
+}
+
+/// Replaces the password hash only if it is still `old`, so two concurrent changes (or a change
+/// racing an admin reset) cannot overwrite each other silently. Returns the rows changed.
+pub async fn swap_password_hash(
+    conn: &mut PgConnection,
+    user_id: Uuid,
+    old: &str,
+    new: &str,
+) -> Result<u64, sqlx::Error> {
+    let result = sqlx::query!(
+        "UPDATE identity.identities SET password_hash = $3
+         WHERE user_id = $1 AND provider = 'password' AND password_hash = $2",
+        user_id,
+        old,
+        new
+    )
+    .execute(conn)
+    .await?;
+    Ok(result.rows_affected())
+}
+
+pub async fn set_must_change_password(
+    conn: &mut PgConnection,
+    user_id: Uuid,
+    value: bool,
+) -> Result<(), sqlx::Error> {
+    sqlx::query!(
+        "UPDATE identity.users SET must_change_password = $2, updated_at = now() WHERE id = $1",
+        user_id,
+        value
+    )
+    .execute(conn)
+    .await?;
+    Ok(())
+}
+
+pub async fn delete_other_sessions(
+    conn: &mut PgConnection,
+    user_id: Uuid,
+    keep_session_id: Uuid,
+) -> Result<u64, sqlx::Error> {
+    let result = sqlx::query!(
+        "DELETE FROM identity.sessions WHERE user_id = $1 AND id <> $2",
+        user_id,
+        keep_session_id
+    )
+    .execute(conn)
+    .await?;
+    Ok(result.rows_affected())
+}
+
+/// The user's unexpired sessions after `after`, in id order, at most `limit`.
+pub async fn list_sessions(
+    conn: &mut PgConnection,
+    user_id: Uuid,
+    after: Option<Uuid>,
+    limit: i64,
+) -> Result<Vec<SessionInfo>, sqlx::Error> {
+    sqlx::query_as!(
+        SessionInfo,
+        r#"SELECT id, kind AS "kind: SessionKind", name, created_at, last_seen_at, expires_at
+           FROM identity.sessions
+           WHERE user_id = $1 AND expires_at > now() AND ($2::uuid IS NULL OR id > $2)
+           ORDER BY id
+           LIMIT $3"#,
+        user_id,
+        after,
+        limit
+    )
+    .fetch_all(conn)
+    .await
 }

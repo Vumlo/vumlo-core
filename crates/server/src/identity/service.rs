@@ -13,8 +13,8 @@ use sqlx::PgConnection;
 use uuid::Uuid;
 
 use super::model::{
-    HashedPassword, ModelError, NewSession, NewUser, SessionKind, SessionToken, TemporaryPassword,
-    User, UserStatus,
+    HashedPassword, ModelError, NewSession, NewUser, Page, PageParams, Password, PasswordPolicy,
+    SessionInfo, SessionKind, SessionToken, TemporaryPassword, User, UserStatus,
 };
 use super::repo::{self, LoginRecord};
 use crate::actor::Actor;
@@ -52,6 +52,12 @@ pub enum IdentityError {
     PasswordUnchanged,
     #[error("the email is already in use")]
     EmailTaken,
+    #[error("the account changed while the request was running")]
+    ConcurrentChange,
+    #[error("user not found")]
+    UserNotFound,
+    #[error("session not found")]
+    SessionNotFound,
     #[error("password hashing failed")]
     Hashing,
     #[error(transparent)]
@@ -379,6 +385,118 @@ pub async fn logout(conn: &mut PgConnection, actor: &Actor) -> Result<(), Identi
     policy::authorize(actor, Action::ManageOwnAccount)?;
     repo::delete_session(conn, actor.session_id(), actor.user_id()).await?;
     Ok(())
+}
+
+// ---------------------------------------------------------------------------------------------
+// Own account
+// ---------------------------------------------------------------------------------------------
+
+pub async fn get_me(conn: &mut PgConnection, actor: &Actor) -> Result<User, IdentityError> {
+    policy::authorize(actor, Action::ManageOwnAccount)?;
+    repo::find_user(conn, actor.user_id())
+        .await?
+        .ok_or(IdentityError::UserNotFound)
+}
+
+/// What a password change needs from the database, read before any hashing starts.
+pub struct PasswordChangeContext {
+    user: User,
+    old_hash: String,
+}
+
+pub async fn password_change_context(
+    conn: &mut PgConnection,
+    actor: &Actor,
+) -> Result<PasswordChangeContext, IdentityError> {
+    policy::authorize(actor, Action::ManageOwnAccount)?;
+    let user = repo::find_user(conn, actor.user_id())
+        .await?
+        .ok_or(IdentityError::UserNotFound)?;
+    // An account without a password identity has no current password to confirm.
+    let old_hash = repo::find_password_hash(conn, user.id)
+        .await?
+        .ok_or(IdentityError::WrongCurrentPassword)?;
+    Ok(PasswordChangeContext { user, old_hash })
+}
+
+/// A new password that passed the policy and is already hashed, ready for [`change_password`].
+pub struct PreparedPasswordChange {
+    old_hash: String,
+    new_hash: HashedPassword,
+}
+
+/// Does all the slow, database-free work of a password change: confirms the current password
+/// (counting failures against the account's login throttle, since a stolen session could
+/// otherwise guess it), applies the policy and hashes the new one.
+pub async fn prepare_password_change(
+    throttle: &LoginThrottle,
+    context: PasswordChangeContext,
+    current: &str,
+    new: String,
+    min_len: usize,
+    institution: &str,
+) -> Result<PreparedPasswordChange, IdentityError> {
+    let PasswordChangeContext { user, old_hash } = context;
+    let key = ThrottleKey::new(&user.email);
+    throttle.check(&key)?;
+    if !verify_password(current.to_owned(), Some(old_hash.clone())).await? {
+        throttle.record_failure(&key);
+        return Err(IdentityError::WrongCurrentPassword);
+    }
+    throttle.reset(&key);
+    if new == current {
+        return Err(IdentityError::PasswordUnchanged);
+    }
+    let policy = PasswordPolicy::new(min_len, &user.email, &user.display_name, institution);
+    let password = Password::parse(new, &policy)?;
+    let new_hash = hash_password(password.expose()).await?;
+    Ok(PreparedPasswordChange { old_hash, new_hash })
+}
+
+/// Stores the new password, clears the forced-change flag and revokes every other session.
+pub async fn change_password(
+    conn: &mut PgConnection,
+    actor: &Actor,
+    prepared: PreparedPasswordChange,
+) -> Result<(), IdentityError> {
+    policy::authorize(actor, Action::ManageOwnAccount)?;
+    let changed = repo::swap_password_hash(
+        conn,
+        actor.user_id(),
+        &prepared.old_hash,
+        prepared.new_hash.as_str(),
+    )
+    .await?;
+    if changed == 0 {
+        return Err(IdentityError::ConcurrentChange);
+    }
+    repo::set_must_change_password(conn, actor.user_id(), false).await?;
+    repo::delete_other_sessions(conn, actor.user_id(), actor.session_id()).await?;
+    Ok(())
+}
+
+pub async fn list_sessions(
+    conn: &mut PgConnection,
+    actor: &Actor,
+    page: PageParams,
+) -> Result<Page<SessionInfo>, IdentityError> {
+    policy::authorize(actor, Action::ManageOwnAccount)?;
+    let rows =
+        repo::list_sessions(conn, actor.user_id(), page.after, i64::from(page.limit) + 1).await?;
+    Ok(Page::from_rows(rows, page.limit, |s| s.id))
+}
+
+/// Revokes one of the actor's own sessions. Someone else's session looks like a missing one.
+pub async fn revoke_session(
+    conn: &mut PgConnection,
+    actor: &Actor,
+    session_id: Uuid,
+) -> Result<(), IdentityError> {
+    policy::authorize(actor, Action::ManageOwnAccount)?;
+    match repo::delete_session(conn, session_id, actor.user_id()).await? {
+        0 => Err(IdentityError::SessionNotFound),
+        _ => Ok(()),
+    }
 }
 
 #[cfg(test)]
