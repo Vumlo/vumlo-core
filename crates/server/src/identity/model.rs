@@ -42,7 +42,14 @@ macro_rules! text_enum {
         impl FromStr for $name {
             type Err = String;
             fn from_str(s: &str) -> Result<Self, String> {
-                match s { $($text => Ok(Self::$variant),)+ other => Err(format!("unknown {}: {other}", stringify!($name))) }
+                match s {
+                    $($text => Ok(Self::$variant),)+
+                    other => Err(format!(
+                        "unknown {} `{other}` (expected one of: {})",
+                        stringify!($name).to_lowercase(),
+                        [$($text),+].join(", ")
+                    )),
+                }
             }
         }
 

@@ -3,7 +3,9 @@ use std::process::ExitCode;
 use anyhow::Context;
 use clap::{Parser, Subcommand};
 use server::app::{self, AppState};
+use server::identity::{self, DisplayName, Email, NewUser, Role, TemporaryPassword};
 use server::settings::{LogFormat, Settings};
+use sqlx::PgPool;
 
 #[derive(Parser)]
 #[command(name = "learnly-server", version)]
@@ -18,6 +20,23 @@ enum Command {
     Serve,
     /// Apply embedded database migrations and exit.
     Migrate,
+    /// Create an admin with a temporary password, printed once.
+    CreateAdmin {
+        email: String,
+        /// Display name.
+        #[arg(long)]
+        name: String,
+    },
+    /// Create a user with a temporary password, printed once.
+    CreateUser {
+        email: String,
+        /// Display name.
+        #[arg(long)]
+        name: String,
+        /// admin, teacher or student.
+        #[arg(long)]
+        role: Role,
+    },
 }
 
 #[tokio::main]
@@ -62,7 +81,39 @@ async fn run(cli: Cli) -> anyhow::Result<()> {
             app::MIGRATOR.run(&pool).await.context("migration failed")?;
             tracing::info!("migrations applied");
         }
+        Command::CreateAdmin { email, name } => {
+            create_account(&pool, &email, &name, Role::Admin).await?;
+        }
+        Command::CreateUser { email, name, role } => {
+            create_account(&pool, &email, &name, role).await?;
+        }
     }
+    Ok(())
+}
+
+/// Creates a user with a temporary password (ADR-0017) and prints the password. This is the
+/// only time it is visible; the user must change it at first login.
+async fn create_account(pool: &PgPool, email: &str, name: &str, role: Role) -> anyhow::Result<()> {
+    app::ensure_migrated(pool).await?;
+    let new = NewUser {
+        email: Email::parse(email).context("invalid email")?,
+        display_name: DisplayName::parse(name).context("invalid name")?,
+        role,
+    };
+    let temporary = TemporaryPassword::generate();
+    // Hash before the transaction opens (ADR-0016).
+    let hash = identity::hash_password(temporary.expose())
+        .await
+        .context("cannot hash the password")?;
+    let mut tx = pool.begin().await.context("cannot start a transaction")?;
+    let user = identity::create_user(&mut tx, new, hash)
+        .await
+        .context("cannot create the user")?;
+    tx.commit().await.context("cannot commit")?;
+    tracing::info!(user_id = %user.id, role = role.as_str(), "user created");
+    println!("Created {} {}", role.as_str(), user.id);
+    println!("Temporary password: {}", temporary.expose());
+    println!("It is shown only once and must be changed at first login.");
     Ok(())
 }
 
