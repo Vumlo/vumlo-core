@@ -49,3 +49,4 @@ What gets easier, what gets harder, what we must remember.
 | 0014 | [Core libraries](0014-core-libraries.md) |
 | 0015 | [Gradebook as a separate module](0015-gradebook-module.md) |
 | 0016 | [Module layout and transaction handling](0016-module-layout-and-transactions.md) |
+| 0017 | [Accounts, passwords and session lifetimes](0017-accounts-passwords-sessions.md) |

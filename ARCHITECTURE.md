@@ -32,21 +32,21 @@ Nothing else is required. File storage defaults to local disk, with S3-compatibl
 ```
 web (SPA)      ──cookie──┐
 mobile app     ──bearer──┼──>  HTTP /api/v1  ──>  modules  ──>  PostgreSQL
-user CLI       ──bearer──┘
-admin CLI (runs on the server, same binary)  ────────────────>  PostgreSQL
+learnly (CLI)  ──bearer──┘
+learnly-server admin subcommands (on the server)  ──────────>  PostgreSQL
 ```
 
 - **One API for every client.** No client-specific endpoints ([ADR-0012](docs/decisions/0012-api-for-multiple-clients.md)).
-- **Admin CLI** = subcommands of the server binary: `serve`, `migrate`, `create-admin`, `import-users`. It talks to the database directly.
-- **User CLI** = a normal API client with a token. It never touches the database.
+- **`learnly-server`** = the server binary. Subcommands: `serve`, `migrate`, `create-admin`, `import-users`. Admin subcommands talk to the database directly.
+- **`learnly`** = the user CLI for students and teachers. A normal API client with a token; it never touches the database. (Naming follows the `dockerd` / `docker` pattern: the short name goes to the command people type most.)
 
 ## Repository layout
 
 ```
 crates/
-  server/      # HTTP API, modules, worker, admin CLI subcommands
+  server/      # library + binary `learnly-server`: HTTP API, modules, worker, admin subcommands
   api-types/   # request/response types shared with the Rust CLI; OpenAPI source
-  cli/         # user CLI (API client)
+  cli/         # binary `learnly`: user CLI (API client)
 migrations/
 docs/decisions/
 ```

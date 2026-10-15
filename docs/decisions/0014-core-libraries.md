@@ -65,6 +65,7 @@ Rule: request DTOs are validated with `garde` at the HTTP edge. Inside services,
 | `hmac` 0.13 | Webhook signatures (ADR-0007). |
 | `openidconnect` 4 | Google sign-in: discovery, PKCE, ID-token verification for the web redirect flow and for mobile ID tokens. |
 | `tower_governor` | Rate limiting of login, registration and device-code endpoints. |
+| `zxcvbn` 3 | Password strength check (ADR-0017): catches common passwords, dictionary words and patterns, takes user inputs as context, and returns feedback for the UI. It replaces maintaining our own blocklist. |
 
 Sessions and the device authorization flow are **implemented in-house** (ADR-0003). They are about 300 lines on top of the crates above. `tower-sessions` was rejected because it is cookie-centric, while we need the same session usable as a bearer token.
 
@@ -87,8 +88,13 @@ Sessions and the device authorization flow are **implemented in-house** (ADR-000
 - `#[sqlx::test]` creates a fresh database per test and applies migrations.
 - API tests start the real server on a random port and call it with `reqwest`, the same way clients do (black-box).
 
+### Email (ADR-0017, task 004)
+| Crate / tool | Why |
+|---|---|
+| `lettre` 0.11 | SMTP client. Emails are sent by the outbox worker, never inside a request. |
+| Mailpit (Docker image, **dev only**) | Local SMTP server with a web inbox in `compose.yaml`, so emails can be checked without a real mail server. Production uses the institution's SMTP. |
+
 ### Later (separate ADRs when the feature arrives)
-- `lettre` for email.
 - A templating crate for email bodies.
 - A web push / FCM client.
 
