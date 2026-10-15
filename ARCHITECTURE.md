@@ -44,12 +44,14 @@ learnly-server admin subcommands (on the server)  ──────────
 
 ```
 crates/
-  server/      # library + binary `learnly-server`: HTTP API, modules, worker, admin subcommands
+  server/      # library + binary `learnly-server`: HTTP API, modules, worker, admin subcommands; build.rs
   api-types/   # request/response types shared with the Rust CLI; OpenAPI source
   cli/         # binary `learnly`: user CLI (API client)
 migrations/
 docs/decisions/
 ```
+
+**Migrations** are plain `.sql` files in `migrations/`, append-only, embedded into `learnly-server` at compile time with `sqlx::migrate!` and applied by `learnly-server migrate`. `serve` refuses to start while any are pending. `crates/server/build.rs` tells Cargo to rebuild when anything in `migrations/` changes, so a new file is always picked up. The `.sqlx/` folder holds the offline query data for `query!` (`cargo sqlx prepare --workspace`) and is committed.
 
 ## Modules (inside `server`)
 

@@ -23,7 +23,7 @@ All crates were checked on crates.io in October 2026: they exist, are maintained
 | Crate | Why | Rejected |
 |---|---|---|
 | `sqlx` 0.9 (`postgres`, `runtime-tokio`, `tls-rustls`, `migrate`, `uuid`, `chrono`, `json`, `rust_decimal`) | We write plain SQL, and `query!` checks it against the real schema at compile time. The design relies on PostgreSQL features that ORMs hide or fight: per-module schemas, the `effective_members` view, `FOR UPDATE SKIP LOCKED` in the outbox, draft → published copied in one `UPDATE`. You see exactly what hits the database. | `sea-orm`: ORM, closest to JPA, but hides SQL and complex queries end up raw anyway. `diesel`: very strict typed query builder with a steep learning curve and a sync-first design. |
-| sqlx migrations | Plain `.sql` files in `migrations/`, embedded into the binary with `sqlx::migrate!` and run by `learnly-server migrate`. One tool instead of two. | `refinery`: a separate tool for the same job. |
+| sqlx migrations | Plain `.sql` files in `migrations/`, embedded into the binary with `sqlx::migrate!` and run by `learnly-server migrate`. A `build.rs` watches `migrations/` so a new file triggers a rebuild. One tool instead of two. | `refinery`: a separate tool for the same job. |
 
 Consequences: CI needs either a database at build time or sqlx offline mode (`cargo sqlx prepare`, with the `.sqlx/` folder committed). Dynamic filters use `sqlx::QueryBuilder`.
 

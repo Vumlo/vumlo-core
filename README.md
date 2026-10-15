@@ -41,6 +41,3 @@ Behind a reverse proxy set `server.client_ip_header` (e.g. `x-real-ip`) so login
 ```
 cargo test --workspace                 # needs the running PostgreSQL and DATABASE_URL (see .env)
 ```
-
-A new file in `migrations/` is embedded at compile time; if a test does not see it, touch
-`crates/server/src/app.rs` to force a rebuild.
