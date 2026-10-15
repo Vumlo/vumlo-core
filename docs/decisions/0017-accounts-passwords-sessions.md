@@ -27,6 +27,8 @@ ADR-0003 restricts registration to allowed email domains. But a domain check doe
 - One generic error for a wrong email or wrong password.
 - When the user does not exist, a dummy hash is still verified, so response time does not reveal which emails exist.
 - Rate limits per IP and per account on login, registration and reset.
+- Per-IP limit: `tower_governor`. The key is the header named by `server.client_ip_header` (set it when a reverse proxy overwrites it), otherwise the TCP peer address.
+- Per-account limit is in-memory (single binary), 10 failures / 15 min, reset on success; accepted trade-off: an attacker can temporarily lock out a known email.
 
 ### Session lifetimes
 | kind | lifetime |

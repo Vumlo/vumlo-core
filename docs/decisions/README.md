@@ -50,3 +50,4 @@ What gets easier, what gets harder, what we must remember.
 | 0015 | [Gradebook as a separate module](0015-gradebook-module.md) |
 | 0016 | [Module layout and transaction handling](0016-module-layout-and-transactions.md) |
 | 0017 | [Accounts, passwords and session lifetimes](0017-accounts-passwords-sessions.md) |
+| 0018 | [API validation errors and cursor pagination](0018-api-errors-and-pagination.md) |

@@ -61,6 +61,7 @@ Rule: request DTOs are validated with `garde` at the HTTP edge. Inside services,
 |---|---|
 | `argon2` 0.6 | Argon2id password hashing, the current OWASP recommendation. Stored in PHC string format, so parameters can be raised later. |
 | `rand` 0.10 | 256-bit random session tokens, device codes and user codes. |
+| `base64` 0.23 | Encodes session tokens and temporary passwords as base64url (no padding). Encode-only; added in task 002 (amends this ADR). |
 | `sha2` 0.11 | Session tokens are stored as SHA-256 hashes. Argon2 is not needed here: the tokens are random and high-entropy, unlike passwords, and a fast hash keeps the per-request lookup cheap. |
 | `hmac` 0.13 | Webhook signatures (ADR-0007). |
 | `openidconnect` 4 | Google sign-in: discovery, PKCE, ID-token verification for the web redirect flow and for mobile ID tokens. |
