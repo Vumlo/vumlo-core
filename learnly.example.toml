@@ -1,0 +1,12 @@
+# Copy to learnly.toml. Any key can be overridden with LEARNLY__<SECTION>__<KEY>,
+# e.g. LEARNLY__DATABASE__URL.
+
+[server]
+bind_addr = "127.0.0.1:8080"
+
+[database]
+url = "postgres://learnly:learnly@localhost:5432/learnly"
+max_connections = 10
+
+[log]
+format = "pretty" # "pretty" | "json"
