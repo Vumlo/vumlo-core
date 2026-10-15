@@ -1,45 +1,11 @@
-use std::sync::Arc;
+mod common;
+
 use std::time::Duration;
 
 use api_types::{HealthResponse, ProblemDetails};
-use server::app::{self, AppState};
-use server::settings::{DatabaseSettings, LogFormat, LogSettings, ServerSettings, Settings};
+use common::spawn;
 use sqlx::PgPool;
 use sqlx::postgres::PgPoolOptions;
-use tokio::net::TcpListener;
-
-fn test_settings() -> Settings {
-    Settings {
-        server: ServerSettings {
-            bind_addr: ([127, 0, 0, 1], 0).into(),
-        },
-        database: DatabaseSettings {
-            url: String::new(),
-            max_connections: 1,
-        },
-        log: LogSettings {
-            format: LogFormat::Pretty,
-        },
-    }
-}
-
-/// Starts the real server on a random local port and returns its base URL.
-async fn spawn(db: PgPool) -> String {
-    let listener = TcpListener::bind("127.0.0.1:0")
-        .await
-        .expect("bind test listener");
-    let addr = listener.local_addr().expect("listener address");
-    let state = AppState {
-        db,
-        config: Arc::new(test_settings()),
-    };
-    tokio::spawn(app::serve(
-        listener,
-        app::router(state),
-        std::future::pending(),
-    ));
-    format!("http://{addr}")
-}
 
 fn content_type(response: &reqwest::Response) -> &str {
     response.headers()["content-type"]
