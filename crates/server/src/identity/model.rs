@@ -88,6 +88,16 @@ pub enum SessionKind {
 text_enum!(SessionKind { Web => "web", App => "app", Cli => "cli", Pat => "pat" });
 
 impl SessionKind {
+    /// Lifetime of a session when it is created (ADR-0017). `Pat` is the maximum; personal
+    /// access tokens will choose a shorter one when they exist.
+    pub fn initial_lifetime(self) -> Duration {
+        match self {
+            Self::Web => Duration::days(30),
+            Self::App | Self::Cli => Duration::days(90),
+            Self::Pat => Duration::days(365),
+        }
+    }
+
     /// Lifetime of a sliding session, extended on activity. `None`: the expiry is absolute (ADR-0017).
     pub fn sliding_lifetime(self) -> Option<Duration> {
         match self {
@@ -195,17 +205,12 @@ pub struct PasswordPolicy {
 }
 
 impl PasswordPolicy {
-    pub fn new(
-        min_len: usize,
-        email: &Email,
-        display_name: &DisplayName,
-        institution: &str,
-    ) -> Self {
-        let mut user_inputs = vec![email.as_str().to_owned(), "learnly".to_owned()];
-        let (local, domain) = email.as_str().split_once('@').unwrap_or_default();
+    pub fn new(min_len: usize, email: &str, display_name: &str, institution: &str) -> Self {
+        let mut user_inputs = vec![email.to_owned(), "learnly".to_owned()];
+        let (local, domain) = email.split_once('@').unwrap_or_default();
         user_inputs.push(local.to_owned());
         user_inputs.extend(domain.split('.').map(str::to_owned));
-        for text in [display_name.as_str(), institution] {
+        for text in [display_name, institution] {
             user_inputs.push(text.to_owned());
             user_inputs.extend(text.split_whitespace().map(str::to_owned));
         }
@@ -261,6 +266,26 @@ impl fmt::Debug for Password {
     }
 }
 
+/// An Argon2id PHC string, ready to store. Only `service::hash_password` makes one.
+#[derive(Clone, PartialEq, Eq)]
+pub struct HashedPassword(String);
+
+impl HashedPassword {
+    pub(super) fn new(phc: String) -> Self {
+        Self(phc)
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl fmt::Debug for HashedPassword {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("HashedPassword(***)")
+    }
+}
+
 /// A generated password for admin-created accounts: shown once, then must be changed.
 #[derive(Clone, PartialEq, Eq)]
 pub struct TemporaryPassword(String);
@@ -279,6 +304,14 @@ impl fmt::Debug for TemporaryPassword {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str("TemporaryPassword(***)")
     }
+}
+
+/// A new session as the client receives it: the raw token is shown once and never stored.
+#[derive(Debug, Clone)]
+pub struct NewSession {
+    pub token: SessionToken,
+    pub kind: SessionKind,
+    pub expires_at: DateTime<Utc>,
 }
 
 /// An opaque session credential. Only its SHA-256 is stored.
@@ -327,8 +360,8 @@ mod tests {
     fn policy() -> PasswordPolicy {
         PasswordPolicy::new(
             12,
-            &Email::parse("anna.kowalska@school.edu").unwrap(),
-            &DisplayName::parse("Anna Kowalska").unwrap(),
+            "anna.kowalska@school.edu",
+            "Anna Kowalska",
             "Example University",
         )
     }

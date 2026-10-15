@@ -95,6 +95,43 @@ async fn openapi_document_contains_health_path(pool: PgPool) {
 }
 
 #[sqlx::test(migrator = "server::app::MIGRATOR")]
+async fn openapi_document_declares_cookie_and_bearer_security(pool: PgPool) {
+    let base = spawn(pool).await;
+
+    let doc: serde_json::Value = serde_json::from_slice(
+        &reqwest::get(format!("{base}/api/v1/openapi.json"))
+            .await
+            .unwrap()
+            .bytes()
+            .await
+            .unwrap(),
+    )
+    .unwrap();
+
+    let schemes = &doc["components"]["securitySchemes"];
+    assert_eq!(schemes["cookie"]["type"], "apiKey");
+    assert_eq!(schemes["cookie"]["in"], "cookie");
+    assert_eq!(schemes["cookie"]["name"], "learnly_session");
+    assert_eq!(schemes["bearer"]["type"], "http");
+    assert_eq!(schemes["bearer"]["scheme"], "bearer");
+    let logout = &doc["paths"]["/api/v1/auth/logout"]["post"];
+    assert_eq!(
+        logout["security"][0]["cookie"],
+        serde_json::json!([]),
+        "{logout}"
+    );
+    assert_eq!(
+        logout["security"][1]["bearer"],
+        serde_json::json!([]),
+        "{logout}"
+    );
+    assert!(
+        doc["paths"]["/api/v1/auth/login"]["post"].is_object(),
+        "{doc}"
+    );
+}
+
+#[sqlx::test(migrator = "server::app::MIGRATOR")]
 async fn docs_page_lists_health_endpoint(pool: PgPool) {
     let base = spawn(pool).await;
 

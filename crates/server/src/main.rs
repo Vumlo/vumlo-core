@@ -49,9 +49,13 @@ async fn run(cli: Cli) -> anyhow::Result<()> {
                 db: pool,
                 config: std::sync::Arc::new(settings),
             };
-            app::serve(listener, app::router(state), shutdown)
-                .await
-                .context("server error")?;
+            app::serve(
+                listener,
+                app::router(state).context("cannot build the router")?,
+                shutdown,
+            )
+            .await
+            .context("server error")?;
             tracing::info!("shut down");
         }
         Command::Migrate => {
