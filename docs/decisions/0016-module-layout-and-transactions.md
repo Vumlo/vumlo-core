@@ -21,7 +21,8 @@ ADR-0001 defines modules with owned schemas, and ADR-0007 requires a state chang
 ## Decision
 
 Layout:
-- `crates/server/src/{main.rs, app.rs, error.rs, actor.rs}` + one folder per module.
+- `crates/server/src/{lib.rs, main.rs, app.rs, error.rs, actor.rs}` + one folder per module.
+- `server` is a library plus a thin binary `learnly-server`. `lib.rs` only declares modules, `main.rs` is the CLI entry, and integration tests use the library.
 - Each module: `mod.rs` (the only public surface, incl. `pub fn router()`), `model.rs` (public types), and private `routes.rs`, `service.rs`, `repo.rs`.
 - `app.rs` only nests module routers. Large files become folders without changing the public surface.
 - Later, a module can become its own crate one-to-one.

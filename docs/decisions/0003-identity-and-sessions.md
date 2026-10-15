@@ -17,7 +17,7 @@ Users sign in with an institutional email + password, or with Google (Microsoft 
 - Delivery: an HttpOnly, SameSite cookie for web (plus an `Origin` check against CSRF); `Authorization: Bearer` for mobile and CLI.
 - CLI login: device authorization flow (RFC 8628) from v1. The CLI shows a code, the user approves it in the browser, and the CLI receives a `cli` session. State lives in `identity.device_authorizations`. Personal access tokens (`pat`) exist for scripts and CI, not as the login method.
 - Mobile Google login: the app sends the Google ID token, and the server verifies it and issues its own session.
-- First admin: `learnly create-admin <email>` (server CLI), or set by hand in the database.
+- First admin: `learnly-server create-admin <email>` (server CLI), or set by hand in the database.
 
 ## Consequences
 - Every request does one indexed lookup by token hash. That is acceptable.

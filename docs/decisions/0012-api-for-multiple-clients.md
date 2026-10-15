@@ -13,7 +13,7 @@ Web, mobile and CLI clients run at the same time. Mobile apps cannot be force-up
 - Non-idempotent POSTs accept an `Idempotency-Key` header.
 - An OpenAPI spec is generated from Rust types. The web and mobile clients are generated from it; the Rust CLI uses the `api-types` crate directly.
 - Auth: cookie for web, bearer token for mobile and CLI (ADR-0003).
-- Two CLIs: the server binary's admin subcommands (direct DB access) and the user CLI (API only).
+- Two command-line tools: `learnly-server` (the server binary; admin subcommands with direct DB access) and `learnly` (the user CLI; API only).
 
 ## Consequences
 - The API contract is the product, so breaking it needs `/v2`.

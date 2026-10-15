@@ -21,6 +21,7 @@ If a rule blocks the task, stop and say so. Do not work around it.
 
 - Only crates listed in ADR-0014, with the features listed there.
 - A new crate, a version bump or a new feature flag means: stop and propose an ADR.
+- Features required to implement a use already described in ADR-0014 are allowed without a new ADR, but must be listed in the plan.
 
 ## 4. Architecture (ADR-0001, ADR-0015, ADR-0016)
 
@@ -90,6 +91,7 @@ Modules: `identity`, `org`, `teaching`, `content`, `assessment`, `gradebook`, `f
 - Everything under `/api/v1`. Changes are additive only.
 - Request/response DTOs live in `crates/api-types`, are validated with `garde`, and are annotated for `utoipa`.
 - Errors are RFC 9457 Problem Details, produced by one `IntoResponse` impl.
+- All error responses, including framework-generated ones (405/408/413, extractor rejections), are Problem Details.
 - Lists use cursor pagination. Non-idempotent POSTs honor `Idempotency-Key`.
 
 ## 10. Errors and panics

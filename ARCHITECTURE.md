@@ -22,7 +22,7 @@ Each of these must stay possible to add later without a schema rewrite.
 ## Deployment shape
 
 ```
-learnly (single binary)  +  PostgreSQL
+learnly-server (single binary)  +  PostgreSQL
 ```
 
 Nothing else is required. File storage defaults to local disk, with S3-compatible storage optional. No Redis, no message broker: queues and scheduled jobs live in PostgreSQL ([ADR-0001](docs/decisions/0001-modular-monolith.md)).
@@ -76,7 +76,7 @@ Rules ([ADR-0001](docs/decisions/0001-modular-monolith.md)):
 
 ```
 crates/server/src/
-  main.rs   app.rs   error.rs   actor.rs
+  lib.rs    main.rs   app.rs   error.rs   actor.rs
   <module>/
     mod.rs      # the only public surface: pub fn router(), pub service functions, pub types
     model.rs    # domain types (public)
@@ -84,6 +84,8 @@ crates/server/src/
     service.rs  # private
     repo.rs     # private
 ```
+
+`server` is a library plus a thin binary `learnly-server`. `lib.rs` only declares modules, `main.rs` is the CLI entry, and integration tests use the library.
 
 Private files cannot be reached from other modules, so the compiler enforces module boundaries.
 
