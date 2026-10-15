@@ -16,7 +16,7 @@ A person's rights depend on who they are in the institution and on who they are 
 - Assistants have full course access **except root actions**: add/remove teachers and assistants, change the grading scale, archive, delete, transfer ownership.
 - Teachers can do root actions except delete and transfer ownership, which are owner/admin only.
 - An admin has no memberships, acts as an implicit owner everywhere, and **every admin action in a course is audited**.
-- The role → permission mapping lives in code, in the `policy` module. Every check goes through `authorize(actor, action, resource)`.
+- The role → permission mapping lives in code, in the `policy` module. Every check goes through `authorize(&Actor, Action)`; the resource a check needs (a course, later) travels inside the `Action` variant, so new actions do not change existing callers.
 - The full matrix is in `ARCHITECTURE.md`.
 
 ## Consequences

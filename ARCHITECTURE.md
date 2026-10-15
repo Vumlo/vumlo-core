@@ -1,6 +1,6 @@
 # Learnly — Architecture
 
-Status: **design, no code yet.**
+Status: **in progress.** Implemented: the foundation (config, migrations, health, OpenAPI, Problem Details) and `identity` + `policy` (users, password login, sessions, admin user management). Everything else below is still design.
 This file is the current picture of the system. Every decision behind it has a record in [`docs/decisions/`](docs/decisions/). If this file and an ADR disagree, the ADR wins and this file gets fixed.
 
 ## Goal
@@ -37,7 +37,7 @@ learnly-server admin subcommands (on the server)  ──────────
 ```
 
 - **One API for every client.** No client-specific endpoints ([ADR-0012](docs/decisions/0012-api-for-multiple-clients.md)).
-- **`learnly-server`** = the server binary. Subcommands: `serve`, `migrate`, `create-admin`, `import-users`. Admin subcommands talk to the database directly.
+- **`learnly-server`** = the server binary. Subcommands: `serve`, `migrate`, `create-admin`, `create-user` (`import-users` is planned). Admin subcommands talk to the database directly.
 - **`learnly`** = the user CLI for students and teachers. A normal API client with a token; it never touches the database. (Naming follows the `dockerd` / `docker` pattern: the short name goes to the command people type most.)
 
 ## Repository layout
@@ -63,7 +63,7 @@ docs/decisions/
 | `gradebook`  | `gradebook.*`                   | grades (draft/published), grade history, publishing, gradebook view |
 | `files`      | `files.*`                       | uploads, storage backends |
 | `events`     | `events.*`                      | outbox, webhooks, audit log, scheduled jobs |
-| `policy`     | — (no tables)                   | `authorize(actor, action, resource)` — the only place permissions are checked |
+| `policy`     | — (no tables)                   | `authorize(&Actor, Action)` — the only place permissions are checked |
 
 Rules ([ADR-0001](docs/decisions/0001-modular-monolith.md)):
 
@@ -76,11 +76,11 @@ Rules ([ADR-0001](docs/decisions/0001-modular-monolith.md)):
 
 ```
 crates/server/src/
-  lib.rs    main.rs   app.rs   error.rs   actor.rs
+  lib.rs    main.rs   app.rs   error.rs   actor.rs   settings.rs   health.rs
   <module>/
     mod.rs      # the only public surface: pub fn router(), pub service functions, pub types
     model.rs    # domain types (public)
-    routes.rs   # private
+    routes.rs   # private (a folder `routes/` once it grows, as in `identity`)
     service.rs  # private
     repo.rs     # private
 ```
@@ -92,7 +92,7 @@ Private files cannot be reached from other modules, so the compiler enforces mod
 ### Transactions ([ADR-0016](docs/decisions/0016-module-layout-and-transactions.md))
 
 - Services and repos take `&mut PgConnection` and never `begin` or `commit`.
-- **Writes:** the handler opens a transaction, calls exactly one service function, and commits. The owning module's service orchestrates other modules and passes the same connection on.
+- **Writes:** the handler opens a transaction, calls exactly one *writing* service function, and commits. The owning module's service orchestrates other modules and passes the same connection on. Reads and slow preparation (loading a user, verifying and hashing passwords) are separate service calls that run before `begin`, never inside the transaction.
 - **Reads:** a pooled connection without a transaction (read-only transaction only for consistent multi-query snapshots).
 - **Nothing slow inside a transaction:** no password hashing, no HTTP calls. Files are stored before their metadata is inserted.
 
@@ -100,14 +100,16 @@ Private files cannot be reached from other modules, so the compiler enforces mod
 
 ```
 identity
-  users            id, email (unique), display_name,
-                   role: admin | teacher | student, status: active | disabled
+  users            id, email (unique, stored lowercase), display_name,
+                   role: admin | teacher | student, status: active | disabled,
+                   email_verified_at?, must_change_password, created_at, updated_at
   identities       id, user_id, provider: password | google, subject, password_hash?
-                   unique(provider, subject)
-  sessions         id, user_id, token_hash, kind: web | app | cli | pat, name?,
-                   created_at, last_seen_at, expires_at
+                   unique(provider, subject); a password identity has subject = user id
+  sessions         id, user_id, token_hash (SHA-256, unique), kind: web | app | cli | pat, name?,
+                   created_at, last_seen_at, expires_at       -- revoking = deleting the row
   device_authorizations  id, device_code_hash, user_code, user_id?,
-                   status: pending | approved | denied, expires_at    -- CLI login, RFC 8628
+                   status: pending | approved | denied, expires_at    -- CLI login, RFC 8628 (planned)
+  email_tokens     -- email verification and password reset (planned, task 004)
 
 org
   terms            id, name, starts_on, ends_on
@@ -161,7 +163,36 @@ Key points:
 - **`effective_members` is a view, not a sync job** ([ADR-0006](docs/decisions/0006-groups-and-membership.md)). A student who leaves a group disappears from the course automatically, and their grades stay because grades are keyed by `user_id`.
 - **The gradebook is a separate module, not a separate tree** ([ADR-0015](docs/decisions/0015-gradebook-module.md), [ADR-0009](docs/decisions/0009-grading-and-gradebook.md)). Every gradebook column is an assignment in the course tree. "+ column" in the gradebook creates an assignment of type `no_submission` in a chosen module. Column order = course tree order.
 
+## Identity and sessions
+
+([ADR-0003](docs/decisions/0003-identity-and-sessions.md), [ADR-0017](docs/decisions/0017-accounts-passwords-sessions.md))
+
+- **Accounts** exist only when an admin creates them (`POST /admin/users`, `learnly-server create-user` / `create-admin`). The system generates a temporary password, shown once, and sets `must_change_password`. Self-registration, email verification and Google arrive in later tasks.
+- **Login** `POST /auth/login { email, password, client: web | app }`. `web` sets the `learnly_session` cookie (HttpOnly, SameSite=Lax, `Secure` from `auth.cookie_secure`); `app` returns the token for `Authorization: Bearer`. A wrong email, a wrong password and a disabled account all give the same 401 and take the same time (a dummy hash is verified for unknown emails).
+- **Tokens** are 32 random bytes in base64url; only their SHA-256 is stored. Passwords use Argon2id (19 MiB, 2 iterations, 1 lane) on a blocking thread, always before a transaction opens.
+- **Lifetimes:** `web` 30 days and `app` 90 days, both sliding; `cli` 90 days and `pat` up to 365 days, absolute. `last_seen_at` and the expiry are written at most once an hour per session.
+- **Extractors:** `Actor` (valid session, active user, no password change pending) rejects with 401 or 403. `PendingActor` also accepts `must_change_password = true` and is used only by logout, `GET /me` and change password. The role is read from the database on every request, so a role change or a disabled account applies at once.
+- **CSRF:** a cookie-authenticated request that is not GET/HEAD/OPTIONS must carry `Origin` equal to `server.public_origin`, and so must a `web` login. Bearer requests are exempt.
+- **Rate limits** on login: per IP (`tower_governor`, key from `server.client_ip_header` when set, else the TCP peer) and per account (in memory, 10 failures per 15 minutes, reset on success). Wrong current passwords on change-password count against the same per-account limit.
+- **Admin rules:** disabling a user deletes all their sessions in the same transaction; a password reset issues a new temporary password and deletes all sessions; the last active admin can be neither demoted nor disabled (409, serialized with a row lock). Changing one's own password revokes the user's other sessions.
+
+## API conventions
+
+([ADR-0012](docs/decisions/0012-api-for-multiple-clients.md), [ADR-0018](docs/decisions/0018-api-errors-and-pagination.md))
+
+- Everything is under `/api/v1`. OpenAPI is served at `/api/v1/openapi.json` and `/api/v1/docs`, with `cookie` and `bearer` security schemes.
+- Errors are RFC 9457 Problem Details, including framework-generated ones. A request that cannot be accepted is `422` with `errors: [{ field, message }]`; the password policy's feedback comes back this way.
+- Lists take `?cursor=&limit=` (default 50, max 100) and return `{ items, next_cursor }`. The cursor is opaque.
+- Responses that carry a credential (login token, temporary password) send `Cache-Control: no-store`.
+
+## Configuration
+
+`learnly.toml`, any key overridable with `LEARNLY__SECTION__KEY` (see `learnly.example.toml`):
+`server.bind_addr`, `server.public_origin`, `server.client_ip_header?`, `database.url`, `database.max_connections`, `log.format`, `institution.name`, and an optional `[auth]` section (`password_min_length` = 12, `cookie_secure` = true, `allowed_domains` = [], used from task 004). `institution.mode` (school | university) is planned.
+
 ## Authorization
+
+`policy::authorize(&Actor, Action)` decides every check. The resource an action needs travels inside its `Action` variant, so course-level actions can be added without changing existing callers. Today: `ManageOwnAccount` (any role) and `ManageUsers` (admin only).
 
 There are two levels of roles ([ADR-0004](docs/decisions/0004-roles-and-policy.md)).
 

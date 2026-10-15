@@ -26,7 +26,7 @@ ADR-0003 restricts registration to allowed email domains. But a domain check doe
 ### Login
 - One generic error for a wrong email or wrong password.
 - When the user does not exist, a dummy hash is still verified, so response time does not reveal which emails exist.
-- Rate limits per IP and per account on login, registration and reset.
+- Rate limits per IP and per account on login, registration and reset (task 002 implements login; the per-account counter also covers wrong current passwords on change-password).
 - Per-IP limit: `tower_governor`. The key is the header named by `server.client_ip_header` (set it when a reverse proxy overwrites it), otherwise the TCP peer address.
 - Per-account limit is in-memory (single binary), 10 failures / 15 min, reset on success; accepted trade-off: an attacker can temporarily lock out a known email.
 
@@ -40,6 +40,11 @@ ADR-0003 restricts registration to allowed email domains. But a domain check doe
 
 - `last_seen_at` / expiry are updated at most once per hour per session, not on every request.
 - Expired sessions are deleted by a cleanup job once the worker exists (task 003). Until then, expired sessions are simply rejected.
+
+### Admin actions
+- A password reset issues a new temporary password (`must_change_password = true`) and deletes all the user's sessions.
+- The last active admin cannot be demoted or disabled (409). The check locks all active admins, so two concurrent requests cannot remove the last two.
+- A new password must differ from the current one.
 
 ### Disabling a user
 - `status = disabled` revokes **all** of the user's sessions in the same transaction. A disabled user cannot log in. Their data is kept.

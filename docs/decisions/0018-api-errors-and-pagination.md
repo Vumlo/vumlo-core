@@ -12,6 +12,7 @@ ADR-0012 requires RFC 9457 Problem Details and cursor pagination, but fixes no s
 
 ## Decision
 - A validation failure is `422` Problem Details with an extension member `errors: [{ "field": string, "message": string }]`. The member is omitted when empty. A password rejection lists zxcvbn's warning and each suggestion as entries with the password field name.
+- A query string or body that cannot be read at all is also `422`; malformed path parameters are `400`.
 - Lists accept `?cursor=<opaque>&limit=<n>` (default 50, max 100) and return `{ "items": [...], "next_cursor": string | null }`. Items are ordered by `id` (UUID v7, so creation order). Clients must treat the cursor as opaque; today it is the last returned id.
 
 ## Consequences

@@ -14,10 +14,10 @@ Users sign in with an institutional email + password, or with Google (Microsoft 
 - Registration is open only for emails in `allowed_domains`. New users get role `student`. An admin promotes teachers.
 - A Google identity is linked to an existing user **only if Google reports `email_verified = true`** and the domain is allowed.
 - Sessions are random tokens; only their hash is stored. `kind = web | app | cli | pat`. Users can list and revoke their sessions.
-- Delivery: an HttpOnly, SameSite cookie for web (plus an `Origin` check against CSRF); `Authorization: Bearer` for mobile and CLI.
+- Delivery: an HttpOnly, SameSite=Lax cookie for web (plus an `Origin` check against `server.public_origin` for every non-read-only request, and for web login); `Authorization: Bearer` for mobile and CLI, which skips the Origin check.
 - CLI login: device authorization flow (RFC 8628) from v1. The CLI shows a code, the user approves it in the browser, and the CLI receives a `cli` session. State lives in `identity.device_authorizations`. Personal access tokens (`pat`) exist for scripts and CI, not as the login method.
 - Mobile Google login: the app sends the Google ID token, and the server verifies it and issues its own session.
-- First admin: `learnly-server create-admin <email>` (server CLI), or set by hand in the database.
+- First admin: `learnly-server create-admin <email> --name <name>` (server CLI), or set by hand in the database. `learnly-server create-user <email> --name <name> --role <role>` creates other accounts.
 
 ## Consequences
 - Every request does one indexed lookup by token hash. That is acceptable.

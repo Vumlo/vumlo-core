@@ -16,7 +16,7 @@ All crates were checked on crates.io in October 2026: they exist, are maintained
 | `tokio` 1 | The de-facto async runtime. axum, sqlx and reqwest are built on it. | — |
 | `axum` 0.8 | Built by the tokio team on top of `tower`, so middleware (timeouts, tracing, CORS, rate limits) is reusable. Handlers are plain functions with typed extractors, no macros. Most used Rust web framework. | `actix-web`: equally mature, but has its own middleware system outside the `tower` ecosystem. |
 | `tower-http` | Standard layers: request tracing, CORS, timeouts, body size limit, compression. | — |
-| `axum-extra` | `CookieJar` for the web session cookie. | — |
+| `axum-extra` (feature `cookie` only) | `CookieJar` to read the web session cookie. The `Set-Cookie` header is written by hand. | — |
 
 ### Database
 
@@ -59,13 +59,13 @@ Rule: request DTOs are validated with `garde` at the HTTP edge. Inside services,
 
 | Crate | Why |
 |---|---|
-| `argon2` 0.6 | Argon2id password hashing, the current OWASP recommendation. Stored in PHC string format, so parameters can be raised later. |
+| `argon2` 0.6 | Argon2id password hashing, the current OWASP recommendation (19 MiB, 2 iterations, 1 lane). Stored in PHC string format, so parameters can be raised later. |
 | `rand` 0.10 | 256-bit random session tokens, device codes and user codes. |
 | `base64` 0.23 | Encodes session tokens and temporary passwords as base64url (no padding). Encode-only; added in task 002 (amends this ADR). |
 | `sha2` 0.11 | Session tokens are stored as SHA-256 hashes. Argon2 is not needed here: the tokens are random and high-entropy, unlike passwords, and a fast hash keeps the per-request lookup cheap. |
 | `hmac` 0.13 | Webhook signatures (ADR-0007). |
 | `openidconnect` 4 | Google sign-in: discovery, PKCE, ID-token verification for the web redirect flow and for mobile ID tokens. |
-| `tower_governor` | Rate limiting of login, registration and device-code endpoints. |
+| `tower_governor` 0.8 (feature `axum` only; the default also pulls `tonic`) | Per-IP rate limiting of login, registration and device-code endpoints. |
 | `zxcvbn` 3 | Password strength check (ADR-0017): catches common passwords, dictionary words and patterns, takes user inputs as context, and returns feedback for the UI. It replaces maintaining our own blocklist. |
 
 Sessions and the device authorization flow are **implemented in-house** (ADR-0003). They are about 300 lines on top of the crates above. `tower-sessions` was rejected because it is cookie-centric, while we need the same session usable as a bearer token.

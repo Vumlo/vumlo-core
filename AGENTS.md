@@ -28,9 +28,10 @@ If a rule blocks the task, stop and say so. Do not work around it.
 Modules: `identity`, `org`, `teaching`, `content`, `assessment`, `gradebook`, `files`, `events`, `policy`.
 
     crates/server/src/
-      main.rs      CLI entry: serve | migrate | create-admin | import-users
+      main.rs      CLI entry: serve | migrate | create-admin | create-user (import-users: planned)
       app.rs       AppState, router assembly (nests each module's router())
-      error.rs     shared API error → Problem Details
+      error.rs     shared API error → Problem Details, ValidJson/ValidQuery extractors
+      settings.rs  configuration (learnly.toml + LEARNLY__ environment)
       actor.rs     Actor: who performs the action
       <module>/
         mod.rs     the ONLY public surface: pub fn router(), pub service functions, pub types
@@ -49,7 +50,8 @@ Modules: `identity`, `org`, `teaching`, `content`, `assessment`, `gradebook`, `f
 ### Transactions
 
 - Service and repo functions take `&mut PgConnection`. They **never** call `begin` or `commit`.
-- **Writes:** the route handler (or CLI command) opens the transaction, calls **exactly one** service function, and commits.
+- **Writes:** the route handler (or CLI command) opens the transaction, calls **exactly one writing** service function, and commits.
+  Reads and slow preparation (looking up a user, verifying or hashing a password) are separate service calls made **before** `begin`.
   If an action spans modules, the owning module's service calls the others and passes the same connection
   (e.g. `gradebook::publish_grades` calls `events::emit`).
 - **Reads:** use a pooled connection without a transaction. Use a read-only transaction only when several
@@ -59,7 +61,9 @@ Modules: `identity`, `org`, `teaching`, `content`, `assessment`, `gradebook`, `f
 
 ## 5. Authorization
 
-- Every service function acting for a user takes an `Actor` and calls `policy::authorize(actor, action, resource)` before anything else.
+- Every service function acting for a user takes an `Actor` and calls `policy::authorize(&actor, Action)` before anything else.
+  The resource a check needs travels inside the `Action` variant.
+  A handler may also call it early, before costly work such as hashing, but the service still authorizes first.
 - No role checks anywhere except `policy`. Deny by default.
 - Every action by an `admin` inside a course writes to `events.audit_log` in the same transaction.
 
@@ -92,7 +96,8 @@ Modules: `identity`, `org`, `teaching`, `content`, `assessment`, `gradebook`, `f
 - Request/response DTOs live in `crates/api-types`, are validated with `garde`, and are annotated for `utoipa`.
 - Errors are RFC 9457 Problem Details, produced by one `IntoResponse` impl.
 - All error responses, including framework-generated ones (405/408/413, extractor rejections), are Problem Details.
-- Lists use cursor pagination. Non-idempotent POSTs honor `Idempotency-Key`.
+- Validation failures are `422` with `errors: [{field, message}]` (ADR-0018).
+- Lists use cursor pagination: `?cursor=&limit=` → `{items, next_cursor}` (ADR-0018). Non-idempotent POSTs honor `Idempotency-Key`.
 
 ## 10. Errors and panics
 
@@ -104,12 +109,15 @@ Modules: `identity`, `org`, `teaching`, `content`, `assessment`, `gradebook`, `f
 - Passwords: `argon2`, always inside `tokio::task::spawn_blocking`, and before opening a transaction.
 - Session tokens, device codes and webhook secrets are stored hashed or encrypted, never in plain text.
 - Compare secrets in constant time.
+- Responses that carry a credential (a token, a temporary password) send `Cache-Control: no-store`.
+- Types that hold secrets (`Password`, `SessionToken`, DTOs with passwords) redact them in `Debug`.
 - Never log passwords, tokens, cookies or email addresses. Log user ids.
 
 ## 12. Tests
 
 - Every change comes with tests that check behavior, not just "it compiles".
 - DB tests use `#[sqlx::test]`. API tests start the real server and call it with `reqwest`.
+  Shared helpers (server spawn, seeding, login) live in `crates/server/tests/common/`.
 - **Never delete, skip or weaken a test to make it pass.** If a test looks wrong, say so and stop.
 
 ## 13. Forbidden
