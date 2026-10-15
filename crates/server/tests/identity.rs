@@ -513,7 +513,8 @@ async fn me_returns_the_current_user(pool: PgPool) {
 
 #[sqlx::test(migrator = "server::app::MIGRATOR")]
 async fn pending_password_change_allows_only_me_logout_and_password(pool: PgPool) {
-    let temporary = seed_pending_user(&pool, "newbie@school.edu", Role::Teacher).await;
+    // An admin: the 403 on /admin/* below is due to the pending change, not to the role.
+    let temporary = seed_pending_user(&pool, "newbie@school.edu", Role::Admin).await;
     let http = Http::new(&spawn(pool.clone()).await);
     let token = login_app(&http, "newbie@school.edu", &temporary).await;
     let id = uuid::Uuid::now_v7();
@@ -525,6 +526,29 @@ async fn pending_password_change_allows_only_me_logout_and_password(pool: PgPool
         .await
         .problem(403);
     http.delete(&format!("/me/sessions/{id}"))
+        .bearer(&token)
+        .send()
+        .await
+        .problem(403);
+
+    http.get("/admin/users")
+        .bearer(&token)
+        .send()
+        .await
+        .problem(403);
+    http.post("/admin/users")
+        .bearer(&token)
+        .json(&json!({"email": "x@school.edu", "display_name": "X", "role": "student"}))
+        .send()
+        .await
+        .problem(403);
+    http.patch(&format!("/admin/users/{id}"))
+        .bearer(&token)
+        .json(&json!({}))
+        .send()
+        .await
+        .problem(403);
+    http.post(&format!("/admin/users/{id}/reset-password"))
         .bearer(&token)
         .send()
         .await
@@ -918,4 +942,543 @@ async fn revoking_with_a_cookie_needs_the_origin(pool: PgPool) {
         .send()
         .await
         .problem(404);
+}
+
+// --- admin -------------------------------------------------------------------------------------
+
+async fn admin(pool: &PgPool, http: &Http) -> String {
+    seed_user(pool, "root@school.edu", Role::Admin).await;
+    login_app(http, "root@school.edu", PASSWORD).await
+}
+
+async fn user_id(pool: &PgPool, email: &str) -> uuid::Uuid {
+    sqlx::query_scalar!(
+        r#"SELECT id AS "id!" FROM identity.users WHERE email = $1"#,
+        email
+    )
+    .fetch_one(pool)
+    .await
+    .unwrap()
+}
+
+async fn count_users(pool: &PgPool) -> i64 {
+    sqlx::query_scalar!(r#"SELECT count(*) AS "n!" FROM identity.users"#)
+        .fetch_one(pool)
+        .await
+        .unwrap()
+}
+
+#[sqlx::test(migrator = "server::app::MIGRATOR")]
+async fn non_admins_get_403_on_every_admin_endpoint(pool: PgPool) {
+    let http = setup(&pool).await; // anna is a student
+    seed_user(&pool, "terry@school.edu", Role::Teacher).await;
+    let victim = user_id(&pool, "anna@school.edu").await;
+    let users_before = count_users(&pool).await;
+
+    for who in ["anna@school.edu", "terry@school.edu"] {
+        let token = login_app(&http, who, PASSWORD).await;
+        http.get("/admin/users")
+            .bearer(&token)
+            .send()
+            .await
+            .problem(403);
+        http.post("/admin/users")
+            .bearer(&token)
+            .json(&json!({"email": "new@school.edu", "display_name": "New", "role": "admin"}))
+            .send()
+            .await
+            .problem(403);
+        http.patch(&format!("/admin/users/{victim}"))
+            .bearer(&token)
+            .json(&json!({"role": "admin"}))
+            .send()
+            .await
+            .problem(403);
+        http.post(&format!("/admin/users/{victim}/reset-password"))
+            .bearer(&token)
+            .send()
+            .await
+            .problem(403);
+    }
+
+    assert_eq!(count_users(&pool).await, users_before);
+    let role = sqlx::query_scalar!(
+        r#"SELECT role AS "role!" FROM identity.users WHERE id = $1"#,
+        victim
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(role, "student");
+    http.get("/admin/users").send().await.problem(401);
+}
+
+#[sqlx::test(migrator = "server::app::MIGRATOR")]
+async fn admin_creates_a_user_with_a_temporary_password(pool: PgPool) {
+    let http = Http::new(&spawn(pool.clone()).await);
+    let token = admin(&pool, &http).await;
+
+    let created = http
+        .post("/admin/users")
+        .bearer(&token)
+        .json(&json!({"email": "  New.Teacher@Elsewhere.org ", "display_name": " Nina Novak ", "role": "teacher"}))
+        .send()
+        .await;
+
+    assert_eq!(
+        created.status,
+        201,
+        "{}",
+        String::from_utf8_lossy(&created.body)
+    );
+    assert_eq!(created.header("cache-control"), "no-store");
+    let body = created.json();
+    assert_eq!(
+        body["user"]["email"], "new.teacher@elsewhere.org",
+        "any domain is fine for admins"
+    );
+    assert_eq!(body["user"]["display_name"], "Nina Novak");
+    assert_eq!(body["user"]["role"], "teacher");
+    assert_eq!(body["user"]["must_change_password"], true);
+    let temporary = body["temporary_password"].as_str().unwrap().to_owned();
+    assert_eq!(temporary.len(), 22);
+
+    // Only the Argon2id hash is stored.
+    let stored = sqlx::query_scalar!(
+        r#"SELECT password_hash AS "h!" FROM identity.identities WHERE provider = 'password'
+           AND subject = $1"#,
+        body["user"]["id"].as_str().unwrap()
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert!(stored.starts_with("$argon2id$"));
+    assert!(!stored.contains(&temporary));
+
+    // The temporary password works, and the user is told to change it.
+    let new_token = login_app(&http, "new.teacher@elsewhere.org", &temporary).await;
+    let me = http.get("/me").bearer(&new_token).send().await.json();
+    assert_eq!(me["must_change_password"], true);
+}
+
+#[sqlx::test(migrator = "server::app::MIGRATOR")]
+async fn admin_create_rejects_duplicates_and_invalid_input(pool: PgPool) {
+    let http = Http::new(&spawn(pool.clone()).await);
+    let token = admin(&pool, &http).await;
+    let create = |email: &str, name: &str| {
+        http.post("/admin/users")
+            .bearer(&token)
+            .json(&json!({"email": email, "display_name": name, "role": "student"}))
+            .send()
+    };
+
+    create("Root@School.edu", "Another Root").await.problem(409);
+    assert_eq!(
+        create("bad address", "Name").await.problem(422).errors[0].field,
+        "email"
+    );
+    assert_eq!(
+        create("ok@school.edu", "   ").await.problem(422).errors[0].field,
+        "display_name"
+    );
+    assert_eq!(
+        create("ok@school.edu", &"x".repeat(101))
+            .await
+            .problem(422)
+            .errors[0]
+            .field,
+        "display_name"
+    );
+    let bad_role = http
+        .post("/admin/users")
+        .bearer(&token)
+        .json(&json!({"email": "ok@school.edu", "display_name": "Ok", "role": "owner"}))
+        .send()
+        .await;
+    bad_role.problem(422);
+    assert_eq!(
+        count_users(&pool).await,
+        1,
+        "nothing was created by the failures"
+    );
+}
+
+#[sqlx::test(migrator = "server::app::MIGRATOR")]
+async fn admin_lists_users_with_filters_and_cursor(pool: PgPool) {
+    let http = Http::new(&spawn(pool.clone()).await);
+    let token = admin(&pool, &http).await;
+    for (email, role) in [
+        ("alice@a.edu", Role::Student),
+        ("bob@a.edu", Role::Teacher),
+        ("carol@b.edu", Role::Student),
+        ("dave_x@b.edu", Role::Student),
+        ("daveax@b.edu", Role::Student),
+        ("50%off@b.edu", Role::Student),
+        ("50xoff@b.edu", Role::Student),
+    ] {
+        seed_user(&pool, email, role).await;
+    }
+    sqlx::query!("UPDATE identity.users SET status = 'disabled' WHERE email = 'carol@b.edu'")
+        .execute(&pool)
+        .await
+        .unwrap();
+    let emails = |response: &common::Resp| -> Vec<String> {
+        assert_eq!(
+            response.status,
+            200,
+            "{}",
+            String::from_utf8_lossy(&response.body)
+        );
+        response.json()["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|u| u["email"].as_str().unwrap().to_owned())
+            .collect()
+    };
+    let list = |query: &str| {
+        http.get(&format!("/admin/users{query}"))
+            .bearer(&token)
+            .send()
+    };
+
+    assert_eq!(
+        emails(&list("").await).len(),
+        8,
+        "all users, admin included"
+    );
+    assert_eq!(emails(&list("?role=teacher").await), ["bob@a.edu"]);
+    assert_eq!(emails(&list("?status=disabled").await), ["carol@b.edu"]);
+    assert_eq!(
+        emails(&list("?role=admin&status=active").await),
+        ["root@school.edu"]
+    );
+    assert_eq!(
+        emails(&list("?email=ALICE").await),
+        ["alice@a.edu"],
+        "case-insensitive"
+    );
+    assert_eq!(emails(&list("?email=%40b.edu").await).len(), 5);
+    // `_` and `%` in the search text are literal characters, not wildcards.
+    assert_eq!(emails(&list("?email=dave_x").await), ["dave_x@b.edu"]);
+    assert_eq!(emails(&list("?email=50%25").await), ["50%off@b.edu"]);
+    assert!(emails(&list("?email=nobody").await).is_empty());
+
+    // Paging visits every user exactly once, in creation order.
+    let mut seen = Vec::new();
+    let mut query = "?limit=3".to_owned();
+    let mut pages = 0;
+    loop {
+        let response = list(&query).await;
+        seen.extend(emails(&response));
+        pages += 1;
+        match response.json()["next_cursor"].as_str() {
+            Some(cursor) => query = format!("?limit=3&cursor={cursor}"),
+            None => break,
+        }
+    }
+    assert_eq!(pages, 3);
+    assert_eq!(seen.len(), 8);
+    assert_eq!(seen[0], "root@school.edu");
+    assert_eq!(seen[7], "50xoff@b.edu");
+    let unique: std::collections::HashSet<_> = seen.iter().collect();
+    assert_eq!(unique.len(), 8);
+
+    assert_eq!(
+        list("?cursor=junk").await.problem(422).errors[0].field,
+        "cursor"
+    );
+    list("?limit=101").await.problem(422);
+    list("?role=owner").await.problem(422);
+}
+
+#[sqlx::test(migrator = "server::app::MIGRATOR")]
+async fn admin_updates_a_user(pool: PgPool) {
+    let http = setup(&pool).await;
+    let token = admin(&pool, &http).await;
+    let anna = user_id(&pool, "anna@school.edu").await;
+    let anna_token = login_app(&http, "anna@school.edu", PASSWORD).await;
+    let patch = |body: serde_json::Value| {
+        http.patch(&format!("/admin/users/{anna}"))
+            .bearer(&token)
+            .json(&body)
+            .send()
+    };
+
+    let renamed = patch(json!({"display_name": "  Anna K.  "})).await;
+    assert_eq!(renamed.status, 200);
+    assert_eq!(renamed.json()["display_name"], "Anna K.");
+    assert_eq!(renamed.json()["role"], "student", "other fields stay");
+
+    // A promotion applies at once, to the sessions the user already has.
+    http.get("/admin/users")
+        .bearer(&anna_token)
+        .send()
+        .await
+        .problem(403);
+    assert_eq!(
+        patch(json!({"role": "admin"})).await.json()["role"],
+        "admin"
+    );
+    assert_eq!(
+        http.get("/admin/users")
+            .bearer(&anna_token)
+            .send()
+            .await
+            .status,
+        200
+    );
+    assert_eq!(
+        patch(json!({"role": "teacher"})).await.json()["role"],
+        "teacher"
+    );
+    http.get("/admin/users")
+        .bearer(&anna_token)
+        .send()
+        .await
+        .problem(403);
+
+    assert_eq!(
+        patch(json!({})).await.status,
+        200,
+        "an empty patch changes nothing"
+    );
+    assert_eq!(
+        patch(json!({"display_name": ""})).await.problem(422).errors[0].field,
+        "display_name"
+    );
+    patch(json!({"role": "owner"})).await.problem(422);
+    http.patch(&format!("/admin/users/{}", uuid::Uuid::now_v7()))
+        .bearer(&token)
+        .json(&json!({"display_name": "Ghost"}))
+        .send()
+        .await
+        .problem(404);
+    http.patch("/admin/users/not-a-uuid")
+        .bearer(&token)
+        .json(&json!({}))
+        .send()
+        .await
+        .problem(400);
+}
+
+#[sqlx::test(migrator = "server::app::MIGRATOR")]
+async fn disabling_a_user_deletes_their_sessions(pool: PgPool) {
+    let http = setup(&pool).await;
+    let token = admin(&pool, &http).await;
+    let anna = user_id(&pool, "anna@school.edu").await;
+    let phone = login_app(&http, "anna@school.edu", PASSWORD).await;
+    let browser = login_web(&http, "anna@school.edu", PASSWORD).await;
+    let sessions = |id: uuid::Uuid| {
+        let pool = pool.clone();
+        async move {
+            sqlx::query_scalar!(
+                r#"SELECT count(*) AS "n!" FROM identity.sessions WHERE user_id = $1"#,
+                id
+            )
+            .fetch_one(&pool)
+            .await
+            .unwrap()
+        }
+    };
+    assert_eq!(sessions(anna).await, 2);
+
+    let response = http
+        .patch(&format!("/admin/users/{anna}"))
+        .bearer(&token)
+        .json(&json!({"status": "disabled"}))
+        .send()
+        .await;
+
+    assert_eq!(response.status, 200);
+    assert_eq!(response.json()["status"], "disabled");
+    assert_eq!(
+        sessions(anna).await,
+        0,
+        "the rows are gone, not just ignored"
+    );
+    http.get("/me").bearer(&phone).send().await.problem(401);
+    http.get("/me").cookie(&browser).send().await.problem(401);
+    http.post("/auth/login")
+        .json(&login_body("anna@school.edu", PASSWORD, "app"))
+        .send()
+        .await
+        .problem(401);
+
+    // Enabling again lets them log in, but does not bring the old sessions back.
+    http.patch(&format!("/admin/users/{anna}"))
+        .bearer(&token)
+        .json(&json!({"status": "active"}))
+        .send()
+        .await;
+    login_app(&http, "anna@school.edu", PASSWORD).await;
+    http.get("/me").bearer(&phone).send().await.problem(401);
+}
+
+#[sqlx::test(migrator = "server::app::MIGRATOR")]
+async fn last_active_admin_cannot_be_disabled_or_demoted(pool: PgPool) {
+    let http = Http::new(&spawn(pool.clone()).await);
+    let first = admin(&pool, &http).await;
+    let first_id = user_id(&pool, "root@school.edu").await;
+    let patch = |token: &str, id: uuid::Uuid, body: serde_json::Value| {
+        http.patch(&format!("/admin/users/{id}"))
+            .bearer(token)
+            .json(&body)
+            .send()
+    };
+
+    // Alone, the admin can neither demote nor disable themself.
+    let demote = patch(&first, first_id, json!({"role": "teacher"})).await;
+    assert_eq!(
+        demote.problem(409).detail.as_deref(),
+        Some("the last active admin cannot be demoted or disabled")
+    );
+    patch(&first, first_id, json!({"status": "disabled"}))
+        .await
+        .problem(409);
+    patch(
+        &first,
+        first_id,
+        json!({"role": "student", "status": "disabled"}),
+    )
+    .await
+    .problem(409);
+    // Renaming and no-op changes are fine.
+    assert_eq!(
+        patch(
+            &first,
+            first_id,
+            json!({"display_name": "Root", "role": "admin"})
+        )
+        .await
+        .status,
+        200
+    );
+
+    // With a second admin, either can step down ...
+    seed_user(&pool, "second@school.edu", Role::Admin).await;
+    let second = login_app(&http, "second@school.edu", PASSWORD).await;
+    let second_id = user_id(&pool, "second@school.edu").await;
+    assert_eq!(
+        patch(&second, first_id, json!({"status": "disabled"}))
+            .await
+            .status,
+        200
+    );
+    http.get("/me").bearer(&first).send().await.problem(401);
+
+    // ... but then the remaining one is the last. A disabled admin does not count.
+    patch(&second, second_id, json!({"role": "teacher"}))
+        .await
+        .problem(409);
+    patch(&second, second_id, json!({"status": "disabled"}))
+        .await
+        .problem(409);
+
+    // A second admin can be created again, which frees the first one.
+    patch(&second, first_id, json!({"status": "active"})).await;
+    assert_eq!(
+        patch(&second, first_id, json!({"role": "student"}))
+            .await
+            .status,
+        200
+    );
+    patch(&second, second_id, json!({"role": "teacher"}))
+        .await
+        .problem(409);
+}
+
+#[sqlx::test(migrator = "server::app::MIGRATOR")]
+async fn admin_resets_a_password(pool: PgPool) {
+    let http = setup(&pool).await;
+    let token = admin(&pool, &http).await;
+    let anna = user_id(&pool, "anna@school.edu").await;
+    let phone = login_app(&http, "anna@school.edu", PASSWORD).await;
+    let browser = login_web(&http, "anna@school.edu", PASSWORD).await;
+
+    let reset = http
+        .post(&format!("/admin/users/{anna}/reset-password"))
+        .bearer(&token)
+        .send()
+        .await;
+
+    assert_eq!(reset.status, 200);
+    assert_eq!(reset.header("cache-control"), "no-store");
+    let temporary = reset.json()["temporary_password"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    assert_eq!(temporary.len(), 22);
+    http.get("/me").bearer(&phone).send().await.problem(401);
+    http.get("/me").cookie(&browser).send().await.problem(401);
+    http.post("/auth/login")
+        .json(&login_body("anna@school.edu", PASSWORD, "app"))
+        .send()
+        .await
+        .problem(401);
+    let new_token = login_app(&http, "anna@school.edu", &temporary).await;
+    assert_eq!(
+        http.get("/me").bearer(&new_token).send().await.json()["must_change_password"],
+        true
+    );
+    http.get("/me/sessions")
+        .bearer(&new_token)
+        .send()
+        .await
+        .problem(403);
+
+    // Each reset issues a different password, and the old temporary one stops working.
+    let again = http
+        .post(&format!("/admin/users/{anna}/reset-password"))
+        .bearer(&token)
+        .send()
+        .await
+        .json()["temporary_password"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    assert_ne!(again, temporary);
+    http.post("/auth/login")
+        .ip("192.0.2.9")
+        .json(&login_body("anna@school.edu", &temporary, "app"))
+        .send()
+        .await
+        .problem(401);
+    http.post(&format!(
+        "/admin/users/{}/reset-password",
+        uuid::Uuid::now_v7()
+    ))
+    .bearer(&token)
+    .send()
+    .await
+    .problem(404);
+}
+
+#[sqlx::test(migrator = "server::app::MIGRATOR")]
+async fn admin_endpoints_with_a_cookie_need_the_origin(pool: PgPool) {
+    let http = Http::new(&spawn(pool.clone()).await);
+    seed_user(&pool, "root@school.edu", Role::Admin).await;
+    let web = login_web(&http, "root@school.edu", PASSWORD).await;
+    let body = json!({"email": "x@school.edu", "display_name": "X", "role": "student"});
+
+    http.post("/admin/users")
+        .cookie(&web)
+        .json(&body)
+        .send()
+        .await
+        .problem(403);
+    assert_eq!(count_users(&pool).await, 1);
+    let ok = http
+        .post("/admin/users")
+        .cookie(&web)
+        .origin(ORIGIN)
+        .json(&body)
+        .send()
+        .await;
+    assert_eq!(ok.status, 201);
+    assert_eq!(
+        http.get("/admin/users").cookie(&web).send().await.status,
+        200,
+        "reads need no origin"
+    );
 }

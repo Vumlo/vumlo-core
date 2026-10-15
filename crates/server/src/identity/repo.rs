@@ -4,7 +4,7 @@ use chrono::{DateTime, Utc};
 use sqlx::PgConnection;
 use uuid::Uuid;
 
-use super::model::{NewUser, Role, SessionInfo, SessionKind, User, UserStatus};
+use super::model::{NewUser, Role, SessionInfo, SessionKind, User, UserFilter, UserStatus};
 
 pub struct LoginRecord {
     pub user: User,
@@ -274,4 +274,100 @@ pub async fn list_sessions(
     )
     .fetch_all(conn)
     .await
+}
+
+pub async fn list_users(
+    conn: &mut PgConnection,
+    filter: &UserFilter,
+    after: Option<Uuid>,
+    limit: i64,
+) -> Result<Vec<User>, sqlx::Error> {
+    // `strpos` instead of LIKE: the search text never needs escaping. Emails are stored lowercase.
+    sqlx::query_as!(
+        User,
+        r#"SELECT id, email, display_name,
+                  role AS "role: Role", status AS "status: UserStatus",
+                  must_change_password, created_at
+           FROM identity.users
+           WHERE ($1::text IS NULL OR role = $1)
+             AND ($2::text IS NULL OR status = $2)
+             AND ($3::text IS NULL OR strpos(email, $3) > 0)
+             AND ($4::uuid IS NULL OR id > $4)
+           ORDER BY id
+           LIMIT $5"#,
+        filter.role.map(Role::as_str),
+        filter.status.map(UserStatus::as_str),
+        filter.email_contains.as_deref(),
+        after,
+        limit
+    )
+    .fetch_all(conn)
+    .await
+}
+
+/// Locks every active admin until the end of the transaction and returns their ids. Concurrent
+/// demotions queue here, so the last active admin cannot be removed by two racing requests.
+pub async fn lock_active_admins(conn: &mut PgConnection) -> Result<Vec<Uuid>, sqlx::Error> {
+    sqlx::query_scalar!(
+        "SELECT id FROM identity.users WHERE role = 'admin' AND status = 'active' ORDER BY id FOR UPDATE"
+    )
+    .fetch_all(conn)
+    .await
+}
+
+pub async fn update_user(
+    conn: &mut PgConnection,
+    id: Uuid,
+    display_name: Option<&str>,
+    role: Option<Role>,
+    status: Option<UserStatus>,
+) -> Result<Option<User>, sqlx::Error> {
+    sqlx::query_as!(
+        User,
+        r#"UPDATE identity.users
+           SET display_name = COALESCE($2, display_name),
+               role = COALESCE($3, role),
+               status = COALESCE($4, status),
+               updated_at = now()
+           WHERE id = $1
+           RETURNING id, email, display_name,
+                     role AS "role: Role", status AS "status: UserStatus",
+                     must_change_password, created_at"#,
+        id,
+        display_name,
+        role.map(Role::as_str),
+        status.map(UserStatus::as_str)
+    )
+    .fetch_optional(conn)
+    .await
+}
+
+pub async fn delete_sessions_of(
+    conn: &mut PgConnection,
+    user_id: Uuid,
+) -> Result<u64, sqlx::Error> {
+    let result = sqlx::query!("DELETE FROM identity.sessions WHERE user_id = $1", user_id)
+        .execute(conn)
+        .await?;
+    Ok(result.rows_affected())
+}
+
+/// Sets the user's password, creating the password identity if they only had another provider.
+pub async fn upsert_password_hash(
+    conn: &mut PgConnection,
+    user_id: Uuid,
+    password_hash: &str,
+) -> Result<(), sqlx::Error> {
+    sqlx::query!(
+        "INSERT INTO identity.identities (id, user_id, provider, subject, password_hash)
+         VALUES ($1, $2, 'password', $3, $4)
+         ON CONFLICT (provider, subject) DO UPDATE SET password_hash = EXCLUDED.password_hash",
+        Uuid::now_v7(),
+        user_id,
+        user_id.to_string(),
+        password_hash
+    )
+    .execute(conn)
+    .await?;
+    Ok(())
 }

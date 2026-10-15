@@ -175,6 +175,23 @@ impl<T> Page<T> {
     }
 }
 
+/// Which users `list_users` returns. Empty means all.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct UserFilter {
+    pub role: Option<Role>,
+    pub status: Option<UserStatus>,
+    /// Case-insensitive substring of the email.
+    pub email_contains: Option<String>,
+}
+
+/// Fields an admin may change. `None` leaves a field as it is.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct UserUpdate {
+    pub display_name: Option<DisplayName>,
+    pub role: Option<Role>,
+    pub status: Option<UserStatus>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NewUser {
     pub email: Email,

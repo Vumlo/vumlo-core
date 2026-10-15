@@ -14,7 +14,8 @@ use uuid::Uuid;
 
 use super::model::{
     HashedPassword, ModelError, NewSession, NewUser, Page, PageParams, Password, PasswordPolicy,
-    SessionInfo, SessionKind, SessionToken, TemporaryPassword, User, UserStatus,
+    Role, SessionInfo, SessionKind, SessionToken, TemporaryPassword, User, UserFilter, UserStatus,
+    UserUpdate,
 };
 use super::repo::{self, LoginRecord};
 use crate::actor::Actor;
@@ -54,6 +55,8 @@ pub enum IdentityError {
     EmailTaken,
     #[error("the account changed while the request was running")]
     ConcurrentChange,
+    #[error("the last active admin cannot be demoted or disabled")]
+    LastAdmin,
     #[error("user not found")]
     UserNotFound,
     #[error("session not found")]
@@ -388,6 +391,85 @@ pub async fn logout(conn: &mut PgConnection, actor: &Actor) -> Result<(), Identi
 }
 
 // ---------------------------------------------------------------------------------------------
+// Admin: users
+// ---------------------------------------------------------------------------------------------
+
+pub async fn list_users(
+    conn: &mut PgConnection,
+    actor: &Actor,
+    mut filter: UserFilter,
+    page: PageParams,
+) -> Result<Page<User>, IdentityError> {
+    policy::authorize(actor, Action::ManageUsers)?;
+    filter.email_contains = filter.email_contains.map(|text| text.to_lowercase());
+    let rows = repo::list_users(conn, &filter, page.after, i64::from(page.limit) + 1).await?;
+    Ok(Page::from_rows(rows, page.limit, |u| u.id))
+}
+
+/// Creates a user with a temporary password for an admin. The hash is computed by the caller
+/// before the transaction starts.
+pub async fn admin_create_user(
+    conn: &mut PgConnection,
+    actor: &Actor,
+    new: NewUser,
+    temporary_password: HashedPassword,
+) -> Result<User, IdentityError> {
+    policy::authorize(actor, Action::ManageUsers)?;
+    create_user(conn, new, temporary_password).await
+}
+
+/// Changes a user's name, role or status. Disabling also deletes all their sessions, in the
+/// same transaction. The last active admin can be neither demoted nor disabled.
+pub async fn update_user(
+    conn: &mut PgConnection,
+    actor: &Actor,
+    user_id: Uuid,
+    update: UserUpdate,
+) -> Result<User, IdentityError> {
+    policy::authorize(actor, Action::ManageUsers)?;
+    let active_admins = repo::lock_active_admins(conn).await?;
+    let target = repo::find_user(conn, user_id)
+        .await?
+        .ok_or(IdentityError::UserNotFound)?;
+    let stops_being_active_admin = update.role.is_some_and(|role| role != Role::Admin)
+        || update.status == Some(UserStatus::Disabled);
+    if stops_being_active_admin && active_admins == [user_id] {
+        return Err(IdentityError::LastAdmin);
+    }
+    let updated = repo::update_user(
+        conn,
+        target.id,
+        update.display_name.as_ref().map(|name| name.as_str()),
+        update.role,
+        update.status,
+    )
+    .await?
+    .ok_or(IdentityError::UserNotFound)?;
+    if update.status == Some(UserStatus::Disabled) {
+        repo::delete_sessions_of(conn, updated.id).await?;
+    }
+    Ok(updated)
+}
+
+/// Replaces a user's password with a temporary one they must change, and signs them out
+/// everywhere.
+pub async fn reset_password(
+    conn: &mut PgConnection,
+    actor: &Actor,
+    user_id: Uuid,
+    temporary_password: HashedPassword,
+) -> Result<(), IdentityError> {
+    policy::authorize(actor, Action::ManageUsers)?;
+    repo::find_user(conn, user_id)
+        .await?
+        .ok_or(IdentityError::UserNotFound)?;
+    repo::upsert_password_hash(conn, user_id, temporary_password.as_str()).await?;
+    repo::set_must_change_password(conn, user_id, true).await?;
+    repo::delete_sessions_of(conn, user_id).await?;
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------------------------
 // Own account
 // ---------------------------------------------------------------------------------------------
 
@@ -629,5 +711,61 @@ mod tests {
                 .await
                 .unwrap()
         );
+    }
+
+    async fn admin_actor(pool: &sqlx::PgPool, email: &str) -> Actor {
+        use super::super::model::{DisplayName, Email};
+        let user = repo::insert_user(
+            &mut pool.acquire().await.unwrap(),
+            Uuid::now_v7(),
+            &NewUser {
+                email: Email::parse(email).unwrap(),
+                display_name: DisplayName::parse("Admin").unwrap(),
+                role: Role::Admin,
+            },
+            false,
+        )
+        .await
+        .unwrap();
+        Actor::new(user.id, Role::Admin, Uuid::now_v7())
+    }
+
+    fn demote() -> UserUpdate {
+        UserUpdate {
+            role: Some(Role::Teacher),
+            ..UserUpdate::default()
+        }
+    }
+
+    #[sqlx::test(migrator = "crate::app::MIGRATOR")]
+    async fn concurrent_demotions_cannot_remove_every_admin(pool: sqlx::PgPool) {
+        let a = admin_actor(&pool, "a@x.edu").await;
+        let b = admin_actor(&pool, "b@x.edu").await;
+
+        // `a` demotes `b` and holds its transaction open; `b` tries to demote `a` meanwhile.
+        let mut first = pool.begin().await.unwrap();
+        update_user(&mut first, &a, b.user_id(), demote())
+            .await
+            .unwrap();
+        let second = tokio::spawn({
+            let pool = pool.clone();
+            let (b, a_id) = (b.clone(), a.user_id());
+            async move {
+                let mut tx = pool.begin().await.unwrap();
+                update_user(&mut tx, &b, a_id, demote()).await
+            }
+        });
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        first.commit().await.unwrap();
+
+        let outcome = second.await.unwrap();
+        assert!(
+            matches!(outcome, Err(IdentityError::LastAdmin)),
+            "{outcome:?}"
+        );
+        let admins = repo::lock_active_admins(&mut pool.acquire().await.unwrap())
+            .await
+            .unwrap();
+        assert_eq!(admins, [a.user_id()]);
     }
 }

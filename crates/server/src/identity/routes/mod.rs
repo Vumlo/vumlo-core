@@ -1,5 +1,6 @@
 //! HTTP edge of `identity`: extractors, DTO mapping, OpenAPI annotations.
 
+mod admin;
 mod auth;
 mod extract;
 mod me;
@@ -89,6 +90,9 @@ pub fn router(settings: &Settings) -> Result<OpenApiRouter<AppState>, SetupError
         .routes(routes!(me::change_password))
         .routes(routes!(me::list_sessions))
         .routes(routes!(me::revoke_session))
+        .routes(routes!(admin::list_users, admin::create_user))
+        .routes(routes!(admin::update_user))
+        .routes(routes!(admin::reset_password))
         .layer(Extension(Arc::new(LoginThrottle::default()))))
 }
 
@@ -115,6 +119,9 @@ impl From<IdentityError> for ApiError {
             IdentityError::EmailTaken => Self::Conflict("the email is already in use"),
             IdentityError::ConcurrentChange => {
                 Self::Conflict("the account changed while the request was running, try again")
+            }
+            IdentityError::LastAdmin => {
+                Self::Conflict("the last active admin cannot be demoted or disabled")
             }
             IdentityError::UserNotFound | IdentityError::SessionNotFound => Self::NotFound,
             IdentityError::Hashing => Self::Internal,
@@ -152,6 +159,21 @@ pub(super) fn api_role(role: Role) -> api_types::Role {
         Role::Admin => api_types::Role::Admin,
         Role::Teacher => api_types::Role::Teacher,
         Role::Student => api_types::Role::Student,
+    }
+}
+
+pub(super) fn domain_role(role: api_types::Role) -> Role {
+    match role {
+        api_types::Role::Admin => Role::Admin,
+        api_types::Role::Teacher => Role::Teacher,
+        api_types::Role::Student => Role::Student,
+    }
+}
+
+pub(super) fn domain_status(status: api_types::UserStatus) -> UserStatus {
+    match status {
+        api_types::UserStatus::Active => UserStatus::Active,
+        api_types::UserStatus::Disabled => UserStatus::Disabled,
     }
 }
 
