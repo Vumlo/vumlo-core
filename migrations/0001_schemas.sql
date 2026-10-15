@@ -1,0 +1,8 @@
+CREATE SCHEMA identity;
+CREATE SCHEMA org;
+CREATE SCHEMA teaching;
+CREATE SCHEMA content;
+CREATE SCHEMA assessment;
+CREATE SCHEMA gradebook;
+CREATE SCHEMA files;
+CREATE SCHEMA events;
