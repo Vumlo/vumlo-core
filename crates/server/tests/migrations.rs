@@ -623,3 +623,61 @@ async fn migration_7_turns_lesson_items_into_text_items(pool: PgPool) {
         .unwrap();
     app::ensure_migrated(&pool).await.unwrap();
 }
+
+const EMPTY_DOCUMENT: &str = r#"{"v": 1, "blocks": [], "attachments": []}"#;
+
+async fn item_body(pool: &PgPool, id: uuid::Uuid) -> serde_json::Value {
+    sqlx::query_scalar!(
+        r#"SELECT body AS "body!" FROM content.items WHERE id = $1"#,
+        id
+    )
+    .fetch_one(pool)
+    .await
+    .unwrap()
+}
+
+#[sqlx::test(migrator = "server::app::MIGRATOR")]
+async fn an_item_without_a_body_starts_with_the_empty_document(pool: PgPool) {
+    let (_, text) = assignment_fixture(&pool).await;
+    let empty: serde_json::Value = serde_json::from_str(EMPTY_DOCUMENT).unwrap();
+    assert_eq!(item_body(&pool, text).await, empty);
+}
+
+#[sqlx::test(migrations = false)]
+async fn migration_8_turns_empty_object_bodies_into_the_empty_document(pool: PgPool) {
+    app::MIGRATOR.run_to(7, &pool).await.unwrap();
+
+    let owner = owner(&pool, "t@x.edu").await;
+    let course = insert_course(&pool, owner).await;
+    let module = insert_module_row(&pool, course, None, 1).await.unwrap();
+    let empty = insert_item_of_kind(&pool, module, course, 1, "text")
+        .await
+        .unwrap();
+    let kept = insert_item_of_kind(&pool, module, course, 2, "text")
+        .await
+        .unwrap();
+    sqlx::query!(
+        "UPDATE content.items SET body = $2 WHERE id = $1",
+        kept,
+        serde_json::json!({"a": 1})
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    assert_eq!(item_body(&pool, empty).await, serde_json::json!({}));
+
+    app::MIGRATOR.run(&pool).await.unwrap();
+
+    let document: serde_json::Value = serde_json::from_str(EMPTY_DOCUMENT).unwrap();
+    assert_eq!(item_body(&pool, empty).await, document);
+    assert_eq!(
+        item_body(&pool, kept).await,
+        serde_json::json!({"a": 1}),
+        "only the empty object is converted"
+    );
+    let later = insert_item_of_kind(&pool, module, course, 3, "text")
+        .await
+        .unwrap();
+    assert_eq!(item_body(&pool, later).await, document);
+    app::ensure_migrated(&pool).await.unwrap();
+}

@@ -3,7 +3,7 @@ mod common;
 use common::{Http, Resp, create_course, id_of, publish_course, put_member, seed_and_login};
 use serde_json::{Value, json};
 use server::identity::Role;
-use server::settings::GradingScale;
+use server::settings::{EditorSettings, GradingScale, ProfileSettings, Settings};
 use sqlx::PgPool;
 use uuid::Uuid;
 
@@ -40,6 +40,10 @@ async fn world(pool: PgPool) -> World {
 async fn world_with(pool: PgPool, scale: GradingScale) -> World {
     let mut settings = common::test_settings();
     settings.institution.grading_scale = scale;
+    world_from(pool, settings).await
+}
+
+async fn world_from(pool: PgPool, settings: Settings) -> World {
     let http = Http::new(&common::spawn_with(pool.clone(), settings).await);
     let owner = user(&pool, &http, "owner@x.edu", Role::Teacher).await;
     let assistant = user(&pool, &http, "assistant@x.edu", Role::Student).await;
@@ -343,7 +347,7 @@ async fn a_sub_module_needs_a_top_level_parent_of_the_same_course(pool: PgPool) 
 }
 
 #[sqlx::test(migrator = "server::app::MIGRATOR")]
-async fn text_bodies_are_stored_as_given_and_must_be_objects(pool: PgPool) {
+async fn text_bodies_are_block_documents_stored_as_given(pool: PgPool) {
     let w = world(pool).await;
     let module = module(&w, "M", None).await;
     let path = format!("/modules/{module}/items");
@@ -357,11 +361,19 @@ async fn text_bodies_are_stored_as_given_and_must_be_objects(pool: PgPool) {
         )
         .await,
     );
-    assert_eq!(plain["body"], json!({}));
+    assert_eq!(
+        plain["body"],
+        empty_doc(),
+        "an omitted body is the empty document"
+    );
     assert_eq!(plain["kind"], "text");
     assert_eq!(plain["status"], "draft");
 
-    let body = json!({"blocks": [{"type": "p", "text": "Hi"}], "n": 1.5, "nested": {"a": null}});
+    let body = doc(json!([
+        {"id": "h", "type": "heading", "props": {"level": 2},
+            "content": [{"type": "text", "text": "Hi", "styles": {"bold": true}}]},
+        paragraph("p", "Text"),
+    ]));
     let rich = created(
         &post(
             &w.http,
@@ -380,7 +392,14 @@ async fn text_bodies_are_stored_as_given_and_must_be_objects(pool: PgPool) {
     .await);
     assert_eq!(fetched["body"], body);
 
-    for bad in [json!([1, 2]), json!("text"), json!(7), json!(true)] {
+    // Anything that is not a document is refused, whatever its JSON type.
+    for bad in [
+        json!([1, 2]),
+        json!("text"),
+        json!(7),
+        json!(true),
+        json!({"a": 1}),
+    ] {
         let response = post(
             &w.http,
             &w.owner.token,
@@ -1070,10 +1089,10 @@ async fn an_assistant_runs_the_whole_tree(pool: PgPool) {
             &w.http,
             token,
             &format!("/items/{text}"),
-            json!({"body": {"a": 1}})
+            json!({"body": doc(json!([paragraph("a", "x")]))})
         )
         .await)["body"],
-        json!({"a": 1})
+        doc(json!([paragraph("a", "x")]))
     );
     no_content(
         &put(
@@ -1322,12 +1341,12 @@ async fn modules_and_text_items_are_edited_through_patch(pool: PgPool) {
         &w.http,
         token,
         &format!("/items/{l}"),
-        json!({"title": "T", "body": {"x": [1]}}),
+        json!({"title": "T", "body": doc(json!([paragraph("x", "one")]))}),
     )
     .await);
     assert_eq!(
         (edited["title"].as_str(), &edited["body"]),
-        (Some("T"), &json!({"x": [1]}))
+        (Some("T"), &doc(json!([paragraph("x", "one")])))
     );
     let retitled = ok(&patch(
         &w.http,
@@ -1338,11 +1357,21 @@ async fn modules_and_text_items_are_edited_through_patch(pool: PgPool) {
     .await);
     assert_eq!(
         retitled["body"],
-        json!({"x": [1]}),
+        doc(json!([paragraph("x", "one")])),
         "an absent body is kept"
     );
-    let emptied = ok(&patch(&w.http, token, &format!("/items/{l}"), json!({"body": {}})).await);
-    assert_eq!(emptied["body"], json!({}));
+    // The old empty object is no longer a body: only a document is.
+    patch(&w.http, token, &format!("/items/{l}"), json!({"body": {}}))
+        .await
+        .problem(422);
+    let emptied = ok(&patch(
+        &w.http,
+        token,
+        &format!("/items/{l}"),
+        json!({"body": empty_doc()}),
+    )
+    .await);
+    assert_eq!(emptied["body"], empty_doc());
     let no_change = ok(&patch(&w.http, token, &format!("/items/{l}"), json!({})).await);
     assert_eq!(
         no_change["updated_at"], emptied["updated_at"],
@@ -1876,6 +1905,19 @@ async fn patch_item(w: &World, item: Uuid, body: Value) -> Resp {
     patch(&w.http, &w.owner.token, &format!("/items/{item}"), body).await
 }
 
+/// A block document with these blocks, in the canonical form the server stores.
+fn doc(blocks: Value) -> Value {
+    json!({"v": 1, "blocks": blocks, "attachments": []})
+}
+
+fn paragraph(id: &str, text: &str) -> Value {
+    json!({"id": id, "type": "paragraph", "content": [{"type": "text", "text": text}]})
+}
+
+fn empty_doc() -> Value {
+    doc(json!([]))
+}
+
 fn error_fields(response: &Resp) -> Vec<String> {
     response
         .problem(422)
@@ -2275,7 +2317,7 @@ async fn an_assignment_carries_its_part_and_a_text_item_none(pool: PgPool) {
         json!({
             "kind": "assignment",
             "title": "Essay",
-            "body": {"instructions": "Write"},
+            "body": doc(json!([paragraph("i", "Write")])),
             "assignment": {"type": "text", "max_points": "20"},
         }),
     )
@@ -2283,7 +2325,7 @@ async fn an_assignment_carries_its_part_and_a_text_item_none(pool: PgPool) {
     let essay = created(&response);
     assert_eq!(essay["kind"], "assignment");
     assert_eq!(essay["status"], "draft");
-    assert_eq!(essay["body"], json!({"instructions": "Write"}));
+    assert_eq!(essay["body"], doc(json!([paragraph("i", "Write")])));
     let expected = json!({"type": "text", "config": {}, "max_points": "20.00", "is_bonus": false});
     assert_eq!(essay["assignment"], expected);
 
@@ -2559,4 +2601,435 @@ async fn the_assignment_schemas_are_in_the_openapi_document(pool: PgPool) {
         json!(["text", "assignment"]),
         "`lesson` is no longer an item kind (ADR-0024)"
     );
+}
+
+// --- block documents (ADR-0025, ADR-0027) ------------------------------------------------------
+
+fn errors_of(response: &Resp) -> Vec<(String, String)> {
+    response
+        .problem(422)
+        .errors
+        .into_iter()
+        .map(|error| (error.field, error.message))
+        .collect()
+}
+
+fn fields_of(response: &Resp) -> Vec<String> {
+    errors_of(response)
+        .into_iter()
+        .map(|(field, _)| field)
+        .collect()
+}
+
+/// Settings whose `full` profile has no table, code, math or mermaid, and whose only video
+/// provider is Vimeo.
+fn narrowed_settings() -> Settings {
+    let mut settings = common::test_settings();
+    let mut editor = EditorSettings::default();
+    editor.profiles.insert(
+        "full".to_owned(),
+        ProfileSettings {
+            features: [
+                "headings",
+                "text_styles",
+                "links",
+                "lists",
+                "quote",
+                "divider",
+                "video",
+            ]
+            .map(str::to_owned)
+            .into(),
+        },
+    );
+    editor.video_providers = vec!["vimeo".to_owned()];
+    settings.editor = editor;
+    settings
+}
+
+fn table_block() -> Value {
+    json!({"id": "t", "type": "table", "props": {"header_row": false, "rows": [[[], []]]}})
+}
+
+#[sqlx::test(migrator = "server::app::MIGRATOR")]
+async fn an_invalid_document_is_a_422_with_the_path_of_the_problem(pool: PgPool) {
+    let w = world(pool).await;
+    let m = module(&w, "M", None).await;
+    let path = format!("/modules/{m}/items");
+
+    let duplicate = doc(json!([paragraph("a", "x"), paragraph("a", "y")]));
+    let response = post(
+        &w.http,
+        &w.owner.token,
+        &path,
+        json!({"kind": "text", "title": "T", "body": duplicate}),
+    )
+    .await;
+    assert_eq!(fields_of(&response), ["body.blocks[1].id"]);
+
+    let level = doc(json!([{"id": "h", "type": "heading", "props": {"level": 4}}]));
+    let response = post(
+        &w.http,
+        &w.owner.token,
+        &path,
+        json!({"kind": "text", "title": "T", "body": level}),
+    )
+    .await;
+    assert_eq!(fields_of(&response), ["body.blocks[0].props.level"]);
+
+    // The whole document is one problem when it is not even an object with a version.
+    let response = post(
+        &w.http,
+        &w.owner.token,
+        &path,
+        json!({"kind": "text", "title": "T", "body": {}}),
+    )
+    .await;
+    assert_eq!(fields_of(&response), ["body.v", "body.blocks"]);
+
+    let item = id_of(&created(
+        &post(
+            &w.http,
+            &w.owner.token,
+            &path,
+            json!({"kind": "text", "title": "T"}),
+        )
+        .await,
+    ));
+    let image = doc(json!([{"id": "i", "type": "image"}]));
+    let response = patch_item(&w, item, json!({"body": image})).await;
+    assert_eq!(
+        errors_of(&response),
+        [(
+            "body.blocks[0].type".to_owned(),
+            "is not available yet".to_owned()
+        )]
+    );
+    // Nothing was written.
+    assert_eq!(item_json(&w, item).await["body"], empty_doc());
+}
+
+#[sqlx::test(migrator = "server::app::MIGRATOR")]
+async fn an_assignments_description_is_a_document_too(pool: PgPool) {
+    let w = world(pool).await;
+    let m = module(&w, "M", None).await;
+    let path = format!("/modules/{m}/items");
+    let response = post(
+        &w.http,
+        &w.owner.token,
+        &path,
+        json!({
+            "kind": "assignment",
+            "title": "Essay",
+            "body": doc(json!([{"id": "h", "type": "heading", "props": {"level": 0}}])),
+            "assignment": {"type": "text", "max_points": "5"},
+        }),
+    )
+    .await;
+    assert_eq!(fields_of(&response), ["body.blocks[0].props.level"]);
+
+    let essay = id_of(&created(
+        &post(
+            &w.http,
+            &w.owner.token,
+            &path,
+            json!({"kind": "assignment", "title": "Essay",
+                "assignment": {"type": "text", "max_points": "5"}}),
+        )
+        .await,
+    ));
+    assert_eq!(item_json(&w, essay).await["body"], empty_doc());
+    let response = patch_item(&w, essay, json!({"body": {"v": 2, "blocks": []}})).await;
+    assert_eq!(fields_of(&response), ["body.v"]);
+    let description = doc(json!([paragraph("p", "Write 200 words")]));
+    let patched = ok(&patch_item(&w, essay, json!({"body": description})).await);
+    assert_eq!(patched["body"], description);
+}
+
+#[sqlx::test(migrator = "server::app::MIGRATOR")]
+async fn a_null_body_changes_nothing_and_a_document_replaces_the_whole_body(pool: PgPool) {
+    let w = world(pool).await;
+    let m = module(&w, "M", None).await;
+    let first = doc(json!([paragraph("a", "one"), paragraph("b", "two")]));
+    let item = id_of(&created(
+        &post(
+            &w.http,
+            &w.owner.token,
+            &format!("/modules/{m}/items"),
+            json!({"kind": "text", "title": "T", "body": first}),
+        )
+        .await,
+    ));
+
+    let kept = ok(&patch_item(&w, item, json!({"title": "U", "body": null})).await);
+    assert_eq!((kept["title"].as_str(), &kept["body"]), (Some("U"), &first));
+    let second = doc(json!([paragraph("c", "three")]));
+    let replaced = ok(&patch_item(&w, item, json!({"body": second})).await);
+    assert_eq!(replaced["body"], second);
+    assert_eq!(item_json(&w, item).await["body"], second);
+}
+
+#[sqlx::test(migrator = "server::app::MIGRATOR")]
+async fn a_student_reads_the_document_of_a_released_item(pool: PgPool) {
+    let w = world(pool).await;
+    let m = module(&w, "M", None).await;
+    let body = doc(json!([
+        paragraph("a", "Hello"),
+        {"id": "v", "type": "video", "props": {"provider": "youtube", "video_id": "dQw4w9WgXcQ"}},
+    ]));
+    let item = id_of(&created(
+        &post(
+            &w.http,
+            &w.owner.token,
+            &format!("/modules/{m}/items"),
+            json!({"kind": "text", "title": "T", "body": body}),
+        )
+        .await,
+    ));
+    assert_eq!(
+        get(&w.http, &w.student.token, &format!("/items/{item}"))
+            .await
+            .status,
+        404,
+        "a draft is invisible to a student"
+    );
+    publish_module(&w, m, true).await;
+    let seen = ok(&get(&w.http, &w.student.token, &format!("/items/{item}")).await);
+    assert_eq!(seen["body"], body);
+}
+
+#[sqlx::test(migrator = "server::app::MIGRATOR")]
+async fn the_configuration_narrows_what_a_document_may_contain(pool: PgPool) {
+    let w = world_from(pool, narrowed_settings()).await;
+    let m = module(&w, "M", None).await;
+    let path = format!("/modules/{m}/items");
+
+    // A table is valid in the code profile, but this institution switched it off.
+    let response = post(
+        &w.http,
+        &w.owner.token,
+        &path,
+        json!({"kind": "text", "title": "T", "body": doc(json!([table_block()]))}),
+    )
+    .await;
+    assert_eq!(
+        errors_of(&response),
+        [(
+            "body.blocks[0]".to_owned(),
+            "is not allowed here".to_owned()
+        )]
+    );
+    // A heading was not switched off.
+    let heading = doc(json!([{"id": "h", "type": "heading", "props": {"level": 1}}]));
+    created(
+        &post(
+            &w.http,
+            &w.owner.token,
+            &path,
+            json!({"kind": "text", "title": "T", "body": heading}),
+        )
+        .await,
+    );
+    // Only Vimeo is enabled.
+    let video = |provider: &str, id: &str| {
+        doc(json!([{"id": "v", "type": "video", "props": {"provider": provider, "video_id": id}}]))
+    };
+    let response = post(
+        &w.http,
+        &w.owner.token,
+        &path,
+        json!({"kind": "text", "title": "T", "body": video("youtube", "dQw4w9WgXcQ")}),
+    )
+    .await;
+    assert_eq!(fields_of(&response), ["body.blocks[0].props.provider"]);
+    created(
+        &post(
+            &w.http,
+            &w.owner.token,
+            &path,
+            json!({"kind": "text", "title": "T", "body": video("vimeo", "76979871")}),
+        )
+        .await,
+    );
+}
+
+#[sqlx::test(migrator = "server::app::MIGRATOR")]
+async fn the_error_body_never_echoes_what_was_sent(pool: PgPool) {
+    let w = world(pool).await;
+    let m = module(&w, "M", None).await;
+    let body = doc(json!([
+        {"id": "SECRET id!", "type": "paragraph", "SECRET_KEY": 1,
+            "content": [
+                {"type": "text", "text": "SECRET_TEXT", "styles": {"SECRET_STYLE": true}},
+                {"type": "link", "href": "javascript:SECRET_HREF", "content": []},
+            ]},
+        {"id": "b", "type": "SECRET_TYPE"},
+        {"id": "c", "type": "video", "props": {"provider": "SECRET_PROVIDER", "video_id": "SECRET_VIDEO"}},
+        {"id": "d", "type": "code", "props": {"language": "SECRET_LANG", "source": 5, "SECRET_PROP": 1}},
+    ]));
+    let response = post(
+        &w.http,
+        &w.owner.token,
+        &format!("/modules/{m}/items"),
+        json!({"kind": "text", "title": "T", "body": body}),
+    )
+    .await;
+    assert_eq!(response.status, 422);
+    let text = String::from_utf8_lossy(&response.body);
+    assert!(text.contains("body.blocks"), "{text}");
+    assert!(!text.contains("SECRET"), "{text}");
+}
+
+#[sqlx::test(migrator = "server::app::MIGRATOR")]
+async fn a_document_of_exactly_one_mebibyte_is_accepted_and_one_byte_more_is_not(pool: PgPool) {
+    let w = world(pool).await;
+    let m = module(&w, "M", None).await;
+    let path = format!("/modules/{m}/items");
+    let limit = usize::try_from(server::content::limits().max_document_bytes).unwrap();
+
+    // The last paragraph's text is sized so that the compact serialization is `target` bytes.
+    let sized = |target: usize| {
+        let mut blocks: Vec<Value> = (0..20)
+            .map(|i| paragraph(&format!("p{i}"), &"x".repeat(50_000)))
+            .collect();
+        blocks.push(paragraph("last", ""));
+        let base = serde_json::to_vec(&doc(json!(blocks))).unwrap().len();
+        *blocks.last_mut().unwrap() = paragraph("last", &"y".repeat(target - base));
+        let document = doc(json!(blocks));
+        assert_eq!(serde_json::to_vec(&document).unwrap().len(), target);
+        document
+    };
+
+    let exact = sized(limit);
+    let response = post(
+        &w.http,
+        &w.owner.token,
+        &path,
+        json!({"kind": "text", "title": "T", "body": exact}),
+    )
+    .await;
+    // The request is bigger than the old 1 MiB body limit, so this also proves the new one.
+    assert!(
+        response.status != 413,
+        "the body limit refused the document"
+    );
+    let item = created(&response);
+    assert_eq!(item["body"], exact);
+
+    let response = post(
+        &w.http,
+        &w.owner.token,
+        &path,
+        json!({"kind": "text", "title": "T", "body": sized(limit + 1)}),
+    )
+    .await;
+    assert_eq!(
+        errors_of(&response),
+        [("body".to_owned(), "is larger than 1 MiB".to_owned())]
+    );
+}
+
+#[sqlx::test(migrator = "server::app::MIGRATOR")]
+async fn editor_profiles_need_a_session_and_show_the_effective_profiles(pool: PgPool) {
+    let w = world(pool).await;
+    w.http.get("/editor/profiles").send().await.problem(401);
+
+    for token in [&w.student.token, &w.owner.token] {
+        let view = ok(&get(&w.http, token, "/editor/profiles").await);
+        let names: Vec<&str> = view["profiles"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|p| p["name"].as_str().unwrap())
+            .collect();
+        assert_eq!(names, ["full", "question", "option", "student"]);
+        let features = |index: usize| -> Vec<&str> {
+            view["profiles"][index]["features"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|f| f.as_str().unwrap())
+                .collect()
+        };
+        assert_eq!(features(0).len(), 11);
+        assert!(features(0).contains(&"video"));
+        assert_eq!(features(2), ["text_styles", "links", "code", "math"]);
+        assert!(!features(3).contains(&"video"));
+        assert_eq!(view["profiles"][2]["single_block"], true);
+        assert_eq!(view["profiles"][0]["single_block"], false);
+        assert_eq!(
+            view["profiles"][0]["limits"]["max_document_bytes"],
+            1_048_576
+        );
+        assert_eq!(view["profiles"][0]["limits"]["max_depth"], 6);
+        assert_eq!(view["video_providers"], json!(["youtube", "vimeo"]));
+    }
+}
+
+#[sqlx::test(migrator = "server::app::MIGRATOR")]
+async fn editor_profiles_show_what_the_configuration_narrowed(pool: PgPool) {
+    let w = world_from(pool, narrowed_settings()).await;
+    let view = ok(&get(&w.http, &w.student.token, "/editor/profiles").await);
+    assert_eq!(
+        view["profiles"][0]["features"],
+        json!([
+            "headings",
+            "text_styles",
+            "links",
+            "lists",
+            "quote",
+            "divider",
+            "video"
+        ])
+    );
+    assert_eq!(
+        view["profiles"][1]["features"].as_array().unwrap().len(),
+        11
+    );
+    assert_eq!(view["video_providers"], json!(["vimeo"]));
+
+    let mut settings = common::test_settings();
+    settings.editor.video_providers = Vec::new();
+    // Another server on the same database: the sessions are still valid.
+    let off = Http::new(&common::spawn_with(w.pool.clone(), settings).await);
+    let view = ok(&get(&off, &w.student.token, "/editor/profiles").await);
+    assert_eq!(view["video_providers"], json!([]));
+    for profile in view["profiles"].as_array().unwrap() {
+        assert!(!profile["features"].to_string().contains("video"));
+    }
+}
+
+#[sqlx::test(migrator = "server::app::MIGRATOR")]
+async fn the_document_schemas_and_the_profiles_endpoint_are_in_the_openapi_document(pool: PgPool) {
+    let base = common::spawn(pool).await;
+    let response = reqwest::get(format!("{base}/api/v1/openapi.json"))
+        .await
+        .unwrap();
+    let doc: Value = serde_json::from_slice(&response.bytes().await.unwrap()).unwrap();
+    let schemas = &doc["components"]["schemas"];
+    for name in [
+        "Document",
+        "Block",
+        "Inline",
+        "TextRun",
+        "VideoProps",
+        "EditorProfiles",
+        "EditorProfile",
+        "DocumentLimits",
+        "Feature",
+    ] {
+        assert!(schemas[name].is_object(), "{name} missing");
+    }
+    assert!(doc["paths"]["/api/v1/editor/profiles"]["get"].is_object());
+    for (schema, field) in [
+        ("Item", "body"),
+        ("CreateItemRequest", "body"),
+        ("UpdateItemRequest", "body"),
+    ] {
+        let property = schemas[schema]["properties"][field].to_string();
+        assert!(
+            property.contains("Document"),
+            "{schema}.{field}: {property}"
+        );
+    }
 }

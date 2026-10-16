@@ -3,17 +3,19 @@
 
 use api_types::{
     ContentModule, ContentStatus, ContentSubModule, ContentTree, CreateItemRequest,
-    CreateModuleRequest, FieldError, Item, ItemSummary, Module, NewAssignment, ProblemDetails,
-    PublishModuleRequest, ReorderItemsRequest, ReorderModulesRequest, UpdateItemRequest,
-    UpdateModuleRequest,
+    CreateModuleRequest, EditorProfiles, FieldError, Item, ItemSummary, Module, NewAssignment,
+    ProblemDetails, ProfileName, PublishModuleRequest, ReorderItemsRequest, ReorderModulesRequest,
+    UpdateItemRequest, UpdateModuleRequest,
 };
 use axum::Json;
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
+use serde_json::Value;
 use utoipa_axum::router::OpenApiRouter;
 use utoipa_axum::routes;
 use uuid::Uuid;
 
+use super::document::{EffectiveProfiles, ValidDocument, validate_document};
 use super::model::{
     self, BuiltinType, ContentTitle, ItemKind, ItemPatch, ItemStatus, MaxPoints, ModelError,
     ModulePatch, ModuleStatus,
@@ -33,6 +35,7 @@ pub fn router() -> OpenApiRouter<AppState> {
         .routes(routes!(create_item, reorder_items))
         .routes(routes!(get_item, update_item, delete_item))
         .routes(routes!(publish_item))
+        .routes(routes!(get_editor_profiles))
 }
 
 impl From<ContentError> for ApiError {
@@ -228,15 +231,26 @@ fn under_assignment(error: ContentError) -> ApiError {
     }
 }
 
-/// Until the document validator is wired in, a body must at least be a JSON object.
-fn object_body(
-    body: Option<serde_json::Value>,
-) -> Result<Option<serde_json::Map<String, serde_json::Value>>, ApiError> {
-    match body {
-        None => Ok(None),
-        Some(serde_json::Value::Object(map)) => Ok(Some(map)),
-        Some(_) => Err(ApiError::invalid_field("body", "must be a JSON object")),
-    }
+/// The effective editor profiles, from the configuration. `Settings::load` already checked it, so
+/// a failure here means a hand-built `Settings`.
+fn profiles(state: &AppState) -> Result<EffectiveProfiles, ApiError> {
+    EffectiveProfiles::resolve(&state.config.editor).map_err(|e| {
+        tracing::error!(error = %e, "content: editor configuration");
+        ApiError::Internal
+    })
+}
+
+/// Validates a request's `body` as a document of profile `full`. `None` stays `None`.
+fn document(state: &AppState, body: Option<Value>) -> Result<Option<ValidDocument>, ApiError> {
+    let Some(value) = body else {
+        return Ok(None);
+    };
+    validate_document(&value, ProfileName::Full, &profiles(state)?)
+        .map(Some)
+        .map_err(|errors| ApiError::Unprocessable {
+            detail: "the request has invalid fields".to_owned(),
+            errors: errors.into_field_errors("body"),
+        })
 }
 
 /// Creates a draft module as the last of its siblings. Staff and admins only.
@@ -499,6 +513,7 @@ async fn create_item(
         }
         (ItemKind::Assignment, Some(new)) => Some(domain_assignment(new)?),
     };
+    let body = document(&state, request.body)?;
     let mut tx = state.db.begin().await.map_err(ContentError::from)?;
     let item = service::create_item(
         &mut tx,
@@ -506,7 +521,7 @@ async fn create_item(
         state.config.institution.grading_scale,
         module_id,
         title,
-        object_body(request.body)?,
+        body,
         assignment,
     )
     .await
@@ -609,7 +624,7 @@ async fn update_item(
 ) -> Result<Json<Item>, ApiError> {
     let patch = ItemPatch {
         title: request.title.as_deref().map(title).transpose()?,
-        body: object_body(request.body)?,
+        body: document(&state, request.body)?,
         publish_at: request.publish_at,
         config: request.config,
         max_points: request
@@ -687,4 +702,26 @@ async fn publish_item(
     let item = service::publish_item(&mut tx, &actor, id).await?;
     tx.commit().await.map_err(ContentError::from)?;
     Ok(Json(api_item(item)))
+}
+
+/// The document editor's profiles as the server enforces them: for each profile the features it
+/// allows after the institution's configuration narrowed it, whether it is a single block, and
+/// the limits; plus the video providers that are switched on. Any signed-in user may read it.
+#[utoipa::path(
+    get,
+    path = "/editor/profiles",
+    tag = "editor",
+    security(("cookie" = []), ("bearer" = [])),
+    responses(
+        (status = 200, description = "The effective profiles", body = EditorProfiles),
+        (status = 401, description = "Not logged in", body = ProblemDetails,
+            content_type = "application/problem+json"),
+    )
+)]
+async fn get_editor_profiles(
+    State(state): State<AppState>,
+    actor: Actor,
+) -> Result<Json<EditorProfiles>, ApiError> {
+    let profiles = service::editor_profiles(&actor, profiles(&state)?)?;
+    Ok(Json(profiles.to_dto()))
 }

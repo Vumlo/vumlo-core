@@ -7,6 +7,7 @@ use sqlx::postgres::{PgTypeInfo, PgValueRef};
 use sqlx::types::Decimal;
 use uuid::Uuid;
 
+use super::document::ValidDocument;
 use crate::policy::Release;
 use crate::text_enum::text_enum;
 
@@ -201,8 +202,8 @@ impl Module {
     }
 }
 
-/// A `text` item or an assignment. `body` is a JSON object the server never interprets (ADR-0020); for
-/// an assignment it holds the instructions.
+/// A `text` item or an assignment. `body` is a block document (ADR-0025) as stored; for an
+/// assignment it is the description.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Item {
     pub id: Uuid,
@@ -281,7 +282,7 @@ impl ModulePatch {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ItemPatch {
     pub title: Option<ContentTitle>,
-    pub body: Option<Map<String, Value>>,
+    pub body: Option<ValidDocument>,
     pub publish_at: Option<Option<DateTime<Utc>>>,
     pub config: Option<Map<String, Value>>,
     pub max_points: Option<MaxPoints>,
