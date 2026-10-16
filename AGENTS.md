@@ -67,7 +67,7 @@ Modules: `identity`, `org`, `teaching`, `content`, `assessment`, `gradebook`, `f
   then authorize, and report a denied view as "not found".
   A handler may also call it early, before costly work such as hashing, but the service still authorizes first.
 - No role checks anywhere except `policy`. Deny by default.
-- Every action by an `admin` inside a course writes to `events.audit_log` in the same transaction.
+- Every action by an `admin` inside a course that changes data writes to `events.audit_log` in the same transaction; reads are not audited.
 
 ## 6. Visibility invariants (each one must have a test)
 
