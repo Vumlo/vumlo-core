@@ -77,9 +77,14 @@ fn api_kind(kind: ItemKind) -> api_types::ItemKind {
     }
 }
 
-fn domain_kind(kind: api_types::ItemKind) -> ItemKind {
+/// Assignments get their service support with the next change; until then they are refused.
+fn domain_kind(kind: api_types::ItemKind) -> Result<ItemKind, ApiError> {
     match kind {
-        api_types::ItemKind::Lesson => ItemKind::Lesson,
+        api_types::ItemKind::Lesson => Ok(ItemKind::Lesson),
+        api_types::ItemKind::Assignment => Err(ApiError::invalid_field(
+            "kind",
+            "assignments cannot be created yet",
+        )),
     }
 }
 
@@ -108,6 +113,7 @@ fn api_item(item: model::Item) -> Item {
         body: item.body,
         status: api_item_status(item.status),
         publish_at: item.publish_at,
+        assignment: None,
         created_at: item.created_at,
         updated_at: item.updated_at,
     }
@@ -121,6 +127,7 @@ fn api_summary(item: model::ItemSummary) -> ItemSummary {
         status: api_item_status(item.status),
         publish_at: item.publish_at,
         position: item.position,
+        assignment: None,
     }
 }
 
@@ -384,17 +391,16 @@ async fn create_item(
     Path(module_id): Path<Uuid>,
     ValidJson(request): ValidJson<CreateItemRequest>,
 ) -> Result<(StatusCode, Json<Item>), ApiError> {
+    let kind = domain_kind(request.kind)?;
+    if request.assignment.is_some() {
+        return Err(ApiError::invalid_field(
+            "assignment",
+            "only an item of kind `assignment` has this field",
+        ));
+    }
     let title = title(&request.title)?;
     let mut tx = state.db.begin().await.map_err(ContentError::from)?;
-    let item = service::create_item(
-        &mut tx,
-        &actor,
-        module_id,
-        domain_kind(request.kind),
-        title,
-        request.body,
-    )
-    .await?;
+    let item = service::create_item(&mut tx, &actor, module_id, kind, title, request.body).await?;
     tx.commit().await.map_err(ContentError::from)?;
     Ok((StatusCode::CREATED, Json(api_item(item))))
 }

@@ -299,6 +299,7 @@ pub enum ContentStatus {
 #[serde(rename_all = "lowercase")]
 pub enum ItemKind {
     Lesson,
+    Assignment,
 }
 
 /// A top-level module or a sub-module (ADR-0020).
@@ -318,7 +319,33 @@ pub struct Module {
     pub updated_at: DateTime<Utc>,
 }
 
-/// A lesson. `body` is a JSON object the server stores without interpreting it.
+/// The assignment part of an item of kind `assignment` (ADR-0021).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct Assignment {
+    /// The assignment type, `text` for now. It cannot change.
+    #[serde(rename = "type")]
+    pub assignment_type: String,
+    /// Settings of the type; an empty object for `text`.
+    #[schema(value_type = Object)]
+    pub config: Map<String, Value>,
+    /// A decimal string with exactly two decimals, e.g. `"20.00"`.
+    pub max_points: String,
+    /// Extra credit: outside the sum that the `hundred` grading scale limits (ADR-0022).
+    pub is_bonus: bool,
+}
+
+/// What the course tree shows of an assignment: everything but `config`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct AssignmentSummary {
+    #[serde(rename = "type")]
+    pub assignment_type: String,
+    /// A decimal string with exactly two decimals, e.g. `"20.00"`.
+    pub max_points: String,
+    pub is_bonus: bool,
+}
+
+/// A lesson or an assignment. `body` is a JSON object the server stores without interpreting it;
+/// for an assignment it holds the instructions.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct Item {
     pub id: Uuid,
@@ -331,6 +358,9 @@ pub struct Item {
     pub body: Map<String, Value>,
     pub status: ContentStatus,
     pub publish_at: Option<DateTime<Utc>>,
+    /// Present for items of kind `assignment`, absent for lessons.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub assignment: Option<Assignment>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -344,6 +374,9 @@ pub struct ItemSummary {
     pub status: ContentStatus,
     pub publish_at: Option<DateTime<Utc>>,
     pub position: i32,
+    /// Present for items of kind `assignment`, absent for lessons.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub assignment: Option<AssignmentSummary>,
 }
 
 /// A sub-module with its items.
@@ -425,17 +458,61 @@ pub struct ReorderItemsRequest {
     pub ids: Vec<Uuid>,
 }
 
+/// A point value is a decimal string. Anything else that is not a string is turned into the
+/// empty string, which the server rejects on the field with a fixed message: serde's own message
+/// would echo the value, and the field would be lost.
+fn points_text<'de, D: Deserializer<'de>>(deserializer: D) -> Result<String, D::Error> {
+    Ok(match Value::deserialize(deserializer)? {
+        Value::String(text) => text,
+        _ => String::new(),
+    })
+}
+
+/// Like [`points_text`], but `null` means absent, as in the other PATCH fields.
+fn optional_points_text<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<String>, D::Error> {
+    Ok(match Value::deserialize(deserializer)? {
+        Value::Null => None,
+        Value::String(text) => Some(text),
+        _ => Some(String::new()),
+    })
+}
+
+/// The assignment part of a new item of kind `assignment` (ADR-0021).
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct NewAssignment {
+    /// The assignment type. Only `text` exists so far.
+    #[serde(rename = "type", default)]
+    pub assignment_type: String,
+    /// Settings of the type, a JSON object. Defaults to `{}`; `text` has none.
+    #[serde(default)]
+    #[schema(value_type = Option<Object>)]
+    pub config: Option<Map<String, Value>>,
+    /// A decimal string with at most two decimals, greater than 0 and at most 9999.99, e.g.
+    /// `"20"`, `"7.5"` or `"20.00"`. A JSON number is rejected.
+    #[serde(default, deserialize_with = "points_text")]
+    pub max_points: String,
+    /// Extra credit, outside the sum that the `hundred` grading scale limits. Defaults to `false`.
+    #[serde(default)]
+    pub is_bonus: bool,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Validate, ToSchema)]
 pub struct CreateItemRequest {
     #[garde(skip)]
     pub kind: ItemKind,
     #[garde(length(chars, min = 1, max = 200))]
     pub title: String,
-    /// A JSON object, stored as is. Defaults to `{}`.
+    /// A JSON object, stored as is. Defaults to `{}`. For an assignment it holds the instructions.
     #[serde(default)]
     #[schema(value_type = Option<Object>)]
     #[garde(skip)]
     pub body: Option<Map<String, Value>>,
+    /// Required for `kind: assignment`, not allowed for `kind: lesson`.
+    #[serde(default)]
+    #[garde(skip)]
+    pub assignment: Option<NewAssignment>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, Validate, ToSchema)]
@@ -451,6 +528,17 @@ pub struct UpdateItemRequest {
     #[schema(value_type = Option<DateTime<Utc>>)]
     #[garde(skip)]
     pub publish_at: Option<Option<DateTime<Utc>>>,
+    /// Assignments only: replaces the config. Omit to keep it.
+    #[schema(value_type = Option<Object>)]
+    #[garde(skip)]
+    pub config: Option<Map<String, Value>>,
+    /// Assignments only: a decimal string, see `NewAssignment`. Omit to keep it.
+    #[serde(default, deserialize_with = "optional_points_text")]
+    #[garde(skip)]
+    pub max_points: Option<String>,
+    /// Assignments only. Omit to keep it.
+    #[garde(skip)]
+    pub is_bonus: Option<bool>,
 }
 
 #[cfg(test)]
@@ -513,5 +601,121 @@ mod content_tests {
         .unwrap();
         assert_eq!(value["title"], json!("t"));
         assert_eq!(value["submodules"], json!([]));
+    }
+
+    fn new_assignment(value: Value) -> NewAssignment {
+        serde_json::from_value(value).unwrap()
+    }
+
+    #[test]
+    fn a_new_assignment_takes_defaults_for_what_is_missing() {
+        let empty = new_assignment(json!({}));
+        assert_eq!(empty.assignment_type, "");
+        assert_eq!(empty.max_points, "");
+        assert_eq!(empty.config, None);
+        assert!(!empty.is_bonus);
+
+        let only_type = new_assignment(json!({"type": "text"}));
+        assert_eq!(only_type.assignment_type, "text");
+        assert_eq!(only_type.max_points, "");
+
+        let only_points = new_assignment(json!({"max_points": "20"}));
+        assert_eq!(only_points.assignment_type, "");
+        assert_eq!(only_points.max_points, "20");
+    }
+
+    #[test]
+    fn a_new_assignments_points_that_are_not_text_become_the_rejected_empty_string() {
+        for sent in [
+            json!(20),
+            json!(7.5),
+            json!(true),
+            json!([1]),
+            json!({"a": 1}),
+            json!(null),
+        ] {
+            let assignment = new_assignment(json!({"type": "text", "max_points": sent}));
+            assert_eq!(assignment.max_points, "", "{sent}");
+        }
+        let kept = new_assignment(json!({"type": "text", "max_points": "1.005"}));
+        assert_eq!(
+            kept.max_points, "1.005",
+            "text is passed on for the server to judge"
+        );
+    }
+
+    #[test]
+    fn an_update_reads_points_text_and_treats_null_as_absent() {
+        let update = |value: Value| serde_json::from_value::<UpdateItemRequest>(value).unwrap();
+        assert_eq!(update(json!({})).max_points, None);
+        assert_eq!(update(json!({"max_points": null})).max_points, None);
+        assert_eq!(
+            update(json!({"max_points": "12.5"})).max_points.as_deref(),
+            Some("12.5")
+        );
+        for sent in [json!(12), json!(false), json!([]), json!({})] {
+            assert_eq!(
+                update(json!({"max_points": sent})).max_points.as_deref(),
+                Some(""),
+                "{sent}"
+            );
+        }
+        let nulls = update(json!({"config": null, "is_bonus": null}));
+        assert_eq!(nulls.config, None);
+        assert_eq!(nulls.is_bonus, None);
+        let set = update(json!({"config": {}, "is_bonus": true}));
+        assert_eq!(set.config, Some(Map::new()));
+        assert_eq!(set.is_bonus, Some(true));
+    }
+
+    #[test]
+    fn a_lesson_serializes_without_an_assignment_key() {
+        let item = |assignment| Item {
+            id: Uuid::nil(),
+            module_id: Uuid::nil(),
+            course_id: Uuid::nil(),
+            position: 1,
+            kind: ItemKind::Lesson,
+            title: "t".into(),
+            body: Map::new(),
+            status: ContentStatus::Draft,
+            publish_at: None,
+            assignment,
+            created_at: DateTime::UNIX_EPOCH,
+            updated_at: DateTime::UNIX_EPOCH,
+        };
+        let lesson = serde_json::to_value(item(None)).unwrap();
+        assert!(lesson.get("assignment").is_none());
+
+        let assignment = serde_json::to_value(item(Some(Assignment {
+            assignment_type: "text".into(),
+            config: Map::new(),
+            max_points: "20.00".into(),
+            is_bonus: false,
+        })))
+        .unwrap();
+        assert_eq!(
+            assignment["assignment"],
+            json!({"type": "text", "config": {}, "max_points": "20.00", "is_bonus": false})
+        );
+    }
+
+    #[test]
+    fn a_tree_summary_without_an_assignment_has_no_key() {
+        let summary = ItemSummary {
+            id: Uuid::nil(),
+            kind: ItemKind::Lesson,
+            title: "t".into(),
+            status: ContentStatus::Draft,
+            publish_at: None,
+            position: 1,
+            assignment: None,
+        };
+        assert!(
+            serde_json::to_value(summary)
+                .unwrap()
+                .get("assignment")
+                .is_none()
+        );
     }
 }
