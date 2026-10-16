@@ -473,6 +473,12 @@ pub async fn reset_password(
 // Own account
 // ---------------------------------------------------------------------------------------------
 
+/// A user by id, for other modules that have already authorized their own action (for example
+/// to check the institution role of someone about to join a course).
+pub async fn find_user(conn: &mut PgConnection, id: Uuid) -> Result<Option<User>, IdentityError> {
+    Ok(repo::find_user(conn, id).await?)
+}
+
 pub async fn get_me(conn: &mut PgConnection, actor: &Actor) -> Result<User, IdentityError> {
     policy::authorize(actor, Action::ManageOwnAccount)?;
     repo::find_user(conn, actor.user_id())
