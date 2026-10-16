@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT u.id AS user_id, u.name, u.surname\n           FROM teaching.memberships m\n           JOIN identity.users u ON u.id = m.user_id\n           WHERE m.course_id = $1 AND m.role = 'student'\n             AND ($2::uuid IS NULL\n                  OR (u.surname, u.name, u.id) > (SELECT c.surname, c.name, c.id\n                                                  FROM identity.users c WHERE c.id = $2))\n           ORDER BY u.surname, u.name, u.id\n           LIMIT $3",
+  "query": "SELECT u.id AS user_id, u.name, u.surname\n           FROM teaching.effective_members m\n           JOIN identity.users u ON u.id = m.user_id\n           WHERE m.course_id = $1 AND m.role = 'student'\n             AND ($2::uuid IS NULL\n                  OR (u.surname, u.name, u.id) > (SELECT c.surname, c.name, c.id\n                                                  FROM identity.users c WHERE c.id = $2))\n           ORDER BY u.surname, u.name, u.id\n           LIMIT $3",
   "describe": {
     "columns": [
       {
@@ -50,5 +50,5 @@
       false
     ]
   },
-  "hash": "82bd499d6b022ab61ae5dcb9a8ed3e13d850b536b105e9ce18f989bc20081a3d"
+  "hash": "f26582dc237a4a5da13264f399fe47c5b86cbb4c40192d20410c269503b078c9"
 }

@@ -1,15 +1,15 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT user_id FROM teaching.memberships\n         WHERE course_id = $1 AND role = 'student' AND user_id = ANY($2)",
+  "query": "SELECT user_id AS \"user_id!\" FROM teaching.effective_members\n           WHERE course_id = $1 AND role = 'student' AND user_id = ANY($2)",
   "describe": {
     "columns": [
       {
         "ordinal": 0,
-        "name": "user_id",
+        "name": "user_id!",
         "type_info": "Uuid",
         "origin": {
           "Table": {
-            "table": "teaching.memberships",
+            "table": "teaching.effective_members",
             "name": "user_id"
           }
         }
@@ -22,8 +22,8 @@
       ]
     },
     "nullable": [
-      false
+      true
     ]
   },
-  "hash": "5e5b534beddfe7dcb8a3b3f12421f2cff0a0b8b8cc61ae9efcb397f679225274"
+  "hash": "683a6be704cd2564c1f320e51b9b8c1092d0806d9a6ed706c9b28025a60a9eab"
 }

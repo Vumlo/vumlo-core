@@ -127,6 +127,7 @@ teaching
   course_groups    course_id, group_id, subgroup_id?   -- live link; no subgroup = whole group
   memberships      course_id, user_id, role: teacher | assistant | student
   effective_members (VIEW) = memberships ∪ students of linked groups / subgroups
+                   -- built (task 012b): course_id, user_id, role = the direct memberships for now
   course_subgroups        id, course_id, name           -- lab group 1/2; course-local, flat
   course_subgroup_members course_subgroup_id, user_id
 
@@ -171,7 +172,7 @@ events
 Key points:
 
 - **One `courses` table for courses and templates** ([ADR-0005](docs/decisions/0005-courses-and-templates.md)). Creating from a template or saving as a template is a deep copy. Content is never shared live.
-- **`effective_members` is a view, not a sync job** ([ADR-0006](docs/decisions/0006-groups-and-membership.md)). A student who leaves a group disappears from the course automatically, and their grades stay because grades are keyed by `user_id`.
+- **`effective_members` is a view, not a sync job** ([ADR-0006](docs/decisions/0006-groups-and-membership.md)). A student who leaves a group disappears from the course automatically, and their grades stay because grades are keyed by `user_id`. The view is `teaching`'s declared read interface for who takes part in a course, with the columns `course_id`, `user_id` and `role`: other modules read it and never `teaching.memberships` (`crates/server/tests/architecture.rs` checks this). Today it is the direct memberships.
 - **Every content row carries `course_id`** ([ADR-0020](docs/decisions/0020-content-tree.md)), kept consistent with its parent by composite foreign keys, so a content row reaches its course without joins. Positions are dense integers per sibling sequence (the top-level modules of a course, the sub-modules of a module, the items of a module), unique under deferred constraints; a reorder sends the whole list.
 - **The gradebook is a separate module, not a separate tree** ([ADR-0015](docs/decisions/0015-gradebook-module.md), [ADR-0009](docs/decisions/0009-grading-and-gradebook.md)). Every gradebook column is an assignment in the course tree. "+ column" in the gradebook creates an assignment of type `no_submission` in a chosen module. Column order = course tree order.
 
@@ -263,7 +264,7 @@ The gradebook endpoints (tag `gradebook`):
 | `GET /courses/{id}/gradebook` | staff and admins: columns (every assignment in tree order, drafts included) and the current students as rows by surname, name and id, paged by student, with both slots and `has_unpublished_changes` per cell |
 | `GET /courses/{id}/my-grades` | students only: published values for assignments visible now, no draft field |
 
-A cell exists only where a grade row exists; every cell carries its `assignment_id`, and a missing cell means "no grade". The roster is the direct student memberships until `effective_members` exists (see Known limits).
+A cell exists only where a grade row exists; every cell carries its `assignment_id`, and a missing cell means "no grade". The roster is the students in the view `teaching.effective_members` (see Known limits).
 
 **Publishing a module** ([ADR-0010](docs/decisions/0010-content-publishing.md))
 `POST /modules/{id}/publish { "cascade": true | false }`. The parameter is required and has no default. The web UI asks in a dialog; the CLI and mobile app must choose explicitly. `cascade: true` also publishes the module's sub-modules and every draft item below them, in one transaction. Publishing is idempotent and never changes `publish_at`.
@@ -301,7 +302,7 @@ Examples: in a school, the template "Algebra 7" becomes courses "Algebra 7-A" an
 
 - **Rights are checked before the row lock.** `gradebook` and `content` authorize first and lock the assignment row after, so a role taken away in the same instant can still write one grade. There is no course-level lock.
 - **Disabled students stay in the gradebook.** A disabled user who is a student of a course is still listed and graded; the user status is not filtered.
-- **`teaching.effective_members` does not exist yet.** The gradebook roster reads direct student memberships, in four queries of `gradebook/repo.rs` (`students`, `is_student_member`, `student_members_among`, `lock_publishable`). When the groups arrive they are repointed at the view.
+- **`teaching.effective_members` is the direct memberships for now.** The gradebook reads the students of a course from this one view (four queries of `gradebook/repo.rs`). When groups arrive the view is redefined to add the students of linked groups and subgroups (ADR-0006), and the gradebook needs no change. The other readers of `teaching.memberships` that mean "is this user a student of the course" must then move to the view: in `teaching/repo.rs`, `find_course` (a student's role), `list_courses_of` and `list_members`. Teachers and assistants stay direct memberships. No module outside `teaching` reads the table directly.
 - **There is no course deletion yet.** When it is added it must lock the assignment rows of the course `FOR UPDATE`, then call `gradebook::has_grades_in_course` (409 if true) and `purge_course`, in one transaction. `teaching` then calls `gradebook` while `gradebook` calls `teaching`: a module-level cycle ([ADR-0030](docs/decisions/0030-gradebook-lock-covers-deletes-and-course-access.md)).
 
 ## Open questions

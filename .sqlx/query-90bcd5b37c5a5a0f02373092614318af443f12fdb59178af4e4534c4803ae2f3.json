@@ -1,0 +1,30 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT g.student_id\n           FROM gradebook.grades g\n           JOIN teaching.effective_members m\n             ON m.course_id = $2 AND m.user_id = g.student_id AND m.role = 'student'\n           WHERE g.assignment_id = $1\n             AND ($3::uuid[] IS NULL OR g.student_id = ANY($3))\n             AND ROW(g.draft_score, g.draft_feedback)\n                 IS DISTINCT FROM ROW(g.published_score, g.published_feedback)\n           ORDER BY g.student_id\n           FOR UPDATE OF g",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "student_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "gradebook.grades",
+            "name": "student_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "UuidArray"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "90bcd5b37c5a5a0f02373092614318af443f12fdb59178af4e4534c4803ae2f3"
+}

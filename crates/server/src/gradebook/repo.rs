@@ -1,7 +1,7 @@
 //! SQL only. Every function takes the connection it runs on and never begins a transaction.
 //!
 //! `content`, `teaching` and `identity` tables are read here with plain JOINs and never written
-//! (ADR-0028). Student-facing reads select `published_*` columns only.
+//! (ADR-0028). The students of a course come from the view `teaching.effective_members`. Student-facing reads select `published_*` columns only.
 
 use chrono::{DateTime, Utc};
 use sqlx::PgConnection;
@@ -81,7 +81,7 @@ pub async fn is_student_member(
     student_id: Uuid,
 ) -> Result<bool, sqlx::Error> {
     sqlx::query_scalar!(
-        r#"SELECT EXISTS (SELECT 1 FROM teaching.memberships
+        r#"SELECT EXISTS (SELECT 1 FROM teaching.effective_members
                           WHERE course_id = $1 AND user_id = $2 AND role = 'student') AS "member!""#,
         course_id,
         student_id
@@ -97,8 +97,9 @@ pub async fn student_members_among(
     student_ids: &[Uuid],
 ) -> Result<Vec<Uuid>, sqlx::Error> {
     sqlx::query_scalar!(
-        "SELECT user_id FROM teaching.memberships
-         WHERE course_id = $1 AND role = 'student' AND user_id = ANY($2)",
+        // A view's columns are inferred as nullable; `user_id` is not null in its definition.
+        r#"SELECT user_id AS "user_id!" FROM teaching.effective_members
+           WHERE course_id = $1 AND role = 'student' AND user_id = ANY($2)"#,
         course_id,
         student_ids
     )
@@ -179,7 +180,7 @@ pub async fn lock_publishable(
     sqlx::query_scalar!(
         r#"SELECT g.student_id
            FROM gradebook.grades g
-           JOIN teaching.memberships m
+           JOIN teaching.effective_members m
              ON m.course_id = $2 AND m.user_id = g.student_id AND m.role = 'student'
            WHERE g.assignment_id = $1
              AND ($3::uuid[] IS NULL OR g.student_id = ANY($3))
@@ -269,7 +270,7 @@ pub async fn students(
     sqlx::query_as!(
         StudentRow,
         r#"SELECT u.id AS user_id, u.name, u.surname
-           FROM teaching.memberships m
+           FROM teaching.effective_members m
            JOIN identity.users u ON u.id = m.user_id
            WHERE m.course_id = $1 AND m.role = 'student'
              AND ($2::uuid IS NULL

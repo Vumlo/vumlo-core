@@ -44,6 +44,7 @@ Modules: `identity`, `org`, `teaching`, `content`, `assessment`, `gradebook`, `f
 - Each module owns its Postgres schema. **A module writes only to its own schema.**
   To change another module's data, call that module's public function and pass the connection.
 - Cross-module JOINs are allowed **only in read-model queries** (e.g. the gradebook view in `gradebook`), never for writes.
+  A module reads another module's data only through a read interface the owner declares; `teaching.effective_members` is the first one.
 - SQL lives only in `repo.rs`. HTTP types (`axum`, DTOs) never appear in `service.rs` or `repo.rs`.
 - Exception: the block document types of ADR-0025 and ADR-0027 live in `api-types` and `content` uses them directly.
 - A large file becomes a folder (`routes/courses.rs`, `routes/groups.rs`). The module's public surface does not change.
