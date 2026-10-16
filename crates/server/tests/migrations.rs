@@ -49,7 +49,7 @@ async fn serve_check_refuses_an_unmigrated_database(pool: PgPool) {
 
 async fn insert_user(pool: &PgPool, email: &str, role: &str) -> Result<(), sqlx::Error> {
     sqlx::query!(
-        "INSERT INTO identity.users (id, email, display_name, role) VALUES ($1, $2, 'Test', $3)",
+        "INSERT INTO identity.users (id, email, name, surname, role) VALUES ($1, $2, 'Test', 'User', $3)",
         uuid::Uuid::now_v7(),
         email,
         role
@@ -75,7 +75,7 @@ async fn identity_schema_rejects_invalid_users(pool: PgPool) {
 async fn deleting_a_user_cascades_to_identities_and_sessions(pool: PgPool) {
     let user_id = uuid::Uuid::now_v7();
     sqlx::query!(
-        "INSERT INTO identity.users (id, email, display_name, role) VALUES ($1, 'c@x.edu', 'C', 'teacher')",
+        "INSERT INTO identity.users (id, email, name, surname, role) VALUES ($1, 'c@x.edu', 'C', 'D', 'teacher')",
         user_id
     )
     .execute(&pool)
@@ -580,13 +580,35 @@ async fn item_kind(pool: &PgPool, id: uuid::Uuid) -> String {
         .unwrap()
 }
 
+/// A teacher as the schema before migration 10 stores them: one `display_name`. A runtime query,
+/// because the compile-time macros are checked against the full schema, where that column is gone.
+async fn insert_user_before_names(
+    pool: &PgPool,
+    email: &str,
+    display_name: &str,
+    role: &str,
+) -> uuid::Uuid {
+    let id = uuid::Uuid::now_v7();
+    sqlx::query(
+        "INSERT INTO identity.users (id, email, display_name, role) VALUES ($1, $2, $3, $4)",
+    )
+    .bind(id)
+    .bind(email)
+    .bind(display_name)
+    .bind(role)
+    .execute(pool)
+    .await
+    .unwrap();
+    id
+}
+
 #[sqlx::test(migrations = false)]
 async fn migration_7_turns_lesson_items_into_text_items(pool: PgPool) {
     app::MIGRATOR.run_to(6, &pool).await.unwrap();
 
     // Data as it exists before the rename: a `lesson` item and an assignment with its row.
     // The macros are checked against the full schema, but only name columns that exist at 6.
-    let owner = owner(&pool, "t@x.edu").await;
+    let owner = insert_user_before_names(&pool, "t@x.edu", "Teacher", "teacher").await;
     let course = insert_course(&pool, owner).await;
     let module = insert_module_row(&pool, course, None, 1).await.unwrap();
     let lesson = insert_item_of_kind(&pool, module, course, 1, "lesson")
@@ -647,7 +669,7 @@ async fn an_item_without_a_body_starts_with_the_empty_document(pool: PgPool) {
 async fn migration_8_turns_empty_object_bodies_into_the_empty_document(pool: PgPool) {
     app::MIGRATOR.run_to(7, &pool).await.unwrap();
 
-    let owner = owner(&pool, "t@x.edu").await;
+    let owner = insert_user_before_names(&pool, "t@x.edu", "Teacher", "teacher").await;
     let course = insert_course(&pool, owner).await;
     let module = insert_module_row(&pool, course, None, 1).await.unwrap();
     let empty = insert_item_of_kind(&pool, module, course, 1, "text")
@@ -680,4 +702,79 @@ async fn migration_8_turns_empty_object_bodies_into_the_empty_document(pool: PgP
         .unwrap();
     assert_eq!(item_body(&pool, later).await, document);
     app::ensure_migrated(&pool).await.unwrap();
+}
+
+#[sqlx::test(migrations = false)]
+async fn migration_10_splits_display_names_into_name_and_surname(pool: PgPool) {
+    app::MIGRATOR.run_to(9, &pool).await.unwrap();
+
+    let cases = [
+        ("a@x.edu", "Anna Kowalska", "Anna", "Kowalska"),
+        ("b@x.edu", "Anna van der Berg", "Anna", "van der Berg"),
+        ("c@x.edu", "Jan \t  Nowak", "Jan", "Nowak"),
+        ("d@x.edu", "Madonna", "Madonna", "Madonna"),
+    ];
+    for (email, display_name, _, _) in cases {
+        insert_user_before_names(&pool, email, display_name, "student").await;
+    }
+
+    app::MIGRATOR.run(&pool).await.unwrap();
+
+    for (email, _, name, surname) in cases {
+        let row = sqlx::query!(
+            "SELECT name, surname FROM identity.users WHERE email = $1",
+            email
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(
+            (row.name.as_str(), row.surname.as_str()),
+            (name, surname),
+            "{email}"
+        );
+    }
+    let column = sqlx::query_scalar!(
+        r#"SELECT count(*) AS "n!" FROM information_schema.columns
+           WHERE table_schema = 'identity' AND table_name = 'users' AND column_name = 'display_name'"#
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(column, 0, "display_name is dropped");
+    app::ensure_migrated(&pool).await.unwrap();
+}
+
+#[sqlx::test(migrator = "server::app::MIGRATOR")]
+async fn a_user_needs_a_trimmed_name_and_surname_of_at_most_a_hundred_characters(pool: PgPool) {
+    let insert = |name: String, surname: String| {
+        let pool = pool.clone();
+        async move {
+            sqlx::query!(
+                "INSERT INTO identity.users (id, email, name, surname, role)
+                 VALUES ($1, $2, $3, $4, 'student')",
+                uuid::Uuid::now_v7(),
+                format!("{}@x.edu", uuid::Uuid::now_v7()),
+                name,
+                surname
+            )
+            .execute(&pool)
+            .await
+        }
+    };
+    insert("Anna".into(), "K".into()).await.unwrap();
+    for (name, surname) in [
+        ("", "K"),
+        ("Anna", ""),
+        (" Anna", "K"),
+        ("Anna", "K "),
+        (&"x".repeat(101), "K"),
+        ("Anna", &"x".repeat(101)),
+    ] {
+        assert_eq!(
+            sqlstate(insert(name.to_owned(), surname.to_owned()).await),
+            "23514",
+            "{name:?} {surname:?}"
+        );
+    }
 }

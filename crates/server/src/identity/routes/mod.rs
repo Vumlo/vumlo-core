@@ -138,7 +138,8 @@ impl From<super::model::ModelError> for ApiError {
         use super::model::ModelError;
         match error {
             ModelError::Email => Self::invalid_field("email", error.to_string()),
-            ModelError::DisplayName => Self::invalid_field("display_name", error.to_string()),
+            ModelError::Name => Self::invalid_field("name", error.to_string()),
+            ModelError::Surname => Self::invalid_field("surname", error.to_string()),
             ModelError::Cursor => Self::invalid_field("cursor", error.to_string()),
             ModelError::Password(reasons) => Self::Unprocessable {
                 detail: "the password does not meet the policy".to_owned(),
@@ -197,7 +198,8 @@ pub(super) fn api_user(user: User) -> api_types::User {
     api_types::User {
         id: user.id,
         email: user.email,
-        display_name: user.display_name,
+        name: user.name,
+        surname: user.surname,
         role: api_role(user.role),
         status: api_status(user.status),
         must_change_password: user.must_change_password,

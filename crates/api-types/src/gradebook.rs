@@ -1,0 +1,294 @@
+//! Request and response types of the gradebook (ADR-0028). Points are decimal strings with at
+//! most two decimals (ADR-0021); responses always carry two decimals.
+
+use chrono::{DateTime, Utc};
+use garde::Validate;
+use serde::{Deserialize, Deserializer, Serialize};
+use serde_json::Value;
+use utoipa::ToSchema;
+use uuid::Uuid;
+
+use super::{ContentStatus, optional_points_text};
+
+/// The most students one publish request may list. `"all"` has no limit.
+pub const MAX_PUBLISH_STUDENTS: usize = 1000;
+
+/// A key that must be present, whose value may be `null`. Anything that is not a string becomes
+/// `Some(value)` so that the server can reject it on the field with a fixed message.
+fn required_nullable<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<Value>, D::Error> {
+    Ok(match Value::deserialize(deserializer)? {
+        Value::Null => None,
+        other => Some(other),
+    })
+}
+
+/// Replaces the draft cell of one student. Both keys are required: a `PUT` replaces the whole
+/// cell, and `null` clears a field.
+#[derive(Debug, Clone, Serialize, Deserialize, Validate, ToSchema)]
+pub struct SaveGradeRequest {
+    /// A decimal string with at most two decimals, from 0 to the assignment's `max_points`, e.g.
+    /// `"7.5"`; `null` clears the score. A JSON number is rejected.
+    #[serde(deserialize_with = "optional_points_text")]
+    #[garde(skip)]
+    pub score: Option<String>,
+    /// Plain text, at most 4000 characters after trimming; `null` or empty clears the feedback.
+    /// Read as a JSON value so that a non-string is rejected on this field.
+    #[serde(deserialize_with = "required_nullable")]
+    #[schema(value_type = Option<String>)]
+    #[garde(skip)]
+    pub feedback: Option<Value>,
+}
+
+/// The only value of the `students` selector that is not a list.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub enum AllStudents {
+    #[serde(rename = "all")]
+    All,
+}
+
+/// Which students to publish: every student whose draft differs from the published value, or a
+/// listed set.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(untagged)]
+pub enum PublishStudents {
+    All(AllStudents),
+    Ids(Vec<Uuid>),
+}
+
+fn at_most_the_publish_limit(students: &PublishStudents, _: &()) -> garde::Result {
+    match students {
+        PublishStudents::Ids(ids) if ids.len() > MAX_PUBLISH_STUDENTS => Err(garde::Error::new(
+            format!("must list at most {MAX_PUBLISH_STUDENTS} students"),
+        )),
+        _ => Ok(()),
+    }
+}
+
+/// Copies draft to published. The body is required and has no default.
+#[derive(Debug, Clone, Serialize, Deserialize, Validate, ToSchema)]
+pub struct PublishGradesRequest {
+    /// `"all"` or a list of student ids.
+    #[garde(custom(at_most_the_publish_limit))]
+    pub students: PublishStudents,
+}
+
+/// The students whose published value was replaced (a retraction counts).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct PublishGradesResponse {
+    pub published: Vec<Uuid>,
+}
+
+/// One cell as staff see it: both slots. Never sent to a student.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct GradeCell {
+    /// A decimal string with exactly two decimals, or `null`.
+    pub draft_score: Option<String>,
+    pub draft_feedback: Option<String>,
+    pub published_score: Option<String>,
+    pub published_feedback: Option<String>,
+    /// True when the draft differs from the published value.
+    pub has_unpublished_changes: bool,
+}
+
+/// A gradebook column: one assignment of the course, in course tree order.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct GradebookColumn {
+    pub assignment_id: Uuid,
+    pub title: String,
+    /// A decimal string with exactly two decimals, e.g. `"20.00"`.
+    pub max_points: String,
+    pub is_bonus: bool,
+    /// The item's status, so staff can tell a draft column from a published one.
+    pub status: ContentStatus,
+}
+
+/// A cell of one student in the column `assignment_id`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct GradebookCell {
+    pub assignment_id: Uuid,
+    #[serde(flatten)]
+    pub cell: GradeCell,
+}
+
+/// One student of the gradebook with their cells. A student who was never graded in a column has
+/// no cell for it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct GradebookRow {
+    pub user_id: Uuid,
+    pub name: String,
+    pub surname: String,
+    pub cells: Vec<GradebookCell>,
+}
+
+/// A page of the staff gradebook, paged by student (ADR-0018). `columns` is the same on every
+/// page.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct GradebookPage {
+    pub columns: Vec<GradebookColumn>,
+    pub items: Vec<GradebookRow>,
+    /// Pass as `cursor` to get the next page; `null` on the last page.
+    pub next_cursor: Option<String>,
+}
+
+/// A published grade as its student sees it. It has no draft field by construction.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct MyGrade {
+    pub assignment_id: Uuid,
+    pub title: String,
+    /// A decimal string with exactly two decimals, e.g. `"20.00"`.
+    pub max_points: String,
+    pub is_bonus: bool,
+    /// A decimal string with exactly two decimals, or `null` if only feedback was published.
+    pub score: Option<String>,
+    pub feedback: Option<String>,
+    pub published_at: DateTime<Utc>,
+}
+
+/// The published grades of the caller in one course, in course tree order. Not paged: a course
+/// is bounded (ADR-0020).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct MyGrades {
+    pub items: Vec<MyGrade>,
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::*;
+
+    fn save(value: Value) -> Result<SaveGradeRequest, serde_json::Error> {
+        serde_json::from_value(value)
+    }
+
+    #[test]
+    fn a_save_needs_both_keys_and_null_clears() {
+        assert!(save(json!({})).is_err());
+        assert!(save(json!({"score": "5"})).is_err());
+        assert!(save(json!({"feedback": "ok"})).is_err());
+        let cleared = save(json!({"score": null, "feedback": null})).unwrap();
+        assert_eq!((cleared.score, cleared.feedback), (None, None));
+        let set = save(json!({"score": "7.5", "feedback": "good"})).unwrap();
+        assert_eq!(set.score.as_deref(), Some("7.5"));
+        assert_eq!(set.feedback, Some(json!("good")));
+    }
+
+    #[test]
+    fn a_score_that_is_not_text_becomes_the_rejected_empty_string() {
+        for sent in [
+            json!(5),
+            json!(7.5),
+            json!(true),
+            json!([1]),
+            json!({"a": 1}),
+        ] {
+            let request = save(json!({"score": sent, "feedback": null})).unwrap();
+            assert_eq!(request.score.as_deref(), Some(""), "{sent}");
+        }
+        let kept = save(json!({"score": "1.005", "feedback": null})).unwrap();
+        assert_eq!(
+            kept.score.as_deref(),
+            Some("1.005"),
+            "text is judged by the server"
+        );
+    }
+
+    #[test]
+    fn a_feedback_that_is_not_text_is_kept_for_the_server_to_reject() {
+        for sent in [json!(5), json!(true), json!([]), json!({})] {
+            let request = save(json!({"score": null, "feedback": sent.clone()})).unwrap();
+            assert_eq!(request.feedback, Some(sent));
+        }
+    }
+
+    fn publish(value: Value) -> Result<PublishGradesRequest, serde_json::Error> {
+        serde_json::from_value(value)
+    }
+
+    #[test]
+    fn publish_takes_all_or_a_list_and_the_body_is_required() {
+        assert!(publish(json!({})).is_err());
+        assert!(publish(json!({"students": null})).is_err());
+        for bad in [
+            json!("everyone"),
+            json!("ALL"),
+            json!(1),
+            json!(["not-a-uuid"]),
+            json!({}),
+        ] {
+            assert!(publish(json!({"students": bad.clone()})).is_err(), "{bad}");
+        }
+        let all = publish(json!({"students": "all"})).unwrap();
+        assert_eq!(all.students, PublishStudents::All(AllStudents::All));
+        let id = Uuid::now_v7();
+        let some = publish(json!({"students": [id]})).unwrap();
+        assert_eq!(some.students, PublishStudents::Ids(vec![id]));
+        assert_eq!(
+            serde_json::to_value(&all).unwrap(),
+            json!({"students": "all"})
+        );
+    }
+
+    #[test]
+    fn a_publish_list_is_capped() {
+        let ids = |n: usize| PublishStudents::Ids((0..n).map(|_| Uuid::now_v7()).collect());
+        let request = |students| PublishGradesRequest { students };
+        assert!(request(ids(MAX_PUBLISH_STUDENTS)).validate().is_ok());
+        assert!(request(ids(MAX_PUBLISH_STUDENTS + 1)).validate().is_err());
+        assert!(
+            request(PublishStudents::All(AllStudents::All))
+                .validate()
+                .is_ok()
+        );
+    }
+
+    #[test]
+    fn a_student_view_has_exactly_the_published_fields() {
+        let grade = MyGrade {
+            assignment_id: Uuid::nil(),
+            title: "t".into(),
+            max_points: "10.00".into(),
+            is_bonus: false,
+            score: Some("7.50".into()),
+            feedback: None,
+            published_at: DateTime::UNIX_EPOCH,
+        };
+        let value = serde_json::to_value(grade).unwrap();
+        let mut keys: Vec<_> = value.as_object().unwrap().keys().cloned().collect();
+        keys.sort();
+        assert_eq!(
+            keys,
+            [
+                "assignment_id",
+                "feedback",
+                "is_bonus",
+                "max_points",
+                "published_at",
+                "score",
+                "title"
+            ]
+        );
+        assert!(!value.to_string().contains("draft"));
+    }
+
+    #[test]
+    fn a_gradebook_cell_flattens_the_grade_fields() {
+        let cell = GradebookCell {
+            assignment_id: Uuid::nil(),
+            cell: GradeCell {
+                draft_score: Some("8.00".into()),
+                draft_feedback: None,
+                published_score: None,
+                published_feedback: None,
+                has_unpublished_changes: true,
+            },
+        };
+        let value = serde_json::to_value(cell).unwrap();
+        assert_eq!(value["draft_score"], json!("8.00"));
+        assert_eq!(value["has_unpublished_changes"], json!(true));
+        assert_eq!(value["published_score"], Value::Null);
+        assert!(value.get("cell").is_none());
+    }
+}

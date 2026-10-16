@@ -15,7 +15,7 @@ cp .env.example .env
 cp learnly.example.toml learnly.toml   # set server.public_origin and institution.name
 docker compose up -d --wait            # PostgreSQL 18 on :5432
 cargo run -p server -- migrate         # apply migrations
-cargo run -p server -- create-admin you@example.edu --name "Your Name"
+cargo run -p server -- create-admin you@example.edu --name Your --surname Name
 cargo run -p server -- serve           # http://127.0.0.1:8080
 ```
 
@@ -28,7 +28,7 @@ curl -s localhost:8080/api/v1/auth/login -H 'content-type: application/json' \
 # use the returned token as: Authorization: Bearer <token>
 ```
 
-Other users: `learnly-server create-user <email> --name <name> --role admin|teacher|student`, or
+Other users: `learnly-server create-user <email> --name <name> --surname <surname> --role admin|teacher|student`, or
 `POST /api/v1/admin/users` as an admin. API docs: `/api/v1/docs`.
 Health check: `curl localhost:8080/api/v1/health` or `cargo run -p cli -- health --url http://localhost:8080`.
 

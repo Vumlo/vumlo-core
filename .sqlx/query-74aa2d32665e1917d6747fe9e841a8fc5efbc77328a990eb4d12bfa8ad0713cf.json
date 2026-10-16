@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT id, email, display_name,\n                  role AS \"role: Role\", status AS \"status: UserStatus\",\n                  must_change_password, created_at\n           FROM identity.users WHERE id = $1",
+  "query": "SELECT id, email, name, surname,\n                  role AS \"role: Role\", status AS \"status: UserStatus\",\n                  must_change_password, created_at\n           FROM identity.users\n           WHERE ($1::text IS NULL OR role = $1)\n             AND ($2::text IS NULL OR status = $2)\n             AND ($3::text IS NULL OR strpos(email, $3) > 0)\n             AND ($4::uuid IS NULL OR id > $4)\n           ORDER BY id\n           LIMIT $5",
   "describe": {
     "columns": [
       {
@@ -27,17 +27,28 @@
       },
       {
         "ordinal": 2,
-        "name": "display_name",
+        "name": "name",
         "type_info": "Text",
         "origin": {
           "Table": {
             "table": "identity.users",
-            "name": "display_name"
+            "name": "name"
           }
         }
       },
       {
         "ordinal": 3,
+        "name": "surname",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "identity.users",
+            "name": "surname"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
         "name": "role: Role",
         "type_info": "Text",
         "origin": {
@@ -48,7 +59,7 @@
         }
       },
       {
-        "ordinal": 4,
+        "ordinal": 5,
         "name": "status: UserStatus",
         "type_info": "Text",
         "origin": {
@@ -59,7 +70,7 @@
         }
       },
       {
-        "ordinal": 5,
+        "ordinal": 6,
         "name": "must_change_password",
         "type_info": "Bool",
         "origin": {
@@ -70,7 +81,7 @@
         }
       },
       {
-        "ordinal": 6,
+        "ordinal": 7,
         "name": "created_at",
         "type_info": "Timestamptz",
         "origin": {
@@ -83,7 +94,11 @@
     ],
     "parameters": {
       "Left": [
-        "Uuid"
+        "Text",
+        "Text",
+        "Text",
+        "Uuid",
+        "Int8"
       ]
     },
     "nullable": [
@@ -93,8 +108,9 @@
       false,
       false,
       false,
+      false,
       false
     ]
   },
-  "hash": "90d3ab885f2de17080610490b490d2cd010e56cfbff0ab14593ec1b60476be3a"
+  "hash": "74aa2d32665e1917d6747fe9e841a8fc5efbc77328a990eb4d12bfa8ad0713cf"
 }

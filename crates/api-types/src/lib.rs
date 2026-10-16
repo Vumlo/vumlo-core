@@ -8,8 +8,10 @@ use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
 mod document;
+mod gradebook;
 
 pub use document::*;
+pub use gradebook::*;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct HealthResponse {
@@ -75,7 +77,8 @@ pub enum LoginClient {
 pub struct User {
     pub id: Uuid,
     pub email: String,
-    pub display_name: String,
+    pub name: String,
+    pub surname: String,
     pub role: Role,
     pub status: UserStatus,
     pub must_change_password: bool,
@@ -157,7 +160,9 @@ pub struct CreateUserRequest {
     #[garde(length(min = 1, max = 254))]
     pub email: String,
     #[garde(length(chars, min = 1, max = 100))]
-    pub display_name: String,
+    pub name: String,
+    #[garde(length(chars, min = 1, max = 100))]
+    pub surname: String,
     #[garde(skip)]
     pub role: Role,
 }
@@ -193,7 +198,9 @@ impl fmt::Debug for TemporaryPasswordResponse {
 #[derive(Debug, Clone, Default, Serialize, Deserialize, Validate, ToSchema)]
 pub struct UpdateUserRequest {
     #[garde(inner(length(chars, min = 1, max = 100)))]
-    pub display_name: Option<String>,
+    pub name: Option<String>,
+    #[garde(inner(length(chars, min = 1, max = 100)))]
+    pub surname: Option<String>,
     #[garde(skip)]
     pub role: Option<Role>,
     #[garde(skip)]

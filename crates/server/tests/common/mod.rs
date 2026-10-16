@@ -2,7 +2,7 @@
 #![allow(dead_code)]
 
 use server::app::{self, AppState};
-use server::identity::{self, DisplayName, Email, NewUser, Role, TemporaryPassword};
+use server::identity::{self, Email, NewUser, PersonName, Role, TemporaryPassword};
 use server::settings::{
     AuthSettings, DatabaseSettings, EditorSettings, GradingScale, InstitutionSettings, LogFormat,
     LogSettings, ServerSettings, Settings,
@@ -184,7 +184,8 @@ pub async fn seed_pending_user(pool: &PgPool, email: &str, role: Role) -> String
         &mut tx,
         NewUser {
             email: Email::parse(email).expect("email"),
-            display_name: DisplayName::parse("Test User").expect("name"),
+            name: PersonName::name("Test").expect("name"),
+            surname: PersonName::surname("User").expect("surname"),
             role,
         },
         hash,

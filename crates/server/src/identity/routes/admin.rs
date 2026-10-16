@@ -13,7 +13,7 @@ use crate::actor::Actor;
 use crate::app::AppState;
 use crate::error::{ApiError, ValidJson, ValidQuery};
 use crate::identity::model::{
-    DisplayName, Email, NewUser, PageParams, TemporaryPassword, UserFilter, UserUpdate,
+    Email, NewUser, PageParams, PersonName, TemporaryPassword, UserFilter, UserUpdate,
 };
 use crate::identity::service::{self, IdentityError};
 use crate::policy::{self, Action};
@@ -92,7 +92,8 @@ pub async fn create_user(
     require_admin(&actor)?;
     let new = NewUser {
         email: Email::parse(&request.email).map_err(IdentityError::from)?,
-        display_name: DisplayName::parse(&request.display_name).map_err(IdentityError::from)?,
+        name: PersonName::name(&request.name).map_err(IdentityError::from)?,
+        surname: PersonName::surname(&request.surname).map_err(IdentityError::from)?,
         role: domain_role(request.role),
     };
     let temporary = TemporaryPassword::generate();
@@ -146,10 +147,16 @@ pub async fn update_user(
 ) -> Result<Json<User>, ApiError> {
     require_admin(&actor)?;
     let update = UserUpdate {
-        display_name: request
-            .display_name
+        name: request
+            .name
             .as_deref()
-            .map(DisplayName::parse)
+            .map(PersonName::name)
+            .transpose()
+            .map_err(IdentityError::from)?,
+        surname: request
+            .surname
+            .as_deref()
+            .map(PersonName::surname)
             .transpose()
             .map_err(IdentityError::from)?,
         role: request.role.map(domain_role),

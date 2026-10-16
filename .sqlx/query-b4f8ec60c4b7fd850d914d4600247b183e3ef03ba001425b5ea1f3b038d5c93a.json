@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "INSERT INTO identity.users (id, email, display_name, role, must_change_password)\n           VALUES ($1, $2, $3, $4, $5)\n           RETURNING id, email, display_name,\n                     role AS \"role: Role\", status AS \"status: UserStatus\",\n                     must_change_password, created_at",
+  "query": "INSERT INTO identity.users (id, email, name, surname, role, must_change_password)\n           VALUES ($1, $2, $3, $4, $5, $6)\n           RETURNING id, email, name, surname,\n                     role AS \"role: Role\", status AS \"status: UserStatus\",\n                     must_change_password, created_at",
   "describe": {
     "columns": [
       {
@@ -27,17 +27,28 @@
       },
       {
         "ordinal": 2,
-        "name": "display_name",
+        "name": "name",
         "type_info": "Text",
         "origin": {
           "Table": {
             "table": "identity.users",
-            "name": "display_name"
+            "name": "name"
           }
         }
       },
       {
         "ordinal": 3,
+        "name": "surname",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "identity.users",
+            "name": "surname"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
         "name": "role: Role",
         "type_info": "Text",
         "origin": {
@@ -48,7 +59,7 @@
         }
       },
       {
-        "ordinal": 4,
+        "ordinal": 5,
         "name": "status: UserStatus",
         "type_info": "Text",
         "origin": {
@@ -59,7 +70,7 @@
         }
       },
       {
-        "ordinal": 5,
+        "ordinal": 6,
         "name": "must_change_password",
         "type_info": "Bool",
         "origin": {
@@ -70,7 +81,7 @@
         }
       },
       {
-        "ordinal": 6,
+        "ordinal": 7,
         "name": "created_at",
         "type_info": "Timestamptz",
         "origin": {
@@ -87,6 +98,7 @@
         "Text",
         "Text",
         "Text",
+        "Text",
         "Bool"
       ]
     },
@@ -97,8 +109,9 @@
       false,
       false,
       false,
+      false,
       false
     ]
   },
-  "hash": "9c16799de13301c7f592b98a11cc767f1bfb4569bfc75b6ea907ac07e10aa13d"
+  "hash": "b4f8ec60c4b7fd850d914d4600247b183e3ef03ba001425b5ea1f3b038d5c93a"
 }

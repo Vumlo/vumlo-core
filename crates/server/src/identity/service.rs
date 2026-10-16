@@ -14,8 +14,8 @@ use uuid::Uuid;
 
 use super::model::{
     HashedPassword, ModelError, NewSession, NewUser, Page, PageParams, Password, PasswordPolicy,
-    Role, SessionInfo, SessionKind, SessionToken, TemporaryPassword, User, UserFilter, UserStatus,
-    UserUpdate,
+    PersonName, Role, SessionInfo, SessionKind, SessionToken, TemporaryPassword, User, UserFilter,
+    UserStatus, UserUpdate,
 };
 use super::repo::{self, LoginRecord};
 use crate::actor::Actor;
@@ -439,7 +439,8 @@ pub async fn update_user(
     let updated = repo::update_user(
         conn,
         target.id,
-        update.display_name.as_ref().map(|name| name.as_str()),
+        update.name.as_ref().map(PersonName::as_str),
+        update.surname.as_ref().map(PersonName::as_str),
         update.role,
         update.status,
     )
@@ -536,7 +537,7 @@ pub async fn prepare_password_change(
     if new == current {
         return Err(IdentityError::PasswordUnchanged);
     }
-    let policy = PasswordPolicy::new(min_len, &user.email, &user.display_name, institution);
+    let policy = PasswordPolicy::new(min_len, &user.email, &user.name, &user.surname, institution);
     let password = Password::parse(new, &policy)?;
     let new_hash = hash_password(password.expose()).await?;
     Ok(PreparedPasswordChange { old_hash, new_hash })
@@ -721,13 +722,14 @@ mod tests {
     }
 
     async fn admin_actor(pool: &sqlx::PgPool, email: &str) -> Actor {
-        use super::super::model::{DisplayName, Email};
+        use super::super::model::{Email, PersonName};
         let user = repo::insert_user(
             &mut pool.acquire().await.unwrap(),
             Uuid::now_v7(),
             &NewUser {
                 email: Email::parse(email).unwrap(),
-                display_name: DisplayName::parse("Admin").unwrap(),
+                name: PersonName::name("Admin").unwrap(),
+                surname: PersonName::surname("Admin").unwrap(),
                 role: Role::Admin,
             },
             false,

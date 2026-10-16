@@ -3,7 +3,7 @@ use std::process::ExitCode;
 use anyhow::Context;
 use clap::{Parser, Subcommand};
 use server::app::{self, AppState};
-use server::identity::{self, DisplayName, Email, NewUser, Role, TemporaryPassword};
+use server::identity::{self, Email, NewUser, PersonName, Role, TemporaryPassword};
 use server::settings::{LogFormat, Settings};
 use sqlx::PgPool;
 
@@ -23,16 +23,22 @@ enum Command {
     /// Create an admin with a temporary password, printed once.
     CreateAdmin {
         email: String,
-        /// Display name.
+        /// First name.
         #[arg(long)]
         name: String,
+        /// Last name.
+        #[arg(long)]
+        surname: String,
     },
     /// Create a user with a temporary password, printed once.
     CreateUser {
         email: String,
-        /// Display name.
+        /// First name.
         #[arg(long)]
         name: String,
+        /// Last name.
+        #[arg(long)]
+        surname: String,
         /// admin, teacher or student.
         #[arg(long)]
         role: Role,
@@ -79,11 +85,20 @@ async fn run(cli: Cli) -> anyhow::Result<()> {
             app::MIGRATOR.run(&pool).await.context("migration failed")?;
             tracing::info!("migrations applied");
         }
-        Command::CreateAdmin { email, name } => {
-            create_account(&pool, &email, &name, Role::Admin).await?;
+        Command::CreateAdmin {
+            email,
+            name,
+            surname,
+        } => {
+            create_account(&pool, &email, &name, &surname, Role::Admin).await?;
         }
-        Command::CreateUser { email, name, role } => {
-            create_account(&pool, &email, &name, role).await?;
+        Command::CreateUser {
+            email,
+            name,
+            surname,
+            role,
+        } => {
+            create_account(&pool, &email, &name, &surname, role).await?;
         }
     }
     Ok(())
@@ -91,11 +106,18 @@ async fn run(cli: Cli) -> anyhow::Result<()> {
 
 /// Creates a user with a temporary password (ADR-0017) and prints the password. This is the
 /// only time it is visible; the user must change it at first login.
-async fn create_account(pool: &PgPool, email: &str, name: &str, role: Role) -> anyhow::Result<()> {
+async fn create_account(
+    pool: &PgPool,
+    email: &str,
+    name: &str,
+    surname: &str,
+    role: Role,
+) -> anyhow::Result<()> {
     app::ensure_migrated(pool).await?;
     let new = NewUser {
         email: Email::parse(email).context("invalid email")?,
-        display_name: DisplayName::parse(name).context("invalid name")?,
+        name: PersonName::name(name).context("invalid name")?,
+        surname: PersonName::surname(surname).context("invalid surname")?,
         role,
     };
     let temporary = TemporaryPassword::generate();
