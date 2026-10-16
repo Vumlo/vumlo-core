@@ -73,7 +73,8 @@ Modules: `identity`, `org`, `teaching`, `content`, `assessment`, `gradebook`, `f
 ## 6. Visibility invariants (each one must have a test)
 
 - Students and any non-staff response **never** contain `draft_*` grade fields.
-  Student-facing repo functions do not select those columns.
+  Student-facing repo functions do not select those columns. In `gradebook` that is
+  `my-grades`, served by one repo function that selects `published_*` only.
 - Students never see items unless course, module and item are published and `publish_at <= now()`.
 - Staff never see submissions with `status = 'draft'`.
 
