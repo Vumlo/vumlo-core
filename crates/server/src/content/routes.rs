@@ -457,7 +457,7 @@ async fn publish_module(
 /// For an assignment it holds the instructions.
 ///
 /// `kind: assignment` requires an `assignment` object `{type, config?, max_points, is_bonus?}`
-/// (ADR-0021); a `text` item must not carry one. `type` is `text` for now, with an empty `config`.
+/// (ADR-0021); a `text` item must not carry one. `type` is `text` or `no_submission`, with an empty `config`.
 /// `max_points` is a decimal string such as `"20"` or `"7.5"`; a JSON number is rejected. The
 /// grading scale limits the points (ADR-0022): at most 12 per assignment on `twelve`, at most
 /// 100 in total over the regular (not bonus) assignments of the course on `hundred`.

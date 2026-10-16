@@ -1,6 +1,6 @@
 use sqlx::PgConnection;
 
-use super::model::AuditEntry;
+use super::model::{AuditEntry, Event};
 use super::repo;
 use crate::actor::Actor;
 use crate::policy::implicit_course_owner;
@@ -20,6 +20,13 @@ pub async fn audit(
     entry: AuditEntry,
 ) -> Result<(), EventsError> {
     repo::insert_audit(conn, actor.user_id(), &entry).await?;
+    Ok(())
+}
+
+/// Writes `event` to the outbox on the caller's connection, in the same transaction as the state
+/// change it announces (ADR-0007). Draft saves never emit.
+pub async fn emit(conn: &mut PgConnection, event: Event) -> Result<(), EventsError> {
+    repo::insert_outbox(conn, &event).await?;
     Ok(())
 }
 

@@ -2218,7 +2218,7 @@ async fn unknown_types_and_config_fields_are_422(pool: PgPool) {
     let with =
         |assignment: Value| json!({"kind": "assignment", "title": "T", "assignment": assignment});
 
-    for bad in ["form", "", "Text", "no_submission", "quiz-xyz"] {
+    for bad in ["form", "", "Text", "No_Submission", "quiz-xyz"] {
         let response = post(
             &w.http,
             &w.owner.token,
@@ -2258,6 +2258,174 @@ async fn unknown_types_and_config_fields_are_422(pool: PgPool) {
     )
     .await
     .problem(422);
+}
+
+fn no_submission_request(title: &str, assignment: Value) -> Value {
+    let mut assignment = assignment;
+    assignment["type"] = json!("no_submission");
+    json!({"kind": "assignment", "title": title, "assignment": assignment})
+}
+
+#[sqlx::test(migrator = "server::app::MIGRATOR")]
+async fn a_no_submission_assignment_is_created_like_a_text_one(pool: PgPool) {
+    let w = world(pool).await;
+    let m = module(&w, "M", None).await;
+    let path = format!("/modules/{m}/items");
+
+    let oral = created(
+        &post(
+            &w.http,
+            &w.owner.token,
+            &path,
+            no_submission_request("Oral answers", json!({"max_points": "12"})),
+        )
+        .await,
+    );
+    assert_eq!(oral["kind"], "assignment");
+    assert_eq!(oral["status"], "draft");
+    assert_eq!(
+        oral["assignment"],
+        json!({"type": "no_submission", "config": {}, "max_points": "12.00", "is_bonus": false})
+    );
+    let fetched = item_json(&w, id_of(&oral)).await;
+    assert_eq!(fetched["assignment"], oral["assignment"]);
+    let seen = tree(&w, &w.owner.token).await;
+    assert_eq!(
+        top(&seen, "M")["items"][0]["assignment"],
+        json!({"type": "no_submission", "max_points": "12.00", "is_bonus": false})
+    );
+
+    // An empty config is the type's config; any field is a mistake on `config`, and the value is
+    // not echoed.
+    let with_empty = created(
+        &post(
+            &w.http,
+            &w.owner.token,
+            &path,
+            no_submission_request("B", json!({"max_points": "5", "config": {}})),
+        )
+        .await,
+    );
+    assert_eq!(with_empty["assignment"]["config"], json!({}));
+    let response = post(
+        &w.http,
+        &w.owner.token,
+        &path,
+        no_submission_request("C", json!({"max_points": "5", "config": {"secret-key": 3}})),
+    )
+    .await;
+    assert_eq!(error_fields(&response), ["assignment.config"]);
+    assert_eq!(
+        top(&tree(&w, &w.owner.token).await, "M")["items"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2
+    );
+
+    // The type cannot change afterwards, and a patch of its config follows the same rule.
+    let id = id_of(&oral);
+    let response = patch_item(&w, id, json!({"config": {"limit": 1}})).await;
+    assert_eq!(error_fields(&response), ["config"]);
+    let patched = ok(&patch_item(&w, id, json!({"max_points": "8.5", "config": {}})).await);
+    assert_eq!(patched["assignment"]["type"], "no_submission");
+    assert_eq!(patched["assignment"]["max_points"], "8.50");
+}
+
+#[sqlx::test(migrator = "server::app::MIGRATOR")]
+async fn no_submission_assignments_follow_the_points_rules_of_the_scale(pool: PgPool) {
+    let w = world(pool).await;
+    let m = module(&w, "M", None).await;
+    let path = format!("/modules/{m}/items");
+    let make = |points: &str, is_bonus: bool| {
+        no_submission_request("N", json!({"max_points": points, "is_bonus": is_bonus}))
+    };
+
+    created(&post(&w.http, &w.owner.token, &path, make("60", false)).await);
+    // A second regular 60 exceeds the hundred points of the course; the type changes nothing.
+    let response = post(&w.http, &w.owner.token, &path, make("60", false)).await;
+    assert_eq!(error_fields(&response), ["assignment.max_points"]);
+    assert!(message_of(&response).contains("40.00 are still free"));
+    // Bonus points are outside that sum, and 0 and a JSON number are invalid points.
+    created(&post(&w.http, &w.owner.token, &path, make("60", true)).await);
+    for bad in [json!("0"), json!(5), json!("1.005"), json!("")] {
+        let response = post(
+            &w.http,
+            &w.owner.token,
+            &path,
+            no_submission_request("N", json!({"max_points": bad})),
+        )
+        .await;
+        assert_eq!(error_fields(&response), ["assignment.max_points"], "{bad}");
+    }
+}
+
+#[sqlx::test(migrator = "server::app::MIGRATOR")]
+async fn no_submission_assignments_on_the_twelve_scale_are_worth_at_most_twelve(pool: PgPool) {
+    let w = world_with(pool, GradingScale::Twelve).await;
+    let m = module(&w, "M", None).await;
+    let path = format!("/modules/{m}/items");
+
+    created(
+        &post(
+            &w.http,
+            &w.owner.token,
+            &path,
+            no_submission_request("N", json!({"max_points": "12"})),
+        )
+        .await,
+    );
+    let response = post(
+        &w.http,
+        &w.owner.token,
+        &path,
+        no_submission_request("N", json!({"max_points": "12.01"})),
+    )
+    .await;
+    assert_eq!(error_fields(&response), ["assignment.max_points"]);
+}
+
+#[sqlx::test(migrator = "server::app::MIGRATOR")]
+async fn students_see_a_no_submission_item_under_the_ordinary_publication_rules(pool: PgPool) {
+    let w = world(pool).await;
+    let m = module(&w, "M", None).await;
+    let oral = id_of(&created(
+        &post(
+            &w.http,
+            &w.owner.token,
+            &format!("/modules/{m}/items"),
+            no_submission_request("Oral", json!({"max_points": "10"})),
+        )
+        .await,
+    ));
+
+    // A draft item in a draft module is hidden from the student, in the tree and by id.
+    assert_eq!(
+        get(&w.http, &w.student.token, &format!("/items/{oral}"))
+            .await
+            .status,
+        404
+    );
+    assert_eq!(tree(&w, &w.student.token).await["modules"], json!([]));
+
+    publish_module(&w, m, false).await;
+    // The module is open, the item is still a draft.
+    assert_eq!(
+        get(&w.http, &w.student.token, &format!("/items/{oral}"))
+            .await
+            .status,
+        404
+    );
+    assert_eq!(
+        top(&tree(&w, &w.student.token).await, "M")["items"],
+        json!([])
+    );
+
+    publish_item(&w, oral).await;
+    let seen = ok(&get(&w.http, &w.student.token, &format!("/items/{oral}")).await);
+    assert_eq!(seen["assignment"]["type"], "no_submission");
+    let listed = tree(&w, &w.student.token).await;
+    assert_eq!(titles(&top(&listed, "M")["items"]), ["Oral"]);
 }
 
 #[sqlx::test(migrator = "server::app::MIGRATOR")]

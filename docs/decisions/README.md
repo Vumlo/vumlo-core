@@ -60,3 +60,4 @@ What gets easier, what gets harder, what we must remember.
 | 0025 | [Block documents (the canvas): format, features, profiles, sandboxed HTML](0025-block-documents.md) |
 | 0026 | [Lessons and self-check questions](0026-lessons-and-questions.md) |
 | 0027 | [Document types live in api-types; video blocks store a provider and an id; an option is one block](0027-document-types-and-video-blocks.md) |
+| 0028 | [Gradebook: grades, publishing, read models](0028-gradebook-grades-publishing-read-models.md) |
