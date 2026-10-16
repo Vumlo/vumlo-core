@@ -1,14 +1,13 @@
 use std::fmt;
-use std::str::FromStr;
 
 use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use chrono::{DateTime, Duration, Utc};
 use rand::Rng;
 use sha2::{Digest, Sha256};
-use sqlx::Postgres;
-use sqlx::postgres::{PgTypeInfo, PgValueRef};
 use uuid::Uuid;
+
+use crate::text_enum::text_enum;
 
 pub const PASSWORD_MAX_LEN: usize = 128;
 const EMAIL_MAX_LEN: usize = 254;
@@ -29,47 +28,6 @@ pub enum ModelError {
     /// Human-readable reasons, the first being zxcvbn's warning when it has one.
     #[error("password rejected")]
     Password(Vec<String>),
-}
-
-macro_rules! text_enum {
-    ($name:ident { $($variant:ident => $text:literal),+ $(,)? }) => {
-        impl $name {
-            pub fn as_str(self) -> &'static str {
-                match self { $(Self::$variant => $text),+ }
-            }
-        }
-
-        impl FromStr for $name {
-            type Err = String;
-            fn from_str(s: &str) -> Result<Self, String> {
-                match s {
-                    $($text => Ok(Self::$variant),)+
-                    other => Err(format!(
-                        "unknown {} `{other}` (expected one of: {})",
-                        stringify!($name).to_lowercase(),
-                        [$($text),+].join(", ")
-                    )),
-                }
-            }
-        }
-
-        // Stored as `text` + CHECK (AGENTS §8), not as a Postgres ENUM.
-        impl sqlx::Type<Postgres> for $name {
-            fn type_info() -> PgTypeInfo {
-                <str as sqlx::Type<Postgres>>::type_info()
-            }
-            fn compatible(ty: &PgTypeInfo) -> bool {
-                <str as sqlx::Type<Postgres>>::compatible(ty)
-            }
-        }
-
-        impl<'r> sqlx::Decode<'r, Postgres> for $name {
-            fn decode(value: PgValueRef<'r>) -> Result<Self, sqlx::error::BoxDynError> {
-                let text = <&str as sqlx::Decode<Postgres>>::decode(value)?;
-                text.parse().map_err(Into::into)
-            }
-        }
-    };
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
