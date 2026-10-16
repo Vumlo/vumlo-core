@@ -3,7 +3,7 @@
 use sqlx::PgConnection;
 use uuid::Uuid;
 
-use super::model::AuditEntry;
+use super::model::{AuditEntry, Event};
 
 pub async fn insert_audit(
     conn: &mut PgConnection,
@@ -19,6 +19,19 @@ pub async fn insert_audit(
         entry.resource_type,
         entry.resource_id,
         entry.meta
+    )
+    .execute(conn)
+    .await?;
+    Ok(())
+}
+
+pub async fn insert_outbox(conn: &mut PgConnection, event: &Event) -> Result<(), sqlx::Error> {
+    sqlx::query!(
+        "INSERT INTO events.outbox (id, type, version, payload) VALUES ($1, $2, $3, $4)",
+        Uuid::now_v7(),
+        event.kind(),
+        event.version(),
+        event.payload()
     )
     .execute(conn)
     .await?;
@@ -81,5 +94,49 @@ mod tests {
         assert_eq!(row.resource_type, "course");
         assert_eq!(row.resource_id, resource_id);
         assert_eq!(row.meta, json!({"role": "teacher"}));
+    }
+
+    #[sqlx::test(migrator = "crate::app::MIGRATOR")]
+    async fn an_event_commits_and_rolls_back_with_its_transaction_and_holds_ids_only(
+        pool: sqlx::PgPool,
+    ) {
+        let event = Event::GradePublished {
+            assignment_id: Uuid::now_v7(),
+            student_id: Uuid::now_v7(),
+            course_id: Uuid::now_v7(),
+        };
+
+        let mut rolled_back = pool.begin().await.unwrap();
+        insert_outbox(&mut rolled_back, &event).await.unwrap();
+        rolled_back.rollback().await.unwrap();
+        let count = sqlx::query_scalar!(r#"SELECT count(*) AS "n!" FROM events.outbox"#)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(count, 0);
+
+        let mut tx = pool.begin().await.unwrap();
+        insert_outbox(&mut tx, &event).await.unwrap();
+        tx.commit().await.unwrap();
+        let row = sqlx::query!("SELECT type, version, payload, processed_at FROM events.outbox")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(row.r#type, "grade.published");
+        assert_eq!(row.version, 1);
+        assert!(row.processed_at.is_none());
+        let Event::GradePublished {
+            assignment_id,
+            student_id,
+            course_id,
+        } = event;
+        assert_eq!(
+            row.payload,
+            json!({
+                "assignment_id": assignment_id,
+                "student_id": student_id,
+                "course_id": course_id,
+            })
+        );
     }
 }
