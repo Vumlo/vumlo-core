@@ -20,7 +20,7 @@ use super::service::{self, GradebookError};
 use crate::actor::Actor;
 use crate::app::AppState;
 use crate::error::{ApiError, ValidJson, ValidQuery};
-use crate::identity::PageParams;
+use crate::pagination::PageParams;
 
 pub fn router() -> OpenApiRouter<AppState> {
     OpenApiRouter::new()
@@ -47,9 +47,17 @@ impl From<GradebookError> for ApiError {
             GradebookError::AssignmentNotFound
             | GradebookError::CourseNotFound
             | GradebookError::StudentNotFound => Self::NotFound,
-            GradebookError::StudentsNotInCourse => {
-                Self::invalid_field("students", error.to_string())
-            }
+            GradebookError::StudentsNotInCourse(positions) => Self::Unprocessable {
+                detail: "the request has invalid fields".to_owned(),
+                errors: positions
+                    .into_iter()
+                    .map(|position| api_types::FieldError {
+                        field: format!("students[{position}]"),
+                        message: "is not a current student of the course".to_owned(),
+                    })
+                    .collect(),
+            },
+            GradebookError::Teaching(e) => e.into(),
             GradebookError::HasGrades => Self::Conflict("this has grades"),
             GradebookError::Events(e) => {
                 tracing::error!(error = %e, "gradebook: outbox or audit log error");

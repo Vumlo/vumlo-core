@@ -5,8 +5,11 @@
 //! id, an id in a course they cannot see and a draft they may not open give the same error. Only
 //! after that does the action decide between going ahead and 403.
 //!
-//! `gradebook` calls no function of `content`, `teaching` or `identity` (ADR-0028): their tables
-//! are read in `repo` with JOINs, and the actor's course access is built here from one such read.
+//! `gradebook` calls no other module's Rust code except the read-only course-access function of
+//! `teaching` (ADR-0028, ADR-0030): the tables of `content`, `teaching` and `identity` are read in
+//! `repo` with JOINs.
+
+use std::collections::{HashMap, HashSet};
 
 use chrono::Utc;
 use serde_json::json;
@@ -21,9 +24,9 @@ use super::model::{
 use super::repo::{self, AssignmentContext};
 use crate::actor::Actor;
 use crate::events::{self, AuditEntry, Event, EventsError};
-// Pagination is shared infrastructure of ADR-0018, not behavior of `identity`.
-use crate::identity::{Page, PageParams};
+use crate::pagination::{Page, PageParams};
 use crate::policy::{self, Action, CourseAccess, PolicyError};
+use crate::teaching::{self, TeachingError};
 
 #[derive(Debug, thiserror::Error)]
 pub enum GradebookError {
@@ -41,35 +44,32 @@ pub enum GradebookError {
     /// The student is not a current student member of the course.
     #[error("student not found")]
     StudentNotFound,
-    #[error("every listed student must be a current student of the course")]
-    StudentsNotInCourse,
+    /// The positions, in the request, of the listed students who are not current students.
+    #[error("not a current student of the course")]
+    StudentsNotInCourse(Vec<usize>),
     /// A purge found grades with a value: the caller had to refuse the delete instead.
     #[error("there are grades")]
     HasGrades,
+    #[error(transparent)]
+    Teaching(TeachingError),
     #[error(transparent)]
     Events(#[from] EventsError),
     #[error(transparent)]
     Db(#[from] sqlx::Error),
 }
 
-/// How `actor` relates to the course, read here because `gradebook` calls nothing in `teaching`.
-/// A course the actor may not view is `CourseNotFound`.
+/// How `actor` relates to the course. A course the actor may not view is `CourseNotFound`.
 async fn course_access(
     conn: &mut PgConnection,
     actor: &Actor,
     course_id: Uuid,
 ) -> Result<CourseAccess, GradebookError> {
-    let course = repo::find_course(conn, course_id, actor.user_id())
-        .await?
-        .ok_or(GradebookError::CourseNotFound)?;
-    let access = CourseAccess {
-        role: course.role,
-        is_owner: course.owner_id == actor.user_id(),
-        status: course.status,
-    };
-    policy::authorize(actor, Action::ViewCourse(access))
-        .map_err(|_| GradebookError::CourseNotFound)?;
-    Ok(access)
+    teaching::course_access(conn, actor, course_id)
+        .await
+        .map_err(|error| match error {
+            TeachingError::CourseNotFound => GradebookError::CourseNotFound,
+            other => GradebookError::Teaching(other),
+        })
 }
 
 /// Loads an assignment the actor may view, with their access to its course.
@@ -236,12 +236,21 @@ pub async fn publish_grades(
     let only = match students {
         Students::All => None,
         Students::Listed(mut ids) => {
+            let members: HashSet<Uuid> = repo::student_members_among(conn, context.course_id, &ids)
+                .await?
+                .into_iter()
+                .collect();
+            let outside: Vec<usize> = ids
+                .iter()
+                .enumerate()
+                .filter(|(_, id)| !members.contains(id))
+                .map(|(position, _)| position)
+                .collect();
+            if !outside.is_empty() {
+                return Err(GradebookError::StudentsNotInCourse(outside));
+            }
             ids.sort_unstable();
             ids.dedup();
-            let members = repo::student_members_among(conn, context.course_id, &ids).await?;
-            if members.len() != ids.len() {
-                return Err(GradebookError::StudentsNotInCourse);
-            }
             Some(ids)
         }
     };
@@ -306,7 +315,12 @@ pub async fn gradebook(
         .iter()
         .map(|student| student.user_id)
         .collect();
-    let mut cells = repo::cells(conn, course_id, &ids).await?;
+    // One map for the whole page, so each cell is found by its key instead of by a search.
+    let mut cells: HashMap<(Uuid, Uuid), Cell> = repo::cells(conn, course_id, &ids)
+        .await?
+        .into_iter()
+        .map(|row| ((row.student_id, row.assignment_id), row.cell))
+        .collect();
     let rows = students
         .items
         .into_iter()
@@ -315,12 +329,8 @@ pub async fn gradebook(
             let own: Vec<(Uuid, Cell)> = columns
                 .iter()
                 .filter_map(|column| {
-                    let at = cells.iter().position(|cell| {
-                        cell.student_id == student.user_id
-                            && cell.assignment_id == column.assignment_id
-                    })?;
-                    let row = cells.swap_remove(at);
-                    Some((row.assignment_id, row.cell))
+                    let cell = cells.remove(&(student.user_id, column.assignment_id))?;
+                    Some((column.assignment_id, cell))
                 })
                 .collect();
             GradebookRow {
@@ -454,6 +464,7 @@ mod tests {
         ItemRules, MaxPoints,
     };
     use crate::identity::{self, Email, NewUser, PersonName, Role};
+    use crate::pagination::PageParams;
     use crate::policy::CourseRole;
     use crate::settings::GradingScale;
     use crate::teaching::{self, CourseTitle};
@@ -470,12 +481,18 @@ mod tests {
     struct Fixture {
         pool: PgPool,
         owner: Actor,
+        course: Uuid,
         student: Uuid,
         assignment: Uuid,
     }
 
     /// A course with a teacher, a student and one assignment worth 10 points.
     async fn fixture(pool: PgPool) -> Fixture {
+        fixture_worth(pool, "10").await
+    }
+
+    /// The same, with an assignment worth `points`.
+    async fn fixture_worth(pool: PgPool, points: &str) -> Fixture {
         let hash = identity::hash_password("irrelevant").await.unwrap();
         let mut tx = pool.begin().await.unwrap();
         let mut create = async |email: &str, role: Role| {
@@ -527,7 +544,7 @@ mod tests {
             Some(Assignment {
                 assignment_type: BuiltinType::Text,
                 config: Map::new(),
-                max_points: MaxPoints::parse("10").unwrap(),
+                max_points: MaxPoints::parse(points).unwrap(),
                 is_bonus: false,
             }),
         )
@@ -537,6 +554,7 @@ mod tests {
         Fixture {
             pool,
             owner,
+            course: course.id,
             student: student_user.id,
             assignment: item.id,
         }
@@ -610,6 +628,85 @@ mod tests {
                 }
                 result
             })
+        }
+
+        /// Publishes every student's draft in its own transaction on a task and commits when it
+        /// succeeds.
+        fn publish_in_background(
+            &self,
+        ) -> tokio::task::JoinHandle<Result<Vec<Uuid>, GradebookError>> {
+            let (pool, owner, assignment) =
+                (self.pool.clone(), self.owner.clone(), self.assignment);
+            tokio::spawn(async move {
+                let mut tx = pool.begin().await.unwrap();
+                let result = publish_grades(&mut tx, &owner, assignment, Students::All).await;
+                if result.is_ok() {
+                    tx.commit().await.unwrap();
+                }
+                result
+            })
+        }
+
+        /// Saves a draft score in a transaction that is committed at once.
+        async fn save_committed(&self, text: &'static str) {
+            let mut tx = self.pool.begin().await.unwrap();
+            save_grade(
+                &mut tx,
+                &self.owner,
+                self.assignment,
+                self.student,
+                score(text),
+            )
+            .await
+            .unwrap();
+            tx.commit().await.unwrap();
+        }
+
+        /// The cell as stored: draft score, published score, and whether it was never published.
+        async fn stored(&self) -> (Option<String>, Option<String>, bool) {
+            sqlx::query_as::<_, (Option<String>, Option<String>, bool)>(
+                "SELECT draft_score::text, published_score::text, published_at IS NULL
+                 FROM gradebook.grades WHERE assignment_id = $1",
+            )
+            .bind(self.assignment)
+            .fetch_one(&self.pool)
+            .await
+            .unwrap()
+        }
+
+        /// The history of the cell, oldest first: the action and the score after it.
+        async fn history(&self) -> Vec<(String, Option<String>)> {
+            sqlx::query_as::<_, (String, Option<String>)>(
+                "SELECT action, score::text FROM gradebook.grade_history
+                 WHERE assignment_id = $1 ORDER BY at, id",
+            )
+            .bind(self.assignment)
+            .fetch_all(&self.pool)
+            .await
+            .unwrap()
+        }
+
+        async fn published_events(&self) -> i64 {
+            sqlx::query_scalar::<_, i64>(
+                "SELECT count(*) FROM events.outbox WHERE type = 'grade.published'",
+            )
+            .fetch_one(&self.pool)
+            .await
+            .unwrap()
+        }
+
+        /// What the staff gradebook says about the student's only cell.
+        async fn has_unpublished_changes(&self) -> bool {
+            let mut conn = self.pool.acquire().await.unwrap();
+            let page = gradebook(
+                &mut conn,
+                &self.owner,
+                self.course,
+                PageParams::new(None, None).unwrap(),
+            )
+            .await
+            .unwrap();
+            page.rows[0].cells[0].1.has_unpublished_changes
         }
 
         async fn count(&self, sql: &'static str) -> i64 {
@@ -761,5 +858,115 @@ mod tests {
                 .await,
             0
         );
+    }
+
+    fn history_of(rows: &[(&str, Option<&str>)]) -> Vec<(String, Option<String>)> {
+        rows.iter()
+            .map(|(action, score)| ((*action).to_owned(), score.map(str::to_owned)))
+            .collect()
+    }
+
+    /// The draft is saved (10) and committed. Another save (15) is in flight and holds the cell
+    /// when a publish starts. The publish must wait for it and copy the draft as it is after the
+    /// wait: 15, not the 10 it could have read before. Without that, the student would be shown
+    /// a grade that no longer is the teacher's draft, while the history and the event say 15.
+    #[sqlx::test(migrator = "crate::app::MIGRATOR")]
+    async fn a_publish_waits_for_a_draft_save_and_copies_the_draft_as_it_is_after_the_wait(
+        pool: PgPool,
+    ) {
+        let f = fixture_worth(pool, "20").await;
+        f.save_committed("10").await;
+
+        let mut holder = f.pool.begin().await.unwrap();
+        save_grade(&mut holder, &f.owner, f.assignment, f.student, score("15"))
+            .await
+            .unwrap();
+        let publish = f.publish_in_background();
+        wait_until_blocked(&f.pool, &publish).await;
+        holder.commit().await.unwrap();
+
+        assert_eq!(publish.await.unwrap().unwrap(), [f.student]);
+        let (draft, published, never_published) = f.stored().await;
+        assert_eq!(draft.as_deref(), Some("15.00"));
+        assert_eq!(published.as_deref(), Some("15.00"));
+        assert!(!never_published);
+        assert_eq!(
+            f.history().await,
+            history_of(&[
+                ("save_draft", Some("10.00")),
+                ("save_draft", Some("15.00")),
+                ("publish", Some("15.00")),
+            ])
+        );
+        assert_eq!(f.published_events().await, 1);
+    }
+
+    /// Same start, but the save in flight clears the draft. After the wait there is nothing to
+    /// publish for that row: no student is returned, nothing is published, nothing is logged as a
+    /// publish and no event is emitted.
+    #[sqlx::test(migrator = "crate::app::MIGRATOR")]
+    async fn a_publish_waits_for_a_clearing_save_and_then_has_nothing_to_publish(pool: PgPool) {
+        let f = fixture(pool).await;
+        f.save_committed("10").await;
+
+        let mut holder = f.pool.begin().await.unwrap();
+        save_grade(
+            &mut holder,
+            &f.owner,
+            f.assignment,
+            f.student,
+            GradeInput {
+                score: None,
+                feedback: None,
+            },
+        )
+        .await
+        .unwrap();
+        let publish = f.publish_in_background();
+        wait_until_blocked(&f.pool, &publish).await;
+        holder.commit().await.unwrap();
+
+        assert!(publish.await.unwrap().unwrap().is_empty());
+        let (draft, published, never_published) = f.stored().await;
+        assert_eq!((draft, published), (None, None));
+        assert!(never_published, "the row was not published");
+        assert_eq!(
+            f.history().await,
+            history_of(&[("save_draft", Some("10.00")), ("save_draft", None)])
+        );
+        assert_eq!(f.published_events().await, 0);
+    }
+
+    /// The opposite order: a publish has copied the draft (10) and holds the cell. A save of 15
+    /// starts and must wait for it. Once the publish commits the save lands on top: the student
+    /// keeps the 10 that was published, the draft is 15 and the cell has unpublished changes.
+    #[sqlx::test(migrator = "crate::app::MIGRATOR")]
+    async fn a_draft_save_waits_for_a_publish_and_lands_on_top_of_it(pool: PgPool) {
+        let f = fixture_worth(pool, "20").await;
+        f.save_committed("10").await;
+
+        let mut holder = f.pool.begin().await.unwrap();
+        let published = publish_grades(&mut holder, &f.owner, f.assignment, Students::All)
+            .await
+            .unwrap();
+        assert_eq!(published, [f.student]);
+        let save = f.save_in_background("15");
+        wait_until_blocked(&f.pool, &save).await;
+        holder.commit().await.unwrap();
+
+        save.await.unwrap().unwrap();
+        let (draft, published, _) = f.stored().await;
+        assert_eq!(draft.as_deref(), Some("15.00"));
+        assert_eq!(published.as_deref(), Some("10.00"));
+        assert!(f.has_unpublished_changes().await);
+        assert_eq!(
+            f.history().await,
+            history_of(&[
+                ("save_draft", Some("10.00")),
+                ("publish", Some("10.00")),
+                ("save_draft", Some("15.00")),
+            ])
+        );
+        assert_eq!(f.published_events().await, 1);
     }
 }

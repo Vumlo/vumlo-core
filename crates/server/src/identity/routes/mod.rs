@@ -140,7 +140,6 @@ impl From<super::model::ModelError> for ApiError {
             ModelError::Email => Self::invalid_field("email", error.to_string()),
             ModelError::Name => Self::invalid_field("name", error.to_string()),
             ModelError::Surname => Self::invalid_field("surname", error.to_string()),
-            ModelError::Cursor => Self::invalid_field("cursor", error.to_string()),
             ModelError::Password(reasons) => Self::Unprocessable {
                 detail: "the password does not meet the policy".to_owned(),
                 errors: reasons

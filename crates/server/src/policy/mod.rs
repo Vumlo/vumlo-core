@@ -6,7 +6,7 @@ use crate::actor::Actor;
 use crate::identity::Role;
 use crate::text_enum::text_enum;
 
-/// A user's role inside one course (`teaching.memberships.role`). The owner is a `Teacher`
+/// The user's role in the course. The owner is a `Teacher`
 /// whose course has `owner_id` set to them; that fact travels in [`CourseAccess::is_owner`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CourseRole {

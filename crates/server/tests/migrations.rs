@@ -914,3 +914,96 @@ async fn the_grade_history_is_append_only(pool: PgPool) {
     .unwrap();
     assert_eq!(deleted.rows_affected(), 2);
 }
+
+// --- migration 12: the effective_members view ---------------------------------------------------
+
+async fn effective_members(pool: &PgPool) -> Vec<(uuid::Uuid, uuid::Uuid, String)> {
+    let mut rows: Vec<_> =
+        sqlx::query!("SELECT course_id, user_id, role FROM teaching.effective_members")
+            .fetch_all(pool)
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|r| (r.course_id.unwrap(), r.user_id.unwrap(), r.role.unwrap()))
+            .collect();
+    rows.sort();
+    rows
+}
+
+async fn memberships(pool: &PgPool) -> Vec<(uuid::Uuid, uuid::Uuid, String)> {
+    let mut rows: Vec<_> =
+        sqlx::query!("SELECT course_id, user_id, role FROM teaching.memberships")
+            .fetch_all(pool)
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|r| (r.course_id, r.user_id, r.role))
+            .collect();
+    rows.sort();
+    rows
+}
+
+#[sqlx::test(migrator = "server::app::MIGRATOR")]
+async fn effective_members_are_exactly_the_memberships_for_now(pool: PgPool) {
+    let exists = sqlx::query_scalar!(
+        r#"SELECT count(*) AS "n!" FROM information_schema.views
+           WHERE table_schema = 'teaching' AND table_name = 'effective_members'"#
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(exists, 1, "a view, not a table");
+    assert!(effective_members(&pool).await.is_empty());
+
+    let teacher = owner(&pool, "t@x.edu").await;
+    let assistant = owner(&pool, "a@x.edu").await;
+    let student = owner(&pool, "s@x.edu").await;
+    let other_student = owner(&pool, "o@x.edu").await;
+    let course = insert_course(&pool, teacher).await;
+    let other_course = insert_course(&pool, teacher).await;
+    let add = |course: uuid::Uuid, user: uuid::Uuid, role: &'static str| {
+        let pool = pool.clone();
+        async move {
+            sqlx::query!(
+                "INSERT INTO teaching.memberships (course_id, user_id, role) VALUES ($1, $2, $3)",
+                course,
+                user,
+                role
+            )
+            .execute(&pool)
+            .await
+            .unwrap();
+        }
+    };
+    add(course, teacher, "teacher").await;
+    add(course, assistant, "assistant").await;
+    add(course, student, "student").await;
+    add(other_course, student, "student").await;
+    add(other_course, other_student, "student").await;
+
+    let seen = effective_members(&pool).await;
+    assert_eq!(seen.len(), 5, "every role, every course");
+    assert_eq!(seen, memberships(&pool).await);
+
+    // It follows the table: a role change and a removal show at once.
+    sqlx::query!(
+        "UPDATE teaching.memberships SET role = 'assistant' WHERE course_id = $1 AND user_id = $2",
+        other_course,
+        other_student
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query!(
+        "DELETE FROM teaching.memberships WHERE course_id = $1 AND user_id = $2",
+        course,
+        student
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    let seen = effective_members(&pool).await;
+    assert_eq!(seen.len(), 4);
+    assert_eq!(seen, memberships(&pool).await);
+    assert!(seen.contains(&(other_course, other_student, "assistant".to_owned())));
+}

@@ -62,3 +62,4 @@ What gets easier, what gets harder, what we must remember.
 | 0027 | [Document types live in api-types; video blocks store a provider and an id; an option is one block](0027-document-types-and-video-blocks.md) |
 | 0028 | [Gradebook: grades, publishing, read models](0028-gradebook-grades-publishing-read-models.md) |
 | 0029 | [A user has a name and a surname](0029-user-name-and-surname.md) |
+| 0030 | [The assignment-row lock covers deletes; the gradebook may ask teaching for course access](0030-gradebook-lock-covers-deletes-and-course-access.md) |

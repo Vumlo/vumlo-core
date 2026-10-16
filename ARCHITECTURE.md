@@ -127,6 +127,7 @@ teaching
   course_groups    course_id, group_id, subgroup_id?   -- live link; no subgroup = whole group
   memberships      course_id, user_id, role: teacher | assistant | student
   effective_members (VIEW) = memberships ∪ students of linked groups / subgroups
+                   -- built (task 012b): course_id, user_id, role = the direct memberships for now
   course_subgroups        id, course_id, name           -- lab group 1/2; course-local, flat
   course_subgroup_members course_subgroup_id, user_id
 
@@ -171,7 +172,7 @@ events
 Key points:
 
 - **One `courses` table for courses and templates** ([ADR-0005](docs/decisions/0005-courses-and-templates.md)). Creating from a template or saving as a template is a deep copy. Content is never shared live.
-- **`effective_members` is a view, not a sync job** ([ADR-0006](docs/decisions/0006-groups-and-membership.md)). A student who leaves a group disappears from the course automatically, and their grades stay because grades are keyed by `user_id`.
+- **`effective_members` is a view, not a sync job** ([ADR-0006](docs/decisions/0006-groups-and-membership.md)). A student who leaves a group disappears from the course automatically, and their grades stay because grades are keyed by `user_id`. The view is `teaching`'s declared read interface for who takes part in a course, with the columns `course_id`, `user_id` and `role`: other modules read it and never `teaching.memberships` (`crates/server/tests/architecture.rs` checks this). Today it is the direct memberships.
 - **Every content row carries `course_id`** ([ADR-0020](docs/decisions/0020-content-tree.md)), kept consistent with its parent by composite foreign keys, so a content row reaches its course without joins. Positions are dense integers per sibling sequence (the top-level modules of a course, the sub-modules of a module, the items of a module), unique under deferred constraints; a reorder sends the whole list.
 - **The gradebook is a separate module, not a separate tree** ([ADR-0015](docs/decisions/0015-gradebook-module.md), [ADR-0009](docs/decisions/0009-grading-and-gradebook.md)). Every gradebook column is an assignment in the course tree. "+ column" in the gradebook creates an assignment of type `no_submission` in a chosen module. Column order = course tree order.
 
@@ -204,7 +205,7 @@ Key points:
 
 ## Authorization
 
-`policy::authorize(&Actor, Action)` decides every check. The resource an action needs travels inside its `Action` variant, so course-level actions can be added without changing existing callers. Today: `ManageOwnAccount` (any role), `ManageUsers` (admin only), the course actions `CreateCourse`, `ViewOwnCourses`, `ViewCourse`, `PublishCourse`, `ManageMembership`, `DeleteCourse` and `TransferOwnership`, the content actions `ManageContent` and `ViewContent`, `ViewEditorProfiles` (any role), and the gradebook actions `GradeAssignment`, `PublishGrades` and `ViewGradebook` (staff and admins, any course status) and `ViewOwnGrades` (only a student of a published course; staff and admins read the gradebook instead). A course action carries a `CourseAccess` (the actor's course role, whether they own it, and its status), which `teaching` reads from the database; `content` gets it through `teaching::course_access`, and `gradebook`, which calls no function of another module, reads the same facts with its own query. `ManageContent` covers viewing drafts, editing and publishing content for staff and admins and ignores the course status, so the content of an archived course stays editable until archiving gets its own ADR. `ViewContent` carries the release state of every row on the path to the target and the evaluation time, because `policy` has no clock. The delete and transfer actions have no endpoint yet.
+`policy::authorize(&Actor, Action)` decides every check. The resource an action needs travels inside its `Action` variant, so course-level actions can be added without changing existing callers. Today: `ManageOwnAccount` (any role), `ManageUsers` (admin only), the course actions `CreateCourse`, `ViewOwnCourses`, `ViewCourse`, `PublishCourse`, `ManageMembership`, `DeleteCourse` and `TransferOwnership`, the content actions `ManageContent` and `ViewContent`, `ViewEditorProfiles` (any role), and the gradebook actions `GradeAssignment`, `PublishGrades` and `ViewGradebook` (staff and admins, any course status) and `ViewOwnGrades` (only a student of a published course; staff and admins read the gradebook instead). A course action carries a `CourseAccess` (the actor's course role, whether they own it, and its status), which `teaching` reads from the database; `content` and `gradebook` get it through `teaching::course_access`, the one read function of another module that `gradebook` may call ([ADR-0030](docs/decisions/0030-gradebook-lock-covers-deletes-and-course-access.md)). `ManageContent` covers viewing drafts, editing and publishing content for staff and admins and ignores the course status, so the content of an archived course stays editable until archiving gets its own ADR. `ViewContent` carries the release state of every row on the path to the target and the evaluation time, because `policy` has no clock. The delete and transfer actions have no endpoint yet.
 
 There are two levels of roles ([ADR-0004](docs/decisions/0004-roles-and-policy.md)).
 
@@ -250,7 +251,7 @@ Invariants:
 ## Key flows
 
 **Grades and publishing** ([ADR-0009](docs/decisions/0009-grading-and-gradebook.md), [ADR-0028](docs/decisions/0028-gradebook-grades-publishing-read-models.md))
-Grading writes only `draft_*`: `PUT /assignments/{id}/grades/{student_id}` replaces the draft cell (`score` a decimal string from 0 to the assignment's `max_points`, or `null`; `feedback` plain text or `null`), appends to `grade_history` and emits nothing. "Publish" (`POST /assignments/{id}/grades/publish`, body `{"students": "all"}` or a list, required) runs in one transaction: for every current student whose draft differs from the published value it copies `draft_*` → `published_*`, appends to `grade_history`, and emits one `grade.published` event per student whose published value became non-empty. Publishing an empty draft over a published grade retracts it and emits no event. Editing a published grade changes only the draft; the student keeps seeing the old grade until the next publish. A grade write and a change of `max_points` or a delete on the same assignment are serialized through the assignment row in `content.assignments` (the grade write holds it `FOR SHARE`, the others `FOR UPDATE`).
+Grading writes only `draft_*`: `PUT /assignments/{id}/grades/{student_id}` replaces the draft cell (`score` a decimal string from 0 to the assignment's `max_points`, or `null`; `feedback` plain text or `null`), appends to `grade_history` and emits nothing. "Publish" (`POST /assignments/{id}/grades/publish`, body `{"students": "all"}` or a list, required) runs in one transaction: for every current student whose draft differs from the published value it copies `draft_*` → `published_*`, appends to `grade_history`, and emits one `grade.published` event per student whose published value became non-empty. Publishing an empty draft over a published grade retracts it and emits no event. Editing a published grade changes only the draft; the student keeps seeing the old grade until the next publish. A grade write and a change of `max_points` or a delete on the same assignment are serialized through the assignment row in `content.assignments` (the grade write holds it `FOR SHARE`, the others `FOR UPDATE`, [ADR-0030](docs/decisions/0030-gradebook-lock-covers-deletes-and-course-access.md)).
 
 Lowering `max_points` below a score already given, and deleting an assignment, a module or a course that holds a grade with a value, are 409; rows with no value are purged with their history by the delete. There is no course delete yet: it must call `gradebook::has_grades_in_course` and `purge_course`.
 
@@ -263,7 +264,7 @@ The gradebook endpoints (tag `gradebook`):
 | `GET /courses/{id}/gradebook` | staff and admins: columns (every assignment in tree order, drafts included) and the current students as rows by surname, name and id, paged by student, with both slots and `has_unpublished_changes` per cell |
 | `GET /courses/{id}/my-grades` | students only: published values for assignments visible now, no draft field |
 
-The roster is the direct student memberships until `effective_members` exists (ADR-0006).
+A cell exists only where a grade row exists; every cell carries its `assignment_id`, and a missing cell means "no grade". The roster is the students in the view `teaching.effective_members` (see Known limits).
 
 **Publishing a module** ([ADR-0010](docs/decisions/0010-content-publishing.md))
 `POST /modules/{id}/publish { "cascade": true | false }`. The parameter is required and has no default. The web UI asks in a dialog; the CLI and mobile app must choose explicitly. `cascade: true` also publishes the module's sub-modules and every draft item below them, in one transaction. Publishing is idempotent and never changes `publish_at`.
@@ -296,6 +297,13 @@ A state change and its event are written in the same transaction. A worker (a to
 `school` or `university`, set in the config file. The mode changes **terminology** (course/subject, module/topic), **the default grading scale** ([ADR-0022](docs/decisions/0022-grading-scale-setting.md)) and **dashboard layout**. It does not change the schema.
 
 Examples: in a school, the template "Algebra 7" becomes courses "Algebra 7-A" and "Algebra 7-B", each linked to its class group. In a university, the template "Databases" becomes "Databases, Fall 2026", linked to one or more academic groups.
+
+## Known limits
+
+- **Rights are checked before the row lock.** `gradebook` and `content` authorize first and lock the assignment row after, so a role taken away in the same instant can still write one grade. There is no course-level lock.
+- **Disabled students stay in the gradebook.** A disabled user who is a student of a course is still listed and graded; the user status is not filtered.
+- **`teaching.effective_members` is the direct memberships for now.** The gradebook reads the students of a course from this one view (four queries of `gradebook/repo.rs`). When groups arrive the view is redefined to add the students of linked groups and subgroups (ADR-0006), and the gradebook needs no change. The other readers of `teaching.memberships` that mean "is this user a student of the course" must then move to the view: in `teaching/repo.rs`, `find_course` (a student's role), `list_courses_of` and `list_members`. Teachers and assistants stay direct memberships. No module outside `teaching` reads the table directly.
+- **There is no course deletion yet.** When it is added it must lock the assignment rows of the course `FOR UPDATE`, then call `gradebook::has_grades_in_course` (409 if true) and `purge_course`, in one transaction. `teaching` then calls `gradebook` while `gradebook` calls `teaching`: a module-level cycle ([ADR-0030](docs/decisions/0030-gradebook-lock-covers-deletes-and-course-access.md)).
 
 ## Open questions
 

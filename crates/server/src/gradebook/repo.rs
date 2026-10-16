@@ -1,7 +1,7 @@
 //! SQL only. Every function takes the connection it runs on and never begins a transaction.
 //!
 //! `content`, `teaching` and `identity` tables are read here with plain JOINs and never written
-//! (ADR-0028). Student-facing reads select `published_*` columns only.
+//! (ADR-0028). The students of a course come from the view `teaching.effective_members`. Student-facing reads select `published_*` columns only.
 
 use chrono::{DateTime, Utc};
 use sqlx::PgConnection;
@@ -9,7 +9,7 @@ use sqlx::types::Decimal;
 use uuid::Uuid;
 
 use super::model::{Cell, Column, ColumnStatus, MyGrade};
-use crate::policy::{CourseRole, CourseStatus, Release};
+use crate::policy::Release;
 
 /// An assignment with the course it belongs to and the release state of every row on the path to
 /// it, which `policy` needs to decide whether a student may see it.
@@ -20,13 +20,6 @@ pub struct AssignmentContext {
     pub module: Release,
     /// That module's parent, when the module is a sub-module.
     pub parent: Option<Release>,
-}
-
-/// A course with the asking user's membership, which is all `policy` needs of it.
-pub struct CourseRow {
-    pub owner_id: Uuid,
-    pub status: CourseStatus,
-    pub role: Option<CourseRole>,
 }
 
 pub async fn find_assignment(
@@ -64,26 +57,6 @@ pub async fn find_assignment(
     }))
 }
 
-/// The course and `user_id`'s membership in it, read here because `gradebook` calls no function
-/// of `teaching` (ADR-0028).
-pub async fn find_course(
-    conn: &mut PgConnection,
-    course_id: Uuid,
-    user_id: Uuid,
-) -> Result<Option<CourseRow>, sqlx::Error> {
-    sqlx::query_as!(
-        CourseRow,
-        r#"SELECT c.owner_id, c.status AS "status: CourseStatus", m.role AS "role?: CourseRole"
-           FROM teaching.courses c
-           LEFT JOIN teaching.memberships m ON m.course_id = c.id AND m.user_id = $2
-           WHERE c.id = $1"#,
-        course_id,
-        user_id
-    )
-    .fetch_optional(conn)
-    .await
-}
-
 /// Takes a shared lock on the assignment row until the transaction ends and returns `max_points`
 /// as it is in that row. A change of `max_points` and a delete take the row `FOR UPDATE`, so they
 /// wait for this transaction and a grade written here is seen by their later checks. When this
@@ -108,7 +81,7 @@ pub async fn is_student_member(
     student_id: Uuid,
 ) -> Result<bool, sqlx::Error> {
     sqlx::query_scalar!(
-        r#"SELECT EXISTS (SELECT 1 FROM teaching.memberships
+        r#"SELECT EXISTS (SELECT 1 FROM teaching.effective_members
                           WHERE course_id = $1 AND user_id = $2 AND role = 'student') AS "member!""#,
         course_id,
         student_id
@@ -124,8 +97,9 @@ pub async fn student_members_among(
     student_ids: &[Uuid],
 ) -> Result<Vec<Uuid>, sqlx::Error> {
     sqlx::query_scalar!(
-        "SELECT user_id FROM teaching.memberships
-         WHERE course_id = $1 AND role = 'student' AND user_id = ANY($2)",
+        // A view's columns are inferred as nullable; `user_id` is not null in its definition.
+        r#"SELECT user_id AS "user_id!" FROM teaching.effective_members
+           WHERE course_id = $1 AND role = 'student' AND user_id = ANY($2)"#,
         course_id,
         student_ids
     )
@@ -206,7 +180,7 @@ pub async fn lock_publishable(
     sqlx::query_scalar!(
         r#"SELECT g.student_id
            FROM gradebook.grades g
-           JOIN teaching.memberships m
+           JOIN teaching.effective_members m
              ON m.course_id = $2 AND m.user_id = g.student_id AND m.role = 'student'
            WHERE g.assignment_id = $1
              AND ($3::uuid[] IS NULL OR g.student_id = ANY($3))
@@ -296,7 +270,7 @@ pub async fn students(
     sqlx::query_as!(
         StudentRow,
         r#"SELECT u.id AS user_id, u.name, u.surname
-           FROM teaching.memberships m
+           FROM teaching.effective_members m
            JOIN identity.users u ON u.id = m.user_id
            WHERE m.course_id = $1 AND m.role = 'student'
              AND ($2::uuid IS NULL

@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT EXISTS (SELECT 1 FROM teaching.memberships\n                          WHERE course_id = $1 AND user_id = $2 AND role = 'student') AS \"member!\"",
+  "query": "SELECT EXISTS (SELECT 1 FROM teaching.effective_members\n                          WHERE course_id = $1 AND user_id = $2 AND role = 'student') AS \"member!\"",
   "describe": {
     "columns": [
       {
@@ -20,5 +20,5 @@
       null
     ]
   },
-  "hash": "7908c3d708fa8f7de12098186ddfe6166f5ff67ece9365ba25462e0705d9c779"
+  "hash": "7be6369573f7f26c88bb7f5c62a3813ec30e6d6b89c9e1387d91fe5c7e6052a9"
 }
