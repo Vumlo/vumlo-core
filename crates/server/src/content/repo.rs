@@ -6,7 +6,12 @@ use sqlx::PgConnection;
 use sqlx::types::Json;
 use uuid::Uuid;
 
-use super::model::{Item, ItemKind, ItemStatus, ItemSummary, Module, ModuleStatus};
+use sqlx::types::Decimal;
+
+use super::model::{
+    Assignment, AssignmentSummary, BuiltinType, Item, ItemKind, ItemStatus, ItemSummary, MaxPoints,
+    Module, ModuleStatus,
+};
 use crate::policy::Release;
 
 type Body = Json<Map<String, Value>>;
@@ -57,9 +62,37 @@ impl From<RawItem> for Item {
             body: raw.body.0,
             status: raw.status,
             publish_at: raw.publish_at,
+            assignment: None,
             created_at: raw.created_at,
             updated_at: raw.updated_at,
         }
+    }
+}
+
+/// The columns of `content.assignments` as a LEFT JOIN returns them: all `None` for a lesson.
+struct JoinedAssignment {
+    assignment_type: Option<BuiltinType>,
+    config: Option<Body>,
+    max_points: Option<MaxPoints>,
+    is_bonus: Option<bool>,
+}
+
+impl JoinedAssignment {
+    fn full(self) -> Option<Assignment> {
+        Some(Assignment {
+            assignment_type: self.assignment_type?,
+            config: self.config?.0,
+            max_points: self.max_points?,
+            is_bonus: self.is_bonus?,
+        })
+    }
+
+    fn summary(self) -> Option<AssignmentSummary> {
+        Some(AssignmentSummary {
+            assignment_type: self.assignment_type?,
+            max_points: self.max_points?,
+            is_bonus: self.is_bonus?,
+        })
     }
 }
 
@@ -292,10 +325,14 @@ pub async fn find_item(conn: &mut PgConnection, id: Uuid) -> Result<Option<ItemR
                   i.body AS "body: Body", i.status AS "status: ItemStatus", i.publish_at,
                   i.created_at, i.updated_at,
                   m.status AS "module_status: ModuleStatus", m.publish_at AS module_publish_at,
-                  p.status AS "parent_status?: ModuleStatus", p.publish_at AS parent_publish_at
+                  p.status AS "parent_status?: ModuleStatus", p.publish_at AS parent_publish_at,
+                  a.type AS "assignment_type?: BuiltinType", a.config AS "assignment_config?: Body",
+                  a.max_points AS "assignment_max_points?: MaxPoints",
+                  a.is_bonus AS "assignment_is_bonus?"
            FROM content.items i
            JOIN content.modules m ON m.id = i.module_id
            LEFT JOIN content.modules p ON p.id = m.parent_id
+           LEFT JOIN content.assignments a ON a.item_id = i.id
            WHERE i.id = $1"#,
         id
     )
@@ -312,6 +349,13 @@ pub async fn find_item(conn: &mut PgConnection, id: Uuid) -> Result<Option<ItemR
             body: row.body.0,
             status: row.status,
             publish_at: row.publish_at,
+            assignment: JoinedAssignment {
+                assignment_type: row.assignment_type,
+                config: row.assignment_config,
+                max_points: row.assignment_max_points,
+                is_bonus: row.assignment_is_bonus,
+            }
+            .full(),
             created_at: row.created_at,
             updated_at: row.updated_at,
         },
@@ -426,13 +470,17 @@ pub async fn tree(
                   p.status AS "parent_status?: ModuleStatus", p.publish_at AS parent_publish_at,
                   i.id AS "item_id?", i.kind AS "item_kind?: ItemKind", i.title AS "item_title?",
                   i.status AS "item_status?: ItemStatus", i.publish_at AS item_publish_at,
-                  i.position AS "item_position?"
+                  i.position AS "item_position?",
+                  a.type AS "assignment_type?: BuiltinType",
+                  a.max_points AS "assignment_max_points?: MaxPoints",
+                  a.is_bonus AS "assignment_is_bonus?"
            FROM content.modules m
            LEFT JOIN content.modules p ON p.id = m.parent_id
            LEFT JOIN content.items i
                   ON i.module_id = m.id
                  AND ($2::timestamptz IS NULL
                       OR (i.status = 'published' AND (i.publish_at IS NULL OR i.publish_at <= $2)))
+           LEFT JOIN content.assignments a ON a.item_id = i.id
            WHERE m.course_id = $1
              AND ($2::timestamptz IS NULL
                   OR (m.status = 'published' AND (m.publish_at IS NULL OR m.publish_at <= $2)
@@ -467,9 +515,157 @@ pub async fn tree(
                     status,
                     publish_at: row.item_publish_at,
                     position: row.item_position.unwrap_or_default(),
+                    assignment: JoinedAssignment {
+                        assignment_type: row.assignment_type,
+                        config: None,
+                        max_points: row.assignment_max_points,
+                        is_bonus: row.assignment_is_bonus,
+                    }
+                    .summary(),
                 }),
                 _ => None,
             },
         })
         .collect())
+}
+
+// ---------------------------------------------------------------------------------------------
+// Assignments
+// ---------------------------------------------------------------------------------------------
+
+struct RawAssignment {
+    assignment_type: BuiltinType,
+    config: Body,
+    max_points: MaxPoints,
+    is_bonus: bool,
+}
+
+impl From<RawAssignment> for Assignment {
+    fn from(raw: RawAssignment) -> Self {
+        Self {
+            assignment_type: raw.assignment_type,
+            config: raw.config.0,
+            max_points: raw.max_points,
+            is_bonus: raw.is_bonus,
+        }
+    }
+}
+
+/// Adds the assignment row of an item of kind `assignment`. The database refuses any other item.
+pub async fn insert_assignment(
+    conn: &mut PgConnection,
+    item_id: Uuid,
+    assignment: &Assignment,
+) -> Result<Assignment, sqlx::Error> {
+    let raw = sqlx::query_as!(
+        RawAssignment,
+        r#"INSERT INTO content.assignments (item_id, type, config, max_points, is_bonus)
+           VALUES ($1, $2, $3, $4, $5)
+           RETURNING type AS "assignment_type: BuiltinType", config AS "config: Body",
+                     max_points AS "max_points: MaxPoints", is_bonus"#,
+        item_id,
+        assignment.assignment_type.as_str(),
+        Json(&assignment.config) as Json<&Map<String, Value>>,
+        assignment.max_points.value(),
+        assignment.is_bonus
+    )
+    .fetch_one(conn)
+    .await?;
+    Ok(raw.into())
+}
+
+pub async fn find_assignment(
+    conn: &mut PgConnection,
+    item_id: Uuid,
+) -> Result<Option<Assignment>, sqlx::Error> {
+    let raw = sqlx::query_as!(
+        RawAssignment,
+        r#"SELECT type AS "assignment_type: BuiltinType", config AS "config: Body",
+                  max_points AS "max_points: MaxPoints", is_bonus
+           FROM content.assignments WHERE item_id = $1"#,
+        item_id
+    )
+    .fetch_optional(conn)
+    .await?;
+    Ok(raw.map(Assignment::from))
+}
+
+/// Each field is kept when `None`.
+pub async fn update_assignment(
+    conn: &mut PgConnection,
+    item_id: Uuid,
+    config: Option<&Map<String, Value>>,
+    max_points: Option<MaxPoints>,
+    is_bonus: Option<bool>,
+) -> Result<Assignment, sqlx::Error> {
+    let raw = sqlx::query_as!(
+        RawAssignment,
+        r#"UPDATE content.assignments
+           SET config = COALESCE($2::jsonb, config),
+               max_points = COALESCE($3::numeric, max_points),
+               is_bonus = COALESCE($4::boolean, is_bonus),
+               updated_at = now()
+           WHERE item_id = $1
+           RETURNING type AS "assignment_type: BuiltinType", config AS "config: Body",
+                     max_points AS "max_points: MaxPoints", is_bonus"#,
+        item_id,
+        config.map(Json) as Option<Json<&Map<String, Value>>>,
+        max_points.map(MaxPoints::value),
+        is_bonus
+    )
+    .fetch_one(conn)
+    .await?;
+    Ok(raw.into())
+}
+
+/// Takes the transaction-scoped advisory lock that serializes writes to a course's points
+/// (ADR-0022), waiting for the holder to commit or roll back. It is released at the end of the
+/// transaction. The course id is hashed into the lock key; two courses that collide only wait for
+/// each other. Callers read the sum in a later statement, so READ COMMITTED sees the holder's rows.
+pub async fn lock_course_points(
+    conn: &mut PgConnection,
+    course_id: Uuid,
+) -> Result<(), sqlx::Error> {
+    sqlx::query!(
+        r#"SELECT pg_advisory_xact_lock(hashtextextended('content.points:' || $1::uuid::text, 0)) AS "locked!: ()""#,
+        course_id
+    )
+    .fetch_one(conn)
+    .await?;
+    Ok(())
+}
+
+/// The sum of `max_points` over the course's regular (not bonus) assignments, drafts included.
+/// `except` leaves one assignment out: the one being changed.
+pub async fn regular_points(
+    conn: &mut PgConnection,
+    course_id: Uuid,
+    except: Option<Uuid>,
+) -> Result<Decimal, sqlx::Error> {
+    sqlx::query_scalar!(
+        r#"SELECT COALESCE(sum(a.max_points), 0) AS "sum!"
+           FROM content.assignments a
+           JOIN content.items i ON i.id = a.item_id
+           WHERE i.course_id = $1 AND NOT a.is_bonus AND a.item_id IS DISTINCT FROM $2::uuid"#,
+        course_id,
+        except
+    )
+    .fetch_one(conn)
+    .await
+}
+
+/// How many sessions of this database wait for an advisory lock. Tests poll it to know that a
+/// writer is blocked behind another one, instead of sleeping and hoping.
+///
+/// A runtime query with a constant string: `cargo sqlx prepare` does not cover test-only code, so
+/// a `query!` here would be missing from `.sqlx/` (an exception to AGENTS §8).
+#[cfg(test)]
+pub async fn advisory_lock_waiters(conn: &mut PgConnection) -> Result<i64, sqlx::Error> {
+    sqlx::query_scalar::<_, i64>(
+        "SELECT count(*) FROM pg_locks
+         WHERE locktype = 'advisory' AND NOT granted
+           AND database = (SELECT oid FROM pg_database WHERE datname = current_database())",
+    )
+    .fetch_one(conn)
+    .await
 }

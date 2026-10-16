@@ -1,4 +1,5 @@
-//! The course content tree: modules, one level of sub-modules and lessons (ADR-0020).
+//! The course content tree: modules, one level of sub-modules, lessons and assignments
+//! (ADR-0020, ADR-0021).
 
 mod model;
 mod repo;
@@ -6,8 +7,9 @@ mod routes;
 mod service;
 
 pub use model::{
-    ContentModule, ContentSubModule, ContentTitle, Item, ItemKind, ItemPatch, ItemStatus,
-    ItemSummary, ModelError, Module, ModulePatch, ModuleStatus,
+    Assignment, AssignmentSummary, AssignmentType, BuiltinType, ContentModule, ContentSubModule,
+    ContentTitle, Item, ItemKind, ItemPatch, ItemStatus, ItemSummary, MaxPoints, ModelError,
+    Module, ModulePatch, ModuleStatus,
 };
 pub use routes::router;
 pub use service::{

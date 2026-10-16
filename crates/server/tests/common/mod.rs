@@ -6,8 +6,8 @@ use std::sync::Arc;
 use server::app::{self, AppState};
 use server::identity::{self, DisplayName, Email, NewUser, Role, TemporaryPassword};
 use server::settings::{
-    AuthSettings, DatabaseSettings, InstitutionSettings, LogFormat, LogSettings, ServerSettings,
-    Settings,
+    AuthSettings, DatabaseSettings, GradingScale, InstitutionSettings, LogFormat, LogSettings,
+    ServerSettings, Settings,
 };
 use sqlx::PgPool;
 use tokio::net::TcpListener;
@@ -31,6 +31,7 @@ pub fn test_settings() -> Settings {
         auth: AuthSettings::default(),
         institution: InstitutionSettings {
             name: "Test University".to_owned(),
+            grading_scale: GradingScale::Hundred,
         },
     }
 }
