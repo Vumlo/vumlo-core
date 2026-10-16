@@ -8,8 +8,10 @@ use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
 mod document;
+mod gradebook;
 
 pub use document::*;
+pub use gradebook::*;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct HealthResponse {
