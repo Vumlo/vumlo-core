@@ -9,9 +9,11 @@ use uuid::Uuid;
 
 mod document;
 mod gradebook;
+mod org;
 
 pub use document::*;
 pub use gradebook::*;
+pub use org::*;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct HealthResponse {
