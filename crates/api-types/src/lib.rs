@@ -229,3 +229,59 @@ pub struct Page<T> {
     /// Pass as `cursor` to get the next page; `null` on the last page.
     pub next_cursor: Option<String>,
 }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum CourseKind {
+    Regular,
+    Template,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum CourseStatus {
+    /// Visible to staff and admins only.
+    Draft,
+    Published,
+    Archived,
+}
+
+/// A user's role inside one course. The owner is a `teacher` flagged `is_owner`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum CourseRole {
+    Teacher,
+    Assistant,
+    Student,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct Course {
+    pub id: Uuid,
+    pub kind: CourseKind,
+    pub title: String,
+    pub status: CourseStatus,
+    pub owner_id: Uuid,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Validate, ToSchema)]
+pub struct CreateCourseRequest {
+    #[garde(length(chars, min = 1, max = 200))]
+    pub title: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Validate, ToSchema)]
+pub struct PutMemberRequest {
+    #[garde(skip)]
+    pub role: CourseRole,
+}
+
+/// One member of a course. Only ids: names and emails are fetched through the user endpoints.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct Membership {
+    pub course_id: Uuid,
+    pub user_id: Uuid,
+    pub role: CourseRole,
+    pub is_owner: bool,
+}
