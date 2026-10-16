@@ -1,5 +1,7 @@
 //! The only place that decides who may do what (ADR-0004, ADR-0019). Deny by default.
 
+use chrono::{DateTime, Utc};
+
 use crate::actor::Actor;
 use crate::identity::Role;
 use crate::text_enum::text_enum;
@@ -43,6 +45,21 @@ impl CourseAccess {
     }
 }
 
+/// What decides whether one module or item is open to students: its status and `publish_at`
+/// (ADR-0010). `content` fills it from its rows.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Release {
+    pub published: bool,
+    pub publish_at: Option<DateTime<Utc>>,
+}
+
+impl Release {
+    /// Published, and `publish_at` is not after `at` (a `publish_at` equal to `at` counts).
+    fn is_open_at(self, at: DateTime<Utc>) -> bool {
+        self.published && self.publish_at.is_none_or(|publish_at| publish_at <= at)
+    }
+}
+
 /// What an actor wants to do. The resource a variant needs travels inside it, so course-level
 /// actions can be added as new variants without touching existing callers.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -67,6 +84,21 @@ pub enum Action {
     },
     DeleteCourse(CourseAccess),
     TransferOwnership(CourseAccess),
+    /// View drafts, edit and publish content (ADR-0004). Ignores the course status.
+    ManageContent(CourseAccess),
+    /// Read one module, sub-module or item (ADR-0010, ADR-0020). Staff and admins see drafts; a
+    /// student sees it only if the course and every row on the path to it are open at `at`.
+    ///
+    /// `module` is the top-level module on the path, `submodule` is set when the target is a
+    /// sub-module or lies in one, and `item` is set when the target is an item. `policy` has no
+    /// clock: the caller reads the time once and passes it in.
+    ViewContent {
+        access: CourseAccess,
+        module: Release,
+        submodule: Option<Release>,
+        item: Option<Release>,
+        at: DateTime<Utc>,
+    },
 }
 
 /// May `institution` role holders have `course` role (ADR-0004)? Admins hold no course role:
@@ -114,6 +146,23 @@ pub fn authorize(actor: &Actor, action: Action) -> Result<(), PolicyError> {
         }
         Action::DeleteCourse(access) | Action::TransferOwnership(access) => {
             is_admin || access.is_owner
+        }
+        Action::ManageContent(access) => is_admin || access.is_staff(),
+        Action::ViewContent {
+            access,
+            module,
+            submodule,
+            item,
+            at,
+        } => {
+            is_admin
+                || access.is_staff()
+                || (access.role == Some(CourseRole::Student)
+                    && access.status == CourseStatus::Published
+                    && [Some(module), submodule, item]
+                        .into_iter()
+                        .flatten()
+                        .all(|release| release.is_open_at(at)))
         }
     };
     if allowed { Ok(()) } else { Err(PolicyError) }
@@ -391,6 +440,192 @@ mod tests {
         assert!(implicit_course_owner(&actor(Role::Admin)));
         assert!(!implicit_course_owner(&actor(Role::Teacher)));
         assert!(!implicit_course_owner(&actor(Role::Student)));
+    }
+
+    fn at() -> DateTime<Utc> {
+        "2030-06-01T12:00:00Z".parse().unwrap()
+    }
+
+    fn open() -> Release {
+        Release {
+            published: true,
+            publish_at: None,
+        }
+    }
+
+    fn draft() -> Release {
+        Release {
+            published: false,
+            publish_at: None,
+        }
+    }
+
+    fn publish_at(offset_secs: i64) -> Release {
+        Release {
+            published: true,
+            publish_at: Some(at() + chrono::Duration::seconds(offset_secs)),
+        }
+    }
+
+    fn view(
+        access: CourseAccess,
+        module: Release,
+        submodule: Option<Release>,
+        item: Option<Release>,
+    ) -> Action {
+        Action::ViewContent {
+            access,
+            module,
+            submodule,
+            item,
+            at: at(),
+        }
+    }
+
+    #[test]
+    fn a_student_sees_content_only_when_the_course_and_every_row_on_the_path_are_open() {
+        let student = actor(Role::Student);
+        let allowed = |action| authorize(&student, action) == Ok(());
+        let me = member(Student);
+        assert!(allowed(view(me, open(), Some(open()), Some(open()))));
+        assert!(allowed(view(me, open(), None, Some(open()))));
+        assert!(allowed(view(me, open(), None, None)));
+        assert!(allowed(view(me, open(), Some(open()), None)));
+
+        for status in [Draft, Archived] {
+            let closed = access(Some(Student), false, status);
+            assert!(
+                !allowed(view(closed, open(), Some(open()), Some(open()))),
+                "{status:?}"
+            );
+        }
+        assert!(
+            !allowed(view(me, draft(), Some(open()), Some(open()))),
+            "draft module"
+        );
+        assert!(
+            !allowed(view(me, open(), Some(draft()), Some(open()))),
+            "draft sub-module"
+        );
+        assert!(
+            !allowed(view(me, open(), Some(open()), Some(draft()))),
+            "draft item"
+        );
+        assert!(
+            !allowed(view(me, open(), None, Some(draft()))),
+            "draft direct item"
+        );
+        assert!(
+            !allowed(view(me, publish_at(1), Some(open()), Some(open()))),
+            "future module"
+        );
+        assert!(
+            !allowed(view(me, open(), Some(publish_at(1)), Some(open()))),
+            "future sub-module"
+        );
+        assert!(
+            !allowed(view(me, open(), Some(open()), Some(publish_at(1)))),
+            "future item"
+        );
+        assert!(
+            !allowed(view(me, open(), None, Some(publish_at(1)))),
+            "future direct item"
+        );
+    }
+
+    #[test]
+    fn a_publish_at_equal_to_the_evaluation_time_is_open_on_every_level() {
+        let student = actor(Role::Student);
+        let me = member(Student);
+        for action in [
+            view(me, publish_at(0), Some(open()), Some(open())),
+            view(me, open(), Some(publish_at(0)), Some(open())),
+            view(me, open(), Some(open()), Some(publish_at(0))),
+            view(
+                me,
+                publish_at(-1),
+                Some(publish_at(-1)),
+                Some(publish_at(-1)),
+            ),
+        ] {
+            assert_eq!(authorize(&student, action), Ok(()), "{action:?}");
+        }
+    }
+
+    #[test]
+    fn staff_and_admins_see_drafts_and_future_content_in_every_course_status() {
+        let hidden = |item| view(item, draft(), Some(publish_at(60)), Some(draft()));
+        for status in [Draft, Published, Archived] {
+            for (role, is_owner) in [
+                (Some(Teacher), true),
+                (Some(Teacher), false),
+                (Some(Assistant), false),
+            ] {
+                let action = hidden(access(role, is_owner, status));
+                assert_eq!(
+                    authorize(&actor(Role::Teacher), action),
+                    Ok(()),
+                    "{role:?} {status:?}"
+                );
+            }
+            let action = hidden(access(None, false, status));
+            assert_eq!(
+                authorize(&actor(Role::Admin), action),
+                Ok(()),
+                "admin {status:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn non_members_see_no_content_but_admins_do() {
+        let action = view(non_member(), open(), None, Some(open()));
+        for role in [Role::Teacher, Role::Student] {
+            assert_eq!(
+                authorize(&actor(role), action),
+                Err(PolicyError),
+                "{role:?}"
+            );
+        }
+        assert_eq!(authorize(&actor(Role::Admin), action), Ok(()));
+    }
+
+    #[test]
+    fn staff_and_admins_manage_content_in_every_course_status_and_students_never_do() {
+        for status in [Draft, Published, Archived] {
+            for (role, is_owner) in [
+                (Some(Teacher), true),
+                (Some(Teacher), false),
+                (Some(Assistant), false),
+            ] {
+                let action = Action::ManageContent(access(role, is_owner, status));
+                assert_eq!(
+                    authorize(&actor(Role::Teacher), action),
+                    Ok(()),
+                    "{role:?} {status:?}"
+                );
+            }
+            assert_eq!(
+                authorize(
+                    &actor(Role::Admin),
+                    Action::ManageContent(access(None, false, status))
+                ),
+                Ok(())
+            );
+            for role in [Some(Student), None] {
+                let action = Action::ManageContent(access(role, false, status));
+                assert_eq!(
+                    authorize(&actor(Role::Student), action),
+                    Err(PolicyError),
+                    "{role:?} {status:?}"
+                );
+                assert_eq!(
+                    authorize(&actor(Role::Teacher), action),
+                    Err(PolicyError),
+                    "{role:?} {status:?}"
+                );
+            }
+        }
     }
 
     #[test]
