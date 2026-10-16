@@ -61,8 +61,10 @@ Modules: `identity`, `org`, `teaching`, `content`, `assessment`, `gradebook`, `f
 
 ## 5. Authorization
 
-- Every service function acting for a user takes an `Actor` and calls `policy::authorize(&actor, Action)` before anything else.
-  The resource a check needs travels inside the `Action` variant.
+- Every service function acting for a user takes an `Actor` and authorizes (`policy::authorize(&actor, Action)`)
+  before it changes or reveals anything.
+  The resource a check needs travels inside the `Action` variant: when the action needs the resource, load it first,
+  then authorize, and report a denied view as "not found".
   A handler may also call it early, before costly work such as hashing, but the service still authorizes first.
 - No role checks anywhere except `policy`. Deny by default.
 - Every action by an `admin` inside a course writes to `events.audit_log` in the same transaction.
@@ -97,7 +99,7 @@ Modules: `identity`, `org`, `teaching`, `content`, `assessment`, `gradebook`, `f
 - Errors are RFC 9457 Problem Details, produced by one `IntoResponse` impl.
 - All error responses, including framework-generated ones (405/408/413, extractor rejections), are Problem Details.
 - Validation failures are `422` with `errors: [{field, message}]` (ADR-0018).
-- Lists use cursor pagination: `?cursor=&limit=` → `{items, next_cursor}` (ADR-0018). Non-idempotent POSTs honor `Idempotency-Key`.
+- Lists use cursor pagination: `?cursor=&limit=` → `{items, next_cursor}` (ADR-0018). `Idempotency-Key` is not implemented yet (needs its own task and table design, see ADR-0012); do not add ad-hoc handling.
 
 ## 10. Errors and panics
 
