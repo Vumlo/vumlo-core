@@ -5,8 +5,6 @@ use api_types::ProfileName;
 use config::{Config, ConfigError, Environment, File, FileFormat, Source};
 use serde::Deserialize;
 
-use crate::content::EffectiveProfiles;
-
 #[derive(Debug, Clone, Deserialize)]
 pub struct Settings {
     pub server: ServerSettings,
@@ -69,8 +67,8 @@ pub enum GradingScale {
     Hundred,
 }
 
-/// What the document editor may offer (ADR-0025, ADR-0027). The config can only narrow the
-/// profiles in code; `content::EffectiveProfiles::resolve` applies and checks it.
+/// What the document editor may offer (ADR-0025, ADR-0027). Plain data: `AppState::new` applies
+/// it to the profiles in code (it can only narrow them) and rejects what does not fit.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(default)]
 pub struct EditorSettings {
@@ -164,8 +162,6 @@ impl Settings {
             ));
         }
         self.server.public_origin = origin.to_owned();
-        EffectiveProfiles::resolve(&self.editor)
-            .map_err(|error| ConfigError::Message(error.to_string()))?;
         Ok(())
     }
 }
@@ -366,28 +362,24 @@ mod tests {
     }
 
     #[test]
-    fn an_editor_configuration_that_does_not_only_narrow_stops_startup_and_names_the_culprit() {
-        for (extra, culprit) in [
-            ("[editor.profiles.wizard]\nfeatures = []", "wizard"),
-            (
-                "[editor.profiles.full]\nfeatures = [\"telepathy\"]",
-                "telepathy",
-            ),
-            (
-                "[editor.profiles.option]\nfeatures = [\"headings\"]",
-                "headings",
-            ),
-            ("[editor.profiles.student]\nfeatures = [\"video\"]", "video"),
-            ("video_providers = [\"dailymotion\"]", "dailymotion"),
-            (
-                "[editor.profiles.full]\nfeatures = []\ncolor = \"red\"",
-                "color",
-            ),
+    fn an_unknown_key_in_an_editor_profile_is_a_parse_error_that_names_it() {
+        let toml = with_editor("[editor.profiles.full]\nfeatures = []\ncolor = \"red\"");
+        let e = build(&toml, &[]).unwrap_err();
+        assert!(e.to_string().contains("color"), "{e}");
+    }
+
+    #[test]
+    fn settings_hold_the_editor_section_as_data_and_what_it_means_is_checked_later() {
+        // `AppState::new` resolves the profiles and rejects these (tests/api.rs).
+        for extra in [
+            "[editor.profiles.wizard]\nfeatures = []",
+            "[editor.profiles.full]\nfeatures = [\"telepathy\"]",
+            "[editor.profiles.option]\nfeatures = [\"headings\"]",
+            "video_providers = [\"dailymotion\"]",
         ] {
-            let e = build(&with_editor(extra), &[]).unwrap_err();
-            assert!(e.to_string().contains(culprit), "{extra}: {e}");
+            build(&with_editor(extra), &[]).unwrap();
         }
-        let e = build(VALID, &[("LEARNLY__EDITOR__VIDEO_PROVIDERS", "vimeo,nope")]).unwrap_err();
-        assert!(e.to_string().contains("nope"), "{e}");
+        let s = build(VALID, &[("LEARNLY__EDITOR__VIDEO_PROVIDERS", "vimeo,nope")]).unwrap();
+        assert_eq!(s.editor.video_providers, ["vimeo", "nope"]);
     }
 }

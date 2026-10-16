@@ -7,7 +7,6 @@ use sqlx::postgres::{PgTypeInfo, PgValueRef};
 use sqlx::types::Decimal;
 use uuid::Uuid;
 
-use super::document::ValidDocument;
 use crate::policy::Release;
 use crate::text_enum::text_enum;
 
@@ -277,12 +276,13 @@ impl ModulePatch {
     }
 }
 
-/// A change to an item. `body` replaces the whole body when set; `config`, `max_points` and
-/// `is_bonus` apply to assignments only.
+/// A change to an item. `body` is the raw JSON the client sent; it replaces the whole body when
+/// set, after the service has authorized the change and validated it as a document. `config`,
+/// `max_points` and `is_bonus` apply to assignments only.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ItemPatch {
     pub title: Option<ContentTitle>,
-    pub body: Option<ValidDocument>,
+    pub body: Option<Value>,
     pub publish_at: Option<Option<DateTime<Utc>>>,
     pub config: Option<Map<String, Value>>,
     pub max_points: Option<MaxPoints>,

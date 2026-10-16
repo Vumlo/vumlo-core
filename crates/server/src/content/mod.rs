@@ -18,7 +18,7 @@ pub use model::{
 };
 pub use routes::router;
 pub use service::{
-    ContentError, create_item, create_module, delete_item, delete_module, editor_profiles,
-    get_item, get_tree, publish_item, publish_module, reorder_items, reorder_modules, update_item,
-    update_module,
+    ContentError, ItemRules, create_item, create_module, delete_item, delete_module,
+    editor_profiles, get_item, get_tree, publish_item, publish_module, reorder_items,
+    reorder_modules, update_item, update_module,
 };

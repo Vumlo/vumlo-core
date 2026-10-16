@@ -4,23 +4,21 @@
 use api_types::{
     ContentModule, ContentStatus, ContentSubModule, ContentTree, CreateItemRequest,
     CreateModuleRequest, EditorProfiles, FieldError, Item, ItemSummary, Module, NewAssignment,
-    ProblemDetails, ProfileName, PublishModuleRequest, ReorderItemsRequest, ReorderModulesRequest,
+    ProblemDetails, PublishModuleRequest, ReorderItemsRequest, ReorderModulesRequest,
     UpdateItemRequest, UpdateModuleRequest,
 };
 use axum::Json;
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
-use serde_json::Value;
 use utoipa_axum::router::OpenApiRouter;
 use utoipa_axum::routes;
 use uuid::Uuid;
 
-use super::document::{EffectiveProfiles, ValidDocument, validate_document};
 use super::model::{
     self, BuiltinType, ContentTitle, ItemKind, ItemPatch, ItemStatus, MaxPoints, ModelError,
     ModulePatch, ModuleStatus,
 };
-use super::service::{self, ContentError};
+use super::service::{self, ContentError, ItemRules};
 use crate::actor::Actor;
 use crate::app::AppState;
 use crate::error::{ApiError, ValidJson};
@@ -51,6 +49,10 @@ impl From<ContentError> for ApiError {
                 };
                 Self::invalid_field(field, error.to_string())
             }
+            ContentError::Document(errors) => Self::Unprocessable {
+                detail: "the request has invalid fields".to_owned(),
+                errors: errors.into_field_errors("body"),
+            },
             ContentError::NotAnAssignment { field } => {
                 Self::invalid_field(field, error.to_string())
             }
@@ -215,7 +217,19 @@ fn domain_assignment(new: NewAssignment) -> Result<model::Assignment, ApiError> 
 }
 
 /// A 422 about the assignment part of a create request names its field under `assignment.`.
+/// What item writes read from the configuration.
+fn rules(state: &AppState) -> ItemRules<'_> {
+    ItemRules {
+        scale: state.config.institution.grading_scale,
+        profiles: &state.editor,
+    }
+}
+
 fn under_assignment(error: ContentError) -> ApiError {
+    // The document is the item's own `body`, not part of the assignment object.
+    if matches!(error, ContentError::Document(_)) {
+        return error.into();
+    }
     match ApiError::from(error) {
         ApiError::Unprocessable { detail, errors } => ApiError::Unprocessable {
             detail,
@@ -229,28 +243,6 @@ fn under_assignment(error: ContentError) -> ApiError {
         },
         other => other,
     }
-}
-
-/// The effective editor profiles, from the configuration. `Settings::load` already checked it, so
-/// a failure here means a hand-built `Settings`.
-fn profiles(state: &AppState) -> Result<EffectiveProfiles, ApiError> {
-    EffectiveProfiles::resolve(&state.config.editor).map_err(|e| {
-        tracing::error!(error = %e, "content: editor configuration");
-        ApiError::Internal
-    })
-}
-
-/// Validates a request's `body` as a document of profile `full`. `None` stays `None`.
-fn document(state: &AppState, body: Option<Value>) -> Result<Option<ValidDocument>, ApiError> {
-    let Some(value) = body else {
-        return Ok(None);
-    };
-    validate_document(&value, ProfileName::Full, &profiles(state)?)
-        .map(Some)
-        .map_err(|errors| ApiError::Unprocessable {
-            detail: "the request has invalid fields".to_owned(),
-            errors: errors.into_field_errors("body"),
-        })
 }
 
 /// Creates a draft module as the last of its siblings. Staff and admins only.
@@ -513,15 +505,14 @@ async fn create_item(
         }
         (ItemKind::Assignment, Some(new)) => Some(domain_assignment(new)?),
     };
-    let body = document(&state, request.body)?;
     let mut tx = state.db.begin().await.map_err(ContentError::from)?;
     let item = service::create_item(
         &mut tx,
         &actor,
-        state.config.institution.grading_scale,
+        rules(&state),
         module_id,
         title,
-        body,
+        request.body,
         assignment,
     )
     .await
@@ -624,7 +615,7 @@ async fn update_item(
 ) -> Result<Json<Item>, ApiError> {
     let patch = ItemPatch {
         title: request.title.as_deref().map(title).transpose()?,
-        body: document(&state, request.body)?,
+        body: request.body,
         publish_at: request.publish_at,
         config: request.config,
         max_points: request
@@ -636,14 +627,7 @@ async fn update_item(
         is_bonus: request.is_bonus,
     };
     let mut tx = state.db.begin().await.map_err(ContentError::from)?;
-    let item = service::update_item(
-        &mut tx,
-        &actor,
-        state.config.institution.grading_scale,
-        id,
-        patch,
-    )
-    .await?;
+    let item = service::update_item(&mut tx, &actor, rules(&state), id, patch).await?;
     tx.commit().await.map_err(ContentError::from)?;
     Ok(Json(api_item(item)))
 }
@@ -722,6 +706,6 @@ async fn get_editor_profiles(
     State(state): State<AppState>,
     actor: Actor,
 ) -> Result<Json<EditorProfiles>, ApiError> {
-    let profiles = service::editor_profiles(&actor, profiles(&state)?)?;
+    let profiles = service::editor_profiles(&actor, &state.editor)?;
     Ok(Json(profiles.to_dto()))
 }

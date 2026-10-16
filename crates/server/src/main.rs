@@ -58,16 +58,14 @@ async fn run(cli: Cli) -> anyhow::Result<()> {
         .context("cannot connect to the database")?;
     match cli.command {
         Command::Serve => {
-            app::ensure_migrated(&pool).await?;
-            let listener = tokio::net::TcpListener::bind(settings.server.bind_addr)
+            let state = AppState::new(pool, settings).context("invalid configuration")?;
+            app::ensure_migrated(&state.db).await?;
+            let bind_addr = state.config.server.bind_addr;
+            let listener = tokio::net::TcpListener::bind(bind_addr)
                 .await
-                .with_context(|| format!("cannot bind {}", settings.server.bind_addr))?;
+                .with_context(|| format!("cannot bind {bind_addr}"))?;
             let shutdown = app::shutdown_signal().context("cannot install signal handlers")?;
-            tracing::info!(addr = %settings.server.bind_addr, "listening");
-            let state = AppState {
-                db: pool,
-                config: std::sync::Arc::new(settings),
-            };
+            tracing::info!(addr = %bind_addr, "listening");
             app::serve(
                 listener,
                 app::router(state).context("cannot build the router")?,

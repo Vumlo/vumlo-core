@@ -3033,3 +3033,132 @@ async fn the_document_schemas_and_the_profiles_endpoint_are_in_the_openapi_docum
         );
     }
 }
+
+// --- authorization comes before the document is looked at --------------------------------------
+
+/// A body that the validator refuses, in two places.
+fn invalid_body() -> Value {
+    doc(json!([
+        {"id": "h", "type": "heading", "props": {"level": 9}},
+        paragraph("h", "duplicate id"),
+    ]))
+}
+
+#[sqlx::test(migrator = "server::app::MIGRATOR")]
+async fn a_student_who_sends_an_invalid_document_gets_403_not_422(pool: PgPool) {
+    let w = world(pool).await;
+    let m = module(&w, "M", None).await;
+    let existing = item(&w, m, "T").await;
+    // The student must see the module and the item, or the answer would be 404.
+    publish_module(&w, m, true).await;
+    let create = format!("/modules/{m}/items");
+    let update = format!("/items/{existing}");
+
+    for token in [&w.student.token, &w.stranger.token] {
+        let who = if token == &w.student.token {
+            "student"
+        } else {
+            "stranger"
+        };
+        let created = post(
+            &w.http,
+            token,
+            &create,
+            json!({"kind": "text", "title": "T", "body": invalid_body()}),
+        )
+        .await;
+        let patched = patch(&w.http, token, &update, json!({"body": invalid_body()})).await;
+        let expected = if who == "student" { 403 } else { 404 };
+        assert_eq!(created.status, expected, "{who} create");
+        assert_eq!(patched.status, expected, "{who} patch");
+    }
+
+    // A staff member who may write gets the 422, with the same paths both times.
+    let expected = ["body.blocks[0].props.level", "body.blocks[1].id"];
+    let created = post(
+        &w.http,
+        &w.assistant.token,
+        &create,
+        json!({"kind": "text", "title": "T", "body": invalid_body()}),
+    )
+    .await;
+    assert_eq!(fields_of(&created), expected);
+    let patched = patch(
+        &w.http,
+        &w.owner.token,
+        &update,
+        json!({"body": invalid_body()}),
+    )
+    .await;
+    assert_eq!(fields_of(&patched), expected);
+    // The refused requests wrote nothing.
+    assert_eq!(item_json(&w, existing).await["body"], empty_doc());
+    let tree = tree(&w, &w.owner.token).await;
+    assert_eq!(top(&tree, "M")["items"].as_array().unwrap().len(), 1);
+}
+
+#[sqlx::test(migrator = "server::app::MIGRATOR")]
+async fn an_invisible_module_is_a_404_before_the_document_is_looked_at(pool: PgPool) {
+    let w = world(pool).await;
+    let m = module(&w, "M", None).await;
+    let existing = item(&w, m, "T").await;
+
+    // The module and item are drafts: a student cannot see them, so they do not exist for them.
+    let created = post(
+        &w.http,
+        &w.student.token,
+        &format!("/modules/{m}/items"),
+        json!({"kind": "text", "title": "T", "body": invalid_body()}),
+    )
+    .await;
+    created.problem(404);
+    patch(
+        &w.http,
+        &w.student.token,
+        &format!("/items/{existing}"),
+        json!({"body": invalid_body()}),
+    )
+    .await
+    .problem(404);
+    // An id that does not exist at all gives the same answer, whatever the body.
+    post(
+        &w.http,
+        &w.owner.token,
+        &format!("/modules/{}/items", Uuid::now_v7()),
+        json!({"kind": "text", "title": "T", "body": invalid_body()}),
+    )
+    .await
+    .problem(404);
+    patch(
+        &w.http,
+        &w.owner.token,
+        &format!("/items/{}", Uuid::now_v7()),
+        json!({"body": invalid_body()}),
+    )
+    .await
+    .problem(404);
+}
+
+#[sqlx::test(migrator = "server::app::MIGRATOR")]
+async fn an_assignments_document_errors_keep_the_body_path_and_not_the_assignment_prefix(
+    pool: PgPool,
+) {
+    let w = world(pool).await;
+    let m = module(&w, "M", None).await;
+    let response = post(
+        &w.http,
+        &w.owner.token,
+        &format!("/modules/{m}/items"),
+        json!({
+            "kind": "assignment",
+            "title": "Essay",
+            "body": invalid_body(),
+            "assignment": {"type": "text", "max_points": "5"},
+        }),
+    )
+    .await;
+    assert_eq!(
+        fields_of(&response),
+        ["body.blocks[0].props.level", "body.blocks[1].id"]
+    );
+}

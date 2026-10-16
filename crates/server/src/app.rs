@@ -25,7 +25,7 @@ use utoipa_axum::router::OpenApiRouter;
 use utoipa_axum::routes;
 use utoipa_scalar::{Scalar, Servable};
 
-use crate::content;
+use crate::content::{self, EditorConfigError, EffectiveProfiles};
 use crate::error::{ApiError, problem_details};
 use crate::health;
 use crate::identity::{self, SetupError};
@@ -44,6 +44,22 @@ const MAX_BODY_BYTES: usize = 2 * 1024 * 1024;
 pub struct AppState {
     pub db: PgPool,
     pub config: Arc<Settings>,
+    /// The editor profiles, resolved once from `config.editor` (ADR-0025, ADR-0027).
+    pub editor: Arc<EffectiveProfiles>,
+}
+
+impl AppState {
+    /// The composition root of the shared state. It resolves the editor configuration, so a
+    /// configuration that does not fit the profiles in code fails here, at startup, with an error
+    /// that names the key and the value, and never at the first request.
+    pub fn new(db: PgPool, config: Settings) -> Result<Self, EditorConfigError> {
+        let editor = EffectiveProfiles::resolve(&config.editor)?;
+        Ok(Self {
+            db,
+            config: Arc::new(config),
+            editor: Arc::new(editor),
+        })
+    }
 }
 
 #[derive(OpenApi)]
