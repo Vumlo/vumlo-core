@@ -52,3 +52,4 @@ What gets easier, what gets harder, what we must remember.
 | 0017 | [Accounts, passwords and session lifetimes](0017-accounts-passwords-sessions.md) |
 | 0018 | [API validation errors and cursor pagination](0018-api-errors-and-pagination.md) |
 | 0019 | [Publishing a course is a root action](0019-course-publishing.md) |
+| 0020 | [Content tree: course_id on every row, one level of sub-modules, dense positions, opaque lesson body](0020-content-tree.md) |

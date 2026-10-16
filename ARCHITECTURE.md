@@ -1,6 +1,6 @@
 # Learnly — Architecture
 
-Status: **in progress.** Implemented: the foundation (config, migrations, health, OpenAPI, Problem Details), `identity` + `policy` (users, password login, sessions, admin user management), and the first slice of `teaching` (courses, members, publishing) with a minimal `events.audit_log`. Everything else below is still design.
+Status: **in progress.** Implemented: the foundation (config, migrations, health, OpenAPI, Problem Details), `identity` + `policy` (users, password login, sessions, admin user management), the first slice of `teaching` (courses, members, publishing) with a minimal `events.audit_log`, and the `content` tree (modules, sub-modules and lessons). Everything else below is still design.
 This file is the current picture of the system. Every decision behind it has a record in [`docs/decisions/`](docs/decisions/). If this file and an ADR disagree, the ADR wins and this file gets fixed.
 
 ## Goal
@@ -60,7 +60,7 @@ docs/decisions/
 | `identity`   | `identity.*`                    | users, login identities, sessions, tokens |
 | `org`        | `org.*`                         | terms, groups (cohorts), grading scales, institution settings |
 | `teaching`   | `teaching.*`                    | courses, memberships, publishing; group links and course subgroups are planned |
-| `content`    | `content.*`                     | modules, items, assignments and assignment types |
+| `content`    | `content.*`                     | modules, items (lessons built; assignments and assignment types planned) |
 | `assessment` | `assessment.*`                  | submissions, attempts, lateness, auto-grading of forms |
 | `gradebook`  | `gradebook.*`                   | grades (draft/published), grade history, publishing, gradebook view |
 | `files`      | `files.*`                       | uploads, storage backends |
@@ -133,9 +133,11 @@ teaching
   course_subgroup_members course_subgroup_id, user_id
 
 content
-  modules          id, course_id, position, title, status: draft | published, publish_at?
-  items            id, module_id, position, kind: lesson | assignment, title,
-                   body (jsonb), status: draft | published, publish_at?
+  modules          id, course_id, parent_id?, position, title, status: draft | published, publish_at?
+                   -- one level of sub-modules: parent_id is null or a top-level module of the same course
+  items            id, module_id, course_id, position, kind: lesson | assignment, title,
+                   body (jsonb object), status: draft | published, publish_at?
+                   -- built: lesson is the only kind so far (ADR-0020)
   assignments      item_id (PK), type (text), config (jsonb), max_points, due_at?,
                    accept_late (bool), late_until?, on_deadline: keep_draft | auto_submit,
                    max_attempts?                       -- null = unlimited
@@ -165,6 +167,7 @@ Key points:
 
 - **One `courses` table for courses and templates** ([ADR-0005](docs/decisions/0005-courses-and-templates.md)). Creating from a template or saving as a template is a deep copy. Content is never shared live.
 - **`effective_members` is a view, not a sync job** ([ADR-0006](docs/decisions/0006-groups-and-membership.md)). A student who leaves a group disappears from the course automatically, and their grades stay because grades are keyed by `user_id`.
+- **Every content row carries `course_id`** ([ADR-0020](docs/decisions/0020-content-tree.md)), kept consistent with its parent by composite foreign keys, so a content row reaches its course without joins. Positions are dense integers per sibling sequence (the top-level modules of a course, the sub-modules of a module, the items of a module), unique under deferred constraints; a reorder sends the whole list.
 - **The gradebook is a separate module, not a separate tree** ([ADR-0015](docs/decisions/0015-gradebook-module.md), [ADR-0009](docs/decisions/0009-grading-and-gradebook.md)). Every gradebook column is an assignment in the course tree. "+ column" in the gradebook creates an assignment of type `no_submission` in a chosen module. Column order = course tree order.
 
 ## Identity and sessions
@@ -196,7 +199,7 @@ Key points:
 
 ## Authorization
 
-`policy::authorize(&Actor, Action)` decides every check. The resource an action needs travels inside its `Action` variant, so course-level actions can be added without changing existing callers. Today: `ManageOwnAccount` (any role), `ManageUsers` (admin only), and the course actions `CreateCourse`, `ViewOwnCourses`, `ViewCourse`, `PublishCourse`, `ManageMembership`, `DeleteCourse` and `TransferOwnership`. A course action carries a `CourseAccess` (the actor's course role, whether they own it, and its status), which `teaching` reads from the database. The delete and transfer actions have no endpoint yet.
+`policy::authorize(&Actor, Action)` decides every check. The resource an action needs travels inside its `Action` variant, so course-level actions can be added without changing existing callers. Today: `ManageOwnAccount` (any role), `ManageUsers` (admin only), the course actions `CreateCourse`, `ViewOwnCourses`, `ViewCourse`, `PublishCourse`, `ManageMembership`, `DeleteCourse` and `TransferOwnership`, and the content actions `ManageContent` and `ViewContent`. A course action carries a `CourseAccess` (the actor's course role, whether they own it, and its status), which `teaching` reads from the database; other modules get it through `teaching::course_access`. `ManageContent` covers viewing drafts, editing and publishing content for staff and admins and ignores the course status, so the content of an archived course stays editable until archiving gets its own ADR. `ViewContent` carries the release state of every row on the path to the target and the evaluation time, because `policy` has no clock. The delete and transfer actions have no endpoint yet.
 
 There are two levels of roles ([ADR-0004](docs/decisions/0004-roles-and-policy.md)).
 
@@ -234,7 +237,7 @@ Invariants:
 ## Visibility rules
 
 - A student sees a course only if it is `published`; a draft or archived course is a 404 for them, in `GET /courses/{id}`, its members and `GET /me/courses`. They can still be enrolled in a draft. Staff and admins see every status.
-- A student sees an item only if **the course, the module and the item** are all `published` and `publish_at <= now()`.
+- A student sees an item only if **the course, every module on the path to it (the module, and its parent if it is a sub-module) and the item** are all `published` and each `publish_at` is null or `<= now()`. List queries filter in SQL, and `policy` checks every row again. Staff and admins see drafts and scheduled rows. A student gets 404, never 403, for anything they may not see.
 - A student **never receives `draft_*` grade fields.** Student-facing repo functions do not select those columns, and a test enforces this.
 - A teacher sees only `submitted` submissions, never a student's draft.
 
@@ -244,7 +247,21 @@ Invariants:
 Grading writes only `draft_*`. "Publish" runs in one transaction: for every row where draft ≠ published, copy `draft_*` → `published_*`, append to `grade_history`, and emit one `grade.published` event per student. Editing an already published grade changes only the draft. The student keeps seeing the old grade until the next publish.
 
 **Publishing a module** ([ADR-0010](docs/decisions/0010-content-publishing.md))
-`POST /modules/{id}/publish { "cascade": true | false }`. The parameter is required and has no default. The web UI asks in a dialog; the CLI and mobile app must choose explicitly.
+`POST /modules/{id}/publish { "cascade": true | false }`. The parameter is required and has no default. The web UI asks in a dialog; the CLI and mobile app must choose explicitly. `cascade: true` also publishes the module's sub-modules and every draft item below them, in one transaction. Publishing is idempotent and never changes `publish_at`.
+
+The content endpoints (tag `content`, all under `/api/v1`):
+
+| Endpoint | |
+|---|---|
+| `POST /courses/{id}/modules` | create a module, or a sub-module with `parent_id` |
+| `GET /courses/{id}/content` | the whole tree, not paged (it is bounded and ordered by position, not by id) |
+| `PATCH /modules/{id}`, `DELETE /modules/{id}` | edit (`publish_at: null` clears it), delete with everything below |
+| `PUT /courses/{id}/modules/order` | reorder the top-level modules, or the sub-modules of `parent_id` |
+| `POST /modules/{id}/publish` | publish, `cascade` required |
+| `POST /modules/{id}/items`, `PUT /modules/{id}/items/order` | create a lesson, reorder a module's items |
+| `GET`, `PATCH`, `DELETE /items/{id}`, `POST /items/{id}/publish` | read (with `body`), edit, delete, publish a lesson |
+
+Two creates that race for the same last position conflict at commit: the loser gets 409 and retries.
 
 **Submission lifecycle** ([ADR-0011](docs/decisions/0011-submissions.md))
 `draft` (autosaved, invisible to staff) → `submitted` (immutable). Resubmitting creates a new attempt, limited by `max_attempts`. At the deadline the draft is kept or auto-submitted according to `on_deadline`. A late submission is allowed only if `accept_late` is set and `now() <= late_until` (if set), and it is marked `is_late`. Staff grade the latest submitted attempt.

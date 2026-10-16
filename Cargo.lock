@@ -89,6 +89,7 @@ dependencies = [
  "chrono",
  "garde",
  "serde",
+ "serde_json",
  "utoipa",
  "uuid",
 ]

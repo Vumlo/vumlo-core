@@ -2,7 +2,8 @@ use std::fmt;
 
 use chrono::{DateTime, Utc};
 use garde::Validate;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
+use serde_json::{Map, Value};
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
@@ -284,4 +285,233 @@ pub struct Membership {
     pub user_id: Uuid,
     pub role: CourseRole,
     pub is_owner: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum ContentStatus {
+    /// Visible to staff and admins only.
+    Draft,
+    Published,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum ItemKind {
+    Lesson,
+}
+
+/// A top-level module or a sub-module (ADR-0020).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct Module {
+    pub id: Uuid,
+    pub course_id: Uuid,
+    /// `null` for a top-level module.
+    pub parent_id: Option<Uuid>,
+    /// Starts at 1, among the siblings with the same parent. Gaps are possible.
+    pub position: i32,
+    pub title: String,
+    pub status: ContentStatus,
+    /// Students see the module only from this moment on.
+    pub publish_at: Option<DateTime<Utc>>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+/// A lesson. `body` is a JSON object the server stores without interpreting it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct Item {
+    pub id: Uuid,
+    pub module_id: Uuid,
+    pub course_id: Uuid,
+    pub position: i32,
+    pub kind: ItemKind,
+    pub title: String,
+    #[schema(value_type = Object)]
+    pub body: Map<String, Value>,
+    pub status: ContentStatus,
+    pub publish_at: Option<DateTime<Utc>>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+/// An item in the course tree: everything but the body.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct ItemSummary {
+    pub id: Uuid,
+    pub kind: ItemKind,
+    pub title: String,
+    pub status: ContentStatus,
+    pub publish_at: Option<DateTime<Utc>>,
+    pub position: i32,
+}
+
+/// A sub-module with its items.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct ContentSubModule {
+    #[serde(flatten)]
+    pub module: Module,
+    pub items: Vec<ItemSummary>,
+}
+
+/// A top-level module with its sub-modules and its direct items. Both lists are in position
+/// order; clients show sub-modules first.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct ContentModule {
+    #[serde(flatten)]
+    pub module: Module,
+    pub submodules: Vec<ContentSubModule>,
+    pub items: Vec<ItemSummary>,
+}
+
+/// The whole content of a course as the caller may see it. Not paged: a course tree is bounded.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct ContentTree {
+    pub modules: Vec<ContentModule>,
+}
+
+/// Absent field -> `None` (leave as is); `null` -> `Some(None)` (clear); a value -> `Some(Some)`.
+fn set_or_clear<'de, D, T>(deserializer: D) -> Result<Option<Option<T>>, D::Error>
+where
+    D: Deserializer<'de>,
+    T: Deserialize<'de>,
+{
+    Option::<T>::deserialize(deserializer).map(Some)
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Validate, ToSchema)]
+pub struct CreateModuleRequest {
+    #[garde(length(chars, min = 1, max = 200))]
+    pub title: String,
+    /// A top-level module of this course, to create a sub-module. Omit for a top-level module.
+    #[garde(skip)]
+    pub parent_id: Option<Uuid>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, Validate, ToSchema)]
+pub struct UpdateModuleRequest {
+    #[garde(inner(length(chars, min = 1, max = 200)))]
+    pub title: Option<String>,
+    /// Omit to keep, `null` to clear, a timestamp to set.
+    #[serde(default, deserialize_with = "set_or_clear")]
+    #[schema(value_type = Option<DateTime<Utc>>)]
+    #[garde(skip)]
+    pub publish_at: Option<Option<DateTime<Utc>>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Validate, ToSchema)]
+pub struct PublishModuleRequest {
+    /// Required. `true` also publishes the module's sub-modules and every draft item below it.
+    #[garde(skip)]
+    pub cascade: bool,
+}
+
+/// The complete ordered list of one sequence: the top-level modules, or the sub-modules of one
+/// parent.
+#[derive(Debug, Clone, Serialize, Deserialize, Validate, ToSchema)]
+pub struct ReorderModulesRequest {
+    /// `null` or absent: reorder the top-level modules. Otherwise the sub-modules of that module.
+    #[serde(default)]
+    #[garde(skip)]
+    pub parent_id: Option<Uuid>,
+    #[garde(skip)]
+    pub ids: Vec<Uuid>,
+}
+
+/// The complete ordered list of the items of one module.
+#[derive(Debug, Clone, Serialize, Deserialize, Validate, ToSchema)]
+pub struct ReorderItemsRequest {
+    #[garde(skip)]
+    pub ids: Vec<Uuid>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Validate, ToSchema)]
+pub struct CreateItemRequest {
+    #[garde(skip)]
+    pub kind: ItemKind,
+    #[garde(length(chars, min = 1, max = 200))]
+    pub title: String,
+    /// A JSON object, stored as is. Defaults to `{}`.
+    #[serde(default)]
+    #[schema(value_type = Option<Object>)]
+    #[garde(skip)]
+    pub body: Option<Map<String, Value>>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, Validate, ToSchema)]
+pub struct UpdateItemRequest {
+    #[garde(inner(length(chars, min = 1, max = 200)))]
+    pub title: Option<String>,
+    /// A JSON object that replaces the body. Omit to keep it.
+    #[schema(value_type = Option<Object>)]
+    #[garde(skip)]
+    pub body: Option<Map<String, Value>>,
+    /// Omit to keep, `null` to clear, a timestamp to set.
+    #[serde(default, deserialize_with = "set_or_clear")]
+    #[schema(value_type = Option<DateTime<Utc>>)]
+    #[garde(skip)]
+    pub publish_at: Option<Option<DateTime<Utc>>>,
+}
+
+#[cfg(test)]
+mod content_tests {
+    use serde_json::json;
+
+    use super::*;
+
+    #[test]
+    fn publish_at_distinguishes_absent_null_and_a_value() {
+        let absent: UpdateModuleRequest = serde_json::from_value(json!({})).unwrap();
+        assert_eq!(absent.publish_at, None);
+        let cleared: UpdateModuleRequest =
+            serde_json::from_value(json!({"publish_at": null})).unwrap();
+        assert_eq!(cleared.publish_at, Some(None));
+        let set: UpdateItemRequest =
+            serde_json::from_value(json!({"publish_at": "2030-01-02T03:04:05Z"})).unwrap();
+        assert!(matches!(set.publish_at, Some(Some(_))));
+    }
+
+    #[test]
+    fn cascade_is_required() {
+        assert!(serde_json::from_value::<PublishModuleRequest>(json!({})).is_err());
+        let request: PublishModuleRequest =
+            serde_json::from_value(json!({"cascade": false})).unwrap();
+        assert!(!request.cascade);
+    }
+
+    #[test]
+    fn a_body_must_be_an_object() {
+        for body in [json!([1]), json!("text"), json!(3)] {
+            let create = json!({"kind": "lesson", "title": "t", "body": body});
+            assert!(serde_json::from_value::<CreateItemRequest>(create).is_err());
+            assert!(serde_json::from_value::<UpdateItemRequest>(json!({"body": body})).is_err());
+        }
+        let ok: CreateItemRequest =
+            serde_json::from_value(json!({"kind": "lesson", "title": "t", "body": {"a": 1}}))
+                .unwrap();
+        assert_eq!(ok.body.unwrap()["a"], json!(1));
+    }
+
+    #[test]
+    fn a_tree_entry_flattens_the_module_fields() {
+        let module = Module {
+            id: Uuid::nil(),
+            course_id: Uuid::nil(),
+            parent_id: None,
+            position: 1,
+            title: "t".into(),
+            status: ContentStatus::Draft,
+            publish_at: None,
+            created_at: DateTime::UNIX_EPOCH,
+            updated_at: DateTime::UNIX_EPOCH,
+        };
+        let value = serde_json::to_value(ContentModule {
+            module,
+            submodules: vec![],
+            items: vec![],
+        })
+        .unwrap();
+        assert_eq!(value["title"], json!("t"));
+        assert_eq!(value["submodules"], json!([]));
+    }
 }

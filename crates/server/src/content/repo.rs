@@ -1,0 +1,475 @@
+//! SQL only. Every function takes the connection it runs on and never begins a transaction.
+
+use chrono::{DateTime, Utc};
+use serde_json::{Map, Value};
+use sqlx::PgConnection;
+use sqlx::types::Json;
+use uuid::Uuid;
+
+use super::model::{Item, ItemKind, ItemStatus, ItemSummary, Module, ModuleStatus};
+use crate::policy::Release;
+
+type Body = Json<Map<String, Value>>;
+
+/// A module together with the release state of its parent, if it has one.
+pub struct ModuleRow {
+    pub module: Module,
+    pub parent: Option<Release>,
+}
+
+/// An item together with the release state of its module and of that module's parent, if any.
+pub struct ItemRow {
+    pub item: Item,
+    pub module: Release,
+    pub module_parent: Option<Release>,
+}
+
+/// One row of the tree query: a module, its parent's state and at most one of its items.
+pub struct TreeRow {
+    pub module: Module,
+    pub parent: Option<Release>,
+    pub item: Option<ItemSummary>,
+}
+
+struct RawItem {
+    id: Uuid,
+    module_id: Uuid,
+    course_id: Uuid,
+    position: i32,
+    kind: ItemKind,
+    title: String,
+    body: Body,
+    status: ItemStatus,
+    publish_at: Option<DateTime<Utc>>,
+    created_at: DateTime<Utc>,
+    updated_at: DateTime<Utc>,
+}
+
+impl From<RawItem> for Item {
+    fn from(raw: RawItem) -> Self {
+        Self {
+            id: raw.id,
+            module_id: raw.module_id,
+            course_id: raw.course_id,
+            position: raw.position,
+            kind: raw.kind,
+            title: raw.title,
+            body: raw.body.0,
+            status: raw.status,
+            publish_at: raw.publish_at,
+            created_at: raw.created_at,
+            updated_at: raw.updated_at,
+        }
+    }
+}
+
+fn release(status: Option<ModuleStatus>, publish_at: Option<DateTime<Utc>>) -> Option<Release> {
+    status.map(|status| Release {
+        published: status == ModuleStatus::Published,
+        publish_at,
+    })
+}
+
+// ---------------------------------------------------------------------------------------------
+// Modules
+// ---------------------------------------------------------------------------------------------
+
+/// Inserts a module as the last of its siblings: the top-level modules of the course when
+/// `parent_id` is `None`, otherwise the sub-modules of that parent. Two concurrent inserts can
+/// pick the same position; the deferred unique constraint then fails one of them at commit.
+pub async fn insert_module(
+    conn: &mut PgConnection,
+    id: Uuid,
+    course_id: Uuid,
+    parent_id: Option<Uuid>,
+    title: &str,
+) -> Result<Module, sqlx::Error> {
+    sqlx::query_as!(
+        Module,
+        r#"INSERT INTO content.modules (id, course_id, parent_id, position, title)
+           VALUES ($1, $2, $3::uuid,
+                   COALESCE((SELECT max(position) FROM content.modules
+                             WHERE course_id = $2 AND parent_id IS NOT DISTINCT FROM $3::uuid), 0) + 1,
+                   $4)
+           RETURNING id, course_id, parent_id, position, title,
+                     status AS "status: ModuleStatus", publish_at, created_at, updated_at"#,
+        id,
+        course_id,
+        parent_id,
+        title
+    )
+    .fetch_one(conn)
+    .await
+}
+
+pub async fn find_module(
+    conn: &mut PgConnection,
+    id: Uuid,
+) -> Result<Option<ModuleRow>, sqlx::Error> {
+    let row = sqlx::query!(
+        r#"SELECT m.id, m.course_id, m.parent_id, m.position, m.title,
+                  m.status AS "status: ModuleStatus", m.publish_at, m.created_at, m.updated_at,
+                  p.status AS "parent_status?: ModuleStatus", p.publish_at AS parent_publish_at
+           FROM content.modules m
+           LEFT JOIN content.modules p ON p.id = m.parent_id
+           WHERE m.id = $1"#,
+        id
+    )
+    .fetch_optional(conn)
+    .await?;
+    Ok(row.map(|row| ModuleRow {
+        module: Module {
+            id: row.id,
+            course_id: row.course_id,
+            parent_id: row.parent_id,
+            position: row.position,
+            title: row.title,
+            status: row.status,
+            publish_at: row.publish_at,
+            created_at: row.created_at,
+            updated_at: row.updated_at,
+        },
+        parent: release(row.parent_status, row.parent_publish_at),
+    }))
+}
+
+/// `title` is kept when `None`; `publish_at` is changed only when `set_publish_at` is true.
+pub async fn update_module(
+    conn: &mut PgConnection,
+    id: Uuid,
+    title: Option<&str>,
+    set_publish_at: bool,
+    publish_at: Option<DateTime<Utc>>,
+) -> Result<Module, sqlx::Error> {
+    sqlx::query_as!(
+        Module,
+        r#"UPDATE content.modules
+           SET title = COALESCE($2::text, title),
+               publish_at = CASE WHEN $3 THEN $4::timestamptz ELSE publish_at END,
+               updated_at = now()
+           WHERE id = $1
+           RETURNING id, course_id, parent_id, position, title,
+                     status AS "status: ModuleStatus", publish_at, created_at, updated_at"#,
+        id,
+        title,
+        set_publish_at,
+        publish_at
+    )
+    .fetch_one(conn)
+    .await
+}
+
+pub async fn delete_module(conn: &mut PgConnection, id: Uuid) -> Result<u64, sqlx::Error> {
+    let result = sqlx::query!("DELETE FROM content.modules WHERE id = $1", id)
+        .execute(conn)
+        .await?;
+    Ok(result.rows_affected())
+}
+
+/// The ids of one sibling sequence: the top-level modules of the course, or the sub-modules of a
+/// parent.
+pub async fn module_ids(
+    conn: &mut PgConnection,
+    course_id: Uuid,
+    parent_id: Option<Uuid>,
+) -> Result<Vec<Uuid>, sqlx::Error> {
+    sqlx::query_scalar!(
+        "SELECT id FROM content.modules
+         WHERE course_id = $1 AND parent_id IS NOT DISTINCT FROM $2::uuid",
+        course_id,
+        parent_id
+    )
+    .fetch_all(conn)
+    .await
+}
+
+/// Gives `ids[0]` position 1, `ids[1]` position 2 and so on, within one sibling sequence.
+/// Returns how many rows were rewritten.
+pub async fn reorder_modules(
+    conn: &mut PgConnection,
+    course_id: Uuid,
+    parent_id: Option<Uuid>,
+    ids: &[Uuid],
+) -> Result<u64, sqlx::Error> {
+    let result = sqlx::query!(
+        "UPDATE content.modules m SET position = o.pos::int, updated_at = now()
+         FROM unnest($3::uuid[]) WITH ORDINALITY AS o(id, pos)
+         WHERE m.id = o.id AND m.course_id = $1 AND m.parent_id IS NOT DISTINCT FROM $2::uuid",
+        course_id,
+        parent_id,
+        ids
+    )
+    .execute(conn)
+    .await?;
+    Ok(result.rows_affected())
+}
+
+/// Publishes a draft module. `None` when it was not a draft, so nothing is touched.
+pub async fn publish_module(
+    conn: &mut PgConnection,
+    id: Uuid,
+) -> Result<Option<Module>, sqlx::Error> {
+    sqlx::query_as!(
+        Module,
+        r#"UPDATE content.modules SET status = 'published', updated_at = now()
+           WHERE id = $1 AND status = 'draft'
+           RETURNING id, course_id, parent_id, position, title,
+                     status AS "status: ModuleStatus", publish_at, created_at, updated_at"#,
+        id
+    )
+    .fetch_optional(conn)
+    .await
+}
+
+pub async fn publish_draft_submodules(
+    conn: &mut PgConnection,
+    parent_id: Uuid,
+) -> Result<u64, sqlx::Error> {
+    let result = sqlx::query!(
+        "UPDATE content.modules SET status = 'published', updated_at = now()
+         WHERE parent_id = $1 AND status = 'draft'",
+        parent_id
+    )
+    .execute(conn)
+    .await?;
+    Ok(result.rows_affected())
+}
+
+/// Publishes the draft items of a module and of its sub-modules.
+pub async fn publish_draft_items_below(
+    conn: &mut PgConnection,
+    module_id: Uuid,
+) -> Result<u64, sqlx::Error> {
+    let result = sqlx::query!(
+        "UPDATE content.items SET status = 'published', updated_at = now()
+         WHERE status = 'draft'
+           AND (module_id = $1 OR module_id IN (SELECT id FROM content.modules WHERE parent_id = $1))",
+        module_id
+    )
+    .execute(conn)
+    .await?;
+    Ok(result.rows_affected())
+}
+
+// ---------------------------------------------------------------------------------------------
+// Items
+// ---------------------------------------------------------------------------------------------
+
+/// Inserts an item as the last of its module.
+pub async fn insert_item(
+    conn: &mut PgConnection,
+    id: Uuid,
+    module_id: Uuid,
+    course_id: Uuid,
+    kind: ItemKind,
+    title: &str,
+    body: &Map<String, Value>,
+) -> Result<Item, sqlx::Error> {
+    let raw = sqlx::query_as!(
+        RawItem,
+        r#"INSERT INTO content.items (id, module_id, course_id, position, kind, title, body)
+           VALUES ($1, $2, $3,
+                   COALESCE((SELECT max(position) FROM content.items WHERE module_id = $2), 0) + 1,
+                   $4, $5, $6)
+           RETURNING id, module_id, course_id, position, kind AS "kind: ItemKind", title,
+                     body AS "body: Body", status AS "status: ItemStatus", publish_at,
+                     created_at, updated_at"#,
+        id,
+        module_id,
+        course_id,
+        kind.as_str(),
+        title,
+        Json(body) as Json<&Map<String, Value>>
+    )
+    .fetch_one(conn)
+    .await?;
+    Ok(raw.into())
+}
+
+pub async fn find_item(conn: &mut PgConnection, id: Uuid) -> Result<Option<ItemRow>, sqlx::Error> {
+    let row = sqlx::query!(
+        r#"SELECT i.id, i.module_id, i.course_id, i.position, i.kind AS "kind: ItemKind", i.title,
+                  i.body AS "body: Body", i.status AS "status: ItemStatus", i.publish_at,
+                  i.created_at, i.updated_at,
+                  m.status AS "module_status: ModuleStatus", m.publish_at AS module_publish_at,
+                  p.status AS "parent_status?: ModuleStatus", p.publish_at AS parent_publish_at
+           FROM content.items i
+           JOIN content.modules m ON m.id = i.module_id
+           LEFT JOIN content.modules p ON p.id = m.parent_id
+           WHERE i.id = $1"#,
+        id
+    )
+    .fetch_optional(conn)
+    .await?;
+    Ok(row.map(|row| ItemRow {
+        item: Item {
+            id: row.id,
+            module_id: row.module_id,
+            course_id: row.course_id,
+            position: row.position,
+            kind: row.kind,
+            title: row.title,
+            body: row.body.0,
+            status: row.status,
+            publish_at: row.publish_at,
+            created_at: row.created_at,
+            updated_at: row.updated_at,
+        },
+        module: Release {
+            published: row.module_status == ModuleStatus::Published,
+            publish_at: row.module_publish_at,
+        },
+        module_parent: release(row.parent_status, row.parent_publish_at),
+    }))
+}
+
+/// `title` and `body` are kept when `None`; `publish_at` is changed only when `set_publish_at`.
+pub async fn update_item(
+    conn: &mut PgConnection,
+    id: Uuid,
+    title: Option<&str>,
+    body: Option<&Map<String, Value>>,
+    set_publish_at: bool,
+    publish_at: Option<DateTime<Utc>>,
+) -> Result<Item, sqlx::Error> {
+    let raw = sqlx::query_as!(
+        RawItem,
+        r#"UPDATE content.items
+           SET title = COALESCE($2::text, title),
+               body = COALESCE($3::jsonb, body),
+               publish_at = CASE WHEN $4 THEN $5::timestamptz ELSE publish_at END,
+               updated_at = now()
+           WHERE id = $1
+           RETURNING id, module_id, course_id, position, kind AS "kind: ItemKind", title,
+                     body AS "body: Body", status AS "status: ItemStatus", publish_at,
+                     created_at, updated_at"#,
+        id,
+        title,
+        body.map(Json) as Option<Json<&Map<String, Value>>>,
+        set_publish_at,
+        publish_at
+    )
+    .fetch_one(conn)
+    .await?;
+    Ok(raw.into())
+}
+
+pub async fn delete_item(conn: &mut PgConnection, id: Uuid) -> Result<u64, sqlx::Error> {
+    let result = sqlx::query!("DELETE FROM content.items WHERE id = $1", id)
+        .execute(conn)
+        .await?;
+    Ok(result.rows_affected())
+}
+
+pub async fn item_ids(conn: &mut PgConnection, module_id: Uuid) -> Result<Vec<Uuid>, sqlx::Error> {
+    sqlx::query_scalar!(
+        "SELECT id FROM content.items WHERE module_id = $1",
+        module_id
+    )
+    .fetch_all(conn)
+    .await
+}
+
+/// Gives `ids[0]` position 1, `ids[1]` position 2 and so on. Returns how many rows were rewritten.
+pub async fn reorder_items(
+    conn: &mut PgConnection,
+    module_id: Uuid,
+    ids: &[Uuid],
+) -> Result<u64, sqlx::Error> {
+    let result = sqlx::query!(
+        "UPDATE content.items i SET position = o.pos::int, updated_at = now()
+         FROM unnest($2::uuid[]) WITH ORDINALITY AS o(id, pos)
+         WHERE i.id = o.id AND i.module_id = $1",
+        module_id,
+        ids
+    )
+    .execute(conn)
+    .await?;
+    Ok(result.rows_affected())
+}
+
+/// Publishes a draft item. `None` when it was not a draft, so nothing is touched.
+pub async fn publish_item(conn: &mut PgConnection, id: Uuid) -> Result<Option<Item>, sqlx::Error> {
+    let raw = sqlx::query_as!(
+        RawItem,
+        r#"UPDATE content.items SET status = 'published', updated_at = now()
+           WHERE id = $1 AND status = 'draft'
+           RETURNING id, module_id, course_id, position, kind AS "kind: ItemKind", title,
+                     body AS "body: Body", status AS "status: ItemStatus", publish_at,
+                     created_at, updated_at"#,
+        id
+    )
+    .fetch_optional(conn)
+    .await?;
+    Ok(raw.map(Item::from))
+}
+
+// ---------------------------------------------------------------------------------------------
+// The tree
+// ---------------------------------------------------------------------------------------------
+
+/// Every module of the course with its items, one row per (module, item) and one row for a module
+/// without items. Top-level modules come in position order, each directly followed by its
+/// sub-modules in position order; the items of one module come in position order.
+///
+/// With `open_at`, only rows a student may see at that moment are returned: the module and its
+/// parent are published and not scheduled later, and so is each item. `policy` checks every row
+/// again; this filter keeps a course page from loading what it would then drop.
+pub async fn tree(
+    conn: &mut PgConnection,
+    course_id: Uuid,
+    open_at: Option<DateTime<Utc>>,
+) -> Result<Vec<TreeRow>, sqlx::Error> {
+    let rows = sqlx::query!(
+        r#"SELECT m.id, m.course_id, m.parent_id, m.position, m.title,
+                  m.status AS "status: ModuleStatus", m.publish_at, m.created_at, m.updated_at,
+                  p.status AS "parent_status?: ModuleStatus", p.publish_at AS parent_publish_at,
+                  i.id AS "item_id?", i.kind AS "item_kind?: ItemKind", i.title AS "item_title?",
+                  i.status AS "item_status?: ItemStatus", i.publish_at AS item_publish_at,
+                  i.position AS "item_position?"
+           FROM content.modules m
+           LEFT JOIN content.modules p ON p.id = m.parent_id
+           LEFT JOIN content.items i
+                  ON i.module_id = m.id
+                 AND ($2::timestamptz IS NULL
+                      OR (i.status = 'published' AND (i.publish_at IS NULL OR i.publish_at <= $2)))
+           WHERE m.course_id = $1
+             AND ($2::timestamptz IS NULL
+                  OR (m.status = 'published' AND (m.publish_at IS NULL OR m.publish_at <= $2)
+                      AND (p.id IS NULL
+                           OR (p.status = 'published' AND (p.publish_at IS NULL OR p.publish_at <= $2)))))
+           ORDER BY COALESCE(p.position, m.position), m.parent_id NULLS FIRST, m.position, i.position"#,
+        course_id,
+        open_at
+    )
+    .fetch_all(conn)
+    .await?;
+    Ok(rows
+        .into_iter()
+        .map(|row| TreeRow {
+            module: Module {
+                id: row.id,
+                course_id: row.course_id,
+                parent_id: row.parent_id,
+                position: row.position,
+                title: row.title,
+                status: row.status,
+                publish_at: row.publish_at,
+                created_at: row.created_at,
+                updated_at: row.updated_at,
+            },
+            parent: release(row.parent_status, row.parent_publish_at),
+            item: match (row.item_id, row.item_kind, row.item_title, row.item_status) {
+                (Some(id), Some(kind), Some(title), Some(status)) => Some(ItemSummary {
+                    id,
+                    kind,
+                    title,
+                    status,
+                    publish_at: row.item_publish_at,
+                    position: row.item_position.unwrap_or_default(),
+                }),
+                _ => None,
+            },
+        })
+        .collect())
+}

@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE content.modules SET status = 'published', updated_at = now()\n         WHERE parent_id = $1 AND status = 'draft'",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "b94c6ff5a35cb118e13cd2ac850b7c8f2e55be66074bbf94b55b8842779b8fd9"
+}
