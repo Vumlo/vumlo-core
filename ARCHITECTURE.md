@@ -196,7 +196,7 @@ Key points:
 ## Configuration
 
 `learnly.toml`, any key overridable with `LEARNLY__SECTION__KEY` (see `learnly.example.toml`):
-`server.bind_addr`, `server.public_origin`, `server.client_ip_header?`, `database.url`, `database.max_connections`, `log.format`, `institution.name`, and an optional `[auth]` section (`password_min_length` = 12, `cookie_secure` = true, `allowed_domains` = [], used from task 004). `institution.mode` (school | university) is planned. `institution.grading_scale` (`twelve` | `hundred`) limits assignment points, see [ADR-0022](docs/decisions/0022-grading-scale-setting.md); optional, default `hundred` until `institution.mode` exists, then it follows the mode. `editor.profiles.<name>.features` and `editor.video_providers` (default `["youtube", "vimeo"]`; an empty list switches video off) narrow what a place of the editor allows, see [ADR-0025](docs/decisions/0025-block-documents.md) and [ADR-0027](docs/decisions/0027-document-types-and-video-blocks.md). A configuration can only narrow: one that widens a profile or names an unknown profile, feature or provider stops the server at startup. Planned: `editor.html` (default `false`).
+`server.bind_addr`, `server.public_origin`, `server.client_ip_header?`, `database.url`, `database.max_connections`, `log.format`, `institution.name`, and an optional `[auth]` section (`password_min_length` = 12, `cookie_secure` = true, `allowed_domains` = [], used from task 004). `institution.mode` (school | university) is planned. `institution.grading_scale` (`twelve` | `hundred`) limits assignment points, see [ADR-0022](docs/decisions/0022-grading-scale-setting.md); optional, default `hundred` until `institution.mode` exists, then it follows the mode. `editor.profiles.<name>.features` and `editor.video_providers` (default `["youtube", "vimeo"]`; an empty list switches video off) narrow what a place of the editor allows, see [ADR-0025](docs/decisions/0025-block-documents.md) and [ADR-0027](docs/decisions/0027-document-types-and-video-blocks.md). The configuration is plain data. A configuration can only narrow: `AppState::new` resolves it once, when the server starts, and one that widens a profile or names an unknown profile, feature or provider stops the server there with a message that names the key and the value. Handlers and services receive the resolved profiles from `AppState`. Planned: `editor.html` (default `false`).
 
 ## Authorization
 
@@ -259,7 +259,7 @@ The content endpoints (tag `content`, all under `/api/v1`):
 | `PATCH /modules/{id}`, `DELETE /modules/{id}` | edit (`publish_at: null` clears it), delete with everything below |
 | `PUT /courses/{id}/modules/order` | reorder the top-level modules, or the sub-modules of `parent_id` |
 | `POST /modules/{id}/publish` | publish, `cascade` required |
-| `POST /modules/{id}/items`, `PUT /modules/{id}/items/order` | create a `text` item or an assignment, reorder a module's items |
+| `POST /modules/{id}/items`, `PUT /modules/{id}/items/order` | create a `text` item or an assignment, reorder a module's items; a `body` is validated as a document only after the caller is authorized (404, then 403, then 422) |
 | `GET`, `PATCH`, `DELETE /items/{id}`, `POST /items/{id}/publish` | read (with `body`), edit, delete, publish a `text` item or an assignment |
 | `GET /editor/profiles` | any signed-in user: the document profiles as enforced (features, single block or not, limits) and the enabled video providers |
 
