@@ -1,6 +1,6 @@
 # Learnly — Architecture
 
-Status: **in progress.** Implemented: the foundation (config, migrations, health, OpenAPI, Problem Details) and `identity` + `policy` (users, password login, sessions, admin user management). Everything else below is still design.
+Status: **in progress.** Implemented: the foundation (config, migrations, health, OpenAPI, Problem Details), `identity` + `policy` (users, password login, sessions, admin user management), and the first slice of `teaching` (courses, members, publishing) with a minimal `events.audit_log`. Everything else below is still design.
 This file is the current picture of the system. Every decision behind it has a record in [`docs/decisions/`](docs/decisions/). If this file and an ADR disagree, the ADR wins and this file gets fixed.
 
 ## Goal
@@ -59,12 +59,12 @@ docs/decisions/
 |--------------|---------------------------------|----------------|
 | `identity`   | `identity.*`                    | users, login identities, sessions, tokens |
 | `org`        | `org.*`                         | terms, groups (cohorts), grading scales, institution settings |
-| `teaching`   | `teaching.*`                    | courses, memberships, group links, course subgroups |
+| `teaching`   | `teaching.*`                    | courses, memberships, publishing; group links and course subgroups are planned |
 | `content`    | `content.*`                     | modules, items, assignments and assignment types |
 | `assessment` | `assessment.*`                  | submissions, attempts, lateness, auto-grading of forms |
 | `gradebook`  | `gradebook.*`                   | grades (draft/published), grade history, publishing, gradebook view |
 | `files`      | `files.*`                       | uploads, storage backends |
-| `events`     | `events.*`                      | outbox, webhooks, audit log, scheduled jobs |
+| `events`     | `events.*`                      | audit log (built); outbox, webhooks, scheduled jobs (planned) |
 | `policy`     | — (no tables)                   | `authorize(&Actor, Action)` — the only place permissions are checked |
 
 Rules ([ADR-0001](docs/decisions/0001-modular-monolith.md)):
@@ -124,6 +124,8 @@ org
 teaching
   courses          id, kind: regular | template, title, term_id?, grading_scale_id,
                    status: draft | published | archived, owner_id, created_by
+                   -- built: no grading_scale_id yet, and term_id has no foreign key until
+                   -- org.terms exists (both arrive with `org`)
   course_groups    course_id, group_id, subgroup_id?   -- live link; no subgroup = whole group
   memberships      course_id, user_id, role: teacher | assistant | student
   effective_members (VIEW) = memberships ∪ students of linked groups / subgroups
@@ -194,7 +196,7 @@ Key points:
 
 ## Authorization
 
-`policy::authorize(&Actor, Action)` decides every check. The resource an action needs travels inside its `Action` variant, so course-level actions can be added without changing existing callers. Today: `ManageOwnAccount` (any role) and `ManageUsers` (admin only).
+`policy::authorize(&Actor, Action)` decides every check. The resource an action needs travels inside its `Action` variant, so course-level actions can be added without changing existing callers. Today: `ManageOwnAccount` (any role), `ManageUsers` (admin only), and the course actions `CreateCourse`, `ViewOwnCourses`, `ViewCourse`, `PublishCourse`, `ManageMembership`, `DeleteCourse` and `TransferOwnership`. A course action carries a `CourseAccess` (the actor's course role, whether they own it, and its status), which `teaching` reads from the database. The delete and transfer actions have no endpoint yet.
 
 There are two levels of roles ([ADR-0004](docs/decisions/0004-roles-and-policy.md)).
 
@@ -214,6 +216,7 @@ There are two levels of roles ([ADR-0004](docs/decisions/0004-roles-and-policy.m
 | View drafts, edit content, publish content                  |    –    |     ✓     |    ✓    |   ✓   |   ✓   |
 | Grade, publish grades                                       |    –    |     ✓     |    ✓    |   ✓   |   ✓   |
 | Enroll/remove students, link groups, manage course subgroups|    –    |     ✓     |    ✓    |   ✓   |   ✓   |
+| Publish the course ([ADR-0019](docs/decisions/0019-course-publishing.md)) |    –    |     –     |    ✓    |   ✓   |   ✓   |
 | Add/remove teachers and assistants                          |    –    |     –     |    ✓    |   ✓   |   ✓   |
 | Change grading scale, archive course                        |    –    |     –     |    ✓    |   ✓   |   ✓   |
 | Delete course, transfer ownership                           |    –    |     –     |    –    |   ✓   |   ✓   |
@@ -222,11 +225,15 @@ Invariants:
 
 - Course role `teacher` requires institution role `teacher` or `admin`. An institution `student` can be a course `assistant`.
 - An institution `teacher` may join any course as `student`.
-- An `admin` has no membership rows and acts as an implicit owner everywhere. **Every admin action inside a course is written to `audit_log`.**
+- An `admin` has no membership rows and acts as an implicit owner everywhere. **Every admin action inside a course is written to `audit_log`** (course creation, publishing, adding and removing members; reads are not audited).
+- The owner is also a `teacher` member and can be neither removed nor given another role. A course an admin creates has no owner membership.
+- Putting the role a member already has changes nothing. Member writes lock the course row first, so concurrent writers see each other's committed roles.
+- Course endpoints answer 404 to anyone who may not see the course, 403 to those who may see it but not do the action.
 - The owner is always a course teacher or an admin.
 
 ## Visibility rules
 
+- A student sees a course only if it is `published`; a draft or archived course is a 404 for them, in `GET /courses/{id}`, its members and `GET /me/courses`. They can still be enrolled in a draft. Staff and admins see every status.
 - A student sees an item only if **the course, the module and the item** are all `published` and `publish_at <= now()`.
 - A student **never receives `draft_*` grade fields.** Student-facing repo functions do not select those columns, and a test enforces this.
 - A teacher sees only `submitted` submissions, never a student's draft.
