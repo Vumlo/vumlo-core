@@ -7,6 +7,7 @@ use sqlx::postgres::{PgTypeInfo, PgValueRef};
 use sqlx::types::Decimal;
 use uuid::Uuid;
 
+use crate::points;
 use crate::policy::Release;
 use crate::text_enum::text_enum;
 
@@ -76,17 +77,7 @@ pub struct MaxPoints(Decimal);
 impl MaxPoints {
     /// Accepts digits with an optional fraction of one or two digits: "20", "7.5", "20.00".
     pub fn parse(raw: &str) -> Result<Self, ModelError> {
-        let (whole, fraction) = raw.split_once('.').unwrap_or((raw, ""));
-        let digits = |part: &str| part.bytes().all(|b| b.is_ascii_digit());
-        let shape_ok = !whole.is_empty()
-            && digits(whole)
-            && digits(fraction)
-            && (raw.contains('.') == (1..=2).contains(&fraction.len()))
-            && raw.len() <= 16;
-        if !shape_ok {
-            return Err(ModelError::MaxPoints);
-        }
-        let value: Decimal = raw.parse().map_err(|_| ModelError::MaxPoints)?;
+        let value = points::parse_decimal(raw).ok_or(ModelError::MaxPoints)?;
         Self::from_decimal(value)
     }
 

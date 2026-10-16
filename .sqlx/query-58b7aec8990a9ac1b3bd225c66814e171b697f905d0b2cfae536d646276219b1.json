@@ -1,0 +1,96 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT g.assignment_id, g.student_id,\n                  g.draft_score, g.draft_feedback, g.published_score, g.published_feedback,\n                  ROW(g.draft_score, g.draft_feedback)\n                      IS DISTINCT FROM ROW(g.published_score, g.published_feedback)\n                      AS \"has_unpublished_changes!\"\n           FROM gradebook.grades g\n           JOIN content.items i ON i.id = g.assignment_id\n           WHERE i.course_id = $1 AND g.student_id = ANY($2)",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "assignment_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "gradebook.grades",
+            "name": "assignment_id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "student_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "gradebook.grades",
+            "name": "student_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "draft_score",
+        "type_info": "Numeric",
+        "origin": {
+          "Table": {
+            "table": "gradebook.grades",
+            "name": "draft_score"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "draft_feedback",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "gradebook.grades",
+            "name": "draft_feedback"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "published_score",
+        "type_info": "Numeric",
+        "origin": {
+          "Table": {
+            "table": "gradebook.grades",
+            "name": "published_score"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "published_feedback",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "gradebook.grades",
+            "name": "published_feedback"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "has_unpublished_changes!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "UuidArray"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      null
+    ]
+  },
+  "hash": "58b7aec8990a9ac1b3bd225c66814e171b697f905d0b2cfae536d646276219b1"
+}

@@ -1,0 +1,75 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO gradebook.grades\n               (assignment_id, student_id, draft_score, draft_feedback, draft_updated_by)\n           VALUES ($1, $2, $3, $4, $5)\n           ON CONFLICT (assignment_id, student_id) DO UPDATE\n           SET draft_score = EXCLUDED.draft_score,\n               draft_feedback = EXCLUDED.draft_feedback,\n               draft_updated_by = EXCLUDED.draft_updated_by,\n               draft_updated_at = now()\n           RETURNING draft_score, draft_feedback, published_score, published_feedback,\n                     ROW(draft_score, draft_feedback)\n                         IS DISTINCT FROM ROW(published_score, published_feedback)\n                         AS \"has_unpublished_changes!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "draft_score",
+        "type_info": "Numeric",
+        "origin": {
+          "Table": {
+            "table": "gradebook.grades",
+            "name": "draft_score"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "draft_feedback",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "gradebook.grades",
+            "name": "draft_feedback"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "published_score",
+        "type_info": "Numeric",
+        "origin": {
+          "Table": {
+            "table": "gradebook.grades",
+            "name": "published_score"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "published_feedback",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "gradebook.grades",
+            "name": "published_feedback"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "has_unpublished_changes!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Numeric",
+        "Text",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      true,
+      true,
+      true,
+      true,
+      null
+    ]
+  },
+  "hash": "3be3afd7ce85ab5a14960cb2b861d3a44a56d0f447070e8366758c963936eb70"
+}

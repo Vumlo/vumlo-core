@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT EXISTS (\n               SELECT 1 FROM gradebook.grades g\n               JOIN content.items i ON i.id = g.assignment_id\n               JOIN content.modules m ON m.id = i.module_id\n               WHERE (m.id = $1 OR m.parent_id = $1)\n                 AND (g.draft_score IS NOT NULL OR g.draft_feedback IS NOT NULL\n                      OR g.published_score IS NOT NULL OR g.published_feedback IS NOT NULL)\n           ) AS \"has!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "has!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "29d5fdac3d5a7ddd66cfa40ce69fe27598cc9b0f87352f7f641092a9898d6066"
+}

@@ -1,0 +1,76 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT i.id AS assignment_id, i.title, a.max_points, a.is_bonus,\n                  i.status AS \"status: ColumnStatus\"\n           FROM content.assignments a\n           JOIN content.items i ON i.id = a.item_id\n           JOIN content.modules m ON m.id = i.module_id\n           LEFT JOIN content.modules p ON p.id = m.parent_id\n           WHERE i.course_id = $1\n           ORDER BY COALESCE(p.position, m.position), m.parent_id NULLS FIRST, m.position,\n                    i.position",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "assignment_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "content.items",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "title",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "content.items",
+            "name": "title"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "max_points",
+        "type_info": "Numeric",
+        "origin": {
+          "Table": {
+            "table": "content.assignments",
+            "name": "max_points"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "is_bonus",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "content.assignments",
+            "name": "is_bonus"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "status: ColumnStatus",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "content.items",
+            "name": "status"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "0f5c99760e00a008a88accb760ec24777a6c6c2c126b2f40353c0fe5d02e7ef2"
+}

@@ -27,6 +27,7 @@ use utoipa_scalar::{Scalar, Servable};
 
 use crate::content::{self, EditorConfigError, EffectiveProfiles};
 use crate::error::{ApiError, problem_details};
+use crate::gradebook;
 use crate::health;
 use crate::identity::{self, SetupError};
 use crate::settings::Settings;
@@ -171,7 +172,8 @@ pub fn router(state: AppState) -> Result<Router, SetupError> {
                 .routes(routes!(health::health))
                 .merge(identity)
                 .merge(teaching::router())
-                .merge(content::router()),
+                .merge(content::router())
+                .merge(gradebook::router()),
         )
         .split_for_parts();
     let spec = openapi.clone();
