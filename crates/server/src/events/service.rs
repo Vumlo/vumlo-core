@@ -3,6 +3,7 @@ use sqlx::PgConnection;
 use super::model::AuditEntry;
 use super::repo;
 use crate::actor::Actor;
+use crate::policy::implicit_course_owner;
 
 #[derive(Debug, thiserror::Error)]
 pub enum EventsError {
@@ -19,5 +20,19 @@ pub async fn audit(
     entry: AuditEntry,
 ) -> Result<(), EventsError> {
     repo::insert_audit(conn, actor.user_id(), &entry).await?;
+    Ok(())
+}
+
+/// Like [`audit`], but only when `actor` acts as an implicit course owner. Admins have no
+/// membership, so everything they change inside a course is audited (ADR-0004); other actors
+/// write nothing.
+pub async fn audit_admin(
+    conn: &mut PgConnection,
+    actor: &Actor,
+    entry: AuditEntry,
+) -> Result<(), EventsError> {
+    if implicit_course_owner(actor) {
+        audit(conn, actor, entry).await?;
+    }
     Ok(())
 }

@@ -5,4 +5,4 @@ mod repo;
 mod service;
 
 pub use model::AuditEntry;
-pub use service::{EventsError, audit};
+pub use service::{EventsError, audit, audit_admin};

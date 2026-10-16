@@ -89,19 +89,6 @@ async fn load(
     Ok((course, access))
 }
 
-/// Admins act as implicit owners with no membership, so everything they change in a course is
-/// audited (ADR-0004).
-async fn audit_admin(
-    conn: &mut PgConnection,
-    actor: &Actor,
-    entry: AuditEntry,
-) -> Result<(), TeachingError> {
-    if implicit_course_owner(actor) {
-        events::audit(conn, actor, entry).await?;
-    }
-    Ok(())
-}
-
 /// Creates a draft course owned by the actor. Teachers also join it as its `teacher`; an admin
 /// owns it without a membership.
 pub async fn create_course(
@@ -114,7 +101,7 @@ pub async fn create_course(
     if !implicit_course_owner(actor) {
         repo::upsert_membership(conn, course.id, actor.user_id(), CourseRole::Teacher).await?;
     }
-    audit_admin(
+    events::audit_admin(
         conn,
         actor,
         AuditEntry {
@@ -180,7 +167,7 @@ pub async fn publish_course(
         CourseStatus::Archived => Err(TeachingError::NotPublishable),
         CourseStatus::Draft => {
             let published = repo::set_published(conn, course_id).await?;
-            audit_admin(
+            events::audit_admin(
                 conn,
                 actor,
                 AuditEntry {
@@ -236,7 +223,7 @@ pub async fn put_member(
         return Err(TeachingError::RoleNotAllowed);
     }
     repo::upsert_membership(conn, course_id, user_id, role).await?;
-    audit_admin(
+    events::audit_admin(
         conn,
         actor,
         AuditEntry {
@@ -266,7 +253,7 @@ pub async fn remove_member(
         return Err(TeachingError::OwnerCannotBeRemoved);
     }
     repo::delete_membership(conn, course_id, user_id).await?;
-    audit_admin(
+    events::audit_admin(
         conn,
         actor,
         AuditEntry {
