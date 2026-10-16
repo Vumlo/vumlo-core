@@ -8,23 +8,42 @@ publish = false
 
 [workspace.dependencies]
 anyhow = "1"
+argon2 = "0.6"
 axum = "0.8"
+axum-extra = { version = "0.12", default-features = false, features = ["cookie"] }
+base64 = "0.23"
+chrono = { version = "0.4", features = ["serde"] }
 clap = { version = "4", features = ["derive"] }
 config = { version = "0.15", default-features = false, features = ["toml"] }
+garde = { version = "0.23", features = ["derive"] }
+rand = "0.10"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-sqlx = { version = "0.9", default-features = false, features = ["postgres", "runtime-tokio", "tls-rustls", "migrate", "macros"] }
+sha2 = "0.11"
+sqlx = { version = "0.9", default-features = false, features = ["postgres", "runtime-tokio", "tls-rustls", "migrate", "macros", "uuid", "chrono"] }
+thiserror = "2"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "signal"] }
 tower-http = { version = "0.7", features = ["trace", "timeout", "limit"] }
+tower_governor = { version = "0.8", default-features = false, features = ["axum"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["json"] }
-utoipa = "6"
+utoipa = { version = "6", features = ["uuid", "chrono"] }
 utoipa-axum = "0.3"
 utoipa-scalar = { version = "0.4", features = ["axum"] }
+uuid = { version = "1", features = ["v7", "serde"] }
+zxcvbn = "3"
 
 api-types = { path = "crates/api-types" }
 server = { path = "crates/server" }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"
+
+# Password hashing and strength checks are far too slow unoptimized; keep tests fast.
+[profile.dev.package.argon2]
+opt-level = 3
+[profile.dev.package.blake2]
+opt-level = 3
+[profile.dev.package.zxcvbn]
+opt-level = 3

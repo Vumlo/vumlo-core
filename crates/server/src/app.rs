@@ -4,6 +4,8 @@ use std::future::Future;
 use std::sync::Arc;
 use std::time::Duration;
 
+use std::net::SocketAddr;
+
 use axum::http::StatusCode;
 use axum::middleware::map_response;
 use axum::routing::get;
@@ -17,14 +19,17 @@ use tower_http::limit::RequestBodyLimitLayer;
 use tower_http::timeout::TimeoutLayer;
 use tower_http::trace::{DefaultMakeSpan, DefaultOnResponse, TraceLayer};
 use tracing::Level;
-use utoipa::OpenApi;
+use utoipa::openapi::security::{ApiKey, ApiKeyValue, HttpAuthScheme, HttpBuilder, SecurityScheme};
+use utoipa::{Modify, OpenApi};
 use utoipa_axum::router::OpenApiRouter;
 use utoipa_axum::routes;
 use utoipa_scalar::{Scalar, Servable};
 
 use crate::error::{ApiError, problem_details};
 use crate::health;
+use crate::identity::{self, SetupError};
 use crate::settings::Settings;
+use crate::teaching;
 
 pub static MIGRATOR: Migrator = sqlx::migrate!("../../migrations");
 
@@ -40,8 +45,32 @@ pub struct AppState {
 }
 
 #[derive(OpenApi)]
-#[openapi(info(title = "Learnly API"))]
+#[openapi(info(title = "Learnly API"), modifiers(&SecurityAddon))]
 struct ApiDoc;
+
+/// The two ways to authenticate (ADR-0003): the web cookie and the bearer token.
+struct SecurityAddon;
+
+impl Modify for SecurityAddon {
+    fn modify(&self, openapi: &mut utoipa::openapi::OpenApi) {
+        let components = openapi.components.get_or_insert_with(Default::default);
+        components.add_security_scheme(
+            "cookie",
+            SecurityScheme::ApiKey(ApiKey::Cookie(ApiKeyValue::new(identity::COOKIE_NAME))),
+        );
+        components.add_security_scheme(
+            "bearer",
+            SecurityScheme::Http(
+                HttpBuilder::new()
+                    .scheme(HttpAuthScheme::Bearer)
+                    .description(Some(
+                        "A session token from `POST /auth/login` with `client: app`.",
+                    ))
+                    .build(),
+            ),
+        );
+    }
+}
 
 pub async fn connect(settings: &Settings) -> Result<PgPool, sqlx::Error> {
     PgPoolOptions::new()
@@ -115,15 +144,19 @@ pub async fn ensure_migrated(pool: &PgPool) -> Result<(), MigrationCheckError> {
     }
 }
 
-pub fn router(state: AppState) -> Router {
+pub fn router(state: AppState) -> Result<Router, SetupError> {
+    let identity = identity::router(&state.config)?;
     let (router, openapi) = OpenApiRouter::with_openapi(ApiDoc::openapi())
         .nest(
             "/api/v1",
-            OpenApiRouter::new().routes(routes!(health::health)),
+            OpenApiRouter::new()
+                .routes(routes!(health::health))
+                .merge(identity)
+                .merge(teaching::router()),
         )
         .split_for_parts();
     let spec = openapi.clone();
-    router
+    Ok(router
         .route(
             "/api/v1/openapi.json",
             get(move || async move { Json(spec) }),
@@ -141,7 +174,7 @@ pub fn router(state: AppState) -> Router {
                 .make_span_with(DefaultMakeSpan::new().level(Level::INFO))
                 .on_response(DefaultOnResponse::new().level(Level::INFO)),
         )
-        .layer(map_response(problem_details))
+        .layer(map_response(problem_details)))
 }
 
 pub async fn serve(
@@ -149,9 +182,12 @@ pub async fn serve(
     router: Router,
     shutdown: impl Future<Output = ()> + Send + 'static,
 ) -> std::io::Result<()> {
-    axum::serve(listener, router)
-        .with_graceful_shutdown(shutdown)
-        .await
+    axum::serve(
+        listener,
+        router.into_make_service_with_connect_info::<SocketAddr>(),
+    )
+    .with_graceful_shutdown(shutdown)
+    .await
 }
 
 /// Registers SIGINT and SIGTERM handlers now; the returned future completes on the first signal.

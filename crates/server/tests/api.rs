@@ -1,45 +1,11 @@
-use std::sync::Arc;
+mod common;
+
 use std::time::Duration;
 
 use api_types::{HealthResponse, ProblemDetails};
-use server::app::{self, AppState};
-use server::settings::{DatabaseSettings, LogFormat, LogSettings, ServerSettings, Settings};
+use common::spawn;
 use sqlx::PgPool;
 use sqlx::postgres::PgPoolOptions;
-use tokio::net::TcpListener;
-
-fn test_settings() -> Settings {
-    Settings {
-        server: ServerSettings {
-            bind_addr: ([127, 0, 0, 1], 0).into(),
-        },
-        database: DatabaseSettings {
-            url: String::new(),
-            max_connections: 1,
-        },
-        log: LogSettings {
-            format: LogFormat::Pretty,
-        },
-    }
-}
-
-/// Starts the real server on a random local port and returns its base URL.
-async fn spawn(db: PgPool) -> String {
-    let listener = TcpListener::bind("127.0.0.1:0")
-        .await
-        .expect("bind test listener");
-    let addr = listener.local_addr().expect("listener address");
-    let state = AppState {
-        db,
-        config: Arc::new(test_settings()),
-    };
-    tokio::spawn(app::serve(
-        listener,
-        app::router(state),
-        std::future::pending(),
-    ));
-    format!("http://{addr}")
-}
 
 fn content_type(response: &reqwest::Response) -> &str {
     response.headers()["content-type"]
@@ -124,6 +90,43 @@ async fn openapi_document_contains_health_path(pool: PgPool) {
     assert!(doc["paths"]["/api/v1/health"]["get"].is_object(), "{doc}");
     assert!(
         doc["components"]["schemas"]["HealthResponse"].is_object(),
+        "{doc}"
+    );
+}
+
+#[sqlx::test(migrator = "server::app::MIGRATOR")]
+async fn openapi_document_declares_cookie_and_bearer_security(pool: PgPool) {
+    let base = spawn(pool).await;
+
+    let doc: serde_json::Value = serde_json::from_slice(
+        &reqwest::get(format!("{base}/api/v1/openapi.json"))
+            .await
+            .unwrap()
+            .bytes()
+            .await
+            .unwrap(),
+    )
+    .unwrap();
+
+    let schemes = &doc["components"]["securitySchemes"];
+    assert_eq!(schemes["cookie"]["type"], "apiKey");
+    assert_eq!(schemes["cookie"]["in"], "cookie");
+    assert_eq!(schemes["cookie"]["name"], "learnly_session");
+    assert_eq!(schemes["bearer"]["type"], "http");
+    assert_eq!(schemes["bearer"]["scheme"], "bearer");
+    let logout = &doc["paths"]["/api/v1/auth/logout"]["post"];
+    assert_eq!(
+        logout["security"][0]["cookie"],
+        serde_json::json!([]),
+        "{logout}"
+    );
+    assert_eq!(
+        logout["security"][1]["bearer"],
+        serde_json::json!([]),
+        "{logout}"
+    );
+    assert!(
+        doc["paths"]["/api/v1/auth/login"]["post"].is_object(),
         "{doc}"
     );
 }

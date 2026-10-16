@@ -16,14 +16,14 @@ All crates were checked on crates.io in October 2026: they exist, are maintained
 | `tokio` 1 | The de-facto async runtime. axum, sqlx and reqwest are built on it. | — |
 | `axum` 0.8 | Built by the tokio team on top of `tower`, so middleware (timeouts, tracing, CORS, rate limits) is reusable. Handlers are plain functions with typed extractors, no macros. Most used Rust web framework. | `actix-web`: equally mature, but has its own middleware system outside the `tower` ecosystem. |
 | `tower-http` | Standard layers: request tracing, CORS, timeouts, body size limit, compression. | — |
-| `axum-extra` | `CookieJar` for the web session cookie. | — |
+| `axum-extra` (feature `cookie` only) | `CookieJar` to read the web session cookie. The `Set-Cookie` header is written by hand. | — |
 
 ### Database
 
 | Crate | Why | Rejected |
 |---|---|---|
 | `sqlx` 0.9 (`postgres`, `runtime-tokio`, `tls-rustls`, `migrate`, `uuid`, `chrono`, `json`, `rust_decimal`) | We write plain SQL, and `query!` checks it against the real schema at compile time. The design relies on PostgreSQL features that ORMs hide or fight: per-module schemas, the `effective_members` view, `FOR UPDATE SKIP LOCKED` in the outbox, draft → published copied in one `UPDATE`. You see exactly what hits the database. | `sea-orm`: ORM, closest to JPA, but hides SQL and complex queries end up raw anyway. `diesel`: very strict typed query builder with a steep learning curve and a sync-first design. |
-| sqlx migrations | Plain `.sql` files in `migrations/`, embedded into the binary with `sqlx::migrate!` and run by `learnly-server migrate`. One tool instead of two. | `refinery`: a separate tool for the same job. |
+| sqlx migrations | Plain `.sql` files in `migrations/`, embedded into the binary with `sqlx::migrate!` and run by `learnly-server migrate`. A `build.rs` watches `migrations/` so a new file triggers a rebuild. One tool instead of two. | `refinery`: a separate tool for the same job. |
 
 Consequences: CI needs either a database at build time or sqlx offline mode (`cargo sqlx prepare`, with the `.sqlx/` folder committed). Dynamic filters use `sqlx::QueryBuilder`.
 
@@ -59,12 +59,14 @@ Rule: request DTOs are validated with `garde` at the HTTP edge. Inside services,
 
 | Crate | Why |
 |---|---|
-| `argon2` 0.6 | Argon2id password hashing, the current OWASP recommendation. Stored in PHC string format, so parameters can be raised later. |
+| `argon2` 0.6 | Argon2id password hashing, the current OWASP recommendation (19 MiB, 2 iterations, 1 lane). Stored in PHC string format, so parameters can be raised later. |
 | `rand` 0.10 | 256-bit random session tokens, device codes and user codes. |
+| `base64` 0.23 | Encodes session tokens and temporary passwords as base64url (no padding). Encode-only; added in task 002 (amends this ADR). |
 | `sha2` 0.11 | Session tokens are stored as SHA-256 hashes. Argon2 is not needed here: the tokens are random and high-entropy, unlike passwords, and a fast hash keeps the per-request lookup cheap. |
 | `hmac` 0.13 | Webhook signatures (ADR-0007). |
 | `openidconnect` 4 | Google sign-in: discovery, PKCE, ID-token verification for the web redirect flow and for mobile ID tokens. |
-| `tower_governor` | Rate limiting of login, registration and device-code endpoints. |
+| `tower_governor` 0.8 (feature `axum` only; the default also pulls `tonic`) | Per-IP rate limiting of login, registration and device-code endpoints. |
+| `zxcvbn` 3 | Password strength check (ADR-0017): catches common passwords, dictionary words and patterns, takes user inputs as context, and returns feedback for the UI. It replaces maintaining our own blocklist. |
 
 Sessions and the device authorization flow are **implemented in-house** (ADR-0003). They are about 300 lines on top of the crates above. `tower-sessions` was rejected because it is cookie-centric, while we need the same session usable as a bearer token.
 
@@ -87,8 +89,13 @@ Sessions and the device authorization flow are **implemented in-house** (ADR-000
 - `#[sqlx::test]` creates a fresh database per test and applies migrations.
 - API tests start the real server on a random port and call it with `reqwest`, the same way clients do (black-box).
 
+### Email (ADR-0017, task 004)
+| Crate / tool | Why |
+|---|---|
+| `lettre` 0.11 | SMTP client. Emails are sent by the outbox worker, never inside a request. |
+| Mailpit (Docker image, **dev only**) | Local SMTP server with a web inbox in `compose.yaml`, so emails can be checked without a real mail server. Production uses the institution's SMTP. |
+
 ### Later (separate ADRs when the feature arrives)
-- `lettre` for email.
 - A templating crate for email bodies.
 - A web push / FCM client.
 

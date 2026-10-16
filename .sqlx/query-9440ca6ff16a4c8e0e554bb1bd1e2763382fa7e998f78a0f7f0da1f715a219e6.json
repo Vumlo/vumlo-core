@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE identity.sessions\n         SET last_seen_at = now(),\n             expires_at = CASE WHEN $2::bigint IS NULL THEN expires_at\n                               ELSE now() + $2::bigint * interval '1 second' END\n         WHERE id = $1 AND last_seen_at < now() - interval '1 hour'",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "9440ca6ff16a4c8e0e554bb1bd1e2763382fa7e998f78a0f7f0da1f715a219e6"
+}
