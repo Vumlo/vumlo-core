@@ -123,6 +123,16 @@ pub async fn get_course(
     Ok(load(conn, actor, course_id, false).await?.0)
 }
 
+/// How `actor` relates to the course, for other modules that authorize their own actions
+/// against it. A course the actor may not view is `CourseNotFound`.
+pub async fn course_access(
+    conn: &mut PgConnection,
+    actor: &Actor,
+    course_id: Uuid,
+) -> Result<CourseAccess, TeachingError> {
+    Ok(load(conn, actor, course_id, false).await?.1)
+}
+
 /// The courses the actor owns or belongs to that they may see.
 pub async fn list_my_courses(
     conn: &mut PgConnection,
@@ -426,5 +436,66 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(newcomer_role, None);
+    }
+
+    #[sqlx::test(migrator = "crate::app::MIGRATOR")]
+    async fn course_access_describes_the_actor_and_hides_courses_they_cannot_view(
+        pool: sqlx::PgPool,
+    ) {
+        let hash = identity::hash_password("irrelevant").await.unwrap();
+        let owner = actor(&pool, &hash, "owner@x.edu", Role::Teacher).await;
+        let admin = actor(&pool, &hash, "admin@x.edu", Role::Admin).await;
+        let student = actor(&pool, &hash, "student@x.edu", Role::Student).await;
+        let stranger = actor(&pool, &hash, "stranger@x.edu", Role::Teacher).await;
+
+        let mut tx = pool.begin().await.unwrap();
+        let course = create_course(&mut tx, &owner, CourseTitle::parse("Algebra").unwrap())
+            .await
+            .unwrap();
+        put_member(
+            &mut tx,
+            &owner,
+            course.id,
+            student.user_id(),
+            CourseRole::Student,
+        )
+        .await
+        .unwrap();
+        tx.commit().await.unwrap();
+
+        let mut conn = pool.acquire().await.unwrap();
+        let access = course_access(&mut conn, &owner, course.id).await.unwrap();
+        assert_eq!(
+            access,
+            CourseAccess {
+                role: Some(CourseRole::Teacher),
+                is_owner: true,
+                status: CourseStatus::Draft
+            }
+        );
+        let access = course_access(&mut conn, &admin, course.id).await.unwrap();
+        assert_eq!(access.role, None);
+        assert!(!access.is_owner);
+
+        // A student cannot see a draft course, a stranger never sees it, an unknown id is absent.
+        for who in [&student, &stranger] {
+            let outcome = course_access(&mut conn, who, course.id).await;
+            assert!(
+                matches!(outcome, Err(TeachingError::CourseNotFound)),
+                "{outcome:?}"
+            );
+        }
+        let outcome = course_access(&mut conn, &owner, Uuid::now_v7()).await;
+        assert!(
+            matches!(outcome, Err(TeachingError::CourseNotFound)),
+            "{outcome:?}"
+        );
+
+        let mut tx = pool.begin().await.unwrap();
+        publish_course(&mut tx, &owner, course.id).await.unwrap();
+        tx.commit().await.unwrap();
+        let access = course_access(&mut conn, &student, course.id).await.unwrap();
+        assert_eq!(access.role, Some(CourseRole::Student));
+        assert_eq!(access.status, CourseStatus::Published);
     }
 }
