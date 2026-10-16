@@ -1,0 +1,26 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT mode AS \"mode: InstitutionMode\" FROM org.installation",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "mode: InstitutionMode",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "org.installation",
+            "name": "mode"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "20e50f85842222cc32b5de6a567e9673b3ace0bd1b78721ac6cb2be8719262c9"
+}

@@ -4,8 +4,8 @@
 use server::app::{self, AppState};
 use server::identity::{self, Email, NewUser, PersonName, Role, TemporaryPassword};
 use server::settings::{
-    AuthSettings, DatabaseSettings, EditorSettings, GradingScale, InstitutionSettings, LogFormat,
-    LogSettings, ServerSettings, Settings,
+    AuthSettings, DatabaseSettings, EditorSettings, GradingScale, InstitutionMode,
+    InstitutionSettings, LogFormat, LogSettings, ServerSettings, Settings,
 };
 use sqlx::PgPool;
 use tokio::net::TcpListener;
@@ -29,6 +29,7 @@ pub fn test_settings() -> Settings {
         auth: AuthSettings::default(),
         institution: InstitutionSettings {
             name: "Test University".to_owned(),
+            mode: InstitutionMode::University,
             grading_scale: GradingScale::Hundred,
         },
         editor: EditorSettings::default(),
