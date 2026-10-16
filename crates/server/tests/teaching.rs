@@ -953,6 +953,15 @@ async fn admin_actions_are_audited_and_other_actions_are_not(pool: PgPool) {
 #[sqlx::test(migrator = "server::app::MIGRATOR")]
 async fn every_course_endpoint_is_in_the_openapi_document(pool: PgPool) {
     let base = common::spawn(pool).await;
+    let docs = reqwest::get(format!("{base}/api/v1/docs"))
+        .await
+        .unwrap()
+        .text()
+        .await
+        .unwrap();
+    for path in ["/api/v1/courses/{id}/publish", "/api/v1/me/courses"] {
+        assert!(docs.contains(path), "{path} missing from the docs page");
+    }
     let response = reqwest::get(format!("{base}/api/v1/openapi.json"))
         .await
         .unwrap();
