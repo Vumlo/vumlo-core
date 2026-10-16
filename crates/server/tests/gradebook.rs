@@ -75,6 +75,7 @@ async fn call(
         "POST" => http.post(path),
         "PUT" => http.put(path),
         "PATCH" => http.patch(path),
+        "DELETE" => http.delete(path),
         other => panic!("{other}"),
     };
     if let Some(token) = token {
@@ -1347,4 +1348,258 @@ async fn a_purge_removes_empty_rows_and_their_history_and_refuses_a_graded_scope
     );
     assert_eq!(rows_of(&w.pool, a).await, (0, 0));
     assert_eq!(rows_of(&w.pool, other).await, (0, 0));
+}
+
+// --- the guards content owes the gradebook ---------------------------------------------------------
+
+async fn set_points(w: &World, item: Uuid, points: &str) -> Resp {
+    call(
+        &w.http,
+        "PATCH",
+        Some(&w.owner.token),
+        &format!("/items/{item}"),
+        Some(json!({"max_points": points})),
+    )
+    .await
+}
+
+async fn delete(w: &World, path: &str) -> Resp {
+    call(&w.http, "DELETE", Some(&w.owner.token), path, None).await
+}
+
+async fn max_points_of(w: &World, item: Uuid) -> String {
+    let item = ok(&call(
+        &w.http,
+        "GET",
+        Some(&w.owner.token),
+        &format!("/items/{item}"),
+        None,
+    )
+    .await);
+    item["assignment"]["max_points"]
+        .as_str()
+        .unwrap()
+        .to_owned()
+}
+
+const LOWERING_MESSAGE: &str = "max_points cannot be lowered below a score that was already given";
+const DELETE_MESSAGE: &str = "it has grades: clear them before deleting";
+
+fn conflict(response: &Resp, message: &str) {
+    let problem = response.problem(409);
+    assert_eq!(problem.detail.as_deref(), Some(message));
+}
+
+#[sqlx::test(migrator = "server::app::MIGRATOR")]
+async fn max_points_cannot_drop_below_a_draft_or_published_score(pool: PgPool) {
+    let w = world(pool).await;
+    let a = open_assignment(&w, "A").await;
+    let other = add_student(&w, "other@x.edu", "Oto", "Other").await;
+
+    // Nothing graded yet, and an empty row: lowering is free.
+    assert_eq!(
+        ok(&set_points(&w, a, "15").await)["assignment"]["max_points"],
+        "15.00"
+    );
+    grade(&w, a, other, Some("14"), None).await;
+    grade(&w, a, other, None, None).await;
+    assert_eq!(
+        ok(&set_points(&w, a, "10").await)["assignment"]["max_points"],
+        "10.00"
+    );
+
+    // A draft score blocks, down to exactly the score.
+    grade(&w, a, w.student.id, Some("8"), None).await;
+    conflict(&set_points(&w, a, "7.99").await, LOWERING_MESSAGE);
+    assert_eq!(max_points_of(&w, a).await, "10.00");
+    assert_eq!(
+        ok(&set_points(&w, a, "8").await)["assignment"]["max_points"],
+        "8.00"
+    );
+    assert_eq!(
+        ok(&set_points(&w, a, "8.00").await)["assignment"]["max_points"],
+        "8.00",
+        "no change"
+    );
+    assert_eq!(
+        ok(&set_points(&w, a, "20").await)["assignment"]["max_points"],
+        "20.00",
+        "raising"
+    );
+
+    // A published score blocks even after the draft was cleared; a higher one anywhere counts.
+    grade(&w, a, other, Some("12"), None).await;
+    published(&w, a, json!("all")).await;
+    grade(&w, a, other, None, None).await;
+    conflict(&set_points(&w, a, "11").await, LOWERING_MESSAGE);
+    assert_eq!(
+        ok(&set_points(&w, a, "12").await)["assignment"]["max_points"],
+        "12.00"
+    );
+    // Only the scores count, not feedback.
+    grade(&w, a, other, None, Some("words")).await;
+    published(&w, a, json!("all")).await;
+    grade(&w, a, other, None, None).await;
+    published(&w, a, json!("all")).await;
+    grade(&w, a, w.student.id, None, None).await;
+    published(&w, a, json!("all")).await;
+    assert_eq!(
+        ok(&set_points(&w, a, "1").await)["assignment"]["max_points"],
+        "1.00"
+    );
+}
+
+#[sqlx::test(migrator = "server::app::MIGRATOR")]
+async fn an_assignment_with_a_grade_cannot_be_deleted_and_an_empty_one_is_purged(pool: PgPool) {
+    let w = world(pool).await;
+    let graded = open_assignment(&w, "graded").await;
+    let empty = open_assignment(&w, "empty").await;
+    let plain = assignment_in(&w, w.module, "plain", "no_submission", "5").await;
+    let text = {
+        let response = call(
+            &w.http,
+            "POST",
+            Some(&w.owner.token),
+            &format!("/modules/{}/items", w.module),
+            Some(json!({"kind": "text", "title": "T"})),
+        )
+        .await;
+        id_of(&response.json())
+    };
+
+    // A draft value blocks; nothing is deleted and the grade is intact.
+    grade(&w, graded, w.student.id, Some("3"), None).await;
+    conflict(
+        &delete(&w, &format!("/items/{graded}")).await,
+        DELETE_MESSAGE,
+    );
+    assert_eq!(rows_of(&w.pool, graded).await, (1, 1));
+    assert_eq!(
+        max_points_of(&w, graded).await,
+        "20.00",
+        "the item is still there"
+    );
+    // A published value blocks after the draft is cleared, feedback alone blocks too.
+    published(&w, graded, json!("all")).await;
+    grade(&w, graded, w.student.id, None, None).await;
+    conflict(
+        &delete(&w, &format!("/items/{graded}")).await,
+        DELETE_MESSAGE,
+    );
+    published(&w, graded, json!("all")).await;
+    grade(&w, graded, w.student.id, None, Some("only words")).await;
+    conflict(
+        &delete(&w, &format!("/items/{graded}")).await,
+        DELETE_MESSAGE,
+    );
+
+    // A row with nothing in it does not block, and goes with its history.
+    saved_and_cleared(&w, empty).await;
+    assert_eq!(rows_of(&w.pool, empty).await, (1, 2));
+    assert_eq!(delete(&w, &format!("/items/{empty}")).await.status, 204);
+    assert_eq!(rows_of(&w.pool, empty).await, (0, 0));
+    call(
+        &w.http,
+        "GET",
+        Some(&w.owner.token),
+        &format!("/items/{empty}"),
+        None,
+    )
+    .await
+    .problem(404);
+    // The graded neighbour is untouched.
+    assert_eq!(rows_of(&w.pool, graded).await.0, 1);
+
+    // No grade row at all, and an item that is not an assignment.
+    assert_eq!(delete(&w, &format!("/items/{plain}")).await.status, 204);
+    assert_eq!(delete(&w, &format!("/items/{text}")).await.status, 204);
+
+    // Clearing the last value lets the graded one go too.
+    grade(&w, graded, w.student.id, None, None).await;
+    published(&w, graded, json!("all")).await;
+    assert_eq!(delete(&w, &format!("/items/{graded}")).await.status, 204);
+    assert_eq!(rows_of(&w.pool, graded).await, (0, 0));
+}
+
+#[sqlx::test(migrator = "server::app::MIGRATOR")]
+async fn a_module_with_a_grade_below_it_cannot_be_deleted_and_an_empty_one_is_purged(pool: PgPool) {
+    let w = world(pool).await;
+    let top = module(&w, "Top", None).await;
+    let sub = module(&w, "Sub", Some(top)).await;
+    let in_top = assignment_in(&w, top, "in top", "text", "5").await;
+    let in_sub = assignment_in(&w, sub, "in sub", "no_submission", "5").await;
+    let elsewhere = assignment_in(&w, w.module, "elsewhere", "text", "5").await;
+    grade(&w, elsewhere, w.student.id, Some("1"), None).await;
+
+    // A grade in the sub-module blocks the sub-module and its parent, not the other module.
+    grade(&w, in_sub, w.student.id, Some("2"), None).await;
+    conflict(
+        &delete(&w, &format!("/modules/{sub}")).await,
+        DELETE_MESSAGE,
+    );
+    conflict(
+        &delete(&w, &format!("/modules/{top}")).await,
+        DELETE_MESSAGE,
+    );
+    assert_eq!(rows_of(&w.pool, in_sub).await, (1, 1));
+
+    // Only empty rows left: the parent goes with the sub-module and every row and history.
+    grade(&w, in_sub, w.student.id, None, None).await;
+    saved_and_cleared(&w, in_top).await;
+    assert_eq!(delete(&w, &format!("/modules/{top}")).await.status, 204);
+    assert_eq!(rows_of(&w.pool, in_top).await, (0, 0));
+    assert_eq!(rows_of(&w.pool, in_sub).await, (0, 0));
+    assert_eq!(
+        rows_of(&w.pool, elsewhere).await,
+        (1, 1),
+        "another module is untouched"
+    );
+    conflict(
+        &delete(&w, &format!("/modules/{}", w.module)).await,
+        DELETE_MESSAGE,
+    );
+    // A module with no assignment at all is deleted as before.
+    let bare = module(&w, "Bare", None).await;
+    assert_eq!(delete(&w, &format!("/modules/{bare}")).await.status, 204);
+}
+
+#[sqlx::test(migrator = "server::app::MIGRATOR")]
+async fn an_admin_delete_is_audited_once_and_a_refused_one_not_at_all(pool: PgPool) {
+    let w = world(pool).await;
+    let a = open_assignment(&w, "A").await;
+    saved_and_cleared(&w, a).await;
+    let audit_count = |action: &'static str| {
+        let pool = w.pool.clone();
+        async move {
+            sqlx::query_scalar!(
+                r#"SELECT count(*) AS "n!" FROM events.audit_log WHERE action = $1"#,
+                action
+            )
+            .fetch_one(&pool)
+            .await
+            .unwrap()
+        }
+    };
+    grade(&w, a, w.student.id, Some("1"), None).await;
+    let refused = call(
+        &w.http,
+        "DELETE",
+        Some(&w.admin.token),
+        &format!("/items/{a}"),
+        None,
+    )
+    .await;
+    conflict(&refused, DELETE_MESSAGE);
+    assert_eq!(audit_count("content.item.delete").await, 0);
+    grade(&w, a, w.student.id, None, None).await;
+    let done = call(
+        &w.http,
+        "DELETE",
+        Some(&w.admin.token),
+        &format!("/items/{a}"),
+        None,
+    )
+    .await;
+    assert_eq!(done.status, 204);
+    assert_eq!(audit_count("content.item.delete").await, 1);
 }

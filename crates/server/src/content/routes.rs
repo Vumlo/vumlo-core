@@ -61,6 +61,11 @@ impl From<ContentError> for ApiError {
             ContentError::InvalidOrder => Self::invalid_field("ids", error.to_string()),
             ContentError::ModuleNotFound | ContentError::ItemNotFound => Self::NotFound,
             ContentError::Conflict => Self::Conflict("a concurrent change conflicts, retry"),
+            ContentError::BelowGivenScores => {
+                Self::Conflict("max_points cannot be lowered below a score that was already given")
+            }
+            ContentError::HasGrades => Self::Conflict("it has grades: clear them before deleting"),
+            ContentError::Gradebook(e) => e.into(),
             ContentError::Teaching(e) => e.into(),
             ContentError::Events(e) => {
                 tracing::error!(error = %e, "content: audit log error");

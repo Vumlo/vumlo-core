@@ -434,3 +434,332 @@ pub async fn purge_course(conn: &mut PgConnection, course_id: Uuid) -> Result<u6
     }
     Ok(repo::purge_course(conn, course_id).await?)
 }
+
+#[cfg(test)]
+mod tests {
+    //! Lock order (ADR-0028 point 5, READ COMMITTED). Each test holds one writer's transaction
+    //! open, starts a second writer on a task, waits until that writer is observed blocked on a
+    //! lock, and only then lets the first one commit. Nothing sleeps: the order is forced by the
+    //! locks, not by timing.
+
+    use std::sync::LazyLock;
+    use std::time::Duration;
+
+    use serde_json::Map;
+    use sqlx::PgPool;
+
+    use super::*;
+    use crate::content::{
+        self, Assignment, BuiltinType, ContentError, ContentTitle, EffectiveProfiles, ItemPatch,
+        ItemRules, MaxPoints,
+    };
+    use crate::identity::{self, Email, NewUser, PersonName, Role};
+    use crate::policy::CourseRole;
+    use crate::settings::GradingScale;
+    use crate::teaching::{self, CourseTitle};
+
+    static PROFILES: LazyLock<EffectiveProfiles> = LazyLock::new(EffectiveProfiles::unrestricted);
+
+    fn rules() -> ItemRules<'static> {
+        ItemRules {
+            scale: GradingScale::Hundred,
+            profiles: &PROFILES,
+        }
+    }
+
+    struct Fixture {
+        pool: PgPool,
+        owner: Actor,
+        student: Uuid,
+        assignment: Uuid,
+    }
+
+    /// A course with a teacher, a student and one assignment worth 10 points.
+    async fn fixture(pool: PgPool) -> Fixture {
+        let hash = identity::hash_password("irrelevant").await.unwrap();
+        let mut tx = pool.begin().await.unwrap();
+        let mut create = async |email: &str, role: Role| {
+            identity::create_user(
+                &mut tx,
+                NewUser {
+                    email: Email::parse(email).unwrap(),
+                    name: PersonName::name("Test").unwrap(),
+                    surname: PersonName::surname("User").unwrap(),
+                    role,
+                },
+                hash.clone(),
+            )
+            .await
+            .unwrap()
+        };
+        let owner_user = create("owner@x.edu", Role::Teacher).await;
+        let student_user = create("student@x.edu", Role::Student).await;
+        let owner = Actor::new(owner_user.id, Role::Teacher, Uuid::now_v7());
+        let course =
+            teaching::create_course(&mut tx, &owner, CourseTitle::parse("Algebra").unwrap())
+                .await
+                .unwrap();
+        teaching::put_member(
+            &mut tx,
+            &owner,
+            course.id,
+            student_user.id,
+            CourseRole::Student,
+        )
+        .await
+        .unwrap();
+        let module = content::create_module(
+            &mut tx,
+            &owner,
+            course.id,
+            ContentTitle::parse("M").unwrap(),
+            None,
+        )
+        .await
+        .unwrap();
+        let item = content::create_item(
+            &mut tx,
+            &owner,
+            rules(),
+            module.id,
+            ContentTitle::parse("A").unwrap(),
+            None,
+            Some(Assignment {
+                assignment_type: BuiltinType::Text,
+                config: Map::new(),
+                max_points: MaxPoints::parse("10").unwrap(),
+                is_bonus: false,
+            }),
+        )
+        .await
+        .unwrap();
+        tx.commit().await.unwrap();
+        Fixture {
+            pool,
+            owner,
+            student: student_user.id,
+            assignment: item.id,
+        }
+    }
+
+    fn score(text: &str) -> GradeInput {
+        GradeInput {
+            score: Some(text.to_owned()),
+            feedback: None,
+        }
+    }
+
+    fn lower_to(points: &str) -> ItemPatch {
+        ItemPatch {
+            max_points: Some(MaxPoints::parse(points).unwrap()),
+            ..ItemPatch::default()
+        }
+    }
+
+    impl Fixture {
+        /// Saves a grade in its own transaction on a task and commits when it succeeds.
+        fn save_in_background(
+            &self,
+            text: &'static str,
+        ) -> tokio::task::JoinHandle<Result<Cell, GradebookError>> {
+            let (pool, owner, student, assignment) = (
+                self.pool.clone(),
+                self.owner.clone(),
+                self.student,
+                self.assignment,
+            );
+            tokio::spawn(async move {
+                let mut tx = pool.begin().await.unwrap();
+                let result = save_grade(&mut tx, &owner, assignment, student, score(text)).await;
+                if result.is_ok() {
+                    tx.commit().await.unwrap();
+                }
+                result
+            })
+        }
+
+        /// Lowers `max_points` in its own transaction on a task and commits when it succeeds.
+        fn lower_in_background(
+            &self,
+            points: &'static str,
+        ) -> tokio::task::JoinHandle<Result<(), ContentError>> {
+            let (pool, owner, assignment) =
+                (self.pool.clone(), self.owner.clone(), self.assignment);
+            tokio::spawn(async move {
+                let mut tx = pool.begin().await.unwrap();
+                let result =
+                    content::update_item(&mut tx, &owner, rules(), assignment, lower_to(points))
+                        .await
+                        .map(|_| ());
+                if result.is_ok() {
+                    tx.commit().await.unwrap();
+                }
+                result
+            })
+        }
+
+        /// Deletes the assignment in its own transaction on a task and commits when it succeeds.
+        fn delete_in_background(&self) -> tokio::task::JoinHandle<Result<(), ContentError>> {
+            let (pool, owner, assignment) =
+                (self.pool.clone(), self.owner.clone(), self.assignment);
+            tokio::spawn(async move {
+                let mut tx = pool.begin().await.unwrap();
+                let result = content::delete_item(&mut tx, &owner, assignment).await;
+                if result.is_ok() {
+                    tx.commit().await.unwrap();
+                }
+                result
+            })
+        }
+
+        async fn count(&self, sql: &'static str) -> i64 {
+            sqlx::query_scalar::<_, i64>(sql)
+                .bind(self.assignment)
+                .fetch_one(&self.pool)
+                .await
+                .unwrap()
+        }
+
+        async fn grades(&self) -> i64 {
+            self.count("SELECT count(*) FROM gradebook.grades WHERE assignment_id = $1")
+                .await
+        }
+
+        async fn max_points(&self) -> String {
+            sqlx::query_scalar::<_, String>(
+                "SELECT max_points::text FROM content.assignments WHERE item_id = $1",
+            )
+            .bind(self.assignment)
+            .fetch_one(&self.pool)
+            .await
+            .unwrap()
+        }
+    }
+
+    /// Returns once a session waits for a lock. Fails if the writer finished instead (it did not
+    /// wait for anything) or if nobody waits within the timeout.
+    async fn wait_until_blocked<T>(pool: &PgPool, writer: &tokio::task::JoinHandle<T>) {
+        let mut conn = pool.acquire().await.unwrap();
+        let waited = tokio::time::timeout(Duration::from_secs(10), async {
+            while !writer.is_finished() && repo::lock_waiters(&mut conn).await.unwrap() < 1 {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await;
+        assert!(waited.is_ok(), "no writer waited for a lock");
+        assert!(
+            !writer.is_finished(),
+            "the second writer finished without waiting for the assignment row"
+        );
+    }
+
+    /// A grade write is in flight with an uncommitted score of 8. A lowering to 5 must wait for
+    /// it and then see the score. Without the row locks it would not see it and lower the points
+    /// under a score of 8.
+    #[sqlx::test(migrator = "crate::app::MIGRATOR")]
+    async fn a_lowering_waits_for_a_grade_write_and_then_sees_its_score(pool: PgPool) {
+        let f = fixture(pool).await;
+
+        let mut first = f.pool.begin().await.unwrap();
+        save_grade(&mut first, &f.owner, f.assignment, f.student, score("8"))
+            .await
+            .unwrap();
+        let second = f.lower_in_background("5");
+        wait_until_blocked(&f.pool, &second).await;
+        first.commit().await.unwrap();
+
+        let result = second.await.unwrap();
+        assert!(
+            matches!(result, Err(ContentError::BelowGivenScores)),
+            "{result:?}"
+        );
+        assert_eq!(f.max_points().await, "10.00");
+        assert_eq!(f.grades().await, 1);
+    }
+
+    /// A lowering to 5 is in flight and holds the row. A grade write of 8, valid against the old
+    /// maximum, must wait for it and be checked against the new one. Without the lock the write
+    /// would read 10, store 8 and leave a score above `max_points`.
+    #[sqlx::test(migrator = "crate::app::MIGRATOR")]
+    async fn a_grade_write_waits_for_a_lowering_and_is_checked_against_the_new_maximum(
+        pool: PgPool,
+    ) {
+        let f = fixture(pool).await;
+
+        let mut first = f.pool.begin().await.unwrap();
+        content::update_item(&mut first, &f.owner, rules(), f.assignment, lower_to("5"))
+            .await
+            .unwrap();
+        let second = f.save_in_background("8");
+        wait_until_blocked(&f.pool, &second).await;
+        first.commit().await.unwrap();
+
+        let result = second.await.unwrap();
+        match result {
+            Err(GradebookError::Invalid(problems)) => {
+                assert_eq!(problems.len(), 1);
+                assert_eq!(problems[0].field, "score");
+                assert!(
+                    problems[0].message.contains("5.00"),
+                    "{}",
+                    problems[0].message
+                );
+            }
+            other => panic!("expected the score to be refused, got {other:?}"),
+        }
+        assert_eq!(f.max_points().await, "5.00");
+        assert_eq!(f.grades().await, 0);
+    }
+
+    /// A grade write is in flight. A delete of the assignment must wait for it and then see the
+    /// grade. Without the lock the delete would pass its check, remove the assignment and leave
+    /// the grade behind with nothing to belong to.
+    #[sqlx::test(migrator = "crate::app::MIGRATOR")]
+    async fn a_delete_waits_for_a_grade_write_and_then_sees_the_grade(pool: PgPool) {
+        let f = fixture(pool).await;
+
+        let mut first = f.pool.begin().await.unwrap();
+        save_grade(&mut first, &f.owner, f.assignment, f.student, score("8"))
+            .await
+            .unwrap();
+        let second = f.delete_in_background();
+        wait_until_blocked(&f.pool, &second).await;
+        first.commit().await.unwrap();
+
+        let result = second.await.unwrap();
+        assert!(matches!(result, Err(ContentError::HasGrades)), "{result:?}");
+        assert_eq!(f.grades().await, 1);
+        assert_eq!(
+            f.count("SELECT count(*) FROM content.assignments WHERE item_id = $1")
+                .await,
+            1
+        );
+    }
+
+    /// A delete of the assignment is in flight. A grade write must wait for it and then find
+    /// that the assignment is gone, instead of storing a grade for it.
+    #[sqlx::test(migrator = "crate::app::MIGRATOR")]
+    async fn a_grade_write_waits_for_a_delete_and_then_finds_the_assignment_gone(pool: PgPool) {
+        let f = fixture(pool).await;
+
+        let mut first = f.pool.begin().await.unwrap();
+        content::delete_item(&mut first, &f.owner, f.assignment)
+            .await
+            .unwrap();
+        let second = f.save_in_background("8");
+        wait_until_blocked(&f.pool, &second).await;
+        first.commit().await.unwrap();
+
+        let result = second.await.unwrap();
+        assert!(
+            matches!(result, Err(GradebookError::AssignmentNotFound)),
+            "{result:?}"
+        );
+        assert_eq!(f.grades().await, 0);
+        assert_eq!(
+            f.count("SELECT count(*) FROM content.items WHERE id = $1")
+                .await,
+            0
+        );
+    }
+}
