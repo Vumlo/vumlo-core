@@ -282,7 +282,7 @@ mod tests {
     use std::time::Duration;
 
     use super::*;
-    use crate::identity::{self, DisplayName, Email, HashedPassword, NewUser, Role};
+    use crate::identity::{self, Email, HashedPassword, NewUser, PersonName, Role};
 
     async fn actor(pool: &sqlx::PgPool, hash: &HashedPassword, email: &str, role: Role) -> Actor {
         let mut tx = pool.begin().await.unwrap();
@@ -290,7 +290,8 @@ mod tests {
             &mut tx,
             NewUser {
                 email: Email::parse(email).unwrap(),
-                display_name: DisplayName::parse("Test").unwrap(),
+                name: PersonName::name("Test").unwrap(),
+                surname: PersonName::surname("Test").unwrap(),
                 role,
             },
             hash.clone(),

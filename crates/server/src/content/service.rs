@@ -822,7 +822,7 @@ mod tests {
 
     use super::*;
     use crate::error::ApiError;
-    use crate::identity::{self, DisplayName, Email, NewUser, Role};
+    use crate::identity::{self, Email, NewUser, PersonName, Role};
     use crate::teaching::CourseTitle;
 
     static PROFILES: LazyLock<EffectiveProfiles> = LazyLock::new(EffectiveProfiles::unrestricted);
@@ -847,7 +847,8 @@ mod tests {
             &mut tx,
             NewUser {
                 email: Email::parse("owner@x.edu").unwrap(),
-                display_name: DisplayName::parse("Owner").unwrap(),
+                name: PersonName::name("Owner").unwrap(),
+                surname: PersonName::surname("Owner").unwrap(),
                 role: Role::Teacher,
             },
             hash,
@@ -939,7 +940,8 @@ mod tests {
             &mut tx,
             NewUser {
                 email: Email::parse("owner@x.edu").unwrap(),
-                display_name: DisplayName::parse("Owner").unwrap(),
+                name: PersonName::name("Owner").unwrap(),
+                surname: PersonName::surname("Owner").unwrap(),
                 role: Role::Teacher,
             },
             hash,

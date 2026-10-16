@@ -83,7 +83,14 @@ fn temporary_password(output: &Output) -> String {
 async fn create_admin_creates_a_working_admin_who_must_change_password(pool: PgPool) {
     let output = run(
         &pool,
-        &["create-admin", "Root@School.edu", "--name", "Root Admin"],
+        &[
+            "create-admin",
+            "Root@School.edu",
+            "--name",
+            "Root",
+            "--surname",
+            "Admin",
+        ],
     )
     .await;
 
@@ -99,7 +106,8 @@ async fn create_admin_creates_a_working_admin_who_must_change_password(pool: PgP
     let token = login_app(&http, "root@school.edu", &temporary).await;
     let me = http.get("/me").bearer(&token).send().await.json();
     assert_eq!(me["role"], "admin");
-    assert_eq!(me["display_name"], "Root Admin");
+    assert_eq!(me["name"], "Root");
+    assert_eq!(me["surname"], "Admin");
     assert_eq!(me["must_change_password"], true);
 
     // Until the password is changed, nothing but /me, logout and change-password works.
@@ -130,6 +138,8 @@ async fn create_user_takes_a_role(pool: PgPool) {
             "terry@school.edu",
             "--name",
             "Terry",
+            "--surname",
+            "Teacher",
             "--role",
             "teacher",
         ],
@@ -149,29 +159,70 @@ async fn create_user_takes_a_role(pool: PgPool) {
 async fn create_user_refuses_bad_input_and_duplicates(pool: PgPool) {
     let created = run(
         &pool,
-        &["create-admin", "root@school.edu", "--name", "Root"],
+        &[
+            "create-admin",
+            "root@school.edu",
+            "--name",
+            "Root",
+            "--surname",
+            "Admin",
+        ],
     )
     .await;
     assert!(created.ok, "{}", created.stderr);
 
     for (args, expected) in [
         (
-            vec!["create-admin", "ROOT@school.edu", "--name", "Again"],
+            vec![
+                "create-admin",
+                "ROOT@school.edu",
+                "--name",
+                "Again",
+                "--surname",
+                "Admin",
+            ],
             "already in use",
         ),
         (
-            vec!["create-admin", "not-an-email", "--name", "X"],
+            vec![
+                "create-admin",
+                "not-an-email",
+                "--name",
+                "X",
+                "--surname",
+                "Admin",
+            ],
             "invalid email",
         ),
         (
-            vec!["create-admin", "x@school.edu", "--name", "  "],
+            vec![
+                "create-admin",
+                "x@school.edu",
+                "--name",
+                "  ",
+                "--surname",
+                "X",
+            ],
             "invalid name",
+        ),
+        (
+            vec![
+                "create-admin",
+                "x@school.edu",
+                "--name",
+                "X",
+                "--surname",
+                "  ",
+            ],
+            "invalid surname",
         ),
         (
             vec![
                 "create-user",
                 "x@school.edu",
                 "--name",
+                "X",
+                "--surname",
                 "X",
                 "--role",
                 "owner",
@@ -199,7 +250,14 @@ async fn create_user_refuses_bad_input_and_duplicates(pool: PgPool) {
 async fn create_admin_refuses_an_unmigrated_database(pool: PgPool) {
     let output = run(
         &pool,
-        &["create-admin", "root@school.edu", "--name", "Root"],
+        &[
+            "create-admin",
+            "root@school.edu",
+            "--name",
+            "Root",
+            "--surname",
+            "Admin",
+        ],
     )
     .await;
 

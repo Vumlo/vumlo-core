@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT u.id, u.email, u.display_name,\n                  u.role AS \"role: Role\", u.status AS \"status: UserStatus\",\n                  u.must_change_password, u.created_at,\n                  i.password_hash AS \"password_hash!\"\n           FROM identity.users u\n           JOIN identity.identities i ON i.user_id = u.id AND i.provider = 'password'\n           WHERE u.email = $1",
+  "query": "SELECT u.id, u.email, u.name, u.surname,\n                  u.role AS \"role: Role\", u.status AS \"status: UserStatus\",\n                  u.must_change_password, u.created_at,\n                  i.password_hash AS \"password_hash!\"\n           FROM identity.users u\n           JOIN identity.identities i ON i.user_id = u.id AND i.provider = 'password'\n           WHERE u.email = $1",
   "describe": {
     "columns": [
       {
@@ -27,17 +27,28 @@
       },
       {
         "ordinal": 2,
-        "name": "display_name",
+        "name": "name",
         "type_info": "Text",
         "origin": {
           "Table": {
             "table": "identity.users",
-            "name": "display_name"
+            "name": "name"
           }
         }
       },
       {
         "ordinal": 3,
+        "name": "surname",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "identity.users",
+            "name": "surname"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
         "name": "role: Role",
         "type_info": "Text",
         "origin": {
@@ -48,7 +59,7 @@
         }
       },
       {
-        "ordinal": 4,
+        "ordinal": 5,
         "name": "status: UserStatus",
         "type_info": "Text",
         "origin": {
@@ -59,7 +70,7 @@
         }
       },
       {
-        "ordinal": 5,
+        "ordinal": 6,
         "name": "must_change_password",
         "type_info": "Bool",
         "origin": {
@@ -70,7 +81,7 @@
         }
       },
       {
-        "ordinal": 6,
+        "ordinal": 7,
         "name": "created_at",
         "type_info": "Timestamptz",
         "origin": {
@@ -81,7 +92,7 @@
         }
       },
       {
-        "ordinal": 7,
+        "ordinal": 8,
         "name": "password_hash!",
         "type_info": "Text",
         "origin": {
@@ -105,8 +116,9 @@
       false,
       false,
       false,
+      false,
       true
     ]
   },
-  "hash": "d7864652eeed278981af13ae08a36a18c575f9fef8b3fd2d3161293d2b0ea177"
+  "hash": "6513ab56e09b166abd41bf554c68009933f8ee85e1b085e96f3c1a977d0caffb"
 }

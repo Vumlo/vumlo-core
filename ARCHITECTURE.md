@@ -102,7 +102,7 @@ Private files cannot be reached from other modules, so the compiler enforces mod
 
 ```
 identity
-  users            id, email (unique, stored lowercase), display_name,
+  users            id, email (unique, stored lowercase), name, surname (ADR-0029),
                    role: admin | teacher | student, status: active | disabled,
                    email_verified_at?, must_change_password, created_at, updated_at
   identities       id, user_id, provider: password | google, subject, password_hash?

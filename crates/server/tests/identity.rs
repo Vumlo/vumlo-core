@@ -501,7 +501,8 @@ async fn me_returns_the_current_user(pool: PgPool) {
     assert_eq!(response.status, 200);
     let me = response.json();
     assert_eq!(me["email"], "anna@school.edu");
-    assert_eq!(me["display_name"], "Test User");
+    assert_eq!(me["name"], "Test");
+    assert_eq!(me["surname"], "User");
     assert_eq!(me["role"], "student");
     assert_eq!(me["status"], "active");
     assert_eq!(me["must_change_password"], false);
@@ -538,7 +539,7 @@ async fn pending_password_change_allows_only_me_logout_and_password(pool: PgPool
         .problem(403);
     http.post("/admin/users")
         .bearer(&token)
-        .json(&json!({"email": "x@school.edu", "display_name": "X", "role": "student"}))
+        .json(&json!({"email": "x@school.edu", "name": "X", "surname": "X", "role": "student"}))
         .send()
         .await
         .problem(403);
@@ -984,7 +985,7 @@ async fn non_admins_get_403_on_every_admin_endpoint(pool: PgPool) {
             .problem(403);
         http.post("/admin/users")
             .bearer(&token)
-            .json(&json!({"email": "new@school.edu", "display_name": "New", "role": "admin"}))
+            .json(&json!({"email": "new@school.edu", "name": "New", "surname": "New", "role": "admin"}))
             .send()
             .await
             .problem(403);
@@ -1021,7 +1022,7 @@ async fn admin_creates_a_user_with_a_temporary_password(pool: PgPool) {
     let created = http
         .post("/admin/users")
         .bearer(&token)
-        .json(&json!({"email": "  New.Teacher@Elsewhere.org ", "display_name": " Nina Novak ", "role": "teacher"}))
+        .json(&json!({"email": "  New.Teacher@Elsewhere.org ", "name": " Nina ", "surname": " Novak ", "role": "teacher"}))
         .send()
         .await;
 
@@ -1037,7 +1038,8 @@ async fn admin_creates_a_user_with_a_temporary_password(pool: PgPool) {
         body["user"]["email"], "new.teacher@elsewhere.org",
         "any domain is fine for admins"
     );
-    assert_eq!(body["user"]["display_name"], "Nina Novak");
+    assert_eq!(body["user"]["name"], "Nina");
+    assert_eq!(body["user"]["surname"], "Novak");
     assert_eq!(body["user"]["role"], "teacher");
     assert_eq!(body["user"]["must_change_password"], true);
     let temporary = body["temporary_password"].as_str().unwrap().to_owned();
@@ -1065,34 +1067,65 @@ async fn admin_creates_a_user_with_a_temporary_password(pool: PgPool) {
 async fn admin_create_rejects_duplicates_and_invalid_input(pool: PgPool) {
     let http = Http::new(&spawn(pool.clone()).await);
     let token = admin(&pool, &http).await;
-    let create = |email: &str, name: &str| {
+    let create = |email: &str, name: &str, surname: &str| {
         http.post("/admin/users")
             .bearer(&token)
-            .json(&json!({"email": email, "display_name": name, "role": "student"}))
+            .json(&json!({"email": email, "name": name, "surname": surname, "role": "student"}))
             .send()
     };
 
-    create("Root@School.edu", "Another Root").await.problem(409);
+    create("Root@School.edu", "Another", "Root")
+        .await
+        .problem(409);
     assert_eq!(
-        create("bad address", "Name").await.problem(422).errors[0].field,
-        "email"
-    );
-    assert_eq!(
-        create("ok@school.edu", "   ").await.problem(422).errors[0].field,
-        "display_name"
-    );
-    assert_eq!(
-        create("ok@school.edu", &"x".repeat(101))
+        create("bad address", "Name", "Name")
             .await
             .problem(422)
             .errors[0]
             .field,
-        "display_name"
+        "email"
     );
+    assert_eq!(
+        create("ok@school.edu", "   ", "Ok")
+            .await
+            .problem(422)
+            .errors[0]
+            .field,
+        "name"
+    );
+    assert_eq!(
+        create("ok@school.edu", "Ok", "   ")
+            .await
+            .problem(422)
+            .errors[0]
+            .field,
+        "surname"
+    );
+    let too_long = "x".repeat(101);
+    for (name, surname, field) in [
+        (too_long.as_str(), "Ok", "name"),
+        ("Ok", too_long.as_str(), "surname"),
+    ] {
+        assert_eq!(
+            create("ok@school.edu", name, surname)
+                .await
+                .problem(422)
+                .errors[0]
+                .field,
+            field
+        );
+    }
+    // The old single field is gone.
+    http.post("/admin/users")
+        .bearer(&token)
+        .json(&json!({"email": "ok@school.edu", "display_name": "Ok", "role": "student"}))
+        .send()
+        .await
+        .problem(422);
     let bad_role = http
         .post("/admin/users")
         .bearer(&token)
-        .json(&json!({"email": "ok@school.edu", "display_name": "Ok", "role": "owner"}))
+        .json(&json!({"email": "ok@school.edu", "name": "Ok", "surname": "Ok", "role": "owner"}))
         .send()
         .await;
     bad_role.problem(422);
@@ -1205,9 +1238,13 @@ async fn admin_updates_a_user(pool: PgPool) {
             .send()
     };
 
-    let renamed = patch(json!({"display_name": "  Anna K.  "})).await;
+    let renamed = patch(json!({"name": "  Anna  ", "surname": "  K.  "})).await;
     assert_eq!(renamed.status, 200);
-    assert_eq!(renamed.json()["display_name"], "Anna K.");
+    assert_eq!(renamed.json()["name"], "Anna");
+    assert_eq!(renamed.json()["surname"], "K.");
+    let only_surname = patch(json!({"surname": "Kowalska"})).await.json();
+    assert_eq!(only_surname["name"], "Anna", "the other part stays");
+    assert_eq!(only_surname["surname"], "Kowalska");
     assert_eq!(renamed.json()["role"], "student", "other fields stay");
 
     // A promotion applies at once, to the sessions the user already has.
@@ -1244,13 +1281,17 @@ async fn admin_updates_a_user(pool: PgPool) {
         "an empty patch changes nothing"
     );
     assert_eq!(
-        patch(json!({"display_name": ""})).await.problem(422).errors[0].field,
-        "display_name"
+        patch(json!({"name": ""})).await.problem(422).errors[0].field,
+        "name"
+    );
+    assert_eq!(
+        patch(json!({"surname": ""})).await.problem(422).errors[0].field,
+        "surname"
     );
     patch(json!({"role": "owner"})).await.problem(422);
     http.patch(&format!("/admin/users/{}", uuid::Uuid::now_v7()))
         .bearer(&token)
-        .json(&json!({"display_name": "Ghost"}))
+        .json(&json!({"name": "Ghost"}))
         .send()
         .await
         .problem(404);
@@ -1345,13 +1386,9 @@ async fn last_active_admin_cannot_be_disabled_or_demoted(pool: PgPool) {
     .problem(409);
     // Renaming and no-op changes are fine.
     assert_eq!(
-        patch(
-            &first,
-            first_id,
-            json!({"display_name": "Root", "role": "admin"})
-        )
-        .await
-        .status,
+        patch(&first, first_id, json!({"name": "Root", "role": "admin"}))
+            .await
+            .status,
         200
     );
 
@@ -1459,7 +1496,7 @@ async fn admin_endpoints_with_a_cookie_need_the_origin(pool: PgPool) {
     let http = Http::new(&spawn(pool.clone()).await);
     seed_user(&pool, "root@school.edu", Role::Admin).await;
     let web = login_web(&http, "root@school.edu", PASSWORD).await;
-    let body = json!({"email": "x@school.edu", "display_name": "X", "role": "student"});
+    let body = json!({"email": "x@school.edu", "name": "X", "surname": "X", "role": "student"});
 
     http.post("/admin/users")
         .cookie(&web)

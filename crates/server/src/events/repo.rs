@@ -43,7 +43,7 @@ mod tests {
     use serde_json::json;
 
     use super::*;
-    use crate::identity::{self, DisplayName, Email, NewUser, Role};
+    use crate::identity::{self, Email, NewUser, PersonName, Role};
 
     #[sqlx::test(migrator = "crate::app::MIGRATOR")]
     async fn an_audit_entry_commits_and_rolls_back_with_its_transaction(pool: sqlx::PgPool) {
@@ -53,7 +53,8 @@ mod tests {
             &mut tx,
             NewUser {
                 email: Email::parse("a@x.edu").unwrap(),
-                display_name: DisplayName::parse("Admin").unwrap(),
+                name: PersonName::name("Admin").unwrap(),
+                surname: PersonName::surname("Admin").unwrap(),
                 role: Role::Admin,
             },
             hash,

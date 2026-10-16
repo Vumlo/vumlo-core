@@ -12,7 +12,7 @@ use crate::text_enum::text_enum;
 pub const PASSWORD_MAX_LEN: usize = 128;
 const EMAIL_MAX_LEN: usize = 254;
 const EMAIL_LOCAL_MAX_LEN: usize = 64;
-const DISPLAY_NAME_MAX_LEN: usize = 100;
+const NAME_MAX_LEN: usize = 100;
 /// 32 random bytes in unpadded base64url.
 const TOKEN_LEN: usize = 43;
 
@@ -21,8 +21,10 @@ const TOKEN_LEN: usize = 43;
 pub enum ModelError {
     #[error("not a valid email address")]
     Email,
-    #[error("must be 1 to {DISPLAY_NAME_MAX_LEN} characters")]
-    DisplayName,
+    #[error("must be 1 to {NAME_MAX_LEN} characters")]
+    Name,
+    #[error("must be 1 to {NAME_MAX_LEN} characters")]
+    Surname,
     #[error("is not a valid cursor")]
     Cursor,
     /// Human-readable reasons, the first being zxcvbn's warning when it has one.
@@ -79,7 +81,8 @@ impl SessionKind {
 pub struct User {
     pub id: Uuid,
     pub email: String,
-    pub display_name: String,
+    pub name: String,
+    pub surname: String,
     pub role: Role,
     pub status: UserStatus,
     pub must_change_password: bool,
@@ -152,7 +155,8 @@ pub struct UserFilter {
 /// Fields an admin may change. `None` leaves a field as it is.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct UserUpdate {
-    pub display_name: Option<DisplayName>,
+    pub name: Option<PersonName>,
+    pub surname: Option<PersonName>,
     pub role: Option<Role>,
     pub status: Option<UserStatus>,
 }
@@ -160,7 +164,8 @@ pub struct UserUpdate {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NewUser {
     pub email: Email,
-    pub display_name: DisplayName,
+    pub name: PersonName,
+    pub surname: PersonName,
     pub role: Role,
 }
 
@@ -205,18 +210,25 @@ impl Email {
     }
 }
 
+/// A trimmed name or surname of 1 to 100 characters without control characters (ADR-0029). Which
+/// of the two failed is decided by the constructor, because each maps to its own API field.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DisplayName(String);
+pub struct PersonName(String);
 
-impl DisplayName {
-    pub fn parse(raw: &str) -> Result<Self, ModelError> {
-        let name = raw.trim();
-        let len = name.chars().count();
-        if (1..=DISPLAY_NAME_MAX_LEN).contains(&len) && !name.chars().any(char::is_control) {
-            Ok(Self(name.to_owned()))
-        } else {
-            Err(ModelError::DisplayName)
-        }
+impl PersonName {
+    pub fn name(raw: &str) -> Result<Self, ModelError> {
+        Self::parse(raw).ok_or(ModelError::Name)
+    }
+
+    pub fn surname(raw: &str) -> Result<Self, ModelError> {
+        Self::parse(raw).ok_or(ModelError::Surname)
+    }
+
+    fn parse(raw: &str) -> Option<Self> {
+        let text = raw.trim();
+        let len = text.chars().count();
+        ((1..=NAME_MAX_LEN).contains(&len) && !text.chars().any(char::is_control))
+            .then(|| Self(text.to_owned()))
     }
 
     pub fn as_str(&self) -> &str {
@@ -228,17 +240,17 @@ impl DisplayName {
 #[derive(Debug, Clone)]
 pub struct PasswordPolicy {
     pub min_len: usize,
-    /// Words that must not appear in a password: email, display name, institution, "learnly".
+    /// Words that must not appear in a password: email, name, surname, institution, "learnly".
     pub user_inputs: Vec<String>,
 }
 
 impl PasswordPolicy {
-    pub fn new(min_len: usize, email: &str, display_name: &str, institution: &str) -> Self {
+    pub fn new(min_len: usize, email: &str, name: &str, surname: &str, institution: &str) -> Self {
         let mut user_inputs = vec![email.to_owned(), "learnly".to_owned()];
         let (local, domain) = email.split_once('@').unwrap_or_default();
         user_inputs.push(local.to_owned());
         user_inputs.extend(domain.split('.').map(str::to_owned));
-        for text in [display_name, institution] {
+        for text in [name, surname, institution] {
             user_inputs.push(text.to_owned());
             user_inputs.extend(text.split_whitespace().map(str::to_owned));
         }
@@ -389,7 +401,8 @@ mod tests {
         PasswordPolicy::new(
             12,
             "anna.kowalska@school.edu",
-            "Anna Kowalska",
+            "Anna",
+            "Kowalska",
             "Example University",
         )
     }
@@ -436,13 +449,21 @@ mod tests {
     }
 
     #[test]
-    fn display_name_is_trimmed_and_bounded() {
-        assert_eq!(DisplayName::parse("  Anna  ").unwrap().as_str(), "Anna");
-        assert!(DisplayName::parse("   ").is_err());
-        assert!(DisplayName::parse("").is_err());
-        assert!(DisplayName::parse("a\nb").is_err());
-        assert!(DisplayName::parse(&"ł".repeat(100)).is_ok());
-        assert!(DisplayName::parse(&"ł".repeat(101)).is_err());
+    fn names_are_trimmed_and_bounded_and_each_reports_its_own_field() {
+        assert_eq!(PersonName::name("  Anna  ").unwrap().as_str(), "Anna");
+        assert_eq!(
+            PersonName::surname(" Kowalska ").unwrap().as_str(),
+            "Kowalska"
+        );
+        for bad in ["   ", "", "a\nb", &"ł".repeat(101)] {
+            assert_eq!(PersonName::name(bad), Err(ModelError::Name), "{bad:?}");
+            assert_eq!(
+                PersonName::surname(bad),
+                Err(ModelError::Surname),
+                "{bad:?}"
+            );
+        }
+        assert!(PersonName::name(&"ł".repeat(100)).is_ok());
     }
 
     #[test]

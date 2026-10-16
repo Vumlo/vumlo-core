@@ -27,7 +27,7 @@ pub async fn find_login(
     email: &str,
 ) -> Result<Option<LoginRecord>, sqlx::Error> {
     let row = sqlx::query!(
-        r#"SELECT u.id, u.email, u.display_name,
+        r#"SELECT u.id, u.email, u.name, u.surname,
                   u.role AS "role: Role", u.status AS "status: UserStatus",
                   u.must_change_password, u.created_at,
                   i.password_hash AS "password_hash!"
@@ -42,7 +42,8 @@ pub async fn find_login(
         user: User {
             id: r.id,
             email: r.email,
-            display_name: r.display_name,
+            name: r.name,
+            surname: r.surname,
             role: r.role,
             status: r.status,
             must_change_password: r.must_change_password,
@@ -60,14 +61,15 @@ pub async fn insert_user(
 ) -> Result<User, sqlx::Error> {
     sqlx::query_as!(
         User,
-        r#"INSERT INTO identity.users (id, email, display_name, role, must_change_password)
-           VALUES ($1, $2, $3, $4, $5)
-           RETURNING id, email, display_name,
+        r#"INSERT INTO identity.users (id, email, name, surname, role, must_change_password)
+           VALUES ($1, $2, $3, $4, $5, $6)
+           RETURNING id, email, name, surname,
                      role AS "role: Role", status AS "status: UserStatus",
                      must_change_password, created_at"#,
         id,
         new.email.as_str(),
-        new.display_name.as_str(),
+        new.name.as_str(),
+        new.surname.as_str(),
         new.role.as_str(),
         must_change_password
     )
@@ -180,7 +182,7 @@ pub async fn delete_session(
 pub async fn find_user(conn: &mut PgConnection, id: Uuid) -> Result<Option<User>, sqlx::Error> {
     sqlx::query_as!(
         User,
-        r#"SELECT id, email, display_name,
+        r#"SELECT id, email, name, surname,
                   role AS "role: Role", status AS "status: UserStatus",
                   must_change_password, created_at
            FROM identity.users WHERE id = $1"#,
@@ -285,7 +287,7 @@ pub async fn list_users(
     // `strpos` instead of LIKE: the search text never needs escaping. Emails are stored lowercase.
     sqlx::query_as!(
         User,
-        r#"SELECT id, email, display_name,
+        r#"SELECT id, email, name, surname,
                   role AS "role: Role", status AS "status: UserStatus",
                   must_change_password, created_at
            FROM identity.users
@@ -318,23 +320,26 @@ pub async fn lock_active_admins(conn: &mut PgConnection) -> Result<Vec<Uuid>, sq
 pub async fn update_user(
     conn: &mut PgConnection,
     id: Uuid,
-    display_name: Option<&str>,
+    name: Option<&str>,
+    surname: Option<&str>,
     role: Option<Role>,
     status: Option<UserStatus>,
 ) -> Result<Option<User>, sqlx::Error> {
     sqlx::query_as!(
         User,
         r#"UPDATE identity.users
-           SET display_name = COALESCE($2, display_name),
-               role = COALESCE($3, role),
-               status = COALESCE($4, status),
+           SET name = COALESCE($2, name),
+               surname = COALESCE($3, surname),
+               role = COALESCE($4, role),
+               status = COALESCE($5, status),
                updated_at = now()
            WHERE id = $1
-           RETURNING id, email, display_name,
+           RETURNING id, email, name, surname,
                      role AS "role: Role", status AS "status: UserStatus",
                      must_change_password, created_at"#,
         id,
-        display_name,
+        name,
+        surname,
         role.map(Role::as_str),
         status.map(UserStatus::as_str)
     )
