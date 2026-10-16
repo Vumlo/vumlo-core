@@ -39,7 +39,7 @@ pub enum ContentError {
     InvalidParent,
     #[error("ids must list exactly the current siblings, once each")]
     InvalidOrder,
-    /// `config`, `max_points` or `is_bonus` sent for a lesson.
+    /// `config`, `max_points` or `is_bonus` sent for a `text` item.
     #[error("only an assignment has this field")]
     NotAnAssignment { field: &'static str },
     /// The grading scale does not allow these points (ADR-0022).
@@ -546,7 +546,7 @@ pub async fn publish_module(
 // ---------------------------------------------------------------------------------------------
 
 /// Creates a draft item as the last of the module, which may be a top-level module or a
-/// sub-module. An `assignment` makes it an item of kind `assignment`; without one it is a lesson.
+/// sub-module. An `assignment` makes it an item of kind `assignment`; without one it is a `text` item.
 pub async fn create_item(
     conn: &mut PgConnection,
     actor: &Actor,
@@ -576,7 +576,7 @@ pub async fn create_item(
     let kind = if assignment.is_some() {
         ItemKind::Assignment
     } else {
-        ItemKind::Lesson
+        ItemKind::Text
     };
     let mut item = repo::insert_item(
         conn,

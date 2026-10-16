@@ -85,14 +85,14 @@ fn api_item_status(status: ItemStatus) -> ContentStatus {
 
 fn api_kind(kind: ItemKind) -> api_types::ItemKind {
     match kind {
-        ItemKind::Lesson => api_types::ItemKind::Lesson,
+        ItemKind::Text => api_types::ItemKind::Text,
         ItemKind::Assignment => api_types::ItemKind::Assignment,
     }
 }
 
 fn domain_kind(kind: api_types::ItemKind) -> ItemKind {
     match kind {
-        api_types::ItemKind::Lesson => ItemKind::Lesson,
+        api_types::ItemKind::Text => ItemKind::Text,
         api_types::ItemKind::Assignment => ItemKind::Assignment,
     }
 }
@@ -434,13 +434,13 @@ async fn publish_module(
     Ok(Json(api_module(module)))
 }
 
-/// Creates a draft lesson or assignment as the last item of a module or sub-module.
+/// Creates a draft `text` item or assignment as the last item of a module or sub-module.
 ///
 /// `body` is a JSON object that is stored and returned as is; an array or a string is rejected.
 /// For an assignment it holds the instructions.
 ///
 /// `kind: assignment` requires an `assignment` object `{type, config?, max_points, is_bonus?}`
-/// (ADR-0021); a lesson must not carry one. `type` is `text` for now, with an empty `config`.
+/// (ADR-0021); a `text` item must not carry one. `type` is `text` for now, with an empty `config`.
 /// `max_points` is a decimal string such as `"20"` or `"7.5"`; a JSON number is rejected. The
 /// grading scale limits the points (ADR-0022): at most 12 per assignment on `twelve`, at most
 /// 100 in total over the regular (not bonus) assignments of the course on `hundred`.
@@ -473,8 +473,8 @@ async fn create_item(
 ) -> Result<(StatusCode, Json<Item>), ApiError> {
     let title = title(&request.title)?;
     let assignment = match (domain_kind(request.kind), request.assignment) {
-        (ItemKind::Lesson, None) => None,
-        (ItemKind::Lesson, Some(_)) => {
+        (ItemKind::Text, None) => None,
+        (ItemKind::Text, Some(_)) => {
             return Err(ApiError::invalid_field(
                 "assignment",
                 "only an item of kind `assignment` has this field",
@@ -538,7 +538,7 @@ async fn reorder_items(
     Ok(StatusCode::NO_CONTENT)
 }
 
-/// One lesson or assignment with its body (and, for an assignment, its `assignment` part). A
+/// One `text` item or assignment with its body (and, for an assignment, its `assignment` part). A
 /// student gets 404 unless the course, every module above it and the item are published and not
 /// scheduled later.
 #[utoipa::path(
@@ -570,7 +570,7 @@ async fn get_item(
 ///
 /// For an assignment `config`, `max_points` and `is_bonus` may change too; the grading scale
 /// limits apply when `max_points` is raised or a bonus assignment becomes regular. They are
-/// rejected for a lesson. `type` and `kind` cannot change: sending them has no effect.
+/// rejected for a `text` item. `type` and `kind` cannot change: sending them has no effect.
 #[utoipa::path(
     patch,
     path = "/items/{id}",
@@ -586,7 +586,7 @@ async fn get_item(
             body = ProblemDetails, content_type = "application/problem+json"),
         (status = 404, description = "No such item, or not visible to the caller",
             body = ProblemDetails, content_type = "application/problem+json"),
-        (status = 422, description = "Invalid title or timestamp, a body that is not a JSON object, assignment fields on a lesson, an unknown config field, invalid points, or points the grading scale does not allow",
+        (status = 422, description = "Invalid title or timestamp, a body that is not a JSON object, assignment fields on a `text` item, an unknown config field, invalid points, or points the grading scale does not allow",
             body = ProblemDetails, content_type = "application/problem+json"),
     )
 )]
@@ -622,7 +622,7 @@ async fn update_item(
     Ok(Json(api_item(item)))
 }
 
-/// Deletes a lesson or an assignment.
+/// Deletes a `text` item or an assignment.
 #[utoipa::path(
     delete,
     path = "/items/{id}",
@@ -650,7 +650,7 @@ async fn delete_item(
     Ok(StatusCode::NO_CONTENT)
 }
 
-/// Publishes a lesson or an assignment. Idempotent; never changes `publish_at`.
+/// Publishes a `text` item or an assignment. Idempotent; never changes `publish_at`.
 #[utoipa::path(
     post,
     path = "/items/{id}/publish",

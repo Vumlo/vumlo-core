@@ -1,4 +1,4 @@
-//! The course content tree: modules, one level of sub-modules, lessons and assignments
+//! The course content tree: modules, one level of sub-modules, `text` items and assignments
 //! (ADR-0020, ADR-0021).
 
 mod model;

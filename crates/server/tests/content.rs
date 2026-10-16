@@ -144,7 +144,7 @@ async fn item(w: &World, module: Uuid, title: &str) -> Uuid {
         &w.http,
         &w.owner.token,
         &format!("/modules/{module}/items"),
-        json!({"kind": "lesson", "title": title}),
+        json!({"kind": "text", "title": title}),
     )
     .await;
     id_of(&created(&response))
@@ -233,7 +233,7 @@ async fn audit_rows(pool: &PgPool) -> Vec<(String, String, Uuid, Value)> {
 // =============================================================================================
 
 #[sqlx::test(migrator = "server::app::MIGRATOR")]
-async fn modules_sub_modules_and_lessons_form_an_ordered_tree(pool: PgPool) {
+async fn modules_sub_modules_and_text_items_form_an_ordered_tree(pool: PgPool) {
     let w = world(pool).await;
     let lectures = module(&w, "Lectures", None).await;
     let practice = module(&w, "Practice", None).await;
@@ -262,7 +262,7 @@ async fn modules_sub_modules_and_lessons_form_an_ordered_tree(pool: PgPool) {
         json!(slides)
     );
     assert!(lectures_node["items"][0].get("body").is_none());
-    assert_eq!(lectures_node["items"][0]["kind"], "lesson");
+    assert_eq!(lectures_node["items"][0]["kind"], "text");
     assert_eq!(top(&tree, "Practice")["id"], json!(practice));
     assert_eq!(top(&tree, "Practice")["submodules"], json!([]));
 }
@@ -304,7 +304,7 @@ async fn new_rows_take_the_last_position_of_their_own_sequence(pool: PgPool) {
             &w.http,
             &w.owner.token,
             &format!("/modules/{parent}/items"),
-            json!({"kind": "lesson", "title": "L"}),
+            json!({"kind": "text", "title": "L"}),
         )
         .await;
         assert_eq!(position(&created(&response)), expected, "items count apart");
@@ -343,7 +343,7 @@ async fn a_sub_module_needs_a_top_level_parent_of_the_same_course(pool: PgPool) 
 }
 
 #[sqlx::test(migrator = "server::app::MIGRATOR")]
-async fn lesson_bodies_are_stored_as_given_and_must_be_objects(pool: PgPool) {
+async fn text_bodies_are_stored_as_given_and_must_be_objects(pool: PgPool) {
     let w = world(pool).await;
     let module = module(&w, "M", None).await;
     let path = format!("/modules/{module}/items");
@@ -353,12 +353,12 @@ async fn lesson_bodies_are_stored_as_given_and_must_be_objects(pool: PgPool) {
             &w.http,
             &w.owner.token,
             &path,
-            json!({"kind": "lesson", "title": "L"}),
+            json!({"kind": "text", "title": "L"}),
         )
         .await,
     );
     assert_eq!(plain["body"], json!({}));
-    assert_eq!(plain["kind"], "lesson");
+    assert_eq!(plain["kind"], "text");
     assert_eq!(plain["status"], "draft");
 
     let body = json!({"blocks": [{"type": "p", "text": "Hi"}], "n": 1.5, "nested": {"a": null}});
@@ -367,7 +367,7 @@ async fn lesson_bodies_are_stored_as_given_and_must_be_objects(pool: PgPool) {
             &w.http,
             &w.owner.token,
             &path,
-            json!({"kind": "lesson", "title": "R", "body": body}),
+            json!({"kind": "text", "title": "R", "body": body}),
         )
         .await,
     );
@@ -385,7 +385,7 @@ async fn lesson_bodies_are_stored_as_given_and_must_be_objects(pool: PgPool) {
             &w.http,
             &w.owner.token,
             &path,
-            json!({"kind": "lesson", "title": "Bad", "body": bad}),
+            json!({"kind": "text", "title": "Bad", "body": bad}),
         )
         .await;
         response.problem(422);
@@ -688,27 +688,27 @@ async fn a_student_sees_no_content_while_the_course_is_a_draft(pool: PgPool) {
 // =============================================================================================
 
 #[sqlx::test(migrator = "server::app::MIGRATOR")]
-async fn a_student_who_sees_a_lesson_still_cannot_change_it(pool: PgPool) {
+async fn a_student_who_sees_a_text_item_still_cannot_change_it(pool: PgPool) {
     let w = world(pool).await;
     let module = module(&w, "M", None).await;
     publish_module(&w, module, false).await;
-    let lesson = item(&w, module, "L").await;
-    publish_item(&w, lesson).await;
+    let text = item(&w, module, "L").await;
+    publish_item(&w, text).await;
     let token = &w.student.token;
 
     for response in [
         patch(
             &w.http,
             token,
-            &format!("/items/{lesson}"),
+            &format!("/items/{text}"),
             json!({"title": "X"}),
         )
         .await,
-        delete(&w.http, token, &format!("/items/{lesson}")).await,
+        delete(&w.http, token, &format!("/items/{text}")).await,
         post(
             &w.http,
             token,
-            &format!("/items/{lesson}/publish"),
+            &format!("/items/{text}/publish"),
             json!(null),
         )
         .await,
@@ -731,14 +731,14 @@ async fn a_student_who_sees_a_lesson_still_cannot_change_it(pool: PgPool) {
             &w.http,
             token,
             &format!("/modules/{module}/items"),
-            json!({"kind": "lesson", "title": "T"}),
+            json!({"kind": "text", "title": "T"}),
         )
         .await,
         put(
             &w.http,
             token,
             &format!("/modules/{module}/items/order"),
-            json!({"ids": [lesson]}),
+            json!({"ids": [text]}),
         )
         .await,
         post(
@@ -759,7 +759,7 @@ async fn a_student_who_sees_a_lesson_still_cannot_change_it(pool: PgPool) {
         response.problem(403);
     }
     // Nothing changed.
-    let item = ok(&get(&w.http, &w.owner.token, &format!("/items/{lesson}")).await);
+    let item = ok(&get(&w.http, &w.owner.token, &format!("/items/{text}")).await);
     assert_eq!(item["title"], "L");
 }
 
@@ -792,7 +792,7 @@ async fn a_student_gets_404_not_403_for_content_they_cannot_see(pool: PgPool) {
         &w.http,
         token,
         &format!("/modules/{module}/items"),
-        json!({"kind": "lesson", "title": "T"}),
+        json!({"kind": "text", "title": "T"}),
     )
     .await
     .problem(404);
@@ -803,25 +803,25 @@ async fn a_non_member_sees_and_changes_nothing(pool: PgPool) {
     let w = world(pool).await;
     let module = module(&w, "M", None).await;
     publish_module(&w, module, false).await;
-    let lesson = item(&w, module, "L").await;
-    publish_item(&w, lesson).await;
+    let text = item(&w, module, "L").await;
+    publish_item(&w, text).await;
     let token = &w.stranger.token;
 
     for response in [
         get(&w.http, token, &format!("/courses/{}/content", w.course)).await,
-        get(&w.http, token, &format!("/items/{lesson}")).await,
+        get(&w.http, token, &format!("/items/{text}")).await,
         patch(
             &w.http,
             token,
-            &format!("/items/{lesson}"),
+            &format!("/items/{text}"),
             json!({"title": "X"}),
         )
         .await,
-        delete(&w.http, token, &format!("/items/{lesson}")).await,
+        delete(&w.http, token, &format!("/items/{text}")).await,
         post(
             &w.http,
             token,
-            &format!("/items/{lesson}/publish"),
+            &format!("/items/{text}/publish"),
             json!(null),
         )
         .await,
@@ -844,7 +844,7 @@ async fn a_non_member_sees_and_changes_nothing(pool: PgPool) {
             &w.http,
             token,
             &format!("/modules/{module}/items"),
-            json!({"kind": "lesson", "title": "T"}),
+            json!({"kind": "text", "title": "T"}),
         )
         .await,
         post(
@@ -865,7 +865,7 @@ async fn a_non_member_sees_and_changes_nothing(pool: PgPool) {
             &w.http,
             token,
             &format!("/modules/{module}/items/order"),
-            json!({"ids": [lesson]}),
+            json!({"ids": [text]}),
         )
         .await,
     ] {
@@ -873,7 +873,7 @@ async fn a_non_member_sees_and_changes_nothing(pool: PgPool) {
     }
     // Everything needs a login.
     for response in [
-        w.http.get(&format!("/items/{lesson}")).send().await,
+        w.http.get(&format!("/items/{text}")).send().await,
         w.http
             .get(&format!("/courses/{}/content", w.course))
             .send()
@@ -1012,7 +1012,7 @@ async fn malformed_ids_are_400_and_unknown_ids_404(pool: PgPool) {
         &w.http,
         token,
         &format!("/modules/{unknown}/items"),
-        json!({"kind": "lesson", "title": "T"}),
+        json!({"kind": "text", "title": "T"}),
     )
     .await
     .problem(404);
@@ -1036,12 +1036,12 @@ async fn an_assistant_runs_the_whole_tree(pool: PgPool) {
     let first = module_as(&w, token, "First", None).await;
     let second = module_as(&w, token, "Second", None).await;
     let sub = module_as(&w, token, "Sub", Some(first)).await;
-    let lesson = id_of(&created(
+    let text = id_of(&created(
         &post(
             &w.http,
             token,
             &format!("/modules/{sub}/items"),
-            json!({"kind": "lesson", "title": "L"}),
+            json!({"kind": "text", "title": "L"}),
         )
         .await,
     ));
@@ -1050,7 +1050,7 @@ async fn an_assistant_runs_the_whole_tree(pool: PgPool) {
             &w.http,
             token,
             &format!("/modules/{sub}/items"),
-            json!({"kind": "lesson", "title": "M"}),
+            json!({"kind": "text", "title": "M"}),
         )
         .await,
     ));
@@ -1069,7 +1069,7 @@ async fn an_assistant_runs_the_whole_tree(pool: PgPool) {
         ok(&patch(
             &w.http,
             token,
-            &format!("/items/{lesson}"),
+            &format!("/items/{text}"),
             json!({"body": {"a": 1}})
         )
         .await)["body"],
@@ -1089,7 +1089,7 @@ async fn an_assistant_runs_the_whole_tree(pool: PgPool) {
             &w.http,
             token,
             &format!("/modules/{sub}/items/order"),
-            json!({"ids": [other, lesson]}),
+            json!({"ids": [other, text]}),
         )
         .await,
     );
@@ -1107,7 +1107,7 @@ async fn an_assistant_runs_the_whole_tree(pool: PgPool) {
         ok(&post(
             &w.http,
             token,
-            &format!("/items/{lesson}/publish"),
+            &format!("/items/{text}/publish"),
             json!(null)
         )
         .await)["status"],
@@ -1263,8 +1263,8 @@ async fn publishing_never_touches_publish_at(pool: PgPool) {
     assert_eq!(node["submodules"][0]["publish_at"], FUTURE);
     assert_eq!(node["items"][0]["publish_at"], FUTURE);
     assert_eq!(node["submodules"][0]["items"][0]["publish_at"], PAST);
-    let lesson = publish_item(&w, d).await;
-    assert_eq!(lesson["publish_at"], FUTURE);
+    let text = publish_item(&w, d).await;
+    assert_eq!(text["publish_at"], FUTURE);
     // Still scheduled for the future, so students see none of it.
     assert_eq!(
         crate::tree(&w, &w.student.token).await["modules"],
@@ -1277,10 +1277,10 @@ async fn publishing_never_touches_publish_at(pool: PgPool) {
 // =============================================================================================
 
 #[sqlx::test(migrator = "server::app::MIGRATOR")]
-async fn modules_and_lessons_are_edited_through_patch(pool: PgPool) {
+async fn modules_and_text_items_are_edited_through_patch(pool: PgPool) {
     let w = world(pool).await;
     let m = module(&w, "Old", None).await;
-    let l = item(&w, m, "Old lesson").await;
+    let l = item(&w, m, "Old text").await;
     let token = &w.owner.token;
 
     let renamed = ok(&patch(
@@ -1567,7 +1567,7 @@ async fn deleting_leaves_gaps_and_later_creates_still_append(pool: PgPool) {
             &w.http,
             &w.owner.token,
             &format!("/modules/{m}/items"),
-            json!({"kind": "lesson", "title": "Four"}),
+            json!({"kind": "text", "title": "Four"}),
         )
         .await,
     );
@@ -1642,7 +1642,7 @@ async fn write_everything(w: &World, token: &str) -> (Uuid, Uuid, Uuid, Uuid, Uu
             &w.http,
             token,
             &format!("/modules/{m}/items"),
-            json!({"kind": "lesson", "title": "I"}),
+            json!({"kind": "text", "title": "I"}),
         )
         .await,
     ));
@@ -1651,7 +1651,7 @@ async fn write_everything(w: &World, token: &str) -> (Uuid, Uuid, Uuid, Uuid, Uu
             &w.http,
             token,
             &format!("/modules/{m}/items"),
-            json!({"kind": "lesson", "title": "J"}),
+            json!({"kind": "text", "title": "J"}),
         )
         .await,
     ));
@@ -1945,8 +1945,8 @@ async fn on_the_hundred_scale_regular_points_of_a_course_add_up_to_at_most_one_h
     let w = world(pool).await;
     let m = module(&w, "M", None).await;
 
-    // A lesson is not an assignment and counts for nothing.
-    item(&w, m, "Lesson").await;
+    // A `text` item is not an assignment and counts for nothing.
+    item(&w, m, "Text").await;
     // Assignments are drafts when created, and drafts count.
     assignment(&w, m, "60", false).await;
     let forty = assignment(&w, m, "40", false).await;
@@ -2219,19 +2219,37 @@ async fn unknown_types_and_config_fields_are_422(pool: PgPool) {
 }
 
 #[sqlx::test(migrator = "server::app::MIGRATOR")]
+async fn the_old_lesson_kind_is_an_unknown_kind(pool: PgPool) {
+    let w = world(pool).await;
+    let m = module(&w, "M", None).await;
+
+    // Like any unknown value, it is a bare 422 (ADR-0024 records the break of ADR-0012).
+    post(
+        &w.http,
+        &w.owner.token,
+        &format!("/modules/{m}/items"),
+        json!({"kind": "lesson", "title": "T"}),
+    )
+    .await
+    .problem(422);
+    let tree = tree(&w, &w.owner.token).await;
+    assert_eq!(top(&tree, "M")["items"], json!([]), "nothing was created");
+}
+
+#[sqlx::test(migrator = "server::app::MIGRATOR")]
 async fn the_assignment_object_goes_with_the_assignment_kind_only(pool: PgPool) {
     let w = world(pool).await;
     let m = module(&w, "M", None).await;
     let path = format!("/modules/{m}/items");
 
-    let lesson_with = post(
+    let text_with = post(
         &w.http,
         &w.owner.token,
         &path,
-        json!({"kind": "lesson", "title": "T", "assignment": {"type": "text", "max_points": "5"}}),
+        json!({"kind": "text", "title": "T", "assignment": {"type": "text", "max_points": "5"}}),
     )
     .await;
-    assert_eq!(error_fields(&lesson_with), ["assignment"]);
+    assert_eq!(error_fields(&text_with), ["assignment"]);
     for body in [
         json!({"kind": "assignment", "title": "T"}),
         json!({"kind": "assignment", "title": "T", "assignment": null}),
@@ -2246,10 +2264,10 @@ async fn the_assignment_object_goes_with_the_assignment_kind_only(pool: PgPool) 
 }
 
 #[sqlx::test(migrator = "server::app::MIGRATOR")]
-async fn an_assignment_carries_its_part_and_a_lesson_none(pool: PgPool) {
+async fn an_assignment_carries_its_part_and_a_text_item_none(pool: PgPool) {
     let w = world(pool).await;
     let m = module(&w, "M", None).await;
-    let lesson = item(&w, m, "Lesson").await;
+    let text = item(&w, m, "Text").await;
     let response = post(
         &w.http,
         &w.owner.token,
@@ -2271,11 +2289,11 @@ async fn an_assignment_carries_its_part_and_a_lesson_none(pool: PgPool) {
 
     let fetched = item_json(&w, id_of(&essay)).await;
     assert_eq!(fetched["assignment"], expected);
-    assert!(item_json(&w, lesson).await.get("assignment").is_none());
+    assert!(item_json(&w, text).await.get("assignment").is_none());
 
     let tree = tree(&w, &w.owner.token).await;
     let items = top(&tree, "M")["items"].as_array().unwrap();
-    assert!(items[0].get("assignment").is_none(), "a lesson has none");
+    assert!(items[0].get("assignment").is_none(), "a text item has none");
     assert_eq!(
         items[1]["assignment"],
         json!({"type": "text", "max_points": "20.00", "is_bonus": false}),
@@ -2287,10 +2305,10 @@ async fn an_assignment_carries_its_part_and_a_lesson_none(pool: PgPool) {
 }
 
 #[sqlx::test(migrator = "server::app::MIGRATOR")]
-async fn patch_changes_assignment_fields_and_refuses_them_for_a_lesson(pool: PgPool) {
+async fn patch_changes_assignment_fields_and_refuses_them_for_a_text_item(pool: PgPool) {
     let w = world(pool).await;
     let m = module(&w, "M", None).await;
-    let lesson = item(&w, m, "Lesson").await;
+    let text = item(&w, m, "Text").await;
     let essay = assignment(&w, m, "10", false).await;
 
     let patched = ok(&patch_item(
@@ -2315,10 +2333,10 @@ async fn patch_changes_assignment_fields_and_refuses_them_for_a_lesson(pool: PgP
         ("max_points", json!("5")),
         ("is_bonus", json!(true)),
     ] {
-        let response = patch_item(&w, lesson, json!({ field: value })).await;
+        let response = patch_item(&w, text, json!({ field: value })).await;
         assert_eq!(error_fields(&response), [field]);
     }
-    assert!(item_json(&w, lesson).await.get("assignment").is_none());
+    assert!(item_json(&w, text).await.get("assignment").is_none());
 }
 
 #[sqlx::test(migrator = "server::app::MIGRATOR")]
@@ -2326,13 +2344,13 @@ async fn type_and_kind_cannot_change_and_are_ignored_by_patch(pool: PgPool) {
     let w = world(pool).await;
     let m = module(&w, "M", None).await;
     let essay = assignment(&w, m, "10", false).await;
-    let lesson = item(&w, m, "Lesson").await;
+    let text = item(&w, m, "Text").await;
 
-    let patched = ok(&patch_item(&w, essay, json!({"type": "form", "kind": "lesson"})).await);
+    let patched = ok(&patch_item(&w, essay, json!({"type": "form", "kind": "text"})).await);
     assert_eq!(patched["kind"], "assignment");
     assert_eq!(patched["assignment"]["type"], "text");
-    let patched = ok(&patch_item(&w, lesson, json!({"kind": "assignment", "type": "text"})).await);
-    assert_eq!(patched["kind"], "lesson");
+    let patched = ok(&patch_item(&w, text, json!({"kind": "assignment", "type": "text"})).await);
+    assert_eq!(patched["kind"], "text");
     assert!(patched.get("assignment").is_none());
 }
 
@@ -2380,7 +2398,7 @@ async fn students_reach_an_assignment_only_once_it_is_released_on_every_level(po
 }
 
 #[sqlx::test(migrator = "server::app::MIGRATOR")]
-async fn lessons_and_assignments_share_one_position_sequence(pool: PgPool) {
+async fn text_items_and_assignments_share_one_position_sequence(pool: PgPool) {
     let w = world(pool).await;
     let m = module(&w, "M", None).await;
     let first = item(&w, m, "First").await;
@@ -2420,13 +2438,13 @@ async fn cascade_publishing_publishes_draft_assignments_too(pool: PgPool) {
     let sub = module(&w, "Sub", Some(m)).await;
     let direct = assignment(&w, m, "10", false).await;
     let nested = assignment(&w, sub, "20", false).await;
-    let lesson = item(&w, m, "Lesson").await;
+    let text = item(&w, m, "Text").await;
 
     publish_module(&w, m, false).await;
     assert_eq!(item_json(&w, direct).await["status"], "draft");
 
     publish_module(&w, m, true).await;
-    for id in [direct, nested, lesson] {
+    for id in [direct, nested, text] {
         assert_eq!(item_json(&w, id).await["status"], "published");
     }
     assert_eq!(
@@ -2536,6 +2554,9 @@ async fn the_assignment_schemas_are_in_the_openapi_document(pool: PgPool) {
     assert!(schemas["UpdateItemRequest"]["properties"]["max_points"].is_object());
     assert!(schemas["Item"]["properties"]["assignment"].is_object());
     assert!(schemas["ItemSummary"]["properties"]["assignment"].is_object());
-    let kinds = schemas["ItemKind"]["enum"].as_array().unwrap();
-    assert!(kinds.contains(&json!("assignment")) && kinds.contains(&json!("lesson")));
+    assert_eq!(
+        schemas["ItemKind"]["enum"],
+        json!(["text", "assignment"]),
+        "`lesson` is no longer an item kind (ADR-0024)"
+    );
 }
