@@ -3,7 +3,9 @@ mod common;
 use std::time::Duration;
 
 use api_types::{HealthResponse, ProblemDetails};
-use common::spawn;
+use common::{spawn, spawn_with, test_settings};
+use server::app::AppState;
+use server::settings::ProfileSettings;
 use sqlx::PgPool;
 use sqlx::postgres::PgPoolOptions;
 
@@ -140,4 +142,46 @@ async fn docs_page_lists_health_endpoint(pool: PgPool) {
     assert_eq!(response.status(), 200);
     assert!(content_type(&response).starts_with("text/html"));
     assert!(response.text().await.unwrap().contains("/api/v1/health"));
+}
+
+/// The app is built from a hand-made `Settings` the way `main` builds it, so a configuration that
+/// does not fit fails there and never at the first request.
+#[sqlx::test(migrator = "server::app::MIGRATOR")]
+async fn building_the_app_from_a_bad_editor_configuration_fails_and_names_the_culprit(
+    pool: PgPool,
+) {
+    let features = |profile: &str, names: &[&str]| {
+        let mut settings = test_settings();
+        settings.editor.profiles.insert(
+            profile.to_owned(),
+            ProfileSettings {
+                features: names.iter().map(|name| (*name).to_owned()).collect(),
+            },
+        );
+        settings
+    };
+    let mut unknown_provider = test_settings();
+    unknown_provider.editor.video_providers = vec!["vimeo".to_owned(), "dailymotion".to_owned()];
+
+    for (settings, culprit) in [
+        (features("wizard", &[]), "wizard"),
+        (features("full", &["telepathy"]), "telepathy"),
+        (features("option", &["headings"]), "headings"),
+        (features("student", &["video"]), "video"),
+        (unknown_provider, "dailymotion"),
+    ] {
+        let error = AppState::new(pool.clone(), settings)
+            .map(|_| ())
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains(culprit), "{culprit}: {error}");
+        assert!(error.starts_with("editor."), "{error}");
+    }
+
+    // A configuration that only narrows builds, and the app serves it.
+    let mut narrowed = test_settings();
+    narrowed.editor.video_providers = vec!["vimeo".to_owned()];
+    let state = AppState::new(pool.clone(), narrowed.clone()).unwrap();
+    assert_eq!(state.editor.video_providers().len(), 1);
+    spawn_with(pool, narrowed).await;
 }

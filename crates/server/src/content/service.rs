@@ -7,13 +7,14 @@
 
 use std::collections::{HashMap, HashSet};
 
+use api_types::ProfileName;
 use chrono::{DateTime, Utc};
-use serde_json::json;
+use serde_json::{Value, json};
 use sqlx::PgConnection;
 use sqlx::types::Decimal;
 use uuid::Uuid;
 
-use super::document::{EffectiveProfiles, ValidDocument};
+use super::document::{DocumentErrors, EffectiveProfiles, ValidDocument, validate_document};
 use super::model::{
     Assignment, AssignmentType, ContentModule, ContentSubModule, ContentTitle, Item, ItemKind,
     ItemPatch, ModelError, Module, ModulePatch,
@@ -44,6 +45,9 @@ pub enum ContentError {
     #[error("only an assignment has this field")]
     NotAnAssignment { field: &'static str },
     /// The grading scale does not allow these points (ADR-0022).
+    /// The `body` is not a valid document of the profile `full` (ADR-0025).
+    #[error("the body is not a valid document")]
+    Document(DocumentErrors),
     #[error("{message}")]
     PointsLimit {
         field: &'static str,
@@ -546,15 +550,33 @@ pub async fn publish_module(
 // Items
 // ---------------------------------------------------------------------------------------------
 
+/// What the item writes read from the configuration: the grading scale (ADR-0022) and the
+/// resolved editor profiles (ADR-0025). Both are resolved once, when `AppState` is built.
+#[derive(Debug, Clone, Copy)]
+pub struct ItemRules<'a> {
+    pub scale: GradingScale,
+    pub profiles: &'a EffectiveProfiles,
+}
+
+/// Validates a body as a document of profile `full`. Called only after the actor was authorized.
+fn document(
+    body: Option<&Value>,
+    profiles: &EffectiveProfiles,
+) -> Result<Option<ValidDocument>, ContentError> {
+    body.map(|value| validate_document(value, ProfileName::Full, profiles))
+        .transpose()
+        .map_err(ContentError::Document)
+}
+
 /// Creates a draft item as the last of the module, which may be a top-level module or a
 /// sub-module. An `assignment` makes it an item of kind `assignment`; without one it is a `text` item.
 pub async fn create_item(
     conn: &mut PgConnection,
     actor: &Actor,
-    scale: GradingScale,
+    rules: ItemRules<'_>,
     module_id: Uuid,
     title: ContentTitle,
-    body: Option<ValidDocument>,
+    body: Option<Value>,
     assignment: Option<Assignment>,
 ) -> Result<Item, ContentError> {
     let row = manage_module(conn, actor, module_id).await?;
@@ -563,9 +585,12 @@ pub async fn create_item(
         assignment
             .assignment_type
             .validate_config(&assignment.config)?;
+    }
+    let body = document(body.as_ref(), rules.profiles)?;
+    if let Some(assignment) = &assignment {
         check_points(
             conn,
-            scale,
+            rules.scale,
             course_id,
             None,
             assignment.max_points.value(),
@@ -605,10 +630,10 @@ pub async fn create_item(
 }
 
 /// The profiles the document editor enforces, for building its toolbar. Any role may ask.
-pub fn editor_profiles(
+pub fn editor_profiles<'a>(
     actor: &Actor,
-    profiles: EffectiveProfiles,
-) -> Result<EffectiveProfiles, ContentError> {
+    profiles: &'a EffectiveProfiles,
+) -> Result<&'a EffectiveProfiles, ContentError> {
     policy::authorize(actor, Action::ViewEditorProfiles)?;
     Ok(profiles)
 }
@@ -630,7 +655,7 @@ pub async fn get_item(
 pub async fn update_item(
     conn: &mut PgConnection,
     actor: &Actor,
-    scale: GradingScale,
+    rules: ItemRules<'_>,
     id: Uuid,
     patch: ItemPatch,
 ) -> Result<Item, ContentError> {
@@ -652,8 +677,9 @@ pub async fn update_item(
     if let (Some(config), Some(assignment)) = (&patch.config, &row.item.assignment) {
         assignment.assignment_type.validate_config(config)?;
     }
+    let body = document(patch.body.as_ref(), rules.profiles)?;
     if is_assignment && (patch.max_points.is_some() || patch.is_bonus.is_some()) {
-        if scale == GradingScale::Hundred {
+        if rules.scale == GradingScale::Hundred {
             repo::lock_course_points(conn, row.item.course_id).await?;
         }
         let current = repo::find_assignment(conn, id)
@@ -663,7 +689,7 @@ pub async fn update_item(
         let is_bonus = patch.is_bonus.unwrap_or(current.is_bonus);
         let raised = points.value() > current.max_points.value();
         let becomes_regular = current.is_bonus && !is_bonus;
-        let needs_check = match scale {
+        let needs_check = match rules.scale {
             GradingScale::Twelve => raised,
             GradingScale::Hundred => raised || becomes_regular,
         };
@@ -671,7 +697,7 @@ pub async fn update_item(
             let field = if raised { "max_points" } else { "is_bonus" };
             check_points(
                 conn,
-                scale,
+                rules.scale,
                 row.item.course_id,
                 Some(id),
                 points.value(),
@@ -685,7 +711,7 @@ pub async fn update_item(
         conn,
         id,
         patch.title.as_ref().map(ContentTitle::as_str),
-        patch.body.as_ref().map(ValidDocument::as_body),
+        body.as_ref().map(ValidDocument::as_body),
         patch.publish_at.is_some(),
         patch.publish_at.flatten(),
     )
@@ -792,10 +818,22 @@ mod tests {
     use axum::response::IntoResponse;
     use serde_json::Map;
 
+    use std::sync::LazyLock;
+
     use super::*;
     use crate::error::ApiError;
     use crate::identity::{self, DisplayName, Email, NewUser, Role};
     use crate::teaching::CourseTitle;
+
+    static PROFILES: LazyLock<EffectiveProfiles> = LazyLock::new(EffectiveProfiles::unrestricted);
+
+    /// The `hundred` scale and the profiles of the code, as most tests want them.
+    fn rules() -> ItemRules<'static> {
+        ItemRules {
+            scale: GradingScale::Hundred,
+            profiles: &PROFILES,
+        }
+    }
 
     /// Two creators each read "the last position" before the other commits, so both pick the
     /// same one. The unique constraint is deferred: neither insert waits for the other, and the
@@ -941,7 +979,7 @@ mod tests {
             create_item(
                 conn,
                 &self.owner,
-                GradingScale::Hundred,
+                rules(),
                 self.module,
                 ContentTitle::parse("A").unwrap(),
                 None,
@@ -964,7 +1002,7 @@ mod tests {
             id: Uuid,
             patch: ItemPatch,
         ) -> Result<Item, ContentError> {
-            update_item(conn, &self.owner, GradingScale::Hundred, id, patch).await
+            update_item(conn, &self.owner, rules(), id, patch).await
         }
 
         /// Runs `patch` in its own transaction on a task and commits it when it succeeds.
@@ -976,7 +1014,7 @@ mod tests {
             let (pool, owner) = (self.pool.clone(), self.owner.clone());
             tokio::spawn(async move {
                 let mut tx = pool.begin().await.unwrap();
-                let result = update_item(&mut tx, &owner, GradingScale::Hundred, id, patch).await;
+                let result = update_item(&mut tx, &owner, rules(), id, patch).await;
                 if result.is_ok() {
                     tx.commit().await.unwrap();
                 }
@@ -1043,7 +1081,7 @@ mod tests {
                 let result = create_item(
                     &mut tx,
                     &owner,
-                    GradingScale::Hundred,
+                    rules(),
                     module,
                     ContentTitle::parse("B").unwrap(),
                     None,

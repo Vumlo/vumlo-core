@@ -1,8 +1,6 @@
 // Each test binary compiles this module and uses only some helpers.
 #![allow(dead_code)]
 
-use std::sync::Arc;
-
 use server::app::{self, AppState};
 use server::identity::{self, DisplayName, Email, NewUser, Role, TemporaryPassword};
 use server::settings::{
@@ -47,10 +45,7 @@ pub async fn spawn_with(db: PgPool, settings: Settings) -> String {
         .await
         .expect("bind test listener");
     let addr = listener.local_addr().expect("listener address");
-    let state = AppState {
-        db,
-        config: Arc::new(settings),
-    };
+    let state = AppState::new(db, settings).expect("test app state");
     tokio::spawn(app::serve(
         listener,
         app::router(state).expect("test router"),
