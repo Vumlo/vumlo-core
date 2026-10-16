@@ -58,7 +58,7 @@ docs/decisions/
 | Module       | Owns (Postgres schema)          | Responsibility |
 |--------------|---------------------------------|----------------|
 | `identity`   | `identity.*`                    | users, login identities, sessions, tokens |
-| `org`        | `org.*`                         | terms, groups (cohorts), grading scales, institution settings |
+| `org`        | `org.*`                         | terms, groups (cohorts), institution settings |
 | `teaching`   | `teaching.*`                    | courses, memberships, publishing; group links and course subgroups are planned |
 | `content`    | `content.*`                     | modules, items (lessons built; assignments and assignment types planned) |
 | `assessment` | `assessment.*`                  | submissions, attempts, lateness, auto-grading of forms |
@@ -119,13 +119,11 @@ org
   group_members    group_id, user_id
   subgroups        id, group_id, name                  -- 7-A English 1/2; one level only
   subgroup_members subgroup_id, user_id                -- must also be a member of the group
-  grading_scales   id, name, kind, config (jsonb)      -- 12-point, 100-point + ECTS, ...
 
 teaching
-  courses          id, kind: regular | template, title, term_id?, grading_scale_id,
+  courses          id, kind: regular | template, title, term_id?,
                    status: draft | published | archived, owner_id, created_by
-                   -- built: no grading_scale_id yet, and term_id has no foreign key until
-                   -- org.terms exists (both arrive with `org`)
+                   -- built: term_id has no foreign key until org.terms exists
   course_groups    course_id, group_id, subgroup_id?   -- live link; no subgroup = whole group
   memberships      course_id, user_id, role: teacher | assistant | student
   effective_members (VIEW) = memberships ∪ students of linked groups / subgroups
@@ -138,7 +136,7 @@ content
   items            id, module_id, course_id, position, kind: lesson | assignment, title,
                    body (jsonb object), status: draft | published, publish_at?
                    -- built: lesson is the only kind so far (ADR-0020)
-  assignments      item_id (PK), type (text), config (jsonb), max_points, due_at?,
+  assignments      item_id (PK), type (text), config (jsonb), max_points numeric(6,2), due_at?,
                    accept_late (bool), late_until?, on_deadline: keep_draft | auto_submit,
                    max_attempts?                       -- null = unlimited
 
@@ -195,7 +193,7 @@ Key points:
 ## Configuration
 
 `learnly.toml`, any key overridable with `LEARNLY__SECTION__KEY` (see `learnly.example.toml`):
-`server.bind_addr`, `server.public_origin`, `server.client_ip_header?`, `database.url`, `database.max_connections`, `log.format`, `institution.name`, and an optional `[auth]` section (`password_min_length` = 12, `cookie_secure` = true, `allowed_domains` = [], used from task 004). `institution.mode` (school | university) is planned.
+`server.bind_addr`, `server.public_origin`, `server.client_ip_header?`, `database.url`, `database.max_connections`, `log.format`, `institution.name`, and an optional `[auth]` section (`password_min_length` = 12, `cookie_secure` = true, `allowed_domains` = [], used from task 004). `institution.mode` (school | university) is planned. `institution.grading_scale` (`twelve` | `hundred`, default from `institution.mode`) is planned, see [ADR-0022](docs/decisions/0022-grading-scale-setting.md).
 
 ## Authorization
 
@@ -208,7 +206,7 @@ There are two levels of roles ([ADR-0004](docs/decisions/0004-roles-and-policy.m
 | Action                                         | student | teacher | admin |
 |------------------------------------------------|:-------:|:-------:|:-----:|
 | Create a course                                |    –    |    ✓    |   ✓   |
-| Manage users, roles, groups, terms, scales     |    –    |    –    |   ✓   |
+| Manage users, roles, groups, terms             |    –    |    –    |   ✓   |
 
 **Course level** (`memberships.role`; the owner is `courses.owner_id`):
 
@@ -221,7 +219,7 @@ There are two levels of roles ([ADR-0004](docs/decisions/0004-roles-and-policy.m
 | Enroll/remove students, link groups, manage course subgroups|    –    |     ✓     |    ✓    |   ✓   |   ✓   |
 | Publish the course ([ADR-0019](docs/decisions/0019-course-publishing.md)) |    –    |     –     |    ✓    |   ✓   |   ✓   |
 | Add/remove teachers and assistants                          |    –    |     –     |    ✓    |   ✓   |   ✓   |
-| Change grading scale, archive course                        |    –    |     –     |    ✓    |   ✓   |   ✓   |
+| Archive course                                              |    –    |     –     |    ✓    |   ✓   |   ✓   |
 | Delete course, transfer ownership                           |    –    |     –     |    –    |   ✓   |   ✓   |
 
 Invariants:
@@ -273,7 +271,7 @@ A state change and its event are written in the same transaction. A worker (a to
 
 ## Institution modes
 
-`school` or `university`, set in the config file. The mode changes **terminology** (course/subject, module/topic), **the default grading scale** and **dashboard layout**. It does not change the schema.
+`school` or `university`, set in the config file. The mode changes **terminology** (course/subject, module/topic), **the default grading scale** ([ADR-0022](docs/decisions/0022-grading-scale-setting.md)) and **dashboard layout**. It does not change the schema.
 
 Examples: in a school, the template "Algebra 7" becomes courses "Algebra 7-A" and "Algebra 7-B", each linked to its class group. In a university, the template "Databases" becomes "Databases, Fall 2026", linked to one or more academic groups.
 
