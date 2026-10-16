@@ -9,7 +9,7 @@
 //! `teaching` (ADR-0028, ADR-0030): the tables of `content`, `teaching` and `identity` are read in
 //! `repo` with JOINs.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use chrono::Utc;
 use serde_json::json;
@@ -315,7 +315,12 @@ pub async fn gradebook(
         .iter()
         .map(|student| student.user_id)
         .collect();
-    let mut cells = repo::cells(conn, course_id, &ids).await?;
+    // One map for the whole page, so each cell is found by its key instead of by a search.
+    let mut cells: HashMap<(Uuid, Uuid), Cell> = repo::cells(conn, course_id, &ids)
+        .await?
+        .into_iter()
+        .map(|row| ((row.student_id, row.assignment_id), row.cell))
+        .collect();
     let rows = students
         .items
         .into_iter()
@@ -324,12 +329,8 @@ pub async fn gradebook(
             let own: Vec<(Uuid, Cell)> = columns
                 .iter()
                 .filter_map(|column| {
-                    let at = cells.iter().position(|cell| {
-                        cell.student_id == student.user_id
-                            && cell.assignment_id == column.assignment_id
-                    })?;
-                    let row = cells.swap_remove(at);
-                    Some((row.assignment_id, row.cell))
+                    let cell = cells.remove(&(student.user_id, column.assignment_id))?;
+                    Some((column.assignment_id, cell))
                 })
                 .collect();
             GradebookRow {

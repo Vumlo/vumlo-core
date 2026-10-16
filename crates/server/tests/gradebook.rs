@@ -1638,3 +1638,97 @@ async fn an_admin_delete_is_audited_once_and_a_refused_one_not_at_all(pool: PgPo
     assert_eq!(done.status, 204);
     assert_eq!(audit_count("content.item.delete").await, 1);
 }
+
+#[sqlx::test(migrator = "server::app::MIGRATOR")]
+async fn cells_follow_the_column_order_and_exist_only_where_graded(pool: PgPool) {
+    let w = world(pool).await;
+    // Four columns in tree order: two in the module, one in its sub-module, one in the next module.
+    let sub = module(&w, "Sub", Some(w.module)).await;
+    let next = module(&w, "Next", None).await;
+    let columns = [
+        assignment_in(&w, w.module, "c0", "text", "10").await,
+        assignment_in(&w, w.module, "c1", "text", "10").await,
+        assignment_in(&w, sub, "c2", "no_submission", "10").await,
+        assignment_in(&w, next, "c3", "text", "10").await,
+    ];
+    // Created in another order than they are listed in, to prove the order is the tree's.
+    let students = [
+        w.student.id,
+        add_student(&w, "b@x.edu", "Bea", "B").await,
+        add_student(&w, "c@x.edu", "Cal", "C").await,
+        add_student(&w, "d@x.edu", "Dee", "D").await,
+    ];
+    set_name(&w, students[0], "Abe", "A").await;
+
+    // Which columns each student has a grade row in: one has all four, one none.
+    let graded: [&[usize]; 4] = [&[0, 1, 2, 3], &[1, 3], &[2], &[]];
+    // Every score and feedback names its (student, column), so a cell moved to another place
+    // is a different value.
+    let score = |student: usize, column: usize| format!("{}.{}0", column + 1, student + 1);
+    let note = |student: usize, column: usize| format!("s{student}c{column}");
+    for (student, wanted) in graded.iter().enumerate() {
+        // The student who has every cell is graded from the last column to the first.
+        let order: Vec<usize> = if student == 0 {
+            wanted.iter().rev().copied().collect()
+        } else {
+            wanted.to_vec()
+        };
+        for column in order {
+            let sent = json!({"score": score(student, column), "feedback": note(student, column)});
+            ok(&save(&w, &w.owner.token, columns[column], students[student], sent).await);
+        }
+    }
+
+    let expected: Vec<Value> = graded
+        .iter()
+        .enumerate()
+        .map(|(student, wanted)| {
+            let cells: Vec<Value> = wanted
+                .iter()
+                .map(|&column| {
+                    json!({
+                        "assignment_id": columns[column],
+                        "draft_score": score(student, column),
+                        "draft_feedback": note(student, column),
+                        "published_score": null,
+                        "published_feedback": null,
+                        "has_unpublished_changes": true,
+                    })
+                })
+                .collect();
+            let (name, surname) = [("Abe", "A"), ("Bea", "B"), ("Cal", "C"), ("Dee", "D")][student];
+            json!({"user_id": students[student], "name": name, "surname": surname, "cells": cells})
+        })
+        .collect();
+
+    let book = gradebook(&w, &w.owner.token, "").await;
+    let listed: Vec<_> = book["columns"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|c| c["assignment_id"].clone())
+        .collect();
+    assert_eq!(
+        listed,
+        columns.map(|c| json!(c)),
+        "the columns are in tree order"
+    );
+    assert_eq!(book["items"], json!(expected));
+
+    // The same rows come back, in the same order, when the students are read two at a time.
+    let mut paged = Vec::new();
+    let mut cursor = None::<String>;
+    loop {
+        let query = match &cursor {
+            None => "?limit=2".to_owned(),
+            Some(cursor) => format!("?limit=2&cursor={cursor}"),
+        };
+        let page = gradebook(&w, &w.owner.token, &query).await;
+        paged.extend(page["items"].as_array().unwrap().iter().cloned());
+        match page["next_cursor"].as_str() {
+            Some(next) => cursor = Some(next.to_owned()),
+            None => break,
+        }
+    }
+    assert_eq!(Value::Array(paged), json!(expected));
+}
