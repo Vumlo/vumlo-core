@@ -54,3 +54,4 @@ What gets easier, what gets harder, what we must remember.
 | 0019 | [Publishing a course is a root action](0019-course-publishing.md) |
 | 0020 | [Content tree: course_id on every row, one level of sub-modules, dense positions, opaque lesson body](0020-content-tree.md) |
 | 0021 | [Assignments and scores: numeric points, max_points column, text type first](0021-assignments-and-scores.md) |
+| 0022 | [The grading scale is an institution setting, not a table](0022-grading-scale-setting.md) |
