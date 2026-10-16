@@ -631,11 +631,26 @@ async fn publish_needs_a_body_and_checks_the_listed_students(pool: PgPool) {
         let response = call(&w.http, "POST", token, &path, Some(bad.clone())).await;
         assert_eq!(response.status, 422, "{bad}");
     }
-    // A listed student must be a current student of the course.
+    // A listed student must be a current student of the course; each offender is named by its
+    // position in the list.
     for outside in [w.outsider.id, w.owner.id, w.assistant.id, Uuid::now_v7()] {
         let response = publish(&w, &w.owner.token, a, json!([w.student.id, outside])).await;
-        assert_eq!(error_fields(&response), ["students"], "{outside}");
+        assert_eq!(error_fields(&response), ["students[1]"], "{outside}");
     }
+    let two = publish(
+        &w,
+        &w.owner.token,
+        a,
+        json!([w.outsider.id, w.student.id, w.owner.id]),
+    )
+    .await;
+    let problem = two.problem(422);
+    let fields: Vec<_> = problem.errors.iter().map(|e| e.field.as_str()).collect();
+    assert_eq!(fields, ["students[0]", "students[2]"]);
+    assert_eq!(
+        problem.errors[0].message,
+        "is not a current student of the course"
+    );
     assert_eq!(
         event_count(&w.pool).await,
         0,
@@ -1141,6 +1156,26 @@ async fn the_gradebook_endpoints_are_in_the_openapi_document(pool: PgPool) {
             "{schema}"
         );
     }
+    let schemas = &spec["components"]["schemas"];
+    let cells = schemas["GradebookRow"]["properties"]["cells"]["description"]
+        .as_str()
+        .unwrap();
+    assert!(
+        cells.contains("assignment_id") && cells.contains("no grade"),
+        "{cells}"
+    );
+    // The flattened cell is `allOf` the grade fields and the key.
+    let own = &schemas["GradebookCell"]["allOf"][1];
+    let key = own["properties"]["assignment_id"]["description"]
+        .as_str()
+        .unwrap();
+    assert!(key.contains("map"), "{key}");
+    assert!(
+        own["required"]
+            .as_array()
+            .unwrap()
+            .contains(&json!("assignment_id"))
+    );
     let my = spec["components"]["schemas"]["MyGrade"]["properties"]
         .as_object()
         .unwrap();

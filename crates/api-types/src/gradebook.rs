@@ -104,26 +104,31 @@ pub struct GradebookColumn {
     pub status: ContentStatus,
 }
 
-/// A cell of one student in the column `assignment_id`.
+/// The grade of one student in one column. A cell exists only where a grade row exists: the
+/// student was graded in that column at least once (a draft saved, even one that was cleared).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct GradebookCell {
+    /// The column this cell belongs to: the `assignment_id` of an entry of `columns`. Clients
+    /// build a map from it; the cells of a row are not padded to match `columns`.
     pub assignment_id: Uuid,
     #[serde(flatten)]
     pub cell: GradeCell,
 }
 
-/// One student of the gradebook with their cells. A student who was never graded in a column has
-/// no cell for it.
+/// One student of the gradebook with their cells.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct GradebookRow {
     pub user_id: Uuid,
     pub name: String,
     pub surname: String,
+    /// Only the cells that exist, in column order, each carrying its `assignment_id`. A column
+    /// with no cell here means this student has no grade there: absence is "no grade", not an
+    /// error and not a cell with empty values.
     pub cells: Vec<GradebookCell>,
 }
 
 /// A page of the staff gradebook, paged by student (ADR-0018). `columns` is the same on every
-/// page.
+/// page; each row's `cells` refer to a column by `assignment_id`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct GradebookPage {
     pub columns: Vec<GradebookColumn>,

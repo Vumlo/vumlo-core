@@ -9,7 +9,7 @@ use sqlx::types::Decimal;
 use uuid::Uuid;
 
 use super::model::{Cell, Column, ColumnStatus, MyGrade};
-use crate::policy::{CourseRole, CourseStatus, Release};
+use crate::policy::Release;
 
 /// An assignment with the course it belongs to and the release state of every row on the path to
 /// it, which `policy` needs to decide whether a student may see it.
@@ -20,13 +20,6 @@ pub struct AssignmentContext {
     pub module: Release,
     /// That module's parent, when the module is a sub-module.
     pub parent: Option<Release>,
-}
-
-/// A course with the asking user's membership, which is all `policy` needs of it.
-pub struct CourseRow {
-    pub owner_id: Uuid,
-    pub status: CourseStatus,
-    pub role: Option<CourseRole>,
 }
 
 pub async fn find_assignment(
@@ -62,26 +55,6 @@ pub async fn find_assignment(
             publish_at: row.parent_publish_at,
         }),
     }))
-}
-
-/// The course and `user_id`'s membership in it, read here because `gradebook` calls no function
-/// of `teaching` (ADR-0028).
-pub async fn find_course(
-    conn: &mut PgConnection,
-    course_id: Uuid,
-    user_id: Uuid,
-) -> Result<Option<CourseRow>, sqlx::Error> {
-    sqlx::query_as!(
-        CourseRow,
-        r#"SELECT c.owner_id, c.status AS "status: CourseStatus", m.role AS "role?: CourseRole"
-           FROM teaching.courses c
-           LEFT JOIN teaching.memberships m ON m.course_id = c.id AND m.user_id = $2
-           WHERE c.id = $1"#,
-        course_id,
-        user_id
-    )
-    .fetch_optional(conn)
-    .await
 }
 
 /// Takes a shared lock on the assignment row until the transaction ends and returns `max_points`
