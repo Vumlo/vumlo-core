@@ -139,6 +139,7 @@ content
   assignments      item_id (PK), type (text), config (jsonb), max_points numeric(6,2), due_at?,
                    accept_late (bool), late_until?, on_deadline: keep_draft | auto_submit,
                    max_attempts?                       -- null = unlimited
+                   -- built: item_id, type, config, max_points, is_bonus (task 007); due_at, accept_late, late_until, on_deadline and max_attempts arrive with the submissions task (ADR-0011, ADR-0021)
 
 assessment
   submissions      id, assignment_id, student_id, attempt, status: draft | submitted,
@@ -193,7 +194,7 @@ Key points:
 ## Configuration
 
 `learnly.toml`, any key overridable with `LEARNLY__SECTION__KEY` (see `learnly.example.toml`):
-`server.bind_addr`, `server.public_origin`, `server.client_ip_header?`, `database.url`, `database.max_connections`, `log.format`, `institution.name`, and an optional `[auth]` section (`password_min_length` = 12, `cookie_secure` = true, `allowed_domains` = [], used from task 004). `institution.mode` (school | university) is planned. `institution.grading_scale` (`twelve` | `hundred`, default from `institution.mode`) is planned, see [ADR-0022](docs/decisions/0022-grading-scale-setting.md).
+`server.bind_addr`, `server.public_origin`, `server.client_ip_header?`, `database.url`, `database.max_connections`, `log.format`, `institution.name`, and an optional `[auth]` section (`password_min_length` = 12, `cookie_secure` = true, `allowed_domains` = [], used from task 004). `institution.mode` (school | university) is planned. `institution.grading_scale` (`twelve` | `hundred`) limits assignment points, see [ADR-0022](docs/decisions/0022-grading-scale-setting.md); optional, default `hundred` until `institution.mode` exists, then it follows the mode. It arrives with task 007.
 
 ## Authorization
 
