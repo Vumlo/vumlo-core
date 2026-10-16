@@ -58,3 +58,4 @@ What gets easier, what gets harder, what we must remember.
 | 0023 | [Default assignment types: text, no_submission, file, form, quiz](0023-default-assignment-types.md) |
 | 0024 | [Item kinds: text, link, file, lesson, assignment](0024-item-kinds.md) |
 | 0025 | [Block documents (the canvas): format, features, profiles, sandboxed HTML](0025-block-documents.md) |
+| 0026 | [Lessons and self-check questions](0026-lessons-and-questions.md) |
