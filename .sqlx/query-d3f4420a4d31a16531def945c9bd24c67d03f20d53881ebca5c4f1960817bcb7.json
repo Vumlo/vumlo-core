@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE content.modules m SET position = o.pos::int, updated_at = now()\n         FROM unnest($3::uuid[]) WITH ORDINALITY AS o(id, pos)\n         WHERE m.id = o.id AND m.course_id = $1 AND m.parent_id IS NOT DISTINCT FROM $2::uuid",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "UuidArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "d3f4420a4d31a16531def945c9bd24c67d03f20d53881ebca5c4f1960817bcb7"
+}

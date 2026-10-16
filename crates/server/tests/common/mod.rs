@@ -277,3 +277,63 @@ pub fn cookie_token(response: &Resp) -> String {
         .expect("session cookie")
         .to_owned()
 }
+
+// ---------------------------------------------------------------------------------------------
+// Course helpers shared by the course-scoped test files
+// ---------------------------------------------------------------------------------------------
+
+pub fn id_of(value: &serde_json::Value) -> uuid::Uuid {
+    uuid::Uuid::parse_str(value["id"].as_str().expect("id")).expect("uuid")
+}
+
+/// Creates a draft course as the token's user and returns its id.
+pub async fn create_course(http: &Http, token: &str, title: &str) -> uuid::Uuid {
+    let response = http
+        .post("/courses")
+        .bearer(token)
+        .json(&serde_json::json!({"title": title}))
+        .send()
+        .await;
+    assert_eq!(
+        response.status,
+        201,
+        "{}",
+        String::from_utf8_lossy(&response.body)
+    );
+    id_of(&response.json())
+}
+
+pub async fn put_member(
+    http: &Http,
+    token: &str,
+    course: uuid::Uuid,
+    user: uuid::Uuid,
+    role: &str,
+) {
+    let response = http
+        .put(&format!("/courses/{course}/members/{user}"))
+        .bearer(token)
+        .json(&serde_json::json!({"role": role}))
+        .send()
+        .await;
+    assert_eq!(
+        response.status,
+        200,
+        "{}",
+        String::from_utf8_lossy(&response.body)
+    );
+}
+
+pub async fn publish_course(http: &Http, token: &str, course: uuid::Uuid) {
+    let response = http
+        .post(&format!("/courses/{course}/publish"))
+        .bearer(token)
+        .send()
+        .await;
+    assert_eq!(
+        response.status,
+        200,
+        "{}",
+        String::from_utf8_lossy(&response.body)
+    );
+}

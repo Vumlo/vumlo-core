@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE content.items i SET position = o.pos::int, updated_at = now()\n         FROM unnest($2::uuid[]) WITH ORDINALITY AS o(id, pos)\n         WHERE i.id = o.id AND i.module_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "UuidArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "cb243c230f1388ccaf0119cacac81278ec7d796d14a4821c2173f83cf416c18f"
+}

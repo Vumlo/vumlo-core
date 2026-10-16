@@ -1,0 +1,683 @@
+//! Business rules. Every function that acts for a user authorizes first, takes the connection it
+//! runs on and never begins or commits a transaction.
+//!
+//! A module or item the actor may not view does not exist as far as they can tell (404): an
+//! unknown id, an id in a course they cannot see and a draft they may not open all give the same
+//! error. Only after that does `ManageContent` decide between going ahead and 403.
+
+use std::collections::{HashMap, HashSet};
+
+use chrono::{DateTime, Utc};
+use serde_json::{Map, Value, json};
+use sqlx::PgConnection;
+use uuid::Uuid;
+
+use super::model::{
+    ContentModule, ContentSubModule, ContentTitle, Item, ItemKind, ItemPatch, ModelError, Module,
+    ModulePatch,
+};
+use super::repo::{self, ItemRow, ModuleRow};
+use crate::actor::Actor;
+use crate::events::{self, AuditEntry, EventsError};
+use crate::policy::{self, Action, CourseAccess, PolicyError, Release};
+use crate::teaching::{self, TeachingError};
+
+#[derive(Debug, thiserror::Error)]
+pub enum ContentError {
+    #[error(transparent)]
+    Forbidden(#[from] PolicyError),
+    #[error(transparent)]
+    Invalid(#[from] ModelError),
+    #[error("the parent must be a top-level module of this course")]
+    InvalidParent,
+    #[error("ids must list exactly the current siblings, once each")]
+    InvalidOrder,
+    /// No such module, or the actor may not see it.
+    #[error("module not found")]
+    ModuleNotFound,
+    /// No such item, or the actor may not see it.
+    #[error("item not found")]
+    ItemNotFound,
+    /// A concurrent change got in the way (a position taken, a parent deleted). Retry.
+    #[error("a concurrent change conflicts with this one")]
+    Conflict,
+    #[error(transparent)]
+    Teaching(TeachingError),
+    #[error(transparent)]
+    Events(#[from] EventsError),
+    #[error(transparent)]
+    Db(sqlx::Error),
+}
+
+impl From<sqlx::Error> for ContentError {
+    /// Positions are unique per sibling sequence and checked at commit, and the foreign keys tie
+    /// rows to parents. A violation of either means a concurrent writer, not a bad request:
+    /// the service validates parents and ids before it writes.
+    fn from(error: sqlx::Error) -> Self {
+        let code = error
+            .as_database_error()
+            .and_then(|e| e.code())
+            .map(|code| code.into_owned());
+        match code.as_deref() {
+            Some("23505" | "23503") => Self::Conflict,
+            _ => Self::Db(error),
+        }
+    }
+}
+
+impl From<TeachingError> for ContentError {
+    fn from(error: TeachingError) -> Self {
+        Self::Teaching(error)
+    }
+}
+
+/// The release state of the rows above a target: the top-level module on its path and, if there
+/// is one, the sub-module.
+struct Path {
+    module: Release,
+    submodule: Option<Release>,
+}
+
+impl Path {
+    /// The path to a target whose own release is `own` and whose parent module, if it has one,
+    /// is `parent`. A target with a parent sits in a sub-module's place on the path.
+    fn new(own: Release, parent: Option<Release>) -> Self {
+        match parent {
+            Some(parent) => Self {
+                module: parent,
+                submodule: Some(own),
+            },
+            None => Self {
+                module: own,
+                submodule: None,
+            },
+        }
+    }
+
+    fn of_module(row: &ModuleRow) -> Self {
+        Self::new(row.module.release(), row.parent)
+    }
+
+    /// The path to an item: the module it is in and that module's parent.
+    fn of_item(row: &ItemRow) -> Self {
+        Self::new(row.module, row.module_parent)
+    }
+
+    fn view(&self, access: CourseAccess, item: Option<Release>, at: DateTime<Utc>) -> Action {
+        Action::ViewContent {
+            access,
+            module: self.module,
+            submodule: self.submodule,
+            item,
+            at,
+        }
+    }
+}
+
+/// The actor's access to the course, with an unknown or invisible course reported as the
+/// caller's `not_found`.
+async fn access_or(
+    conn: &mut PgConnection,
+    actor: &Actor,
+    course_id: Uuid,
+    not_found: ContentError,
+) -> Result<CourseAccess, ContentError> {
+    match teaching::course_access(conn, actor, course_id).await {
+        Ok(access) => Ok(access),
+        Err(TeachingError::CourseNotFound) => Err(not_found),
+        Err(other) => Err(other.into()),
+    }
+}
+
+/// Loads a module the actor may view.
+async fn open_module(
+    conn: &mut PgConnection,
+    actor: &Actor,
+    id: Uuid,
+) -> Result<(ModuleRow, CourseAccess), ContentError> {
+    let row = repo::find_module(conn, id)
+        .await?
+        .ok_or(ContentError::ModuleNotFound)?;
+    let access = access_or(
+        conn,
+        actor,
+        row.module.course_id,
+        ContentError::ModuleNotFound,
+    )
+    .await?;
+    let view = Path::of_module(&row).view(access, None, Utc::now());
+    policy::authorize(actor, view).map_err(|_| ContentError::ModuleNotFound)?;
+    Ok((row, access))
+}
+
+/// Loads a module the actor may view and change.
+async fn manage_module(
+    conn: &mut PgConnection,
+    actor: &Actor,
+    id: Uuid,
+) -> Result<ModuleRow, ContentError> {
+    let (row, access) = open_module(conn, actor, id).await?;
+    policy::authorize(actor, Action::ManageContent(access))?;
+    Ok(row)
+}
+
+/// Loads an item the actor may view.
+async fn open_item(
+    conn: &mut PgConnection,
+    actor: &Actor,
+    id: Uuid,
+) -> Result<(ItemRow, CourseAccess), ContentError> {
+    let row = repo::find_item(conn, id)
+        .await?
+        .ok_or(ContentError::ItemNotFound)?;
+    let access = access_or(conn, actor, row.item.course_id, ContentError::ItemNotFound).await?;
+    let view = Path::of_item(&row).view(access, Some(row.item.release()), Utc::now());
+    policy::authorize(actor, view).map_err(|_| ContentError::ItemNotFound)?;
+    Ok((row, access))
+}
+
+/// Loads an item the actor may view and change.
+async fn manage_item(
+    conn: &mut PgConnection,
+    actor: &Actor,
+    id: Uuid,
+) -> Result<ItemRow, ContentError> {
+    let (row, access) = open_item(conn, actor, id).await?;
+    policy::authorize(actor, Action::ManageContent(access))?;
+    Ok(row)
+}
+
+/// The course access of an actor who wants to change the course's content.
+async fn manage_course(
+    conn: &mut PgConnection,
+    actor: &Actor,
+    course_id: Uuid,
+) -> Result<CourseAccess, ContentError> {
+    let access = teaching::course_access(conn, actor, course_id).await?;
+    policy::authorize(actor, Action::ManageContent(access))?;
+    Ok(access)
+}
+
+/// `parent_id` must name a top-level module of `course_id`.
+async fn check_parent(
+    conn: &mut PgConnection,
+    course_id: Uuid,
+    parent_id: Uuid,
+) -> Result<(), ContentError> {
+    match repo::find_module(conn, parent_id).await? {
+        Some(row) if row.module.course_id == course_id && row.module.parent_id.is_none() => Ok(()),
+        _ => Err(ContentError::InvalidParent),
+    }
+}
+
+/// `ids` must be exactly the members of `current`, each once.
+fn check_order(ids: &[Uuid], current: &[Uuid]) -> Result<(), ContentError> {
+    let wanted: HashSet<_> = ids.iter().collect();
+    let have: HashSet<_> = current.iter().collect();
+    if wanted.len() == ids.len() && wanted == have {
+        Ok(())
+    } else {
+        Err(ContentError::InvalidOrder)
+    }
+}
+
+/// A reorder that rewrote fewer rows than it listed raced with a delete.
+fn check_rewritten(rewritten: u64, ids: &[Uuid]) -> Result<(), ContentError> {
+    if usize::try_from(rewritten).is_ok_and(|n| n == ids.len()) {
+        Ok(())
+    } else {
+        Err(ContentError::Conflict)
+    }
+}
+
+async fn audit(
+    conn: &mut PgConnection,
+    actor: &Actor,
+    action: &'static str,
+    resource_type: &'static str,
+    resource_id: Uuid,
+    course_id: Uuid,
+) -> Result<(), ContentError> {
+    events::audit_admin(
+        conn,
+        actor,
+        AuditEntry {
+            action,
+            resource_type,
+            resource_id,
+            meta: json!({"course_id": course_id}),
+        },
+    )
+    .await?;
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------------------------
+// Modules
+// ---------------------------------------------------------------------------------------------
+
+/// Creates a draft module as the last of its siblings: a top-level module, or a sub-module when
+/// `parent_id` is set.
+pub async fn create_module(
+    conn: &mut PgConnection,
+    actor: &Actor,
+    course_id: Uuid,
+    title: ContentTitle,
+    parent_id: Option<Uuid>,
+) -> Result<Module, ContentError> {
+    manage_course(conn, actor, course_id).await?;
+    if let Some(parent_id) = parent_id {
+        check_parent(conn, course_id, parent_id).await?;
+    }
+    let module =
+        repo::insert_module(conn, Uuid::now_v7(), course_id, parent_id, title.as_str()).await?;
+    audit(
+        conn,
+        actor,
+        "content.module.create",
+        "module",
+        module.id,
+        course_id,
+    )
+    .await?;
+    Ok(module)
+}
+
+/// The course's content as the actor may see it. Staff see everything; others only what is open
+/// to students now. Not paged: a course tree is bounded (ADR-0020).
+pub async fn get_tree(
+    conn: &mut PgConnection,
+    actor: &Actor,
+    course_id: Uuid,
+) -> Result<Vec<ContentModule>, ContentError> {
+    let access = teaching::course_access(conn, actor, course_id).await?;
+    let now = Utc::now();
+    let sees_drafts = policy::authorize(actor, Action::ManageContent(access)).is_ok();
+    let rows = repo::tree(conn, course_id, (!sees_drafts).then_some(now)).await?;
+
+    let mut top_level = Vec::new();
+    let mut submodules_of: HashMap<Uuid, Vec<Module>> = HashMap::new();
+    let mut items_of = HashMap::new();
+    let mut seen = HashSet::new();
+    for row in rows {
+        let path = Path::new(row.module.release(), row.parent);
+        if policy::authorize(actor, path.view(access, None, now)).is_err() {
+            continue;
+        }
+        if seen.insert(row.module.id) {
+            match row.module.parent_id {
+                None => top_level.push(row.module.clone()),
+                Some(parent_id) => submodules_of
+                    .entry(parent_id)
+                    .or_default()
+                    .push(row.module.clone()),
+            }
+        }
+        if let Some(item) = row.item
+            && policy::authorize(actor, path.view(access, Some(item.release()), now)).is_ok()
+        {
+            items_of
+                .entry(row.module.id)
+                .or_insert_with(Vec::new)
+                .push(item);
+        }
+    }
+
+    Ok(top_level
+        .into_iter()
+        .map(|module| {
+            let submodules = submodules_of
+                .remove(&module.id)
+                .unwrap_or_default()
+                .into_iter()
+                .map(|sub| ContentSubModule {
+                    items: items_of.remove(&sub.id).unwrap_or_default(),
+                    module: sub,
+                })
+                .collect();
+            ContentModule {
+                items: items_of.remove(&module.id).unwrap_or_default(),
+                submodules,
+                module,
+            }
+        })
+        .collect())
+}
+
+/// Changes the title and/or `publish_at`. A change with no fields writes nothing.
+pub async fn update_module(
+    conn: &mut PgConnection,
+    actor: &Actor,
+    id: Uuid,
+    patch: ModulePatch,
+) -> Result<Module, ContentError> {
+    let row = manage_module(conn, actor, id).await?;
+    if patch.is_empty() {
+        return Ok(row.module);
+    }
+    let module = repo::update_module(
+        conn,
+        id,
+        patch.title.as_ref().map(ContentTitle::as_str),
+        patch.publish_at.is_some(),
+        patch.publish_at.flatten(),
+    )
+    .await?;
+    audit(
+        conn,
+        actor,
+        "content.module.update",
+        "module",
+        id,
+        module.course_id,
+    )
+    .await?;
+    Ok(module)
+}
+
+/// Deletes the module with its sub-modules and items.
+pub async fn delete_module(
+    conn: &mut PgConnection,
+    actor: &Actor,
+    id: Uuid,
+) -> Result<(), ContentError> {
+    let row = manage_module(conn, actor, id).await?;
+    repo::delete_module(conn, id).await?;
+    audit(
+        conn,
+        actor,
+        "content.module.delete",
+        "module",
+        id,
+        row.module.course_id,
+    )
+    .await?;
+    Ok(())
+}
+
+/// Reorders one sequence of modules: the top-level ones when `parent_id` is `None`, otherwise the
+/// sub-modules of that parent. `ids` must be the complete current list.
+pub async fn reorder_modules(
+    conn: &mut PgConnection,
+    actor: &Actor,
+    course_id: Uuid,
+    parent_id: Option<Uuid>,
+    ids: &[Uuid],
+) -> Result<(), ContentError> {
+    manage_course(conn, actor, course_id).await?;
+    if let Some(parent_id) = parent_id {
+        check_parent(conn, course_id, parent_id).await?;
+    }
+    let current = repo::module_ids(conn, course_id, parent_id).await?;
+    check_order(ids, &current)?;
+    let rewritten = repo::reorder_modules(conn, course_id, parent_id, ids).await?;
+    check_rewritten(rewritten, ids)?;
+    match parent_id {
+        Some(parent_id) => {
+            audit(
+                conn,
+                actor,
+                "content.module.reorder",
+                "module",
+                parent_id,
+                course_id,
+            )
+            .await?
+        }
+        None => {
+            audit(
+                conn,
+                actor,
+                "content.module.reorder",
+                "course",
+                course_id,
+                course_id,
+            )
+            .await?
+        }
+    }
+    Ok(())
+}
+
+/// Publishes a module. With `cascade` also its sub-modules and every draft item below it.
+/// Publishing what is already published changes nothing; `publish_at` is never touched.
+pub async fn publish_module(
+    conn: &mut PgConnection,
+    actor: &Actor,
+    id: Uuid,
+    cascade: bool,
+) -> Result<Module, ContentError> {
+    let row = manage_module(conn, actor, id).await?;
+    let published = repo::publish_module(conn, id).await?;
+    let mut changed = published.is_some();
+    if cascade {
+        let submodules = repo::publish_draft_submodules(conn, id).await?;
+        let items = repo::publish_draft_items_below(conn, id).await?;
+        changed |= submodules + items > 0;
+    }
+    if changed {
+        audit(
+            conn,
+            actor,
+            "content.module.publish",
+            "module",
+            id,
+            row.module.course_id,
+        )
+        .await?;
+    }
+    Ok(published.unwrap_or(row.module))
+}
+
+// ---------------------------------------------------------------------------------------------
+// Items
+// ---------------------------------------------------------------------------------------------
+
+/// Creates a draft item as the last of the module, which may be a top-level module or a
+/// sub-module.
+pub async fn create_item(
+    conn: &mut PgConnection,
+    actor: &Actor,
+    module_id: Uuid,
+    kind: ItemKind,
+    title: ContentTitle,
+    body: Option<Map<String, Value>>,
+) -> Result<Item, ContentError> {
+    let row = manage_module(conn, actor, module_id).await?;
+    let item = repo::insert_item(
+        conn,
+        Uuid::now_v7(),
+        module_id,
+        row.module.course_id,
+        kind,
+        title.as_str(),
+        &body.unwrap_or_default(),
+    )
+    .await?;
+    audit(
+        conn,
+        actor,
+        "content.item.create",
+        "item",
+        item.id,
+        item.course_id,
+    )
+    .await?;
+    Ok(item)
+}
+
+pub async fn get_item(
+    conn: &mut PgConnection,
+    actor: &Actor,
+    id: Uuid,
+) -> Result<Item, ContentError> {
+    Ok(open_item(conn, actor, id).await?.0.item)
+}
+
+/// Changes the title, body and/or `publish_at`. A change with no fields writes nothing.
+pub async fn update_item(
+    conn: &mut PgConnection,
+    actor: &Actor,
+    id: Uuid,
+    patch: ItemPatch,
+) -> Result<Item, ContentError> {
+    let row = manage_item(conn, actor, id).await?;
+    if patch.is_empty() {
+        return Ok(row.item);
+    }
+    let item = repo::update_item(
+        conn,
+        id,
+        patch.title.as_ref().map(ContentTitle::as_str),
+        patch.body.as_ref(),
+        patch.publish_at.is_some(),
+        patch.publish_at.flatten(),
+    )
+    .await?;
+    audit(
+        conn,
+        actor,
+        "content.item.update",
+        "item",
+        id,
+        item.course_id,
+    )
+    .await?;
+    Ok(item)
+}
+
+pub async fn delete_item(
+    conn: &mut PgConnection,
+    actor: &Actor,
+    id: Uuid,
+) -> Result<(), ContentError> {
+    let row = manage_item(conn, actor, id).await?;
+    repo::delete_item(conn, id).await?;
+    audit(
+        conn,
+        actor,
+        "content.item.delete",
+        "item",
+        id,
+        row.item.course_id,
+    )
+    .await?;
+    Ok(())
+}
+
+/// Reorders the items of a module. `ids` must be the complete current list.
+pub async fn reorder_items(
+    conn: &mut PgConnection,
+    actor: &Actor,
+    module_id: Uuid,
+    ids: &[Uuid],
+) -> Result<(), ContentError> {
+    let row = manage_module(conn, actor, module_id).await?;
+    let current = repo::item_ids(conn, module_id).await?;
+    check_order(ids, &current)?;
+    let rewritten = repo::reorder_items(conn, module_id, ids).await?;
+    check_rewritten(rewritten, ids)?;
+    audit(
+        conn,
+        actor,
+        "content.item.reorder",
+        "module",
+        module_id,
+        row.module.course_id,
+    )
+    .await?;
+    Ok(())
+}
+
+/// Publishes an item. Publishing a published item changes nothing; `publish_at` is not touched.
+pub async fn publish_item(
+    conn: &mut PgConnection,
+    actor: &Actor,
+    id: Uuid,
+) -> Result<Item, ContentError> {
+    let row = manage_item(conn, actor, id).await?;
+    match repo::publish_item(conn, id).await? {
+        Some(item) => {
+            audit(
+                conn,
+                actor,
+                "content.item.publish",
+                "item",
+                id,
+                item.course_id,
+            )
+            .await?;
+            Ok(item)
+        }
+        None => Ok(row.item),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use axum::http::StatusCode;
+    use axum::response::IntoResponse;
+
+    use super::*;
+    use crate::error::ApiError;
+    use crate::identity::{self, DisplayName, Email, NewUser, Role};
+    use crate::teaching::CourseTitle;
+
+    /// Two creators each read "the last position" before the other commits, so both pick the
+    /// same one. The unique constraint is deferred: neither insert waits for the other, and the
+    /// loser fails at its own commit. The steps run one after another on purpose, so the
+    /// interleaving is fixed by the code, not by timing.
+    #[sqlx::test(migrator = "crate::app::MIGRATOR")]
+    async fn two_creates_racing_for_the_last_position_one_gets_409(pool: sqlx::PgPool) {
+        let hash = identity::hash_password("irrelevant").await.unwrap();
+        let mut tx = pool.begin().await.unwrap();
+        let user = identity::create_user(
+            &mut tx,
+            NewUser {
+                email: Email::parse("owner@x.edu").unwrap(),
+                display_name: DisplayName::parse("Owner").unwrap(),
+                role: Role::Teacher,
+            },
+            hash,
+        )
+        .await
+        .unwrap();
+        let owner = Actor::new(user.id, Role::Teacher, Uuid::now_v7());
+        let course =
+            teaching::create_course(&mut tx, &owner, CourseTitle::parse("Algebra").unwrap())
+                .await
+                .unwrap();
+        tx.commit().await.unwrap();
+
+        let title = |text| ContentTitle::parse(text).unwrap();
+        let mut winner = pool.begin().await.unwrap();
+        let mut loser = pool.begin().await.unwrap();
+        let first = create_module(&mut winner, &owner, course.id, title("First"), None)
+            .await
+            .unwrap();
+        let second = create_module(&mut loser, &owner, course.id, title("Second"), None)
+            .await
+            .unwrap();
+        assert_eq!((first.position, second.position), (1, 1));
+
+        winner.commit().await.unwrap();
+        let error = ContentError::from(loser.commit().await.expect_err("the position is taken"));
+        assert!(matches!(error, ContentError::Conflict), "{error:?}");
+        assert_eq!(
+            ApiError::from(error).into_response().status(),
+            StatusCode::CONFLICT
+        );
+
+        let mut conn = pool.acquire().await.unwrap();
+        let ids = repo::module_ids(&mut conn, course.id, None).await.unwrap();
+        assert_eq!(ids, [first.id], "only the winner is stored");
+
+        // The client retries and now appends after the winner.
+        let mut retry = pool.begin().await.unwrap();
+        let again = create_module(&mut retry, &owner, course.id, title("Second"), None)
+            .await
+            .unwrap();
+        retry.commit().await.unwrap();
+        assert_eq!(again.position, 2);
+    }
+}

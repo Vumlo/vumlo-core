@@ -25,6 +25,7 @@ use utoipa_axum::router::OpenApiRouter;
 use utoipa_axum::routes;
 use utoipa_scalar::{Scalar, Servable};
 
+use crate::content;
 use crate::error::{ApiError, problem_details};
 use crate::health;
 use crate::identity::{self, SetupError};
@@ -152,7 +153,8 @@ pub fn router(state: AppState) -> Result<Router, SetupError> {
             OpenApiRouter::new()
                 .routes(routes!(health::health))
                 .merge(identity)
-                .merge(teaching::router()),
+                .merge(teaching::router())
+                .merge(content::router()),
         )
         .split_for_parts();
     let spec = openapi.clone();
