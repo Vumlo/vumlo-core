@@ -326,10 +326,10 @@ pub struct Module {
 /// The assignment part of an item of kind `assignment` (ADR-0021).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct Assignment {
-    /// The assignment type, `text` for now. It cannot change.
+    /// The assignment type: `text` or `no_submission`. It cannot change.
     #[serde(rename = "type")]
     pub assignment_type: String,
-    /// Settings of the type; an empty object for `text`.
+    /// Settings of the type; an empty object for `text` and `no_submission`.
     #[schema(value_type = Object)]
     pub config: Map<String, Value>,
     /// A decimal string with exactly two decimals, e.g. `"20.00"`.
@@ -487,10 +487,10 @@ fn optional_points_text<'de, D: Deserializer<'de>>(
 /// The assignment part of a new item of kind `assignment` (ADR-0021).
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct NewAssignment {
-    /// The assignment type. Only `text` exists so far.
+    /// The assignment type: `text` or `no_submission`.
     #[serde(rename = "type", default)]
     pub assignment_type: String,
-    /// Settings of the type, a JSON object. Defaults to `{}`; `text` has none.
+    /// Settings of the type, a JSON object. Defaults to `{}`; `text` and `no_submission` have none.
     #[serde(default)]
     #[schema(value_type = Option<Object>)]
     pub config: Option<Map<String, Value>>,

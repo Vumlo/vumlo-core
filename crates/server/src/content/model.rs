@@ -19,7 +19,7 @@ pub enum ModelError {
     Title,
     #[error("must be a number above 0 and at most 9999.99, with at most two decimals")]
     MaxPoints,
-    #[error("unknown assignment type; available: text")]
+    #[error("unknown assignment type; available: text, no_submission")]
     AssignmentType,
     #[error("{0}")]
     Config(String),
@@ -137,8 +137,10 @@ pub trait AssignmentType {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BuiltinType {
     Text,
+    /// Nothing is submitted: oral answers, class work, paper tests (ADR-0023). Graded by hand.
+    NoSubmission,
 }
-text_enum!(BuiltinType { Text => "text" });
+text_enum!(BuiltinType { Text => "text", NoSubmission => "no_submission" });
 
 impl BuiltinType {
     /// An unknown or not-yet-built type is an error that does not repeat the input.
@@ -150,11 +152,12 @@ impl BuiltinType {
 impl AssignmentType for BuiltinType {
     fn validate_config(&self, config: &Map<String, Value>) -> Result<(), ModelError> {
         match self {
-            // A text answer needs no settings; any field is a mistake.
-            Self::Text => match config.keys().next() {
+            // These types need no settings; any field is a mistake.
+            Self::Text | Self::NoSubmission => match config.keys().next() {
                 None => Ok(()),
                 Some(field) => Err(ModelError::Config(format!(
-                    "unknown field `{field}`: the text type has no settings"
+                    "unknown field `{field}`: the {} type has no settings",
+                    self.as_str()
                 ))),
             },
         }
@@ -382,10 +385,15 @@ mod tests {
     }
 
     #[test]
-    fn the_type_enum_parses_text_and_nothing_else() {
+    fn the_type_enum_parses_text_and_no_submission_and_nothing_else() {
         assert_eq!(BuiltinType::parse("text"), Ok(BuiltinType::Text));
         assert_eq!(BuiltinType::Text.as_str(), "text");
-        for bad in ["form", "", "Text", "no_submission"] {
+        assert_eq!(
+            BuiltinType::parse("no_submission"),
+            Ok(BuiltinType::NoSubmission)
+        );
+        assert_eq!(BuiltinType::NoSubmission.as_str(), "no_submission");
+        for bad in ["form", "", "Text", "No_Submission", "no-submission"] {
             assert_eq!(
                 BuiltinType::parse(bad),
                 Err(ModelError::AssignmentType),
@@ -396,12 +404,16 @@ mod tests {
     }
 
     #[test]
-    fn the_text_type_takes_an_empty_config_only() {
-        let mut config = Map::new();
-        assert_eq!(BuiltinType::Text.validate_config(&config), Ok(()));
-        config.insert("limit".to_owned(), Value::from(5));
-        let error = BuiltinType::Text.validate_config(&config).unwrap_err();
-        assert!(error.to_string().contains("limit"), "{error}");
+    fn the_text_and_no_submission_types_take_an_empty_config_only() {
+        for assignment_type in [BuiltinType::Text, BuiltinType::NoSubmission] {
+            let mut config = Map::new();
+            assert_eq!(assignment_type.validate_config(&config), Ok(()));
+            config.insert("limit".to_owned(), Value::from(5));
+            let error = assignment_type.validate_config(&config).unwrap_err();
+            let message = error.to_string();
+            assert!(message.contains("limit"), "{message}");
+            assert!(message.contains(assignment_type.as_str()), "{message}");
+        }
     }
 
     #[test]
