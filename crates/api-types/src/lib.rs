@@ -7,6 +7,10 @@ use serde_json::{Map, Value};
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
+mod document;
+
+pub use document::*;
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct HealthResponse {
     pub status: String,
@@ -354,7 +358,8 @@ pub struct Item {
     pub position: i32,
     pub kind: ItemKind,
     pub title: String,
-    #[schema(value_type = Object)]
+    /// A block document (ADR-0025). The server returns the stored body as is.
+    #[schema(value_type = Document)]
     pub body: Map<String, Value>,
     pub status: ContentStatus,
     pub publish_at: Option<DateTime<Utc>>,
@@ -504,11 +509,12 @@ pub struct CreateItemRequest {
     pub kind: ItemKind,
     #[garde(length(chars, min = 1, max = 200))]
     pub title: String,
-    /// A JSON object, stored as is. Defaults to `{}`. For an assignment it holds the instructions.
+    /// A block document (ADR-0025). Defaults to the empty document. For an assignment it is the
+    /// description. It is read as a JSON value so that a rejection can name the path.
     #[serde(default)]
-    #[schema(value_type = Option<Object>)]
+    #[schema(value_type = Option<Document>)]
     #[garde(skip)]
-    pub body: Option<Map<String, Value>>,
+    pub body: Option<Value>,
     /// Required for `kind: assignment`, not allowed for `kind: text`.
     #[serde(default)]
     #[garde(skip)]
@@ -519,10 +525,10 @@ pub struct CreateItemRequest {
 pub struct UpdateItemRequest {
     #[garde(inner(length(chars, min = 1, max = 200)))]
     pub title: Option<String>,
-    /// A JSON object that replaces the body. Omit to keep it.
-    #[schema(value_type = Option<Object>)]
+    /// A block document that replaces the body. Omit (or send `null`) to keep it.
+    #[schema(value_type = Option<Document>)]
     #[garde(skip)]
-    pub body: Option<Map<String, Value>>,
+    pub body: Option<Value>,
     /// Omit to keep, `null` to clear, a timestamp to set.
     #[serde(default, deserialize_with = "set_or_clear")]
     #[schema(value_type = Option<DateTime<Utc>>)]
@@ -568,16 +574,20 @@ mod content_tests {
     }
 
     #[test]
-    fn a_body_must_be_an_object() {
-        for body in [json!([1]), json!("text"), json!(3)] {
+    fn a_body_is_read_as_a_json_value_and_null_is_absent() {
+        // What a body may contain is decided by the document validator, which reports a path.
+        for body in [json!([1]), json!("text"), json!({"a": 1})] {
             let create = json!({"kind": "text", "title": "t", "body": body});
-            assert!(serde_json::from_value::<CreateItemRequest>(create).is_err());
-            assert!(serde_json::from_value::<UpdateItemRequest>(json!({"body": body})).is_err());
+            let create: CreateItemRequest = serde_json::from_value(create).unwrap();
+            assert_eq!(create.body, Some(body.clone()));
+            let update: UpdateItemRequest = serde_json::from_value(json!({"body": body})).unwrap();
+            assert_eq!(update.body, Some(body));
         }
-        let ok: CreateItemRequest =
-            serde_json::from_value(json!({"kind": "text", "title": "t", "body": {"a": 1}}))
-                .unwrap();
-        assert_eq!(ok.body.unwrap()["a"], json!(1));
+        let absent: UpdateItemRequest = serde_json::from_value(json!({"body": null})).unwrap();
+        assert_eq!(absent.body, None);
+        let omitted: CreateItemRequest =
+            serde_json::from_value(json!({"kind": "text", "title": "t"})).unwrap();
+        assert_eq!(omitted.body, None);
     }
 
     #[test]

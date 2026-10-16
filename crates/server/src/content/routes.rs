@@ -228,6 +228,17 @@ fn under_assignment(error: ContentError) -> ApiError {
     }
 }
 
+/// Until the document validator is wired in, a body must at least be a JSON object.
+fn object_body(
+    body: Option<serde_json::Value>,
+) -> Result<Option<serde_json::Map<String, serde_json::Value>>, ApiError> {
+    match body {
+        None => Ok(None),
+        Some(serde_json::Value::Object(map)) => Ok(Some(map)),
+        Some(_) => Err(ApiError::invalid_field("body", "must be a JSON object")),
+    }
+}
+
 /// Creates a draft module as the last of its siblings. Staff and admins only.
 ///
 /// Without `parent_id` this is a top-level module. With one, a sub-module of that module, which
@@ -495,7 +506,7 @@ async fn create_item(
         state.config.institution.grading_scale,
         module_id,
         title,
-        request.body,
+        object_body(request.body)?,
         assignment,
     )
     .await
@@ -598,7 +609,7 @@ async fn update_item(
 ) -> Result<Json<Item>, ApiError> {
     let patch = ItemPatch {
         title: request.title.as_deref().map(title).transpose()?,
-        body: request.body,
+        body: object_body(request.body)?,
         publish_at: request.publish_at,
         config: request.config,
         max_points: request
