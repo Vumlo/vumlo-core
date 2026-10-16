@@ -1,6 +1,6 @@
 # Learnly — Architecture
 
-Status: **in progress.** Implemented: the foundation (config, migrations, health, OpenAPI, Problem Details), `identity` + `policy` (users, password login, sessions, admin user management), the first slice of `teaching` (courses, members, publishing) with a minimal `events.audit_log`, and the `content` tree (modules, sub-modules, lessons and `text` assignments). Everything else below is still design.
+Status: **in progress.** Implemented: the foundation (config, migrations, health, OpenAPI, Problem Details), `identity` + `policy` (users, password login, sessions, admin user management), the first slice of `teaching` (courses, members, publishing) with a minimal `events.audit_log`, and the `content` tree (modules, sub-modules, `text` items and `text` assignments, whose bodies are block documents). Everything else below is still design.
 This file is the current picture of the system. Every decision behind it has a record in [`docs/decisions/`](docs/decisions/). If this file and an ADR disagree, the ADR wins and this file gets fixed.
 
 ## Goal
@@ -60,7 +60,7 @@ docs/decisions/
 | `identity`   | `identity.*`                    | users, login identities, sessions, tokens |
 | `org`        | `org.*`                         | terms, groups (cohorts), institution settings |
 | `teaching`   | `teaching.*`                    | courses, memberships, publishing; group links and course subgroups are planned |
-| `content`    | `content.*`                     | modules, items (lessons and `text` assignments built; other assignment types planned). Planned kinds and types: ADR-0023, ADR-0024. |
+| `content`    | `content.*`                     | modules, items (`text` items and `text` assignments built, their bodies are block documents (ADR-0025, ADR-0027); other assignment types planned). Planned kinds and types: ADR-0023, ADR-0024. |
 | `assessment` | `assessment.*`                  | submissions, attempts, lateness, auto-grading of quizzes |
 | `gradebook`  | `gradebook.*`                   | grades (draft/published), grade history, publishing, gradebook view |
 | `files`      | `files.*`                       | uploads, storage backends |
@@ -133,10 +133,11 @@ teaching
 content
   modules          id, course_id, parent_id?, position, title, status: draft | published, publish_at?
                    -- one level of sub-modules: parent_id is null or a top-level module of the same course
-  items            id, module_id, course_id, position, kind: lesson | assignment, title,
+  items            id, module_id, course_id, position, kind: text | assignment, title,
                    body (jsonb object), status: draft | published, publish_at?
-                   -- built: both kinds, lesson and assignment (ADR-0020, ADR-0021)
-                   -- planned (ADR-0024): the built lesson is renamed text; link, file and a lesson made of steps (ADR-0026) are added
+                   -- built: both kinds, text and assignment (ADR-0020, ADR-0021, ADR-0024)
+                   -- the body of a text item and of an assignment (its description) is a block document (ADR-0025, ADR-0027); the default is the empty document
+                   -- planned (ADR-0024): link, file and a lesson made of steps (ADR-0026) are added
   assignments      item_id (PK), type (text), config (jsonb), max_points numeric(6,2), due_at?,
                    accept_late (bool), late_until?, on_deadline: keep_draft | auto_submit,
                    max_attempts?                       -- null = unlimited
@@ -195,11 +196,11 @@ Key points:
 ## Configuration
 
 `learnly.toml`, any key overridable with `LEARNLY__SECTION__KEY` (see `learnly.example.toml`):
-`server.bind_addr`, `server.public_origin`, `server.client_ip_header?`, `database.url`, `database.max_connections`, `log.format`, `institution.name`, and an optional `[auth]` section (`password_min_length` = 12, `cookie_secure` = true, `allowed_domains` = [], used from task 004). `institution.mode` (school | university) is planned. `institution.grading_scale` (`twelve` | `hundred`) limits assignment points, see [ADR-0022](docs/decisions/0022-grading-scale-setting.md); optional, default `hundred` until `institution.mode` exists, then it follows the mode. Planned (ADR-0025): `editor.html` (default `false`), `editor.video_hosts` and `editor.profiles.<name>.features`, which narrow what a place of the editor allows.
+`server.bind_addr`, `server.public_origin`, `server.client_ip_header?`, `database.url`, `database.max_connections`, `log.format`, `institution.name`, and an optional `[auth]` section (`password_min_length` = 12, `cookie_secure` = true, `allowed_domains` = [], used from task 004). `institution.mode` (school | university) is planned. `institution.grading_scale` (`twelve` | `hundred`) limits assignment points, see [ADR-0022](docs/decisions/0022-grading-scale-setting.md); optional, default `hundred` until `institution.mode` exists, then it follows the mode. `editor.profiles.<name>.features` and `editor.video_providers` (default `["youtube", "vimeo"]`; an empty list switches video off) narrow what a place of the editor allows, see [ADR-0025](docs/decisions/0025-block-documents.md) and [ADR-0027](docs/decisions/0027-document-types-and-video-blocks.md). A configuration can only narrow: one that widens a profile or names an unknown profile, feature or provider stops the server at startup. Planned: `editor.html` (default `false`).
 
 ## Authorization
 
-`policy::authorize(&Actor, Action)` decides every check. The resource an action needs travels inside its `Action` variant, so course-level actions can be added without changing existing callers. Today: `ManageOwnAccount` (any role), `ManageUsers` (admin only), the course actions `CreateCourse`, `ViewOwnCourses`, `ViewCourse`, `PublishCourse`, `ManageMembership`, `DeleteCourse` and `TransferOwnership`, and the content actions `ManageContent` and `ViewContent`. A course action carries a `CourseAccess` (the actor's course role, whether they own it, and its status), which `teaching` reads from the database; other modules get it through `teaching::course_access`. `ManageContent` covers viewing drafts, editing and publishing content for staff and admins and ignores the course status, so the content of an archived course stays editable until archiving gets its own ADR. `ViewContent` carries the release state of every row on the path to the target and the evaluation time, because `policy` has no clock. The delete and transfer actions have no endpoint yet.
+`policy::authorize(&Actor, Action)` decides every check. The resource an action needs travels inside its `Action` variant, so course-level actions can be added without changing existing callers. Today: `ManageOwnAccount` (any role), `ManageUsers` (admin only), the course actions `CreateCourse`, `ViewOwnCourses`, `ViewCourse`, `PublishCourse`, `ManageMembership`, `DeleteCourse` and `TransferOwnership`, the content actions `ManageContent` and `ViewContent`, and `ViewEditorProfiles` (any role). A course action carries a `CourseAccess` (the actor's course role, whether they own it, and its status), which `teaching` reads from the database; other modules get it through `teaching::course_access`. `ManageContent` covers viewing drafts, editing and publishing content for staff and admins and ignores the course status, so the content of an archived course stays editable until archiving gets its own ADR. `ViewContent` carries the release state of every row on the path to the target and the evaluation time, because `policy` has no clock. The delete and transfer actions have no endpoint yet.
 
 There are two levels of roles ([ADR-0004](docs/decisions/0004-roles-and-policy.md)).
 
@@ -258,8 +259,9 @@ The content endpoints (tag `content`, all under `/api/v1`):
 | `PATCH /modules/{id}`, `DELETE /modules/{id}` | edit (`publish_at: null` clears it), delete with everything below |
 | `PUT /courses/{id}/modules/order` | reorder the top-level modules, or the sub-modules of `parent_id` |
 | `POST /modules/{id}/publish` | publish, `cascade` required |
-| `POST /modules/{id}/items`, `PUT /modules/{id}/items/order` | create a lesson or an assignment, reorder a module's items |
-| `GET`, `PATCH`, `DELETE /items/{id}`, `POST /items/{id}/publish` | read (with `body`), edit, delete, publish a lesson or an assignment |
+| `POST /modules/{id}/items`, `PUT /modules/{id}/items/order` | create a `text` item or an assignment, reorder a module's items |
+| `GET`, `PATCH`, `DELETE /items/{id}`, `POST /items/{id}/publish` | read (with `body`), edit, delete, publish a `text` item or an assignment |
+| `GET /editor/profiles` | any signed-in user: the document profiles as enforced (features, single block or not, limits) and the enabled video providers |
 
 Two creates that race for the same last position conflict at commit: the loser gets 409 and retries.
 

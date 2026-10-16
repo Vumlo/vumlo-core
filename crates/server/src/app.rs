@@ -37,7 +37,8 @@ pub static MIGRATOR: Migrator = sqlx::migrate!("../../migrations");
 /// Shorter than the request timeout, so an unreachable database surfaces as 503, not 408.
 const DB_ACQUIRE_TIMEOUT: Duration = Duration::from_secs(5);
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
-const MAX_BODY_BYTES: usize = 1024 * 1024;
+/// Room for a 1 MiB document (ADR-0025) and the rest of the request around it.
+const MAX_BODY_BYTES: usize = 2 * 1024 * 1024;
 
 #[derive(Clone)]
 pub struct AppState {

@@ -7,6 +7,10 @@ use serde_json::{Map, Value};
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
+mod document;
+
+pub use document::*;
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct HealthResponse {
     pub status: String,
@@ -298,7 +302,7 @@ pub enum ContentStatus {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum ItemKind {
-    Lesson,
+    Text,
     Assignment,
 }
 
@@ -344,7 +348,7 @@ pub struct AssignmentSummary {
     pub is_bonus: bool,
 }
 
-/// A lesson or an assignment. `body` is a JSON object the server stores without interpreting it;
+/// A `text` item or an assignment. `body` is a JSON object the server stores without interpreting it;
 /// for an assignment it holds the instructions.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct Item {
@@ -354,11 +358,12 @@ pub struct Item {
     pub position: i32,
     pub kind: ItemKind,
     pub title: String,
-    #[schema(value_type = Object)]
+    /// A block document (ADR-0025). The server returns the stored body as is.
+    #[schema(value_type = Document)]
     pub body: Map<String, Value>,
     pub status: ContentStatus,
     pub publish_at: Option<DateTime<Utc>>,
-    /// Present for items of kind `assignment`, absent for lessons.
+    /// Present for items of kind `assignment`, absent for `text` items.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub assignment: Option<Assignment>,
     pub created_at: DateTime<Utc>,
@@ -374,7 +379,7 @@ pub struct ItemSummary {
     pub status: ContentStatus,
     pub publish_at: Option<DateTime<Utc>>,
     pub position: i32,
-    /// Present for items of kind `assignment`, absent for lessons.
+    /// Present for items of kind `assignment`, absent for `text` items.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub assignment: Option<AssignmentSummary>,
 }
@@ -504,12 +509,13 @@ pub struct CreateItemRequest {
     pub kind: ItemKind,
     #[garde(length(chars, min = 1, max = 200))]
     pub title: String,
-    /// A JSON object, stored as is. Defaults to `{}`. For an assignment it holds the instructions.
+    /// A block document (ADR-0025). Defaults to the empty document. For an assignment it is the
+    /// description. It is read as a JSON value so that a rejection can name the path.
     #[serde(default)]
-    #[schema(value_type = Option<Object>)]
+    #[schema(value_type = Option<Document>)]
     #[garde(skip)]
-    pub body: Option<Map<String, Value>>,
-    /// Required for `kind: assignment`, not allowed for `kind: lesson`.
+    pub body: Option<Value>,
+    /// Required for `kind: assignment`, not allowed for `kind: text`.
     #[serde(default)]
     #[garde(skip)]
     pub assignment: Option<NewAssignment>,
@@ -519,10 +525,10 @@ pub struct CreateItemRequest {
 pub struct UpdateItemRequest {
     #[garde(inner(length(chars, min = 1, max = 200)))]
     pub title: Option<String>,
-    /// A JSON object that replaces the body. Omit to keep it.
-    #[schema(value_type = Option<Object>)]
+    /// A block document that replaces the body. Omit (or send `null`) to keep it.
+    #[schema(value_type = Option<Document>)]
     #[garde(skip)]
-    pub body: Option<Map<String, Value>>,
+    pub body: Option<Value>,
     /// Omit to keep, `null` to clear, a timestamp to set.
     #[serde(default, deserialize_with = "set_or_clear")]
     #[schema(value_type = Option<DateTime<Utc>>)]
@@ -568,16 +574,27 @@ mod content_tests {
     }
 
     #[test]
-    fn a_body_must_be_an_object() {
-        for body in [json!([1]), json!("text"), json!(3)] {
-            let create = json!({"kind": "lesson", "title": "t", "body": body});
-            assert!(serde_json::from_value::<CreateItemRequest>(create).is_err());
-            assert!(serde_json::from_value::<UpdateItemRequest>(json!({"body": body})).is_err());
+    fn a_body_is_read_as_a_json_value_and_null_is_absent() {
+        // What a body may contain is decided by the document validator, which reports a path.
+        for body in [json!([1]), json!("text"), json!({"a": 1})] {
+            let create = json!({"kind": "text", "title": "t", "body": body});
+            let create: CreateItemRequest = serde_json::from_value(create).unwrap();
+            assert_eq!(create.body, Some(body.clone()));
+            let update: UpdateItemRequest = serde_json::from_value(json!({"body": body})).unwrap();
+            assert_eq!(update.body, Some(body));
         }
-        let ok: CreateItemRequest =
-            serde_json::from_value(json!({"kind": "lesson", "title": "t", "body": {"a": 1}}))
-                .unwrap();
-        assert_eq!(ok.body.unwrap()["a"], json!(1));
+        let absent: UpdateItemRequest = serde_json::from_value(json!({"body": null})).unwrap();
+        assert_eq!(absent.body, None);
+        let omitted: CreateItemRequest =
+            serde_json::from_value(json!({"kind": "text", "title": "t"})).unwrap();
+        assert_eq!(omitted.body, None);
+    }
+
+    #[test]
+    fn the_item_kinds_are_text_and_assignment() {
+        assert_eq!(serde_json::to_value(ItemKind::Text).unwrap(), json!("text"));
+        let old = json!({"kind": "lesson", "title": "t"});
+        assert!(serde_json::from_value::<CreateItemRequest>(old).is_err());
     }
 
     #[test]
@@ -669,13 +686,13 @@ mod content_tests {
     }
 
     #[test]
-    fn a_lesson_serializes_without_an_assignment_key() {
+    fn a_text_item_serializes_without_an_assignment_key() {
         let item = |assignment| Item {
             id: Uuid::nil(),
             module_id: Uuid::nil(),
             course_id: Uuid::nil(),
             position: 1,
-            kind: ItemKind::Lesson,
+            kind: ItemKind::Text,
             title: "t".into(),
             body: Map::new(),
             status: ContentStatus::Draft,
@@ -684,8 +701,8 @@ mod content_tests {
             created_at: DateTime::UNIX_EPOCH,
             updated_at: DateTime::UNIX_EPOCH,
         };
-        let lesson = serde_json::to_value(item(None)).unwrap();
-        assert!(lesson.get("assignment").is_none());
+        let text = serde_json::to_value(item(None)).unwrap();
+        assert!(text.get("assignment").is_none());
 
         let assignment = serde_json::to_value(item(Some(Assignment {
             assignment_type: "text".into(),
@@ -704,7 +721,7 @@ mod content_tests {
     fn a_tree_summary_without_an_assignment_has_no_key() {
         let summary = ItemSummary {
             id: Uuid::nil(),
-            kind: ItemKind::Lesson,
+            kind: ItemKind::Text,
             title: "t".into(),
             status: ContentStatus::Draft,
             publish_at: None,

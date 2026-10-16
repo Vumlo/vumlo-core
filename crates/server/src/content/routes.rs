@@ -3,17 +3,19 @@
 
 use api_types::{
     ContentModule, ContentStatus, ContentSubModule, ContentTree, CreateItemRequest,
-    CreateModuleRequest, FieldError, Item, ItemSummary, Module, NewAssignment, ProblemDetails,
-    PublishModuleRequest, ReorderItemsRequest, ReorderModulesRequest, UpdateItemRequest,
-    UpdateModuleRequest,
+    CreateModuleRequest, EditorProfiles, FieldError, Item, ItemSummary, Module, NewAssignment,
+    ProblemDetails, ProfileName, PublishModuleRequest, ReorderItemsRequest, ReorderModulesRequest,
+    UpdateItemRequest, UpdateModuleRequest,
 };
 use axum::Json;
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
+use serde_json::Value;
 use utoipa_axum::router::OpenApiRouter;
 use utoipa_axum::routes;
 use uuid::Uuid;
 
+use super::document::{EffectiveProfiles, ValidDocument, validate_document};
 use super::model::{
     self, BuiltinType, ContentTitle, ItemKind, ItemPatch, ItemStatus, MaxPoints, ModelError,
     ModulePatch, ModuleStatus,
@@ -33,6 +35,7 @@ pub fn router() -> OpenApiRouter<AppState> {
         .routes(routes!(create_item, reorder_items))
         .routes(routes!(get_item, update_item, delete_item))
         .routes(routes!(publish_item))
+        .routes(routes!(get_editor_profiles))
 }
 
 impl From<ContentError> for ApiError {
@@ -85,14 +88,14 @@ fn api_item_status(status: ItemStatus) -> ContentStatus {
 
 fn api_kind(kind: ItemKind) -> api_types::ItemKind {
     match kind {
-        ItemKind::Lesson => api_types::ItemKind::Lesson,
+        ItemKind::Text => api_types::ItemKind::Text,
         ItemKind::Assignment => api_types::ItemKind::Assignment,
     }
 }
 
 fn domain_kind(kind: api_types::ItemKind) -> ItemKind {
     match kind {
-        api_types::ItemKind::Lesson => ItemKind::Lesson,
+        api_types::ItemKind::Text => ItemKind::Text,
         api_types::ItemKind::Assignment => ItemKind::Assignment,
     }
 }
@@ -226,6 +229,28 @@ fn under_assignment(error: ContentError) -> ApiError {
         },
         other => other,
     }
+}
+
+/// The effective editor profiles, from the configuration. `Settings::load` already checked it, so
+/// a failure here means a hand-built `Settings`.
+fn profiles(state: &AppState) -> Result<EffectiveProfiles, ApiError> {
+    EffectiveProfiles::resolve(&state.config.editor).map_err(|e| {
+        tracing::error!(error = %e, "content: editor configuration");
+        ApiError::Internal
+    })
+}
+
+/// Validates a request's `body` as a document of profile `full`. `None` stays `None`.
+fn document(state: &AppState, body: Option<Value>) -> Result<Option<ValidDocument>, ApiError> {
+    let Some(value) = body else {
+        return Ok(None);
+    };
+    validate_document(&value, ProfileName::Full, &profiles(state)?)
+        .map(Some)
+        .map_err(|errors| ApiError::Unprocessable {
+            detail: "the request has invalid fields".to_owned(),
+            errors: errors.into_field_errors("body"),
+        })
 }
 
 /// Creates a draft module as the last of its siblings. Staff and admins only.
@@ -434,13 +459,13 @@ async fn publish_module(
     Ok(Json(api_module(module)))
 }
 
-/// Creates a draft lesson or assignment as the last item of a module or sub-module.
+/// Creates a draft `text` item or assignment as the last item of a module or sub-module.
 ///
 /// `body` is a JSON object that is stored and returned as is; an array or a string is rejected.
 /// For an assignment it holds the instructions.
 ///
 /// `kind: assignment` requires an `assignment` object `{type, config?, max_points, is_bonus?}`
-/// (ADR-0021); a lesson must not carry one. `type` is `text` for now, with an empty `config`.
+/// (ADR-0021); a `text` item must not carry one. `type` is `text` for now, with an empty `config`.
 /// `max_points` is a decimal string such as `"20"` or `"7.5"`; a JSON number is rejected. The
 /// grading scale limits the points (ADR-0022): at most 12 per assignment on `twelve`, at most
 /// 100 in total over the regular (not bonus) assignments of the course on `hundred`.
@@ -473,8 +498,8 @@ async fn create_item(
 ) -> Result<(StatusCode, Json<Item>), ApiError> {
     let title = title(&request.title)?;
     let assignment = match (domain_kind(request.kind), request.assignment) {
-        (ItemKind::Lesson, None) => None,
-        (ItemKind::Lesson, Some(_)) => {
+        (ItemKind::Text, None) => None,
+        (ItemKind::Text, Some(_)) => {
             return Err(ApiError::invalid_field(
                 "assignment",
                 "only an item of kind `assignment` has this field",
@@ -488,6 +513,7 @@ async fn create_item(
         }
         (ItemKind::Assignment, Some(new)) => Some(domain_assignment(new)?),
     };
+    let body = document(&state, request.body)?;
     let mut tx = state.db.begin().await.map_err(ContentError::from)?;
     let item = service::create_item(
         &mut tx,
@@ -495,7 +521,7 @@ async fn create_item(
         state.config.institution.grading_scale,
         module_id,
         title,
-        request.body,
+        body,
         assignment,
     )
     .await
@@ -538,7 +564,7 @@ async fn reorder_items(
     Ok(StatusCode::NO_CONTENT)
 }
 
-/// One lesson or assignment with its body (and, for an assignment, its `assignment` part). A
+/// One `text` item or assignment with its body (and, for an assignment, its `assignment` part). A
 /// student gets 404 unless the course, every module above it and the item are published and not
 /// scheduled later.
 #[utoipa::path(
@@ -570,7 +596,7 @@ async fn get_item(
 ///
 /// For an assignment `config`, `max_points` and `is_bonus` may change too; the grading scale
 /// limits apply when `max_points` is raised or a bonus assignment becomes regular. They are
-/// rejected for a lesson. `type` and `kind` cannot change: sending them has no effect.
+/// rejected for a `text` item. `type` and `kind` cannot change: sending them has no effect.
 #[utoipa::path(
     patch,
     path = "/items/{id}",
@@ -586,7 +612,7 @@ async fn get_item(
             body = ProblemDetails, content_type = "application/problem+json"),
         (status = 404, description = "No such item, or not visible to the caller",
             body = ProblemDetails, content_type = "application/problem+json"),
-        (status = 422, description = "Invalid title or timestamp, a body that is not a JSON object, assignment fields on a lesson, an unknown config field, invalid points, or points the grading scale does not allow",
+        (status = 422, description = "Invalid title or timestamp, a body that is not a JSON object, assignment fields on a `text` item, an unknown config field, invalid points, or points the grading scale does not allow",
             body = ProblemDetails, content_type = "application/problem+json"),
     )
 )]
@@ -598,7 +624,7 @@ async fn update_item(
 ) -> Result<Json<Item>, ApiError> {
     let patch = ItemPatch {
         title: request.title.as_deref().map(title).transpose()?,
-        body: request.body,
+        body: document(&state, request.body)?,
         publish_at: request.publish_at,
         config: request.config,
         max_points: request
@@ -622,7 +648,7 @@ async fn update_item(
     Ok(Json(api_item(item)))
 }
 
-/// Deletes a lesson or an assignment.
+/// Deletes a `text` item or an assignment.
 #[utoipa::path(
     delete,
     path = "/items/{id}",
@@ -650,7 +676,7 @@ async fn delete_item(
     Ok(StatusCode::NO_CONTENT)
 }
 
-/// Publishes a lesson or an assignment. Idempotent; never changes `publish_at`.
+/// Publishes a `text` item or an assignment. Idempotent; never changes `publish_at`.
 #[utoipa::path(
     post,
     path = "/items/{id}/publish",
@@ -676,4 +702,26 @@ async fn publish_item(
     let item = service::publish_item(&mut tx, &actor, id).await?;
     tx.commit().await.map_err(ContentError::from)?;
     Ok(Json(api_item(item)))
+}
+
+/// The document editor's profiles as the server enforces them: for each profile the features it
+/// allows after the institution's configuration narrowed it, whether it is a single block, and
+/// the limits; plus the video providers that are switched on. Any signed-in user may read it.
+#[utoipa::path(
+    get,
+    path = "/editor/profiles",
+    tag = "editor",
+    security(("cookie" = []), ("bearer" = [])),
+    responses(
+        (status = 200, description = "The effective profiles", body = EditorProfiles),
+        (status = 401, description = "Not logged in", body = ProblemDetails,
+            content_type = "application/problem+json"),
+    )
+)]
+async fn get_editor_profiles(
+    State(state): State<AppState>,
+    actor: Actor,
+) -> Result<Json<EditorProfiles>, ApiError> {
+    let profiles = service::editor_profiles(&actor, profiles(&state)?)?;
+    Ok(Json(profiles.to_dto()))
 }

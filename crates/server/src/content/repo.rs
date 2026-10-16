@@ -69,7 +69,7 @@ impl From<RawItem> for Item {
     }
 }
 
-/// The columns of `content.assignments` as a LEFT JOIN returns them: all `None` for a lesson.
+/// The columns of `content.assignments` as a LEFT JOIN returns them: all `None` for a `text` item.
 struct JoinedAssignment {
     assignment_type: Option<BuiltinType>,
     config: Option<Body>,

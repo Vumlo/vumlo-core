@@ -1,7 +1,11 @@
+use std::collections::BTreeMap;
 use std::net::SocketAddr;
 
+use api_types::ProfileName;
 use config::{Config, ConfigError, Environment, File, FileFormat, Source};
 use serde::Deserialize;
+
+use crate::content::EffectiveProfiles;
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct Settings {
@@ -11,6 +15,8 @@ pub struct Settings {
     #[serde(default)]
     pub auth: AuthSettings,
     pub institution: InstitutionSettings,
+    #[serde(default)]
+    pub editor: EditorSettings,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -63,6 +69,32 @@ pub enum GradingScale {
     Hundred,
 }
 
+/// What the document editor may offer (ADR-0025, ADR-0027). The config can only narrow the
+/// profiles in code; `content::EffectiveProfiles::resolve` applies and checks it.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(default)]
+pub struct EditorSettings {
+    /// Per profile name (`full`, `question`, `option`, `student`): the features it keeps.
+    pub profiles: BTreeMap<String, ProfileSettings>,
+    /// The providers a video block may name. Empty switches video off.
+    pub video_providers: Vec<String>,
+}
+
+impl Default for EditorSettings {
+    fn default() -> Self {
+        Self {
+            profiles: BTreeMap::new(),
+            video_providers: vec!["youtube".to_owned(), "vimeo".to_owned()],
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ProfileSettings {
+    pub features: Vec<String>,
+}
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct DatabaseSettings {
     pub url: String,
@@ -97,13 +129,18 @@ impl Settings {
         file: impl Source + Send + Sync + 'static,
         env: Environment,
     ) -> Result<Self, ConfigError> {
+        let mut env = env
+            .try_parsing(true)
+            .list_separator(",")
+            .with_list_parse_key("auth.allowed_domains")
+            .with_list_parse_key("editor.video_providers");
+        for profile in ProfileName::ALL {
+            env =
+                env.with_list_parse_key(&format!("editor.profiles.{}.features", profile.as_str()));
+        }
         let mut settings: Self = Config::builder()
             .add_source(file)
-            .add_source(
-                env.try_parsing(true)
-                    .list_separator(",")
-                    .with_list_parse_key("auth.allowed_domains"),
-            )
+            .add_source(env)
             .build()?
             .try_deserialize()?;
         settings.validate()?;
@@ -127,6 +164,8 @@ impl Settings {
             ));
         }
         self.server.public_origin = origin.to_owned();
+        EffectiveProfiles::resolve(&self.editor)
+            .map_err(|error| ConfigError::Message(error.to_string()))?;
         Ok(())
     }
 }
@@ -280,5 +319,75 @@ mod tests {
             let e = build(VALID, &[("LEARNLY__SERVER__PUBLIC_ORIGIN", bad)]).unwrap_err();
             assert!(e.to_string().contains("public_origin"), "{bad}: {e}");
         }
+    }
+
+    fn with_editor(extra: &str) -> String {
+        format!("{VALID}\n[editor]\n{extra}")
+    }
+
+    #[test]
+    fn the_editor_section_is_optional_and_video_is_on_by_default() {
+        let s = build(VALID, &[]).unwrap();
+        assert!(s.editor.profiles.is_empty());
+        assert_eq!(s.editor.video_providers, ["youtube", "vimeo"]);
+    }
+
+    #[test]
+    fn editor_values_come_from_the_file_and_the_environment() {
+        let toml = with_editor(
+            "video_providers = [\"vimeo\"]\n[editor.profiles.option]\nfeatures = [\"links\"]",
+        );
+        let s = build(&toml, &[]).unwrap();
+        assert_eq!(s.editor.video_providers, ["vimeo"]);
+        assert_eq!(s.editor.profiles["option"].features, ["links"]);
+
+        let s = build(
+            VALID,
+            &[
+                ("LEARNLY__EDITOR__VIDEO_PROVIDERS", "youtube"),
+                (
+                    "LEARNLY__EDITOR__PROFILES__STUDENT__FEATURES",
+                    "text_styles,links",
+                ),
+            ],
+        )
+        .unwrap();
+        assert_eq!(s.editor.video_providers, ["youtube"]);
+        assert_eq!(
+            s.editor.profiles["student"].features,
+            ["text_styles", "links"]
+        );
+    }
+
+    #[test]
+    fn an_empty_provider_list_is_allowed_and_switches_video_off() {
+        let s = build(&with_editor("video_providers = []"), &[]).unwrap();
+        assert!(s.editor.video_providers.is_empty());
+    }
+
+    #[test]
+    fn an_editor_configuration_that_does_not_only_narrow_stops_startup_and_names_the_culprit() {
+        for (extra, culprit) in [
+            ("[editor.profiles.wizard]\nfeatures = []", "wizard"),
+            (
+                "[editor.profiles.full]\nfeatures = [\"telepathy\"]",
+                "telepathy",
+            ),
+            (
+                "[editor.profiles.option]\nfeatures = [\"headings\"]",
+                "headings",
+            ),
+            ("[editor.profiles.student]\nfeatures = [\"video\"]", "video"),
+            ("video_providers = [\"dailymotion\"]", "dailymotion"),
+            (
+                "[editor.profiles.full]\nfeatures = []\ncolor = \"red\"",
+                "color",
+            ),
+        ] {
+            let e = build(&with_editor(extra), &[]).unwrap_err();
+            assert!(e.to_string().contains(culprit), "{extra}: {e}");
+        }
+        let e = build(VALID, &[("LEARNLY__EDITOR__VIDEO_PROVIDERS", "vimeo,nope")]).unwrap_err();
+        assert!(e.to_string().contains("nope"), "{e}");
     }
 }

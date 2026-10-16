@@ -8,11 +8,12 @@
 use std::collections::{HashMap, HashSet};
 
 use chrono::{DateTime, Utc};
-use serde_json::{Map, Value, json};
+use serde_json::json;
 use sqlx::PgConnection;
 use sqlx::types::Decimal;
 use uuid::Uuid;
 
+use super::document::{EffectiveProfiles, ValidDocument};
 use super::model::{
     Assignment, AssignmentType, ContentModule, ContentSubModule, ContentTitle, Item, ItemKind,
     ItemPatch, ModelError, Module, ModulePatch,
@@ -39,7 +40,7 @@ pub enum ContentError {
     InvalidParent,
     #[error("ids must list exactly the current siblings, once each")]
     InvalidOrder,
-    /// `config`, `max_points` or `is_bonus` sent for a lesson.
+    /// `config`, `max_points` or `is_bonus` sent for a `text` item.
     #[error("only an assignment has this field")]
     NotAnAssignment { field: &'static str },
     /// The grading scale does not allow these points (ADR-0022).
@@ -546,14 +547,14 @@ pub async fn publish_module(
 // ---------------------------------------------------------------------------------------------
 
 /// Creates a draft item as the last of the module, which may be a top-level module or a
-/// sub-module. An `assignment` makes it an item of kind `assignment`; without one it is a lesson.
+/// sub-module. An `assignment` makes it an item of kind `assignment`; without one it is a `text` item.
 pub async fn create_item(
     conn: &mut PgConnection,
     actor: &Actor,
     scale: GradingScale,
     module_id: Uuid,
     title: ContentTitle,
-    body: Option<Map<String, Value>>,
+    body: Option<ValidDocument>,
     assignment: Option<Assignment>,
 ) -> Result<Item, ContentError> {
     let row = manage_module(conn, actor, module_id).await?;
@@ -576,7 +577,7 @@ pub async fn create_item(
     let kind = if assignment.is_some() {
         ItemKind::Assignment
     } else {
-        ItemKind::Lesson
+        ItemKind::Text
     };
     let mut item = repo::insert_item(
         conn,
@@ -585,7 +586,7 @@ pub async fn create_item(
         course_id,
         kind,
         title.as_str(),
-        &body.unwrap_or_default(),
+        body.unwrap_or_else(ValidDocument::empty).as_body(),
     )
     .await?;
     if let Some(assignment) = &assignment {
@@ -601,6 +602,15 @@ pub async fn create_item(
     )
     .await?;
     Ok(item)
+}
+
+/// The profiles the document editor enforces, for building its toolbar. Any role may ask.
+pub fn editor_profiles(
+    actor: &Actor,
+    profiles: EffectiveProfiles,
+) -> Result<EffectiveProfiles, ContentError> {
+    policy::authorize(actor, Action::ViewEditorProfiles)?;
+    Ok(profiles)
 }
 
 pub async fn get_item(
@@ -675,7 +685,7 @@ pub async fn update_item(
         conn,
         id,
         patch.title.as_ref().map(ContentTitle::as_str),
-        patch.body.as_ref(),
+        patch.body.as_ref().map(ValidDocument::as_body),
         patch.publish_at.is_some(),
         patch.publish_at.flatten(),
     )
@@ -780,6 +790,7 @@ pub async fn publish_item(
 mod tests {
     use axum::http::StatusCode;
     use axum::response::IntoResponse;
+    use serde_json::Map;
 
     use super::*;
     use crate::error::ApiError;

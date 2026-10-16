@@ -192,7 +192,7 @@ async fn insert_item_row(
 ) -> Result<(), sqlx::Error> {
     sqlx::query!(
         "INSERT INTO content.items (id, module_id, course_id, position, kind, title, body)
-         VALUES ($1, $2, $3, $4, 'lesson', 'Lesson', $5)",
+         VALUES ($1, $2, $3, $4, 'text', 'Text', $5)",
         uuid::Uuid::now_v7(),
         module_id,
         course_id,
@@ -406,7 +406,7 @@ async fn insert_assignment_row(
     .map(|_| ())
 }
 
-/// A course with one module, and an assignment item and a lesson item in it.
+/// A course with one module, and an assignment item and a `text` item in it.
 async fn assignment_fixture(pool: &PgPool) -> (uuid::Uuid, uuid::Uuid) {
     let owner = owner(pool, "t@x.edu").await;
     let course = insert_course(pool, owner).await;
@@ -414,10 +414,10 @@ async fn assignment_fixture(pool: &PgPool) -> (uuid::Uuid, uuid::Uuid) {
     let assignment = insert_item_of_kind(pool, module, course, 1, "assignment")
         .await
         .unwrap();
-    let lesson = insert_item_of_kind(pool, module, course, 2, "lesson")
+    let text = insert_item_of_kind(pool, module, course, 2, "text")
         .await
         .unwrap();
-    (assignment, lesson)
+    (assignment, text)
 }
 
 #[sqlx::test(migrator = "server::app::MIGRATOR")]
@@ -429,23 +429,26 @@ async fn item_kind_accepts_assignment_and_rejects_anything_else(pool: PgPool) {
     insert_item_of_kind(&pool, module, course, 1, "assignment")
         .await
         .unwrap();
-    insert_item_of_kind(&pool, module, course, 2, "lesson")
+    insert_item_of_kind(&pool, module, course, 2, "text")
         .await
         .unwrap();
-    assert_eq!(
-        sqlstate(insert_item_of_kind(&pool, module, course, 3, "quiz").await),
-        "23514"
-    );
+    for (position, kind) in [(3, "quiz"), (4, "lesson")] {
+        assert_eq!(
+            sqlstate(insert_item_of_kind(&pool, module, course, position, kind).await),
+            "23514",
+            "{kind}"
+        );
+    }
 }
 
 #[sqlx::test(migrator = "server::app::MIGRATOR")]
 async fn an_assignment_row_belongs_to_an_assignment_item_only(pool: PgPool) {
-    let (assignment, lesson) = assignment_fixture(&pool).await;
+    let (assignment, text) = assignment_fixture(&pool).await;
 
     assert_eq!(
-        sqlstate(insert_assignment_row(&pool, lesson, "5", serde_json::json!({})).await),
+        sqlstate(insert_assignment_row(&pool, text, "5", serde_json::json!({})).await),
         "23503",
-        "a lesson cannot have an assignment row"
+        "a text item cannot have an assignment row"
     );
     assert_eq!(
         sqlstate(
@@ -472,7 +475,7 @@ async fn an_item_with_an_assignment_row_cannot_change_kind(pool: PgPool) {
         .unwrap();
 
     let change = sqlx::query!(
-        "UPDATE content.items SET kind = 'lesson' WHERE id = $1",
+        "UPDATE content.items SET kind = 'text' WHERE id = $1",
         assignment
     )
     .execute(&pool)
@@ -568,4 +571,113 @@ async fn deleting_a_module_removes_its_assignment_rows(pool: PgPool) {
         .await
         .unwrap();
     assert_eq!(rows, 0);
+}
+
+async fn item_kind(pool: &PgPool, id: uuid::Uuid) -> String {
+    sqlx::query_scalar!("SELECT kind FROM content.items WHERE id = $1", id)
+        .fetch_one(pool)
+        .await
+        .unwrap()
+}
+
+#[sqlx::test(migrations = false)]
+async fn migration_7_turns_lesson_items_into_text_items(pool: PgPool) {
+    app::MIGRATOR.run_to(6, &pool).await.unwrap();
+
+    // Data as it exists before the rename: a `lesson` item and an assignment with its row.
+    // The macros are checked against the full schema, but only name columns that exist at 6.
+    let owner = owner(&pool, "t@x.edu").await;
+    let course = insert_course(&pool, owner).await;
+    let module = insert_module_row(&pool, course, None, 1).await.unwrap();
+    let lesson = insert_item_of_kind(&pool, module, course, 1, "lesson")
+        .await
+        .unwrap();
+    let assignment = insert_item_of_kind(&pool, module, course, 2, "assignment")
+        .await
+        .unwrap();
+    insert_assignment_row(&pool, assignment, "5", serde_json::json!({}))
+        .await
+        .unwrap();
+    assert_eq!(
+        sqlstate(insert_item_of_kind(&pool, module, course, 3, "text").await),
+        "23514",
+        "version 6 does not know the kind yet"
+    );
+
+    app::MIGRATOR.run(&pool).await.unwrap();
+
+    assert_eq!(item_kind(&pool, lesson).await, "text");
+    assert_eq!(item_kind(&pool, assignment).await, "assignment");
+    let rows = sqlx::query_scalar!(r#"SELECT count(*) AS "n!" FROM content.assignments"#)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(rows, 1, "the assignment row survived");
+    assert_eq!(
+        sqlstate(insert_item_of_kind(&pool, module, course, 3, "lesson").await),
+        "23514",
+        "the new CHECK refuses the old kind"
+    );
+    insert_item_of_kind(&pool, module, course, 3, "text")
+        .await
+        .unwrap();
+    app::ensure_migrated(&pool).await.unwrap();
+}
+
+const EMPTY_DOCUMENT: &str = r#"{"v": 1, "blocks": [], "attachments": []}"#;
+
+async fn item_body(pool: &PgPool, id: uuid::Uuid) -> serde_json::Value {
+    sqlx::query_scalar!(
+        r#"SELECT body AS "body!" FROM content.items WHERE id = $1"#,
+        id
+    )
+    .fetch_one(pool)
+    .await
+    .unwrap()
+}
+
+#[sqlx::test(migrator = "server::app::MIGRATOR")]
+async fn an_item_without_a_body_starts_with_the_empty_document(pool: PgPool) {
+    let (_, text) = assignment_fixture(&pool).await;
+    let empty: serde_json::Value = serde_json::from_str(EMPTY_DOCUMENT).unwrap();
+    assert_eq!(item_body(&pool, text).await, empty);
+}
+
+#[sqlx::test(migrations = false)]
+async fn migration_8_turns_empty_object_bodies_into_the_empty_document(pool: PgPool) {
+    app::MIGRATOR.run_to(7, &pool).await.unwrap();
+
+    let owner = owner(&pool, "t@x.edu").await;
+    let course = insert_course(&pool, owner).await;
+    let module = insert_module_row(&pool, course, None, 1).await.unwrap();
+    let empty = insert_item_of_kind(&pool, module, course, 1, "text")
+        .await
+        .unwrap();
+    let kept = insert_item_of_kind(&pool, module, course, 2, "text")
+        .await
+        .unwrap();
+    sqlx::query!(
+        "UPDATE content.items SET body = $2 WHERE id = $1",
+        kept,
+        serde_json::json!({"a": 1})
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    assert_eq!(item_body(&pool, empty).await, serde_json::json!({}));
+
+    app::MIGRATOR.run(&pool).await.unwrap();
+
+    let document: serde_json::Value = serde_json::from_str(EMPTY_DOCUMENT).unwrap();
+    assert_eq!(item_body(&pool, empty).await, document);
+    assert_eq!(
+        item_body(&pool, kept).await,
+        serde_json::json!({"a": 1}),
+        "only the empty object is converted"
+    );
+    let later = insert_item_of_kind(&pool, module, course, 3, "text")
+        .await
+        .unwrap();
+    assert_eq!(item_body(&pool, later).await, document);
+    app::ensure_migrated(&pool).await.unwrap();
 }

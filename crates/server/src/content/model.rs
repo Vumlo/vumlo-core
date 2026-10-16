@@ -7,6 +7,7 @@ use sqlx::postgres::{PgTypeInfo, PgValueRef};
 use sqlx::types::Decimal;
 use uuid::Uuid;
 
+use super::document::ValidDocument;
 use crate::policy::Release;
 use crate::text_enum::text_enum;
 
@@ -60,10 +61,10 @@ text_enum!(ItemStatus { Draft => "draft", Published => "published" });
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ItemKind {
-    Lesson,
+    Text,
     Assignment,
 }
-text_enum!(ItemKind { Lesson => "lesson", Assignment => "assignment" });
+text_enum!(ItemKind { Text => "text", Assignment => "assignment" });
 
 /// The most points one assignment can be worth (`numeric(6,2)`, ADR-0021).
 const MAX_POINTS_LIMIT: Decimal = Decimal::from_parts(999_999, 0, 0, false, 2);
@@ -201,8 +202,8 @@ impl Module {
     }
 }
 
-/// A lesson or an assignment. `body` is a JSON object the server never interprets (ADR-0020); for
-/// an assignment it holds the instructions.
+/// A `text` item or an assignment. `body` is a block document (ADR-0025) as stored; for an
+/// assignment it is the description.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Item {
     pub id: Uuid,
@@ -281,7 +282,7 @@ impl ModulePatch {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ItemPatch {
     pub title: Option<ContentTitle>,
-    pub body: Option<Map<String, Value>>,
+    pub body: Option<ValidDocument>,
     pub publish_at: Option<Option<DateTime<Utc>>>,
     pub config: Option<Map<String, Value>>,
     pub max_points: Option<MaxPoints>,
@@ -328,7 +329,8 @@ mod tests {
         for status in [ItemStatus::Draft, ItemStatus::Published] {
             assert_eq!(status.as_str().parse::<ItemStatus>(), Ok(status));
         }
-        assert_eq!("lesson".parse::<ItemKind>(), Ok(ItemKind::Lesson));
+        assert_eq!("text".parse::<ItemKind>(), Ok(ItemKind::Text));
+        assert!("lesson".parse::<ItemKind>().is_err());
         assert_eq!("assignment".parse::<ItemKind>(), Ok(ItemKind::Assignment));
         assert!("quiz".parse::<ItemKind>().is_err());
     }

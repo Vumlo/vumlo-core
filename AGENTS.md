@@ -45,6 +45,7 @@ Modules: `identity`, `org`, `teaching`, `content`, `assessment`, `gradebook`, `f
   To change another module's data, call that module's public function and pass the connection.
 - Cross-module JOINs are allowed **only in read-model queries** (e.g. the gradebook view in `gradebook`), never for writes.
 - SQL lives only in `repo.rs`. HTTP types (`axum`, DTOs) never appear in `service.rs` or `repo.rs`.
+- Exception: the block document types of ADR-0025 and ADR-0027 live in `api-types` and `content` uses them directly.
 - A large file becomes a folder (`routes/courses.rs`, `routes/groups.rs`). The module's public surface does not change.
 
 ### Transactions
@@ -67,7 +68,7 @@ Modules: `identity`, `org`, `teaching`, `content`, `assessment`, `gradebook`, `f
   then authorize, and report a denied view as "not found".
   A handler may also call it early, before costly work such as hashing, but the service still authorizes first.
 - No role checks anywhere except `policy`. Deny by default.
-- Every action by an `admin` inside a course writes to `events.audit_log` in the same transaction.
+- Every action by an `admin` inside a course that changes data writes to `events.audit_log` in the same transaction; reads are not audited.
 
 ## 6. Visibility invariants (each one must have a test)
 

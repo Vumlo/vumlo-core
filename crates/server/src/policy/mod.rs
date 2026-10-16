@@ -99,6 +99,8 @@ pub enum Action {
         item: Option<Release>,
         at: DateTime<Utc>,
     },
+    /// Read the profiles the document editor enforces (ADR-0025), to build its toolbar.
+    ViewEditorProfiles,
 }
 
 /// May `institution` role holders have `course` role (ADR-0004)? Admins hold no course role:
@@ -130,6 +132,7 @@ pub fn authorize(actor: &Actor, action: Action) -> Result<(), PolicyError> {
         Action::ManageUsers => is_admin,
         Action::CreateCourse => matches!(actor.role(), Role::Admin | Role::Teacher),
         Action::ViewOwnCourses => true,
+        Action::ViewEditorProfiles => true,
         Action::ViewCourse(access) => {
             is_admin
                 || access.is_staff()
@@ -182,6 +185,13 @@ mod tests {
     fn every_role_may_manage_their_own_account() {
         for role in [Role::Admin, Role::Teacher, Role::Student] {
             assert_eq!(authorize(&actor(role), Action::ManageOwnAccount), Ok(()));
+        }
+    }
+
+    #[test]
+    fn every_role_may_view_the_editor_profiles() {
+        for role in [Role::Admin, Role::Teacher, Role::Student] {
+            assert_eq!(authorize(&actor(role), Action::ViewEditorProfiles), Ok(()));
         }
     }
 
