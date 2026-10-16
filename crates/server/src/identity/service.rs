@@ -474,7 +474,8 @@ pub async fn reset_password(
 // ---------------------------------------------------------------------------------------------
 
 /// A user by id, for other modules that have already authorized their own action (for example
-/// to check the institution role of someone about to join a course).
+/// to check the institution role of someone about to join a course). Callers must have
+/// authorized the action already: this checks nothing.
 pub async fn find_user(conn: &mut PgConnection, id: Uuid) -> Result<Option<User>, IdentityError> {
     Ok(repo::find_user(conn, id).await?)
 }

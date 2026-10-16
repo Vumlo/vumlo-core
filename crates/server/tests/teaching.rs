@@ -767,6 +767,54 @@ async fn members_must_exist_and_may_hold_only_roles_their_institution_role_allow
     bad_role.problem(422);
 }
 
+async fn disable(pool: &PgPool, user: Uuid) {
+    sqlx::query!(
+        "UPDATE identity.users SET status = 'disabled' WHERE id = $1",
+        user
+    )
+    .execute(pool)
+    .await
+    .expect("disable user");
+}
+
+#[sqlx::test(migrator = "server::app::MIGRATOR")]
+async fn disabled_users_cannot_be_added_as_members(pool: PgPool) {
+    let w = world(pool).await;
+    let admin = user(&w.pool, &w.http, "admin@x.edu", Role::Admin).await;
+    let gone = user(&w.pool, &w.http, "gone@x.edu", Role::Student).await;
+    disable(&w.pool, gone.id).await;
+
+    // A course teacher is refused with an error on the user.
+    let refused = put_member(&w.http, &w.owner.token, w.course, gone.id, "student").await;
+    let problem = refused.problem(422);
+    assert_eq!(problem.errors.len(), 1);
+    assert_eq!(problem.errors[0].field, "user_id");
+    assert_eq!(member_role(&w.pool, w.course, gone.id).await, None);
+
+    // So is an admin, and a refused change leaves no audit row behind.
+    let admins = create_course(&w.http, &admin.token, "Admin's course").await;
+    let audited = audit_count(&w.pool).await;
+    let refused = put_member(&w.http, &admin.token, admins, gone.id, "student").await;
+    assert_eq!(refused.problem(422).errors[0].field, "user_id");
+    assert_eq!(member_role(&w.pool, admins, gone.id).await, None);
+    assert_eq!(audit_count(&w.pool).await, audited);
+}
+
+#[sqlx::test(migrator = "server::app::MIGRATOR")]
+async fn putting_the_same_role_for_a_member_who_was_disabled_later_is_still_a_no_op(pool: PgPool) {
+    let w = world(pool).await;
+    disable(&w.pool, w.student.id).await;
+
+    let again = put_member(&w.http, &w.owner.token, w.course, w.student.id, "student").await;
+    assert_eq!(again.status, 200);
+    assert_eq!(
+        member_role(&w.pool, w.course, w.student.id)
+            .await
+            .as_deref(),
+        Some("student")
+    );
+}
+
 #[sqlx::test(migrator = "server::app::MIGRATOR")]
 async fn the_owner_must_stay_a_teacher_and_cannot_be_removed(pool: PgPool) {
     let w = world(pool).await;

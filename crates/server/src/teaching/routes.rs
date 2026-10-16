@@ -38,6 +38,7 @@ impl From<TeachingError> for ApiError {
             }
             TeachingError::CourseNotFound | TeachingError::MemberNotFound => Self::NotFound,
             TeachingError::UserNotFound => Self::invalid_field("user_id", "no such user"),
+            TeachingError::UserDisabled => Self::invalid_field("user_id", "that user is disabled"),
             TeachingError::RoleNotAllowed => {
                 Self::invalid_field("role", "this user cannot hold that course role")
             }

@@ -13,7 +13,7 @@ use super::model::{Course, CourseTitle, Membership, ModelError};
 use super::repo;
 use crate::actor::Actor;
 use crate::events::{self, AuditEntry, EventsError};
-use crate::identity::{self, IdentityError, Page, PageParams};
+use crate::identity::{self, IdentityError, Page, PageParams, UserStatus};
 use crate::policy::{
     self, Action, CourseAccess, CourseRole, CourseStatus, PolicyError, course_role_allowed,
     implicit_course_owner,
@@ -32,6 +32,8 @@ pub enum TeachingError {
     MemberNotFound,
     #[error("user not found")]
     UserNotFound,
+    #[error("that user is disabled")]
+    UserDisabled,
     #[error("that user cannot hold that course role")]
     RoleNotAllowed,
     #[error("the course owner must stay a teacher")]
@@ -227,6 +229,9 @@ pub async fn put_member(
     let user = identity::find_user(conn, user_id)
         .await?
         .ok_or(TeachingError::UserNotFound)?;
+    if user.status == UserStatus::Disabled {
+        return Err(TeachingError::UserDisabled);
+    }
     if !course_role_allowed(user.role, role) {
         return Err(TeachingError::RoleNotAllowed);
     }
