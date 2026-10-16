@@ -20,7 +20,7 @@ use super::service::{self, GradebookError};
 use crate::actor::Actor;
 use crate::app::AppState;
 use crate::error::{ApiError, ValidJson, ValidQuery};
-use crate::identity::PageParams;
+use crate::pagination::PageParams;
 
 pub fn router() -> OpenApiRouter<AppState> {
     OpenApiRouter::new()

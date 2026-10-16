@@ -10,8 +10,8 @@ use super::{api_kind, api_user};
 use crate::actor::{Actor, PendingActor};
 use crate::app::AppState;
 use crate::error::{ApiError, ValidJson, ValidQuery};
-use crate::identity::model::PageParams;
 use crate::identity::service::{self, IdentityError, LoginThrottle};
+use crate::pagination::PageParams;
 
 /// The signed-in user.
 ///
@@ -103,8 +103,7 @@ pub async fn list_sessions(
     actor: Actor,
     ValidQuery(query): ValidQuery<PageQuery>,
 ) -> Result<Json<Page<Session>>, ApiError> {
-    let params =
-        PageParams::new(query.cursor.as_deref(), query.limit).map_err(IdentityError::from)?;
+    let params = PageParams::new(query.cursor.as_deref(), query.limit)?;
     let mut conn = state.db.acquire().await.map_err(IdentityError::from)?;
     let page = service::list_sessions(&mut conn, &actor, params).await?;
     Ok(Json(Page {

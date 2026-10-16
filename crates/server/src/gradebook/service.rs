@@ -21,8 +21,7 @@ use super::model::{
 use super::repo::{self, AssignmentContext};
 use crate::actor::Actor;
 use crate::events::{self, AuditEntry, Event, EventsError};
-// Pagination is shared infrastructure of ADR-0018, not behavior of `identity`.
-use crate::identity::{Page, PageParams};
+use crate::pagination::{Page, PageParams};
 use crate::policy::{self, Action, CourseAccess, PolicyError};
 
 #[derive(Debug, thiserror::Error)]

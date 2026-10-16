@@ -13,9 +13,10 @@ use crate::actor::Actor;
 use crate::app::AppState;
 use crate::error::{ApiError, ValidJson, ValidQuery};
 use crate::identity::model::{
-    Email, NewUser, PageParams, PersonName, TemporaryPassword, UserFilter, UserUpdate,
+    Email, NewUser, PersonName, TemporaryPassword, UserFilter, UserUpdate,
 };
 use crate::identity::service::{self, IdentityError};
+use crate::pagination::PageParams;
 use crate::policy::{self, Action};
 
 /// Refuses non-admins before any work is done on their behalf (parsing, hashing a password).
@@ -47,8 +48,7 @@ pub async fn list_users(
     ValidQuery(query): ValidQuery<ListUsersQuery>,
 ) -> Result<Json<Page<User>>, ApiError> {
     require_admin(&actor)?;
-    let page =
-        PageParams::new(query.cursor.as_deref(), query.limit).map_err(IdentityError::from)?;
+    let page = PageParams::new(query.cursor.as_deref(), query.limit)?;
     let filter = UserFilter {
         role: query.role.map(domain_role),
         status: query.status.map(domain_status),

@@ -13,12 +13,13 @@ use sqlx::PgConnection;
 use uuid::Uuid;
 
 use super::model::{
-    HashedPassword, ModelError, NewSession, NewUser, Page, PageParams, Password, PasswordPolicy,
-    PersonName, Role, SessionInfo, SessionKind, SessionToken, TemporaryPassword, User, UserFilter,
-    UserStatus, UserUpdate,
+    HashedPassword, ModelError, NewSession, NewUser, Password, PasswordPolicy, PersonName, Role,
+    SessionInfo, SessionKind, SessionToken, TemporaryPassword, User, UserFilter, UserStatus,
+    UserUpdate,
 };
 use super::repo::{self, LoginRecord};
 use crate::actor::Actor;
+use crate::pagination::{Page, PageParams};
 use crate::policy::{self, Action, PolicyError};
 
 /// OWASP's Argon2id minimum: 19 MiB, 2 iterations, 1 lane (ADR-0017).

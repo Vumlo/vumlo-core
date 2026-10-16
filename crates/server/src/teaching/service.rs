@@ -13,7 +13,8 @@ use super::model::{Course, CourseTitle, Membership, ModelError};
 use super::repo;
 use crate::actor::Actor;
 use crate::events::{self, AuditEntry, EventsError};
-use crate::identity::{self, IdentityError, Page, PageParams, UserStatus};
+use crate::identity::{self, IdentityError, UserStatus};
+use crate::pagination::{Page, PageParams};
 use crate::policy::{
     self, Action, CourseAccess, CourseRole, CourseStatus, PolicyError, course_role_allowed,
     implicit_course_owner,
