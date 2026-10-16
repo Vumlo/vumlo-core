@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO org.installation (mode) VALUES ($1) ON CONFLICT (singleton) DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "8bc25fe501ca31ca2edd3190c77c3a976dddeff2e0ba00df6794d0f99c85778a"
+}

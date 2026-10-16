@@ -12,7 +12,7 @@ Rust (stable, via rustup) and Docker with the Compose plugin.
 
 ```
 cp .env.example .env
-cp learnly.example.toml learnly.toml   # set server.public_origin and institution.name
+cp learnly.example.toml learnly.toml   # set server.public_origin, institution.name and institution.mode
 docker compose up -d --wait            # PostgreSQL 18 on :5432
 cargo run -p server -- migrate         # apply migrations
 cargo run -p server -- create-admin you@example.edu --name Your --surname Name
@@ -31,6 +31,8 @@ curl -s localhost:8080/api/v1/auth/login -H 'content-type: application/json' \
 Other users: `learnly-server create-user <email> --name <name> --surname <surname> --role admin|teacher|student`, or
 `POST /api/v1/admin/users` as an admin. API docs: `/api/v1/docs`.
 Health check: `curl localhost:8080/api/v1/health` or `cargo run -p cli -- health --url http://localhost:8080`.
+
+Choose `institution.mode` (`school` or `university`) before the first start: it is required, the first command that uses the database records it, and it cannot be changed later (a different value stops the server). The grading scale follows it unless `institution.grading_scale` is set.
 
 Every config key can be overridden with `LEARNLY__<SECTION>__<KEY>`, e.g. `LEARNLY__DATABASE__URL`.
 For plain-HTTP local development set `auth.cookie_secure = false`; keep it `true` in production.

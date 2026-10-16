@@ -23,9 +23,14 @@ allowed_domains = []      # used by self-registration (task 004)
 
 [institution]
 name = "Example University"
+# REQUIRED. Choose it before the first start: it is recorded in the database then and cannot be
+# changed later (a different value stops the server).
+#   "school"     - every piece of work is graded 1-12; the default grading scale is "twelve"
+#   "university" - points add up to 100 per course; the default grading scale is "hundred"
+mode = "university"
 # Limits assignment points: "twelve" = at most 12 per assignment, "hundred" = the regular
-# assignments of a course add up to at most 100. Optional; the default is "hundred".
-grading_scale = "hundred"
+# assignments of a course add up to at most 100. Optional; by default it follows the mode.
+# grading_scale = "hundred"
 
 [editor]
 # What the document editor may offer. A configuration can only narrow what the code allows;

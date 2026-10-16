@@ -4,6 +4,7 @@ use anyhow::Context;
 use clap::{Parser, Subcommand};
 use server::app::{self, AppState};
 use server::identity::{self, Email, NewUser, PersonName, Role, TemporaryPassword};
+use server::org;
 use server::settings::{LogFormat, Settings};
 use sqlx::PgPool;
 
@@ -65,7 +66,7 @@ async fn run(cli: Cli) -> anyhow::Result<()> {
     match cli.command {
         Command::Serve => {
             let state = AppState::new(pool, settings).context("invalid configuration")?;
-            app::ensure_migrated(&state.db).await?;
+            prepare_database(&state.db, &state.config).await?;
             let bind_addr = state.config.server.bind_addr;
             let listener = tokio::net::TcpListener::bind(bind_addr)
                 .await
@@ -83,6 +84,7 @@ async fn run(cli: Cli) -> anyhow::Result<()> {
         }
         Command::Migrate => {
             app::MIGRATOR.run(&pool).await.context("migration failed")?;
+            record_mode(&pool, &settings).await?;
             tracing::info!("migrations applied");
         }
         Command::CreateAdmin {
@@ -90,7 +92,7 @@ async fn run(cli: Cli) -> anyhow::Result<()> {
             name,
             surname,
         } => {
-            create_account(&pool, &email, &name, &surname, Role::Admin).await?;
+            create_account(&pool, &settings, &email, &name, &surname, Role::Admin).await?;
         }
         Command::CreateUser {
             email,
@@ -98,9 +100,23 @@ async fn run(cli: Cli) -> anyhow::Result<()> {
             surname,
             role,
         } => {
-            create_account(&pool, &email, &name, &surname, role).await?;
+            create_account(&pool, &settings, &email, &name, &surname, role).await?;
         }
     }
+    Ok(())
+}
+
+/// Refuses a database with pending migrations, then records or checks the institution mode
+/// (ADR-0031). Every command that uses the database goes through this before it does anything.
+async fn prepare_database(pool: &PgPool, settings: &Settings) -> anyhow::Result<()> {
+    app::ensure_migrated(pool).await?;
+    record_mode(pool, settings).await
+}
+
+async fn record_mode(pool: &PgPool, settings: &Settings) -> anyhow::Result<()> {
+    let mut tx = pool.begin().await.context("cannot start a transaction")?;
+    org::record_mode(&mut tx, settings.institution.mode).await?;
+    tx.commit().await.context("cannot commit")?;
     Ok(())
 }
 
@@ -108,12 +124,13 @@ async fn run(cli: Cli) -> anyhow::Result<()> {
 /// only time it is visible; the user must change it at first login.
 async fn create_account(
     pool: &PgPool,
+    settings: &Settings,
     email: &str,
     name: &str,
     surname: &str,
     role: Role,
 ) -> anyhow::Result<()> {
-    app::ensure_migrated(pool).await?;
+    prepare_database(pool, settings).await?;
     let new = NewUser {
         email: Email::parse(email).context("invalid email")?,
         name: PersonName::name(name).context("invalid name")?,

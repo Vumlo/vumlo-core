@@ -47,6 +47,11 @@ fn test_database_url(pool: &PgPool) -> String {
 }
 
 async fn run(pool: &PgPool, args: &[&str]) -> Output {
+    run_in_mode(pool, "university", args).await
+}
+
+async fn run_in_mode(pool: &PgPool, mode: &str, args: &[&str]) -> Output {
+    let mode = mode.to_owned();
     let url = test_database_url(pool);
     let args: Vec<String> = args.iter().map(|a| (*a).to_owned()).collect();
     tokio::task::spawn_blocking(move || {
@@ -58,6 +63,7 @@ async fn run(pool: &PgPool, args: &[&str]) -> Output {
             .env("LEARNLY__DATABASE__MAX_CONNECTIONS", "2")
             .env("LEARNLY__LOG__FORMAT", "json")
             .env("LEARNLY__INSTITUTION__NAME", "Test University")
+            .env("LEARNLY__INSTITUTION__MODE", &mode)
             .output()
             .expect("run learnly-server");
         Output {
@@ -267,4 +273,71 @@ async fn create_admin_refuses_an_unmigrated_database(pool: PgPool) {
         "{}",
         output.stderr
     );
+}
+
+#[sqlx::test(migrator = "server::app::MIGRATOR")]
+async fn the_first_command_records_the_mode_and_a_different_mode_is_refused(pool: PgPool) {
+    let admin = [
+        "create-admin",
+        "root@school.edu",
+        "--name",
+        "Root",
+        "--surname",
+        "Admin",
+    ];
+    assert!(run_in_mode(&pool, "university", &admin).await.ok);
+    let recorded = sqlx::query_scalar!("SELECT mode FROM org.installation")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(recorded, "university");
+
+    let teacher = [
+        "create-user",
+        "t@school.edu",
+        "--name",
+        "T",
+        "--surname",
+        "Teacher",
+        "--role",
+        "teacher",
+    ];
+    let refused = run_in_mode(&pool, "school", &teacher).await;
+    assert!(!refused.ok);
+    for needle in ["institution.mode", "school", "university"] {
+        assert!(
+            refused.stderr.contains(needle),
+            "{needle}: {}",
+            refused.stderr
+        );
+    }
+    let users = sqlx::query_scalar!(r#"SELECT count(*) AS "n!" FROM identity.users"#)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(users, 1);
+}
+
+#[sqlx::test(migrator = "server::app::MIGRATOR")]
+async fn a_missing_mode_stops_the_binary_at_startup(pool: PgPool) {
+    let url = test_database_url(&pool);
+    let output = tokio::task::spawn_blocking(move || {
+        Command::new(env!("CARGO_BIN_EXE_learnly-server"))
+            .arg("serve")
+            .env_remove("LEARNLY__INSTITUTION__MODE")
+            .env("LEARNLY__SERVER__BIND_ADDR", "127.0.0.1:0")
+            .env("LEARNLY__SERVER__PUBLIC_ORIGIN", common::ORIGIN)
+            .env("LEARNLY__DATABASE__URL", url)
+            .env("LEARNLY__DATABASE__MAX_CONNECTIONS", "2")
+            .env("LEARNLY__LOG__FORMAT", "json")
+            .env("LEARNLY__INSTITUTION__NAME", "Test University")
+            .current_dir(env!("CARGO_TARGET_TMPDIR"))
+            .output()
+            .expect("run learnly-server")
+    })
+    .await
+    .expect("join");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(!output.status.success());
+    assert!(stderr.contains("institution.mode"), "{stderr}");
 }

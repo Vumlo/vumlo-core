@@ -5,6 +5,8 @@ use api_types::ProfileName;
 use config::{Config, ConfigError, Environment, File, FileFormat, Source};
 use serde::Deserialize;
 
+use crate::text_enum::text_enum;
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct Settings {
     pub server: ServerSettings,
@@ -48,22 +50,67 @@ impl Default for AuthSettings {
     }
 }
 
+/// The `[institution]` section as it is loaded. `mode` has no default (ADR-0031).
 #[derive(Debug, Clone, Deserialize)]
+#[serde(try_from = "InstitutionSection")]
 pub struct InstitutionSettings {
     pub name: String,
-    /// Limits assignment points (ADR-0022). Optional; `institution.mode` does not exist yet.
-    #[serde(default)]
+    /// Chosen before the first start and fixed for the life of the installation (ADR-0031).
+    pub mode: InstitutionMode,
+    /// The grading scale that applies: `institution.grading_scale` when set, else the one the
+    /// mode implies (ADR-0022, ADR-0031).
     pub grading_scale: GradingScale,
 }
 
+/// The keys of `[institution]` before the mode is checked and the scale is resolved. This
+/// conversion is the only place that does either.
+#[derive(Deserialize)]
+struct InstitutionSection {
+    name: String,
+    mode: Option<String>,
+    grading_scale: Option<GradingScale>,
+}
+
+impl TryFrom<InstitutionSection> for InstitutionSettings {
+    type Error = String;
+
+    fn try_from(section: InstitutionSection) -> Result<Self, String> {
+        let allowed = "set it to \"school\" or \"university\"; it is recorded at the first start \
+                       and cannot be changed later";
+        let mode = match section.mode {
+            None => return Err(format!("institution.mode is required: {allowed}")),
+            Some(text) => text
+                .parse::<InstitutionMode>()
+                .map_err(|_| format!("institution.mode \"{text}\" is not valid: {allowed}"))?,
+        };
+        let implied = match mode {
+            InstitutionMode::School => GradingScale::Twelve,
+            InstitutionMode::University => GradingScale::Hundred,
+        };
+        Ok(Self {
+            name: section.name,
+            mode,
+            grading_scale: section.grading_scale.unwrap_or(implied),
+        })
+    }
+}
+
+/// What kind of institution this installation serves (ADR-0002, ADR-0031).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InstitutionMode {
+    School,
+    University,
+}
+
+text_enum!(InstitutionMode { School => "school", University => "university" });
+
 /// How points relate to the grade (ADR-0022).
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum GradingScale {
     /// The score of an assignment is its grade: at most 12 points per assignment.
     Twelve,
     /// The regular assignments of a course add up to at most 100 points.
-    #[default]
     Hundred,
 }
 
@@ -183,6 +230,7 @@ mod tests {
         format = "json"
         [institution]
         name = "Example University"
+        mode = "university"
     "#;
 
     fn build(toml: &str, env: &[(&str, &str)]) -> Result<Settings, ConfigError> {
@@ -273,30 +321,80 @@ mod tests {
     }
 
     #[test]
-    fn grading_scale_defaults_to_hundred_and_parses_both_values() {
-        assert_eq!(
-            build(VALID, &[]).unwrap().institution.grading_scale,
-            GradingScale::Hundred
-        );
-        for (text, scale) in [
-            ("twelve", GradingScale::Twelve),
-            ("hundred", GradingScale::Hundred),
+    fn grading_scale_follows_the_mode_and_parses_both_values() {
+        for (mode, scale) in [
+            ("school", GradingScale::Twelve),
+            ("university", GradingScale::Hundred),
         ] {
-            let s = build(VALID, &[("LEARNLY__INSTITUTION__GRADING_SCALE", text)]).unwrap();
-            assert_eq!(s.institution.grading_scale, scale);
+            let s = build(VALID, &[("LEARNLY__INSTITUTION__MODE", mode)]).unwrap();
+            assert_eq!(s.institution.grading_scale, scale, "{mode}");
+        }
+    }
+
+    #[test]
+    fn an_explicit_grading_scale_wins_over_the_mode() {
+        for (mode, text, scale) in [
+            ("school", "hundred", GradingScale::Hundred),
+            ("university", "twelve", GradingScale::Twelve),
+        ] {
+            let s = build(
+                VALID,
+                &[
+                    ("LEARNLY__INSTITUTION__MODE", mode),
+                    ("LEARNLY__INSTITUTION__GRADING_SCALE", text),
+                ],
+            )
+            .unwrap();
+            assert_eq!(s.institution.grading_scale, scale, "{mode} + {text}");
         }
     }
 
     #[test]
     fn grading_scale_in_the_file_is_read() {
         let toml = VALID.replace(
-            "name = \"Example University\"",
-            "name = \"Example University\"\n        grading_scale = \"twelve\"",
+            "mode = \"university\"",
+            "mode = \"university\"\n        grading_scale = \"twelve\"",
         );
         assert_eq!(
             build(&toml, &[]).unwrap().institution.grading_scale,
             GradingScale::Twelve
         );
+    }
+
+    #[test]
+    fn a_missing_mode_is_an_error_that_names_the_key_and_the_values() {
+        let toml = VALID.replace("mode = \"university\"", "");
+        let e = build(&toml, &[]).unwrap_err().to_string();
+        for needle in ["institution.mode", "school", "university"] {
+            assert!(e.contains(needle), "{needle}: {e}");
+        }
+    }
+
+    #[test]
+    fn an_unknown_mode_is_an_error_that_names_the_key_and_the_value() {
+        let e = build(VALID, &[("LEARNLY__INSTITUTION__MODE", "college")])
+            .unwrap_err()
+            .to_string();
+        for needle in ["institution.mode", "college", "school", "university"] {
+            assert!(e.contains(needle), "{needle}: {e}");
+        }
+    }
+
+    #[test]
+    fn both_modes_parse_and_the_environment_overrides_the_file() {
+        assert_eq!(
+            build(VALID, &[]).unwrap().institution.mode,
+            InstitutionMode::University
+        );
+        let s = build(VALID, &[("LEARNLY__INSTITUTION__MODE", "school")]).unwrap();
+        assert_eq!(s.institution.mode, InstitutionMode::School);
+    }
+
+    #[test]
+    fn the_mode_alone_is_enough_without_a_file_value() {
+        let toml = VALID.replace("mode = \"university\"", "");
+        let s = build(&toml, &[("LEARNLY__INSTITUTION__MODE", "school")]).unwrap();
+        assert_eq!(s.institution.mode, InstitutionMode::School);
     }
 
     #[test]
