@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM gradebook.grades\n         WHERE assignment_id IN (SELECT i.id FROM content.items i\n                                 JOIN content.modules m ON m.id = i.module_id\n                                 WHERE m.id = $1 OR m.parent_id = $1)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "6d0773acf31362ff20687c51770c1194590ba6d97574f700acb10ebd69b2f9a3"
+}

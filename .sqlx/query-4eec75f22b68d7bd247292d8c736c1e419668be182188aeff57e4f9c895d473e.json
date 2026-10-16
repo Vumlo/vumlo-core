@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT GREATEST(max(draft_score), max(published_score)) AS \"max\"\n           FROM gradebook.grades WHERE assignment_id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "max",
+        "type_info": "Numeric",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "4eec75f22b68d7bd247292d8c736c1e419668be182188aeff57e4f9c895d473e"
+}

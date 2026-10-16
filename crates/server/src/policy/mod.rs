@@ -101,6 +101,15 @@ pub enum Action {
     },
     /// Read the profiles the document editor enforces (ADR-0025), to build its toolbar.
     ViewEditorProfiles,
+    /// Save a draft grade (ADR-0028). Staff and admins; ignores the course status.
+    GradeAssignment(CourseAccess),
+    /// Copy draft grades to published (ADR-0028). Staff and admins; ignores the course status.
+    PublishGrades(CourseAccess),
+    /// Read the staff gradebook of a course, with every draft value (ADR-0028).
+    ViewGradebook(CourseAccess),
+    /// Read one's own published grades: only a student of a published course (ADR-0028). Staff
+    /// and admins use the gradebook instead.
+    ViewOwnGrades(CourseAccess),
 }
 
 /// May `institution` role holders have `course` role (ADR-0004)? Admins hold no course role:
@@ -150,7 +159,13 @@ pub fn authorize(actor: &Actor, action: Action) -> Result<(), PolicyError> {
         Action::DeleteCourse(access) | Action::TransferOwnership(access) => {
             is_admin || access.is_owner
         }
-        Action::ManageContent(access) => is_admin || access.is_staff(),
+        Action::ManageContent(access)
+        | Action::GradeAssignment(access)
+        | Action::PublishGrades(access)
+        | Action::ViewGradebook(access) => is_admin || access.is_staff(),
+        Action::ViewOwnGrades(access) => {
+            access.role == Some(CourseRole::Student) && access.status == CourseStatus::Published
+        }
         Action::ViewContent {
             access,
             module,
@@ -598,6 +613,79 @@ mod tests {
             );
         }
         assert_eq!(authorize(&actor(Role::Admin), action), Ok(()));
+    }
+
+    #[test]
+    fn staff_and_admins_grade_publish_and_read_the_gradebook_in_every_status() {
+        let actions: [fn(CourseAccess) -> Action; 3] = [
+            Action::GradeAssignment,
+            Action::PublishGrades,
+            Action::ViewGradebook,
+        ];
+        for make in actions {
+            for status in [Draft, Published, Archived] {
+                for (role, is_owner) in [
+                    (Some(Teacher), true),
+                    (Some(Teacher), false),
+                    (Some(Assistant), false),
+                ] {
+                    let action = make(access(role, is_owner, status));
+                    assert_eq!(
+                        authorize(&actor(Role::Teacher), action),
+                        Ok(()),
+                        "{action:?}"
+                    );
+                }
+                let admin = make(access(None, false, status));
+                assert_eq!(authorize(&actor(Role::Admin), admin), Ok(()), "{admin:?}");
+                for role in [Some(Student), None] {
+                    let action = make(access(role, false, status));
+                    for who in [Role::Student, Role::Teacher] {
+                        assert_eq!(
+                            authorize(&actor(who), action),
+                            Err(PolicyError),
+                            "{action:?}"
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn only_a_student_of_a_published_course_views_their_own_grades() {
+        let action = |role, is_owner, status| Action::ViewOwnGrades(access(role, is_owner, status));
+        assert_eq!(
+            authorize(
+                &actor(Role::Student),
+                action(Some(Student), false, Published)
+            ),
+            Ok(())
+        );
+        for status in [Draft, Archived] {
+            assert_eq!(
+                authorize(&actor(Role::Student), action(Some(Student), false, status)),
+                Err(PolicyError),
+                "{status:?}"
+            );
+        }
+        for (role, is_owner) in [
+            (Some(Teacher), true),
+            (Some(Teacher), false),
+            (Some(Assistant), false),
+            (None, false),
+        ] {
+            assert_eq!(
+                authorize(&actor(Role::Teacher), action(role, is_owner, Published)),
+                Err(PolicyError),
+                "{role:?}"
+            );
+        }
+        // An admin has no membership and is not a student.
+        assert_eq!(
+            authorize(&actor(Role::Admin), action(None, false, Published)),
+            Err(PolicyError)
+        );
     }
 
     #[test]

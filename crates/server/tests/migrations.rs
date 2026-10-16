@@ -778,3 +778,139 @@ async fn a_user_needs_a_trimmed_name_and_surname_of_at_most_a_hundred_characters
         );
     }
 }
+
+// --- migration 11: the gradebook ----------------------------------------------------------------
+
+async fn insert_grade(
+    pool: &PgPool,
+    assignment: uuid::Uuid,
+    student: uuid::Uuid,
+    draft_score: Option<&str>,
+    draft_feedback: Option<&str>,
+) -> Result<(), sqlx::Error> {
+    sqlx::query!(
+        "INSERT INTO gradebook.grades
+             (assignment_id, student_id, draft_score, draft_feedback, draft_updated_by)
+         VALUES ($1, $2, $3::text::numeric, $4, $2)",
+        assignment,
+        student,
+        draft_score,
+        draft_feedback
+    )
+    .execute(pool)
+    .await
+    .map(|_| ())
+}
+
+#[sqlx::test(migrator = "server::app::MIGRATOR")]
+async fn a_grade_row_checks_scores_and_feedback_but_not_the_assignment(pool: PgPool) {
+    let student = owner(&pool, "s@x.edu").await;
+    let assignment = uuid::Uuid::now_v7();
+
+    // No foreign key to the assignment (ADR-0021): the gradebook's guards keep them consistent.
+    insert_grade(&pool, assignment, student, Some("0"), Some("fine"))
+        .await
+        .unwrap();
+    assert_eq!(
+        sqlstate(insert_grade(&pool, assignment, student, Some("1"), None).await),
+        "23505",
+        "one row per (assignment, student)"
+    );
+    let other = uuid::Uuid::now_v7();
+    assert_eq!(
+        sqlstate(insert_grade(&pool, other, student, Some("-0.01"), None).await),
+        "23514"
+    );
+    let long = "x".repeat(4001);
+    let ok_long = "x".repeat(4000);
+    for bad in ["", " padded", "padded ", long.as_str()] {
+        assert_eq!(
+            sqlstate(insert_grade(&pool, other, student, None, Some(bad)).await),
+            "23514",
+            "{bad:?}"
+        );
+    }
+    insert_grade(&pool, other, student, Some("9999.99"), Some(&ok_long))
+        .await
+        .unwrap();
+    assert_eq!(
+        sqlstate(
+            insert_grade(
+                &pool,
+                uuid::Uuid::now_v7(),
+                uuid::Uuid::now_v7(),
+                None,
+                None
+            )
+            .await
+        ),
+        "23503",
+        "the student is a user"
+    );
+}
+
+#[sqlx::test(migrator = "server::app::MIGRATOR")]
+async fn published_by_and_published_at_go_together(pool: PgPool) {
+    let student = owner(&pool, "s@x.edu").await;
+    insert_grade(&pool, uuid::Uuid::now_v7(), student, Some("1"), None)
+        .await
+        .unwrap();
+    let only_by = sqlx::query!("UPDATE gradebook.grades SET published_by = $1", student)
+        .execute(&pool)
+        .await;
+    assert_eq!(sqlstate(only_by), "23514");
+    sqlx::query!(
+        "UPDATE gradebook.grades SET published_by = $1, published_at = now()",
+        student
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+}
+
+#[sqlx::test(migrator = "server::app::MIGRATOR")]
+async fn the_grade_history_is_append_only(pool: PgPool) {
+    let actor = owner(&pool, "a@x.edu").await;
+    let assignment = uuid::Uuid::now_v7();
+    let insert = |action: &'static str| {
+        let pool = pool.clone();
+        async move {
+            sqlx::query!(
+                "INSERT INTO gradebook.grade_history
+                     (id, assignment_id, student_id, action, actor_id, score)
+                 VALUES ($1, $2, $3, $4, $3, 5)",
+                uuid::Uuid::now_v7(),
+                assignment,
+                actor,
+                action
+            )
+            .execute(&pool)
+            .await
+        }
+    };
+    insert("save_draft").await.unwrap();
+    insert("publish").await.unwrap();
+    assert_eq!(sqlstate(insert("approve").await), "23514");
+
+    let update = sqlx::query!("UPDATE gradebook.grade_history SET score = 6")
+        .execute(&pool)
+        .await;
+    assert_eq!(sqlstate(update), "P0001", "a row is never changed");
+    let rows = sqlx::query_scalar!(
+        r#"SELECT count(*) AS "n!" FROM gradebook.grade_history WHERE score = 5"#
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(rows, 2);
+
+    // Deleting stays possible: the purge that goes with the deletion of an assignment uses it.
+    let deleted = sqlx::query!(
+        "DELETE FROM gradebook.grade_history WHERE assignment_id = $1",
+        assignment
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    assert_eq!(deleted.rows_affected(), 2);
+}

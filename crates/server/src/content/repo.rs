@@ -590,6 +590,46 @@ pub async fn find_assignment(
     Ok(raw.map(Assignment::from))
 }
 
+/// The assignment row, locked `FOR UPDATE` until the transaction ends. A grade write holds the
+/// same row `FOR SHARE`, so this waits for it (and it for us), and the checks that come in a
+/// later statement see every grade the writer committed (ADR-0028). It returns the row as it is
+/// after the wait. `None` when the item is not an assignment or is gone.
+pub async fn lock_assignment(
+    conn: &mut PgConnection,
+    item_id: Uuid,
+) -> Result<Option<Assignment>, sqlx::Error> {
+    let raw = sqlx::query_as!(
+        RawAssignment,
+        r#"SELECT type AS "assignment_type: BuiltinType", config AS "config: Body",
+                  max_points AS "max_points: MaxPoints", is_bonus
+           FROM content.assignments WHERE item_id = $1
+           FOR UPDATE"#,
+        item_id
+    )
+    .fetch_optional(conn)
+    .await?;
+    Ok(raw.map(Assignment::from))
+}
+
+/// Locks every assignment of a module and of its sub-modules `FOR UPDATE`, in id order so that
+/// two deletes never wait for each other in a circle. Returns their ids.
+pub async fn lock_assignments_below(
+    conn: &mut PgConnection,
+    module_id: Uuid,
+) -> Result<Vec<Uuid>, sqlx::Error> {
+    sqlx::query_scalar!(
+        "SELECT a.item_id FROM content.assignments a
+         JOIN content.items i ON i.id = a.item_id
+         JOIN content.modules m ON m.id = i.module_id
+         WHERE m.id = $1 OR m.parent_id = $1
+         ORDER BY a.item_id
+         FOR UPDATE OF a",
+        module_id
+    )
+    .fetch_all(conn)
+    .await
+}
+
 /// Each field is kept when `None`.
 pub async fn update_assignment(
     conn: &mut PgConnection,

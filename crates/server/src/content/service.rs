@@ -22,6 +22,7 @@ use super::model::{
 use super::repo::{self, ItemRow, ModuleRow};
 use crate::actor::Actor;
 use crate::events::{self, AuditEntry, EventsError};
+use crate::gradebook::{self, GradebookError};
 use crate::policy::{self, Action, CourseAccess, PolicyError, Release};
 use crate::settings::GradingScale;
 use crate::teaching::{self, TeachingError};
@@ -62,6 +63,14 @@ pub enum ContentError {
     /// A concurrent change got in the way (a position taken, a parent deleted). Retry.
     #[error("a concurrent change conflicts with this one")]
     Conflict,
+    /// `max_points` would drop below a score already given (ADR-0021, ADR-0028).
+    #[error("max_points cannot be lowered below a score that was already given")]
+    BelowGivenScores,
+    /// The assignment, or an assignment below the module, has a grade (ADR-0028).
+    #[error("it has grades: clear them before deleting")]
+    HasGrades,
+    #[error(transparent)]
+    Gradebook(GradebookError),
     #[error(transparent)]
     Teaching(TeachingError),
     #[error(transparent)]
@@ -82,6 +91,15 @@ impl From<sqlx::Error> for ContentError {
         match code.as_deref() {
             Some("23505" | "23503") => Self::Conflict,
             _ => Self::Db(error),
+        }
+    }
+}
+
+impl From<GradebookError> for ContentError {
+    fn from(error: GradebookError) -> Self {
+        match error {
+            GradebookError::HasGrades => Self::HasGrades,
+            other => Self::Gradebook(other),
         }
     }
 }
@@ -459,6 +477,14 @@ pub async fn delete_module(
     id: Uuid,
 ) -> Result<(), ContentError> {
     let row = manage_module(conn, actor, id).await?;
+    // Lock every assignment below first: a grade write in flight holds one of them, so the check
+    // that follows, in a later statement, sees its grade (ADR-0028). The empty rows that are left
+    // go with their history; the grades table has no foreign key to cascade through.
+    repo::lock_assignments_below(conn, id).await?;
+    if gradebook::has_grades_in_module(conn, id).await? {
+        return Err(ContentError::HasGrades);
+    }
+    gradebook::purge_module(conn, id).await?;
     repo::delete_module(conn, id).await?;
     audit(
         conn,
@@ -682,11 +708,21 @@ pub async fn update_item(
         if rules.scale == GradingScale::Hundred {
             repo::lock_course_points(conn, row.item.course_id).await?;
         }
-        let current = repo::find_assignment(conn, id)
+        // The row lock comes before the gradebook is asked, which is a later statement: a grade
+        // write holds the row `FOR SHARE`, so this waits for it and then sees its score. The
+        // current points are the ones in the locked row.
+        let current = repo::lock_assignment(conn, id)
             .await?
             .ok_or(ContentError::ItemNotFound)?;
         let points = patch.max_points.unwrap_or(current.max_points);
         let is_bonus = patch.is_bonus.unwrap_or(current.is_bonus);
+        if points.value() < current.max_points.value()
+            && gradebook::max_score(conn, id)
+                .await?
+                .is_some_and(|highest| points.value() < highest)
+        {
+            return Err(ContentError::BelowGivenScores);
+        }
         let raised = points.value() > current.max_points.value();
         let becomes_regular = current.is_bonus && !is_bonus;
         let needs_check = match rules.scale {
@@ -750,6 +786,14 @@ pub async fn delete_item(
     id: Uuid,
 ) -> Result<(), ContentError> {
     let row = manage_item(conn, actor, id).await?;
+    if row.item.kind == ItemKind::Assignment {
+        // The row lock first, then the grades in a later statement (see `delete_module`).
+        repo::lock_assignment(conn, id).await?;
+        if gradebook::has_grades_for_assignment(conn, id).await? {
+            return Err(ContentError::HasGrades);
+        }
+        gradebook::purge_assignment(conn, id).await?;
+    }
     repo::delete_item(conn, id).await?;
     audit(
         conn,

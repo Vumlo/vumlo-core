@@ -1,6 +1,6 @@
 # Learnly — Architecture
 
-Status: **in progress.** Implemented: the foundation (config, migrations, health, OpenAPI, Problem Details), `identity` + `policy` (users, password login, sessions, admin user management), the first slice of `teaching` (courses, members, publishing) with a minimal `events.audit_log`, and the `content` tree (modules, sub-modules, `text` items and `text` assignments, whose bodies are block documents). Everything else below is still design.
+Status: **in progress.** Implemented: the foundation (config, migrations, health, OpenAPI, Problem Details), `identity` + `policy` (users, password login, sessions, admin user management), the first slice of `teaching` (courses, members, publishing) with a minimal `events.audit_log`, the `content` tree (modules, sub-modules, `text` items and assignments of type `text` or `no_submission`, whose bodies are block documents), the `gradebook` (draft and published grades, publishing, the staff gradebook, a student's published grades) and the first event in `events.outbox`. Everything else below is still design.
 This file is the current picture of the system. Every decision behind it has a record in [`docs/decisions/`](docs/decisions/). If this file and an ADR disagree, the ADR wins and this file gets fixed.
 
 ## Goal
@@ -60,11 +60,11 @@ docs/decisions/
 | `identity`   | `identity.*`                    | users, login identities, sessions, tokens |
 | `org`        | `org.*`                         | terms, groups (cohorts), institution settings |
 | `teaching`   | `teaching.*`                    | courses, memberships, publishing; group links and course subgroups are planned |
-| `content`    | `content.*`                     | modules, items (`text` items and `text` assignments built, their bodies are block documents (ADR-0025, ADR-0027); other assignment types planned). Planned kinds and types: ADR-0023, ADR-0024. |
+| `content`    | `content.*`                     | modules, items (`text` items and assignments of type `text` and `no_submission` built, their bodies are block documents (ADR-0025, ADR-0027); other assignment types planned). Planned kinds and types: ADR-0023, ADR-0024. |
 | `assessment` | `assessment.*`                  | submissions, attempts, lateness, auto-grading of quizzes |
-| `gradebook`  | `gradebook.*`                   | grades (draft/published), grade history, publishing, gradebook view |
+| `gradebook`  | `gradebook.*`                   | grades (draft/published), grade history, publishing, gradebook view, my grades |
 | `files`      | `files.*`                       | uploads, storage backends |
-| `events`     | `events.*`                      | audit log (built); outbox, webhooks, scheduled jobs (planned) |
+| `events`     | `events.*`                      | audit log and outbox table with `events::emit` (built); the worker, webhooks and scheduled jobs (planned) |
 | `policy`     | — (no tables)                   | `authorize(&Actor, Action)` — the only place permissions are checked |
 
 Rules ([ADR-0001](docs/decisions/0001-modular-monolith.md)):
@@ -138,7 +138,7 @@ content
                    -- built: both kinds, text and assignment (ADR-0020, ADR-0021, ADR-0024)
                    -- the body of a text item and of an assignment (its description) is a block document (ADR-0025, ADR-0027); the default is the empty document
                    -- planned (ADR-0024): link, file and a lesson made of steps (ADR-0026) are added
-  assignments      item_id (PK), type (text), config (jsonb), max_points numeric(6,2), due_at?,
+  assignments      item_id (PK), type: text | no_submission, config (jsonb), max_points numeric(6,2), due_at?,
                    accept_late (bool), late_until?, on_deadline: keep_draft | auto_submit,
                    max_attempts?                       -- null = unlimited
                    -- built: item_id, type, config, max_points, is_bonus (task 007); due_at, accept_late, late_until, on_deadline and max_attempts arrive with the submissions task (ADR-0011, ADR-0021)
@@ -148,17 +148,21 @@ assessment
                    content (jsonb), submitted_at?, is_late
                    -- at most one draft per (assignment, student); submitted rows are immutable
 
-gradebook
-  grades           assignment_id, student_id                      unique together
-                   draft_score, draft_feedback, draft_updated_by, draft_updated_at,
-                   published_score, published_feedback, published_by, published_at
-  grade_history    append-only log of every draft save and publish
+gradebook                                          -- ADR-0028
+  grades           assignment_id, student_id                      primary key together; no foreign key to the assignment (ADR-0021)
+                   draft_score numeric(6,2)?, draft_feedback?, draft_updated_by, draft_updated_at,
+                   published_score?, published_feedback?, published_by?, published_at?
+                   -- score >= 0 by CHECK, score <= max_points by the service; feedback trimmed, 1 to 4000 characters
+                   -- a cell is "published" for the student when published_score or published_feedback is set
+  grade_history    id, assignment_id, student_id, action: save_draft | publish, actor_id, at,
+                   score?, feedback?                   -- the values after the action; append-only (a trigger refuses UPDATE; only the purge deletes)
 
 files
   files            id, owner_id, storage_key, mime, size, created_at
 
 events
-  outbox                 id, type, payload (jsonb), occurred_at, processed_at?
+  outbox                 id, type, version, payload (jsonb, ids only), occurred_at, processed_at?
+                         -- built; the only event so far is grade.published
   webhook_subscriptions  id, url, secret, event_types[], active
   webhook_deliveries     event_id, subscription_id, attempts, next_attempt_at, status, last_error
   audit_log              id, actor_id, action, resource_type, resource_id, at, meta (jsonb)
@@ -200,7 +204,7 @@ Key points:
 
 ## Authorization
 
-`policy::authorize(&Actor, Action)` decides every check. The resource an action needs travels inside its `Action` variant, so course-level actions can be added without changing existing callers. Today: `ManageOwnAccount` (any role), `ManageUsers` (admin only), the course actions `CreateCourse`, `ViewOwnCourses`, `ViewCourse`, `PublishCourse`, `ManageMembership`, `DeleteCourse` and `TransferOwnership`, the content actions `ManageContent` and `ViewContent`, and `ViewEditorProfiles` (any role). A course action carries a `CourseAccess` (the actor's course role, whether they own it, and its status), which `teaching` reads from the database; other modules get it through `teaching::course_access`. `ManageContent` covers viewing drafts, editing and publishing content for staff and admins and ignores the course status, so the content of an archived course stays editable until archiving gets its own ADR. `ViewContent` carries the release state of every row on the path to the target and the evaluation time, because `policy` has no clock. The delete and transfer actions have no endpoint yet.
+`policy::authorize(&Actor, Action)` decides every check. The resource an action needs travels inside its `Action` variant, so course-level actions can be added without changing existing callers. Today: `ManageOwnAccount` (any role), `ManageUsers` (admin only), the course actions `CreateCourse`, `ViewOwnCourses`, `ViewCourse`, `PublishCourse`, `ManageMembership`, `DeleteCourse` and `TransferOwnership`, the content actions `ManageContent` and `ViewContent`, `ViewEditorProfiles` (any role), and the gradebook actions `GradeAssignment`, `PublishGrades` and `ViewGradebook` (staff and admins, any course status) and `ViewOwnGrades` (only a student of a published course; staff and admins read the gradebook instead). A course action carries a `CourseAccess` (the actor's course role, whether they own it, and its status), which `teaching` reads from the database; `content` gets it through `teaching::course_access`, and `gradebook`, which calls no function of another module, reads the same facts with its own query. `ManageContent` covers viewing drafts, editing and publishing content for staff and admins and ignores the course status, so the content of an archived course stays editable until archiving gets its own ADR. `ViewContent` carries the release state of every row on the path to the target and the evaluation time, because `policy` has no clock. The delete and transfer actions have no endpoint yet.
 
 There are two levels of roles ([ADR-0004](docs/decisions/0004-roles-and-policy.md)).
 
@@ -241,11 +245,25 @@ Invariants:
 - A student sees an item only if **the course, every module on the path to it (the module, and its parent if it is a sub-module) and the item** are all `published` and each `publish_at` is null or `<= now()`. List queries filter in SQL, and `policy` checks every row again. Staff and admins see drafts and scheduled rows. A student gets 404, never 403, for anything they may not see.
 - A student **never receives `draft_*` grade fields.** Student-facing repo functions do not select those columns, and a test enforces this.
 - A teacher sees only `submitted` submissions, never a student's draft.
+- A student sees a `no_submission` assignment like any item: only when the course, module and item are published ([ADR-0028](docs/decisions/0028-gradebook-grades-publishing-read-models.md)). `GET /courses/{id}/my-grades` returns published values only, for assignments visible to the student now.
 
 ## Key flows
 
-**Publishing grades** ([ADR-0009](docs/decisions/0009-grading-and-gradebook.md))
-Grading writes only `draft_*`. "Publish" runs in one transaction: for every row where draft ≠ published, copy `draft_*` → `published_*`, append to `grade_history`, and emit one `grade.published` event per student. Editing an already published grade changes only the draft. The student keeps seeing the old grade until the next publish.
+**Grades and publishing** ([ADR-0009](docs/decisions/0009-grading-and-gradebook.md), [ADR-0028](docs/decisions/0028-gradebook-grades-publishing-read-models.md))
+Grading writes only `draft_*`: `PUT /assignments/{id}/grades/{student_id}` replaces the draft cell (`score` a decimal string from 0 to the assignment's `max_points`, or `null`; `feedback` plain text or `null`), appends to `grade_history` and emits nothing. "Publish" (`POST /assignments/{id}/grades/publish`, body `{"students": "all"}` or a list, required) runs in one transaction: for every current student whose draft differs from the published value it copies `draft_*` → `published_*`, appends to `grade_history`, and emits one `grade.published` event per student whose published value became non-empty. Publishing an empty draft over a published grade retracts it and emits no event. Editing a published grade changes only the draft; the student keeps seeing the old grade until the next publish. A grade write and a change of `max_points` or a delete on the same assignment are serialized through the assignment row in `content.assignments` (the grade write holds it `FOR SHARE`, the others `FOR UPDATE`).
+
+Lowering `max_points` below a score already given, and deleting an assignment, a module or a course that holds a grade with a value, are 409; rows with no value are purged with their history by the delete. There is no course delete yet: it must call `gradebook::has_grades_in_course` and `purge_course`.
+
+The gradebook endpoints (tag `gradebook`):
+
+| Endpoint | |
+|---|---|
+| `PUT /assignments/{id}/grades/{student_id}` | staff and admins: save a draft cell; 404 when the student is not a current student of the course; 422 on `score` / `feedback` |
+| `POST /assignments/{id}/grades/publish` | staff and admins: publish `all` or a listed set of students; returns the students whose published value was replaced |
+| `GET /courses/{id}/gradebook` | staff and admins: columns (every assignment in tree order, drafts included) and the current students as rows by surname, name and id, paged by student, with both slots and `has_unpublished_changes` per cell |
+| `GET /courses/{id}/my-grades` | students only: published values for assignments visible now, no draft field |
+
+The roster is the direct student memberships until `effective_members` exists (ADR-0006).
 
 **Publishing a module** ([ADR-0010](docs/decisions/0010-content-publishing.md))
 `POST /modules/{id}/publish { "cascade": true | false }`. The parameter is required and has no default. The web UI asks in a dialog; the CLI and mobile app must choose explicitly. `cascade: true` also publishes the module's sub-modules and every draft item below them, in one transaction. Publishing is idempotent and never changes `publish_at`.
@@ -256,11 +274,11 @@ The content endpoints (tag `content`, all under `/api/v1`):
 |---|---|
 | `POST /courses/{id}/modules` | create a module, or a sub-module with `parent_id` |
 | `GET /courses/{id}/content` | the whole tree, not paged (it is bounded and ordered by position, not by id) |
-| `PATCH /modules/{id}`, `DELETE /modules/{id}` | edit (`publish_at: null` clears it), delete with everything below |
+| `PATCH /modules/{id}`, `DELETE /modules/{id}` | edit (`publish_at: null` clears it), delete with everything below (409 when an assignment below has a grade) |
 | `PUT /courses/{id}/modules/order` | reorder the top-level modules, or the sub-modules of `parent_id` |
 | `POST /modules/{id}/publish` | publish, `cascade` required |
 | `POST /modules/{id}/items`, `PUT /modules/{id}/items/order` | create a `text` item or an assignment, reorder a module's items; a `body` is validated as a document only after the caller is authorized (404, then 403, then 422) |
-| `GET`, `PATCH`, `DELETE /items/{id}`, `POST /items/{id}/publish` | read (with `body`), edit, delete, publish a `text` item or an assignment |
+| `GET`, `PATCH`, `DELETE /items/{id}`, `POST /items/{id}/publish` | read (with `body`), edit, delete, publish a `text` item or an assignment; lowering `max_points` below a given score and deleting a graded assignment are 409 |
 | `GET /editor/profiles` | any signed-in user: the document profiles as enforced (features, single block or not, limits) and the enabled video providers |
 
 Two creates that race for the same last position conflict at commit: the loser gets 409 and retries.

@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT EXISTS (\n               SELECT 1 FROM gradebook.grades\n               WHERE assignment_id = $1\n                 AND (draft_score IS NOT NULL OR draft_feedback IS NOT NULL\n                      OR published_score IS NOT NULL OR published_feedback IS NOT NULL)\n           ) AS \"has!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "has!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "afc9148676d362ba4c3a92e7f4f5f41f0ec4441821c03d557e86937574cc6242"
+}
