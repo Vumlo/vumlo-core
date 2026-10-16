@@ -60,8 +60,8 @@ docs/decisions/
 | `identity`   | `identity.*`                    | users, login identities, sessions, tokens |
 | `org`        | `org.*`                         | terms, groups (cohorts), institution settings |
 | `teaching`   | `teaching.*`                    | courses, memberships, publishing; group links and course subgroups are planned |
-| `content`    | `content.*`                     | modules, items (lessons and `text` assignments built; other assignment types planned) |
-| `assessment` | `assessment.*`                  | submissions, attempts, lateness, auto-grading of forms |
+| `content`    | `content.*`                     | modules, items (lessons and `text` assignments built; other assignment types planned). Planned kinds and types: ADR-0023, ADR-0024. |
+| `assessment` | `assessment.*`                  | submissions, attempts, lateness, auto-grading of quizzes |
 | `gradebook`  | `gradebook.*`                   | grades (draft/published), grade history, publishing, gradebook view |
 | `files`      | `files.*`                       | uploads, storage backends |
 | `events`     | `events.*`                      | audit log (built); outbox, webhooks, scheduled jobs (planned) |
@@ -136,6 +136,7 @@ content
   items            id, module_id, course_id, position, kind: lesson | assignment, title,
                    body (jsonb object), status: draft | published, publish_at?
                    -- built: both kinds, lesson and assignment (ADR-0020, ADR-0021)
+                   -- planned (ADR-0024): the built lesson is renamed text; link, file and a lesson made of steps (ADR-0026) are added
   assignments      item_id (PK), type (text), config (jsonb), max_points numeric(6,2), due_at?,
                    accept_late (bool), late_until?, on_deadline: keep_draft | auto_submit,
                    max_attempts?                       -- null = unlimited
@@ -194,7 +195,7 @@ Key points:
 ## Configuration
 
 `learnly.toml`, any key overridable with `LEARNLY__SECTION__KEY` (see `learnly.example.toml`):
-`server.bind_addr`, `server.public_origin`, `server.client_ip_header?`, `database.url`, `database.max_connections`, `log.format`, `institution.name`, and an optional `[auth]` section (`password_min_length` = 12, `cookie_secure` = true, `allowed_domains` = [], used from task 004). `institution.mode` (school | university) is planned. `institution.grading_scale` (`twelve` | `hundred`) limits assignment points, see [ADR-0022](docs/decisions/0022-grading-scale-setting.md); optional, default `hundred` until `institution.mode` exists, then it follows the mode.
+`server.bind_addr`, `server.public_origin`, `server.client_ip_header?`, `database.url`, `database.max_connections`, `log.format`, `institution.name`, and an optional `[auth]` section (`password_min_length` = 12, `cookie_secure` = true, `allowed_domains` = [], used from task 004). `institution.mode` (school | university) is planned. `institution.grading_scale` (`twelve` | `hundred`) limits assignment points, see [ADR-0022](docs/decisions/0022-grading-scale-setting.md); optional, default `hundred` until `institution.mode` exists, then it follows the mode. Planned (ADR-0025): `editor.html` (default `false`), `editor.video_hosts` and `editor.profiles.<name>.features`, which narrow what a place of the editor allows.
 
 ## Authorization
 
