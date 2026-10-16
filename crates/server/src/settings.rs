@@ -47,6 +47,20 @@ impl Default for AuthSettings {
 #[derive(Debug, Clone, Deserialize)]
 pub struct InstitutionSettings {
     pub name: String,
+    /// Limits assignment points (ADR-0022). Optional; `institution.mode` does not exist yet.
+    #[serde(default)]
+    pub grading_scale: GradingScale,
+}
+
+/// How points relate to the grade (ADR-0022).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum GradingScale {
+    /// The score of an assignment is its grade: at most 12 points per assignment.
+    Twelve,
+    /// The regular assignments of a course add up to at most 100 points.
+    #[default]
+    Hundred,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -221,6 +235,39 @@ mod tests {
         }
         assert!(build(VALID, &[("LEARNLY__AUTH__PASSWORD_MIN_LENGTH", "8")]).is_ok());
         assert!(build(VALID, &[("LEARNLY__AUTH__PASSWORD_MIN_LENGTH", "128")]).is_ok());
+    }
+
+    #[test]
+    fn grading_scale_defaults_to_hundred_and_parses_both_values() {
+        assert_eq!(
+            build(VALID, &[]).unwrap().institution.grading_scale,
+            GradingScale::Hundred
+        );
+        for (text, scale) in [
+            ("twelve", GradingScale::Twelve),
+            ("hundred", GradingScale::Hundred),
+        ] {
+            let s = build(VALID, &[("LEARNLY__INSTITUTION__GRADING_SCALE", text)]).unwrap();
+            assert_eq!(s.institution.grading_scale, scale);
+        }
+    }
+
+    #[test]
+    fn grading_scale_in_the_file_is_read() {
+        let toml = VALID.replace(
+            "name = \"Example University\"",
+            "name = \"Example University\"\n        grading_scale = \"twelve\"",
+        );
+        assert_eq!(
+            build(&toml, &[]).unwrap().institution.grading_scale,
+            GradingScale::Twelve
+        );
+    }
+
+    #[test]
+    fn an_unknown_grading_scale_is_an_error_that_names_the_value() {
+        let e = build(VALID, &[("LEARNLY__INSTITUTION__GRADING_SCALE", "ten")]).unwrap_err();
+        assert!(e.to_string().contains("ten"), "{e}");
     }
 
     #[test]

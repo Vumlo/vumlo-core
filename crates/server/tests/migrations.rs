@@ -360,3 +360,212 @@ async fn content_item_body_must_be_a_json_object(pool: PgPool) {
         );
     }
 }
+
+// ---------------------------------------------------------------------------------------------
+// assignments (ADR-0021)
+// ---------------------------------------------------------------------------------------------
+
+async fn insert_item_of_kind(
+    pool: &PgPool,
+    module_id: uuid::Uuid,
+    course_id: uuid::Uuid,
+    position: i32,
+    kind: &str,
+) -> Result<uuid::Uuid, sqlx::Error> {
+    let id = uuid::Uuid::now_v7();
+    sqlx::query!(
+        "INSERT INTO content.items (id, module_id, course_id, position, kind, title)
+         VALUES ($1, $2, $3, $4, $5, 'Item')",
+        id,
+        module_id,
+        course_id,
+        position,
+        kind
+    )
+    .execute(pool)
+    .await?;
+    Ok(id)
+}
+
+/// `max_points` is passed as text so each test can name the exact literal PostgreSQL parses.
+async fn insert_assignment_row(
+    pool: &PgPool,
+    item_id: uuid::Uuid,
+    max_points: &str,
+    config: serde_json::Value,
+) -> Result<(), sqlx::Error> {
+    sqlx::query!(
+        "INSERT INTO content.assignments (item_id, type, config, max_points)
+         VALUES ($1, 'text', $2, $3::text::numeric)",
+        item_id,
+        config,
+        max_points
+    )
+    .execute(pool)
+    .await
+    .map(|_| ())
+}
+
+/// A course with one module, and an assignment item and a lesson item in it.
+async fn assignment_fixture(pool: &PgPool) -> (uuid::Uuid, uuid::Uuid) {
+    let owner = owner(pool, "t@x.edu").await;
+    let course = insert_course(pool, owner).await;
+    let module = insert_module_row(pool, course, None, 1).await.unwrap();
+    let assignment = insert_item_of_kind(pool, module, course, 1, "assignment")
+        .await
+        .unwrap();
+    let lesson = insert_item_of_kind(pool, module, course, 2, "lesson")
+        .await
+        .unwrap();
+    (assignment, lesson)
+}
+
+#[sqlx::test(migrator = "server::app::MIGRATOR")]
+async fn item_kind_accepts_assignment_and_rejects_anything_else(pool: PgPool) {
+    let owner = owner(&pool, "t@x.edu").await;
+    let course = insert_course(&pool, owner).await;
+    let module = insert_module_row(&pool, course, None, 1).await.unwrap();
+
+    insert_item_of_kind(&pool, module, course, 1, "assignment")
+        .await
+        .unwrap();
+    insert_item_of_kind(&pool, module, course, 2, "lesson")
+        .await
+        .unwrap();
+    assert_eq!(
+        sqlstate(insert_item_of_kind(&pool, module, course, 3, "quiz").await),
+        "23514"
+    );
+}
+
+#[sqlx::test(migrator = "server::app::MIGRATOR")]
+async fn an_assignment_row_belongs_to_an_assignment_item_only(pool: PgPool) {
+    let (assignment, lesson) = assignment_fixture(&pool).await;
+
+    assert_eq!(
+        sqlstate(insert_assignment_row(&pool, lesson, "5", serde_json::json!({})).await),
+        "23503",
+        "a lesson cannot have an assignment row"
+    );
+    assert_eq!(
+        sqlstate(
+            insert_assignment_row(&pool, uuid::Uuid::now_v7(), "5", serde_json::json!({})).await
+        ),
+        "23503",
+        "nor can an unknown item"
+    );
+    insert_assignment_row(&pool, assignment, "5", serde_json::json!({}))
+        .await
+        .unwrap();
+    assert_eq!(
+        sqlstate(insert_assignment_row(&pool, assignment, "6", serde_json::json!({})).await),
+        "23505",
+        "an item has one assignment row"
+    );
+}
+
+#[sqlx::test(migrator = "server::app::MIGRATOR")]
+async fn an_item_with_an_assignment_row_cannot_change_kind(pool: PgPool) {
+    let (assignment, _) = assignment_fixture(&pool).await;
+    insert_assignment_row(&pool, assignment, "5", serde_json::json!({}))
+        .await
+        .unwrap();
+
+    let change = sqlx::query!(
+        "UPDATE content.items SET kind = 'lesson' WHERE id = $1",
+        assignment
+    )
+    .execute(&pool)
+    .await;
+    assert_eq!(sqlstate(change), "23503");
+}
+
+#[sqlx::test(migrator = "server::app::MIGRATOR")]
+async fn assignment_points_are_above_zero_and_fit_numeric_6_2(pool: PgPool) {
+    let (assignment, _) = assignment_fixture(&pool).await;
+    let json = serde_json::json!({});
+
+    for bad in ["0", "-1", "-0.01"] {
+        assert_eq!(
+            sqlstate(insert_assignment_row(&pool, assignment, bad, json.clone()).await),
+            "23514",
+            "{bad}"
+        );
+    }
+    assert_eq!(
+        sqlstate(insert_assignment_row(&pool, assignment, "10000", json.clone()).await),
+        "22003"
+    );
+    insert_assignment_row(&pool, assignment, "9999.99", json)
+        .await
+        .unwrap();
+}
+
+#[sqlx::test(migrator = "server::app::MIGRATOR")]
+async fn assignment_config_must_be_a_json_object(pool: PgPool) {
+    let (assignment, _) = assignment_fixture(&pool).await;
+
+    for bad in [
+        serde_json::json!([]),
+        serde_json::json!("text"),
+        serde_json::json!(null),
+    ] {
+        assert_eq!(
+            sqlstate(insert_assignment_row(&pool, assignment, "5", bad).await),
+            "23514"
+        );
+    }
+    insert_assignment_row(&pool, assignment, "5", serde_json::json!({"a": 1}))
+        .await
+        .unwrap();
+}
+
+#[sqlx::test(migrator = "server::app::MIGRATOR")]
+async fn assignments_are_not_bonus_by_default_and_go_with_their_item(pool: PgPool) {
+    let (assignment, _) = assignment_fixture(&pool).await;
+    insert_assignment_row(&pool, assignment, "5", serde_json::json!({}))
+        .await
+        .unwrap();
+
+    let is_bonus = sqlx::query_scalar!(
+        "SELECT is_bonus FROM content.assignments WHERE item_id = $1",
+        assignment
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert!(!is_bonus);
+
+    sqlx::query!("DELETE FROM content.items WHERE id = $1", assignment)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let rows = sqlx::query_scalar!(r#"SELECT count(*) AS "n!" FROM content.assignments"#)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(rows, 0);
+}
+
+#[sqlx::test(migrator = "server::app::MIGRATOR")]
+async fn deleting_a_module_removes_its_assignment_rows(pool: PgPool) {
+    let owner = owner(&pool, "t@x.edu").await;
+    let course = insert_course(&pool, owner).await;
+    let module = insert_module_row(&pool, course, None, 1).await.unwrap();
+    let item = insert_item_of_kind(&pool, module, course, 1, "assignment")
+        .await
+        .unwrap();
+    insert_assignment_row(&pool, item, "5", serde_json::json!({}))
+        .await
+        .unwrap();
+
+    sqlx::query!("DELETE FROM content.modules WHERE id = $1", module)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let rows = sqlx::query_scalar!(r#"SELECT count(*) AS "n!" FROM content.assignments"#)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(rows, 0);
+}

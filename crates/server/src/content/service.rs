@@ -10,17 +10,24 @@ use std::collections::{HashMap, HashSet};
 use chrono::{DateTime, Utc};
 use serde_json::{Map, Value, json};
 use sqlx::PgConnection;
+use sqlx::types::Decimal;
 use uuid::Uuid;
 
 use super::model::{
-    ContentModule, ContentSubModule, ContentTitle, Item, ItemKind, ItemPatch, ModelError, Module,
-    ModulePatch,
+    Assignment, AssignmentType, ContentModule, ContentSubModule, ContentTitle, Item, ItemKind,
+    ItemPatch, ModelError, Module, ModulePatch,
 };
 use super::repo::{self, ItemRow, ModuleRow};
 use crate::actor::Actor;
 use crate::events::{self, AuditEntry, EventsError};
 use crate::policy::{self, Action, CourseAccess, PolicyError, Release};
+use crate::settings::GradingScale;
 use crate::teaching::{self, TeachingError};
+
+/// The most points one assignment can be worth on the `twelve` scale (ADR-0022).
+const TWELVE_LIMIT: u32 = 12;
+/// The most points the regular assignments of a course can add up to on the `hundred` scale.
+const HUNDRED_LIMIT: u32 = 100;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ContentError {
@@ -32,6 +39,15 @@ pub enum ContentError {
     InvalidParent,
     #[error("ids must list exactly the current siblings, once each")]
     InvalidOrder,
+    /// `config`, `max_points` or `is_bonus` sent for a lesson.
+    #[error("only an assignment has this field")]
+    NotAnAssignment { field: &'static str },
+    /// The grading scale does not allow these points (ADR-0022).
+    #[error("{message}")]
+    PointsLimit {
+        field: &'static str,
+        message: String,
+    },
     /// No such module, or the actor may not see it.
     #[error("module not found")]
     ModuleNotFound,
@@ -250,6 +266,62 @@ async fn audit(
     )
     .await?;
     Ok(())
+}
+
+/// Refuses points the grading scale does not allow (ADR-0022). The caller decides whether the
+/// change needs the check at all: creating, raising `max_points` and turning a bonus assignment
+/// into a regular one do; lowering, deleting and turning a regular one into a bonus never do.
+///
+/// `hundred`: takes the course's points lock, then reads the sum in a later statement, so a
+/// writer that waited for the lock sees the rows the holder committed. `own` is the assignment
+/// being changed: its current points are not part of the sum it is compared with.
+async fn check_points(
+    conn: &mut PgConnection,
+    scale: GradingScale,
+    course_id: Uuid,
+    own: Option<Uuid>,
+    points: Decimal,
+    is_bonus: bool,
+    field: &'static str,
+) -> Result<(), ContentError> {
+    match scale {
+        GradingScale::Twelve => {
+            if points > Decimal::from(TWELVE_LIMIT) {
+                return Err(ContentError::PointsLimit {
+                    field,
+                    message: format!(
+                        "an assignment may be worth at most {TWELVE_LIMIT} points on the twelve-point scale"
+                    ),
+                });
+            }
+        }
+        GradingScale::Hundred => {
+            if is_bonus {
+                return Ok(());
+            }
+            repo::lock_course_points(conn, course_id).await?;
+            let used = repo::regular_points(conn, course_id, own).await?;
+            let limit = Decimal::from(HUNDRED_LIMIT);
+            if used + points > limit {
+                let free = (limit - used).max(Decimal::ZERO);
+                return Err(ContentError::PointsLimit {
+                    field,
+                    message: format!(
+                        "the regular assignments of a course may total at most {HUNDRED_LIMIT} points; {free:.2} are still free"
+                    ),
+                });
+            }
+        }
+    }
+    Ok(())
+}
+
+/// The item with the assignment part its kind calls for, read in the current transaction.
+async fn with_assignment(conn: &mut PgConnection, mut item: Item) -> Result<Item, ContentError> {
+    if item.kind == ItemKind::Assignment {
+        item.assignment = repo::find_assignment(conn, item.id).await?;
+    }
+    Ok(item)
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -474,26 +546,51 @@ pub async fn publish_module(
 // ---------------------------------------------------------------------------------------------
 
 /// Creates a draft item as the last of the module, which may be a top-level module or a
-/// sub-module.
+/// sub-module. An `assignment` makes it an item of kind `assignment`; without one it is a lesson.
 pub async fn create_item(
     conn: &mut PgConnection,
     actor: &Actor,
+    scale: GradingScale,
     module_id: Uuid,
-    kind: ItemKind,
     title: ContentTitle,
     body: Option<Map<String, Value>>,
+    assignment: Option<Assignment>,
 ) -> Result<Item, ContentError> {
     let row = manage_module(conn, actor, module_id).await?;
-    let item = repo::insert_item(
+    let course_id = row.module.course_id;
+    if let Some(assignment) = &assignment {
+        assignment
+            .assignment_type
+            .validate_config(&assignment.config)?;
+        check_points(
+            conn,
+            scale,
+            course_id,
+            None,
+            assignment.max_points.value(),
+            assignment.is_bonus,
+            "max_points",
+        )
+        .await?;
+    }
+    let kind = if assignment.is_some() {
+        ItemKind::Assignment
+    } else {
+        ItemKind::Lesson
+    };
+    let mut item = repo::insert_item(
         conn,
         Uuid::now_v7(),
         module_id,
-        row.module.course_id,
+        course_id,
         kind,
         title.as_str(),
         &body.unwrap_or_default(),
     )
     .await?;
+    if let Some(assignment) = &assignment {
+        item.assignment = Some(repo::insert_assignment(conn, item.id, assignment).await?);
+    }
     audit(
         conn,
         actor,
@@ -514,10 +611,16 @@ pub async fn get_item(
     Ok(open_item(conn, actor, id).await?.0.item)
 }
 
-/// Changes the title, body and/or `publish_at`. A change with no fields writes nothing.
+/// Changes the title, body and/or `publish_at`, and for an assignment its `config`, `max_points`
+/// and `is_bonus`. A change with no fields writes nothing.
+///
+/// The row loaded to authorize may be stale by the time the points lock is granted (READ COMMITTED
+/// lets another writer commit while this one waits). So whether `max_points` is raised, and
+/// whether a bonus becomes regular, is decided on the assignment re-read after the lock is held.
 pub async fn update_item(
     conn: &mut PgConnection,
     actor: &Actor,
+    scale: GradingScale,
     id: Uuid,
     patch: ItemPatch,
 ) -> Result<Item, ContentError> {
@@ -525,7 +628,50 @@ pub async fn update_item(
     if patch.is_empty() {
         return Ok(row.item);
     }
-    let item = repo::update_item(
+    let is_assignment = row.item.kind == ItemKind::Assignment;
+    if !is_assignment && patch.touches_assignment() {
+        let field = if patch.config.is_some() {
+            "config"
+        } else if patch.max_points.is_some() {
+            "max_points"
+        } else {
+            "is_bonus"
+        };
+        return Err(ContentError::NotAnAssignment { field });
+    }
+    if let (Some(config), Some(assignment)) = (&patch.config, &row.item.assignment) {
+        assignment.assignment_type.validate_config(config)?;
+    }
+    if is_assignment && (patch.max_points.is_some() || patch.is_bonus.is_some()) {
+        if scale == GradingScale::Hundred {
+            repo::lock_course_points(conn, row.item.course_id).await?;
+        }
+        let current = repo::find_assignment(conn, id)
+            .await?
+            .ok_or(ContentError::ItemNotFound)?;
+        let points = patch.max_points.unwrap_or(current.max_points);
+        let is_bonus = patch.is_bonus.unwrap_or(current.is_bonus);
+        let raised = points.value() > current.max_points.value();
+        let becomes_regular = current.is_bonus && !is_bonus;
+        let needs_check = match scale {
+            GradingScale::Twelve => raised,
+            GradingScale::Hundred => raised || becomes_regular,
+        };
+        if needs_check {
+            let field = if raised { "max_points" } else { "is_bonus" };
+            check_points(
+                conn,
+                scale,
+                row.item.course_id,
+                Some(id),
+                points.value(),
+                is_bonus,
+                field,
+            )
+            .await?;
+        }
+    }
+    let mut item = repo::update_item(
         conn,
         id,
         patch.title.as_ref().map(ContentTitle::as_str),
@@ -534,6 +680,22 @@ pub async fn update_item(
         patch.publish_at.flatten(),
     )
     .await?;
+    item.assignment = if is_assignment && patch.touches_assignment() {
+        Some(
+            repo::update_assignment(
+                conn,
+                id,
+                patch.config.as_ref(),
+                patch.max_points,
+                patch.is_bonus,
+            )
+            .await?,
+        )
+    } else if is_assignment {
+        repo::find_assignment(conn, id).await?
+    } else {
+        None
+    };
     audit(
         conn,
         actor,
@@ -598,6 +760,7 @@ pub async fn publish_item(
     let row = manage_item(conn, actor, id).await?;
     match repo::publish_item(conn, id).await? {
         Some(item) => {
+            let item = with_assignment(conn, item).await?;
             audit(
                 conn,
                 actor,
@@ -679,5 +842,269 @@ mod tests {
             .unwrap();
         retry.commit().await.unwrap();
         assert_eq!(again.position, 2);
+    }
+
+    // -----------------------------------------------------------------------------------------
+    // The points lock (ADR-0022). Each test holds the lock in one transaction, starts a second
+    // writer, waits until that writer is observed blocked on the lock, and only then lets the
+    // first one commit. Nothing sleeps: the order is forced by the lock, not by timing.
+    // -----------------------------------------------------------------------------------------
+
+    use std::time::Duration;
+
+    use crate::content::model::{BuiltinType, MaxPoints};
+
+    fn text(points: &str, is_bonus: bool) -> Assignment {
+        Assignment {
+            assignment_type: BuiltinType::Text,
+            config: Map::new(),
+            max_points: MaxPoints::parse(points).unwrap(),
+            is_bonus,
+        }
+    }
+
+    fn points(text: &str) -> ItemPatch {
+        ItemPatch {
+            max_points: Some(MaxPoints::parse(text).unwrap()),
+            ..ItemPatch::default()
+        }
+    }
+
+    fn bonus(is_bonus: bool) -> ItemPatch {
+        ItemPatch {
+            is_bonus: Some(is_bonus),
+            ..ItemPatch::default()
+        }
+    }
+
+    struct Course {
+        pool: sqlx::PgPool,
+        owner: Actor,
+        module: Uuid,
+    }
+
+    async fn course(pool: sqlx::PgPool) -> Course {
+        let hash = identity::hash_password("irrelevant").await.unwrap();
+        let mut tx = pool.begin().await.unwrap();
+        let user = identity::create_user(
+            &mut tx,
+            NewUser {
+                email: Email::parse("owner@x.edu").unwrap(),
+                display_name: DisplayName::parse("Owner").unwrap(),
+                role: Role::Teacher,
+            },
+            hash,
+        )
+        .await
+        .unwrap();
+        let owner = Actor::new(user.id, Role::Teacher, Uuid::now_v7());
+        let course =
+            teaching::create_course(&mut tx, &owner, CourseTitle::parse("Algebra").unwrap())
+                .await
+                .unwrap();
+        let module = create_module(
+            &mut tx,
+            &owner,
+            course.id,
+            ContentTitle::parse("M").unwrap(),
+            None,
+        )
+        .await
+        .unwrap();
+        tx.commit().await.unwrap();
+        Course {
+            pool,
+            owner,
+            module: module.id,
+        }
+    }
+
+    impl Course {
+        /// Creates an assignment in the given transaction on the `hundred` scale.
+        async fn create(
+            &self,
+            conn: &mut PgConnection,
+            points: &str,
+            is_bonus: bool,
+        ) -> Result<Item, ContentError> {
+            create_item(
+                conn,
+                &self.owner,
+                GradingScale::Hundred,
+                self.module,
+                ContentTitle::parse("A").unwrap(),
+                None,
+                Some(text(points, is_bonus)),
+            )
+            .await
+        }
+
+        /// Creates and commits an assignment.
+        async fn committed(&self, points: &str, is_bonus: bool) -> Uuid {
+            let mut tx = self.pool.begin().await.unwrap();
+            let item = self.create(&mut tx, points, is_bonus).await.unwrap();
+            tx.commit().await.unwrap();
+            item.id
+        }
+
+        async fn patch(
+            &self,
+            conn: &mut PgConnection,
+            id: Uuid,
+            patch: ItemPatch,
+        ) -> Result<Item, ContentError> {
+            update_item(conn, &self.owner, GradingScale::Hundred, id, patch).await
+        }
+
+        /// Runs `patch` in its own transaction on a task and commits it when it succeeds.
+        fn patch_in_background(
+            &self,
+            id: Uuid,
+            patch: ItemPatch,
+        ) -> tokio::task::JoinHandle<Result<Item, ContentError>> {
+            let (pool, owner) = (self.pool.clone(), self.owner.clone());
+            tokio::spawn(async move {
+                let mut tx = pool.begin().await.unwrap();
+                let result = update_item(&mut tx, &owner, GradingScale::Hundred, id, patch).await;
+                if result.is_ok() {
+                    tx.commit().await.unwrap();
+                }
+                result
+            })
+        }
+
+        async fn assignment(&self, id: Uuid) -> Assignment {
+            let mut conn = self.pool.acquire().await.unwrap();
+            repo::find_assignment(&mut conn, id).await.unwrap().unwrap()
+        }
+
+        async fn regular_points(&self) -> String {
+            let mut conn = self.pool.acquire().await.unwrap();
+            let course_id = repo::find_module(&mut conn, self.module)
+                .await
+                .unwrap()
+                .unwrap()
+                .module
+                .course_id;
+            repo::regular_points(&mut conn, course_id, None)
+                .await
+                .unwrap()
+                .to_string()
+        }
+    }
+
+    /// Returns once a session waits for an advisory lock. Fails if the writer finished instead
+    /// (it did not wait for the lock) or if nobody waits within the timeout.
+    async fn wait_until_blocked<T>(pool: &sqlx::PgPool, writer: &tokio::task::JoinHandle<T>) {
+        let mut conn = pool.acquire().await.unwrap();
+        let waited = tokio::time::timeout(Duration::from_secs(10), async {
+            while !writer.is_finished() && repo::advisory_lock_waiters(&mut conn).await.unwrap() < 1
+            {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await;
+        assert!(waited.is_ok(), "no writer waited for the points lock");
+        assert!(
+            !writer.is_finished(),
+            "the second writer finished without waiting for the points lock"
+        );
+    }
+
+    fn points_limit(result: Result<Item, ContentError>) -> (&'static str, String) {
+        match result {
+            Err(ContentError::PointsLimit { field, message }) => (field, message),
+            other => panic!("expected the points limit, got {other:?}"),
+        }
+    }
+
+    #[sqlx::test(migrator = "crate::app::MIGRATOR")]
+    async fn two_creates_of_sixty_regular_points_one_gets_422(pool: sqlx::PgPool) {
+        let course = course(pool).await;
+
+        let mut first = course.pool.begin().await.unwrap();
+        course.create(&mut first, "60", false).await.unwrap();
+
+        let second = tokio::spawn({
+            let (pool, owner, module) = (course.pool.clone(), course.owner.clone(), course.module);
+            async move {
+                let mut tx = pool.begin().await.unwrap();
+                let result = create_item(
+                    &mut tx,
+                    &owner,
+                    GradingScale::Hundred,
+                    module,
+                    ContentTitle::parse("B").unwrap(),
+                    None,
+                    Some(text("60", false)),
+                )
+                .await;
+                if result.is_ok() {
+                    tx.commit().await.unwrap();
+                }
+                result
+            }
+        });
+        wait_until_blocked(&course.pool, &second).await;
+        first.commit().await.unwrap();
+
+        let error = second.await.unwrap();
+        let (field, message) = points_limit(error);
+        assert_eq!(field, "max_points");
+        assert!(message.contains("40.00 are still free"), "{message}");
+        assert_eq!(course.regular_points().await, "60.00");
+    }
+
+    #[sqlx::test(migrator = "crate::app::MIGRATOR")]
+    async fn a_patch_that_looked_like_a_lowering_is_checked_again_after_the_wait(
+        pool: sqlx::PgPool,
+    ) {
+        let course = course(pool).await;
+        let x = course.committed("40", false).await;
+        let y = course.committed("60", false).await;
+        assert_ne!(x, y);
+
+        // The first writer lowers X to 10 and fills the freed points with a new assignment.
+        let mut first = course.pool.begin().await.unwrap();
+        course.patch(&mut first, x, points("10")).await.unwrap();
+        course.create(&mut first, "30", false).await.unwrap();
+
+        // The second writer loads X (40) to authorize, then waits for the lock. Against the 40 it
+        // read, 30 is a lowering; against the 10 that is committed by then, it is a raise.
+        let second = course.patch_in_background(x, points("30"));
+        wait_until_blocked(&course.pool, &second).await;
+        first.commit().await.unwrap();
+
+        let (field, message) = points_limit(second.await.unwrap());
+        assert_eq!(field, "max_points");
+        assert!(message.contains("10.00 are still free"), "{message}");
+        assert_eq!(course.assignment(x).await.max_points.to_string(), "10.00");
+        assert_eq!(course.regular_points().await, "100.00");
+    }
+
+    #[sqlx::test(migrator = "crate::app::MIGRATOR")]
+    async fn a_patch_that_looked_like_no_change_is_checked_again_after_the_wait(
+        pool: sqlx::PgPool,
+    ) {
+        let course = course(pool).await;
+        let x = course.committed("50", false).await;
+        course.committed("50", false).await;
+
+        // The first writer makes X a bonus assignment and fills the freed points.
+        let mut first = course.pool.begin().await.unwrap();
+        course.patch(&mut first, x, bonus(true)).await.unwrap();
+        course.create(&mut first, "50", false).await.unwrap();
+
+        // The second writer loads X as a regular assignment, so `is_bonus = false` looks like no
+        // change. Once the first commits, X is a bonus one and this makes it regular again.
+        let second = course.patch_in_background(x, bonus(false));
+        wait_until_blocked(&course.pool, &second).await;
+        first.commit().await.unwrap();
+
+        let (field, message) = points_limit(second.await.unwrap());
+        assert_eq!(field, "is_bonus");
+        assert!(message.contains("0.00 are still free"), "{message}");
+        assert!(course.assignment(x).await.is_bonus);
+        assert_eq!(course.regular_points().await, "100.00");
     }
 }

@@ -23,3 +23,6 @@ allowed_domains = []      # used by self-registration (task 004)
 
 [institution]
 name = "Example University"
+# Limits assignment points: "twelve" = at most 12 per assignment, "hundred" = the regular
+# assignments of a course add up to at most 100. Optional; the default is "hundred".
+grading_scale = "hundred"

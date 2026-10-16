@@ -3,6 +3,7 @@ mod common;
 use common::{Http, Resp, create_course, id_of, publish_course, put_member, seed_and_login};
 use serde_json::{Value, json};
 use server::identity::Role;
+use server::settings::GradingScale;
 use sqlx::PgPool;
 use uuid::Uuid;
 
@@ -33,7 +34,13 @@ struct World {
 }
 
 async fn world(pool: PgPool) -> World {
-    let http = Http::new(&common::spawn(pool.clone()).await);
+    world_with(pool, GradingScale::Hundred).await
+}
+
+async fn world_with(pool: PgPool, scale: GradingScale) -> World {
+    let mut settings = common::test_settings();
+    settings.institution.grading_scale = scale;
+    let http = Http::new(&common::spawn_with(pool.clone(), settings).await);
     let owner = user(&pool, &http, "owner@x.edu", Role::Teacher).await;
     let assistant = user(&pool, &http, "assistant@x.edu", Role::Student).await;
     let student = user(&pool, &http, "student@x.edu", Role::Student).await;
@@ -457,13 +464,28 @@ struct Cases {
 }
 
 async fn build_cases(w: &World) -> Cases {
+    build_cases_of(w, false).await
+}
+
+/// Like `item`, but an assignment of 5 points when `assignments` is set.
+async fn item_of(w: &World, module: Uuid, title: &str, assignments: bool) -> Uuid {
+    if assignments {
+        id_of(&created(
+            &create_assignment(w, module, title, json!("5"), false).await,
+        ))
+    } else {
+        item(w, module, title).await
+    }
+}
+
+async fn build_cases_of(w: &World, assignments: bool) -> Cases {
     let mut hidden = Vec::new();
 
     // A: draft top-level module with a published sub-module and a published item below it.
     let a = module(w, "A", None).await;
     let a_sub = module(w, "A-sub", Some(a)).await;
     publish_module(w, a_sub, false).await;
-    let a_item = item(w, a_sub, "A-item").await;
+    let a_item = item_of(w, a_sub, "A-item", assignments).await;
     publish_item(w, a_item).await;
     hidden.push(("draft top-level module", a_item));
 
@@ -471,19 +493,19 @@ async fn build_cases(w: &World) -> Cases {
     let b = module(w, "B", None).await;
     publish_module(w, b, false).await;
     let b_sub = module(w, "B-sub", Some(b)).await;
-    let b_item = item(w, b_sub, "B-item").await;
+    let b_item = item_of(w, b_sub, "B-item", assignments).await;
     publish_item(w, b_item).await;
     hidden.push(("draft sub-module", b_item));
 
     // C: published module with a draft item.
     let c = module(w, "C", None).await;
     publish_module(w, c, false).await;
-    let c_item = item(w, c, "C-item").await;
+    let c_item = item_of(w, c, "C-item", assignments).await;
     hidden.push(("draft item", c_item));
 
     // D: published module scheduled for later.
     let d = module(w, "D", None).await;
-    let d_item = item(w, d, "D-item").await;
+    let d_item = item_of(w, d, "D-item", assignments).await;
     publish_item(w, d_item).await;
     schedule_module(w, d, FUTURE).await;
     publish_module(w, d, false).await;
@@ -493,7 +515,7 @@ async fn build_cases(w: &World) -> Cases {
     let e = module(w, "E", None).await;
     publish_module(w, e, false).await;
     let e_sub = module(w, "E-sub", Some(e)).await;
-    let e_item = item(w, e_sub, "E-item").await;
+    let e_item = item_of(w, e_sub, "E-item", assignments).await;
     publish_item(w, e_item).await;
     schedule_module(w, e_sub, FUTURE).await;
     publish_module(w, e_sub, false).await;
@@ -502,7 +524,7 @@ async fn build_cases(w: &World) -> Cases {
     // F: published item scheduled for later.
     let f = module(w, "F", None).await;
     publish_module(w, f, false).await;
-    let f_item = item(w, f, "F-item").await;
+    let f_item = item_of(w, f, "F-item", assignments).await;
     publish_item(w, f_item).await;
     schedule_item(w, f_item, FUTURE).await;
     hidden.push(("future item", f_item));
@@ -510,8 +532,8 @@ async fn build_cases(w: &World) -> Cases {
     // G: everything published and released, with a past publish_at on each level.
     let g = module(w, "G", None).await;
     let g_sub = module(w, "G-sub", Some(g)).await;
-    let g_direct = item(w, g, "G-direct").await;
-    let g_nested = item(w, g_sub, "G-nested").await;
+    let g_direct = item_of(w, g, "G-direct", assignments).await;
+    let g_nested = item_of(w, g_sub, "G-nested", assignments).await;
     schedule_module(w, g, PAST).await;
     schedule_module(w, g_sub, PAST).await;
     schedule_item(w, g_nested, PAST).await;
@@ -1813,4 +1835,707 @@ async fn every_content_endpoint_is_in_the_openapi_document(pool: PgPool) {
     // The publish request makes `cascade` required.
     let publish = &doc["components"]["schemas"]["PublishModuleRequest"];
     assert_eq!(publish["required"], json!(["cascade"]));
+}
+
+// =============================================================================================
+// Assignments (ADR-0021, ADR-0022)
+// =============================================================================================
+
+fn assignment_request(title: &str, max_points: Value, is_bonus: bool) -> Value {
+    json!({
+        "kind": "assignment",
+        "title": title,
+        "assignment": {"type": "text", "max_points": max_points, "is_bonus": is_bonus},
+    })
+}
+
+async fn create_assignment(
+    w: &World,
+    module: Uuid,
+    title: &str,
+    max_points: Value,
+    is_bonus: bool,
+) -> Resp {
+    post(
+        &w.http,
+        &w.owner.token,
+        &format!("/modules/{module}/items"),
+        assignment_request(title, max_points, is_bonus),
+    )
+    .await
+}
+
+/// Creates an assignment that must be accepted and returns its id.
+async fn assignment(w: &World, module: Uuid, points: &str, is_bonus: bool) -> Uuid {
+    id_of(&created(
+        &create_assignment(w, module, "A", json!(points), is_bonus).await,
+    ))
+}
+
+async fn patch_item(w: &World, item: Uuid, body: Value) -> Resp {
+    patch(&w.http, &w.owner.token, &format!("/items/{item}"), body).await
+}
+
+fn error_fields(response: &Resp) -> Vec<String> {
+    response
+        .problem(422)
+        .errors
+        .into_iter()
+        .map(|error| error.field)
+        .collect()
+}
+
+fn message_of(response: &Resp) -> String {
+    response.problem(422).errors[0].message.clone()
+}
+
+async fn item_json(w: &World, item: Uuid) -> Value {
+    ok(&get(&w.http, &w.owner.token, &format!("/items/{item}")).await)
+}
+
+// --- twelve ------------------------------------------------------------------------------------
+
+#[sqlx::test(migrator = "server::app::MIGRATOR")]
+async fn on_the_twelve_scale_no_assignment_is_worth_more_than_twelve_points(pool: PgPool) {
+    let w = world_with(pool, GradingScale::Twelve).await;
+    let m = module(&w, "M", None).await;
+
+    // Every assignment is limited on its own: twelve of them are fine.
+    for points in ["12", "12.00", "5", "0.01", "12", "12"] {
+        assignment(&w, m, points, false).await;
+    }
+    for too_much in ["12.01", "13", "9999.99"] {
+        let response = create_assignment(&w, m, "Big", json!(too_much), false).await;
+        assert_eq!(
+            error_fields(&response),
+            ["assignment.max_points"],
+            "{too_much}"
+        );
+        assert!(message_of(&response).contains("at most 12"), "{too_much}");
+    }
+    // A bonus assignment has no exemption on this scale.
+    let response = create_assignment(&w, m, "Bonus", json!("13"), true).await;
+    assert_eq!(error_fields(&response), ["assignment.max_points"]);
+    assignment(&w, m, "12", true).await;
+
+    // The same limit holds for PATCH, and is_bonus has no effect on it.
+    let five = assignment(&w, m, "5", false).await;
+    for too_much in ["12.01", "13"] {
+        let response = patch_item(&w, five, json!({"max_points": too_much})).await;
+        assert_eq!(error_fields(&response), ["max_points"], "{too_much}");
+    }
+    let response = patch_item(&w, five, json!({"max_points": "13", "is_bonus": true})).await;
+    assert_eq!(error_fields(&response), ["max_points"]);
+    let twelve = ok(&patch_item(&w, five, json!({"max_points": "12"})).await);
+    assert_eq!(twelve["assignment"]["max_points"], "12.00");
+    ok(&patch_item(&w, five, json!({"is_bonus": true})).await);
+    ok(&patch_item(&w, five, json!({"is_bonus": false})).await);
+    assert_eq!(
+        item_json(&w, five).await["assignment"]["max_points"],
+        "12.00"
+    );
+}
+
+// --- hundred -----------------------------------------------------------------------------------
+
+#[sqlx::test(migrator = "server::app::MIGRATOR")]
+async fn on_the_hundred_scale_regular_points_of_a_course_add_up_to_at_most_one_hundred(
+    pool: PgPool,
+) {
+    let w = world(pool).await;
+    let m = module(&w, "M", None).await;
+
+    // A lesson is not an assignment and counts for nothing.
+    item(&w, m, "Lesson").await;
+    // Assignments are drafts when created, and drafts count.
+    assignment(&w, m, "60", false).await;
+    let forty = assignment(&w, m, "40", false).await;
+    assert_eq!(item_json(&w, forty).await["status"], "draft");
+
+    let response = create_assignment(&w, m, "One more", json!("1"), false).await;
+    assert_eq!(error_fields(&response), ["assignment.max_points"]);
+    let message = message_of(&response);
+    assert!(message.contains("at most 100"), "{message}");
+    assert!(message.contains("0.00 are still free"), "{message}");
+
+    // Deleting an assignment frees its points.
+    no_content(&delete(&w.http, &w.owner.token, &format!("/items/{forty}")).await);
+    let response = create_assignment(&w, m, "Too big", json!("40.01"), false).await;
+    assert!(message_of(&response).contains("40.00 are still free"));
+    assignment(&w, m, "25.5", false).await;
+    assignment(&w, m, "14.5", false).await;
+    create_assignment(&w, m, "Full", json!("0.01"), false)
+        .await
+        .problem(422);
+}
+
+#[sqlx::test(migrator = "server::app::MIGRATOR")]
+async fn on_the_hundred_scale_patch_checks_a_raise_but_never_a_lowering(pool: PgPool) {
+    let w = world(pool).await;
+    let m = module(&w, "M", None).await;
+    let sixty = assignment(&w, m, "60", false).await;
+    assignment(&w, m, "40", false).await;
+
+    // The assignment's own points are not counted twice: 60 stays 60.
+    let same = ok(&patch_item(&w, sixty, json!({"max_points": "60"})).await);
+    assert_eq!(same["assignment"]["max_points"], "60.00");
+    ok(&patch_item(&w, sixty, json!({"max_points": "60.00", "config": {}})).await);
+
+    let response = patch_item(&w, sixty, json!({"max_points": "60.01"})).await;
+    assert_eq!(error_fields(&response), ["max_points"]);
+    assert!(message_of(&response).contains("60.00 are still free"));
+    assert_eq!(
+        item_json(&w, sixty).await["assignment"]["max_points"],
+        "60.00"
+    );
+
+    let lowered = ok(&patch_item(&w, sixty, json!({"max_points": "20"})).await);
+    assert_eq!(lowered["assignment"]["max_points"], "20.00");
+    // The freed points can be taken back, and not one more.
+    ok(&patch_item(&w, sixty, json!({"max_points": "60"})).await);
+    patch_item(&w, sixty, json!({"max_points": "61"}))
+        .await
+        .problem(422);
+}
+
+#[sqlx::test(migrator = "server::app::MIGRATOR")]
+async fn bonus_assignments_are_outside_the_sum_and_the_scale(pool: PgPool) {
+    let w = world(pool).await;
+    let m = module(&w, "M", None).await;
+    assignment(&w, m, "100", false).await;
+
+    create_assignment(&w, m, "Regular", json!("1"), false)
+        .await
+        .problem(422);
+    let extra = assignment(&w, m, "50", true).await;
+    assignment(&w, m, "9999.99", true).await;
+    let item = item_json(&w, extra).await;
+    assert_eq!(item["assignment"]["is_bonus"], true);
+    // A bonus assignment can be raised without limit, too.
+    ok(&patch_item(&w, extra, json!({"max_points": "500"})).await);
+}
+
+#[sqlx::test(migrator = "server::app::MIGRATOR")]
+async fn turning_bonus_into_regular_is_checked_and_the_other_way_frees_points(pool: PgPool) {
+    let w = world(pool).await;
+    let m = module(&w, "M", None).await;
+    let sixty = assignment(&w, m, "60", false).await;
+    assignment(&w, m, "40", false).await;
+    let bonus = assignment(&w, m, "50", true).await;
+
+    // 100 + 50 would pass the limit: refused, and blamed on is_bonus.
+    let response = patch_item(&w, bonus, json!({"is_bonus": false})).await;
+    assert_eq!(error_fields(&response), ["is_bonus"]);
+    assert!(message_of(&response).contains("0.00 are still free"));
+    assert_eq!(item_json(&w, bonus).await["assignment"]["is_bonus"], true);
+    create_assignment(&w, m, "Regular", json!("1"), false)
+        .await
+        .problem(422);
+
+    // Making a regular assignment a bonus one is never refused, and frees its 60 points.
+    let freed = ok(&patch_item(&w, sixty, json!({"is_bonus": true})).await);
+    assert_eq!(freed["assignment"]["is_bonus"], true);
+    // Now 50 fits next to the 40 that stay regular.
+    let regular = ok(&patch_item(&w, bonus, json!({"is_bonus": false})).await);
+    assert_eq!(regular["assignment"]["is_bonus"], false);
+    assignment(&w, m, "10", false).await;
+    create_assignment(&w, m, "Regular", json!("0.01"), false)
+        .await
+        .problem(422);
+    // Raising the points and flipping the bonus in one patch is judged as a whole.
+    let response = patch_item(&w, sixty, json!({"is_bonus": false, "max_points": "1"})).await;
+    assert_eq!(error_fields(&response), ["is_bonus"]);
+}
+
+#[sqlx::test(migrator = "server::app::MIGRATOR")]
+async fn the_points_of_another_course_are_not_counted(pool: PgPool) {
+    let w = world(pool).await;
+    let m = module(&w, "M", None).await;
+    assignment(&w, m, "100", false).await;
+
+    let other_course = create_course(&w.http, &w.owner.token, "Geometry").await;
+    let other = module_in(&w, other_course, "Other", None).await;
+    assignment(&w, other, "60", false).await;
+    assignment(&w, other, "40", false).await;
+    create_assignment(&w, other, "One more", json!("1"), false)
+        .await
+        .problem(422);
+    create_assignment(&w, m, "One more", json!("1"), false)
+        .await
+        .problem(422);
+}
+
+// --- points and shapes -------------------------------------------------------------------------
+
+#[sqlx::test(migrator = "server::app::MIGRATOR")]
+async fn every_valid_points_form_comes_back_with_two_decimals(pool: PgPool) {
+    let w = world(pool).await;
+    let m = module(&w, "M", None).await;
+    for (sent, shown) in [
+        ("20", "20.00"),
+        ("7.5", "7.50"),
+        ("20.00", "20.00"),
+        ("0.01", "0.01"),
+        ("0012", "12.00"),
+        ("9999.99", "9999.99"),
+    ] {
+        // Bonus, so the hundred-point limit does not interfere.
+        let response = created(&create_assignment(&w, m, "A", json!(sent), true).await);
+        assert_eq!(response["assignment"]["max_points"], shown, "{sent}");
+        let id = id_of(&response);
+        assert_eq!(item_json(&w, id).await["assignment"]["max_points"], shown);
+        let patched = ok(&patch_item(&w, id, json!({"max_points": "7.5"})).await);
+        assert_eq!(patched["assignment"]["max_points"], "7.50");
+    }
+}
+
+#[sqlx::test(migrator = "server::app::MIGRATOR")]
+async fn invalid_points_are_422_on_the_field_and_are_never_echoed(pool: PgPool) {
+    let w = world(pool).await;
+    let m = module(&w, "M", None).await;
+    let item = assignment(&w, m, "5", true).await;
+
+    // Each value is paired with a marker that must not appear in the response body.
+    let cases: Vec<(Value, &str)> = vec![
+        (json!("0"), "\"0\""),
+        (json!("-1"), "\"-1\""),
+        (json!("10000"), "10000"),
+        (json!("1.005"), "1.005"),
+        (json!("zq9x-not-a-number"), "zq9x"),
+        (json!(""), "\"\""),
+        (json!(".5"), "\".5\""),
+        (json!("5."), "\"5.\""),
+        (json!("1e2"), "1e2"),
+        (json!(7345.123), "7345.123"),
+        (json!(20), "20"),
+        (json!(true), "true"),
+        (json!([4242]), "4242"),
+        (json!({"marker": "qw8z"}), "qw8z"),
+    ];
+    for (sent, marker) in &cases {
+        let created = create_assignment(&w, m, "Bad", sent.clone(), true).await;
+        assert_eq!(
+            error_fields(&created),
+            ["assignment.max_points"],
+            "create {sent}"
+        );
+        let body = String::from_utf8_lossy(&created.body);
+        assert!(!body.contains(marker), "create {sent} echoed in {body}");
+
+        let patched = patch_item(&w, item, json!({"max_points": sent})).await;
+        assert_eq!(error_fields(&patched), ["max_points"], "patch {sent}");
+        let body = String::from_utf8_lossy(&patched.body);
+        assert!(!body.contains(marker), "patch {sent} echoed in {body}");
+    }
+    // `null` is a JSON null: absent for PATCH, and a missing value on create.
+    let unchanged = ok(&patch_item(&w, item, json!({"max_points": null})).await);
+    assert_eq!(unchanged["assignment"]["max_points"], "5.00");
+    let created = create_assignment(&w, m, "Null", json!(null), true).await;
+    assert_eq!(error_fields(&created), ["assignment.max_points"]);
+    // Nothing was stored by any of these.
+    assert_eq!(
+        titles(&top(&tree(&w, &w.owner.token).await, "M")["items"]),
+        ["A"]
+    );
+}
+
+#[sqlx::test(migrator = "server::app::MIGRATOR")]
+async fn missing_assignment_keys_are_field_errors(pool: PgPool) {
+    let w = world(pool).await;
+    let m = module(&w, "M", None).await;
+    let path = format!("/modules/{m}/items");
+    let send = |assignment: Value| {
+        post(
+            &w.http,
+            &w.owner.token,
+            &path,
+            json!({"kind": "assignment", "title": "T", "assignment": assignment}),
+        )
+    };
+
+    let no_points = send(json!({"type": "text"})).await;
+    assert_eq!(error_fields(&no_points), ["assignment.max_points"]);
+    let no_type = send(json!({"max_points": "5"})).await;
+    assert_eq!(error_fields(&no_type), ["assignment.type"]);
+    let empty = send(json!({})).await;
+    let mut fields = error_fields(&empty);
+    fields.sort();
+    assert_eq!(fields, ["assignment.max_points", "assignment.type"]);
+
+    assert_eq!(
+        top(&tree(&w, &w.owner.token).await, "M")["items"],
+        json!([])
+    );
+}
+
+#[sqlx::test(migrator = "server::app::MIGRATOR")]
+async fn unknown_types_and_config_fields_are_422(pool: PgPool) {
+    let w = world(pool).await;
+    let m = module(&w, "M", None).await;
+    let path = format!("/modules/{m}/items");
+    let with =
+        |assignment: Value| json!({"kind": "assignment", "title": "T", "assignment": assignment});
+
+    for bad in ["form", "", "Text", "no_submission", "quiz-xyz"] {
+        let response = post(
+            &w.http,
+            &w.owner.token,
+            &path,
+            with(json!({"type": bad, "max_points": "5"})),
+        )
+        .await;
+        assert_eq!(error_fields(&response), ["assignment.type"], "{bad:?}");
+        let body = String::from_utf8_lossy(&response.body).into_owned();
+        assert!(!body.contains("quiz-xyz"), "{body}");
+    }
+    let response = post(
+        &w.http,
+        &w.owner.token,
+        &path,
+        with(json!({"type": "text", "max_points": "5", "config": {"limit": 3}})),
+    )
+    .await;
+    assert_eq!(error_fields(&response), ["assignment.config"]);
+    // An empty config is the text type's config.
+    let ok_config = created(
+        &post(
+            &w.http,
+            &w.owner.token,
+            &path,
+            with(json!({"type": "text", "max_points": "5", "config": {}})),
+        )
+        .await,
+    );
+    assert_eq!(ok_config["assignment"]["config"], json!({}));
+    // A config that is not an object cannot be read at all.
+    post(
+        &w.http,
+        &w.owner.token,
+        &path,
+        with(json!({"type": "text", "max_points": "5", "config": [1]})),
+    )
+    .await
+    .problem(422);
+}
+
+#[sqlx::test(migrator = "server::app::MIGRATOR")]
+async fn the_assignment_object_goes_with_the_assignment_kind_only(pool: PgPool) {
+    let w = world(pool).await;
+    let m = module(&w, "M", None).await;
+    let path = format!("/modules/{m}/items");
+
+    let lesson_with = post(
+        &w.http,
+        &w.owner.token,
+        &path,
+        json!({"kind": "lesson", "title": "T", "assignment": {"type": "text", "max_points": "5"}}),
+    )
+    .await;
+    assert_eq!(error_fields(&lesson_with), ["assignment"]);
+    for body in [
+        json!({"kind": "assignment", "title": "T"}),
+        json!({"kind": "assignment", "title": "T", "assignment": null}),
+    ] {
+        let response = post(&w.http, &w.owner.token, &path, body).await;
+        assert_eq!(error_fields(&response), ["assignment"]);
+    }
+    assert_eq!(
+        top(&tree(&w, &w.owner.token).await, "M")["items"],
+        json!([])
+    );
+}
+
+#[sqlx::test(migrator = "server::app::MIGRATOR")]
+async fn an_assignment_carries_its_part_and_a_lesson_none(pool: PgPool) {
+    let w = world(pool).await;
+    let m = module(&w, "M", None).await;
+    let lesson = item(&w, m, "Lesson").await;
+    let response = post(
+        &w.http,
+        &w.owner.token,
+        &format!("/modules/{m}/items"),
+        json!({
+            "kind": "assignment",
+            "title": "Essay",
+            "body": {"instructions": "Write"},
+            "assignment": {"type": "text", "max_points": "20"},
+        }),
+    )
+    .await;
+    let essay = created(&response);
+    assert_eq!(essay["kind"], "assignment");
+    assert_eq!(essay["status"], "draft");
+    assert_eq!(essay["body"], json!({"instructions": "Write"}));
+    let expected = json!({"type": "text", "config": {}, "max_points": "20.00", "is_bonus": false});
+    assert_eq!(essay["assignment"], expected);
+
+    let fetched = item_json(&w, id_of(&essay)).await;
+    assert_eq!(fetched["assignment"], expected);
+    assert!(item_json(&w, lesson).await.get("assignment").is_none());
+
+    let tree = tree(&w, &w.owner.token).await;
+    let items = top(&tree, "M")["items"].as_array().unwrap();
+    assert!(items[0].get("assignment").is_none(), "a lesson has none");
+    assert_eq!(
+        items[1]["assignment"],
+        json!({"type": "text", "max_points": "20.00", "is_bonus": false}),
+        "the tree shows no config"
+    );
+    // Publishing keeps the part.
+    let published = publish_item(&w, id_of(&essay)).await;
+    assert_eq!(published["assignment"], expected);
+}
+
+#[sqlx::test(migrator = "server::app::MIGRATOR")]
+async fn patch_changes_assignment_fields_and_refuses_them_for_a_lesson(pool: PgPool) {
+    let w = world(pool).await;
+    let m = module(&w, "M", None).await;
+    let lesson = item(&w, m, "Lesson").await;
+    let essay = assignment(&w, m, "10", false).await;
+
+    let patched = ok(&patch_item(
+        &w,
+        essay,
+        json!({"title": "Renamed", "max_points": "7.5", "config": {}, "is_bonus": true}),
+    )
+    .await);
+    assert_eq!(patched["title"], "Renamed");
+    assert_eq!(
+        patched["assignment"],
+        json!({"type": "text", "config": {}, "max_points": "7.50", "is_bonus": true})
+    );
+    // A title-only patch leaves the assignment alone.
+    let renamed = ok(&patch_item(&w, essay, json!({"title": "Again"})).await);
+    assert_eq!(renamed["assignment"], patched["assignment"]);
+    let response = patch_item(&w, essay, json!({"config": {"limit": 1}})).await;
+    assert_eq!(error_fields(&response), ["config"]);
+
+    for (field, value) in [
+        ("config", json!({})),
+        ("max_points", json!("5")),
+        ("is_bonus", json!(true)),
+    ] {
+        let response = patch_item(&w, lesson, json!({ field: value })).await;
+        assert_eq!(error_fields(&response), [field]);
+    }
+    assert!(item_json(&w, lesson).await.get("assignment").is_none());
+}
+
+#[sqlx::test(migrator = "server::app::MIGRATOR")]
+async fn type_and_kind_cannot_change_and_are_ignored_by_patch(pool: PgPool) {
+    let w = world(pool).await;
+    let m = module(&w, "M", None).await;
+    let essay = assignment(&w, m, "10", false).await;
+    let lesson = item(&w, m, "Lesson").await;
+
+    let patched = ok(&patch_item(&w, essay, json!({"type": "form", "kind": "lesson"})).await);
+    assert_eq!(patched["kind"], "assignment");
+    assert_eq!(patched["assignment"]["type"], "text");
+    let patched = ok(&patch_item(&w, lesson, json!({"kind": "assignment", "type": "text"})).await);
+    assert_eq!(patched["kind"], "lesson");
+    assert!(patched.get("assignment").is_none());
+}
+
+// --- visibility, order, publishing, audit ------------------------------------------------------
+
+#[sqlx::test(migrator = "server::app::MIGRATOR")]
+async fn students_reach_an_assignment_only_once_it_is_released_on_every_level(pool: PgPool) {
+    let w = world(pool).await;
+    let cases = build_cases_of(&w, true).await;
+    let part = json!({"type": "text", "config": {}, "max_points": "5.00", "is_bonus": false});
+
+    for (why, item) in &cases.hidden {
+        let response = get(&w.http, &w.student.token, &format!("/items/{item}")).await;
+        assert_eq!(response.status, 404, "{why}");
+        response.problem(404);
+    }
+    for item in [cases.open_direct, cases.open_in_sub] {
+        let seen = ok(&get(&w.http, &w.student.token, &format!("/items/{item}")).await);
+        assert_eq!(seen["assignment"], part);
+    }
+
+    let seen = tree(&w, &w.student.token).await;
+    assert_eq!(titles(&seen["modules"]), ["B", "C", "E", "F", "G"]);
+    let g = top(&seen, "G");
+    assert_eq!(titles(&g["items"]), ["G-direct"]);
+    let summary = json!({"type": "text", "max_points": "5.00", "is_bonus": false});
+    assert_eq!(g["items"][0]["assignment"], summary);
+    assert_eq!(g["submodules"][0]["items"][0]["assignment"], summary);
+    let raw = seen.to_string();
+    for hidden in [
+        "A-sub", "A-item", "B-sub", "B-item", "C-item", "D-item", "E-sub", "E-item", "F-item",
+    ] {
+        assert!(!raw.contains(hidden), "{hidden} leaked to a student");
+    }
+
+    for token in [&w.owner.token, &w.assistant.token, &w.admin.token] {
+        for (why, item) in &cases.hidden {
+            let response = ok(&get(&w.http, token, &format!("/items/{item}")).await);
+            assert_eq!(response["assignment"], part, "{why}");
+        }
+        let full = tree(&w, token).await;
+        assert_eq!(top(&full, "C")["items"][0]["assignment"], summary);
+        assert_eq!(top(&full, "D")["items"][0]["assignment"], summary);
+    }
+}
+
+#[sqlx::test(migrator = "server::app::MIGRATOR")]
+async fn lessons_and_assignments_share_one_position_sequence(pool: PgPool) {
+    let w = world(pool).await;
+    let m = module(&w, "M", None).await;
+    let first = item(&w, m, "First").await;
+    let second = assignment(&w, m, "10", false).await;
+    let third = item(&w, m, "Third").await;
+
+    for (id, position) in [(first, 1), (second, 2), (third, 3)] {
+        assert_eq!(item_json(&w, id).await["position"], position);
+    }
+    assert_eq!(
+        titles(&top(&tree(&w, &w.owner.token).await, "M")["items"]),
+        ["First", "A", "Third"]
+    );
+
+    no_content(
+        &put(
+            &w.http,
+            &w.owner.token,
+            &format!("/modules/{m}/items/order"),
+            json!({"ids": [second, third, first]}),
+        )
+        .await,
+    );
+    let tree = tree(&w, &w.owner.token).await;
+    assert_eq!(titles(&top(&tree, "M")["items"]), ["A", "Third", "First"]);
+    assert_eq!(item_json(&w, second).await["position"], 1);
+    assert_eq!(item_json(&w, first).await["position"], 3);
+    // A new item of either kind goes last.
+    let fourth = assignment(&w, m, "5", false).await;
+    assert_eq!(item_json(&w, fourth).await["position"], 4);
+}
+
+#[sqlx::test(migrator = "server::app::MIGRATOR")]
+async fn cascade_publishing_publishes_draft_assignments_too(pool: PgPool) {
+    let w = world(pool).await;
+    let m = module(&w, "M", None).await;
+    let sub = module(&w, "Sub", Some(m)).await;
+    let direct = assignment(&w, m, "10", false).await;
+    let nested = assignment(&w, sub, "20", false).await;
+    let lesson = item(&w, m, "Lesson").await;
+
+    publish_module(&w, m, false).await;
+    assert_eq!(item_json(&w, direct).await["status"], "draft");
+
+    publish_module(&w, m, true).await;
+    for id in [direct, nested, lesson] {
+        assert_eq!(item_json(&w, id).await["status"], "published");
+    }
+    assert_eq!(
+        item_json(&w, nested).await["assignment"]["max_points"],
+        "20.00"
+    );
+    // Students see them now.
+    let seen = ok(&get(&w.http, &w.student.token, &format!("/items/{nested}")).await);
+    assert_eq!(seen["assignment"]["max_points"], "20.00");
+}
+
+#[sqlx::test(migrator = "server::app::MIGRATOR")]
+async fn admin_assignment_writes_are_audited_and_staff_writes_are_not(pool: PgPool) {
+    let w = world(pool).await;
+    let m = module(&w, "M", None).await;
+
+    // The owner and the assistant run the whole life of an assignment: no audit rows.
+    for token in [&w.owner.token, &w.assistant.token] {
+        let id = id_of(&created(
+            &post(
+                &w.http,
+                token,
+                &format!("/modules/{m}/items"),
+                assignment_request("A", json!("10"), false),
+            )
+            .await,
+        ));
+        ok(&patch(
+            &w.http,
+            token,
+            &format!("/items/{id}"),
+            json!({"max_points": "12"}),
+        )
+        .await);
+        ok(&post(&w.http, token, &format!("/items/{id}/publish"), json!(null)).await);
+        no_content(&delete(&w.http, token, &format!("/items/{id}")).await);
+    }
+    assert_eq!(audit_rows(&w.pool).await, []);
+
+    let token = &w.admin.token;
+    let id = id_of(&created(
+        &post(
+            &w.http,
+            token,
+            &format!("/modules/{m}/items"),
+            assignment_request("A", json!("10"), false),
+        )
+        .await,
+    ));
+    // A refused write is not audited.
+    patch(
+        &w.http,
+        token,
+        &format!("/items/{id}"),
+        json!({"max_points": "101"}),
+    )
+    .await
+    .problem(422);
+    ok(&patch(
+        &w.http,
+        token,
+        &format!("/items/{id}"),
+        json!({"max_points": "12"}),
+    )
+    .await);
+    ok(&post(&w.http, token, &format!("/items/{id}/publish"), json!(null)).await);
+    no_content(&delete(&w.http, token, &format!("/items/{id}")).await);
+
+    let rows = audit_rows(&w.pool).await;
+    let summary: Vec<_> = rows
+        .iter()
+        .map(|(action, kind, resource, _)| (action.as_str(), kind.as_str(), *resource))
+        .collect();
+    assert_eq!(
+        summary,
+        [
+            ("content.item.create", "item", id),
+            ("content.item.update", "item", id),
+            ("content.item.publish", "item", id),
+            ("content.item.delete", "item", id),
+        ]
+    );
+    for (_, _, _, meta) in &rows {
+        assert_eq!(meta, &json!({"course_id": w.course.to_string()}));
+    }
+}
+
+// --- OpenAPI -----------------------------------------------------------------------------------
+
+#[sqlx::test(migrator = "server::app::MIGRATOR")]
+async fn the_assignment_schemas_are_in_the_openapi_document(pool: PgPool) {
+    let base = common::spawn(pool).await;
+    let response = reqwest::get(format!("{base}/api/v1/openapi.json"))
+        .await
+        .unwrap();
+    let doc: Value = serde_json::from_slice(&response.bytes().await.unwrap()).unwrap();
+    let schemas = &doc["components"]["schemas"];
+    for name in ["NewAssignment", "Assignment", "AssignmentSummary"] {
+        assert!(schemas[name].is_object(), "{name} missing");
+        assert_eq!(
+            schemas[name]["properties"]["max_points"]["type"], "string",
+            "{name}"
+        );
+    }
+    assert!(schemas["NewAssignment"]["properties"]["type"].is_object());
+    assert!(schemas["CreateItemRequest"]["properties"]["assignment"].is_object());
+    assert!(schemas["UpdateItemRequest"]["properties"]["max_points"].is_object());
+    assert!(schemas["Item"]["properties"]["assignment"].is_object());
+    assert!(schemas["ItemSummary"]["properties"]["assignment"].is_object());
+    let kinds = schemas["ItemKind"]["enum"].as_array().unwrap();
+    assert!(kinds.contains(&json!("assignment")) && kinds.contains(&json!("lesson")));
 }

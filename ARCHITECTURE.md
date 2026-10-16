@@ -1,6 +1,6 @@
 # Learnly — Architecture
 
-Status: **in progress.** Implemented: the foundation (config, migrations, health, OpenAPI, Problem Details), `identity` + `policy` (users, password login, sessions, admin user management), the first slice of `teaching` (courses, members, publishing) with a minimal `events.audit_log`, and the `content` tree (modules, sub-modules and lessons). Everything else below is still design.
+Status: **in progress.** Implemented: the foundation (config, migrations, health, OpenAPI, Problem Details), `identity` + `policy` (users, password login, sessions, admin user management), the first slice of `teaching` (courses, members, publishing) with a minimal `events.audit_log`, and the `content` tree (modules, sub-modules, lessons and `text` assignments). Everything else below is still design.
 This file is the current picture of the system. Every decision behind it has a record in [`docs/decisions/`](docs/decisions/). If this file and an ADR disagree, the ADR wins and this file gets fixed.
 
 ## Goal
@@ -58,9 +58,9 @@ docs/decisions/
 | Module       | Owns (Postgres schema)          | Responsibility |
 |--------------|---------------------------------|----------------|
 | `identity`   | `identity.*`                    | users, login identities, sessions, tokens |
-| `org`        | `org.*`                         | terms, groups (cohorts), grading scales, institution settings |
+| `org`        | `org.*`                         | terms, groups (cohorts), institution settings |
 | `teaching`   | `teaching.*`                    | courses, memberships, publishing; group links and course subgroups are planned |
-| `content`    | `content.*`                     | modules, items (lessons built; assignments and assignment types planned) |
+| `content`    | `content.*`                     | modules, items (lessons and `text` assignments built; other assignment types planned) |
 | `assessment` | `assessment.*`                  | submissions, attempts, lateness, auto-grading of forms |
 | `gradebook`  | `gradebook.*`                   | grades (draft/published), grade history, publishing, gradebook view |
 | `files`      | `files.*`                       | uploads, storage backends |
@@ -119,13 +119,11 @@ org
   group_members    group_id, user_id
   subgroups        id, group_id, name                  -- 7-A English 1/2; one level only
   subgroup_members subgroup_id, user_id                -- must also be a member of the group
-  grading_scales   id, name, kind, config (jsonb)      -- 12-point, 100-point + ECTS, ...
 
 teaching
-  courses          id, kind: regular | template, title, term_id?, grading_scale_id,
+  courses          id, kind: regular | template, title, term_id?,
                    status: draft | published | archived, owner_id, created_by
-                   -- built: no grading_scale_id yet, and term_id has no foreign key until
-                   -- org.terms exists (both arrive with `org`)
+                   -- built: term_id has no foreign key until org.terms exists
   course_groups    course_id, group_id, subgroup_id?   -- live link; no subgroup = whole group
   memberships      course_id, user_id, role: teacher | assistant | student
   effective_members (VIEW) = memberships ∪ students of linked groups / subgroups
@@ -137,10 +135,11 @@ content
                    -- one level of sub-modules: parent_id is null or a top-level module of the same course
   items            id, module_id, course_id, position, kind: lesson | assignment, title,
                    body (jsonb object), status: draft | published, publish_at?
-                   -- built: lesson is the only kind so far (ADR-0020)
-  assignments      item_id (PK), type (text), config (jsonb), max_points, due_at?,
+                   -- built: both kinds, lesson and assignment (ADR-0020, ADR-0021)
+  assignments      item_id (PK), type (text), config (jsonb), max_points numeric(6,2), due_at?,
                    accept_late (bool), late_until?, on_deadline: keep_draft | auto_submit,
                    max_attempts?                       -- null = unlimited
+                   -- built: item_id, type, config, max_points, is_bonus (task 007); due_at, accept_late, late_until, on_deadline and max_attempts arrive with the submissions task (ADR-0011, ADR-0021)
 
 assessment
   submissions      id, assignment_id, student_id, attempt, status: draft | submitted,
@@ -195,7 +194,7 @@ Key points:
 ## Configuration
 
 `learnly.toml`, any key overridable with `LEARNLY__SECTION__KEY` (see `learnly.example.toml`):
-`server.bind_addr`, `server.public_origin`, `server.client_ip_header?`, `database.url`, `database.max_connections`, `log.format`, `institution.name`, and an optional `[auth]` section (`password_min_length` = 12, `cookie_secure` = true, `allowed_domains` = [], used from task 004). `institution.mode` (school | university) is planned.
+`server.bind_addr`, `server.public_origin`, `server.client_ip_header?`, `database.url`, `database.max_connections`, `log.format`, `institution.name`, and an optional `[auth]` section (`password_min_length` = 12, `cookie_secure` = true, `allowed_domains` = [], used from task 004). `institution.mode` (school | university) is planned. `institution.grading_scale` (`twelve` | `hundred`) limits assignment points, see [ADR-0022](docs/decisions/0022-grading-scale-setting.md); optional, default `hundred` until `institution.mode` exists, then it follows the mode.
 
 ## Authorization
 
@@ -208,7 +207,7 @@ There are two levels of roles ([ADR-0004](docs/decisions/0004-roles-and-policy.m
 | Action                                         | student | teacher | admin |
 |------------------------------------------------|:-------:|:-------:|:-----:|
 | Create a course                                |    –    |    ✓    |   ✓   |
-| Manage users, roles, groups, terms, scales     |    –    |    –    |   ✓   |
+| Manage users, roles, groups, terms             |    –    |    –    |   ✓   |
 
 **Course level** (`memberships.role`; the owner is `courses.owner_id`):
 
@@ -221,7 +220,7 @@ There are two levels of roles ([ADR-0004](docs/decisions/0004-roles-and-policy.m
 | Enroll/remove students, link groups, manage course subgroups|    –    |     ✓     |    ✓    |   ✓   |   ✓   |
 | Publish the course ([ADR-0019](docs/decisions/0019-course-publishing.md)) |    –    |     –     |    ✓    |   ✓   |   ✓   |
 | Add/remove teachers and assistants                          |    –    |     –     |    ✓    |   ✓   |   ✓   |
-| Change grading scale, archive course                        |    –    |     –     |    ✓    |   ✓   |   ✓   |
+| Archive course                                              |    –    |     –     |    ✓    |   ✓   |   ✓   |
 | Delete course, transfer ownership                           |    –    |     –     |    –    |   ✓   |   ✓   |
 
 Invariants:
@@ -258,8 +257,8 @@ The content endpoints (tag `content`, all under `/api/v1`):
 | `PATCH /modules/{id}`, `DELETE /modules/{id}` | edit (`publish_at: null` clears it), delete with everything below |
 | `PUT /courses/{id}/modules/order` | reorder the top-level modules, or the sub-modules of `parent_id` |
 | `POST /modules/{id}/publish` | publish, `cascade` required |
-| `POST /modules/{id}/items`, `PUT /modules/{id}/items/order` | create a lesson, reorder a module's items |
-| `GET`, `PATCH`, `DELETE /items/{id}`, `POST /items/{id}/publish` | read (with `body`), edit, delete, publish a lesson |
+| `POST /modules/{id}/items`, `PUT /modules/{id}/items/order` | create a lesson or an assignment, reorder a module's items |
+| `GET`, `PATCH`, `DELETE /items/{id}`, `POST /items/{id}/publish` | read (with `body`), edit, delete, publish a lesson or an assignment |
 
 Two creates that race for the same last position conflict at commit: the loser gets 409 and retries.
 
@@ -273,7 +272,7 @@ A state change and its event are written in the same transaction. A worker (a to
 
 ## Institution modes
 
-`school` or `university`, set in the config file. The mode changes **terminology** (course/subject, module/topic), **the default grading scale** and **dashboard layout**. It does not change the schema.
+`school` or `university`, set in the config file. The mode changes **terminology** (course/subject, module/topic), **the default grading scale** ([ADR-0022](docs/decisions/0022-grading-scale-setting.md)) and **dashboard layout**. It does not change the schema.
 
 Examples: in a school, the template "Algebra 7" becomes courses "Algebra 7-A" and "Algebra 7-B", each linked to its class group. In a university, the template "Databases" becomes "Databases, Fall 2026", linked to one or more academic groups.
 

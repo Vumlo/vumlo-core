@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT COALESCE(sum(a.max_points), 0) AS \"sum!\"\n           FROM content.assignments a\n           JOIN content.items i ON i.id = a.item_id\n           WHERE i.course_id = $1 AND NOT a.is_bonus AND a.item_id IS DISTINCT FROM $2::uuid",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "sum!",
+        "type_info": "Numeric",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "06fa25d5313fd1a2a697c71f68d03b7c902a80f2a5517bf22a2feabf26a6a2de"
+}

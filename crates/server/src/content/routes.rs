@@ -3,8 +3,9 @@
 
 use api_types::{
     ContentModule, ContentStatus, ContentSubModule, ContentTree, CreateItemRequest,
-    CreateModuleRequest, Item, ItemSummary, Module, ProblemDetails, PublishModuleRequest,
-    ReorderItemsRequest, ReorderModulesRequest, UpdateItemRequest, UpdateModuleRequest,
+    CreateModuleRequest, FieldError, Item, ItemSummary, Module, NewAssignment, ProblemDetails,
+    PublishModuleRequest, ReorderItemsRequest, ReorderModulesRequest, UpdateItemRequest,
+    UpdateModuleRequest,
 };
 use axum::Json;
 use axum::extract::{Path, State};
@@ -14,7 +15,8 @@ use utoipa_axum::routes;
 use uuid::Uuid;
 
 use super::model::{
-    self, ContentTitle, ItemKind, ItemPatch, ItemStatus, ModelError, ModulePatch, ModuleStatus,
+    self, BuiltinType, ContentTitle, ItemKind, ItemPatch, ItemStatus, MaxPoints, ModelError,
+    ModulePatch, ModuleStatus,
 };
 use super::service::{self, ContentError};
 use crate::actor::Actor;
@@ -37,9 +39,19 @@ impl From<ContentError> for ApiError {
     fn from(error: ContentError) -> Self {
         match error {
             ContentError::Forbidden(_) => Self::Forbidden("not allowed"),
-            ContentError::Invalid(ModelError::Title) => {
-                Self::invalid_field("title", error.to_string())
+            ContentError::Invalid(ref model) => {
+                let field = match model {
+                    ModelError::Title => "title",
+                    ModelError::MaxPoints => "max_points",
+                    ModelError::AssignmentType => "type",
+                    ModelError::Config(_) => "config",
+                };
+                Self::invalid_field(field, error.to_string())
             }
+            ContentError::NotAnAssignment { field } => {
+                Self::invalid_field(field, error.to_string())
+            }
+            ContentError::PointsLimit { field, message } => Self::invalid_field(field, message),
             ContentError::InvalidParent => Self::invalid_field("parent_id", error.to_string()),
             ContentError::InvalidOrder => Self::invalid_field("ids", error.to_string()),
             ContentError::ModuleNotFound | ContentError::ItemNotFound => Self::NotFound,
@@ -74,12 +86,14 @@ fn api_item_status(status: ItemStatus) -> ContentStatus {
 fn api_kind(kind: ItemKind) -> api_types::ItemKind {
     match kind {
         ItemKind::Lesson => api_types::ItemKind::Lesson,
+        ItemKind::Assignment => api_types::ItemKind::Assignment,
     }
 }
 
 fn domain_kind(kind: api_types::ItemKind) -> ItemKind {
     match kind {
         api_types::ItemKind::Lesson => ItemKind::Lesson,
+        api_types::ItemKind::Assignment => ItemKind::Assignment,
     }
 }
 
@@ -97,6 +111,23 @@ fn api_module(module: model::Module) -> Module {
     }
 }
 
+fn api_assignment(assignment: model::Assignment) -> api_types::Assignment {
+    api_types::Assignment {
+        assignment_type: assignment.assignment_type.as_str().to_owned(),
+        config: assignment.config,
+        max_points: assignment.max_points.to_string(),
+        is_bonus: assignment.is_bonus,
+    }
+}
+
+fn api_assignment_summary(assignment: model::AssignmentSummary) -> api_types::AssignmentSummary {
+    api_types::AssignmentSummary {
+        assignment_type: assignment.assignment_type.as_str().to_owned(),
+        max_points: assignment.max_points.to_string(),
+        is_bonus: assignment.is_bonus,
+    }
+}
+
 fn api_item(item: model::Item) -> Item {
     Item {
         id: item.id,
@@ -108,6 +139,7 @@ fn api_item(item: model::Item) -> Item {
         body: item.body,
         status: api_item_status(item.status),
         publish_at: item.publish_at,
+        assignment: item.assignment.map(api_assignment),
         created_at: item.created_at,
         updated_at: item.updated_at,
     }
@@ -121,6 +153,7 @@ fn api_summary(item: model::ItemSummary) -> ItemSummary {
         status: api_item_status(item.status),
         publish_at: item.publish_at,
         position: item.position,
+        assignment: item.assignment.map(api_assignment_summary),
     }
 }
 
@@ -146,6 +179,53 @@ fn api_tree(modules: Vec<model::ContentModule>) -> ContentTree {
 
 fn title(raw: &str) -> Result<ContentTitle, ContentError> {
     Ok(ContentTitle::parse(raw)?)
+}
+
+/// Parses the assignment object of a create request. Every bad field is reported at once, under
+/// its path in the request. The messages are fixed texts: they never repeat what was sent.
+fn domain_assignment(new: NewAssignment) -> Result<model::Assignment, ApiError> {
+    let assignment_type = BuiltinType::parse(&new.assignment_type);
+    let max_points = MaxPoints::parse(&new.max_points);
+    match (assignment_type, max_points) {
+        (Ok(assignment_type), Ok(max_points)) => Ok(model::Assignment {
+            assignment_type,
+            config: new.config.unwrap_or_default(),
+            max_points,
+            is_bonus: new.is_bonus,
+        }),
+        (assignment_type, max_points) => Err(ApiError::Unprocessable {
+            detail: "the request has invalid fields".to_owned(),
+            errors: [
+                ("assignment.type", assignment_type.err()),
+                ("assignment.max_points", max_points.err()),
+            ]
+            .into_iter()
+            .filter_map(|(field, error)| {
+                error.map(|error| FieldError {
+                    field: field.to_owned(),
+                    message: error.to_string(),
+                })
+            })
+            .collect(),
+        }),
+    }
+}
+
+/// A 422 about the assignment part of a create request names its field under `assignment.`.
+fn under_assignment(error: ContentError) -> ApiError {
+    match ApiError::from(error) {
+        ApiError::Unprocessable { detail, errors } => ApiError::Unprocessable {
+            detail,
+            errors: errors
+                .into_iter()
+                .map(|error| FieldError {
+                    field: format!("assignment.{}", error.field),
+                    message: error.message,
+                })
+                .collect(),
+        },
+        other => other,
+    }
 }
 
 /// Creates a draft module as the last of its siblings. Staff and admins only.
@@ -354,9 +434,16 @@ async fn publish_module(
     Ok(Json(api_module(module)))
 }
 
-/// Creates a draft lesson as the last item of a module or sub-module.
+/// Creates a draft lesson or assignment as the last item of a module or sub-module.
 ///
 /// `body` is a JSON object that is stored and returned as is; an array or a string is rejected.
+/// For an assignment it holds the instructions.
+///
+/// `kind: assignment` requires an `assignment` object `{type, config?, max_points, is_bonus?}`
+/// (ADR-0021); a lesson must not carry one. `type` is `text` for now, with an empty `config`.
+/// `max_points` is a decimal string such as `"20"` or `"7.5"`; a JSON number is rejected. The
+/// grading scale limits the points (ADR-0022): at most 12 per assignment on `twelve`, at most
+/// 100 in total over the regular (not bonus) assignments of the course on `hundred`.
 #[utoipa::path(
     post,
     path = "/modules/{id}/items",
@@ -374,7 +461,7 @@ async fn publish_module(
             body = ProblemDetails, content_type = "application/problem+json"),
         (status = 409, description = "A concurrent change took the position; retry",
             body = ProblemDetails, content_type = "application/problem+json"),
-        (status = 422, description = "Invalid title, or a body that is not a JSON object",
+        (status = 422, description = "Invalid title, a body that is not a JSON object, a missing or unexpected `assignment` object, an unknown type or config field, invalid points, or points the grading scale does not allow",
             body = ProblemDetails, content_type = "application/problem+json"),
     )
 )]
@@ -385,16 +472,34 @@ async fn create_item(
     ValidJson(request): ValidJson<CreateItemRequest>,
 ) -> Result<(StatusCode, Json<Item>), ApiError> {
     let title = title(&request.title)?;
+    let assignment = match (domain_kind(request.kind), request.assignment) {
+        (ItemKind::Lesson, None) => None,
+        (ItemKind::Lesson, Some(_)) => {
+            return Err(ApiError::invalid_field(
+                "assignment",
+                "only an item of kind `assignment` has this field",
+            ));
+        }
+        (ItemKind::Assignment, None) => {
+            return Err(ApiError::invalid_field(
+                "assignment",
+                "an item of kind `assignment` needs an assignment object",
+            ));
+        }
+        (ItemKind::Assignment, Some(new)) => Some(domain_assignment(new)?),
+    };
     let mut tx = state.db.begin().await.map_err(ContentError::from)?;
     let item = service::create_item(
         &mut tx,
         &actor,
+        state.config.institution.grading_scale,
         module_id,
-        domain_kind(request.kind),
         title,
         request.body,
+        assignment,
     )
-    .await?;
+    .await
+    .map_err(under_assignment)?;
     tx.commit().await.map_err(ContentError::from)?;
     Ok((StatusCode::CREATED, Json(api_item(item))))
 }
@@ -433,8 +538,9 @@ async fn reorder_items(
     Ok(StatusCode::NO_CONTENT)
 }
 
-/// One lesson with its body. A student gets 404 unless the course, every module above it and the
-/// lesson are published and not scheduled later.
+/// One lesson or assignment with its body (and, for an assignment, its `assignment` part). A
+/// student gets 404 unless the course, every module above it and the item are published and not
+/// scheduled later.
 #[utoipa::path(
     get,
     path = "/items/{id}",
@@ -459,8 +565,12 @@ async fn get_item(
     Ok(Json(api_item(item)))
 }
 
-/// Changes a lesson's title, body and/or `publish_at` (`null` clears it). A `body` replaces the
-/// whole body. Edits to a published lesson are visible at once (ADR-0010).
+/// Changes an item's title, body and/or `publish_at` (`null` clears it). A `body` replaces the
+/// whole body. Edits to a published item are visible at once (ADR-0010).
+///
+/// For an assignment `config`, `max_points` and `is_bonus` may change too; the grading scale
+/// limits apply when `max_points` is raised or a bonus assignment becomes regular. They are
+/// rejected for a lesson. `type` and `kind` cannot change: sending them has no effect.
 #[utoipa::path(
     patch,
     path = "/items/{id}",
@@ -476,7 +586,7 @@ async fn get_item(
             body = ProblemDetails, content_type = "application/problem+json"),
         (status = 404, description = "No such item, or not visible to the caller",
             body = ProblemDetails, content_type = "application/problem+json"),
-        (status = 422, description = "Invalid title or timestamp, or a body that is not a JSON object",
+        (status = 422, description = "Invalid title or timestamp, a body that is not a JSON object, assignment fields on a lesson, an unknown config field, invalid points, or points the grading scale does not allow",
             body = ProblemDetails, content_type = "application/problem+json"),
     )
 )]
@@ -490,14 +600,29 @@ async fn update_item(
         title: request.title.as_deref().map(title).transpose()?,
         body: request.body,
         publish_at: request.publish_at,
+        config: request.config,
+        max_points: request
+            .max_points
+            .as_deref()
+            .map(MaxPoints::parse)
+            .transpose()
+            .map_err(ContentError::from)?,
+        is_bonus: request.is_bonus,
     };
     let mut tx = state.db.begin().await.map_err(ContentError::from)?;
-    let item = service::update_item(&mut tx, &actor, id, patch).await?;
+    let item = service::update_item(
+        &mut tx,
+        &actor,
+        state.config.institution.grading_scale,
+        id,
+        patch,
+    )
+    .await?;
     tx.commit().await.map_err(ContentError::from)?;
     Ok(Json(api_item(item)))
 }
 
-/// Deletes a lesson.
+/// Deletes a lesson or an assignment.
 #[utoipa::path(
     delete,
     path = "/items/{id}",
@@ -525,7 +650,7 @@ async fn delete_item(
     Ok(StatusCode::NO_CONTENT)
 }
 
-/// Publishes a lesson. Idempotent; never changes `publish_at`.
+/// Publishes a lesson or an assignment. Idempotent; never changes `publish_at`.
 #[utoipa::path(
     post,
     path = "/items/{id}/publish",
