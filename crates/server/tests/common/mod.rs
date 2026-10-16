@@ -90,6 +90,10 @@ impl Http {
         Req(self.client.post(format!("{}/api/v1{path}", self.base)))
     }
 
+    pub fn put(&self, path: &str) -> Req {
+        Req(self.client.put(format!("{}/api/v1{path}", self.base)))
+    }
+
     pub fn patch(&self, path: &str) -> Req {
         Req(self.client.patch(format!("{}/api/v1{path}", self.base)))
     }
@@ -215,6 +219,21 @@ pub async fn seed_user(pool: &PgPool, email: &str, role: Role) -> String {
     .await
     .expect("clear flag");
     PASSWORD.to_owned()
+}
+
+/// Seeds a ready-to-use user, logs them in as an app client and returns their id and bearer token.
+pub async fn seed_and_login(
+    pool: &PgPool,
+    http: &Http,
+    email: &str,
+    role: Role,
+) -> (uuid::Uuid, String) {
+    let password = seed_user(pool, email, role).await;
+    let id = sqlx::query_scalar!("SELECT id FROM identity.users WHERE email = $1", email)
+        .fetch_one(pool)
+        .await
+        .expect("user id");
+    (id, login_app(http, email, &password).await)
 }
 
 /// Logs in as an app client and returns the bearer token.

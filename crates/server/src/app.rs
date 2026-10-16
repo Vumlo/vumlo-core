@@ -29,6 +29,7 @@ use crate::error::{ApiError, problem_details};
 use crate::health;
 use crate::identity::{self, SetupError};
 use crate::settings::Settings;
+use crate::teaching;
 
 pub static MIGRATOR: Migrator = sqlx::migrate!("../../migrations");
 
@@ -150,7 +151,8 @@ pub fn router(state: AppState) -> Result<Router, SetupError> {
             "/api/v1",
             OpenApiRouter::new()
                 .routes(routes!(health::health))
-                .merge(identity),
+                .merge(identity)
+                .merge(teaching::router()),
         )
         .split_for_parts();
     let spec = openapi.clone();
