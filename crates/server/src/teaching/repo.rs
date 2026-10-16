@@ -98,28 +98,27 @@ pub async fn find_course(
     Ok(row.map(CourseRow::from))
 }
 
-/// Like [`find_course`], and locks the course row until the transaction ends. Writers on one
-/// course queue here, so the memberships they read afterwards are current.
+/// Locks the course row until the transaction ends. Writers on one course queue here.
+///
+/// It returns the course only, never a membership. A statement that waits for a row lock
+/// re-reads just the locked row; anything joined to it keeps the statement's earlier snapshot.
+/// So the caller reads memberships in a later statement, once it holds the lock, and sees what
+/// the writer it waited for committed.
 pub async fn lock_course(
     conn: &mut PgConnection,
     course_id: Uuid,
-    user_id: Uuid,
-) -> Result<Option<CourseRow>, sqlx::Error> {
-    let row = sqlx::query_as!(
-        RawCourseRow,
-        r#"SELECT c.id, c.kind AS "kind: CourseKind", c.title,
-                  c.status AS "status: CourseStatus", c.owner_id, c.created_at,
-                  m.role AS "member_role?: CourseRole"
-           FROM teaching.courses c
-           LEFT JOIN teaching.memberships m ON m.course_id = c.id AND m.user_id = $2
-           WHERE c.id = $1
-           FOR UPDATE OF c"#,
-        course_id,
-        user_id
+) -> Result<Option<Course>, sqlx::Error> {
+    sqlx::query_as!(
+        Course,
+        r#"SELECT id, kind AS "kind: CourseKind", title,
+                  status AS "status: CourseStatus", owner_id, created_at
+           FROM teaching.courses
+           WHERE id = $1
+           FOR UPDATE"#,
+        course_id
     )
     .fetch_optional(conn)
-    .await?;
-    Ok(row.map(CourseRow::from))
+    .await
 }
 
 /// Courses `user_id` owns or belongs to, after `after`, in id order, at most `limit`. A student

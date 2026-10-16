@@ -57,23 +57,34 @@ fn access_of(actor: &Actor, course: &Course, role: Option<CourseRole>) -> Course
 }
 
 /// Loads the course as seen by `actor` and refuses with `CourseNotFound` unless they may view it.
-/// With `lock`, the course row stays locked until the transaction ends.
+///
+/// With `lock`, the course row stays locked until the transaction ends, and the actor's role is
+/// read in a second statement after the lock is held. One statement joining both would wait for
+/// the lock and then re-read only the course row, leaving the role as of the statement's
+/// snapshot: an assistant demoted by the writer we waited for would still act as an assistant.
+/// Without `lock` nothing waits, so one statement is enough.
 async fn load(
     conn: &mut PgConnection,
     actor: &Actor,
     course_id: Uuid,
     lock: bool,
 ) -> Result<(Course, CourseAccess), TeachingError> {
-    let row = if lock {
-        repo::lock_course(conn, course_id, actor.user_id()).await?
+    let (course, role) = if lock {
+        let course = repo::lock_course(conn, course_id)
+            .await?
+            .ok_or(TeachingError::CourseNotFound)?;
+        let role = repo::find_member_role(conn, course_id, actor.user_id()).await?;
+        (course, role)
     } else {
-        repo::find_course(conn, course_id, actor.user_id()).await?
-    }
-    .ok_or(TeachingError::CourseNotFound)?;
-    let access = access_of(actor, &row.course, row.role);
+        let row = repo::find_course(conn, course_id, actor.user_id())
+            .await?
+            .ok_or(TeachingError::CourseNotFound)?;
+        (row.course, row.role)
+    };
+    let access = access_of(actor, &course, role);
     policy::authorize(actor, Action::ViewCourse(access))
         .map_err(|_| TeachingError::CourseNotFound)?;
-    Ok((row.course, access))
+    Ok((course, access))
 }
 
 /// Admins act as implicit owners with no membership, so everything they change in a course is
@@ -348,5 +359,80 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(role, Some(CourseRole::Teacher));
+    }
+
+    /// The owner demotes an assistant to student and holds its transaction open; the assistant
+    /// tries to add a student meanwhile. The assistant's own role must be read after the course
+    /// lock is held: a role read in the same statement as the lock would still be the old one.
+    /// The course is published, otherwise the demoted assistant could no longer see it and the
+    /// answer would be `CourseNotFound` instead of `Forbidden`.
+    #[sqlx::test(migrator = "crate::app::MIGRATOR")]
+    async fn a_demoted_assistant_loses_their_rights_before_their_waiting_write_runs(
+        pool: sqlx::PgPool,
+    ) {
+        let hash = identity::hash_password("irrelevant").await.unwrap();
+        let owner = actor(&pool, &hash, "owner@x.edu", Role::Teacher).await;
+        let assistant = actor(&pool, &hash, "assistant@x.edu", Role::Student).await;
+        let enrolled = actor(&pool, &hash, "enrolled@x.edu", Role::Student).await;
+        let newcomer = actor(&pool, &hash, "newcomer@x.edu", Role::Student).await;
+
+        let mut tx = pool.begin().await.unwrap();
+        let course = create_course(&mut tx, &owner, CourseTitle::parse("Algebra").unwrap())
+            .await
+            .unwrap();
+        for (who, role) in [
+            (assistant.user_id(), CourseRole::Assistant),
+            (enrolled.user_id(), CourseRole::Student),
+        ] {
+            put_member(&mut tx, &owner, course.id, who, role)
+                .await
+                .unwrap();
+        }
+        publish_course(&mut tx, &owner, course.id).await.unwrap();
+        tx.commit().await.unwrap();
+
+        let mut first = pool.begin().await.unwrap();
+        put_member(
+            &mut first,
+            &owner,
+            course.id,
+            assistant.user_id(),
+            CourseRole::Student,
+        )
+        .await
+        .unwrap();
+        let second = tokio::spawn({
+            let pool = pool.clone();
+            let (assistant, newcomer_id, course_id) =
+                (assistant.clone(), newcomer.user_id(), course.id);
+            async move {
+                let mut tx = pool.begin().await.unwrap();
+                put_member(
+                    &mut tx,
+                    &assistant,
+                    course_id,
+                    newcomer_id,
+                    CourseRole::Student,
+                )
+                .await
+            }
+        });
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        first.commit().await.unwrap();
+
+        let outcome = second.await.unwrap();
+        assert!(
+            matches!(outcome, Err(TeachingError::Forbidden(_))),
+            "{outcome:?}"
+        );
+        let mut conn = pool.acquire().await.unwrap();
+        let assistant_role = repo::find_member_role(&mut conn, course.id, assistant.user_id())
+            .await
+            .unwrap();
+        assert_eq!(assistant_role, Some(CourseRole::Student));
+        let newcomer_role = repo::find_member_role(&mut conn, course.id, newcomer.user_id())
+            .await
+            .unwrap();
+        assert_eq!(newcomer_role, None);
     }
 }
