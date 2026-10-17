@@ -173,6 +173,10 @@ pub async fn lock_course(
 /// Courses `user_id` owns or belongs to, after `after`, in id order, at most `limit`. A student
 /// membership only counts once the course is published, the same rule `policy` applies per
 /// course; it lives here too so a page is not emptied by rows the caller may not see.
+///
+/// It starts from the user's own rows (their places on rosters, the courses they own) and joins
+/// the course tables to those, so the cost follows the number of courses the user has, not the
+/// number of courses the installation has (audit 014, A-12).
 pub async fn list_courses_of(
     conn: &mut PgConnection,
     user_id: Uuid,
@@ -184,10 +188,12 @@ pub async fn list_courses_of(
         r#"SELECT c.id, c.kind AS "kind: CourseKind", c.title,
                   c.status AS "status: CourseStatus", c.owner_id, c.term_id, c.created_at,
                   m.role AS "member_role?: CourseRole"
-           FROM teaching.courses c
+           FROM (SELECT course_id AS id FROM teaching.effective_members WHERE user_id = $1
+                 UNION
+                 SELECT id FROM teaching.courses WHERE owner_id = $1) mine
+           JOIN teaching.courses c ON c.id = mine.id
            LEFT JOIN teaching.effective_members m ON m.course_id = c.id AND m.user_id = $1
-           WHERE (m.user_id IS NOT NULL OR c.owner_id = $1)
-             AND (c.status = 'published' OR c.owner_id = $1 OR m.role IN ('teacher', 'assistant'))
+           WHERE (c.status = 'published' OR c.owner_id = $1 OR m.role IN ('teacher', 'assistant'))
              AND ($2::uuid IS NULL OR c.id > $2)
            ORDER BY c.id
            LIMIT $3"#,
