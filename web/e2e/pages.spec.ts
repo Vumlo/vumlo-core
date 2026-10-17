@@ -16,7 +16,7 @@ test.describe("accounts", () => {
     await page.getByLabel("University email").fill("nina@gmail.com");
     await page.getByLabel("Password", { exact: true }).fill("a long unrelated phrase");
     await page.getByRole("button", { name: "Create account" }).click();
-    await expect(page.getByText("Use your university email")).toBeVisible();
+    await expect(page.getByText("ending in @northfield.edu")).toBeVisible();
 
     await page.getByLabel("University email").fill("nina.shevchenko@northfield.edu");
     await page.getByRole("button", { name: "Create account" }).click();
