@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use std::net::SocketAddr;
 
-use axum::http::StatusCode;
+use axum::http::{HeaderValue, Method, StatusCode, header};
 use axum::middleware::map_response;
 use axum::routing::get;
 use axum::{Json, Router};
@@ -15,6 +15,7 @@ use sqlx::migrate::{Migrate, MigrateError, Migrator};
 use sqlx::postgres::PgPoolOptions;
 use tokio::net::TcpListener;
 use tokio::signal::unix::{SignalKind, signal};
+use tower_http::cors::{AllowOrigin, CorsLayer};
 use tower_http::limit::RequestBodyLimitLayer;
 use tower_http::timeout::TimeoutLayer;
 use tower_http::trace::{DefaultOnResponse, TraceLayer};
@@ -185,7 +186,8 @@ pub fn router(state: AppState) -> Result<Router, SetupError> {
         )
         .split_for_parts();
     let spec = openapi.clone();
-    Ok(router
+    let config = state.config.clone();
+    let router = router
         .route(
             "/api/v1/openapi.json",
             get(move || async move { Json(spec) }),
@@ -211,7 +213,42 @@ pub fn router(state: AppState) -> Result<Router, SetupError> {
                 })
                 .on_response(DefaultOnResponse::new().level(Level::INFO)),
         )
-        .layer(map_response(problem_details)))
+        .layer(map_response(problem_details));
+    Ok(cors(router, &config.server.allowed_origins))
+}
+
+/// How long a browser may reuse a preflight answer.
+const PREFLIGHT_MAX_AGE: Duration = Duration::from_secs(600);
+
+/// Lets the browser frontends of `allowed_origins` call the API (ADR-0041). None listed: the
+/// router is returned as it is and no CORS header is ever sent. The layer goes on last so it is
+/// outermost: a preflight is answered before the rate limit, the credential and the CSRF check,
+/// and the headers also reach the error bodies that `problem_details` rebuilds.
+fn cors(router: Router, allowed_origins: &[String]) -> Router {
+    if allowed_origins.is_empty() {
+        return router;
+    }
+    let allowed: Vec<HeaderValue> = allowed_origins
+        .iter()
+        .filter_map(|origin| HeaderValue::from_str(origin).ok())
+        .collect();
+    router.layer(
+        CorsLayer::new()
+            .allow_origin(AllowOrigin::predicate(move |origin, _| {
+                allowed.contains(origin)
+            }))
+            .allow_credentials(true)
+            .allow_methods([
+                Method::GET,
+                Method::POST,
+                Method::PUT,
+                Method::PATCH,
+                Method::DELETE,
+            ])
+            .allow_headers([header::AUTHORIZATION, header::CONTENT_TYPE])
+            .expose_headers([header::RETRY_AFTER])
+            .max_age(PREFLIGHT_MAX_AGE),
+    )
 }
 
 pub async fn serve(

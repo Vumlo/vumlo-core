@@ -55,7 +55,7 @@ pub async fn login(
 ) -> Result<Response, ApiError> {
     if request.client == LoginClient::Web {
         // A login with no session yet is still a state change: refuse cross-site form posts.
-        check_origin(&Method::POST, &headers, &state.config.server.public_origin)?;
+        check_origin(&Method::POST, &headers, &state.config.server)?;
     }
     let attempt = {
         let mut conn = state.db.acquire().await.map_err(IdentityError::from)?;

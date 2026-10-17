@@ -29,6 +29,10 @@ pub struct ServerSettings {
     /// Unset: the TCP peer address is used.
     #[serde(default)]
     pub client_ip_header: Option<String>,
+    /// Origins of trusted browser frontends hosted away from the API (ADR-0041), each exactly
+    /// `scheme://host[:port]`. Empty: no CORS headers, and only `public_origin` passes the CSRF check.
+    #[serde(default)]
+    pub allowed_origins: Vec<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -195,6 +199,7 @@ impl Settings {
             .try_parsing(true)
             .list_separator(",")
             .with_list_parse_key("auth.allowed_domains")
+            .with_list_parse_key("server.allowed_origins")
             .with_list_parse_key("editor.video_providers");
         for profile in ProfileName::ALL {
             env =
@@ -254,18 +259,64 @@ impl Settings {
                 )));
             }
         }
-        let origin = self.server.public_origin.trim_end_matches('/');
-        let host = origin
-            .strip_prefix("https://")
-            .or_else(|| origin.strip_prefix("http://"));
-        if host.is_none_or(|h| h.is_empty() || h.contains(['/', '?', '#'])) {
-            return Err(ConfigError::Message(
-                "server.public_origin must look like https://host[:port], without a path"
-                    .to_owned(),
-            ));
+        self.server.public_origin = origin("server.public_origin", &self.server.public_origin)?;
+        for entry in &mut self.server.allowed_origins {
+            *entry = origin("server.allowed_origins", entry)?;
         }
-        self.server.public_origin = origin.to_owned();
         Ok(())
+    }
+}
+
+/// An origin as a browser writes it in the `Origin` header (ADR-0041): `http` or `https`, a
+/// lowercase host, a port that is not the scheme's default, nothing after that. One trailing `/`
+/// is dropped. Anything else could never equal a real `Origin`, so it is refused at startup.
+fn origin(key: &str, value: &str) -> Result<String, ConfigError> {
+    let bad = || {
+        ConfigError::Message(format!(
+            "{key} \"{value}\" must look like https://host[:port]: http or https, a lowercase \
+             host, no path, no wildcard, no default port"
+        ))
+    };
+    let trimmed = value.strip_suffix('/').unwrap_or(value);
+    let (default_port, rest) = if let Some(rest) = trimmed.strip_prefix("https://") {
+        ("443", rest)
+    } else if let Some(rest) = trimmed.strip_prefix("http://") {
+        ("80", rest)
+    } else {
+        return Err(bad());
+    };
+    let (host, port) = if rest.starts_with('[') {
+        match rest.split_once("]:") {
+            Some((inner, port)) => (&rest[..=inner.len()], Some(port)),
+            None => (rest, None),
+        }
+    } else {
+        match rest.split_once(':') {
+            Some((host, port)) => (host, Some(port)),
+            None => (rest, None),
+        }
+    };
+    let host_ok = if let Some(inner) = host.strip_prefix('[').and_then(|h| h.strip_suffix(']')) {
+        !inner.is_empty() && inner.chars().all(|c| c.is_ascii_hexdigit() || c == ':')
+    } else {
+        !host.is_empty()
+            && !host.starts_with(['.', '-'])
+            && !host.ends_with(['.', '-'])
+            && host
+                .chars()
+                .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '.' || c == '-')
+    };
+    let port_ok = port.is_none_or(|p| {
+        p != default_port
+            && !p.starts_with('0')
+            && p.len() <= 5
+            && p.chars().all(|c| c.is_ascii_digit())
+            && p.parse::<u16>().is_ok()
+    });
+    if host_ok && port_ok {
+        Ok(trimmed.to_owned())
+    } else {
+        Err(bad())
     }
 }
 
@@ -507,6 +558,79 @@ mod tests {
             let e = build(VALID, &[("LEARNLY__SERVER__PUBLIC_ORIGIN", bad)]).unwrap_err();
             assert!(e.to_string().contains("public_origin"), "{bad}: {e}");
         }
+    }
+
+    #[test]
+    fn allowed_origins_default_to_none_and_come_from_a_list() {
+        assert!(build(VALID, &[]).unwrap().server.allowed_origins.is_empty());
+        let settings = build(
+            VALID,
+            &[(
+                "LEARNLY__SERVER__ALLOWED_ORIGINS",
+                "https://app.example.edu/,http://localhost:5173,https://[::1]:8443",
+            )],
+        )
+        .unwrap();
+        assert_eq!(
+            settings.server.allowed_origins,
+            [
+                "https://app.example.edu",
+                "http://localhost:5173",
+                "https://[::1]:8443"
+            ]
+        );
+        let toml = VALID.replace(
+            "public_origin = ",
+            "allowed_origins = [\"https://a.test\"]\npublic_origin = ",
+        );
+        assert_eq!(
+            build(&toml, &[]).unwrap().server.allowed_origins,
+            ["https://a.test"]
+        );
+    }
+
+    #[test]
+    fn invalid_origins_stop_the_server_and_name_the_key() {
+        for bad in [
+            "*",
+            "https://*.example.edu",
+            "null",
+            "",
+            "app.example.edu",
+            "ftp://a.test",
+            "https://a.test/x",
+            "https://a.test?q=1",
+            "https://a.test#f",
+            "https://A.test",
+            "https://a.test:443",
+            "http://a.test:80",
+            "https://a.test:0",
+            "https://a.test:99999",
+            "https://a.test:",
+            "https://a.test:80a",
+            "https://user@a.test",
+            "https://a.test//",
+            "https://",
+            "https://[]",
+        ] {
+            let e = build(VALID, &[("LEARNLY__SERVER__ALLOWED_ORIGINS", bad)]).unwrap_err();
+            assert!(
+                e.to_string().contains("server.allowed_origins"),
+                "{bad:?}: {e}"
+            );
+            let e = build(VALID, &[("LEARNLY__SERVER__PUBLIC_ORIGIN", bad)]).unwrap_err();
+            assert!(
+                e.to_string().contains("server.public_origin"),
+                "{bad:?}: {e}"
+            );
+        }
+        // One bad entry among good ones is still refused.
+        let e = build(
+            VALID,
+            &[("LEARNLY__SERVER__ALLOWED_ORIGINS", "https://a.test,*")],
+        )
+        .unwrap_err();
+        assert!(e.to_string().contains("server.allowed_origins"), "{e}");
     }
 
     fn with_editor(extra: &str) -> String {
