@@ -398,7 +398,7 @@ Examples: in a school, the template "Algebra 7" becomes courses "Algebra 7-A" an
 
 ## Open questions
 
-- Frontend technology (React SPA vs Leptos). The frontend is a separate app either way ([ADR-0013](docs/decisions/0013-separate-frontend.md)).
+- ~~Frontend technology~~ Decided: Next.js, client-rendered ([ADR-0042](docs/decisions/0042-web-frontend-stack.md)). The frontend is a separate app ([ADR-0013](docs/decisions/0013-separate-frontend.md)).
 - Final grades: where they live, periods, computation and rounding. The direction (teacher-entered, system-suggested) is recorded in [ADR-0031](docs/decisions/0031-institution-mode-required-and-fixed.md).
 - Guardians: an institution role linked to specific students.
 - Extension model beyond webhooks: assignment-type registry, WASM, LTI 1.3.
