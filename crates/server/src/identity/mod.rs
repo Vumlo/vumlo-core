@@ -11,5 +11,6 @@ pub use model::{
 };
 pub use routes::{COOKIE_NAME, SetupError, router};
 pub use service::{
-    IdentityError, LoginThrottle, create_user, find_user, find_users, hash_password,
+    IdentityError, LoginThrottle, create_user, create_user_from_cli, find_user, find_users,
+    hash_password,
 };

@@ -19,7 +19,14 @@ pub async fn audit(
     actor: &Actor,
     entry: AuditEntry,
 ) -> Result<(), EventsError> {
-    repo::insert_audit(conn, actor.user_id(), &entry).await?;
+    repo::insert_audit(conn, Some(actor.user_id()), "api", &entry).await?;
+    Ok(())
+}
+
+/// Records something the server CLI did, where nobody is signed in: no actor, the source `cli`
+/// (ADR-0034). Same transaction rule as [`audit`].
+pub async fn audit_cli(conn: &mut PgConnection, entry: AuditEntry) -> Result<(), EventsError> {
+    repo::insert_audit(conn, None, "cli", &entry).await?;
     Ok(())
 }
 

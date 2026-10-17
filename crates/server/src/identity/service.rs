@@ -8,6 +8,7 @@ use std::time::{Duration, Instant};
 
 use argon2::password_hash::{PasswordHasher, PasswordVerifier};
 use argon2::{Algorithm, Argon2, Params, Version};
+use serde_json::json;
 use sha2::{Digest, Sha256};
 use sqlx::PgConnection;
 use uuid::Uuid;
@@ -19,6 +20,7 @@ use super::model::{
 };
 use super::repo::{self, LoginRecord};
 use crate::actor::Actor;
+use crate::events::{self, AuditEntry, EventsError};
 use crate::pagination::{Page, PageParams};
 use crate::policy::{self, Action, PolicyError};
 
@@ -64,6 +66,8 @@ pub enum IdentityError {
     SessionNotFound,
     #[error("password hashing failed")]
     Hashing,
+    #[error(transparent)]
+    Events(#[from] EventsError),
     #[error(transparent)]
     Db(#[from] sqlx::Error),
 }
@@ -267,8 +271,9 @@ impl LoginThrottle {
 // ---------------------------------------------------------------------------------------------
 
 /// Creates a user with a password identity and `must_change_password = true` (ADR-0017: the
-/// password is a generated temporary one). For the server CLI and the admin API, which has
-/// already authorized.
+/// password is a generated temporary one). The low-level function: it audits nothing. The admin
+/// API goes through [`admin_create_user`] and the server CLI through [`create_user_from_cli`],
+/// which do (ADR-0034).
 pub async fn create_user(
     conn: &mut PgConnection,
     new: NewUser,
@@ -279,6 +284,34 @@ pub async fn create_user(
         .map_err(email_taken)?;
     repo::insert_password_identity(conn, user.id, password.as_str()).await?;
     Ok(user)
+}
+
+/// Creates a user for the server CLI, where nobody is signed in, and records it in the audit log
+/// with no actor and the source `cli` (ADR-0034).
+pub async fn create_user_from_cli(
+    conn: &mut PgConnection,
+    new: NewUser,
+    password: HashedPassword,
+) -> Result<User, IdentityError> {
+    let role = new.role;
+    let user = create_user(conn, new, password).await?;
+    events::audit_cli(
+        conn,
+        user_entry("user.create", user.id, json!({"role": role.as_str()})),
+    )
+    .await?;
+    Ok(user)
+}
+
+/// An audit entry about a user. `meta` holds ids, roles and field names only (ADR-0034): never a
+/// password, a hash, a token, an email address or a name.
+fn user_entry(action: &'static str, user_id: Uuid, meta: serde_json::Value) -> AuditEntry {
+    AuditEntry {
+        action,
+        resource_type: "user",
+        resource_id: user_id,
+        meta,
+    }
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -416,7 +449,15 @@ pub async fn admin_create_user(
     temporary_password: HashedPassword,
 ) -> Result<User, IdentityError> {
     policy::authorize(actor, Action::ManageUsers)?;
-    create_user(conn, new, temporary_password).await
+    let role = new.role;
+    let user = create_user(conn, new, temporary_password).await?;
+    events::audit(
+        conn,
+        actor,
+        user_entry("user.create", user.id, json!({"role": role.as_str()})),
+    )
+    .await?;
+    Ok(user)
 }
 
 /// Changes a user's name, role or status. Disabling also deletes all their sessions, in the
@@ -450,6 +491,41 @@ pub async fn update_user(
     if update.status == Some(UserStatus::Disabled) {
         repo::delete_sessions_of(conn, updated.id).await?;
     }
+    // One row for each kind of change, and none for a field that was sent with its old value.
+    let mut renamed = Vec::new();
+    if update
+        .name
+        .as_ref()
+        .is_some_and(|n| n.as_str() != target.name)
+    {
+        renamed.push("name");
+    }
+    if update
+        .surname
+        .as_ref()
+        .is_some_and(|n| n.as_str() != target.surname)
+    {
+        renamed.push("surname");
+    }
+    if !renamed.is_empty() {
+        events::audit(
+            conn,
+            actor,
+            user_entry("user.rename", target.id, json!({"fields": renamed})),
+        )
+        .await?;
+    }
+    if let Some(to) = update.role.filter(|role| *role != target.role) {
+        let meta = json!({"from": target.role.as_str(), "to": to.as_str()});
+        events::audit(conn, actor, user_entry("user.role_change", target.id, meta)).await?;
+    }
+    if let Some(status) = update.status.filter(|status| *status != target.status) {
+        let action = match status {
+            UserStatus::Disabled => "user.disable",
+            UserStatus::Active => "user.enable",
+        };
+        events::audit(conn, actor, user_entry(action, target.id, json!({}))).await?;
+    }
     Ok(updated)
 }
 
@@ -468,6 +544,12 @@ pub async fn reset_password(
     repo::upsert_password_hash(conn, user_id, temporary_password.as_str()).await?;
     repo::set_must_change_password(conn, user_id, true).await?;
     repo::delete_sessions_of(conn, user_id).await?;
+    events::audit(
+        conn,
+        actor,
+        user_entry("user.password_reset", user_id, json!({})),
+    )
+    .await?;
     Ok(())
 }
 

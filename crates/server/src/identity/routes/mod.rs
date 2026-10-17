@@ -125,6 +125,10 @@ impl From<IdentityError> for ApiError {
             }
             IdentityError::UserNotFound | IdentityError::SessionNotFound => Self::NotFound,
             IdentityError::Hashing => Self::Internal,
+            IdentityError::Events(e) => {
+                tracing::error!(error = %e, "identity: audit log error");
+                Self::Internal
+            }
             IdentityError::Db(e) => {
                 tracing::error!(error = %e, "identity: database error");
                 Self::Internal

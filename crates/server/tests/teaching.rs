@@ -986,7 +986,7 @@ async fn admin_actions_are_audited_and_other_actions_are_not(pool: PgPool) {
         ]
     );
     for row in &rows {
-        assert_eq!(row.actor_id, admin.id);
+        assert_eq!(row.actor_id, Some(admin.id));
         assert_eq!(row.resource_type, "course");
     }
     assert_eq!(
