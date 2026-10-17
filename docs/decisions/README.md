@@ -71,3 +71,4 @@ What gets easier, what gets harder, what we must remember.
 | 0036 | [Each test gets its own database and its own pool](0036-test-database-harness.md) |
 | 0037 | [Who is on a course: active students, former students, role changes, owner transfer](0037-who-is-on-a-course.md) |
 | 0038 | [Login hardening: sessions against a verified credential, counted attempts, bounded hashing](0038-login-hardening.md) |
+| 0039 | [Input the database cannot store, races, a busy database, unreadable bodies](0039-api-input-and-errors.md) |
