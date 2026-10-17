@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE content.items i SET position = r.rn\n         FROM (SELECT id, (row_number() OVER (ORDER BY position))::int AS rn\n               FROM content.items WHERE module_id = $1) r\n         WHERE i.id = r.id AND i.position <> r.rn",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "da2d639a8c6cc7f7e4fddc30a234cc271ca9b4e24d770656d4da05c1480f66b5"
+}

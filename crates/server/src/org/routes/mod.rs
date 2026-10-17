@@ -56,8 +56,11 @@ impl From<OrgError> for ApiError {
         match error {
             OrgError::Forbidden(_) => Self::Forbidden("not allowed"),
             OrgError::Invalid(ModelError::Name) => Self::invalid_field("name", error.to_string()),
-            OrgError::Invalid(ModelError::Dates) => {
+            OrgError::Invalid(ModelError::Dates | ModelError::EndsOnRange) => {
                 Self::invalid_field("ends_on", error.to_string())
+            }
+            OrgError::Invalid(ModelError::StartsOnRange) => {
+                Self::invalid_field("starts_on", error.to_string())
             }
             OrgError::TermNotFound
             | OrgError::GroupNotFound
@@ -87,14 +90,8 @@ impl From<OrgError> for ApiError {
                     .collect(),
             },
             OrgError::Identity(e) => e.into(),
-            OrgError::Events(e) => {
-                tracing::error!(error = %e, "org: audit log error");
-                Self::Internal
-            }
-            OrgError::Db(e) => {
-                tracing::error!(error = %e, "org: database error");
-                Self::Internal
-            }
+            OrgError::Events(e) => e.into(),
+            OrgError::Db(e) => Self::from_db("org", &e),
             OrgError::ModeChanged { .. } => {
                 tracing::error!(error = %error, "org: installation record error");
                 Self::Internal

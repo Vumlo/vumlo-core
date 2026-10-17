@@ -149,6 +149,10 @@ impl Walk {
 
     fn string_field(&mut self, map: &Object, key: &str, path: &str, max_bytes: usize) -> String {
         match map.get(key) {
+            Some(Value::String(text)) if has_control_character(text) => {
+                self.err(&at(path, key), "contains a control character");
+                String::new()
+            }
             Some(Value::String(text)) if text.len() <= max_bytes => text.clone(),
             Some(Value::String(_)) => {
                 self.err(&at(path, key), "is too long");
@@ -509,6 +513,13 @@ impl Walk {
         };
         TextRun { text, styles }
     }
+}
+
+/// A control character other than a line break or a tab. The database cannot store a NUL in text,
+/// and no other control character belongs in a document either (ADR-0039).
+fn has_control_character(text: &str) -> bool {
+    text.chars()
+        .any(|c| c.is_control() && !matches!(c, '\n' | '\r' | '\t'))
 }
 
 /// http or https, something after the scheme, no whitespace or control characters.

@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT id, attempt AS \"attempt!\", content AS \"content: Body\",\n                  submitted_at AS \"submitted_at!\", is_late\n           FROM assessment.submissions\n           WHERE assignment_id = $1 AND student_id = $2 AND status = 'submitted'\n             AND ($3::uuid IS NULL\n                  OR attempt < (SELECT s.attempt FROM assessment.submissions s WHERE s.id = $3))\n           ORDER BY attempt DESC\n           LIMIT $4",
+  "query": "SELECT id, attempt AS \"attempt!\", content AS \"content: Body\",\n                  submitted_at AS \"submitted_at!\", is_late\n           FROM assessment.submissions\n           WHERE assignment_id = $1 AND student_id = $2 AND status = 'submitted'\n             AND ($3::uuid IS NULL\n                  OR attempt < (SELECT s.attempt FROM assessment.submissions s\n                                WHERE s.id = $3 AND s.assignment_id = $1 AND s.student_id = $2\n                                  AND s.status = 'submitted'))\n           ORDER BY attempt DESC\n           LIMIT $4",
   "describe": {
     "columns": [
       {
@@ -75,5 +75,5 @@
       false
     ]
   },
-  "hash": "41214f615fd4311e04530473e21f2bc5f48d2ff99e7289e82aa3f19101c3e443"
+  "hash": "afb1efb0fd0a25c70567f3e36e9d16759b3ed3e3176248f83f8c0c4214cf5fe9"
 }

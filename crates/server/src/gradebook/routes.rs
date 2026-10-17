@@ -62,14 +62,8 @@ impl From<GradebookError> for ApiError {
             GradebookError::StudentFormer => {
                 Self::Conflict("the student is no longer on the roster, their grades are read-only")
             }
-            GradebookError::Events(e) => {
-                tracing::error!(error = %e, "gradebook: outbox or audit log error");
-                Self::Internal
-            }
-            GradebookError::Db(e) => {
-                tracing::error!(error = %e, "gradebook: database error");
-                Self::Internal
-            }
+            GradebookError::Events(e) => e.into(),
+            GradebookError::Db(e) => Self::from_db("gradebook", &e),
         }
     }
 }

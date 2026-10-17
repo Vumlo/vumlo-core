@@ -160,7 +160,9 @@ pub async fn submit_draft(
     })
 }
 
-/// The submitted attempts of one student, newest first, after the attempt `after` (a row id).
+/// The submitted attempts of one student, newest first, after the attempt `after` (a row id). The
+/// cursor counts only if it is an attempt of this student at this assignment: a row id from
+/// anywhere else would otherwise tell the caller its attempt number.
 pub async fn list_attempts(
     conn: &mut PgConnection,
     assignment_id: Uuid,
@@ -174,7 +176,9 @@ pub async fn list_attempts(
            FROM assessment.submissions
            WHERE assignment_id = $1 AND student_id = $2 AND status = 'submitted'
              AND ($3::uuid IS NULL
-                  OR attempt < (SELECT s.attempt FROM assessment.submissions s WHERE s.id = $3))
+                  OR attempt < (SELECT s.attempt FROM assessment.submissions s
+                                WHERE s.id = $3 AND s.assignment_id = $1 AND s.student_id = $2
+                                  AND s.status = 'submitted'))
            ORDER BY attempt DESC
            LIMIT $4"#,
         assignment_id,

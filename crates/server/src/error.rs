@@ -1,5 +1,6 @@
 use api_types::{FieldError, ProblemDetails};
 use axum::Json;
+use axum::extract::rejection::JsonRejection;
 use axum::extract::{FromRequest, FromRequestParts, Query, Request};
 use axum::http::request::Parts;
 use axum::http::{HeaderValue, StatusCode, header};
@@ -8,6 +9,8 @@ use garde::{Report, Validate};
 use serde::de::DeserializeOwned;
 
 const PROBLEM_JSON: &str = "application/problem+json";
+/// What a `503` tells a client to wait.
+const RETRY_AFTER_UNAVAILABLE_SECS: u64 = 5;
 
 #[derive(Debug)]
 pub enum ApiError {
@@ -43,6 +46,19 @@ impl ApiError {
         }
     }
 
+    /// The response for a database error met in `module`. A database that cannot be reached, a pool
+    /// that has no connection to give within its timeout and a server that is full or shutting down
+    /// are `503` with `Retry-After`: the request can be tried again. Anything else is logged and
+    /// answered with a generic `500` (ADR-0039).
+    pub fn from_db(module: &str, error: &sqlx::Error) -> Self {
+        if is_unavailable(error) {
+            tracing::warn!(error = %error, "{module}: the database is unavailable");
+            return Self::ServiceUnavailable("the database is busy or unavailable, try again");
+        }
+        tracing::error!(error = %error, "{module}: database error");
+        Self::Internal
+    }
+
     fn status(&self) -> StatusCode {
         match self {
             Self::NotFound => StatusCode::NOT_FOUND,
@@ -54,6 +70,28 @@ impl ApiError {
             Self::ServiceUnavailable(_) => StatusCode::SERVICE_UNAVAILABLE,
             Self::Internal => StatusCode::INTERNAL_SERVER_ERROR,
             Self::Status(status) => *status,
+        }
+    }
+}
+
+/// Errors after which the same request may well succeed.
+fn is_unavailable(error: &sqlx::Error) -> bool {
+    match error {
+        sqlx::Error::PoolTimedOut | sqlx::Error::PoolClosed | sqlx::Error::Io(_) => true,
+        sqlx::Error::WorkerCrashed => true,
+        sqlx::Error::Database(db) => db.code().is_some_and(|code| {
+            // 08: connection exception; 53: insufficient resources (too many connections, disk,
+            // memory); 57P: operator intervention (shutdown, restart).
+            code.starts_with("08") || code.starts_with("53") || code.starts_with("57P")
+        }),
+        _ => false,
+    }
+}
+
+impl From<crate::events::EventsError> for ApiError {
+    fn from(error: crate::events::EventsError) -> Self {
+        match error {
+            crate::events::EventsError::Db(e) => Self::from_db("events", &e),
         }
     }
 }
@@ -82,7 +120,14 @@ impl IntoResponse for ApiError {
                 extra_headers.push((header::WWW_AUTHENTICATE, HeaderValue::from_static("Bearer")));
                 (Some(detail.to_owned()), Vec::new())
             }
-            Self::Forbidden(detail) | Self::Conflict(detail) | Self::ServiceUnavailable(detail) => {
+            Self::Forbidden(detail) | Self::Conflict(detail) => {
+                (Some(detail.to_owned()), Vec::new())
+            }
+            Self::ServiceUnavailable(detail) => {
+                extra_headers.push((
+                    header::RETRY_AFTER,
+                    HeaderValue::from(RETRY_AFTER_UNAVAILABLE_SECS),
+                ));
                 (Some(detail.to_owned()), Vec::new())
             }
             Self::Unprocessable { detail, errors } => (Some(detail), errors),
@@ -149,10 +194,22 @@ where
     type Rejection = ApiError;
 
     async fn from_request(req: Request, state: &S) -> Result<Self, ApiError> {
-        // The rejection text may quote request values (e.g. a password), so only its status is used.
+        // The rejection text may quote request values (e.g. a password), so only its kind is used.
+        // A body that cannot be read as the expected JSON is a 422 like a bad field (ADR-0018);
+        // a missing or wrong media type is 415 and a body that is too large is 413.
         let Json(value) = Json::<T>::from_request(req, state)
             .await
-            .map_err(|rejection| ApiError::Status(rejection.status()))?;
+            .map_err(|rejection| match rejection {
+                JsonRejection::JsonSyntaxError(_) => ApiError::Unprocessable {
+                    detail: "the request body is not valid JSON".to_owned(),
+                    errors: Vec::new(),
+                },
+                JsonRejection::JsonDataError(_) => ApiError::Unprocessable {
+                    detail: "the request body does not have the expected shape".to_owned(),
+                    errors: Vec::new(),
+                },
+                other => ApiError::Status(other.status()),
+            })?;
         value.validate()?;
         Ok(Self(value))
     }

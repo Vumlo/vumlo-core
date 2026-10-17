@@ -176,7 +176,7 @@ pub async fn update_module(
     title: Option<&str>,
     set_publish_at: bool,
     publish_at: Option<DateTime<Utc>>,
-) -> Result<Module, sqlx::Error> {
+) -> Result<Option<Module>, sqlx::Error> {
     sqlx::query_as!(
         Module,
         r#"UPDATE content.modules
@@ -191,7 +191,7 @@ pub async fn update_module(
         set_publish_at,
         publish_at
     )
-    .fetch_one(conn)
+    .fetch_optional(conn)
     .await
 }
 
@@ -199,6 +199,42 @@ pub async fn delete_module(conn: &mut PgConnection, id: Uuid) -> Result<u64, sql
     let result = sqlx::query!("DELETE FROM content.modules WHERE id = $1", id)
         .execute(conn)
         .await?;
+    Ok(result.rows_affected())
+}
+
+/// Renumbers one sibling sequence of modules 1, 2, 3 … in the order it has, so that a delete leaves
+/// no gap (ADR-0020). The unique key on the position is deferred, so the rewrite may pass through
+/// duplicates. The rows are not touched otherwise: their `updated_at` stays.
+pub async fn compact_modules(
+    conn: &mut PgConnection,
+    course_id: Uuid,
+    parent_id: Option<Uuid>,
+) -> Result<u64, sqlx::Error> {
+    let result = sqlx::query!(
+        "UPDATE content.modules m SET position = r.rn
+         FROM (SELECT id, (row_number() OVER (ORDER BY position))::int AS rn
+               FROM content.modules
+               WHERE course_id = $1 AND parent_id IS NOT DISTINCT FROM $2::uuid) r
+         WHERE m.id = r.id AND m.position <> r.rn",
+        course_id,
+        parent_id
+    )
+    .execute(conn)
+    .await?;
+    Ok(result.rows_affected())
+}
+
+/// Like [`compact_modules`] for the items of one module.
+pub async fn compact_items(conn: &mut PgConnection, module_id: Uuid) -> Result<u64, sqlx::Error> {
+    let result = sqlx::query!(
+        "UPDATE content.items i SET position = r.rn
+         FROM (SELECT id, (row_number() OVER (ORDER BY position))::int AS rn
+               FROM content.items WHERE module_id = $1) r
+         WHERE i.id = r.id AND i.position <> r.rn",
+        module_id
+    )
+    .execute(conn)
+    .await?;
     Ok(result.rows_affected())
 }
 
@@ -390,7 +426,7 @@ pub async fn update_item(
     body: Option<&Map<String, Value>>,
     set_publish_at: bool,
     publish_at: Option<DateTime<Utc>>,
-) -> Result<Item, sqlx::Error> {
+) -> Result<Option<Item>, sqlx::Error> {
     let raw = sqlx::query_as!(
         RawItem,
         r#"UPDATE content.items
@@ -408,9 +444,9 @@ pub async fn update_item(
         set_publish_at,
         publish_at
     )
-    .fetch_one(conn)
+    .fetch_optional(conn)
     .await?;
-    Ok(raw.into())
+    Ok(raw.map(Item::from))
 }
 
 pub async fn delete_item(conn: &mut PgConnection, id: Uuid) -> Result<u64, sqlx::Error> {
@@ -764,7 +800,7 @@ pub async fn update_assignment(
     max_points: Option<MaxPoints>,
     is_bonus: Option<bool>,
     settings: Option<SubmissionSettings>,
-) -> Result<Assignment, sqlx::Error> {
+) -> Result<Option<Assignment>, sqlx::Error> {
     let new = settings.unwrap_or_default();
     let raw = sqlx::query_as!(
         RawAssignment,
@@ -794,9 +830,9 @@ pub async fn update_assignment(
         new.late_until,
         new.max_attempts
     )
-    .fetch_one(conn)
+    .fetch_optional(conn)
     .await?;
-    Ok(raw.into())
+    Ok(raw.map(Assignment::from))
 }
 
 /// Takes the transaction-scoped advisory lock that serializes writes to a course's points

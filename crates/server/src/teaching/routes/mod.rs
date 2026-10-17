@@ -77,14 +77,8 @@ impl From<TeachingError> for ApiError {
             }
             TeachingError::Identity(e) => e.into(),
             TeachingError::Org(e) => e.into(),
-            TeachingError::Events(e) => {
-                tracing::error!(error = %e, "teaching: audit log error");
-                Self::Internal
-            }
-            TeachingError::Db(e) => {
-                tracing::error!(error = %e, "teaching: database error");
-                Self::Internal
-            }
+            TeachingError::Events(e) => e.into(),
+            TeachingError::Db(e) => Self::from_db("teaching", &e),
         }
     }
 }

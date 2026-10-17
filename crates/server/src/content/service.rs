@@ -475,7 +475,9 @@ pub async fn update_module(
         patch.publish_at.is_some(),
         patch.publish_at.flatten(),
     )
-    .await?;
+    .await?
+    // Deleted while this request waited for the row: it is gone, not a failure (ADR-0039).
+    .ok_or(ContentError::ModuleNotFound)?;
     audit(
         conn,
         actor,
@@ -509,7 +511,12 @@ pub async fn delete_module(
     }
     gradebook::purge_module(conn, id).await?;
     assessment::purge_module(conn, id).await?;
-    repo::delete_module(conn, id).await?;
+    // A delete that lost the race to another one found nothing: no answer of success and no
+    // audit row for something that did not happen (ADR-0039).
+    if repo::delete_module(conn, id).await? == 0 {
+        return Err(ContentError::ModuleNotFound);
+    }
+    repo::compact_modules(conn, row.module.course_id, row.module.parent_id).await?;
     audit(
         conn,
         actor,
@@ -576,6 +583,9 @@ pub async fn publish_module(
 ) -> Result<Module, ContentError> {
     let row = manage_module(conn, actor, id).await?;
     let published = repo::publish_module(conn, id).await?;
+    if published.is_none() && repo::find_module(conn, id).await?.is_none() {
+        return Err(ContentError::ModuleNotFound);
+    }
     let mut changed = published.is_some();
     if cascade {
         let submodules = repo::publish_draft_submodules(conn, id).await?;
@@ -859,7 +869,8 @@ pub async fn update_item(
         patch.publish_at.is_some(),
         patch.publish_at.flatten(),
     )
-    .await?;
+    .await?
+    .ok_or(ContentError::ItemNotFound)?;
     item.assignment = if is_assignment && patch.touches_assignment() {
         Some(
             repo::update_assignment(
@@ -870,7 +881,8 @@ pub async fn update_item(
                 patch.is_bonus,
                 settings,
             )
-            .await?,
+            .await?
+            .ok_or(ContentError::ItemNotFound)?,
         )
     } else if is_assignment {
         repo::find_assignment(conn, id).await?
@@ -907,7 +919,10 @@ pub async fn delete_item(
         gradebook::purge_assignment(conn, id).await?;
         assessment::purge_assignment(conn, id).await?;
     }
-    repo::delete_item(conn, id).await?;
+    if repo::delete_item(conn, id).await? == 0 {
+        return Err(ContentError::ItemNotFound);
+    }
+    repo::compact_items(conn, row.item.module_id).await?;
     audit(
         conn,
         actor,
@@ -965,7 +980,13 @@ pub async fn publish_item(
             .await?;
             Ok(item)
         }
-        None => Ok(row.item),
+        None => {
+            // Already published, or deleted while this request waited.
+            if repo::find_item(conn, id).await?.is_none() {
+                return Err(ContentError::ItemNotFound);
+            }
+            Ok(row.item)
+        }
     }
 }
 

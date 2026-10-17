@@ -36,6 +36,48 @@ fn single(value: &Value) -> (String, &'static str) {
     (errors[0].path.clone(), errors[0].message)
 }
 
+#[test]
+fn a_control_character_is_refused_everywhere_text_is_stored_but_line_breaks_are_text() {
+    for (blocks, path) in [
+        (
+            json!([paragraph("a", "x\u{0}y")]),
+            "blocks[0].content[0].text",
+        ),
+        (
+            json!([paragraph("a", "x\u{1b}")]),
+            "blocks[0].content[0].text",
+        ),
+        (
+            json!([{"id": "a", "type": "code", "props": {"language": "rust", "source": "a\u{0}"}}]),
+            "blocks[0].props.source",
+        ),
+        (
+            json!([{"id": "a", "type": "math", "props": {"source": "\u{8}"}}]),
+            "blocks[0].props.source",
+        ),
+        (
+            json!([{"id": "a", "type": "mermaid", "props": {"source": "\u{0}"}}]),
+            "blocks[0].props.source",
+        ),
+        (
+            json!([{"id": "a", "type": "paragraph", "content": [{"type": "math", "source": "\u{0}"}]}]),
+            "blocks[0].content[0].source",
+        ),
+        (
+            json!([{"id": "a", "type": "paragraph", "content": [
+                {"type": "link", "href": "https://x.edu", "content": [{"type": "text", "text": "\u{0}"}]}]}]),
+            "blocks[0].content[0].content[0].text",
+        ),
+    ] {
+        assert_eq!(
+            single(&doc(blocks)),
+            (path.to_owned(), "contains a control character"),
+            "{path}"
+        );
+    }
+    assert!(validate(&doc(json!([paragraph("a", "one\ntwo\tthree\r\n")]))).is_ok());
+}
+
 fn sample() -> Value {
     doc(json!([
         {"id": "a", "type": "paragraph", "content": [

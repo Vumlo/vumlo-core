@@ -1655,7 +1655,7 @@ async fn a_reorder_must_list_exactly_the_current_siblings() {
 }
 
 #[tokio::test]
-async fn deleting_leaves_gaps_and_later_creates_still_append() {
+async fn deleting_closes_the_gap_and_later_creates_still_append() {
     db_test(async |pool| {
         let w = world(pool).await;
         let m = module(&w, "M", None).await;
@@ -1671,7 +1671,7 @@ async fn deleting_leaves_gaps_and_later_creates_still_append() {
             .iter()
             .map(|i| i["position"].as_i64().unwrap())
             .collect();
-        assert_eq!(positions, [1, 3], "the gap stays");
+        assert_eq!(positions, [1, 2], "the siblings are renumbered (ADR-0020)");
         let appended = created(
             &post(
                 &w.http,
@@ -1681,8 +1681,8 @@ async fn deleting_leaves_gaps_and_later_creates_still_append() {
             )
             .await,
         );
-        assert_eq!(appended["position"], 4);
-        // The remaining items can be reordered although positions are not dense.
+        assert_eq!(appended["position"], 3);
+        // The remaining items can be reordered.
         let ids: Vec<Uuid> = {
             let tree = crate::tree(&w, &w.owner.token).await;
             top(&tree, "M")["items"]
@@ -1711,10 +1711,54 @@ async fn deleting_leaves_gaps_and_later_creates_still_append() {
             .iter()
             .map(|i| i["position"].as_i64().unwrap())
             .collect();
+        assert_eq!(positions, [1, 2, 3], "a reorder keeps positions dense");
+    })
+    .await;
+}
+
+/// Modules close the gap too, in the sequence they were in: the top level and one parent's
+/// sub-modules are separate sequences, and a deleted parent takes its children with it.
+#[tokio::test]
+async fn deleting_a_module_renumbers_only_its_own_siblings() {
+    db_test(async |pool| {
+        let w = world(pool).await;
+        let a = module(&w, "A", None).await;
+        let b = module(&w, "B", None).await;
+        module(&w, "C", None).await;
+        let a1 = module(&w, "A1", Some(a)).await;
+        module(&w, "A2", Some(a)).await;
+        module(&w, "A3", Some(a)).await;
+        let positions = |tree: &Value| -> (Vec<i64>, Vec<i64>) {
+            let top_level = tree["modules"].as_array().unwrap();
+            let own = top_level.iter().map(|m| m["position"].as_i64().unwrap());
+            let children = top_level
+                .iter()
+                .find(|m| m["title"] == "A")
+                .map_or(Vec::new(), |a| {
+                    a["submodules"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .map(|m| m["position"].as_i64().unwrap())
+                        .collect()
+                });
+            (own.collect(), children)
+        };
         assert_eq!(
-            positions,
-            [1, 2, 3],
-            "a reorder makes positions dense again"
+            positions(&tree(&w, &w.owner.token).await),
+            (vec![1, 2, 3], vec![1, 2, 3])
+        );
+
+        no_content(&delete(&w.http, &w.owner.token, &format!("/modules/{a1}")).await);
+        assert_eq!(
+            positions(&tree(&w, &w.owner.token).await),
+            (vec![1, 2, 3], vec![1, 2]),
+            "only the sub-modules of A are renumbered"
+        );
+        no_content(&delete(&w.http, &w.owner.token, &format!("/modules/{b}")).await);
+        assert_eq!(
+            positions(&tree(&w, &w.owner.token).await),
+            (vec![1, 2], vec![1, 2])
         );
     })
     .await;
