@@ -1,5 +1,7 @@
+use std::collections::BTreeSet;
 use std::fmt;
 
+use api_types::{Feature, ProfileName};
 use chrono::{DateTime, Utc};
 use serde_json::{Map, Value};
 use sqlx::Postgres;
@@ -7,8 +9,9 @@ use sqlx::postgres::{PgTypeInfo, PgValueRef};
 use sqlx::types::Decimal;
 use uuid::Uuid;
 
+use super::document::{DocumentErrors, EffectiveProfiles, ValidDocument, validate_document_within};
 use crate::points;
-use crate::policy::Release;
+use crate::policy::{CourseAccess, Release};
 use crate::text_enum::text_enum;
 
 const TITLE_MAX_LEN: usize = 200;
@@ -118,10 +121,24 @@ impl<'r> sqlx::Decode<'r, Postgres> for MaxPoints {
 }
 
 /// What an assignment type must provide (ADR-0008). It is the future plugin boundary, so it stays
-/// small: submissions and auto-grading join it with their own tasks.
+/// small: auto-grading joins it with its own task.
 pub trait AssignmentType {
     /// `Ok` when `config` is a valid configuration for this type.
     fn validate_config(&self, config: &Map<String, Value>) -> Result<(), ModelError>;
+
+    /// Whether a student submits something for this type. Only such a type has the deadline
+    /// settings of [`SubmissionSettings`] (ADR-0035).
+    fn takes_submissions(&self) -> bool;
+
+    /// Checks the `content` of a draft against the type, as narrowed by the institution's
+    /// configuration (`profiles`) and by the assignment's own `config` (ADR-0025, ADR-0023). It
+    /// is called only for a type that takes submissions.
+    fn validate_submission(
+        &self,
+        config: &Map<String, Value>,
+        content: &Value,
+        profiles: &EffectiveProfiles,
+    ) -> Result<ValidDocument, DocumentErrors>;
 }
 
 /// The types built into the server. The database column is plain text (ADR-0008).
@@ -140,17 +157,269 @@ impl BuiltinType {
     }
 }
 
+/// The features a `text` assignment's `config.editor.features` allows, in the order given, or
+/// `None` when the config does not narrow the profile. Only `{"editor": {"features": [..]}}` is a
+/// valid config; the messages name the position of a mistake and never repeat what was sent.
+pub fn editor_features(config: &Map<String, Value>) -> Result<Option<Vec<Feature>>, ModelError> {
+    let invalid = |message: &str| Err(ModelError::Config(message.to_owned()));
+    if let Some(field) = config.keys().find(|key| *key != "editor") {
+        return Err(ModelError::Config(format!(
+            "unknown field `{field}`: the text type has only `editor`"
+        )));
+    }
+    let Some(editor) = config.get("editor") else {
+        return Ok(None);
+    };
+    let Some(editor) = editor.as_object() else {
+        return invalid("`editor` must be an object");
+    };
+    if editor.keys().any(|key| key != "features") {
+        return invalid("unknown field in `editor`: it has only `features`");
+    }
+    let Some(features) = editor.get("features") else {
+        return Ok(None);
+    };
+    let Some(features) = features.as_array() else {
+        return invalid("`editor.features` must be a list of feature names");
+    };
+    let mut chosen = Vec::with_capacity(features.len());
+    for (index, value) in features.iter().enumerate() {
+        let Some(feature) = value.as_str().and_then(Feature::from_name) else {
+            return Err(ModelError::Config(format!(
+                "`editor.features[{index}]` is not a feature (expected one of: {})",
+                Feature::ALL
+                    .iter()
+                    .map(|feature| feature.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )));
+        };
+        if chosen.contains(&feature) {
+            return Err(ModelError::Config(format!(
+                "`editor.features[{index}]` is listed twice"
+            )));
+        }
+        chosen.push(feature);
+    }
+    Ok(Some(chosen))
+}
+
 impl AssignmentType for BuiltinType {
     fn validate_config(&self, config: &Map<String, Value>) -> Result<(), ModelError> {
         match self {
-            // These types need no settings; any field is a mistake.
-            Self::Text | Self::NoSubmission => match config.keys().next() {
+            // `text` can only narrow what the student's editor offers (ADR-0025).
+            Self::Text => editor_features(config).map(|_| ()),
+            // This type needs no settings; any field is a mistake.
+            Self::NoSubmission => match config.keys().next() {
                 None => Ok(()),
                 Some(field) => Err(ModelError::Config(format!(
                     "unknown field `{field}`: the {} type has no settings",
                     self.as_str()
                 ))),
             },
+        }
+    }
+
+    fn takes_submissions(&self) -> bool {
+        match self {
+            Self::Text => true,
+            Self::NoSubmission => false,
+        }
+    }
+
+    fn validate_submission(
+        &self,
+        config: &Map<String, Value>,
+        content: &Value,
+        profiles: &EffectiveProfiles,
+    ) -> Result<ValidDocument, DocumentErrors> {
+        match self {
+            Self::Text => {
+                // A config that cannot be read narrows nothing further here: `validate_config`
+                // refused it when it was written.
+                let within: Option<BTreeSet<Feature>> = editor_features(config)
+                    .ok()
+                    .flatten()
+                    .map(|features| features.into_iter().collect());
+                validate_document_within(content, ProfileName::Student, profiles, within.as_ref())
+            }
+            Self::NoSubmission => Err(DocumentErrors::one("", "this type takes no submissions")),
+        }
+    }
+}
+
+/// What happens to a draft at `due_at` (ADR-0011). `AutoSubmit` is stored and validated and does
+/// nothing until the background worker exists (ADR-0035).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OnDeadline {
+    KeepDraft,
+    AutoSubmit,
+}
+text_enum!(OnDeadline { KeepDraft => "keep_draft", AutoSubmit => "auto_submit" });
+
+/// The deadline settings of an assignment that takes submissions (ADR-0011, ADR-0035). Either
+/// `due_at`, `on_deadline` and `accept_late` are all set or none is; `late_until` needs
+/// `accept_late` and comes after `due_at`; `max_attempts` is at least 1. [`Self::resolve`] is
+/// the one place that checks this, and the database repeats it in CHECK constraints.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct SubmissionSettings {
+    pub due_at: Option<DateTime<Utc>>,
+    pub on_deadline: Option<OnDeadline>,
+    pub accept_late: Option<bool>,
+    /// `None` with `accept_late` set means late work is taken without an end.
+    pub late_until: Option<DateTime<Utc>>,
+    /// `None` means unlimited.
+    pub max_attempts: Option<i32>,
+}
+
+/// A change to the settings, as the client sent it: for each field `None` leaves it, `Some(None)`
+/// clears it and `Some(Some(_))` sets it. `on_deadline` and `max_attempts` stay raw so that a bad
+/// value is reported on its field.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct SettingsPatch {
+    pub due_at: Option<Option<DateTime<Utc>>>,
+    pub on_deadline: Option<Option<String>>,
+    pub accept_late: Option<Option<bool>>,
+    pub late_until: Option<Option<DateTime<Utc>>>,
+    pub max_attempts: Option<Option<i64>>,
+}
+
+/// One rule of the settings that the resulting state breaks, on one field.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SettingProblem {
+    pub field: &'static str,
+    pub message: String,
+}
+
+impl SettingsPatch {
+    pub fn is_empty(&self) -> bool {
+        *self == Self::default()
+    }
+
+    /// The first field the patch mentions, set or cleared. Call it on a patch that is not empty.
+    pub fn first_field(&self) -> &'static str {
+        [
+            ("due_at", self.due_at.is_some()),
+            ("on_deadline", self.on_deadline.is_some()),
+            ("accept_late", self.accept_late.is_some()),
+            ("late_until", self.late_until.is_some()),
+            ("max_attempts", self.max_attempts.is_some()),
+        ]
+        .into_iter()
+        .find_map(|(field, mentioned)| mentioned.then_some(field))
+        .unwrap_or("settings")
+    }
+
+    /// The fields that set a value, for a type that takes no submissions to refuse. Clearing a
+    /// field with `null` is not setting it.
+    fn set_fields(&self) -> Vec<&'static str> {
+        [
+            ("due_at", matches!(self.due_at, Some(Some(_)))),
+            ("on_deadline", matches!(self.on_deadline, Some(Some(_)))),
+            ("accept_late", matches!(self.accept_late, Some(Some(_)))),
+            ("late_until", matches!(self.late_until, Some(Some(_)))),
+            ("max_attempts", matches!(self.max_attempts, Some(Some(_)))),
+        ]
+        .into_iter()
+        .filter_map(|(field, set)| set.then_some(field))
+        .collect()
+    }
+}
+
+impl SubmissionSettings {
+    /// The settings after `patch` is applied to `self`, with every broken rule reported at once.
+    /// The rules are judged on the resulting state, so a field the patch leaves alone can be the
+    /// one that makes it fail. `takes_submissions` is the type's answer: a type that takes none
+    /// refuses any value.
+    pub fn resolve(
+        self,
+        patch: &SettingsPatch,
+        takes_submissions: bool,
+    ) -> Result<Self, Vec<SettingProblem>> {
+        if !takes_submissions {
+            let problems: Vec<_> = patch
+                .set_fields()
+                .into_iter()
+                .map(|field| SettingProblem {
+                    field,
+                    message: "this assignment type takes no submissions".to_owned(),
+                })
+                .collect();
+            return if problems.is_empty() {
+                Ok(self)
+            } else {
+                Err(problems)
+            };
+        }
+        let mut problems = Vec::new();
+        let mut problem = |field, message: &str| {
+            problems.push(SettingProblem {
+                field,
+                message: message.to_owned(),
+            });
+        };
+        let due_at = patch.due_at.unwrap_or(self.due_at);
+        let accept_late = patch.accept_late.unwrap_or(self.accept_late);
+        let late_until = patch.late_until.unwrap_or(self.late_until);
+        let on_deadline = match &patch.on_deadline {
+            None => self.on_deadline,
+            Some(None) => None,
+            Some(Some(raw)) => match raw.parse::<OnDeadline>() {
+                Ok(value) => Some(value),
+                Err(_) => {
+                    problem("on_deadline", "must be keep_draft or auto_submit");
+                    self.on_deadline
+                }
+            },
+        };
+        let max_attempts = match patch.max_attempts {
+            None => self.max_attempts,
+            Some(None) => None,
+            Some(Some(raw)) => match i32::try_from(raw).ok().filter(|n| *n >= 1) {
+                Some(value) => Some(value),
+                None => {
+                    problem("max_attempts", "must be a whole number of at least 1");
+                    self.max_attempts
+                }
+            },
+        };
+        let bad_on_deadline =
+            matches!(&patch.on_deadline, Some(Some(raw)) if raw.parse::<OnDeadline>().is_err());
+        match due_at {
+            Some(_) => {
+                if on_deadline.is_none() && !bad_on_deadline {
+                    problem("on_deadline", "is required when due_at is set");
+                }
+                if accept_late.is_none() {
+                    problem("accept_late", "is required when due_at is set");
+                }
+            }
+            None => {
+                if on_deadline.is_some() {
+                    problem("on_deadline", "needs due_at");
+                }
+                if accept_late.is_some() {
+                    problem("accept_late", "needs due_at");
+                }
+            }
+        }
+        if let Some(late_until) = late_until {
+            if accept_late != Some(true) {
+                problem("late_until", "needs accept_late to be true");
+            } else if due_at.is_some_and(|due_at| late_until <= due_at) {
+                problem("late_until", "must be after due_at");
+            }
+        }
+        if problems.is_empty() {
+            Ok(Self {
+                due_at,
+                on_deadline,
+                accept_late,
+                late_until,
+                max_attempts,
+            })
+        } else {
+            Err(problems)
         }
     }
 }
@@ -162,6 +431,7 @@ pub struct Assignment {
     pub config: Map<String, Value>,
     pub max_points: MaxPoints,
     pub is_bonus: bool,
+    pub settings: SubmissionSettings,
 }
 
 /// What the course tree shows of an assignment.
@@ -170,6 +440,16 @@ pub struct AssignmentSummary {
     pub assignment_type: BuiltinType,
     pub max_points: MaxPoints,
     pub is_bonus: bool,
+    pub settings: SubmissionSettings,
+}
+
+/// An assignment that a user may view, with how they relate to its course (see
+/// `content::open_assignment`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct OpenedAssignment {
+    pub course_id: Uuid,
+    pub assignment_type: BuiltinType,
+    pub access: CourseAccess,
 }
 
 /// A top-level module (`parent_id` is `None`) or a sub-module.
@@ -281,6 +561,7 @@ pub struct ItemPatch {
     pub config: Option<Map<String, Value>>,
     pub max_points: Option<MaxPoints>,
     pub is_bonus: Option<bool>,
+    pub settings: SettingsPatch,
 }
 
 impl ItemPatch {
@@ -293,7 +574,10 @@ impl ItemPatch {
 
     /// True when the patch sets a field that lives on the assignment row.
     pub fn touches_assignment(&self) -> bool {
-        self.config.is_some() || self.max_points.is_some() || self.is_bonus.is_some()
+        self.config.is_some()
+            || self.max_points.is_some()
+            || self.is_bonus.is_some()
+            || !self.settings.is_empty()
     }
 }
 
@@ -405,6 +689,287 @@ mod tests {
             assert!(message.contains("limit"), "{message}");
             assert!(message.contains(assignment_type.as_str()), "{message}");
         }
+    }
+
+    fn at(day: u32) -> DateTime<Utc> {
+        DateTime::parse_from_rfc3339(&format!("2030-01-{day:02}T12:00:00Z"))
+            .unwrap()
+            .with_timezone(&Utc)
+    }
+
+    fn deadline_patch() -> SettingsPatch {
+        SettingsPatch {
+            due_at: Some(Some(at(10))),
+            on_deadline: Some(Some("keep_draft".to_owned())),
+            accept_late: Some(Some(false)),
+            ..SettingsPatch::default()
+        }
+    }
+
+    fn fields(result: Result<SubmissionSettings, Vec<SettingProblem>>) -> Vec<&'static str> {
+        result
+            .expect_err("the settings must be refused")
+            .into_iter()
+            .map(|problem| problem.field)
+            .collect()
+    }
+
+    #[test]
+    fn a_deadline_comes_with_what_happens_at_it_and_whether_late_work_is_taken() {
+        let set = SubmissionSettings::default()
+            .resolve(&deadline_patch(), true)
+            .unwrap();
+        assert_eq!(set.due_at, Some(at(10)));
+        assert_eq!(set.on_deadline, Some(OnDeadline::KeepDraft));
+        assert_eq!(set.accept_late, Some(false));
+        assert_eq!((set.late_until, set.max_attempts), (None, None));
+
+        for (what, patch, expected) in [
+            (
+                "due_at alone",
+                SettingsPatch {
+                    due_at: Some(Some(at(10))),
+                    ..SettingsPatch::default()
+                },
+                vec!["on_deadline", "accept_late"],
+            ),
+            (
+                "on_deadline alone",
+                SettingsPatch {
+                    on_deadline: Some(Some("auto_submit".to_owned())),
+                    ..SettingsPatch::default()
+                },
+                vec!["on_deadline"],
+            ),
+            (
+                "accept_late alone",
+                SettingsPatch {
+                    accept_late: Some(Some(true)),
+                    ..SettingsPatch::default()
+                },
+                vec!["accept_late"],
+            ),
+        ] {
+            let result = SubmissionSettings::default().resolve(&patch, true);
+            assert_eq!(fields(result), expected, "{what}");
+        }
+    }
+
+    #[test]
+    fn late_until_needs_accept_late_and_a_later_moment_than_due_at() {
+        let with_late = |accept: bool, late_until: DateTime<Utc>| SettingsPatch {
+            accept_late: Some(Some(accept)),
+            late_until: Some(Some(late_until)),
+            ..deadline_patch()
+        };
+        let ok = SubmissionSettings::default().resolve(&with_late(true, at(11)), true);
+        assert_eq!(ok.unwrap().late_until, Some(at(11)));
+        for (what, patch) in [
+            ("accept_late false", with_late(false, at(11))),
+            ("equal to due_at", with_late(true, at(10))),
+            ("before due_at", with_late(true, at(9))),
+        ] {
+            let result = SubmissionSettings::default().resolve(&patch, true);
+            assert_eq!(fields(result), ["late_until"], "{what}");
+        }
+        let alone = SettingsPatch {
+            late_until: Some(Some(at(11))),
+            ..SettingsPatch::default()
+        };
+        assert_eq!(
+            fields(SubmissionSettings::default().resolve(&alone, true)),
+            ["late_until"]
+        );
+    }
+
+    #[test]
+    fn max_attempts_is_a_whole_number_of_at_least_one() {
+        let attempts = |value: i64| SettingsPatch {
+            max_attempts: Some(Some(value)),
+            ..SettingsPatch::default()
+        };
+        for good in [1, 2, i64::from(i32::MAX)] {
+            let set = SubmissionSettings::default().resolve(&attempts(good), true);
+            assert_eq!(
+                set.unwrap().max_attempts,
+                i32::try_from(good).ok(),
+                "{good}"
+            );
+        }
+        for bad in [0, -1, i64::from(i32::MAX) + 1] {
+            let result = SubmissionSettings::default().resolve(&attempts(bad), true);
+            assert_eq!(fields(result), ["max_attempts"], "{bad}");
+        }
+    }
+
+    #[test]
+    fn a_bad_on_deadline_is_one_problem_on_its_field() {
+        let patch = SettingsPatch {
+            on_deadline: Some(Some("later".to_owned())),
+            ..deadline_patch()
+        };
+        assert_eq!(
+            fields(SubmissionSettings::default().resolve(&patch, true)),
+            ["on_deadline"]
+        );
+    }
+
+    #[test]
+    fn the_rules_are_judged_on_the_resulting_state() {
+        let full = SubmissionSettings::default()
+            .resolve(&deadline_patch(), true)
+            .unwrap();
+        // Absent fields change nothing.
+        assert_eq!(full.resolve(&SettingsPatch::default(), true).unwrap(), full);
+        // Clearing only the deadline leaves the other two without it.
+        let only_due = SettingsPatch {
+            due_at: Some(None),
+            ..SettingsPatch::default()
+        };
+        assert_eq!(
+            fields(full.resolve(&only_due, true)),
+            ["on_deadline", "accept_late"]
+        );
+        // Clearing the three together removes the deadline.
+        let all = SettingsPatch {
+            due_at: Some(None),
+            on_deadline: Some(None),
+            accept_late: Some(None),
+            ..SettingsPatch::default()
+        };
+        assert_eq!(
+            full.resolve(&all, true).unwrap(),
+            SubmissionSettings::default()
+        );
+        // A change of accept_late alone breaks an existing late_until.
+        let late = full
+            .resolve(
+                &SettingsPatch {
+                    accept_late: Some(Some(true)),
+                    late_until: Some(Some(at(12))),
+                    ..SettingsPatch::default()
+                },
+                true,
+            )
+            .unwrap();
+        let strict = SettingsPatch {
+            accept_late: Some(Some(false)),
+            ..SettingsPatch::default()
+        };
+        assert_eq!(fields(late.resolve(&strict, true)), ["late_until"]);
+        // Moving due_at past an existing late_until does too.
+        let later = SettingsPatch {
+            due_at: Some(Some(at(20))),
+            ..SettingsPatch::default()
+        };
+        assert_eq!(fields(late.resolve(&later, true)), ["late_until"]);
+        // max_attempts clears with null and is independent of the deadline.
+        let two = full
+            .resolve(
+                &SettingsPatch {
+                    max_attempts: Some(Some(2)),
+                    ..SettingsPatch::default()
+                },
+                true,
+            )
+            .unwrap();
+        let unlimited = SettingsPatch {
+            max_attempts: Some(None),
+            ..SettingsPatch::default()
+        };
+        assert_eq!(two.resolve(&unlimited, true).unwrap().max_attempts, None);
+    }
+
+    #[test]
+    fn a_type_that_takes_no_submissions_refuses_every_value_but_accepts_null() {
+        let everything = SettingsPatch {
+            max_attempts: Some(Some(1)),
+            ..deadline_patch()
+        };
+        assert_eq!(
+            fields(SubmissionSettings::default().resolve(&everything, false)),
+            ["due_at", "on_deadline", "accept_late", "max_attempts"]
+        );
+        let nulls = SettingsPatch {
+            due_at: Some(None),
+            on_deadline: Some(None),
+            accept_late: Some(None),
+            late_until: Some(None),
+            max_attempts: Some(None),
+        };
+        assert_eq!(
+            SubmissionSettings::default().resolve(&nulls, false),
+            Ok(SubmissionSettings::default())
+        );
+        assert!(BuiltinType::Text.takes_submissions());
+        assert!(!BuiltinType::NoSubmission.takes_submissions());
+    }
+
+    fn features(config: Value) -> Result<Option<Vec<Feature>>, ModelError> {
+        editor_features(config.as_object().unwrap())
+    }
+
+    #[test]
+    fn the_editor_features_of_a_text_config_are_a_list_of_known_unique_names() {
+        assert_eq!(features(serde_json::json!({})), Ok(None));
+        assert_eq!(features(serde_json::json!({"editor": {}})), Ok(None));
+        assert_eq!(
+            features(serde_json::json!({"editor": {"features": ["code", "headings"]}})),
+            Ok(Some(vec![Feature::Code, Feature::Headings]))
+        );
+        assert_eq!(
+            features(serde_json::json!({"editor": {"features": []}})),
+            Ok(Some(vec![]))
+        );
+        for (what, config) in [
+            ("another key", serde_json::json!({"limit": 1})),
+            ("editor not an object", serde_json::json!({"editor": []})),
+            (
+                "another editor key",
+                serde_json::json!({"editor": {"a": 1}}),
+            ),
+            (
+                "features not a list",
+                serde_json::json!({"editor": {"features": "code"}}),
+            ),
+            (
+                "unknown feature",
+                serde_json::json!({"editor": {"features": ["code", "blink"]}}),
+            ),
+            (
+                "not a string",
+                serde_json::json!({"editor": {"features": [1]}}),
+            ),
+            (
+                "twice",
+                serde_json::json!({"editor": {"features": ["code", "code"]}}),
+            ),
+        ] {
+            let error = features(config).expect_err(what);
+            assert!(!error.to_string().contains("blink"), "{what}: {error}");
+        }
+        let message = features(serde_json::json!({"editor": {"features": ["code", "blink"]}}))
+            .unwrap_err()
+            .to_string();
+        assert!(message.contains("features[1]"), "{message}");
+        // The type validates through the same function.
+        let config = serde_json::json!({"editor": {"features": ["blink"]}});
+        assert!(
+            BuiltinType::Text
+                .validate_config(config.as_object().unwrap())
+                .is_err()
+        );
+        let config = serde_json::json!({"editor": {"features": ["code"]}});
+        assert!(
+            BuiltinType::Text
+                .validate_config(config.as_object().unwrap())
+                .is_ok()
+        );
+        assert!(
+            BuiltinType::NoSubmission
+                .validate_config(config.as_object().unwrap())
+                .is_err()
+        );
     }
 
     #[test]

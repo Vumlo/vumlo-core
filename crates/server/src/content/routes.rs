@@ -15,8 +15,8 @@ use utoipa_axum::routes;
 use uuid::Uuid;
 
 use super::model::{
-    self, BuiltinType, ContentTitle, ItemKind, ItemPatch, ItemStatus, MaxPoints, ModelError,
-    ModulePatch, ModuleStatus,
+    self, AssignmentType, BuiltinType, ContentTitle, ItemKind, ItemPatch, ItemStatus, MaxPoints,
+    ModelError, ModulePatch, ModuleStatus, OnDeadline, SettingsPatch, SubmissionSettings,
 };
 use super::service::{self, ContentError, ItemRules};
 use crate::actor::Actor;
@@ -56,6 +56,16 @@ impl From<ContentError> for ApiError {
             ContentError::NotAnAssignment { field } => {
                 Self::invalid_field(field, error.to_string())
             }
+            ContentError::Settings(problems) => Self::Unprocessable {
+                detail: "the request has invalid fields".to_owned(),
+                errors: problems
+                    .into_iter()
+                    .map(|problem| FieldError {
+                        field: problem.field.to_owned(),
+                        message: problem.message,
+                    })
+                    .collect(),
+            },
             ContentError::PointsLimit { field, message } => Self::invalid_field(field, message),
             ContentError::InvalidParent => Self::invalid_field("parent_id", error.to_string()),
             ContentError::InvalidOrder => Self::invalid_field("ids", error.to_string()),
@@ -127,11 +137,18 @@ fn api_assignment(assignment: model::Assignment) -> api_types::Assignment {
         config: assignment.config,
         max_points: assignment.max_points.to_string(),
         is_bonus: assignment.is_bonus,
-        due_at: None,
-        on_deadline: None,
-        accept_late: None,
-        late_until: None,
-        max_attempts: None,
+        due_at: assignment.settings.due_at,
+        on_deadline: assignment.settings.on_deadline.map(api_on_deadline),
+        accept_late: assignment.settings.accept_late,
+        late_until: assignment.settings.late_until,
+        max_attempts: assignment.settings.max_attempts,
+    }
+}
+
+fn api_on_deadline(on_deadline: OnDeadline) -> api_types::OnDeadline {
+    match on_deadline {
+        OnDeadline::KeepDraft => api_types::OnDeadline::KeepDraft,
+        OnDeadline::AutoSubmit => api_types::OnDeadline::AutoSubmit,
     }
 }
 
@@ -140,11 +157,11 @@ fn api_assignment_summary(assignment: model::AssignmentSummary) -> api_types::As
         assignment_type: assignment.assignment_type.as_str().to_owned(),
         max_points: assignment.max_points.to_string(),
         is_bonus: assignment.is_bonus,
-        due_at: None,
-        on_deadline: None,
-        accept_late: None,
-        late_until: None,
-        max_attempts: None,
+        due_at: assignment.settings.due_at,
+        on_deadline: assignment.settings.on_deadline.map(api_on_deadline),
+        accept_late: assignment.settings.accept_late,
+        late_until: assignment.settings.late_until,
+        max_attempts: assignment.settings.max_attempts,
     }
 }
 
@@ -206,16 +223,30 @@ fn title(raw: &str) -> Result<ContentTitle, ContentError> {
 fn domain_assignment(new: NewAssignment) -> Result<model::Assignment, ApiError> {
     let assignment_type = BuiltinType::parse(&new.assignment_type);
     let max_points = MaxPoints::parse(&new.max_points);
-    match (assignment_type, max_points) {
-        (Ok(assignment_type), Ok(max_points)) => Ok(model::Assignment {
+    // With an unknown type the settings cannot be judged; the type is the field to fix first.
+    let settings = match &assignment_type {
+        Ok(assignment_type) => SubmissionSettings::default().resolve(
+            &SettingsPatch {
+                due_at: new.due_at.map(Some),
+                on_deadline: new.on_deadline.map(Some),
+                accept_late: new.accept_late.map(Some),
+                late_until: new.late_until.map(Some),
+                max_attempts: new.max_attempts.map(Some),
+            },
+            assignment_type.takes_submissions(),
+        ),
+        Err(_) => Ok(SubmissionSettings::default()),
+    };
+    match (assignment_type, max_points, settings) {
+        (Ok(assignment_type), Ok(max_points), Ok(settings)) => Ok(model::Assignment {
             assignment_type,
             config: new.config.unwrap_or_default(),
             max_points,
             is_bonus: new.is_bonus,
+            settings,
         }),
-        (assignment_type, max_points) => Err(ApiError::Unprocessable {
-            detail: "the request has invalid fields".to_owned(),
-            errors: [
+        (assignment_type, max_points, settings) => {
+            let mut errors: Vec<FieldError> = [
                 ("assignment.type", assignment_type.err()),
                 ("assignment.max_points", max_points.err()),
             ]
@@ -226,8 +257,22 @@ fn domain_assignment(new: NewAssignment) -> Result<model::Assignment, ApiError> 
                     message: error.to_string(),
                 })
             })
-            .collect(),
-        }),
+            .collect();
+            errors.extend(
+                settings
+                    .err()
+                    .into_iter()
+                    .flatten()
+                    .map(|problem| FieldError {
+                        field: format!("assignment.{}", problem.field),
+                        message: problem.message,
+                    }),
+            );
+            Err(ApiError::Unprocessable {
+                detail: "the request has invalid fields".to_owned(),
+                errors,
+            })
+        }
     }
 }
 
@@ -640,6 +685,13 @@ async fn update_item(
             .transpose()
             .map_err(ContentError::from)?,
         is_bonus: request.is_bonus,
+        settings: SettingsPatch {
+            due_at: request.due_at,
+            on_deadline: request.on_deadline,
+            accept_late: request.accept_late,
+            late_until: request.late_until,
+            max_attempts: request.max_attempts,
+        },
     };
     let mut tx = state.db.begin().await.map_err(ContentError::from)?;
     let item = service::update_item(&mut tx, &actor, rules(&state), id, patch).await?;

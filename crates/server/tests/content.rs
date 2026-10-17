@@ -3331,3 +3331,483 @@ async fn an_assignments_document_errors_keep_the_body_path_and_not_the_assignmen
         ["body.blocks[0].props.level", "body.blocks[1].id"]
     );
 }
+
+// =============================================================================================
+// Submission settings and the editor features of a text assignment (ADR-0035, ADR-0025)
+// =============================================================================================
+
+/// The settings of a text assignment that has a deadline and takes late work for a day.
+fn deadline() -> Value {
+    json!({
+        "due_at": "2030-05-01T10:00:00Z",
+        "on_deadline": "keep_draft",
+        "accept_late": true,
+        "late_until": "2030-05-02T10:00:00Z",
+        "max_attempts": 3,
+    })
+}
+
+/// A create request for an assignment of `kind_of_type` with `settings` merged into it.
+fn assignment_with(assignment_type: &str, settings: Value) -> Value {
+    let mut assignment = json!({"type": assignment_type, "max_points": "5"});
+    for (key, value) in settings.as_object().unwrap() {
+        assignment[key] = value.clone();
+    }
+    json!({"kind": "assignment", "title": "Essay", "assignment": assignment})
+}
+
+async fn create_with(w: &World, module: Uuid, assignment_type: &str, settings: Value) -> Resp {
+    post(
+        &w.http,
+        &w.owner.token,
+        &format!("/modules/{module}/items"),
+        assignment_with(assignment_type, settings),
+    )
+    .await
+}
+
+const SETTING_FIELDS: [&str; 5] = [
+    "due_at",
+    "on_deadline",
+    "accept_late",
+    "late_until",
+    "max_attempts",
+];
+
+fn settings_of(assignment: &Value) -> Value {
+    let mut out = serde_json::Map::new();
+    for field in SETTING_FIELDS {
+        out.insert(field.to_owned(), assignment[field].clone());
+    }
+    Value::Object(out)
+}
+
+#[sqlx::test(migrator = "server::app::MIGRATOR")]
+async fn an_assignment_without_settings_has_none_and_one_with_them_returns_them_everywhere(
+    pool: PgPool,
+) {
+    let w = world(pool).await;
+    let m = module(&w, "M", None).await;
+    let plain = id_of(&created(&create_with(&w, m, "text", json!({})).await));
+    let none = settings_of(&item_json(&w, plain).await["assignment"]);
+    assert_eq!(
+        none,
+        json!({"due_at": null, "on_deadline": null, "accept_late": null,
+               "late_until": null, "max_attempts": null})
+    );
+
+    let with = created(&create_with(&w, m, "text", deadline()).await);
+    assert_eq!(settings_of(&with["assignment"]), deadline());
+    let id = id_of(&with);
+    assert_eq!(
+        settings_of(&item_json(&w, id).await["assignment"]),
+        deadline()
+    );
+    let seen = tree(&w, &w.owner.token).await;
+    assert_eq!(
+        settings_of(&top(&seen, "M")["items"][1]["assignment"]),
+        deadline(),
+        "the tree carries them too"
+    );
+    // Publishing and a title change keep them.
+    let published = publish_item(&w, id).await;
+    assert_eq!(settings_of(&published["assignment"]), deadline());
+    let renamed = ok(&patch_item(&w, id, json!({"title": "Again"})).await);
+    assert_eq!(settings_of(&renamed["assignment"]), deadline());
+}
+
+#[sqlx::test(migrator = "server::app::MIGRATOR")]
+async fn a_deadline_without_what_happens_at_it_or_a_late_rule_is_refused_on_create(pool: PgPool) {
+    let w = world(pool).await;
+    let m = module(&w, "M", None).await;
+    let cases = [
+        (
+            "due_at alone",
+            json!({"due_at": "2030-05-01T10:00:00Z"}),
+            vec!["assignment.on_deadline", "assignment.accept_late"],
+        ),
+        (
+            "on_deadline without due_at",
+            json!({"on_deadline": "keep_draft"}),
+            vec!["assignment.on_deadline"],
+        ),
+        (
+            "accept_late without due_at",
+            json!({"accept_late": false}),
+            vec!["assignment.accept_late"],
+        ),
+        (
+            "late_until without accept_late",
+            json!({"due_at": "2030-05-01T10:00:00Z", "on_deadline": "keep_draft",
+                   "accept_late": false, "late_until": "2030-05-02T10:00:00Z"}),
+            vec!["assignment.late_until"],
+        ),
+        (
+            "late_until before due_at",
+            json!({"due_at": "2030-05-01T10:00:00Z", "on_deadline": "keep_draft",
+                   "accept_late": true, "late_until": "2030-04-30T10:00:00Z"}),
+            vec!["assignment.late_until"],
+        ),
+        (
+            "late_until equal to due_at",
+            json!({"due_at": "2030-05-01T10:00:00Z", "on_deadline": "keep_draft",
+                   "accept_late": true, "late_until": "2030-05-01T10:00:00Z"}),
+            vec!["assignment.late_until"],
+        ),
+        (
+            "an unknown on_deadline",
+            json!({"due_at": "2030-05-01T10:00:00Z", "on_deadline": "later", "accept_late": false}),
+            vec!["assignment.on_deadline"],
+        ),
+        (
+            "zero attempts",
+            json!({"max_attempts": 0}),
+            vec!["assignment.max_attempts"],
+        ),
+        (
+            "negative attempts",
+            json!({"max_attempts": -2}),
+            vec!["assignment.max_attempts"],
+        ),
+    ];
+    for (what, settings, expected) in cases {
+        let response = create_with(&w, m, "text", settings).await;
+        assert_eq!(error_fields(&response), expected, "{what}");
+    }
+    // Attempts need no deadline, and a deadline needs no limit.
+    created(&create_with(&w, m, "text", json!({"max_attempts": 1})).await);
+    created(
+        &create_with(
+            &w,
+            m,
+            "text",
+            json!({"due_at": "2030-05-01T10:00:00Z", "on_deadline": "auto_submit",
+                   "accept_late": true}),
+        )
+        .await,
+    );
+    // Nothing was stored by the refused requests.
+    let seen = tree(&w, &w.owner.token).await;
+    assert_eq!(top(&seen, "M")["items"].as_array().unwrap().len(), 2);
+}
+
+#[sqlx::test(migrator = "server::app::MIGRATOR")]
+async fn a_type_that_takes_no_submissions_refuses_every_setting(pool: PgPool) {
+    let w = world(pool).await;
+    let m = module(&w, "M", None).await;
+    let response = create_with(&w, m, "no_submission", deadline()).await;
+    assert_eq!(
+        error_fields(&response),
+        [
+            "assignment.due_at",
+            "assignment.on_deadline",
+            "assignment.accept_late",
+            "assignment.late_until",
+            "assignment.max_attempts",
+        ]
+    );
+    let response = create_with(&w, m, "no_submission", json!({"max_attempts": 2})).await;
+    assert_eq!(error_fields(&response), ["assignment.max_attempts"]);
+    // Nulls set nothing.
+    let oral = created(
+        &create_with(
+            &w,
+            m,
+            "no_submission",
+            json!({"due_at": null, "max_attempts": null}),
+        )
+        .await,
+    );
+    assert_eq!(settings_of(&oral["assignment"])["due_at"], Value::Null);
+    // Neither does a patch.
+    let id = id_of(&oral);
+    let response = patch_item(&w, id, json!({"max_attempts": 4})).await;
+    assert_eq!(error_fields(&response), ["max_attempts"]);
+    let response = patch_item(&w, id, deadline()).await;
+    assert_eq!(error_fields(&response).len(), 5);
+    ok(&patch_item(&w, id, json!({"due_at": null, "max_attempts": null})).await);
+}
+
+#[sqlx::test(migrator = "server::app::MIGRATOR")]
+async fn patch_keeps_absent_settings_clears_null_ones_and_judges_the_result(pool: PgPool) {
+    let w = world(pool).await;
+    let m = module(&w, "M", None).await;
+    let id = id_of(&created(&create_with(&w, m, "text", deadline()).await));
+
+    // Absent keeps.
+    let patched = ok(&patch_item(&w, id, json!({"title": "T"})).await);
+    assert_eq!(settings_of(&patched["assignment"]), deadline());
+    let patched = ok(&patch_item(&w, id, json!({"max_attempts": 5})).await);
+    let mut expected = deadline();
+    expected["max_attempts"] = json!(5);
+    assert_eq!(settings_of(&patched["assignment"]), expected);
+
+    // Null clears a nullable field.
+    let patched = ok(&patch_item(&w, id, json!({"max_attempts": null, "late_until": null})).await);
+    expected["max_attempts"] = Value::Null;
+    expected["late_until"] = Value::Null;
+    assert_eq!(settings_of(&patched["assignment"]), expected);
+
+    // Clearing the deadline alone leaves the other two without it, and nothing changes.
+    let response = patch_item(&w, id, json!({"due_at": null})).await;
+    assert_eq!(error_fields(&response), ["on_deadline", "accept_late"]);
+    assert_eq!(
+        settings_of(&item_json(&w, id).await["assignment"]),
+        expected
+    );
+
+    // The three together remove it.
+    let patched = ok(&patch_item(
+        &w,
+        id,
+        json!({"due_at": null, "on_deadline": null, "accept_late": null}),
+    )
+    .await);
+    assert_eq!(
+        settings_of(&patched["assignment"]),
+        json!({"due_at": null, "on_deadline": null, "accept_late": null,
+               "late_until": null, "max_attempts": null})
+    );
+
+    // Setting a deadline needs the two others in the same request when they are not stored.
+    let response = patch_item(&w, id, json!({"due_at": "2031-01-01T00:00:00Z"})).await;
+    assert_eq!(error_fields(&response), ["on_deadline", "accept_late"]);
+    ok(&patch_item(
+        &w,
+        id,
+        json!({"due_at": "2031-01-01T00:00:00Z", "on_deadline": "auto_submit", "accept_late": false}),
+    )
+    .await);
+
+    // The rule is judged on the result: a late_until needs accept_late, which is false now.
+    let response = patch_item(&w, id, json!({"late_until": "2031-01-02T00:00:00Z"})).await;
+    assert_eq!(error_fields(&response), ["late_until"]);
+    ok(&patch_item(
+        &w,
+        id,
+        json!({"accept_late": true, "late_until": "2031-01-02T00:00:00Z"}),
+    )
+    .await);
+    // Moving the deadline past the stored late_until is refused.
+    let response = patch_item(&w, id, json!({"due_at": "2031-02-01T00:00:00Z"})).await;
+    assert_eq!(error_fields(&response), ["late_until"]);
+    // A change of settings is a change of the assignment: a text item has none.
+    let text = item(&w, m, "Text").await;
+    let response = patch_item(&w, text, json!({"max_attempts": 2})).await;
+    assert_eq!(error_fields(&response), ["max_attempts"]);
+}
+
+#[sqlx::test(migrator = "server::app::MIGRATOR")]
+async fn a_text_assignment_can_narrow_the_student_editor_and_never_widen_it(pool: PgPool) {
+    let w = world(pool).await;
+    let m = module(&w, "M", None).await;
+    let config = |features: Value| json!({"config": {"editor": {"features": features}}});
+
+    let narrowed = created(&create_with(&w, m, "text", config(json!(["headings", "code"]))).await);
+    assert_eq!(
+        narrowed["assignment"]["config"],
+        json!({"editor": {"features": ["headings", "code"]}})
+    );
+    let id = id_of(&narrowed);
+    ok(&patch_item(&w, id, json!({"config": {"editor": {"features": []}}})).await);
+
+    for (what, features) in [
+        ("an unknown feature", json!(["headings", "blink"])),
+        ("a feature the student profile lacks", json!(["video"])),
+        ("a repeated feature", json!(["code", "code"])),
+        ("not a list", json!("code")),
+    ] {
+        let response = create_with(&w, m, "text", config(features.clone())).await;
+        assert_eq!(error_fields(&response), ["assignment.config"], "{what}");
+        let response = patch_item(
+            &w,
+            id,
+            json!({"config": {"editor": {"features": features}}}),
+        )
+        .await;
+        assert_eq!(error_fields(&response), ["config"], "{what}");
+        assert!(!message_of(&response).contains("blink"), "{what}");
+    }
+    let response = patch_item(&w, id, json!({"config": {"editor": {"x": 1}}})).await;
+    assert_eq!(error_fields(&response), ["config"]);
+    let response = patch_item(&w, id, json!({"config": {"limit": 1}})).await;
+    assert_eq!(error_fields(&response), ["config"]);
+}
+
+#[sqlx::test(migrator = "server::app::MIGRATOR")]
+async fn the_editor_features_of_an_assignment_cannot_widen_what_the_institution_narrowed(
+    pool: PgPool,
+) {
+    let mut settings = common::test_settings();
+    let mut editor = EditorSettings::default();
+    editor.profiles.insert(
+        "student".to_owned(),
+        ProfileSettings {
+            features: ["headings", "text_styles", "lists"]
+                .map(str::to_owned)
+                .into(),
+        },
+    );
+    settings.editor = editor;
+    let w = world_from(pool, settings).await;
+    let m = module(&w, "M", None).await;
+    created(
+        &create_with(
+            &w,
+            m,
+            "text",
+            json!({"config": {"editor": {"features": ["headings", "lists"]}}}),
+        )
+        .await,
+    );
+    let response = create_with(
+        &w,
+        m,
+        "text",
+        json!({"config": {"editor": {"features": ["headings", "table"]}}}),
+    )
+    .await;
+    assert_eq!(error_fields(&response), ["assignment.config"]);
+    assert!(
+        message_of(&response).contains("features[1]"),
+        "{}",
+        message_of(&response)
+    );
+}
+
+/// The five settings as one state: due_at, on_deadline, accept_late, late_until, max_attempts.
+type Settings5 = (
+    Option<&'static str>,
+    Option<&'static str>,
+    Option<bool>,
+    Option<&'static str>,
+    Option<i32>,
+);
+
+/// Writes `state` straight to the row and returns the name of the constraint that refused it, or
+/// `None` when the row took it.
+async fn write_settings(pool: &PgPool, id: Uuid, state: Settings5) -> Option<String> {
+    let when = |text: Option<&str>| {
+        text.map(|text| text.parse::<chrono::DateTime<chrono::Utc>>().unwrap())
+    };
+    let result = sqlx::query!(
+        "UPDATE content.assignments
+         SET due_at = $2, on_deadline = $3, accept_late = $4, late_until = $5, max_attempts = $6
+         WHERE item_id = $1",
+        id,
+        when(state.0),
+        state.1,
+        state.2,
+        when(state.3),
+        state.4
+    )
+    .execute(pool)
+    .await;
+    match result {
+        Ok(_) => None,
+        Err(sqlx::Error::Database(error)) => Some(error.constraint().unwrap_or("?").to_owned()),
+        Err(other) => panic!("unexpected error: {other}"),
+    }
+}
+
+/// The database repeats the rules of the settings, so a writer that skips the service is stopped.
+#[sqlx::test(migrator = "server::app::MIGRATOR")]
+async fn the_database_refuses_settings_that_break_the_rules(pool: PgPool) {
+    let w = world(pool.clone()).await;
+    let m = module(&w, "M", None).await;
+    let text = id_of(&created(&create_with(&w, m, "text", json!({})).await));
+    let oral = id_of(&created(
+        &create_with(&w, m, "no_submission", json!({})).await,
+    ));
+
+    let due = Some("2030-05-01T10:00:00Z");
+    let later = Some("2030-05-02T10:00:00Z");
+    let keep = Some("keep_draft");
+    let refused: [(&str, Uuid, Settings5, &str); 10] = [
+        (
+            "due_at alone",
+            text,
+            (due, None, None, None, None),
+            "assignments_deadline_all_or_none",
+        ),
+        (
+            "on_deadline alone",
+            text,
+            (None, keep, None, None, None),
+            "assignments_deadline_all_or_none",
+        ),
+        (
+            "accept_late alone",
+            text,
+            (None, None, Some(false), None, None),
+            "assignments_deadline_all_or_none",
+        ),
+        (
+            "an unknown on_deadline",
+            text,
+            (due, Some("later"), Some(false), None, None),
+            "assignments_on_deadline_check",
+        ),
+        (
+            "late_until without accept_late",
+            text,
+            (due, keep, Some(false), later, None),
+            "assignments_late_until_check",
+        ),
+        (
+            "late_until not after due_at",
+            text,
+            (due, keep, Some(true), due, None),
+            "assignments_late_until_check",
+        ),
+        (
+            "late_until alone",
+            text,
+            (None, None, None, later, None),
+            "assignments_late_until_check",
+        ),
+        (
+            "zero attempts",
+            text,
+            (None, None, None, None, Some(0)),
+            "assignments_max_attempts_check",
+        ),
+        (
+            "a deadline on no_submission",
+            oral,
+            (due, keep, Some(true), None, None),
+            "assignments_no_submission_settings",
+        ),
+        (
+            "attempts on no_submission",
+            oral,
+            (None, None, None, None, Some(2)),
+            "assignments_no_submission_settings",
+        ),
+    ];
+    for (what, id, state, expected) in refused {
+        assert_eq!(
+            write_settings(&pool, id, state).await.as_deref(),
+            Some(expected),
+            "{what}"
+        );
+    }
+    // The refused statements changed nothing.
+    assert_eq!(
+        item_json(&w, text).await["assignment"]["due_at"],
+        Value::Null
+    );
+    assert_eq!(
+        item_json(&w, oral).await["assignment"]["max_attempts"],
+        Value::Null
+    );
+    // What is allowed goes through.
+    assert_eq!(
+        write_settings(&pool, text, (due, keep, Some(true), later, Some(2))).await,
+        None
+    );
+    assert_eq!(
+        settings_of(&item_json(&w, text).await["assignment"])["max_attempts"],
+        2
+    );
+}

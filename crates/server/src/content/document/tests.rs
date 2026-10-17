@@ -710,3 +710,72 @@ fn a_configuration_that_does_not_only_narrow_is_refused_and_names_the_problem() 
         .to_string();
     assert!(error.contains("dailymotion"), "{error}");
 }
+
+// --- the third layer: an assignment narrows the student profile (ADR-0025) ----------------------
+
+fn student_doc() -> Value {
+    doc(json!([
+        {"id": "a", "type": "heading", "props": {"level": 1}, "content": [{"type": "text", "text": "T"}]},
+        {"id": "b", "type": "code", "props": {"language": "rust", "source": "x"}},
+    ]))
+}
+
+#[test]
+fn a_narrowing_set_cuts_the_student_profile_and_never_widens_it() {
+    let profiles = full();
+    let student = |within: Option<&[Feature]>| {
+        let within = within.map(|features| features.iter().copied().collect());
+        validate_document_within(
+            &student_doc(),
+            ProfileName::Student,
+            &profiles,
+            within.as_ref(),
+        )
+    };
+    assert!(student(None).is_ok(), "no narrowing: the profile alone");
+    assert!(student(Some(&[Feature::Headings, Feature::Code])).is_ok());
+
+    let errors = student(Some(&[Feature::Headings])).expect_err("code is outside the set");
+    let paths: Vec<_> = errors.iter().map(|error| error.path.as_str()).collect();
+    assert_eq!(paths, ["blocks[1]"]);
+    assert_eq!(
+        errors.into_field_errors("content")[0].field,
+        "content.blocks[1]"
+    );
+
+    // A set cannot add a feature the profile lacks: the student profile has no video.
+    let video = doc(json!([
+        {"id": "v", "type": "video", "props": {"provider": "youtube", "video_id": "dQw4w9WgXcQ"}},
+    ]));
+    let within: std::collections::BTreeSet<_> = [Feature::Video].into();
+    assert!(
+        validate_document_within(&video, ProfileName::Student, &profiles, Some(&within)).is_err()
+    );
+    // An empty set allows paragraphs only.
+    let none = std::collections::BTreeSet::new();
+    assert!(
+        validate_document_within(
+            &doc(json!([paragraph("p", "plain")])),
+            ProfileName::Student,
+            &profiles,
+            Some(&none)
+        )
+        .is_ok()
+    );
+    assert!(
+        validate_document_within(&student_doc(), ProfileName::Student, &profiles, Some(&none))
+            .is_err()
+    );
+}
+
+#[test]
+fn a_document_without_text_is_blank() {
+    let blank = |value: Value| validate(&value).unwrap().is_blank();
+    assert!(blank(doc(json!([]))));
+    assert!(blank(doc(json!([paragraph("a", "  \n ")]))));
+    assert!(blank(doc(json!([{"id": "d", "type": "divider"}]))));
+    assert!(!blank(doc(json!([paragraph("a", " x ")]))));
+    assert!(!blank(doc(json!([
+        {"id": "i", "type": "code", "props": {"language": "rust", "source": "x"}}
+    ]))));
+}

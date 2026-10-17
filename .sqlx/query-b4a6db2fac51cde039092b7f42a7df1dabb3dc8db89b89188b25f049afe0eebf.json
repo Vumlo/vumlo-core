@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT i.id, i.module_id, i.course_id, i.position, i.kind AS \"kind: ItemKind\", i.title,\n                  i.body AS \"body: Body\", i.status AS \"status: ItemStatus\", i.publish_at,\n                  i.created_at, i.updated_at,\n                  m.status AS \"module_status: ModuleStatus\", m.publish_at AS module_publish_at,\n                  p.status AS \"parent_status?: ModuleStatus\", p.publish_at AS parent_publish_at,\n                  a.type AS \"assignment_type?: BuiltinType\", a.config AS \"assignment_config?: Body\",\n                  a.max_points AS \"assignment_max_points?: MaxPoints\",\n                  a.is_bonus AS \"assignment_is_bonus?\"\n           FROM content.items i\n           JOIN content.modules m ON m.id = i.module_id\n           LEFT JOIN content.modules p ON p.id = m.parent_id\n           LEFT JOIN content.assignments a ON a.item_id = i.id\n           WHERE i.id = $1",
+  "query": "SELECT i.id, i.module_id, i.course_id, i.position, i.kind AS \"kind: ItemKind\", i.title,\n                  i.body AS \"body: Body\", i.status AS \"status: ItemStatus\", i.publish_at,\n                  i.created_at, i.updated_at,\n                  m.status AS \"module_status: ModuleStatus\", m.publish_at AS module_publish_at,\n                  p.status AS \"parent_status?: ModuleStatus\", p.publish_at AS parent_publish_at,\n                  a.type AS \"assignment_type?: BuiltinType\", a.config AS \"assignment_config?: Body\",\n                  a.max_points AS \"assignment_max_points?: MaxPoints\",\n                  a.is_bonus AS \"assignment_is_bonus?\",\n                  a.due_at AS assignment_due_at,\n                  a.on_deadline AS \"assignment_on_deadline?: OnDeadline\",\n                  a.accept_late AS assignment_accept_late,\n                  a.late_until AS assignment_late_until,\n                  a.max_attempts AS assignment_max_attempts\n           FROM content.items i\n           JOIN content.modules m ON m.id = i.module_id\n           LEFT JOIN content.modules p ON p.id = m.parent_id\n           LEFT JOIN content.assignments a ON a.item_id = i.id\n           WHERE i.id = $1",
   "describe": {
     "columns": [
       {
@@ -211,6 +211,61 @@
             "name": "is_bonus"
           }
         }
+      },
+      {
+        "ordinal": 19,
+        "name": "assignment_due_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "content.assignments",
+            "name": "due_at"
+          }
+        }
+      },
+      {
+        "ordinal": 20,
+        "name": "assignment_on_deadline?: OnDeadline",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "content.assignments",
+            "name": "on_deadline"
+          }
+        }
+      },
+      {
+        "ordinal": 21,
+        "name": "assignment_accept_late",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "content.assignments",
+            "name": "accept_late"
+          }
+        }
+      },
+      {
+        "ordinal": 22,
+        "name": "assignment_late_until",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "content.assignments",
+            "name": "late_until"
+          }
+        }
+      },
+      {
+        "ordinal": 23,
+        "name": "assignment_max_attempts",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "content.assignments",
+            "name": "max_attempts"
+          }
+        }
       }
     ],
     "parameters": {
@@ -237,8 +292,13 @@
       true,
       true,
       true,
+      true,
+      true,
+      true,
+      true,
+      true,
       true
     ]
   },
-  "hash": "708feb0a9fbf22e7530edcb85c676e7ef0dbbadaa3be2ab2509a3422e9aeca93"
+  "hash": "b4a6db2fac51cde039092b7f42a7df1dabb3dc8db89b89188b25f049afe0eebf"
 }

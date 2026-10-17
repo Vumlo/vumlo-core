@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT i.course_id,\n                  i.status = 'published' AS \"item_published!\", i.publish_at AS item_publish_at,\n                  m.status = 'published' AS \"module_published!\", m.publish_at AS module_publish_at,\n                  p.status = 'published' AS \"parent_published?\", p.publish_at AS parent_publish_at\n           FROM content.assignments a\n           JOIN content.items i ON i.id = a.item_id\n           JOIN content.modules m ON m.id = i.module_id\n           LEFT JOIN content.modules p ON p.id = m.parent_id\n           WHERE a.item_id = $1",
+  "query": "SELECT i.course_id, a.type AS \"assignment_type: BuiltinType\",\n                  i.status = 'published' AS \"item_published!\", i.publish_at AS item_publish_at,\n                  m.status = 'published' AS \"module_published!\", m.publish_at AS module_publish_at,\n                  p.status = 'published' AS \"parent_published?\", p.publish_at AS parent_publish_at\n           FROM content.assignments a\n           JOIN content.items i ON i.id = a.item_id\n           JOIN content.modules m ON m.id = i.module_id\n           LEFT JOIN content.modules p ON p.id = m.parent_id\n           WHERE a.item_id = $1",
   "describe": {
     "columns": [
       {
@@ -16,12 +16,23 @@
       },
       {
         "ordinal": 1,
+        "name": "assignment_type: BuiltinType",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "content.assignments",
+            "name": "type"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
         "name": "item_published!",
         "type_info": "Bool",
         "origin": "Expression"
       },
       {
-        "ordinal": 2,
+        "ordinal": 3,
         "name": "item_publish_at",
         "type_info": "Timestamptz",
         "origin": {
@@ -32,13 +43,13 @@
         }
       },
       {
-        "ordinal": 3,
+        "ordinal": 4,
         "name": "module_published!",
         "type_info": "Bool",
         "origin": "Expression"
       },
       {
-        "ordinal": 4,
+        "ordinal": 5,
         "name": "module_publish_at",
         "type_info": "Timestamptz",
         "origin": {
@@ -49,13 +60,13 @@
         }
       },
       {
-        "ordinal": 5,
+        "ordinal": 6,
         "name": "parent_published?",
         "type_info": "Bool",
         "origin": "Expression"
       },
       {
-        "ordinal": 6,
+        "ordinal": 7,
         "name": "parent_publish_at",
         "type_info": "Timestamptz",
         "origin": {
@@ -73,6 +84,7 @@
     },
     "nullable": [
       false,
+      false,
       null,
       true,
       null,
@@ -81,5 +93,5 @@
       true
     ]
   },
-  "hash": "719eb4d9e54eb29605fc2dc518ca4ebb15d276eb0f58dbd342ce4d8be5570882"
+  "hash": "913f86acbe7f9274804b1baa2f21db622eafe9c5fe5b0fe27ef566be1b71098f"
 }

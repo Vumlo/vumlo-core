@@ -10,7 +10,7 @@ use sqlx::types::Decimal;
 
 use super::model::{
     Assignment, AssignmentSummary, BuiltinType, Item, ItemKind, ItemStatus, ItemSummary, MaxPoints,
-    Module, ModuleStatus,
+    Module, ModuleStatus, OnDeadline, SubmissionSettings,
 };
 use crate::policy::Release;
 
@@ -75,6 +75,7 @@ struct JoinedAssignment {
     config: Option<Body>,
     max_points: Option<MaxPoints>,
     is_bonus: Option<bool>,
+    settings: SubmissionSettings,
 }
 
 impl JoinedAssignment {
@@ -84,6 +85,7 @@ impl JoinedAssignment {
             config: self.config?.0,
             max_points: self.max_points?,
             is_bonus: self.is_bonus?,
+            settings: self.settings,
         })
     }
 
@@ -92,6 +94,7 @@ impl JoinedAssignment {
             assignment_type: self.assignment_type?,
             max_points: self.max_points?,
             is_bonus: self.is_bonus?,
+            settings: self.settings,
         })
     }
 }
@@ -328,7 +331,12 @@ pub async fn find_item(conn: &mut PgConnection, id: Uuid) -> Result<Option<ItemR
                   p.status AS "parent_status?: ModuleStatus", p.publish_at AS parent_publish_at,
                   a.type AS "assignment_type?: BuiltinType", a.config AS "assignment_config?: Body",
                   a.max_points AS "assignment_max_points?: MaxPoints",
-                  a.is_bonus AS "assignment_is_bonus?"
+                  a.is_bonus AS "assignment_is_bonus?",
+                  a.due_at AS assignment_due_at,
+                  a.on_deadline AS "assignment_on_deadline?: OnDeadline",
+                  a.accept_late AS assignment_accept_late,
+                  a.late_until AS assignment_late_until,
+                  a.max_attempts AS assignment_max_attempts
            FROM content.items i
            JOIN content.modules m ON m.id = i.module_id
            LEFT JOIN content.modules p ON p.id = m.parent_id
@@ -354,6 +362,13 @@ pub async fn find_item(conn: &mut PgConnection, id: Uuid) -> Result<Option<ItemR
                 config: row.assignment_config,
                 max_points: row.assignment_max_points,
                 is_bonus: row.assignment_is_bonus,
+                settings: SubmissionSettings {
+                    due_at: row.assignment_due_at,
+                    on_deadline: row.assignment_on_deadline,
+                    accept_late: row.assignment_accept_late,
+                    late_until: row.assignment_late_until,
+                    max_attempts: row.assignment_max_attempts,
+                },
             }
             .full(),
             created_at: row.created_at,
@@ -473,7 +488,12 @@ pub async fn tree(
                   i.position AS "item_position?",
                   a.type AS "assignment_type?: BuiltinType",
                   a.max_points AS "assignment_max_points?: MaxPoints",
-                  a.is_bonus AS "assignment_is_bonus?"
+                  a.is_bonus AS "assignment_is_bonus?",
+                  a.due_at AS assignment_due_at,
+                  a.on_deadline AS "assignment_on_deadline?: OnDeadline",
+                  a.accept_late AS assignment_accept_late,
+                  a.late_until AS assignment_late_until,
+                  a.max_attempts AS assignment_max_attempts
            FROM content.modules m
            LEFT JOIN content.modules p ON p.id = m.parent_id
            LEFT JOIN content.items i
@@ -520,6 +540,13 @@ pub async fn tree(
                         config: None,
                         max_points: row.assignment_max_points,
                         is_bonus: row.assignment_is_bonus,
+                        settings: SubmissionSettings {
+                            due_at: row.assignment_due_at,
+                            on_deadline: row.assignment_on_deadline,
+                            accept_late: row.assignment_accept_late,
+                            late_until: row.assignment_late_until,
+                            max_attempts: row.assignment_max_attempts,
+                        },
                     }
                     .summary(),
                 }),
@@ -533,11 +560,65 @@ pub async fn tree(
 // Assignments
 // ---------------------------------------------------------------------------------------------
 
+/// An assignment with its course and the release state of every row on the path to it, which
+/// `policy` needs to decide whether a student may see it. No body: callers on a hot path (a draft
+/// autosave) must not load a document they do not use.
+pub struct AssignmentContext {
+    pub course_id: Uuid,
+    pub assignment_type: BuiltinType,
+    pub item: Release,
+    /// The module the item is in.
+    pub module: Release,
+    /// That module's parent, when the module is a sub-module.
+    pub module_parent: Option<Release>,
+}
+
+pub async fn find_assignment_context(
+    conn: &mut PgConnection,
+    assignment_id: Uuid,
+) -> Result<Option<AssignmentContext>, sqlx::Error> {
+    let row = sqlx::query!(
+        r#"SELECT i.course_id, a.type AS "assignment_type: BuiltinType",
+                  i.status = 'published' AS "item_published!", i.publish_at AS item_publish_at,
+                  m.status = 'published' AS "module_published!", m.publish_at AS module_publish_at,
+                  p.status = 'published' AS "parent_published?", p.publish_at AS parent_publish_at
+           FROM content.assignments a
+           JOIN content.items i ON i.id = a.item_id
+           JOIN content.modules m ON m.id = i.module_id
+           LEFT JOIN content.modules p ON p.id = m.parent_id
+           WHERE a.item_id = $1"#,
+        assignment_id
+    )
+    .fetch_optional(conn)
+    .await?;
+    Ok(row.map(|row| AssignmentContext {
+        course_id: row.course_id,
+        assignment_type: row.assignment_type,
+        item: Release {
+            published: row.item_published,
+            publish_at: row.item_publish_at,
+        },
+        module: Release {
+            published: row.module_published,
+            publish_at: row.module_publish_at,
+        },
+        module_parent: row.parent_published.map(|published| Release {
+            published,
+            publish_at: row.parent_publish_at,
+        }),
+    }))
+}
+
 struct RawAssignment {
     assignment_type: BuiltinType,
     config: Body,
     max_points: MaxPoints,
     is_bonus: bool,
+    due_at: Option<DateTime<Utc>>,
+    on_deadline: Option<OnDeadline>,
+    accept_late: Option<bool>,
+    late_until: Option<DateTime<Utc>>,
+    max_attempts: Option<i32>,
 }
 
 impl From<RawAssignment> for Assignment {
@@ -547,6 +628,13 @@ impl From<RawAssignment> for Assignment {
             config: raw.config.0,
             max_points: raw.max_points,
             is_bonus: raw.is_bonus,
+            settings: SubmissionSettings {
+                due_at: raw.due_at,
+                on_deadline: raw.on_deadline,
+                accept_late: raw.accept_late,
+                late_until: raw.late_until,
+                max_attempts: raw.max_attempts,
+            },
         }
     }
 }
@@ -557,17 +645,27 @@ pub async fn insert_assignment(
     item_id: Uuid,
     assignment: &Assignment,
 ) -> Result<Assignment, sqlx::Error> {
+    let settings = &assignment.settings;
     let raw = sqlx::query_as!(
         RawAssignment,
-        r#"INSERT INTO content.assignments (item_id, type, config, max_points, is_bonus)
-           VALUES ($1, $2, $3, $4, $5)
+        r#"INSERT INTO content.assignments
+               (item_id, type, config, max_points, is_bonus,
+                due_at, on_deadline, accept_late, late_until, max_attempts)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
            RETURNING type AS "assignment_type: BuiltinType", config AS "config: Body",
-                     max_points AS "max_points: MaxPoints", is_bonus"#,
+                     max_points AS "max_points: MaxPoints", is_bonus,
+                     due_at, on_deadline AS "on_deadline: OnDeadline", accept_late, late_until,
+                     max_attempts"#,
         item_id,
         assignment.assignment_type.as_str(),
         Json(&assignment.config) as Json<&Map<String, Value>>,
         assignment.max_points.value(),
-        assignment.is_bonus
+        assignment.is_bonus,
+        settings.due_at,
+        settings.on_deadline.map(OnDeadline::as_str),
+        settings.accept_late,
+        settings.late_until,
+        settings.max_attempts
     )
     .fetch_one(conn)
     .await?;
@@ -581,7 +679,9 @@ pub async fn find_assignment(
     let raw = sqlx::query_as!(
         RawAssignment,
         r#"SELECT type AS "assignment_type: BuiltinType", config AS "config: Body",
-                  max_points AS "max_points: MaxPoints", is_bonus
+                  max_points AS "max_points: MaxPoints", is_bonus,
+                  due_at, on_deadline AS "on_deadline: OnDeadline", accept_late, late_until,
+                  max_attempts
            FROM content.assignments WHERE item_id = $1"#,
         item_id
     )
@@ -590,10 +690,11 @@ pub async fn find_assignment(
     Ok(raw.map(Assignment::from))
 }
 
-/// The assignment row, locked `FOR UPDATE` until the transaction ends. A grade write holds the
-/// same row `FOR SHARE`, so this waits for it (and it for us), and the checks that come in a
-/// later statement see every grade the writer committed (ADR-0028). It returns the row as it is
-/// after the wait. `None` when the item is not an assignment or is gone.
+/// The assignment row, locked `FOR UPDATE` until the transaction ends. A grade write and a
+/// submission write hold the same row `FOR SHARE`, so this waits for them (and they for us), and
+/// the checks that come in a later statement see everything they committed (ADR-0028,
+/// ADR-0035). It returns the row as it is after the wait. `None` when the item is not an
+/// assignment or is gone.
 pub async fn lock_assignment(
     conn: &mut PgConnection,
     item_id: Uuid,
@@ -601,9 +702,33 @@ pub async fn lock_assignment(
     let raw = sqlx::query_as!(
         RawAssignment,
         r#"SELECT type AS "assignment_type: BuiltinType", config AS "config: Body",
-                  max_points AS "max_points: MaxPoints", is_bonus
+                  max_points AS "max_points: MaxPoints", is_bonus,
+                  due_at, on_deadline AS "on_deadline: OnDeadline", accept_late, late_until,
+                  max_attempts
            FROM content.assignments WHERE item_id = $1
            FOR UPDATE"#,
+        item_id
+    )
+    .fetch_optional(conn)
+    .await?;
+    Ok(raw.map(Assignment::from))
+}
+
+/// Like [`lock_assignment`], but `FOR SHARE`: several holders at once, and a writer of the row
+/// waits for all of them. It selects from `content.assignments` alone: a statement that had to
+/// wait re-reads only the locked row, so what it returns is what the last writer committed.
+pub async fn lock_assignment_shared(
+    conn: &mut PgConnection,
+    item_id: Uuid,
+) -> Result<Option<Assignment>, sqlx::Error> {
+    let raw = sqlx::query_as!(
+        RawAssignment,
+        r#"SELECT type AS "assignment_type: BuiltinType", config AS "config: Body",
+                  max_points AS "max_points: MaxPoints", is_bonus,
+                  due_at, on_deadline AS "on_deadline: OnDeadline", accept_late, late_until,
+                  max_attempts
+           FROM content.assignments WHERE item_id = $1
+           FOR SHARE"#,
         item_id
     )
     .fetch_optional(conn)
@@ -630,28 +755,44 @@ pub async fn lock_assignments_below(
     .await
 }
 
-/// Each field is kept when `None`.
+/// Each field is kept when `None`. `settings` replaces all five settings together: the caller has
+/// resolved them against the locked row.
 pub async fn update_assignment(
     conn: &mut PgConnection,
     item_id: Uuid,
     config: Option<&Map<String, Value>>,
     max_points: Option<MaxPoints>,
     is_bonus: Option<bool>,
+    settings: Option<SubmissionSettings>,
 ) -> Result<Assignment, sqlx::Error> {
+    let new = settings.unwrap_or_default();
     let raw = sqlx::query_as!(
         RawAssignment,
         r#"UPDATE content.assignments
            SET config = COALESCE($2::jsonb, config),
                max_points = COALESCE($3::numeric, max_points),
                is_bonus = COALESCE($4::boolean, is_bonus),
+               due_at = CASE WHEN $5 THEN $6::timestamptz ELSE due_at END,
+               on_deadline = CASE WHEN $5 THEN $7::text ELSE on_deadline END,
+               accept_late = CASE WHEN $5 THEN $8::boolean ELSE accept_late END,
+               late_until = CASE WHEN $5 THEN $9::timestamptz ELSE late_until END,
+               max_attempts = CASE WHEN $5 THEN $10::integer ELSE max_attempts END,
                updated_at = now()
            WHERE item_id = $1
            RETURNING type AS "assignment_type: BuiltinType", config AS "config: Body",
-                     max_points AS "max_points: MaxPoints", is_bonus"#,
+                     max_points AS "max_points: MaxPoints", is_bonus,
+                     due_at, on_deadline AS "on_deadline: OnDeadline", accept_late, late_until,
+                     max_attempts"#,
         item_id,
         config.map(Json) as Option<Json<&Map<String, Value>>>,
         max_points.map(MaxPoints::value),
-        is_bonus
+        is_bonus,
+        settings.is_some(),
+        new.due_at,
+        new.on_deadline.map(OnDeadline::as_str),
+        new.accept_late,
+        new.late_until,
+        new.max_attempts
     )
     .fetch_one(conn)
     .await?;

@@ -5,7 +5,9 @@ mod parse;
 mod profile;
 mod text;
 
-use api_types::{Document, DocumentLimits, FieldError, ProfileName};
+use std::collections::BTreeSet;
+
+use api_types::{Document, DocumentLimits, Feature, FieldError, ProfileName};
 use serde_json::{Map, Value};
 
 pub use profile::{EditorConfigError, EffectiveProfiles};
@@ -76,7 +78,7 @@ impl DocumentErrors {
         Self(errors)
     }
 
-    fn one(path: &str, message: &'static str) -> Self {
+    pub(super) fn one(path: &str, message: &'static str) -> Self {
         Self(vec![DocumentError {
             path: path.to_owned(),
             message,
@@ -102,6 +104,12 @@ impl ValidDocument {
         Self { document, body }
     }
 
+    /// True when the document holds no text (ADR-0035): an empty draft may be saved, but never
+    /// submitted.
+    pub fn is_blank(&self) -> bool {
+        plain_text(&self.document).trim().is_empty()
+    }
+
     pub fn as_document(&self) -> &Document {
         &self.document
     }
@@ -121,6 +129,18 @@ pub fn validate_document(
     profile: ProfileName,
     profiles: &EffectiveProfiles,
 ) -> Result<ValidDocument, DocumentErrors> {
+    validate_document_within(value, profile, profiles, None)
+}
+
+/// Like [`validate_document`], with a third layer that can only narrow (ADR-0025): when `within`
+/// is set, only the features of the profile that it also lists are allowed. A feature it lists
+/// that the profile lacks widens nothing.
+pub fn validate_document_within(
+    value: &Value,
+    profile: ProfileName,
+    profiles: &EffectiveProfiles,
+    within: Option<&BTreeSet<Feature>>,
+) -> Result<ValidDocument, DocumentErrors> {
     // A value that is already in memory always serializes, so the fallback is a defensive
     // refusal of an absurd size rather than a case that happens.
     let size = serde_json::to_vec(value).map_or(usize::MAX, |bytes| bytes.len());
@@ -131,7 +151,13 @@ pub fn validate_document(
     let Some(document) = document.filter(|_| errors.is_empty()) else {
         return Err(DocumentErrors::of(errors));
     };
-    let errors = profile::check_profile(&document, profiles.profile(profile), profiles);
+    let mut effective = profiles.profile(profile).clone();
+    if let Some(within) = within {
+        effective
+            .features
+            .retain(|feature| within.contains(feature));
+    }
+    let errors = profile::check_profile(&document, &effective, profiles);
     if !errors.is_empty() {
         return Err(DocumentErrors::of(errors));
     }

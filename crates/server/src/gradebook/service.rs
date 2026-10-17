@@ -5,9 +5,10 @@
 //! id, an id in a course they cannot see and a draft they may not open give the same error. Only
 //! after that does the action decide between going ahead and 403.
 //!
-//! `gradebook` calls no other module's Rust code except the read-only course-access function of
-//! `teaching` (ADR-0028, ADR-0030): the tables of `content`, `teaching` and `identity` are read in
-//! `repo` with JOINs.
+//! `gradebook` calls no other module's Rust code except the read-only functions that every module
+//! uses to open and lock an assignment: `teaching::course_access` and
+//! `content::{open_assignment, lock_assignment_shared}` (ADR-0028, ADR-0030, ADR-0035). The
+//! tables of `content`, `teaching` and `identity` are otherwise read in `repo` with JOINs.
 
 use std::collections::{HashMap, HashSet};
 
@@ -21,8 +22,9 @@ use super::model::{
     Cell, Feedback, FeedbackInput, FieldProblem, GradeInput, GradebookPage, GradebookRow,
     ModelError, MyGrade, Score, Students,
 };
-use super::repo::{self, AssignmentContext};
+use super::repo;
 use crate::actor::Actor;
+use crate::content::{self, OpenError, OpenedAssignment};
 use crate::events::{self, AuditEntry, Event, EventsError};
 use crate::pagination::{Page, PageParams};
 use crate::policy::{self, Action, CourseAccess, PolicyError};
@@ -77,30 +79,25 @@ async fn open_assignment(
     conn: &mut PgConnection,
     actor: &Actor,
     assignment_id: Uuid,
-) -> Result<(AssignmentContext, CourseAccess), GradebookError> {
-    let context = repo::find_assignment(conn, assignment_id)
-        .await?
-        .ok_or(GradebookError::AssignmentNotFound)?;
-    let access = course_access(conn, actor, context.course_id)
+) -> Result<OpenedAssignment, GradebookError> {
+    content::open_assignment(conn, actor, assignment_id)
         .await
         .map_err(|error| match error {
-            GradebookError::CourseNotFound => GradebookError::AssignmentNotFound,
-            other => other,
-        })?;
-    // A module with a parent is a sub-module: the parent is the top-level module on the path.
-    let (module, submodule) = match context.parent {
-        Some(parent) => (parent, Some(context.module)),
-        None => (context.module, None),
-    };
-    let view = Action::ViewContent {
-        access,
-        module,
-        submodule,
-        item: Some(context.item),
-        at: Utc::now(),
-    };
-    policy::authorize(actor, view).map_err(|_| GradebookError::AssignmentNotFound)?;
-    Ok((context, access))
+            OpenError::NotFound => GradebookError::AssignmentNotFound,
+            OpenError::Teaching(error) => GradebookError::Teaching(error),
+            OpenError::Db(error) => GradebookError::Db(error),
+        })
+}
+
+/// Takes the assignment row `FOR SHARE` and returns `max_points` as it is in that row.
+async fn lock_max_points(
+    conn: &mut PgConnection,
+    assignment_id: Uuid,
+) -> Result<Decimal, GradebookError> {
+    content::lock_assignment_shared(conn, assignment_id)
+        .await?
+        .map(|assignment| assignment.max_points.value())
+        .ok_or(GradebookError::AssignmentNotFound)
 }
 
 async fn audit(
@@ -178,11 +175,9 @@ pub async fn save_grade(
     student_id: Uuid,
     input: GradeInput,
 ) -> Result<Cell, GradebookError> {
-    let (context, access) = open_assignment(conn, actor, assignment_id).await?;
-    policy::authorize(actor, Action::GradeAssignment(access))?;
-    let max = repo::lock_assignment_shared(conn, assignment_id)
-        .await?
-        .ok_or(GradebookError::AssignmentNotFound)?;
+    let context = open_assignment(conn, actor, assignment_id).await?;
+    policy::authorize(actor, Action::GradeAssignment(context.access))?;
+    let max = lock_max_points(conn, assignment_id).await?;
     if !repo::is_student_member(conn, context.course_id, student_id).await? {
         return Err(GradebookError::StudentNotFound);
     }
@@ -228,11 +223,9 @@ pub async fn publish_grades(
     assignment_id: Uuid,
     students: Students,
 ) -> Result<Vec<Uuid>, GradebookError> {
-    let (context, access) = open_assignment(conn, actor, assignment_id).await?;
-    policy::authorize(actor, Action::PublishGrades(access))?;
-    repo::lock_assignment_shared(conn, assignment_id)
-        .await?
-        .ok_or(GradebookError::AssignmentNotFound)?;
+    let context = open_assignment(conn, actor, assignment_id).await?;
+    policy::authorize(actor, Action::PublishGrades(context.access))?;
+    lock_max_points(conn, assignment_id).await?;
     let only = match students {
         Students::All => None,
         Students::Listed(mut ids) => {
@@ -461,7 +454,7 @@ mod tests {
     use super::*;
     use crate::content::{
         self, Assignment, BuiltinType, ContentError, ContentTitle, EffectiveProfiles, ItemPatch,
-        ItemRules, MaxPoints,
+        ItemRules, MaxPoints, SubmissionSettings,
     };
     use crate::identity::{self, Email, NewUser, PersonName, Role};
     use crate::pagination::PageParams;
@@ -550,6 +543,7 @@ mod tests {
                 config: Map::new(),
                 max_points: MaxPoints::parse(points).unwrap(),
                 is_bonus: false,
+                settings: SubmissionSettings::default(),
             }),
         )
         .await
