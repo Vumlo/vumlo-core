@@ -1,6 +1,6 @@
 # Learnly — Architecture
 
-Status: **in progress.** Implemented: the foundation (config, migrations, health, OpenAPI, Problem Details), `identity` + `policy` (users, password login, sessions, admin user management), the first slice of `teaching` (courses, members, publishing) with a minimal `events.audit_log`, the `content` tree (modules, sub-modules, `text` items and assignments of type `text` or `no_submission`, whose bodies are block documents), the `gradebook` (draft and published grades, publishing, the staff gradebook, a student's published grades), `assessment` (drafts, attempts and deadlines of `text` assignments, ADR-0035), the first events in `events.outbox`, and `org` with the installation record (the institution mode, ADR-0031) terms, groups and subgroups (ADR-0032), and in `teaching` the group links, the live roster, course exclusions and course editing (ADR-0033). Everything else below is still design.
+Status: **in progress.** Implemented: the foundation (config, migrations, health, OpenAPI, Problem Details), `identity` + `policy` (users, password login, sessions, admin user management), the first slice of `teaching` (courses, members, publishing) with a minimal `events.audit_log`, the `content` tree (modules, sub-modules, `text` items and assignments of type `text` or `no_submission`, whose bodies are block documents), the `gradebook` (draft and published grades, publishing, the staff gradebook, a student's published grades), `assessment` (drafts, attempts and deadlines of `text` assignments, ADR-0035), the first events in `events.outbox`, and `org` with the installation record (the institution mode, ADR-0031) terms, groups and subgroups (ADR-0032), and in `teaching` the group links, the live roster, course exclusions and course editing (ADR-0033). The audit of task 014 added the rules of ADR-0036 to ADR-0040: a test database per test, who is on a course (active students, former students, role changes, owner transfer, the class rollover), login hardening, input and error statuses, and who may link a group. Everything else below is still design.
 This file is the current picture of the system. Every decision behind it has a record in [`docs/decisions/`](docs/decisions/). If this file and an ADR disagree, the ADR wins and this file gets fixed.
 
 ## Goal
@@ -249,7 +249,7 @@ There are two levels of roles ([ADR-0004](docs/decisions/0004-roles-and-policy.m
 | Link and unlink groups, choose a group ([ADR-0040](docs/decisions/0040-who-may-link-a-group.md)) |    –    |     –     |    ✓    |   ✓   |   ✓   |
 | Publish the course ([ADR-0019](docs/decisions/0019-course-publishing.md)) |    –    |     –     |    ✓    |   ✓   |   ✓   |
 | Add/remove teachers and assistants                          |    –    |     –     |    ✓    |   ✓   |   ✓   |
-| Archive course                                              |    –    |     –     |    ✓    |   ✓   |   ✓   |
+| Archive course (planned: no endpoint yet, `archived` cannot be reached) |    –    |     –     |    ✓    |   ✓   |   ✓   |
 | Delete course, transfer ownership                           |    –    |     –     |    –    |   ✓   |   ✓   |
 
 Invariants:
@@ -297,7 +297,7 @@ The content endpoints (tag `content`, all under `/api/v1`):
 | Endpoint | |
 |---|---|
 | `POST /courses/{id}/modules` | create a module, or a sub-module with `parent_id` |
-| `GET /courses/{id}/content` | the whole tree, not paged (it is bounded and ordered by position, not by id) |
+| `GET /courses/{id}/content` | the whole tree, ordered by position and not paged; nothing limits how many modules or items a course has, so its size is the size of the course |
 | `PATCH /modules/{id}`, `DELETE /modules/{id}` | edit (`publish_at: null` clears it), delete with everything below (409 when an assignment below has a grade or a submitted attempt) |
 | `PUT /courses/{id}/modules/order` | reorder the top-level modules, or the sub-modules of `parent_id` |
 | `POST /modules/{id}/publish` | publish, `cascade` required |
@@ -364,6 +364,8 @@ The assessment endpoints (tag `assessment`):
 **Events** ([ADR-0007](docs/decisions/0007-events-outbox.md))
 A state change and its event are written in the same transaction. A worker (a tokio task in the same binary) delivers events to internal handlers (email) and to webhook subscriptions (HMAC-signed, with retries). Delivery is **at-least-once**, so consumers deduplicate by event id. The payload contains ids only. **Draft saves emit no events.**
 
+Notes for the task that builds the worker: `events.outbox.occurred_at` is the time the transaction *began* (`now()`), not the order of commits, and ids are time-ordered at insert, so a row can become visible after a newer one has been delivered. The worker therefore claims unprocessed rows with `FOR UPDATE SKIP LOCKED` (ADR-0007) and never keeps a high-water mark; consumers that need an order read it from the entities, not from the event. The table has no index for that claim yet and no retention of processed rows; `identity.sessions` has no index on `expires_at` for the cleanup; `events.audit_log` has neither retention nor a reader. They are added with the worker.
+
 **Scheduled jobs** (same worker, not built): items reaching `publish_at` → `item.published`; assignments reaching `due_at` with `on_deadline = auto_submit` → submit drafts (task 013b); outbox delivery; expired-session cleanup.
 
 ## Institution modes
@@ -384,6 +386,7 @@ Examples: in a school, the template "Algebra 7" becomes courses "Algebra 7-A" an
 - **An exclusion can go stale.** It stays until restored. A student who left the group since is excluded from nothing; if they are added to the group again they are still excluded.
 - **Removing an assistant or a teacher who is in a linked group leaves them a student of the course.** Only a student's removal records an exclusion; remove the person from the group, or exclude them after the removal, to take them off.
 - **A group student cannot be pinned.** Putting a student who comes from a linked group as `student` changes nothing (they already hold that role), so no direct membership is written; a direct membership written before the link is the one that survives a later unlink.
+- **Built in the data but without an endpoint yet:** archiving a course (the status `archived`), course templates (`kind = 'template'`, ADR-0005), device and personal-access sessions (`kind` `cli` and `pat`), email verification (`email_verified_at`), Google identities, course subgroups. The policy action `DeleteCourse`, `gradebook::{has_grades_in_course, purge_course}` and `assessment::{has_submitted_in_course, purge_course}` wait for the course deletion below. None of them is reachable through the API today.
 - **There is no course deletion yet.** When it is added it must lock the assignment rows of the course `FOR UPDATE`, then call `gradebook::has_grades_in_course` and `assessment::has_submitted_in_course` (409 if either is true) and both `purge_course` functions, in one transaction. `teaching` then calls `gradebook` and `assessment` while they call `teaching`: a module-level cycle ([ADR-0030](docs/decisions/0030-gradebook-lock-covers-deletes-and-course-access.md)).
 
 - **The yearly rollover has no copy-to-next-year action.** The procedure is `PUT /groups/{id}/members` with the new class, then `PATCH /groups/{id}` to rename it; the linked courses follow at once and last year's students become former students with their results (see "Class rollover"). A course copy for the new year needs templates (ADR-0005, not built).
