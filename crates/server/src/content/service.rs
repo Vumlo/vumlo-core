@@ -887,7 +887,7 @@ mod tests {
     async fn two_creates_racing_for_the_last_position_one_gets_409(pool: sqlx::PgPool) {
         let hash = identity::hash_password("irrelevant").await.unwrap();
         let mut tx = pool.begin().await.unwrap();
-        let user = identity::create_user(
+        let user = identity::create_user_unaudited_for_tests(
             &mut tx,
             NewUser {
                 email: Email::parse("owner@x.edu").unwrap(),
@@ -984,7 +984,7 @@ mod tests {
     async fn course(pool: sqlx::PgPool) -> Course {
         let hash = identity::hash_password("irrelevant").await.unwrap();
         let mut tx = pool.begin().await.unwrap();
-        let user = identity::create_user(
+        let user = identity::create_user_unaudited_for_tests(
             &mut tx,
             NewUser {
                 email: Email::parse("owner@x.edu").unwrap(),

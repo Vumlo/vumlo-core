@@ -496,7 +496,7 @@ mod tests {
         let hash = identity::hash_password("irrelevant").await.unwrap();
         let mut tx = pool.begin().await.unwrap();
         let mut create = async |email: &str, role: Role| {
-            identity::create_user(
+            identity::create_user_unaudited_for_tests(
                 &mut tx,
                 NewUser {
                     email: Email::parse(email).unwrap(),

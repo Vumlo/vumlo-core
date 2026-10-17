@@ -2,7 +2,7 @@
 #![allow(dead_code)]
 
 use server::app::{self, AppState};
-use server::identity::{self, Email, NewUser, PersonName, Role, TemporaryPassword};
+use server::identity::{self, Email, Role, TemporaryPassword};
 use server::settings::{
     AuthSettings, DatabaseSettings, EditorSettings, GradingScale, InstitutionMode,
     InstitutionSettings, LogFormat, LogSettings, ServerSettings, Settings,
@@ -174,25 +174,37 @@ impl Resp {
 pub const PASSWORD: &str = "correct horse battery staple";
 
 /// Creates a user the way the CLI does (temporary password, `must_change_password = true`) and
-/// returns the temporary password.
+/// returns the temporary password. Plain SQL: `identity::create_user` is private so that no
+/// production code can skip the audit (ADR-0034), and this writes no audit row either.
 pub async fn seed_pending_user(pool: &PgPool, email: &str, role: Role) -> String {
     let temporary = TemporaryPassword::generate();
     let hash = identity::hash_password(temporary.expose())
         .await
         .expect("hash");
+    let email = Email::parse(email).expect("email");
+    let id = uuid::Uuid::now_v7();
     let mut tx = pool.begin().await.expect("begin");
-    identity::create_user(
-        &mut tx,
-        NewUser {
-            email: Email::parse(email).expect("email"),
-            name: PersonName::name("Test").expect("name"),
-            surname: PersonName::surname("User").expect("surname"),
-            role,
-        },
-        hash,
+    sqlx::query!(
+        "INSERT INTO identity.users (id, email, name, surname, role, must_change_password)
+         VALUES ($1, $2, 'Test', 'User', $3, true)",
+        id,
+        email.as_str(),
+        role.as_str()
     )
+    .execute(&mut *tx)
     .await
-    .expect("create user");
+    .expect("insert user");
+    sqlx::query!(
+        "INSERT INTO identity.identities (id, user_id, provider, subject, password_hash)
+         VALUES ($1, $2, 'password', $3, $4)",
+        uuid::Uuid::now_v7(),
+        id,
+        id.to_string(),
+        hash.as_str()
+    )
+    .execute(&mut *tx)
+    .await
+    .expect("insert identity");
     tx.commit().await.expect("commit");
     temporary.expose().to_owned()
 }

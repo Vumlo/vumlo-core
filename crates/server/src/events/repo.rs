@@ -52,7 +52,7 @@ mod tests {
     async fn an_audit_entry_commits_and_rolls_back_with_its_transaction(pool: sqlx::PgPool) {
         let hash = identity::hash_password("irrelevant").await.unwrap();
         let mut tx = pool.begin().await.unwrap();
-        let user = identity::create_user(
+        let user = identity::create_user_unaudited_for_tests(
             &mut tx,
             NewUser {
                 email: Email::parse("a@x.edu").unwrap(),

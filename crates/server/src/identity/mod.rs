@@ -10,7 +10,8 @@ pub use model::{
     Role, SessionInfo, SessionKind, SessionToken, TemporaryPassword, User, UserStatus,
 };
 pub use routes::{COOKIE_NAME, SetupError, router};
+#[cfg(test)]
+pub use service::create_user_unaudited_for_tests;
 pub use service::{
-    IdentityError, LoginThrottle, create_user, create_user_from_cli, find_user, find_users,
-    hash_password,
+    IdentityError, LoginThrottle, create_user_from_cli, find_user, find_users, hash_password,
 };
