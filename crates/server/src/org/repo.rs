@@ -222,6 +222,36 @@ pub async fn group_members_among(
     .await
 }
 
+/// Every member of the group.
+pub async fn group_member_ids(
+    conn: &mut PgConnection,
+    group_id: Uuid,
+) -> Result<Vec<Uuid>, sqlx::Error> {
+    sqlx::query_scalar!(
+        "SELECT user_id FROM org.group_members WHERE group_id = $1",
+        group_id
+    )
+    .fetch_all(conn)
+    .await
+}
+
+/// Removes the members among `user_ids`, with their rows in the group's subgroups (the composite
+/// key), and returns them.
+pub async fn delete_group_members(
+    conn: &mut PgConnection,
+    group_id: Uuid,
+    user_ids: &[Uuid],
+) -> Result<Vec<Uuid>, sqlx::Error> {
+    sqlx::query_scalar!(
+        "DELETE FROM org.group_members WHERE group_id = $1 AND user_id = ANY($2)
+         RETURNING user_id",
+        group_id,
+        user_ids
+    )
+    .fetch_all(conn)
+    .await
+}
+
 /// Adds the users who are not members yet and returns them.
 pub async fn insert_group_members(
     conn: &mut PgConnection,

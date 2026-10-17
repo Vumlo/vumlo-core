@@ -321,23 +321,13 @@ pub async fn list_group_members(
     Ok(Page::from_rows(rows, page.limit, |member| member.user_id))
 }
 
-/// Adds the users to the group and returns the ones who were not members yet. All or nothing:
-/// every entry that is not a student (or not a user) is reported with its position, and then
-/// nothing is added. Someone who is a member already passes whatever their role is now.
-pub async fn add_group_members(
+/// Refuses, with their positions, the entries of `user_ids` that are not members yet and are no
+/// student (or no user). Someone who is a member already passes whatever their role is now.
+async fn check_new_members(
     conn: &mut PgConnection,
-    actor: &Actor,
-    group_id: Uuid,
     user_ids: &[Uuid],
-) -> Result<Vec<Uuid>, OrgError> {
-    policy::authorize(actor, Action::ManageGroups)?;
-    repo::lock_group(conn, group_id)
-        .await?
-        .ok_or(OrgError::GroupNotFound)?;
-    let members: HashSet<Uuid> = repo::group_members_among(conn, group_id, user_ids)
-        .await?
-        .into_iter()
-        .collect();
+    members: &HashSet<Uuid>,
+) -> Result<(), OrgError> {
     let others: Vec<Uuid> = user_ids
         .iter()
         .filter(|id| !members.contains(id))
@@ -360,9 +350,31 @@ pub async fn add_group_members(
             Some(_) => None,
         })
         .collect();
-    if !refused.is_empty() {
-        return Err(OrgError::Members(refused));
+    if refused.is_empty() {
+        Ok(())
+    } else {
+        Err(OrgError::Members(refused))
     }
+}
+
+/// Adds the users to the group and returns the ones who were not members yet. All or nothing:
+/// every entry that is not a student (or not a user) is reported with its position, and then
+/// nothing is added. Someone who is a member already passes whatever their role is now.
+pub async fn add_group_members(
+    conn: &mut PgConnection,
+    actor: &Actor,
+    group_id: Uuid,
+    user_ids: &[Uuid],
+) -> Result<Vec<Uuid>, OrgError> {
+    policy::authorize(actor, Action::ManageGroups)?;
+    repo::lock_group(conn, group_id)
+        .await?
+        .ok_or(OrgError::GroupNotFound)?;
+    let members: HashSet<Uuid> = repo::group_members_among(conn, group_id, user_ids)
+        .await?
+        .into_iter()
+        .collect();
+    check_new_members(conn, user_ids, &members).await?;
     let added = repo::insert_group_members(conn, group_id, &distinct(user_ids)).await?;
     if !added.is_empty() {
         audit(
@@ -376,6 +388,70 @@ pub async fn add_group_members(
         .await?;
     }
     Ok(added)
+}
+
+/// Makes `user_ids` exactly the members of the group (ADR-0037): adds the ones who are not members,
+/// removes the members who are not listed, and returns both lists. All or nothing, like
+/// [`add_group_members`]; the subgroup memberships of a removed member go with them. The rollover
+/// of a class is one call.
+pub async fn replace_group_members(
+    conn: &mut PgConnection,
+    actor: &Actor,
+    group_id: Uuid,
+    user_ids: &[Uuid],
+) -> Result<(Vec<Uuid>, Vec<Uuid>), OrgError> {
+    policy::authorize(actor, Action::ManageGroups)?;
+    repo::lock_group(conn, group_id)
+        .await?
+        .ok_or(OrgError::GroupNotFound)?;
+    let members: HashSet<Uuid> = repo::group_member_ids(conn, group_id)
+        .await?
+        .into_iter()
+        .collect();
+    check_new_members(conn, user_ids, &members).await?;
+    let wanted: HashSet<Uuid> = user_ids.iter().copied().collect();
+    let leaving: Vec<Uuid> = members.difference(&wanted).copied().collect();
+    let removed = repo::delete_group_members(conn, group_id, &leaving).await?;
+    let added = repo::insert_group_members(conn, group_id, &distinct(user_ids)).await?;
+    if !added.is_empty() || !removed.is_empty() {
+        audit(
+            conn,
+            actor,
+            "group.members.replace",
+            "group",
+            group_id,
+            json!({"added": added, "removed": removed}),
+        )
+        .await?;
+    }
+    Ok((added, removed))
+}
+
+/// Removes several users from the group and from its subgroups; the ones who are not members are
+/// skipped. Returns the ones who were removed.
+pub async fn remove_group_members(
+    conn: &mut PgConnection,
+    actor: &Actor,
+    group_id: Uuid,
+    user_ids: &[Uuid],
+) -> Result<Vec<Uuid>, OrgError> {
+    policy::authorize(actor, Action::ManageGroups)?;
+    repo::lock_group(conn, group_id)
+        .await?
+        .ok_or(OrgError::GroupNotFound)?;
+    let removed = repo::delete_group_members(conn, group_id, &distinct(user_ids)).await?;
+    if !removed.is_empty() {
+        audit(
+            conn,
+            actor,
+            "group.members.remove",
+            "group",
+            group_id,
+            json!({"user_ids": removed}),
+        )
+        .await?;
+    }
+    Ok(removed)
 }
 
 /// Removes the user from the group and, with them, from the group's subgroups.

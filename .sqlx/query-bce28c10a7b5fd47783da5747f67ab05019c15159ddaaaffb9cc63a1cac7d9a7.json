@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT u.id AS student_id, u.name, u.surname,\n                  s.id AS \"attempt_id?\", s.attempt AS \"attempt?\", s.submitted_at AS \"submitted_at?\",\n                  s.is_late AS \"is_late?\"\n           FROM teaching.effective_members m\n           JOIN identity.users u ON u.id = m.user_id\n           LEFT JOIN LATERAL (\n               SELECT id, attempt, submitted_at, is_late FROM assessment.submissions\n               WHERE assignment_id = $2 AND student_id = u.id AND status = 'submitted'\n               ORDER BY attempt DESC LIMIT 1\n           ) s ON true\n           WHERE m.course_id = $1 AND m.role = 'student'\n             AND ($3::uuid IS NULL\n                  OR (u.surname, u.name, u.id) > (SELECT c.surname, c.name, c.id\n                                                  FROM identity.users c WHERE c.id = $3))\n           ORDER BY u.surname, u.name, u.id\n           LIMIT $4",
+  "query": "WITH candidates AS (\n               SELECT user_id AS \"id\" FROM teaching.effective_members\n               WHERE course_id = $1 AND role = 'student'\n             UNION\n               SELECT student_id FROM assessment.submissions\n               WHERE assignment_id = $2 AND status = 'submitted'\n           )\n           SELECT u.id AS student_id, u.name, u.surname,\n                  NOT EXISTS (SELECT 1 FROM teaching.effective_members m\n                              WHERE m.course_id = $1 AND m.user_id = u.id AND m.role = 'student')\n                      AS \"former!\",\n                  s.id AS \"attempt_id?\", s.attempt AS \"attempt?\", s.submitted_at AS \"submitted_at?\",\n                  s.is_late AS \"is_late?\"\n           FROM candidates c\n           JOIN identity.users u ON u.id = c.id\n           LEFT JOIN LATERAL (\n               SELECT id, attempt, submitted_at, is_late FROM assessment.submissions\n               WHERE assignment_id = $2 AND student_id = u.id AND status = 'submitted'\n               ORDER BY attempt DESC LIMIT 1\n           ) s ON true\n           WHERE ($3::uuid IS NULL\n                  OR (u.surname, u.name, u.id) > (SELECT x.surname, x.name, x.id\n                                                  FROM identity.users x WHERE x.id = $3))\n           ORDER BY u.surname, u.name, u.id\n           LIMIT $4",
   "describe": {
     "columns": [
       {
@@ -38,6 +38,12 @@
       },
       {
         "ordinal": 3,
+        "name": "former!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 4,
         "name": "attempt_id?",
         "type_info": "Uuid",
         "origin": {
@@ -48,7 +54,7 @@
         }
       },
       {
-        "ordinal": 4,
+        "ordinal": 5,
         "name": "attempt?",
         "type_info": "Int4",
         "origin": {
@@ -59,7 +65,7 @@
         }
       },
       {
-        "ordinal": 5,
+        "ordinal": 6,
         "name": "submitted_at?",
         "type_info": "Timestamptz",
         "origin": {
@@ -70,7 +76,7 @@
         }
       },
       {
-        "ordinal": 6,
+        "ordinal": 7,
         "name": "is_late?",
         "type_info": "Bool",
         "origin": {
@@ -93,11 +99,12 @@
       false,
       false,
       false,
+      null,
       false,
       true,
       true,
       false
     ]
   },
-  "hash": "6fa2e122e439aff754869949f37b332c2d7e02cd7e13fa3c8dcf562416d7aae3"
+  "hash": "bce28c10a7b5fd47783da5747f67ab05019c15159ddaaaffb9cc63a1cac7d9a7"
 }

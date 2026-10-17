@@ -192,6 +192,26 @@ pub async fn find_user(conn: &mut PgConnection, id: Uuid) -> Result<Option<User>
     .await
 }
 
+/// The user, with their row locked `FOR SHARE` until the transaction ends. A role or status change
+/// of that user waits for this transaction, and a transaction that began after the change sees it
+/// (ADR-0037): the caller reads the role in the same statement that holds the lock.
+pub async fn find_user_shared(
+    conn: &mut PgConnection,
+    id: Uuid,
+) -> Result<Option<User>, sqlx::Error> {
+    sqlx::query_as!(
+        User,
+        r#"SELECT id, email, name, surname,
+                  role AS "role: Role", status AS "status: UserStatus",
+                  must_change_password, created_at
+           FROM identity.users WHERE id = $1
+           FOR SHARE"#,
+        id
+    )
+    .fetch_optional(conn)
+    .await
+}
+
 pub async fn find_users(conn: &mut PgConnection, ids: &[Uuid]) -> Result<Vec<User>, sqlx::Error> {
     sqlx::query_as!(
         User,

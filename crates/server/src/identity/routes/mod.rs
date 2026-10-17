@@ -123,6 +123,10 @@ impl From<IdentityError> for ApiError {
             IdentityError::LastAdmin => {
                 Self::Conflict("the last active admin cannot be demoted or disabled")
             }
+            IdentityError::OwnsCourses => {
+                Self::Conflict("the user owns courses: transfer them to someone else first")
+            }
+            IdentityError::Teaching(e) => (*e).into(),
             IdentityError::UserNotFound | IdentityError::SessionNotFound => Self::NotFound,
             IdentityError::Hashing => Self::Internal,
             IdentityError::Events(e) => {

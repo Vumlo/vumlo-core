@@ -93,6 +93,7 @@ fn api_row(row: model::StudentSubmission) -> SubmissionRow {
         student_id: row.student_id,
         name: row.name,
         surname: row.surname,
+        former: row.former,
         status: if row.latest.is_some() {
             SubmissionStatus::Submitted
         } else {

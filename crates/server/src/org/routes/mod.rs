@@ -31,8 +31,10 @@ pub fn router() -> OpenApiRouter<AppState> {
         ))
         .routes(routes!(
             groups::list_group_members,
-            groups::add_group_members
+            groups::add_group_members,
+            groups::replace_group_members
         ))
+        .routes(routes!(groups::remove_group_members))
         .routes(routes!(groups::remove_group_member))
         .routes(routes!(
             subgroups::create_subgroup,

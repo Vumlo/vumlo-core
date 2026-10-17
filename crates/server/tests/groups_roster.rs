@@ -268,6 +268,19 @@ impl World {
             .collect()
     }
 
+    /// The users the gradebook lists as former students (ADR-0037).
+    async fn former_rows(&self) -> Vec<Uuid> {
+        let path = format!("/courses/{}/gradebook?limit=100", self.course);
+        let page = ok(&self.as_owner("GET", &path, None).await, 200);
+        page["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|row| row["former"] == json!(true))
+            .map(|row| row["user_id"].as_str().unwrap().parse().unwrap())
+            .collect()
+    }
+
     async fn exclusions(&self) -> Vec<Uuid> {
         let path = format!("/courses/{}/exclusions", self.course);
         let page = ok(&self.as_owner("GET", &path, None).await, 200);
@@ -508,9 +521,10 @@ async fn removing_a_group_student_excludes_them_and_restoring_brings_them_back()
 
         assert_eq!(w.status_of_course_for(&s).await, 404, "no access");
         assert_eq!(w.place_of(s.id).await, None);
-        assert!(
-            !w.gradebook_rows().await.contains(&s.id),
-            "off the gradebook roster"
+        assert_eq!(
+            w.former_rows().await,
+            [s.id],
+            "off the roster, but the kept grade makes them a former student"
         );
         assert_eq!(w.exclusions().await, [s.id]);
         let kept = w.grades_of(s.id).await;
@@ -534,6 +548,7 @@ async fn removing_a_group_student_excludes_them_and_restoring_brings_them_back()
         assert_eq!(w.status_of_course_for(&s).await, 200);
         let row = w.gradebook_rows().await;
         assert!(row.contains(&s.id));
+        assert!(w.former_rows().await.is_empty(), "back on the roster");
         let book = ok(
             &w.as_owner("GET", &format!("/courses/{}/gradebook", w.course), None)
                 .await,

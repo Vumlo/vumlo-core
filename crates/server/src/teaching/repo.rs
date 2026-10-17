@@ -82,6 +82,49 @@ pub async fn set_published(
     .await
 }
 
+/// Does the user own a course?
+pub async fn owns_courses(conn: &mut PgConnection, user_id: Uuid) -> Result<bool, sqlx::Error> {
+    sqlx::query_scalar!(
+        r#"SELECT EXISTS (SELECT 1 FROM teaching.courses WHERE owner_id = $1) AS "owns!""#,
+        user_id
+    )
+    .fetch_one(conn)
+    .await
+}
+
+/// Deletes every `teacher` membership of the user and returns the courses they were in.
+pub async fn delete_teacher_memberships(
+    conn: &mut PgConnection,
+    user_id: Uuid,
+) -> Result<Vec<Uuid>, sqlx::Error> {
+    sqlx::query_scalar!(
+        "DELETE FROM teaching.memberships WHERE user_id = $1 AND role = 'teacher'
+         RETURNING course_id",
+        user_id
+    )
+    .fetch_all(conn)
+    .await
+}
+
+/// Hands the course to a new owner.
+pub async fn set_owner(
+    conn: &mut PgConnection,
+    course_id: Uuid,
+    owner_id: Uuid,
+) -> Result<Course, sqlx::Error> {
+    sqlx::query_as!(
+        Course,
+        r#"UPDATE teaching.courses SET owner_id = $2, updated_at = now()
+           WHERE id = $1
+           RETURNING id, kind AS "kind: CourseKind", title,
+                     status AS "status: CourseStatus", owner_id, term_id, created_at"#,
+        course_id,
+        owner_id
+    )
+    .fetch_one(conn)
+    .await
+}
+
 /// The course and `user_id`'s membership in it.
 pub async fn find_course(
     conn: &mut PgConnection,

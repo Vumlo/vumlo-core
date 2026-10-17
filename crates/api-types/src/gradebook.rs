@@ -121,6 +121,11 @@ pub struct GradebookRow {
     pub user_id: Uuid,
     pub name: String,
     pub surname: String,
+    /// Not on the roster now (left the group, disabled, promoted, excluded) but has grades in the
+    /// course. A former student's grades are kept and read-only: a write answers `409` and
+    /// "publish all" skips them (ADR-0037).
+    #[serde(default)]
+    pub former: bool,
     /// Only the cells that exist, in column order, each carrying its `assignment_id`. A column
     /// with no cell here means this student has no grade there: absence is "no grade", not an
     /// error and not a cell with empty values.

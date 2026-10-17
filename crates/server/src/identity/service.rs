@@ -23,6 +23,7 @@ use crate::actor::Actor;
 use crate::events::{self, AuditEntry, EventsError};
 use crate::pagination::{Page, PageParams};
 use crate::policy::{self, Action, PolicyError};
+use crate::teaching::{self, TeachingError};
 
 /// OWASP's Argon2id minimum: 19 MiB, 2 iterations, 1 lane (ADR-0017).
 const ARGON2_MEMORY_KIB: u32 = 19 * 1024;
@@ -60,6 +61,11 @@ pub enum IdentityError {
     ConcurrentChange,
     #[error("the last active admin cannot be demoted or disabled")]
     LastAdmin,
+    /// A teacher or admin cannot become a student while they own a course (ADR-0037).
+    #[error("the user owns courses")]
+    OwnsCourses,
+    #[error(transparent)]
+    Teaching(Box<TeachingError>),
     #[error("user not found")]
     UserNotFound,
     #[error("session not found")]
@@ -502,6 +508,22 @@ pub async fn update_user(
     if update.status == Some(UserStatus::Disabled) {
         repo::delete_sessions_of(conn, updated.id).await?;
     }
+    // A teacher or admin who becomes a student: they must not own a course, and they stop being a
+    // course teacher everywhere (ADR-0037). This comes after the UPDATE, whose row lock waits for
+    // a course being created for this user, so the check sees it; a refusal rolls the UPDATE back.
+    let demoted =
+        updated.role == Role::Student && matches!(target.role, Role::Teacher | Role::Admin);
+    if demoted {
+        if teaching::owns_courses(conn, updated.id)
+            .await
+            .map_err(|e| IdentityError::Teaching(Box::new(e)))?
+        {
+            return Err(IdentityError::OwnsCourses);
+        }
+        teaching::drop_teacher_memberships(conn, actor, updated.id)
+            .await
+            .map_err(|e| IdentityError::Teaching(Box::new(e)))?;
+    }
     // One row for each kind of change, and none for a field that was sent with its old value.
     let mut renamed = Vec::new();
     if update
@@ -577,6 +599,16 @@ pub async fn find_user(conn: &mut PgConnection, id: Uuid) -> Result<Option<User>
 
 /// The users with these ids, in no particular order; an id that names no user is absent. Like
 /// [`find_user`], it checks nothing: the caller has authorized its own action.
+/// Like [`find_user`], with the row locked `FOR SHARE` until the transaction ends, so a role
+/// change or a disabling of that user cannot slip in between the check and the write that relies on
+/// it (ADR-0037).
+pub async fn find_user_shared(
+    conn: &mut PgConnection,
+    id: Uuid,
+) -> Result<Option<User>, IdentityError> {
+    Ok(repo::find_user_shared(conn, id).await?)
+}
+
 pub async fn find_users(conn: &mut PgConnection, ids: &[Uuid]) -> Result<Vec<User>, IdentityError> {
     Ok(repo::find_users(conn, ids).await?)
 }
@@ -878,6 +910,134 @@ mod tests {
                 .await
                 .unwrap();
             assert_eq!(admins, [a.user_id()]);
+        })
+        .await;
+    }
+
+    fn to_student() -> UserUpdate {
+        UserUpdate {
+            role: Some(Role::Student),
+            ..UserUpdate::default()
+        }
+    }
+
+    async fn teacher_actor(pool: &sqlx::PgPool, email: &str) -> Actor {
+        use super::super::model::{Email, PersonName};
+        let user = repo::insert_user(
+            &mut pool.acquire().await.unwrap(),
+            Uuid::now_v7(),
+            &NewUser {
+                email: Email::parse(email).unwrap(),
+                name: PersonName::name("Teacher").unwrap(),
+                surname: PersonName::surname("Teacher").unwrap(),
+                role: Role::Teacher,
+            },
+            false,
+        )
+        .await
+        .unwrap();
+        Actor::new(user.id, Role::Teacher, Uuid::now_v7())
+    }
+
+    async fn course_of(pool: &sqlx::PgPool, owner: &Actor) -> Uuid {
+        let mut tx = pool.begin().await.unwrap();
+        let course = teaching::create_course(
+            &mut tx,
+            owner,
+            teaching::CourseTitle::parse("Algebra").unwrap(),
+            None,
+        )
+        .await
+        .unwrap();
+        tx.commit().await.unwrap();
+        course.id
+    }
+
+    /// A member write holds the user's row `FOR SHARE` from the moment it reads the role; the
+    /// demotion that comes meanwhile waits, and then removes the membership the write added.
+    #[tokio::test]
+    async fn a_demotion_waits_for_a_member_write_and_then_removes_the_membership() {
+        db_test(async |pool| {
+            let admin = admin_actor(&pool, "a@x.edu").await;
+            let owner = teacher_actor(&pool, "owner@x.edu").await;
+            let candidate = teacher_actor(&pool, "candidate@x.edu").await;
+            let course = course_of(&pool, &owner).await;
+
+            let mut first = pool.begin().await.unwrap();
+            teaching::put_member(
+                &mut first,
+                &owner,
+                course,
+                candidate.user_id(),
+                crate::policy::CourseRole::Teacher,
+            )
+            .await
+            .unwrap();
+            let second = tokio::spawn({
+                let pool = pool.clone();
+                let (admin, who) = (admin.clone(), candidate.user_id());
+                async move {
+                    let mut tx = pool.begin().await.unwrap();
+                    update_user(&mut tx, &admin, who, to_student()).await?;
+                    tx.commit().await.map_err(IdentityError::from)
+                }
+            });
+            wait_until_blocked(&pool, &second).await;
+            first.commit().await.unwrap();
+            second.await.unwrap().unwrap();
+
+            // The course is a draft: only a member who is staff can still see it.
+            let access = teaching::course_access(
+                &mut pool.acquire().await.unwrap(),
+                &Actor::new(candidate.user_id(), Role::Student, Uuid::now_v7()),
+                course,
+            )
+            .await;
+            assert!(
+                matches!(access, Err(TeachingError::CourseNotFound)),
+                "no teacher membership survives the demotion: {access:?}"
+            );
+        })
+        .await;
+    }
+
+    /// The other order: the demotion is in flight, and a member write that comes meanwhile waits
+    /// for it and then reads the new role.
+    #[tokio::test]
+    async fn a_member_write_waits_for_a_demotion_and_then_refuses_the_teacher_role() {
+        db_test(async |pool| {
+            let admin = admin_actor(&pool, "a@x.edu").await;
+            let owner = teacher_actor(&pool, "owner@x.edu").await;
+            let candidate = teacher_actor(&pool, "candidate@x.edu").await;
+            let course = course_of(&pool, &owner).await;
+
+            let mut first = pool.begin().await.unwrap();
+            update_user(&mut first, &admin, candidate.user_id(), to_student())
+                .await
+                .unwrap();
+            let second = tokio::spawn({
+                let pool = pool.clone();
+                let (owner, who) = (owner.clone(), candidate.user_id());
+                async move {
+                    let mut tx = pool.begin().await.unwrap();
+                    teaching::put_member(
+                        &mut tx,
+                        &owner,
+                        course,
+                        who,
+                        crate::policy::CourseRole::Teacher,
+                    )
+                    .await
+                }
+            });
+            wait_until_blocked(&pool, &second).await;
+            first.commit().await.unwrap();
+
+            let outcome = second.await.unwrap();
+            assert!(
+                matches!(outcome, Err(TeachingError::RoleNotAllowed)),
+                "{outcome:?}"
+            );
         })
         .await;
     }

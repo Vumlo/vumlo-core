@@ -27,7 +27,7 @@ use crate::actor::Actor;
 use crate::content::{self, OpenError, OpenedAssignment};
 use crate::events::{self, AuditEntry, Event, EventsError};
 use crate::pagination::{Page, PageParams};
-use crate::policy::{self, Action, CourseAccess, PolicyError};
+use crate::policy::{self, Action, CourseAccess, CourseRole, CourseStatus, PolicyError};
 use crate::teaching::{self, TeachingError};
 
 #[derive(Debug, thiserror::Error)]
@@ -46,6 +46,9 @@ pub enum GradebookError {
     /// The student is not a current student member of the course.
     #[error("student not found")]
     StudentNotFound,
+    /// The student left the roster; their grades are kept but cannot be written (ADR-0037).
+    #[error("the student is no longer on the roster")]
+    StudentFormer,
     /// The positions, in the request, of the listed students who are not current students.
     #[error("not a current student of the course")]
     StudentsNotInCourse(Vec<usize>),
@@ -179,7 +182,13 @@ pub async fn save_grade(
     policy::authorize(actor, Action::GradeAssignment(context.access))?;
     let max = lock_max_points(conn, assignment_id).await?;
     if !repo::is_student_member(conn, context.course_id, student_id).await? {
-        return Err(GradebookError::StudentNotFound);
+        return Err(
+            if repo::has_grades_of_student(conn, context.course_id, student_id).await? {
+                GradebookError::StudentFormer
+            } else {
+                GradebookError::StudentNotFound
+            },
+        );
     }
     let (score, feedback) = validate(input, max)?;
     let feedback = feedback.as_ref().map(Feedback::as_str);
@@ -330,6 +339,7 @@ pub async fn gradebook(
                 user_id: student.user_id,
                 name: student.name,
                 surname: student.surname,
+                former: student.former,
                 cells: own,
             }
         })
@@ -342,14 +352,49 @@ pub async fn gradebook(
 }
 
 /// The caller's published grades in the course: only published values, only for assignments the
-/// caller may see now.
+/// caller may see now. Someone who is not on the roster any more (left the group, was disabled and
+/// enabled again, was promoted, was excluded) still reads their own published grades, and nothing
+/// else of the course (ADR-0037).
 pub async fn my_grades(
     conn: &mut PgConnection,
     actor: &Actor,
     course_id: Uuid,
 ) -> Result<Vec<MyGrade>, GradebookError> {
-    let access = course_access(conn, actor, course_id).await?;
-    policy::authorize(actor, Action::ViewOwnGrades(access))?;
+    let access = match course_access(conn, actor, course_id).await {
+        Ok(access) => Some(access),
+        Err(GradebookError::CourseNotFound) => None,
+        Err(other) => return Err(other),
+    };
+    if let Some(access) = access
+        && policy::authorize(actor, Action::ViewOwnGrades(access)).is_ok()
+    {
+        return published_grades(conn, actor, course_id, access).await;
+    }
+    // Not a current student: the grades of a former one, if there are any.
+    let has_rows = repo::has_published_grades(conn, course_id, actor.user_id()).await?;
+    if !has_rows {
+        return Err(match access {
+            Some(_) => GradebookError::Forbidden(PolicyError),
+            None => GradebookError::CourseNotFound,
+        });
+    }
+    policy::authorize(actor, Action::ViewFormerGrades { has_rows })?;
+    // The rows are the user's own, so the course and its status do not matter any more; each
+    // assignment is still shown only while its module and item are open.
+    let access = CourseAccess {
+        role: Some(CourseRole::Student),
+        is_owner: false,
+        status: CourseStatus::Published,
+    };
+    published_grades(conn, actor, course_id, access).await
+}
+
+async fn published_grades(
+    conn: &mut PgConnection,
+    actor: &Actor,
+    course_id: Uuid,
+    access: CourseAccess,
+) -> Result<Vec<MyGrade>, GradebookError> {
     let now = Utc::now();
     let rows = repo::my_published_grades(conn, course_id, actor.user_id(), now).await?;
     Ok(rows

@@ -38,12 +38,14 @@ pub struct LatestAttempt {
     pub is_late: bool,
 }
 
-/// A current student of the course and their latest attempt, if there is one (staff list).
+/// A student of the course and their latest attempt, if there is one (staff list). A former
+/// student is one who left the roster but has an attempt (ADR-0037).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StudentSubmission {
     pub student_id: Uuid,
     pub name: String,
     pub surname: String,
+    pub former: bool,
     pub latest: Option<LatestAttempt>,
 }
 

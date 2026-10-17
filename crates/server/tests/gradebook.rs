@@ -772,7 +772,7 @@ async fn a_student_who_is_not_in_the_course_has_no_cell() {
 }
 
 #[tokio::test]
-async fn the_gradebook_lists_current_students_sorted_and_paged() {
+async fn the_gradebook_lists_current_and_former_students_sorted_and_paged() {
     db_test(async |pool| {
         let w = world(pool).await;
         set_name(&w, w.student.id, "Anna", "Adams").await;
@@ -808,7 +808,8 @@ async fn the_gradebook_lists_current_students_sorted_and_paged() {
             json!({"score": "4", "feedback": "x"}),
         )
         .await);
-        // `left` leaves the course: not listed any more, but the grade stays in the database.
+        // `left` leaves the course: off the roster, but the grade stays and the gradebook still
+        // lists the person, as a former student (ADR-0037).
         let removed = call(
             &w.http,
             "PUT",
@@ -874,15 +875,31 @@ async fn the_gradebook_lists_current_students_sorted_and_paged() {
                 None => break,
             }
         }
-        assert_eq!(pages, 2);
+        assert_eq!(pages, 3);
         let names: Vec<_> = order.iter().map(|(s, n, _)| format!("{s} {n}")).collect();
         assert_eq!(
             names,
-            ["Adams Anna", "Brown Amy", "Brown Zed", "Young Cy"],
-            "surname, name; `left` is gone"
+            [
+                "Aaron Lee",
+                "Adams Anna",
+                "Brown Amy",
+                "Brown Zed",
+                "Young Cy"
+            ],
+            "surname, name; `left` is listed because the grade is kept"
         );
-        assert_eq!(order[1].2, json!(amy));
-        assert_eq!(order[2].2, json!(zed));
+        assert_eq!(order[0].2, json!(left));
+        let all_rows = gradebook(&w, &w.owner.token, "").await;
+        let former: Vec<_> = all_rows["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|row| row["former"] == json!(true))
+            .map(|row| row["user_id"].clone())
+            .collect();
+        assert_eq!(former, [json!(left)], "only `left` is a former student");
+        assert_eq!(order[2].2, json!(amy));
+        assert_eq!(order[3].2, json!(zed));
 
         // A student appears with cells only for what was graded.
         let all = gradebook(&w, &w.owner.token, "").await;
@@ -1791,7 +1808,7 @@ async fn cells_follow_the_column_order_and_exist_only_where_graded() {
                     })
                     .collect();
                 let (name, surname) = [("Abe", "A"), ("Bea", "B"), ("Cal", "C"), ("Dee", "D")][student];
-                json!({"user_id": students[student], "name": name, "surname": surname, "cells": cells})
+                json!({"user_id": students[student], "name": name, "surname": surname, "former": false, "cells": cells})
             })
             .collect();
 

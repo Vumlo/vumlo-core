@@ -859,18 +859,50 @@ async fn disabled_users_cannot_be_added_as_members() {
 }
 
 #[tokio::test]
-async fn putting_the_same_role_for_a_member_who_was_disabled_later_is_still_a_no_op() {
+async fn a_disabled_student_is_off_the_roster_and_back_when_enabled() {
     db_test(async |pool| {
         let w = world(pool).await;
         disable(&w.pool, w.student.id).await;
 
-        let again = put_member(&w.http, &w.owner.token, w.course, w.student.id, "student").await;
-        assert_eq!(again.status, 200);
+        // The membership row stays, but the roster (ADR-0037) has only active students.
         assert_eq!(
             member_role(&w.pool, w.course, w.student.id)
                 .await
                 .as_deref(),
             Some("student")
+        );
+        let members = w
+            .http
+            .get(&format!("/courses/{}/members", w.course))
+            .bearer(&w.owner.token)
+            .send()
+            .await
+            .json();
+        assert!(
+            members["items"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .all(|m| m["user_id"] != json!(w.student.id)),
+            "{members}"
+        );
+        // Putting the role again is not a no-op any more: a disabled person cannot be added.
+        let again = put_member(&w.http, &w.owner.token, w.course, w.student.id, "student").await;
+        assert_eq!(again.problem(422).errors[0].field, "user_id");
+
+        sqlx::query!(
+            "UPDATE identity.users SET status = 'active' WHERE id = $1",
+            w.student.id
+        )
+        .execute(&w.pool)
+        .await
+        .unwrap();
+        assert_eq!(
+            member_role(&w.pool, w.course, w.student.id)
+                .await
+                .as_deref(),
+            Some("student"),
+            "enabled again, they are on the roster with the membership they had"
         );
     })
     .await;

@@ -34,6 +34,20 @@ pub struct CourseAccess {
 }
 
 impl CourseAccess {
+    /// What this access means for `actor`. An institution `student` is never a course teacher or
+    /// an owner (ADR-0004): such a role or ownership is ignored. The rules above stop it from
+    /// existing; this makes it harmless if it ever does (ADR-0037).
+    fn for_actor(self, actor: &Actor) -> Self {
+        if actor.role() != Role::Student {
+            return self;
+        }
+        Self {
+            role: self.role.filter(|role| *role != CourseRole::Teacher),
+            is_owner: false,
+            status: self.status,
+        }
+    }
+
     /// Owner, teacher or assistant: may see every status and manage students.
     fn is_staff(self) -> bool {
         self.is_owner || matches!(self.role, Some(CourseRole::Teacher | CourseRole::Assistant))
@@ -110,6 +124,12 @@ pub enum Action {
     /// Read one's own published grades: only a student of a published course (ADR-0028). Staff
     /// and admins use the gradebook instead.
     ViewOwnGrades(CourseAccess),
+    /// Read one's own published grades in a course one is no longer on the roster of (ADR-0037).
+    /// The caller found published grades of the actor in that course; without any there is
+    /// nothing to read.
+    ViewFormerGrades {
+        has_rows: bool,
+    },
     /// Save, discard and submit one's own work (ADR-0035): only a student of a published course.
     /// Whether the course lets the student see the assignment is `ViewContent`'s business.
     SubmitWork(CourseAccess),
@@ -132,6 +152,56 @@ pub enum Action {
     /// Read groups, subgroups and their members. Admins only until task 015 decides how teachers
     /// pick a group (ADR-0032).
     ViewGroups,
+}
+
+impl Action {
+    /// The same action with the course access read as it applies to `actor`.
+    fn for_actor(self, actor: &Actor) -> Self {
+        let mine = |access: CourseAccess| access.for_actor(actor);
+        match self {
+            Self::ViewCourse(access) => Self::ViewCourse(mine(access)),
+            Self::PublishCourse(access) => Self::PublishCourse(mine(access)),
+            Self::ManageMembership { access, role } => Self::ManageMembership {
+                access: mine(access),
+                role,
+            },
+            Self::DeleteCourse(access) => Self::DeleteCourse(mine(access)),
+            Self::TransferOwnership(access) => Self::TransferOwnership(mine(access)),
+            Self::ManageContent(access) => Self::ManageContent(mine(access)),
+            Self::ViewContent {
+                access,
+                module,
+                submodule,
+                item,
+                at,
+            } => Self::ViewContent {
+                access: mine(access),
+                module,
+                submodule,
+                item,
+                at,
+            },
+            Self::GradeAssignment(access) => Self::GradeAssignment(mine(access)),
+            Self::PublishGrades(access) => Self::PublishGrades(mine(access)),
+            Self::ViewGradebook(access) => Self::ViewGradebook(mine(access)),
+            Self::ViewOwnGrades(access) => Self::ViewOwnGrades(mine(access)),
+            Self::SubmitWork(access) => Self::SubmitWork(mine(access)),
+            Self::ViewOwnSubmission(access) => Self::ViewOwnSubmission(mine(access)),
+            Self::ViewSubmissions(access) => Self::ViewSubmissions(mine(access)),
+            Self::ManageRoster(access) => Self::ManageRoster(mine(access)),
+            Self::EditCourse(access) => Self::EditCourse(mine(access)),
+            Self::ManageOwnAccount
+            | Self::ManageUsers
+            | Self::CreateCourse
+            | Self::ViewOwnCourses
+            | Self::ViewEditorProfiles
+            | Self::ViewFormerGrades { .. }
+            | Self::ManageTerms
+            | Self::ViewTerms
+            | Self::ManageGroups
+            | Self::ViewGroups => self,
+        }
+    }
 }
 
 /// May `institution` role holders have `course` role (ADR-0004)? Admins hold no course role:
@@ -162,6 +232,7 @@ pub struct PolicyError;
 /// Allows or denies `action`. The match has no wildcard: a new action does not compile
 /// until someone decides who may do it.
 pub fn authorize(actor: &Actor, action: Action) -> Result<(), PolicyError> {
+    let action = action.for_actor(actor);
     let is_admin = actor.role() == Role::Admin;
     let allowed = match action {
         Action::ManageOwnAccount => true,
@@ -196,6 +267,7 @@ pub fn authorize(actor: &Actor, action: Action) -> Result<(), PolicyError> {
         | Action::ViewSubmissions(access)
         | Action::ManageRoster(access)
         | Action::EditCourse(access) => is_admin || access.is_staff(),
+        Action::ViewFormerGrades { has_rows } => has_rows,
         Action::ViewOwnGrades(access)
         | Action::SubmitWork(access)
         | Action::ViewOwnSubmission(access) => {
@@ -913,5 +985,43 @@ mod tests {
             assert_eq!(status.as_str().parse::<CourseStatus>(), Ok(status));
         }
         assert!("owner".parse::<CourseRole>().is_err());
+    }
+
+    #[test]
+    fn an_institution_student_is_never_a_course_teacher_or_owner() {
+        // A teacher membership or ownership held by an institution student is ignored (ADR-0037).
+        let student = actor(Role::Student);
+        let stale = |role, is_owner| access(Some(role), is_owner, Published);
+        for held in [stale(Teacher, false), stale(Teacher, true)] {
+            for action in [
+                Action::ViewCourse(held),
+                Action::PublishCourse(held),
+                Action::ManageContent(held),
+                Action::GradeAssignment(held),
+                Action::ViewGradebook(held),
+                Action::ManageRoster(held),
+                Action::EditCourse(held),
+                Action::TransferOwnership(held),
+                Action::ManageMembership {
+                    access: held,
+                    role: Student,
+                },
+            ] {
+                assert_eq!(authorize(&student, action), Err(PolicyError), "{action:?}");
+            }
+        }
+        // The same access held by an institution teacher is what it always was.
+        assert_eq!(
+            authorize(
+                &actor(Role::Teacher),
+                Action::ManageContent(stale(Teacher, true))
+            ),
+            Ok(())
+        );
+        // An assistant or a student role is a different matter and stays.
+        assert_eq!(
+            authorize(&student, Action::ManageContent(stale(Assistant, false))),
+            Ok(())
+        );
     }
 }

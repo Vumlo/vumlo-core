@@ -5,7 +5,7 @@ mod roster;
 
 use api_types::{
     Course, CreateCourseRequest, MemberSource, Membership, Page, PageQuery, ProblemDetails,
-    PutMemberRequest, UpdateCourseRequest,
+    PutMemberRequest, TransferOwnershipRequest, UpdateCourseRequest,
 };
 use axum::Json;
 use axum::extract::{Path, State};
@@ -27,6 +27,7 @@ pub fn router() -> OpenApiRouter<AppState> {
         .routes(routes!(create_course))
         .routes(routes!(get_course, update_course))
         .routes(routes!(publish_course))
+        .routes(routes!(transfer_ownership))
         .routes(routes!(list_my_courses))
         .routes(routes!(list_members))
         .routes(routes!(put_member, remove_member))
@@ -61,6 +62,10 @@ impl From<TeachingError> for ApiError {
             TeachingError::RoleNotAllowed => {
                 Self::invalid_field("role", "this user cannot hold that course role")
             }
+            TeachingError::OwnerNotAllowed => Self::invalid_field(
+                "user_id",
+                "a course owner must be an active teacher or admin",
+            ),
             TeachingError::OwnerMustStayTeacher => {
                 Self::Conflict("the course owner must stay a teacher")
             }
@@ -272,6 +277,42 @@ async fn publish_course(
 ) -> Result<Json<Course>, ApiError> {
     let mut tx = state.db.begin().await.map_err(TeachingError::from)?;
     let course = service::publish_course(&mut tx, &actor, id).await?;
+    tx.commit().await.map_err(TeachingError::from)?;
+    Ok(Json(api_course(course)))
+}
+
+/// Hands the course to another owner. The owner or an admin.
+///
+/// The new owner must be an active teacher or admin. A teacher becomes a course teacher in the
+/// same transaction; an admin owns the course without a membership. The previous owner stays a
+/// course teacher. Idempotent for the current owner. Audited whoever calls it (ADR-0037).
+#[utoipa::path(
+    put,
+    path = "/courses/{id}/owner",
+    tag = "courses",
+    security(("cookie" = []), ("bearer" = [])),
+    params(("id" = Uuid, Path, description = "Course id")),
+    request_body = TransferOwnershipRequest,
+    responses(
+        (status = 200, description = "The course with its new owner", body = Course),
+        (status = 401, description = "Not logged in", body = ProblemDetails,
+            content_type = "application/problem+json"),
+        (status = 403, description = "Only the owner or an admin may hand a course over",
+            body = ProblemDetails, content_type = "application/problem+json"),
+        (status = 404, description = "No such course, or not visible to the caller",
+            body = ProblemDetails, content_type = "application/problem+json"),
+        (status = 422, description = "No such user, or not an active teacher or admin",
+            body = ProblemDetails, content_type = "application/problem+json"),
+    )
+)]
+async fn transfer_ownership(
+    State(state): State<AppState>,
+    actor: Actor,
+    Path(id): Path<Uuid>,
+    ValidJson(request): ValidJson<TransferOwnershipRequest>,
+) -> Result<Json<Course>, ApiError> {
+    let mut tx = state.db.begin().await.map_err(TeachingError::from)?;
+    let course = service::transfer_ownership(&mut tx, &actor, id, request.user_id).await?;
     tx.commit().await.map_err(TeachingError::from)?;
     Ok(Json(api_course(course)))
 }

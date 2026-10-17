@@ -39,6 +39,7 @@ const SCHEMAS: &[&str] = &[
 const VIEW_READS: &[(&str, &str)] = &[
     ("teaching", "org.group_members"),
     ("teaching", "org.subgroup_members"),
+    ("teaching", "identity.users"),
 ];
 
 fn rust_files(dir: &Path, found: &mut Vec<PathBuf>) {

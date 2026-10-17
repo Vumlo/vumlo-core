@@ -1,0 +1,61 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "WITH candidates AS (\n               SELECT user_id AS \"id\" FROM teaching.effective_members\n               WHERE course_id = $1 AND role = 'student'\n             UNION\n               SELECT g.student_id FROM gradebook.grades g\n               JOIN content.items i ON i.id = g.assignment_id\n               WHERE i.course_id = $1\n                 AND (g.draft_score IS NOT NULL OR g.draft_feedback IS NOT NULL\n                      OR g.published_score IS NOT NULL OR g.published_feedback IS NOT NULL)\n           )\n           SELECT u.id AS user_id, u.name, u.surname,\n                  NOT EXISTS (SELECT 1 FROM teaching.effective_members m\n                              WHERE m.course_id = $1 AND m.user_id = u.id AND m.role = 'student')\n                      AS \"former!\"\n           FROM candidates c\n           JOIN identity.users u ON u.id = c.id\n           WHERE ($2::uuid IS NULL\n                  OR (u.surname, u.name, u.id) > (SELECT x.surname, x.name, x.id\n                                                  FROM identity.users x WHERE x.id = $2))\n           ORDER BY u.surname, u.name, u.id\n           LIMIT $3",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "user_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "identity.users",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "identity.users",
+            "name": "name"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "surname",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "identity.users",
+            "name": "surname"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "former!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      null
+    ]
+  },
+  "hash": "88620a87878c77f17105a699b0dbd6ddfa0437db9dd9c8664d8f4f602c9d7ea6"
+}

@@ -58,6 +58,9 @@ pub enum TeachingError {
     RoleNotAllowed,
     #[error("the course owner must stay a teacher")]
     OwnerMustStayTeacher,
+    /// The new owner of a course is not an active teacher or admin (ADR-0037).
+    #[error("a course owner must be an active teacher or admin")]
+    OwnerNotAllowed,
     #[error("the course owner cannot be removed")]
     OwnerCannotBeRemoved,
     #[error("an archived course cannot be published")]
@@ -136,6 +139,14 @@ pub async fn create_course(
     term_id: Option<Uuid>,
 ) -> Result<Course, TeachingError> {
     policy::authorize(actor, Action::CreateCourse)?;
+    // The role in the session may be a moment old. Read it again with the user's row locked, so a
+    // demotion cannot run between this check and the insert (ADR-0037).
+    let creator = identity::find_user_shared(conn, actor.user_id())
+        .await?
+        .ok_or(TeachingError::UserNotFound)?;
+    if creator.status == UserStatus::Disabled || creator.role == identity::Role::Student {
+        return Err(TeachingError::Forbidden(PolicyError));
+    }
     let course = repo::insert_course(
         conn,
         Uuid::now_v7(),
@@ -278,7 +289,9 @@ pub async fn put_member(
     if user_id == course.owner_id && role != CourseRole::Teacher {
         return Err(TeachingError::OwnerMustStayTeacher);
     }
-    let user = identity::find_user(conn, user_id)
+    // The user's row stays locked until the commit: a role change waits for this write and a
+    // write that begins after it sees the new role (ADR-0037).
+    let user = identity::find_user_shared(conn, user_id)
         .await?
         .ok_or(TeachingError::UserNotFound)?;
     if user.status == UserStatus::Disabled {
@@ -301,6 +314,76 @@ pub async fn put_member(
     )
     .await?;
     Ok(membership(MemberSource::Direct))
+}
+
+/// Does the user own a course? An owner cannot become a student (ADR-0037).
+pub async fn owns_courses(conn: &mut PgConnection, user_id: Uuid) -> Result<bool, TeachingError> {
+    Ok(repo::owns_courses(conn, user_id).await?)
+}
+
+/// Deletes the user's `teacher` memberships, for the role change that follows in the same
+/// transaction, and audits each one (ADR-0037). Acts for the admin who changes the role: the
+/// caller has authorized `ManageUsers`.
+pub async fn drop_teacher_memberships(
+    conn: &mut PgConnection,
+    actor: &Actor,
+    user_id: Uuid,
+) -> Result<(), TeachingError> {
+    for course_id in repo::delete_teacher_memberships(conn, user_id).await? {
+        events::audit(
+            conn,
+            actor,
+            AuditEntry {
+                action: "course.member.remove",
+                resource_type: "course",
+                resource_id: course_id,
+                meta: json!({"user_id": user_id, "role": "teacher", "reason": "role_change"}),
+            },
+        )
+        .await?;
+    }
+    Ok(())
+}
+
+/// Hands the course to another teacher or admin (ADR-0037). The owner or an admin may do it. The
+/// new owner becomes a course teacher, unless they are an admin, who own without a membership;
+/// the previous owner stays a course teacher. Audited whoever makes it.
+pub async fn transfer_ownership(
+    conn: &mut PgConnection,
+    actor: &Actor,
+    course_id: Uuid,
+    new_owner_id: Uuid,
+) -> Result<Course, TeachingError> {
+    let (course, access) = load(conn, actor, course_id, true).await?;
+    policy::authorize(actor, Action::TransferOwnership(access))?;
+    if new_owner_id == course.owner_id {
+        return Ok(course);
+    }
+    let user = identity::find_user_shared(conn, new_owner_id)
+        .await?
+        .ok_or(TeachingError::UserNotFound)?;
+    if user.status == UserStatus::Disabled
+        || !matches!(user.role, identity::Role::Teacher | identity::Role::Admin)
+    {
+        return Err(TeachingError::OwnerNotAllowed);
+    }
+    if user.role == identity::Role::Teacher {
+        repo::upsert_membership(conn, course_id, new_owner_id, CourseRole::Teacher).await?;
+        repo::delete_exclusion(conn, course_id, new_owner_id).await?;
+    }
+    let updated = repo::set_owner(conn, course_id, new_owner_id).await?;
+    events::audit(
+        conn,
+        actor,
+        AuditEntry {
+            action: "course.owner.transfer",
+            resource_type: "course",
+            resource_id: course_id,
+            meta: json!({"from": course.owner_id, "to": new_owner_id}),
+        },
+    )
+    .await?;
+    Ok(updated)
 }
 
 /// Removes `user_id` from the roster of the course. The owner cannot be removed.

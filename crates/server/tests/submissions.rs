@@ -1190,7 +1190,8 @@ async fn a_student_who_was_excluded_or_left_the_group_can_no_longer_work() {
             200,
         );
         assert_eq!(attempts["items"].as_array().unwrap().len(), 1);
-        // They are not on the staff list any more: it lists the roster.
+        // They are on the staff list as a former student: the list is the roster plus whoever
+        // still has an attempt (ADR-0037).
         let listed = json_of(
             call(
                 &w,
@@ -1202,13 +1203,14 @@ async fn a_student_who_was_excluded_or_left_the_group_can_no_longer_work() {
             .await,
             200,
         );
-        assert!(
-            listed["items"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .all(|row| row["student_id"] != json!(grouped.id))
-        );
+        let row = listed["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|row| row["student_id"] == json!(grouped.id))
+            .expect("the former student is listed");
+        assert_eq!(row["former"], json!(true));
+        assert_eq!(row["status"], "submitted");
 
         // Another student leaves the group: restored first, then removed from the group.
         let leaver = user(&w.pool, &w.http, "leaver@x.edu", Role::Student).await;

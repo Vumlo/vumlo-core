@@ -59,6 +59,9 @@ impl From<GradebookError> for ApiError {
             },
             GradebookError::Teaching(e) => e.into(),
             GradebookError::HasGrades => Self::Conflict("this has grades"),
+            GradebookError::StudentFormer => {
+                Self::Conflict("the student is no longer on the roster, their grades are read-only")
+            }
             GradebookError::Events(e) => {
                 tracing::error!(error = %e, "gradebook: outbox or audit log error");
                 Self::Internal
@@ -243,6 +246,7 @@ async fn get_gradebook(
                 user_id: row.user_id,
                 name: row.name,
                 surname: row.surname,
+                former: row.former,
                 cells: row
                     .cells
                     .into_iter()

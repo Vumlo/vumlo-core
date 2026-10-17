@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT EXISTS (SELECT 1 FROM teaching.courses WHERE owner_id = $1) AS \"owns!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "owns!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "d6afd6df5dd557fd7a3f1eb9f87273d03a4a01e2e36fbb6aa2b3f44c260e9756"
+}

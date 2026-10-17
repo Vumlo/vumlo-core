@@ -1,6 +1,7 @@
 use api_types::{
     AddMembersRequest, AddMembersResponse, Group, GroupMember, NameRequest, Page, PageQuery,
-    ProblemDetails,
+    ProblemDetails, RemoveMembersRequest, RemoveMembersResponse, ReplaceMembersRequest,
+    ReplaceMembersResponse,
 };
 use axum::Json;
 use axum::extract::{Path, State};
@@ -236,6 +237,76 @@ pub async fn add_group_members(
     let added = service::add_group_members(&mut tx, &actor, id, &request.user_ids).await?;
     tx.commit().await.map_err(OrgError::from)?;
     Ok(Json(AddMembersResponse { added }))
+}
+
+/// Replaces the members of a group: the rollover of a class in one call. Admin only.
+///
+/// The group has exactly `user_ids` afterwards: the ones who were not members are added, the
+/// members who are not listed are removed, with their subgroup memberships. All or nothing: an
+/// entry that is no user or not a student is a `422` on `user_ids[i]`. Linked courses follow at
+/// once; the students who left become former students of them, with their results (ADR-0037).
+#[utoipa::path(
+    put,
+    path = "/groups/{id}/members",
+    tag = "groups",
+    security(("cookie" = []), ("bearer" = [])),
+    params(("id" = Uuid, Path, description = "Group id")),
+    request_body = ReplaceMembersRequest,
+    responses(
+        (status = 200, description = "Who was added and who was removed", body = ReplaceMembersResponse),
+        (status = 401, description = "Not logged in", body = ProblemDetails,
+            content_type = "application/problem+json"),
+        (status = 403, description = "Not an admin", body = ProblemDetails,
+            content_type = "application/problem+json"),
+        (status = 404, description = "No such group", body = ProblemDetails,
+            content_type = "application/problem+json"),
+        (status = 422, description = "An unknown user or a user who is not a student",
+            body = ProblemDetails, content_type = "application/problem+json"),
+    )
+)]
+pub async fn replace_group_members(
+    State(state): State<AppState>,
+    actor: Actor,
+    Path(id): Path<Uuid>,
+    ValidJson(request): ValidJson<ReplaceMembersRequest>,
+) -> Result<Json<ReplaceMembersResponse>, ApiError> {
+    let mut tx = state.db.begin().await.map_err(OrgError::from)?;
+    let (added, removed) =
+        service::replace_group_members(&mut tx, &actor, id, &request.user_ids).await?;
+    tx.commit().await.map_err(OrgError::from)?;
+    Ok(Json(ReplaceMembersResponse { added, removed }))
+}
+
+/// Removes several users from a group and from its subgroups. Admin only.
+///
+/// Users who are not members are skipped; `removed` lists the ones who were.
+#[utoipa::path(
+    post,
+    path = "/groups/{id}/members/remove",
+    tag = "groups",
+    security(("cookie" = []), ("bearer" = [])),
+    params(("id" = Uuid, Path, description = "Group id")),
+    request_body = RemoveMembersRequest,
+    responses(
+        (status = 200, description = "The users who were removed", body = RemoveMembersResponse),
+        (status = 401, description = "Not logged in", body = ProblemDetails,
+            content_type = "application/problem+json"),
+        (status = 403, description = "Not an admin", body = ProblemDetails,
+            content_type = "application/problem+json"),
+        (status = 404, description = "No such group", body = ProblemDetails,
+            content_type = "application/problem+json"),
+    )
+)]
+pub async fn remove_group_members(
+    State(state): State<AppState>,
+    actor: Actor,
+    Path(id): Path<Uuid>,
+    ValidJson(request): ValidJson<RemoveMembersRequest>,
+) -> Result<Json<RemoveMembersResponse>, ApiError> {
+    let mut tx = state.db.begin().await.map_err(OrgError::from)?;
+    let removed = service::remove_group_members(&mut tx, &actor, id, &request.user_ids).await?;
+    tx.commit().await.map_err(OrgError::from)?;
+    Ok(Json(RemoveMembersResponse { removed }))
 }
 
 /// Removes a user from a group and from its subgroups. Admin only.
