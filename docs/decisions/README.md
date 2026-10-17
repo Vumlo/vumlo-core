@@ -66,3 +66,4 @@ What gets easier, what gets harder, what we must remember.
 | 0031 | [The institution mode is required and fixed](0031-institution-mode-required-and-fixed.md) |
 | 0032 | [Terms, groups and subgroups](0032-terms-groups-and-subgroups.md) |
 | 0033 | [Group links, the effective roster and course exclusions](0033-group-links-effective-roster-and-exclusions.md) |
+| 0034 | [Admin writes outside a course are audited](0034-admin-writes-outside-a-course-are-audited.md) |
