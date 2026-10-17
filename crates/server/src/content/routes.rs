@@ -127,6 +127,11 @@ fn api_assignment(assignment: model::Assignment) -> api_types::Assignment {
         config: assignment.config,
         max_points: assignment.max_points.to_string(),
         is_bonus: assignment.is_bonus,
+        due_at: None,
+        on_deadline: None,
+        accept_late: None,
+        late_until: None,
+        max_attempts: None,
     }
 }
 
@@ -135,6 +140,11 @@ fn api_assignment_summary(assignment: model::AssignmentSummary) -> api_types::As
         assignment_type: assignment.assignment_type.as_str().to_owned(),
         max_points: assignment.max_points.to_string(),
         is_bonus: assignment.is_bonus,
+        due_at: None,
+        on_deadline: None,
+        accept_late: None,
+        late_until: None,
+        max_attempts: None,
     }
 }
 
