@@ -692,6 +692,7 @@ pub async fn revoke_session(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::{db_test, wait_until_blocked};
 
     fn key(email: &str) -> ThrottleKey {
         ThrottleKey::new(email)
@@ -846,35 +847,38 @@ mod tests {
         }
     }
 
-    #[sqlx::test(migrator = "crate::app::MIGRATOR")]
-    async fn concurrent_demotions_cannot_remove_every_admin(pool: sqlx::PgPool) {
-        let a = admin_actor(&pool, "a@x.edu").await;
-        let b = admin_actor(&pool, "b@x.edu").await;
+    #[tokio::test]
+    async fn concurrent_demotions_cannot_remove_every_admin() {
+        db_test(async |pool| {
+            let a = admin_actor(&pool, "a@x.edu").await;
+            let b = admin_actor(&pool, "b@x.edu").await;
 
-        // `a` demotes `b` and holds its transaction open; `b` tries to demote `a` meanwhile.
-        let mut first = pool.begin().await.unwrap();
-        update_user(&mut first, &a, b.user_id(), demote())
-            .await
-            .unwrap();
-        let second = tokio::spawn({
-            let pool = pool.clone();
-            let (b, a_id) = (b.clone(), a.user_id());
-            async move {
-                let mut tx = pool.begin().await.unwrap();
-                update_user(&mut tx, &b, a_id, demote()).await
-            }
-        });
-        tokio::time::sleep(Duration::from_millis(200)).await;
-        first.commit().await.unwrap();
+            // `a` demotes `b` and holds its transaction open; `b` tries to demote `a` meanwhile.
+            let mut first = pool.begin().await.unwrap();
+            update_user(&mut first, &a, b.user_id(), demote())
+                .await
+                .unwrap();
+            let second = tokio::spawn({
+                let pool = pool.clone();
+                let (b, a_id) = (b.clone(), a.user_id());
+                async move {
+                    let mut tx = pool.begin().await.unwrap();
+                    update_user(&mut tx, &b, a_id, demote()).await
+                }
+            });
+            wait_until_blocked(&pool, &second).await;
+            first.commit().await.unwrap();
 
-        let outcome = second.await.unwrap();
-        assert!(
-            matches!(outcome, Err(IdentityError::LastAdmin)),
-            "{outcome:?}"
-        );
-        let admins = repo::lock_active_admins(&mut pool.acquire().await.unwrap())
-            .await
-            .unwrap();
-        assert_eq!(admins, [a.user_id()]);
+            let outcome = second.await.unwrap();
+            assert!(
+                matches!(outcome, Err(IdentityError::LastAdmin)),
+                "{outcome:?}"
+            );
+            let admins = repo::lock_active_admins(&mut pool.acquire().await.unwrap())
+                .await
+                .unwrap();
+            assert_eq!(admins, [a.user_id()]);
+        })
+        .await;
     }
 }

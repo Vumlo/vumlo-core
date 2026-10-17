@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT actor_id, action, resource_type, resource_id, meta FROM events.audit_log\n                 WHERE action LIKE 'grade.%' ORDER BY id",
+  "query": "SELECT actor_id, action, resource_type, resource_id, meta FROM events.audit_log\n                     WHERE action LIKE 'grade.%' ORDER BY id",
   "describe": {
     "columns": [
       {
@@ -70,5 +70,5 @@
       false
     ]
   },
-  "hash": "0d330d9f0d908a19f8934036272cc1937b27a12f6cb2c836100081502f90592c"
+  "hash": "2fef229b72e19ff0779953c2cb3c9ce396e43eefa9b680696be9c27be644994a"
 }

@@ -365,18 +365,3 @@ pub async fn purge_course(conn: &mut PgConnection, course_id: Uuid) -> Result<u6
     .await?;
     Ok(result.rows_affected())
 }
-
-/// How many sessions of this database wait for a lock of any kind. Tests poll it to know that a
-/// writer is blocked behind another one, instead of sleeping and hoping.
-///
-/// A plain runtime query: it reads a system view, not our schema, so there is nothing for sqlx to
-/// check.
-#[cfg(test)]
-pub async fn lock_waiters(conn: &mut PgConnection) -> Result<i64, sqlx::Error> {
-    sqlx::query_scalar::<_, i64>(
-        "SELECT count(*) FROM pg_stat_activity
-         WHERE wait_event_type = 'Lock' AND datname = current_database()",
-    )
-    .fetch_one(conn)
-    .await
-}

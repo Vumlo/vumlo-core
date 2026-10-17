@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT action, actor_id, score::text AS score, feedback\n           FROM gradebook.grade_history WHERE assignment_id = $1 AND student_id = $2\n           ORDER BY id",
+  "query": "SELECT action, actor_id, score::text AS score, feedback\n               FROM gradebook.grade_history WHERE assignment_id = $1 AND student_id = $2\n               ORDER BY id",
   "describe": {
     "columns": [
       {
@@ -56,5 +56,5 @@
       true
     ]
   },
-  "hash": "98deda750bb2204ed0dd6ca03d91da43f23fea5a1cdddafa1d81fa22e4200106"
+  "hash": "cce21e6a586e28473c45930986aa2282ad2255c23e0180cc2a736fd42a3bc9af"
 }

@@ -124,8 +124,9 @@ Modules: `identity`, `org`, `teaching`, `content`, `assessment`, `gradebook`, `f
 ## 12. Tests
 
 - Every change comes with tests that check behavior, not just "it compiles".
-- DB tests use `#[sqlx::test]`. API tests start the real server and call it with `reqwest`.
+- DB tests are `#[tokio::test]` functions that run in `db_test(async |pool| { … })` (ADR-0036); never `#[sqlx::test]`. API tests start the real server and call it with `reqwest`.
   Shared helpers (server spawn, seeding, login) live in `crates/server/tests/common/`.
+- A test never holds a pooled connection across a request to the server, and never waits for a lock with a fixed sleep: it uses `test_support::wait_until_blocked`.
 - **Never delete, skip or weaken a test to make it pass.** If a test looks wrong, say so and stop.
 
 ## 13. Forbidden
@@ -143,6 +144,7 @@ All of these pass:
     cargo fmt --all --check
     cargo clippy --workspace --all-targets -- -D warnings
     cargo test --workspace
+    cargo test --workspace -- --test-threads=16
     cargo sqlx prepare --workspace --check -- --all-targets
     SQLX_OFFLINE=true cargo check --workspace --all-targets
 

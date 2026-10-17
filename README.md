@@ -42,4 +42,11 @@ Behind a reverse proxy set `server.client_ip_header` (e.g. `x-real-ip`) so login
 
 ```
 cargo test --workspace                 # needs the running PostgreSQL and DATABASE_URL (see .env)
+cargo test --workspace -- --test-threads=16
 ```
+
+Each test creates its own database (`t_…`) through `crates/server/src/test_support.rs` and drops it
+afterwards (ADR-0036). `DATABASE_URL` only supplies the server and the credentials: the tests connect
+to the `postgres` database, so the development database does not have to exist. A test that fails
+keeps its database; the next run drops the ones older than an hour. Building without a database:
+`SQLX_OFFLINE=true`.

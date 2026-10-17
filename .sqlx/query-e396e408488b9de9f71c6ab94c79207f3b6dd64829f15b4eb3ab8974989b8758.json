@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT count(*) AS \"n!\" FROM information_schema.columns\n           WHERE table_schema = 'identity' AND table_name = 'users' AND column_name = 'display_name'",
+  "query": "SELECT count(*) AS \"n!\" FROM information_schema.columns\n               WHERE table_schema = 'identity' AND table_name = 'users' AND column_name = 'display_name'",
   "describe": {
     "columns": [
       {
@@ -17,5 +17,5 @@
       null
     ]
   },
-  "hash": "f8937fb6d8b7f0b6eb8e26960cda6cf08e1ca0f3b739923f4828bbc91e36ddaa"
+  "hash": "e396e408488b9de9f71c6ab94c79207f3b6dd64829f15b4eb3ab8974989b8758"
 }

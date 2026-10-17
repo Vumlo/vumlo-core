@@ -971,6 +971,7 @@ pub async fn publish_item(
 
 #[cfg(test)]
 mod tests {
+    use crate::test_support::db_test;
     use axum::http::StatusCode;
     use axum::response::IntoResponse;
     use serde_json::Map;
@@ -996,63 +997,67 @@ mod tests {
     /// same one. The unique constraint is deferred: neither insert waits for the other, and the
     /// loser fails at its own commit. The steps run one after another on purpose, so the
     /// interleaving is fixed by the code, not by timing.
-    #[sqlx::test(migrator = "crate::app::MIGRATOR")]
-    async fn two_creates_racing_for_the_last_position_one_gets_409(pool: sqlx::PgPool) {
-        let hash = identity::hash_password("irrelevant").await.unwrap();
-        let mut tx = pool.begin().await.unwrap();
-        let user = identity::create_user_unaudited_for_tests(
-            &mut tx,
-            NewUser {
-                email: Email::parse("owner@x.edu").unwrap(),
-                name: PersonName::name("Owner").unwrap(),
-                surname: PersonName::surname("Owner").unwrap(),
-                role: Role::Teacher,
-            },
-            hash,
-        )
-        .await
-        .unwrap();
-        let owner = Actor::new(user.id, Role::Teacher, Uuid::now_v7());
-        let course = teaching::create_course(
-            &mut tx,
-            &owner,
-            CourseTitle::parse("Algebra").unwrap(),
-            None,
-        )
-        .await
-        .unwrap();
-        tx.commit().await.unwrap();
-
-        let title = |text| ContentTitle::parse(text).unwrap();
-        let mut winner = pool.begin().await.unwrap();
-        let mut loser = pool.begin().await.unwrap();
-        let first = create_module(&mut winner, &owner, course.id, title("First"), None)
+    #[tokio::test]
+    async fn two_creates_racing_for_the_last_position_one_gets_409() {
+        db_test(async |pool| {
+            let hash = identity::hash_password("irrelevant").await.unwrap();
+            let mut tx = pool.begin().await.unwrap();
+            let user = identity::create_user_unaudited_for_tests(
+                &mut tx,
+                NewUser {
+                    email: Email::parse("owner@x.edu").unwrap(),
+                    name: PersonName::name("Owner").unwrap(),
+                    surname: PersonName::surname("Owner").unwrap(),
+                    role: Role::Teacher,
+                },
+                hash,
+            )
             .await
             .unwrap();
-        let second = create_module(&mut loser, &owner, course.id, title("Second"), None)
+            let owner = Actor::new(user.id, Role::Teacher, Uuid::now_v7());
+            let course = teaching::create_course(
+                &mut tx,
+                &owner,
+                CourseTitle::parse("Algebra").unwrap(),
+                None,
+            )
             .await
             .unwrap();
-        assert_eq!((first.position, second.position), (1, 1));
+            tx.commit().await.unwrap();
 
-        winner.commit().await.unwrap();
-        let error = ContentError::from(loser.commit().await.expect_err("the position is taken"));
-        assert!(matches!(error, ContentError::Conflict), "{error:?}");
-        assert_eq!(
-            ApiError::from(error).into_response().status(),
-            StatusCode::CONFLICT
-        );
+            let title = |text| ContentTitle::parse(text).unwrap();
+            let mut winner = pool.begin().await.unwrap();
+            let mut loser = pool.begin().await.unwrap();
+            let first = create_module(&mut winner, &owner, course.id, title("First"), None)
+                .await
+                .unwrap();
+            let second = create_module(&mut loser, &owner, course.id, title("Second"), None)
+                .await
+                .unwrap();
+            assert_eq!((first.position, second.position), (1, 1));
 
-        let mut conn = pool.acquire().await.unwrap();
-        let ids = repo::module_ids(&mut conn, course.id, None).await.unwrap();
-        assert_eq!(ids, [first.id], "only the winner is stored");
+            winner.commit().await.unwrap();
+            let error =
+                ContentError::from(loser.commit().await.expect_err("the position is taken"));
+            assert!(matches!(error, ContentError::Conflict), "{error:?}");
+            assert_eq!(
+                ApiError::from(error).into_response().status(),
+                StatusCode::CONFLICT
+            );
 
-        // The client retries and now appends after the winner.
-        let mut retry = pool.begin().await.unwrap();
-        let again = create_module(&mut retry, &owner, course.id, title("Second"), None)
-            .await
-            .unwrap();
-        retry.commit().await.unwrap();
-        assert_eq!(again.position, 2);
+            let mut conn = pool.acquire().await.unwrap();
+            let ids = repo::module_ids(&mut conn, course.id, None).await.unwrap();
+            assert_eq!(ids, [first.id], "only the winner is stored");
+
+            // The client retries and now appends after the winner.
+            let mut retry = pool.begin().await.unwrap();
+            let again = create_module(&mut retry, &owner, course.id, title("Second"), None)
+                .await
+                .unwrap();
+            retry.commit().await.unwrap();
+            assert_eq!(again.position, 2);
+        })
+        .await;
     }
 
     // -----------------------------------------------------------------------------------------
@@ -1235,93 +1240,99 @@ mod tests {
         }
     }
 
-    #[sqlx::test(migrator = "crate::app::MIGRATOR")]
-    async fn two_creates_of_sixty_regular_points_one_gets_422(pool: sqlx::PgPool) {
-        let course = course(pool).await;
+    #[tokio::test]
+    async fn two_creates_of_sixty_regular_points_one_gets_422() {
+        db_test(async |pool| {
+            let course = course(pool).await;
 
-        let mut first = course.pool.begin().await.unwrap();
-        course.create(&mut first, "60", false).await.unwrap();
+            let mut first = course.pool.begin().await.unwrap();
+            course.create(&mut first, "60", false).await.unwrap();
 
-        let second = tokio::spawn({
-            let (pool, owner, module) = (course.pool.clone(), course.owner.clone(), course.module);
-            async move {
-                let mut tx = pool.begin().await.unwrap();
-                let result = create_item(
-                    &mut tx,
-                    &owner,
-                    rules(),
-                    module,
-                    ContentTitle::parse("B").unwrap(),
-                    None,
-                    Some(text("60", false)),
-                )
-                .await;
-                if result.is_ok() {
-                    tx.commit().await.unwrap();
+            let second = tokio::spawn({
+                let (pool, owner, module) =
+                    (course.pool.clone(), course.owner.clone(), course.module);
+                async move {
+                    let mut tx = pool.begin().await.unwrap();
+                    let result = create_item(
+                        &mut tx,
+                        &owner,
+                        rules(),
+                        module,
+                        ContentTitle::parse("B").unwrap(),
+                        None,
+                        Some(text("60", false)),
+                    )
+                    .await;
+                    if result.is_ok() {
+                        tx.commit().await.unwrap();
+                    }
+                    result
                 }
-                result
-            }
-        });
-        wait_until_blocked(&course.pool, &second).await;
-        first.commit().await.unwrap();
+            });
+            wait_until_blocked(&course.pool, &second).await;
+            first.commit().await.unwrap();
 
-        let error = second.await.unwrap();
-        let (field, message) = points_limit(error);
-        assert_eq!(field, "max_points");
-        assert!(message.contains("40.00 are still free"), "{message}");
-        assert_eq!(course.regular_points().await, "60.00");
+            let error = second.await.unwrap();
+            let (field, message) = points_limit(error);
+            assert_eq!(field, "max_points");
+            assert!(message.contains("40.00 are still free"), "{message}");
+            assert_eq!(course.regular_points().await, "60.00");
+        })
+        .await;
     }
 
-    #[sqlx::test(migrator = "crate::app::MIGRATOR")]
-    async fn a_patch_that_looked_like_a_lowering_is_checked_again_after_the_wait(
-        pool: sqlx::PgPool,
-    ) {
-        let course = course(pool).await;
-        let x = course.committed("40", false).await;
-        let y = course.committed("60", false).await;
-        assert_ne!(x, y);
+    #[tokio::test]
+    async fn a_patch_that_looked_like_a_lowering_is_checked_again_after_the_wait() {
+        db_test(async |pool| {
+            let course = course(pool).await;
+            let x = course.committed("40", false).await;
+            let y = course.committed("60", false).await;
+            assert_ne!(x, y);
 
-        // The first writer lowers X to 10 and fills the freed points with a new assignment.
-        let mut first = course.pool.begin().await.unwrap();
-        course.patch(&mut first, x, points("10")).await.unwrap();
-        course.create(&mut first, "30", false).await.unwrap();
+            // The first writer lowers X to 10 and fills the freed points with a new assignment.
+            let mut first = course.pool.begin().await.unwrap();
+            course.patch(&mut first, x, points("10")).await.unwrap();
+            course.create(&mut first, "30", false).await.unwrap();
 
-        // The second writer loads X (40) to authorize, then waits for the lock. Against the 40 it
-        // read, 30 is a lowering; against the 10 that is committed by then, it is a raise.
-        let second = course.patch_in_background(x, points("30"));
-        wait_until_blocked(&course.pool, &second).await;
-        first.commit().await.unwrap();
+            // The second writer loads X (40) to authorize, then waits for the lock. Against the 40 it
+            // read, 30 is a lowering; against the 10 that is committed by then, it is a raise.
+            let second = course.patch_in_background(x, points("30"));
+            wait_until_blocked(&course.pool, &second).await;
+            first.commit().await.unwrap();
 
-        let (field, message) = points_limit(second.await.unwrap());
-        assert_eq!(field, "max_points");
-        assert!(message.contains("10.00 are still free"), "{message}");
-        assert_eq!(course.assignment(x).await.max_points.to_string(), "10.00");
-        assert_eq!(course.regular_points().await, "100.00");
+            let (field, message) = points_limit(second.await.unwrap());
+            assert_eq!(field, "max_points");
+            assert!(message.contains("10.00 are still free"), "{message}");
+            assert_eq!(course.assignment(x).await.max_points.to_string(), "10.00");
+            assert_eq!(course.regular_points().await, "100.00");
+        })
+        .await;
     }
 
-    #[sqlx::test(migrator = "crate::app::MIGRATOR")]
-    async fn a_patch_that_looked_like_no_change_is_checked_again_after_the_wait(
-        pool: sqlx::PgPool,
-    ) {
-        let course = course(pool).await;
-        let x = course.committed("50", false).await;
-        course.committed("50", false).await;
+    #[tokio::test]
+    async fn a_patch_that_looked_like_no_change_is_checked_again_after_the_wait() {
+        db_test(async |pool| {
+            let course = course(pool).await;
+            let x = course.committed("50", false).await;
+            course.committed("50", false).await;
 
-        // The first writer makes X a bonus assignment and fills the freed points.
-        let mut first = course.pool.begin().await.unwrap();
-        course.patch(&mut first, x, bonus(true)).await.unwrap();
-        course.create(&mut first, "50", false).await.unwrap();
+            // The first writer makes X a bonus assignment and fills the freed points.
+            let mut first = course.pool.begin().await.unwrap();
+            course.patch(&mut first, x, bonus(true)).await.unwrap();
+            course.create(&mut first, "50", false).await.unwrap();
 
-        // The second writer loads X as a regular assignment, so `is_bonus = false` looks like no
-        // change. Once the first commits, X is a bonus one and this makes it regular again.
-        let second = course.patch_in_background(x, bonus(false));
-        wait_until_blocked(&course.pool, &second).await;
-        first.commit().await.unwrap();
+            // The second writer loads X as a regular assignment, so `is_bonus = false` looks like no
+            // change. Once the first commits, X is a bonus one and this makes it regular again.
+            let second = course.patch_in_background(x, bonus(false));
+            wait_until_blocked(&course.pool, &second).await;
+            first.commit().await.unwrap();
 
-        let (field, message) = points_limit(second.await.unwrap());
-        assert_eq!(field, "is_bonus");
-        assert!(message.contains("0.00 are still free"), "{message}");
-        assert!(course.assignment(x).await.is_bonus);
-        assert_eq!(course.regular_points().await, "100.00");
+            let (field, message) = points_limit(second.await.unwrap());
+            assert_eq!(field, "is_bonus");
+            assert!(message.contains("0.00 are still free"), "{message}");
+            assert!(course.assignment(x).await.is_bonus);
+            assert_eq!(course.regular_points().await, "100.00");
+        })
+        .await;
     }
 }

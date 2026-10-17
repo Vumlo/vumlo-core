@@ -10,6 +10,13 @@ use server::settings::{
 use sqlx::PgPool;
 use tokio::net::TcpListener;
 
+// One copy of the per-test database harness, shared with the library's own unit tests.
+#[path = "../../src/test_support.rs"]
+mod test_support;
+// Not every test binary needs the bare variant.
+#[allow(unused_imports)]
+pub use test_support::{bare_db_test, db_test};
+
 pub const ORIGIN: &str = "https://lms.test";
 
 pub fn test_settings() -> Settings {

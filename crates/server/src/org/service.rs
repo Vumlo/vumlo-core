@@ -619,7 +619,7 @@ pub async fn record_mode(
 
 #[cfg(test)]
 mod tests {
-    use std::time::Duration;
+    use crate::test_support::{db_test, wait_until_blocked};
 
     use sqlx::PgPool;
 
@@ -692,82 +692,69 @@ mod tests {
         }
     }
 
-    /// Returns once a session waits for a lock. Fails if the writer finished instead (it did not
-    /// wait for anything) or if nobody waits within the timeout.
-    async fn wait_until_blocked<T>(pool: &PgPool, writer: &tokio::task::JoinHandle<T>) {
-        let mut conn = pool.acquire().await.unwrap();
-        let waited = tokio::time::timeout(Duration::from_secs(10), async {
-            while !writer.is_finished() && repo::lock_waiters(&mut conn).await.unwrap() < 1 {
-                tokio::task::yield_now().await;
-            }
-        })
-        .await;
-        assert!(waited.is_ok(), "no writer waited for a lock");
-        assert!(
-            !writer.is_finished(),
-            "the second writer finished without waiting for the group row"
-        );
-    }
-
     /// A removal from the group is in flight and holds the group lock. An add of the same user to
     /// the subgroup must wait for it and then see that the user is no longer in the group. Without
     /// the lock it would read the old membership, insert, and hit the foreign key (a 500).
-    #[sqlx::test(migrator = "crate::app::MIGRATOR")]
-    async fn an_add_to_a_subgroup_waits_for_a_removal_from_its_group_and_is_refused(pool: PgPool) {
-        let f = fixture(pool).await;
+    #[tokio::test]
+    async fn an_add_to_a_subgroup_waits_for_a_removal_from_its_group_and_is_refused() {
+        db_test(async |pool| {
+            let f = fixture(pool).await;
 
-        let mut first = f.pool.begin().await.unwrap();
-        remove_group_member(&mut first, &f.admin, f.group, f.student)
-            .await
-            .unwrap();
-        let second = tokio::spawn({
-            let (pool, admin, subgroup, student) =
-                (f.pool.clone(), f.admin.clone(), f.subgroup, f.student);
-            async move {
-                let mut tx = pool.begin().await.unwrap();
-                add_subgroup_members(&mut tx, &admin, subgroup, &[student]).await
-            }
-        });
-        wait_until_blocked(&f.pool, &second).await;
-        first.commit().await.unwrap();
+            let mut first = f.pool.begin().await.unwrap();
+            remove_group_member(&mut first, &f.admin, f.group, f.student)
+                .await
+                .unwrap();
+            let second = tokio::spawn({
+                let (pool, admin, subgroup, student) =
+                    (f.pool.clone(), f.admin.clone(), f.subgroup, f.student);
+                async move {
+                    let mut tx = pool.begin().await.unwrap();
+                    add_subgroup_members(&mut tx, &admin, subgroup, &[student]).await
+                }
+            });
+            wait_until_blocked(&f.pool, &second).await;
+            first.commit().await.unwrap();
 
-        let outcome = second.await.unwrap();
-        assert!(
-            matches!(&outcome, Err(OrgError::Members(refused))
-                if refused == &[(0, MemberProblem::NotInGroup)]),
-            "{outcome:?}"
-        );
-        assert_eq!(f.group_members().await, 0);
-        assert_eq!(f.subgroup_members().await, 0);
+            let outcome = second.await.unwrap();
+            assert!(
+                matches!(&outcome, Err(OrgError::Members(refused))
+                    if refused == &[(0, MemberProblem::NotInGroup)]),
+                "{outcome:?}"
+            );
+            assert_eq!(f.group_members().await, 0);
+            assert_eq!(f.subgroup_members().await, 0);
+        })
+        .await;
     }
 
     /// An add to the subgroup is in flight. A removal from the group must wait for it and then
     /// take the user out of the subgroup too, leaving no subgroup row without a group row.
-    #[sqlx::test(migrator = "crate::app::MIGRATOR")]
-    async fn a_removal_from_a_group_waits_for_an_add_to_its_subgroup_and_takes_it_back(
-        pool: PgPool,
-    ) {
-        let f = fixture(pool).await;
+    #[tokio::test]
+    async fn a_removal_from_a_group_waits_for_an_add_to_its_subgroup_and_takes_it_back() {
+        db_test(async |pool| {
+            let f = fixture(pool).await;
 
-        let mut first = f.pool.begin().await.unwrap();
-        let added = add_subgroup_members(&mut first, &f.admin, f.subgroup, &[f.student])
-            .await
-            .unwrap();
-        assert_eq!(added, [f.student]);
-        let second = tokio::spawn({
-            let (pool, admin, group, student) =
-                (f.pool.clone(), f.admin.clone(), f.group, f.student);
-            async move {
-                let mut tx = pool.begin().await.unwrap();
-                remove_group_member(&mut tx, &admin, group, student).await?;
-                tx.commit().await.map_err(OrgError::from)
-            }
-        });
-        wait_until_blocked(&f.pool, &second).await;
-        first.commit().await.unwrap();
+            let mut first = f.pool.begin().await.unwrap();
+            let added = add_subgroup_members(&mut first, &f.admin, f.subgroup, &[f.student])
+                .await
+                .unwrap();
+            assert_eq!(added, [f.student]);
+            let second = tokio::spawn({
+                let (pool, admin, group, student) =
+                    (f.pool.clone(), f.admin.clone(), f.group, f.student);
+                async move {
+                    let mut tx = pool.begin().await.unwrap();
+                    remove_group_member(&mut tx, &admin, group, student).await?;
+                    tx.commit().await.map_err(OrgError::from)
+                }
+            });
+            wait_until_blocked(&f.pool, &second).await;
+            first.commit().await.unwrap();
 
-        second.await.unwrap().unwrap();
-        assert_eq!(f.group_members().await, 0);
-        assert_eq!(f.subgroup_members().await, 0);
+            second.await.unwrap().unwrap();
+            assert_eq!(f.group_members().await, 0);
+            assert_eq!(f.subgroup_members().await, 0);
+        })
+        .await;
     }
 }
