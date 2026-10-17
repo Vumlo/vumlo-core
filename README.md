@@ -2,7 +2,7 @@
 
 A self-hosted, headless LMS core for one school or university. Design: [ARCHITECTURE.md](ARCHITECTURE.md).
 
-Implemented so far: the foundation (config, migrations, health, OpenAPI) and identity (users, password login for web and app clients, sessions, admin user management). See `ARCHITECTURE.md` for what is still design.
+Implemented so far: the foundation (config, migrations, health, OpenAPI), identity (users, password login for web and app clients, sessions, admin user management), courses with terms, groups and the live roster, the content tree with `text` and `no_submission` assignments, the gradebook, and text submissions (drafts, attempts, deadlines and late work, attempt limits). See `ARCHITECTURE.md` for what is still design.
 
 ## Prerequisites
 

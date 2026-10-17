@@ -1,6 +1,6 @@
 # Learnly — Architecture
 
-Status: **in progress.** Implemented: the foundation (config, migrations, health, OpenAPI, Problem Details), `identity` + `policy` (users, password login, sessions, admin user management), the first slice of `teaching` (courses, members, publishing) with a minimal `events.audit_log`, the `content` tree (modules, sub-modules, `text` items and assignments of type `text` or `no_submission`, whose bodies are block documents), the `gradebook` (draft and published grades, publishing, the staff gradebook, a student's published grades), the first event in `events.outbox`, and `org` with the installation record (the institution mode, ADR-0031) terms, groups and subgroups (ADR-0032), and in `teaching` the group links, the live roster, course exclusions and course editing (ADR-0033). Everything else below is still design.
+Status: **in progress.** Implemented: the foundation (config, migrations, health, OpenAPI, Problem Details), `identity` + `policy` (users, password login, sessions, admin user management), the first slice of `teaching` (courses, members, publishing) with a minimal `events.audit_log`, the `content` tree (modules, sub-modules, `text` items and assignments of type `text` or `no_submission`, whose bodies are block documents), the `gradebook` (draft and published grades, publishing, the staff gradebook, a student's published grades), `assessment` (drafts, attempts and deadlines of `text` assignments, ADR-0035), the first events in `events.outbox`, and `org` with the installation record (the institution mode, ADR-0031) terms, groups and subgroups (ADR-0032), and in `teaching` the group links, the live roster, course exclusions and course editing (ADR-0033). Everything else below is still design.
 This file is the current picture of the system. Every decision behind it has a record in [`docs/decisions/`](docs/decisions/). If this file and an ADR disagree, the ADR wins and this file gets fixed.
 
 ## Goal
@@ -60,8 +60,8 @@ docs/decisions/
 | `identity`   | `identity.*`                    | users, login identities, sessions, tokens |
 | `org`        | `org.*`                         | the installation record (the institution mode, ADR-0031); terms, groups (cohorts) and subgroups with their members (ADR-0032) |
 | `teaching`   | `teaching.*`                    | courses, memberships, publishing, group links, exclusions and the roster view (ADR-0033); course subgroups are planned |
-| `content`    | `content.*`                     | modules, items (`text` items and assignments of type `text` and `no_submission` built, their bodies are block documents (ADR-0025, ADR-0027); other assignment types planned). Planned kinds and types: ADR-0023, ADR-0024. |
-| `assessment` | `assessment.*`                  | submissions, attempts, lateness, auto-grading of quizzes |
+| `content`    | `content.*`                     | modules, items (`text` items and assignments of type `text` and `no_submission` built, their bodies are block documents (ADR-0025, ADR-0027), the deadline settings of an assignment (ADR-0035); other assignment types planned). Planned kinds and types: ADR-0023, ADR-0024. |
+| `assessment` | `assessment.*`                  | submissions (drafts and attempts), lateness, the submission window (ADR-0035); auto-grading of quizzes is planned |
 | `gradebook`  | `gradebook.*`                   | grades (draft/published), grade history, publishing, gradebook view, my grades |
 | `files`      | `files.*`                       | uploads, storage backends |
 | `events`     | `events.*`                      | audit log and outbox table with `events::emit` (built); the worker, webhooks and scheduled jobs (planned) |
@@ -149,15 +149,21 @@ content
                    -- built: both kinds, text and assignment (ADR-0020, ADR-0021, ADR-0024)
                    -- the body of a text item and of an assignment (its description) is a block document (ADR-0025, ADR-0027); the default is the empty document
                    -- planned (ADR-0024): link, file and a lesson made of steps (ADR-0026) are added
-  assignments      item_id (PK), type: text | no_submission, config (jsonb), max_points numeric(6,2), due_at?,
-                   accept_late (bool), late_until?, on_deadline: keep_draft | auto_submit,
+  assignments      item_id (PK), type: text | no_submission, config (jsonb), max_points numeric(6,2), is_bonus,
+                   due_at?, on_deadline?: keep_draft | auto_submit, accept_late? (bool), late_until?,
                    max_attempts?                       -- null = unlimited
-                   -- built: item_id, type, config, max_points, is_bonus (task 007); due_at, accept_late, late_until, on_deadline and max_attempts arrive with the submissions task (ADR-0011, ADR-0021)
+                   -- built (ADR-0035): the five settings are nullable. due_at, on_deadline and accept_late are all set or all
+                   -- null (a deadline comes with what happens at it and whether late work is taken); late_until needs
+                   -- accept_late and is after due_at; max_attempts >= 1; a no_submission assignment has none (CHECKs)
+                   -- the config of a text assignment may hold {"editor": {"features": [..]}}, which narrows the student profile
 
-assessment
-  submissions      id, assignment_id, student_id, attempt, status: draft | submitted,
-                   content (jsonb), submitted_at?, is_late
-                   -- at most one draft per (assignment, student); submitted rows are immutable
+assessment                                         -- ADR-0011, ADR-0035
+  submissions      id, assignment_id, student_id, status: draft | submitted, attempt?, content (jsonb),
+                   submitted_at?, is_late, created_at, updated_at
+                   -- no foreign key to the assignment (ADR-0021): content's guards and purge keep them consistent
+                   -- a draft has no attempt and no submitted_at; a submitted row has both, and is never changed (trigger)
+                   -- at most one draft per (assignment, student) and one row per attempt number (partial unique indexes)
+                   -- a submit turns the draft row into attempt n+1 in place; content is a block document of the student profile
 
 gradebook                                          -- ADR-0028
   grades           assignment_id, student_id                      primary key together; no foreign key to the assignment (ADR-0021)
@@ -173,7 +179,7 @@ files
 
 events
   outbox                 id, type, version, payload (jsonb, ids only), occurred_at, processed_at?
-                         -- built; the only event so far is grade.published
+                         -- built; the events so far are grade.published and submission.submitted
   webhook_subscriptions  id, url, secret, event_types[], active
   webhook_deliveries     event_id, subscription_id, attempts, next_attempt_at, status, last_error
   audit_log              id, actor_id?, source: api | cli, action, resource_type, resource_id, at, meta (jsonb)
@@ -216,7 +222,7 @@ Key points:
 
 ## Authorization
 
-`policy::authorize(&Actor, Action)` decides every check. The resource an action needs travels inside its `Action` variant, so course-level actions can be added without changing existing callers. Today: `ManageOwnAccount` (any role), `ManageUsers` (admin only), the course actions `CreateCourse`, `ViewOwnCourses`, `ViewCourse`, `PublishCourse`, `ManageMembership`, `DeleteCourse` and `TransferOwnership`, the content actions `ManageContent` and `ViewContent`, `ViewEditorProfiles` (any role), and the gradebook actions `GradeAssignment`, `PublishGrades` and `ViewGradebook` (staff and admins, any course status) and `ViewOwnGrades` (only a student of a published course; staff and admins read the gradebook instead), `ManageTerms`, `ManageGroups` and `ViewGroups` (admins only) and `ViewTerms` (any role), `ManageRoster` (links, unlinking, the group options, exclusions) and `EditCourse` (title and term), both for assistants, teachers, owners and admins in every course status, with `group_role_allowed` (only an institution `student` is a group member) next to `course_role_allowed` (ADR-0032). A course action carries a `CourseAccess` (the actor's course role, whether they own it, and its status), which `teaching` reads from the database; `content` and `gradebook` get it through `teaching::course_access`, the one read function of another module that `gradebook` may call ([ADR-0030](docs/decisions/0030-gradebook-lock-covers-deletes-and-course-access.md)). `ManageContent` covers viewing drafts, editing and publishing content for staff and admins and ignores the course status, so the content of an archived course stays editable until archiving gets its own ADR. `ViewContent` carries the release state of every row on the path to the target and the evaluation time, because `policy` has no clock. The delete and transfer actions have no endpoint yet.
+`policy::authorize(&Actor, Action)` decides every check. The resource an action needs travels inside its `Action` variant, so course-level actions can be added without changing existing callers. Today: `ManageOwnAccount` (any role), `ManageUsers` (admin only), the course actions `CreateCourse`, `ViewOwnCourses`, `ViewCourse`, `PublishCourse`, `ManageMembership`, `DeleteCourse` and `TransferOwnership`, the content actions `ManageContent` and `ViewContent`, `ViewEditorProfiles` (any role), and the gradebook actions `GradeAssignment`, `PublishGrades` and `ViewGradebook` (staff and admins, any course status) and `ViewOwnGrades` (only a student of a published course; staff and admins read the gradebook instead), the submission actions `SubmitWork` (save, discard and submit one's own work) and `ViewOwnSubmission` (only a student of a published course; assistants, teachers, owners and admins cannot submit) and `ViewSubmissions` (staff and admins, any course status), `ManageTerms`, `ManageGroups` and `ViewGroups` (admins only) and `ViewTerms` (any role), `ManageRoster` (links, unlinking, the group options, exclusions) and `EditCourse` (title and term), both for assistants, teachers, owners and admins in every course status, with `group_role_allowed` (only an institution `student` is a group member) next to `course_role_allowed` (ADR-0032). A course action carries a `CourseAccess` (the actor's course role, whether they own it, and its status), which `teaching` reads from the database; `content`, `gradebook` and `assessment` get it through `teaching::course_access`, the one read function of another module that they may call, and open and lock an assignment through `content::open_assignment` and `content::lock_assignment_shared` ([ADR-0035](docs/decisions/0035-submissions-drafts-attempts-and-deadlines.md), [ADR-0030](docs/decisions/0030-gradebook-lock-covers-deletes-and-course-access.md)). `ManageContent` covers viewing drafts, editing and publishing content for staff and admins and ignores the course status, so the content of an archived course stays editable until archiving gets its own ADR. `ViewContent` carries the release state of every row on the path to the target and the evaluation time, because `policy` has no clock. The delete and transfer actions have no endpoint yet.
 
 There are two levels of roles ([ADR-0004](docs/decisions/0004-roles-and-policy.md)).
 
@@ -257,7 +263,7 @@ Invariants:
 - A student sees a course only if it is `published`; a draft or archived course is a 404 for them, in `GET /courses/{id}`, its members and `GET /me/courses`. They can still be enrolled in a draft. Staff and admins see every status.
 - A student sees an item only if **the course, every module on the path to it (the module, and its parent if it is a sub-module) and the item** are all `published` and each `publish_at` is null or `<= now()`. List queries filter in SQL, and `policy` checks every row again. Staff and admins see drafts and scheduled rows. A student gets 404, never 403, for anything they may not see.
 - A student **never receives `draft_*` grade fields.** Student-facing repo functions do not select those columns, and a test enforces this.
-- A teacher sees only `submitted` submissions, never a student's draft.
+- Staff (assistants, teachers, owners, admins) see only `submitted` attempts, never a student's draft: the staff queries select `status = 'submitted'` and nothing else. A student reads only their own draft and attempts, and only for an assignment they may see under the rule above.
 - A student sees a `no_submission` assignment like any item: only when the course, module and item are published ([ADR-0028](docs/decisions/0028-gradebook-grades-publishing-read-models.md)). `GET /courses/{id}/my-grades` returns published values only, for assignments visible to the student now.
 
 ## Key flows
@@ -287,11 +293,11 @@ The content endpoints (tag `content`, all under `/api/v1`):
 |---|---|
 | `POST /courses/{id}/modules` | create a module, or a sub-module with `parent_id` |
 | `GET /courses/{id}/content` | the whole tree, not paged (it is bounded and ordered by position, not by id) |
-| `PATCH /modules/{id}`, `DELETE /modules/{id}` | edit (`publish_at: null` clears it), delete with everything below (409 when an assignment below has a grade) |
+| `PATCH /modules/{id}`, `DELETE /modules/{id}` | edit (`publish_at: null` clears it), delete with everything below (409 when an assignment below has a grade or a submitted attempt) |
 | `PUT /courses/{id}/modules/order` | reorder the top-level modules, or the sub-modules of `parent_id` |
 | `POST /modules/{id}/publish` | publish, `cascade` required |
 | `POST /modules/{id}/items`, `PUT /modules/{id}/items/order` | create a `text` item or an assignment, reorder a module's items; a `body` is validated as a document only after the caller is authorized (404, then 403, then 422) |
-| `GET`, `PATCH`, `DELETE /items/{id}`, `POST /items/{id}/publish` | read (with `body`), edit, delete, publish a `text` item or an assignment; lowering `max_points` below a given score and deleting a graded assignment are 409 |
+| `GET`, `PATCH`, `DELETE /items/{id}`, `POST /items/{id}/publish` | read (with `body`), edit, delete, publish a `text` item or an assignment; lowering `max_points` below a given score and deleting a graded assignment or one with a submitted attempt are 409; an assignment's `due_at`, `on_deadline`, `accept_late`, `late_until` and `max_attempts` are set on create and PATCH (absent keeps, `null` clears, the rules are judged on the resulting settings, `422` on the field; to remove a deadline send `due_at`, `on_deadline` and `accept_late` as `null` together) |
 | `GET /editor/profiles` | any signed-in user: the document profiles as enforced (features, single block or not, limits) and the enabled video providers |
 
 Two creates that race for the same last position conflict at commit: the loser gets 409 and retries.
@@ -326,13 +332,28 @@ A course links whole groups or single subgroups; their students are students of 
 
 Deleting a group or a subgroup that a course uses is `409` (the foreign keys). An exclusion never touches grades or submissions.
 
-**Submission lifecycle** ([ADR-0011](docs/decisions/0011-submissions.md))
-`draft` (autosaved, invisible to staff) → `submitted` (immutable). Resubmitting creates a new attempt, limited by `max_attempts`. At the deadline the draft is kept or auto-submitted according to `on_deadline`. A late submission is allowed only if `accept_late` is set and `now() <= late_until` (if set), and it is marked `is_late`. Staff grade the latest submitted attempt.
+**Submissions** ([ADR-0011](docs/decisions/0011-submissions.md), [ADR-0035](docs/decisions/0035-submissions-drafts-attempts-and-deadlines.md))
+A student saves a `draft` (autosave, last write wins, an empty document is fine, invisible to staff) and submits it. A submit turns the draft row into attempt n+1 (numbered from 1 per student and assignment) and the row is never changed again, so a second submit without a new draft is `409`. A document with no text cannot be submitted (`422`). Staff grade the latest submitted attempt; earlier attempts stay visible. Only a current student of the course (`effective_members`, role `student`) who may see the published assignment can save or submit; everyone else gets `404` where they may not see it and `403` where they may. The document is validated with the `student` profile as the institution narrowed it and as the assignment's `config.editor.features` narrow it further; it can never widen.
+
+The submission window closes at `due_at` when `accept_late` is false and at `late_until` (never, when null) when it is true; a moment equal to the bound is still inside. After it closes a draft save and a submit are `409`; discarding a draft is still allowed. A submit after `due_at` inside the window is stored with `is_late`. The handler reads the clock once and passes it down. `max_attempts` limits the submits (`409` when reached); changing the settings revalidates nothing and applies from the student's next action, and lowering `max_attempts` below a student's attempts only blocks further ones. Save, discard and submit take the assignment row `FOR SHARE` and read the settings from it, then (submit) the draft row `FOR UPDATE`; a change of any assignment field and the deletes take the assignment row `FOR UPDATE`. A submit emits one `submission.submitted` event (ids only); saving or discarding a draft emits none.
+
+Deleting an assignment, or a module with its sub-modules, that has a submitted attempt is `409`; drafts without any attempt are purged with the delete. There is no course delete yet: it must lock the assignment rows `FOR UPDATE`, then call `assessment::has_submitted_in_course` (409 if true) and `purge_course`, next to the gradebook calls.
+
+The assessment endpoints (tag `assessment`):
+
+| Endpoint | |
+|---|---|
+| `PUT /assignments/{id}/submission/draft` | students: save the draft (`{content}`, a document); `404` / `403` as above; `409` when the type takes no submissions or the window is closed; `422` on `content.…` paths |
+| `DELETE /assignments/{id}/submission/draft` | students: discard the draft, `204` also when there is none |
+| `GET /assignments/{id}/submission` | students: `{draft, attempts, next_cursor}`, the attempts newest first with their content, so a client prefills a new draft from `attempts[0]` |
+| `POST /assignments/{id}/submission/submit` | students: `201` with the attempt; `409` without a draft, after the window or at the attempt limit; `422` for an empty or no longer valid document |
+| `GET /assignments/{id}/submissions` | staff and admins: the current students in roster order (surname, name, id) with `status` (`submitted` / `not_submitted`) and the latest attempt without its content |
+| `GET /assignments/{id}/submissions/{student_id}` | staff and admins: the attempts of one student, newest first, with content; `404` unless the user is a current student or has an attempt |
 
 **Events** ([ADR-0007](docs/decisions/0007-events-outbox.md))
 A state change and its event are written in the same transaction. A worker (a tokio task in the same binary) delivers events to internal handlers (email) and to webhook subscriptions (HMAC-signed, with retries). Delivery is **at-least-once**, so consumers deduplicate by event id. The payload contains ids only. **Draft saves emit no events.**
 
-**Scheduled jobs** (same worker): items reaching `publish_at` → `item.published`; assignments reaching `due_at` with `on_deadline = auto_submit` → submit drafts; outbox delivery; expired-session cleanup.
+**Scheduled jobs** (same worker, not built): items reaching `publish_at` → `item.published`; assignments reaching `due_at` with `on_deadline = auto_submit` → submit drafts (task 013b); outbox delivery; expired-session cleanup.
 
 ## Institution modes
 
@@ -344,12 +365,17 @@ Examples: in a school, the template "Algebra 7" becomes courses "Algebra 7-A" an
 
 - **Rights are checked before the row lock.** `gradebook` and `content` authorize first and lock the assignment row after, so a role taken away in the same instant can still write one grade. There is no course-level lock.
 - **Disabled students stay in the gradebook.** A disabled user who is a student of a course is still listed and graded; the user status is not filtered.
+- **`on_deadline = auto_submit` does nothing yet.** It is stored and validated; a draft at the deadline is kept until the worker exists (task 013b, ADR-0035).
+- **A student's `GET /items/{id}` still returns the whole `config`.** For `text` that is the editor features only; a type with an answer key needs the student view of ADR-0023 first.
+- **Rights are checked before the assignment row lock** in `assessment` too: a student removed from the course in the same instant can still save one draft.
+- **`content` and `assessment` call each other** (`content` guards its deletes with `assessment`, `assessment` opens assignments through `content`), like `content` and `gradebook`: a call cycle inside one crate (ADR-0035).
+- **The empty-document rule counts text only.** It must learn images and attachments when they exist.
 - **The roster is `teaching.effective_members`, live.** The gradebook and `teaching` read the students of a course from this one view; the students of linked groups and subgroups are on it without a sync job. Changes to a group's members show at once on every linked course.
 - **An exclusion can go stale.** It stays until restored. A student who left the group since is excluded from nothing; if they are added to the group again they are still excluded.
 - **Removing an assistant or a teacher who is in a linked group leaves them a student of the course.** Only a student's removal records an exclusion; remove the person from the group, or exclude them after the removal, to take them off.
 - **A group student cannot be pinned.** Putting a student who comes from a linked group as `student` changes nothing (they already hold that role), so no direct membership is written; a direct membership written before the link is the one that survives a later unlink.
 - **The yearly rollover is manual.** Rename the group and change its members; the linked courses follow (ADR-0032, ADR-0033).
-- **There is no course deletion yet.** When it is added it must lock the assignment rows of the course `FOR UPDATE`, then call `gradebook::has_grades_in_course` (409 if true) and `purge_course`, in one transaction. `teaching` then calls `gradebook` while `gradebook` calls `teaching`: a module-level cycle ([ADR-0030](docs/decisions/0030-gradebook-lock-covers-deletes-and-course-access.md)).
+- **There is no course deletion yet.** When it is added it must lock the assignment rows of the course `FOR UPDATE`, then call `gradebook::has_grades_in_course` and `assessment::has_submitted_in_course` (409 if either is true) and both `purge_course` functions, in one transaction. `teaching` then calls `gradebook` and `assessment` while they call `teaching`: a module-level cycle ([ADR-0030](docs/decisions/0030-gradebook-lock-covers-deletes-and-course-access.md)).
 
 - **The rollover of school classes is manual.** There is no copy-to-next-year action: rename the group and change its members (ADR-0032).
 - **Group reads are admin only.** Teachers and assistants read groups through the course-scoped group options (ids and names, no members); `org`'s own endpoints and the member lists stay admin only.
