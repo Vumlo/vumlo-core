@@ -1,0 +1,30 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT count(*) FILTER (WHERE status = 'draft') AS \"drafts!\",\n                  count(*) FILTER (WHERE status = 'submitted') AS \"submitted!\"\n           FROM assessment.submissions WHERE student_id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "drafts!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "submitted!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null,
+      null
+    ]
+  },
+  "hash": "1d4cd9d18e9aeadb82f9cdfc5db31cb90cd66fb7f4312e1bf189308fadd70cf8"
+}

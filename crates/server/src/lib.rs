@@ -1,5 +1,6 @@
 pub mod actor;
 pub mod app;
+pub mod assessment;
 pub mod content;
 pub mod error;
 pub mod events;

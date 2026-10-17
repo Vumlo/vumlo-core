@@ -110,6 +110,14 @@ pub enum Action {
     /// Read one's own published grades: only a student of a published course (ADR-0028). Staff
     /// and admins use the gradebook instead.
     ViewOwnGrades(CourseAccess),
+    /// Save, discard and submit one's own work (ADR-0035): only a student of a published course.
+    /// Whether the course lets the student see the assignment is `ViewContent`'s business.
+    SubmitWork(CourseAccess),
+    /// Read one's own draft and attempts (ADR-0035): only a student of a published course.
+    ViewOwnSubmission(CourseAccess),
+    /// Read the submitted attempts of a course's students (ADR-0035). Staff and admins, any
+    /// course status. Drafts are never read through this: the queries do not select them.
+    ViewSubmissions(CourseAccess),
     /// Link and unlink groups, read the group options, list and restore exclusions (ADR-0033).
     /// The rights of the matrix row "Enroll/remove students, link groups". Ignores the status.
     ManageRoster(CourseAccess),
@@ -185,9 +193,12 @@ pub fn authorize(actor: &Actor, action: Action) -> Result<(), PolicyError> {
         | Action::GradeAssignment(access)
         | Action::PublishGrades(access)
         | Action::ViewGradebook(access)
+        | Action::ViewSubmissions(access)
         | Action::ManageRoster(access)
         | Action::EditCourse(access) => is_admin || access.is_staff(),
-        Action::ViewOwnGrades(access) => {
+        Action::ViewOwnGrades(access)
+        | Action::SubmitWork(access)
+        | Action::ViewOwnSubmission(access) => {
             access.role == Some(CourseRole::Student) && access.status == CourseStatus::Published
         }
         Action::ViewContent {
@@ -740,6 +751,80 @@ mod tests {
                             "{action:?}"
                         );
                     }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn only_a_student_of_a_published_course_saves_submits_and_reads_their_own_work() {
+        let actions: [fn(CourseAccess) -> Action; 2] =
+            [Action::SubmitWork, Action::ViewOwnSubmission];
+        for make in actions {
+            assert_eq!(
+                authorize(
+                    &actor(Role::Student),
+                    make(access(Some(Student), false, Published))
+                ),
+                Ok(())
+            );
+            for status in [Draft, Archived] {
+                assert_eq!(
+                    authorize(
+                        &actor(Role::Student),
+                        make(access(Some(Student), false, status))
+                    ),
+                    Err(PolicyError),
+                    "{status:?}"
+                );
+            }
+            // Staff, a non-member and an admin (who has no membership) never submit.
+            for (role, is_owner) in [
+                (Some(Teacher), true),
+                (Some(Teacher), false),
+                (Some(Assistant), false),
+                (None, false),
+            ] {
+                for who in [Role::Teacher, Role::Student] {
+                    assert_eq!(
+                        authorize(&actor(who), make(access(role, is_owner, Published))),
+                        Err(PolicyError),
+                        "{role:?} {who:?}"
+                    );
+                }
+            }
+            assert_eq!(
+                authorize(&actor(Role::Admin), make(access(None, false, Published))),
+                Err(PolicyError)
+            );
+        }
+    }
+
+    #[test]
+    fn staff_and_admins_read_submissions_in_every_status_and_students_never_do() {
+        for status in [Draft, Published, Archived] {
+            for (role, is_owner) in [
+                (Some(Teacher), true),
+                (Some(Teacher), false),
+                (Some(Assistant), false),
+            ] {
+                let action = Action::ViewSubmissions(access(role, is_owner, status));
+                assert_eq!(
+                    authorize(&actor(Role::Teacher), action),
+                    Ok(()),
+                    "{action:?}"
+                );
+            }
+            let admin = Action::ViewSubmissions(access(None, false, status));
+            assert_eq!(authorize(&actor(Role::Admin), admin), Ok(()));
+            for role in [Some(Student), None] {
+                let action = Action::ViewSubmissions(access(role, false, status));
+                for who in [Role::Student, Role::Teacher] {
+                    assert_eq!(
+                        authorize(&actor(who), action),
+                        Err(PolicyError),
+                        "{action:?}"
+                    );
                 }
             }
         }

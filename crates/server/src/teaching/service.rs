@@ -557,7 +557,7 @@ mod tests {
 
     async fn actor(pool: &sqlx::PgPool, hash: &HashedPassword, email: &str, role: Role) -> Actor {
         let mut tx = pool.begin().await.unwrap();
-        let user = identity::create_user(
+        let user = identity::create_user_unaudited_for_tests(
             &mut tx,
             NewUser {
                 email: Email::parse(email).unwrap(),

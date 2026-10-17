@@ -629,7 +629,7 @@ mod tests {
     async fn user(pool: &PgPool, email: &str, role: Role) -> Uuid {
         let hash = identity::hash_password("irrelevant").await.unwrap();
         let mut tx = pool.begin().await.unwrap();
-        let user = identity::create_user(
+        let user = identity::create_user_unaudited_for_tests(
             &mut tx,
             NewUser {
                 email: Email::parse(email).unwrap(),

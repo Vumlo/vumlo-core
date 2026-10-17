@@ -1,0 +1,20 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO assessment.submissions\n             (id, assignment_id, student_id, status, attempt, content, submitted_at, is_late)\n         VALUES ($1, $2, $3, $4, $5, '{}', $6, $7)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Int4",
+        "Timestamptz",
+        "Bool"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "8d9c91c820cfdf7df94cbfa9f63bd9280cca8029a9fce7df23225a8add2e669d"
+}

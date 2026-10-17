@@ -17,10 +17,11 @@ use uuid::Uuid;
 use super::document::{DocumentErrors, EffectiveProfiles, ValidDocument, validate_document};
 use super::model::{
     Assignment, AssignmentType, ContentModule, ContentSubModule, ContentTitle, Item, ItemKind,
-    ItemPatch, ModelError, Module, ModulePatch,
+    ItemPatch, ModelError, Module, ModulePatch, OpenedAssignment, SettingProblem, editor_features,
 };
 use super::repo::{self, ItemRow, ModuleRow};
 use crate::actor::Actor;
+use crate::assessment::{self, AssessmentError};
 use crate::events::{self, AuditEntry, EventsError};
 use crate::gradebook::{self, GradebookError};
 use crate::policy::{self, Action, CourseAccess, PolicyError, Release};
@@ -63,14 +64,22 @@ pub enum ContentError {
     /// A concurrent change got in the way (a position taken, a parent deleted). Retry.
     #[error("a concurrent change conflicts with this one")]
     Conflict,
+    /// The settings break a rule once the change is applied (ADR-0035); one entry per field.
+    #[error("the settings are invalid")]
+    Settings(Vec<SettingProblem>),
     /// `max_points` would drop below a score already given (ADR-0021, ADR-0028).
     #[error("max_points cannot be lowered below a score that was already given")]
     BelowGivenScores,
     /// The assignment, or an assignment below the module, has a grade (ADR-0028).
     #[error("it has grades: clear them before deleting")]
     HasGrades,
+    /// The assignment, or an assignment below the module, has a submitted attempt (ADR-0035).
+    #[error("it has submitted work")]
+    HasSubmissions,
     #[error(transparent)]
     Gradebook(GradebookError),
+    #[error(transparent)]
+    Assessment(AssessmentError),
     #[error(transparent)]
     Teaching(TeachingError),
     #[error(transparent)]
@@ -100,6 +109,15 @@ impl From<GradebookError> for ContentError {
         match error {
             GradebookError::HasGrades => Self::HasGrades,
             other => Self::Gradebook(other),
+        }
+    }
+}
+
+impl From<AssessmentError> for ContentError {
+    fn from(error: AssessmentError) -> Self {
+        match error {
+            AssessmentError::HasSubmissions => Self::HasSubmissions,
+            other => Self::Assessment(other),
         }
     }
 }
@@ -484,7 +502,13 @@ pub async fn delete_module(
     if gradebook::has_grades_in_module(conn, id).await? {
         return Err(ContentError::HasGrades);
     }
+    // A submit holds the same row `FOR SHARE`, so an attempt in flight is committed by now
+    // (ADR-0035). Drafts without an attempt go with the module.
+    if assessment::has_submitted_in_module(conn, id).await? {
+        return Err(ContentError::HasSubmissions);
+    }
     gradebook::purge_module(conn, id).await?;
+    assessment::purge_module(conn, id).await?;
     repo::delete_module(conn, id).await?;
     audit(
         conn,
@@ -611,6 +635,7 @@ pub async fn create_item(
         assignment
             .assignment_type
             .validate_config(&assignment.config)?;
+        check_editor_features(&assignment.config, rules.profiles)?;
     }
     let body = document(body.as_ref(), rules.profiles)?;
     if let Some(assignment) = &assignment {
@@ -672,6 +697,72 @@ pub async fn get_item(
     Ok(open_item(conn, actor, id).await?.0.item)
 }
 
+/// Why [`open_assignment`] gave nothing.
+#[derive(Debug, thiserror::Error)]
+pub enum OpenError {
+    /// No such assignment, or the actor may not see it.
+    #[error("assignment not found")]
+    NotFound,
+    #[error(transparent)]
+    Teaching(TeachingError),
+    #[error(transparent)]
+    Db(#[from] sqlx::Error),
+}
+
+/// The one way another module opens an assignment for a user (ADR-0035, ADR-0030): the row, its
+/// course, the actor's access to it, and the check that the actor may view it at all. An unknown
+/// id, a course the actor cannot see and an item they may not open (a draft, a scheduled one) all
+/// give `NotFound`. Nothing is locked; `lock_assignment_shared` is the next statement.
+pub async fn open_assignment(
+    conn: &mut PgConnection,
+    actor: &Actor,
+    assignment_id: Uuid,
+) -> Result<OpenedAssignment, OpenError> {
+    let row = repo::find_assignment_context(conn, assignment_id)
+        .await?
+        .ok_or(OpenError::NotFound)?;
+    let access = match teaching::course_access(conn, actor, row.course_id).await {
+        Ok(access) => access,
+        Err(TeachingError::CourseNotFound) => return Err(OpenError::NotFound),
+        Err(other) => return Err(OpenError::Teaching(other)),
+    };
+    let view = Path::new(row.module, row.module_parent).view(access, Some(row.item), Utc::now());
+    policy::authorize(actor, view).map_err(|_| OpenError::NotFound)?;
+    Ok(OpenedAssignment {
+        course_id: row.course_id,
+        assignment_type: row.assignment_type,
+        access,
+    })
+}
+
+/// Takes the assignment row `FOR SHARE` until the transaction ends and returns it as it is in the
+/// row. A change of the row (points, settings) and a delete take it `FOR UPDATE`, so they wait for
+/// this transaction, and what they did before is what this returns (ADR-0030, ADR-0035). A lock,
+/// not a write. `None`: the assignment is gone.
+pub async fn lock_assignment_shared(
+    conn: &mut PgConnection,
+    assignment_id: Uuid,
+) -> Result<Option<Assignment>, sqlx::Error> {
+    repo::lock_assignment_shared(conn, assignment_id).await
+}
+
+/// `config.editor.features` can only narrow the student profile (ADR-0025): a feature it lists
+/// that the effective profile, after the institution's configuration, does not have is refused.
+fn check_editor_features(
+    config: &serde_json::Map<String, Value>,
+    profiles: &EffectiveProfiles,
+) -> Result<(), ModelError> {
+    let allowed = &profiles.profile(ProfileName::Student).features;
+    for (index, feature) in editor_features(config)?.into_iter().flatten().enumerate() {
+        if !allowed.contains(&feature) {
+            return Err(ModelError::Config(format!(
+                "`editor.features[{index}]` is not a feature of the student profile"
+            )));
+        }
+    }
+    Ok(())
+}
+
 /// Changes the title, body and/or `publish_at`, and for an assignment its `config`, `max_points`
 /// and `is_bonus`. A change with no fields writes nothing.
 ///
@@ -695,52 +786,69 @@ pub async fn update_item(
             "config"
         } else if patch.max_points.is_some() {
             "max_points"
-        } else {
+        } else if patch.is_bonus.is_some() {
             "is_bonus"
+        } else {
+            patch.settings.first_field()
         };
         return Err(ContentError::NotAnAssignment { field });
     }
     if let (Some(config), Some(assignment)) = (&patch.config, &row.item.assignment) {
         assignment.assignment_type.validate_config(config)?;
+        check_editor_features(config, rules.profiles)?;
     }
     let body = document(patch.body.as_ref(), rules.profiles)?;
-    if is_assignment && (patch.max_points.is_some() || patch.is_bonus.is_some()) {
-        if rules.scale == GradingScale::Hundred {
+    let mut settings = None;
+    if is_assignment && patch.touches_assignment() {
+        let points_change = patch.max_points.is_some() || patch.is_bonus.is_some();
+        if points_change && rules.scale == GradingScale::Hundred {
             repo::lock_course_points(conn, row.item.course_id).await?;
         }
         // The row lock comes before the gradebook is asked, which is a later statement: a grade
-        // write holds the row `FOR SHARE`, so this waits for it and then sees its score. The
-        // current points are the ones in the locked row.
+        // write holds the row `FOR SHARE`, so this waits for it and then sees its score. A
+        // submission write holds it the same way, so a submit that began first finishes under the
+        // old settings and one that waits sees the new ones (ADR-0035). The current values are
+        // the ones in the locked row.
         let current = repo::lock_assignment(conn, id)
             .await?
             .ok_or(ContentError::ItemNotFound)?;
-        let points = patch.max_points.unwrap_or(current.max_points);
-        let is_bonus = patch.is_bonus.unwrap_or(current.is_bonus);
-        if points.value() < current.max_points.value()
-            && gradebook::max_score(conn, id)
-                .await?
-                .is_some_and(|highest| points.value() < highest)
-        {
-            return Err(ContentError::BelowGivenScores);
+        if !patch.settings.is_empty() {
+            settings = Some(
+                current
+                    .settings
+                    .resolve(&patch.settings, current.assignment_type.takes_submissions())
+                    .map_err(ContentError::Settings)?,
+            );
         }
-        let raised = points.value() > current.max_points.value();
-        let becomes_regular = current.is_bonus && !is_bonus;
-        let needs_check = match rules.scale {
-            GradingScale::Twelve => raised,
-            GradingScale::Hundred => raised || becomes_regular,
-        };
-        if needs_check {
-            let field = if raised { "max_points" } else { "is_bonus" };
-            check_points(
-                conn,
-                rules.scale,
-                row.item.course_id,
-                Some(id),
-                points.value(),
-                is_bonus,
-                field,
-            )
-            .await?;
+        if points_change {
+            let points = patch.max_points.unwrap_or(current.max_points);
+            let is_bonus = patch.is_bonus.unwrap_or(current.is_bonus);
+            if points.value() < current.max_points.value()
+                && gradebook::max_score(conn, id)
+                    .await?
+                    .is_some_and(|highest| points.value() < highest)
+            {
+                return Err(ContentError::BelowGivenScores);
+            }
+            let raised = points.value() > current.max_points.value();
+            let becomes_regular = current.is_bonus && !is_bonus;
+            let needs_check = match rules.scale {
+                GradingScale::Twelve => raised,
+                GradingScale::Hundred => raised || becomes_regular,
+            };
+            if needs_check {
+                let field = if raised { "max_points" } else { "is_bonus" };
+                check_points(
+                    conn,
+                    rules.scale,
+                    row.item.course_id,
+                    Some(id),
+                    points.value(),
+                    is_bonus,
+                    field,
+                )
+                .await?;
+            }
         }
     }
     let mut item = repo::update_item(
@@ -760,6 +868,7 @@ pub async fn update_item(
                 patch.config.as_ref(),
                 patch.max_points,
                 patch.is_bonus,
+                settings,
             )
             .await?,
         )
@@ -792,7 +901,11 @@ pub async fn delete_item(
         if gradebook::has_grades_for_assignment(conn, id).await? {
             return Err(ContentError::HasGrades);
         }
+        if assessment::has_submitted_for_assignment(conn, id).await? {
+            return Err(ContentError::HasSubmissions);
+        }
         gradebook::purge_assignment(conn, id).await?;
+        assessment::purge_assignment(conn, id).await?;
     }
     repo::delete_item(conn, id).await?;
     audit(
@@ -887,7 +1000,7 @@ mod tests {
     async fn two_creates_racing_for_the_last_position_one_gets_409(pool: sqlx::PgPool) {
         let hash = identity::hash_password("irrelevant").await.unwrap();
         let mut tx = pool.begin().await.unwrap();
-        let user = identity::create_user(
+        let user = identity::create_user_unaudited_for_tests(
             &mut tx,
             NewUser {
                 email: Email::parse("owner@x.edu").unwrap(),
@@ -958,6 +1071,7 @@ mod tests {
             config: Map::new(),
             max_points: MaxPoints::parse(points).unwrap(),
             is_bonus,
+            settings: Default::default(),
         }
     }
 
@@ -984,7 +1098,7 @@ mod tests {
     async fn course(pool: sqlx::PgPool) -> Course {
         let hash = identity::hash_password("irrelevant").await.unwrap();
         let mut tx = pool.begin().await.unwrap();
-        let user = identity::create_user(
+        let user = identity::create_user_unaudited_for_tests(
             &mut tx,
             NewUser {
                 email: Email::parse("owner@x.edu").unwrap(),

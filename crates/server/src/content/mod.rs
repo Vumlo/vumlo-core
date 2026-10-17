@@ -9,16 +9,17 @@ mod service;
 
 pub use document::{
     DocumentError, DocumentErrors, EditorConfigError, EffectiveProfiles, ValidDocument, limits,
-    plain_text, validate_document,
+    plain_text, validate_document, validate_document_within,
 };
 pub use model::{
     Assignment, AssignmentSummary, AssignmentType, BuiltinType, ContentModule, ContentSubModule,
     ContentTitle, Item, ItemKind, ItemPatch, ItemStatus, ItemSummary, MaxPoints, ModelError,
-    Module, ModulePatch, ModuleStatus,
+    Module, ModulePatch, ModuleStatus, OnDeadline, OpenedAssignment, SettingProblem, SettingsPatch,
+    SubmissionSettings, editor_features,
 };
 pub use routes::router;
 pub use service::{
-    ContentError, ItemRules, create_item, create_module, delete_item, delete_module,
-    editor_profiles, get_item, get_tree, publish_item, publish_module, reorder_items,
-    reorder_modules, update_item, update_module,
+    ContentError, ItemRules, OpenError, create_item, create_module, delete_item, delete_module,
+    editor_profiles, get_item, get_tree, lock_assignment_shared, open_assignment, publish_item,
+    publish_module, reorder_items, reorder_modules, update_item, update_module,
 };

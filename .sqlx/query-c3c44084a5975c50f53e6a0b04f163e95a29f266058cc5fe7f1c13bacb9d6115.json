@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE assessment.submissions SET is_late = true WHERE assignment_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "c3c44084a5975c50f53e6a0b04f163e95a29f266058cc5fe7f1c13bacb9d6115"
+}

@@ -1,0 +1,41 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT content AS \"content: Body\", updated_at FROM assessment.submissions\n           WHERE assignment_id = $1 AND student_id = $2 AND status = 'draft'",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "content: Body",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "assessment.submissions",
+            "name": "content"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "updated_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "assessment.submissions",
+            "name": "updated_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "dd080d21fa7deba0a40a3e40bb6e9a7cbadc55464c2ee705fbc2adb5a790791e"
+}

@@ -15,8 +15,8 @@ use utoipa_axum::routes;
 use uuid::Uuid;
 
 use super::model::{
-    self, BuiltinType, ContentTitle, ItemKind, ItemPatch, ItemStatus, MaxPoints, ModelError,
-    ModulePatch, ModuleStatus,
+    self, AssignmentType, BuiltinType, ContentTitle, ItemKind, ItemPatch, ItemStatus, MaxPoints,
+    ModelError, ModulePatch, ModuleStatus, OnDeadline, SettingsPatch, SubmissionSettings,
 };
 use super::service::{self, ContentError, ItemRules};
 use crate::actor::Actor;
@@ -56,6 +56,16 @@ impl From<ContentError> for ApiError {
             ContentError::NotAnAssignment { field } => {
                 Self::invalid_field(field, error.to_string())
             }
+            ContentError::Settings(problems) => Self::Unprocessable {
+                detail: "the request has invalid fields".to_owned(),
+                errors: problems
+                    .into_iter()
+                    .map(|problem| FieldError {
+                        field: problem.field.to_owned(),
+                        message: problem.message,
+                    })
+                    .collect(),
+            },
             ContentError::PointsLimit { field, message } => Self::invalid_field(field, message),
             ContentError::InvalidParent => Self::invalid_field("parent_id", error.to_string()),
             ContentError::InvalidOrder => Self::invalid_field("ids", error.to_string()),
@@ -65,7 +75,11 @@ impl From<ContentError> for ApiError {
                 Self::Conflict("max_points cannot be lowered below a score that was already given")
             }
             ContentError::HasGrades => Self::Conflict("it has grades: clear them before deleting"),
+            ContentError::HasSubmissions => {
+                Self::Conflict("it has submitted work: it cannot be deleted")
+            }
             ContentError::Gradebook(e) => e.into(),
+            ContentError::Assessment(e) => e.into(),
             ContentError::Teaching(e) => e.into(),
             ContentError::Events(e) => {
                 tracing::error!(error = %e, "content: audit log error");
@@ -127,6 +141,18 @@ fn api_assignment(assignment: model::Assignment) -> api_types::Assignment {
         config: assignment.config,
         max_points: assignment.max_points.to_string(),
         is_bonus: assignment.is_bonus,
+        due_at: assignment.settings.due_at,
+        on_deadline: assignment.settings.on_deadline.map(api_on_deadline),
+        accept_late: assignment.settings.accept_late,
+        late_until: assignment.settings.late_until,
+        max_attempts: assignment.settings.max_attempts,
+    }
+}
+
+fn api_on_deadline(on_deadline: OnDeadline) -> api_types::OnDeadline {
+    match on_deadline {
+        OnDeadline::KeepDraft => api_types::OnDeadline::KeepDraft,
+        OnDeadline::AutoSubmit => api_types::OnDeadline::AutoSubmit,
     }
 }
 
@@ -135,6 +161,11 @@ fn api_assignment_summary(assignment: model::AssignmentSummary) -> api_types::As
         assignment_type: assignment.assignment_type.as_str().to_owned(),
         max_points: assignment.max_points.to_string(),
         is_bonus: assignment.is_bonus,
+        due_at: assignment.settings.due_at,
+        on_deadline: assignment.settings.on_deadline.map(api_on_deadline),
+        accept_late: assignment.settings.accept_late,
+        late_until: assignment.settings.late_until,
+        max_attempts: assignment.settings.max_attempts,
     }
 }
 
@@ -196,16 +227,30 @@ fn title(raw: &str) -> Result<ContentTitle, ContentError> {
 fn domain_assignment(new: NewAssignment) -> Result<model::Assignment, ApiError> {
     let assignment_type = BuiltinType::parse(&new.assignment_type);
     let max_points = MaxPoints::parse(&new.max_points);
-    match (assignment_type, max_points) {
-        (Ok(assignment_type), Ok(max_points)) => Ok(model::Assignment {
+    // With an unknown type the settings cannot be judged; the type is the field to fix first.
+    let settings = match &assignment_type {
+        Ok(assignment_type) => SubmissionSettings::default().resolve(
+            &SettingsPatch {
+                due_at: new.due_at.map(Some),
+                on_deadline: new.on_deadline.map(Some),
+                accept_late: new.accept_late.map(Some),
+                late_until: new.late_until.map(Some),
+                max_attempts: new.max_attempts.map(Some),
+            },
+            assignment_type.takes_submissions(),
+        ),
+        Err(_) => Ok(SubmissionSettings::default()),
+    };
+    match (assignment_type, max_points, settings) {
+        (Ok(assignment_type), Ok(max_points), Ok(settings)) => Ok(model::Assignment {
             assignment_type,
             config: new.config.unwrap_or_default(),
             max_points,
             is_bonus: new.is_bonus,
+            settings,
         }),
-        (assignment_type, max_points) => Err(ApiError::Unprocessable {
-            detail: "the request has invalid fields".to_owned(),
-            errors: [
+        (assignment_type, max_points, settings) => {
+            let mut errors: Vec<FieldError> = [
                 ("assignment.type", assignment_type.err()),
                 ("assignment.max_points", max_points.err()),
             ]
@@ -216,8 +261,22 @@ fn domain_assignment(new: NewAssignment) -> Result<model::Assignment, ApiError> 
                     message: error.to_string(),
                 })
             })
-            .collect(),
-        }),
+            .collect();
+            errors.extend(
+                settings
+                    .err()
+                    .into_iter()
+                    .flatten()
+                    .map(|problem| FieldError {
+                        field: format!("assignment.{}", problem.field),
+                        message: problem.message,
+                    }),
+            );
+            Err(ApiError::Unprocessable {
+                detail: "the request has invalid fields".to_owned(),
+                errors,
+            })
+        }
     }
 }
 
@@ -355,7 +414,9 @@ async fn update_module(
     Ok(Json(api_module(module)))
 }
 
-/// Deletes a module together with its sub-modules and all their items.
+/// Deletes a module together with its sub-modules and all their items. Drafts of students and
+/// empty grade rows go with it. It is refused (409) when an assignment below has a grade or a
+/// submitted attempt.
 #[utoipa::path(
     delete,
     path = "/modules/{id}",
@@ -369,6 +430,8 @@ async fn update_module(
         (status = 403, description = "The caller may not change this course's content",
             body = ProblemDetails, content_type = "application/problem+json"),
         (status = 404, description = "No such module, or not visible to the caller",
+            body = ProblemDetails, content_type = "application/problem+json"),
+        (status = 409, description = "An assignment below has a grade or a submitted attempt",
             body = ProblemDetails, content_type = "application/problem+json"),
     )
 )]
@@ -630,6 +693,13 @@ async fn update_item(
             .transpose()
             .map_err(ContentError::from)?,
         is_bonus: request.is_bonus,
+        settings: SettingsPatch {
+            due_at: request.due_at,
+            on_deadline: request.on_deadline,
+            accept_late: request.accept_late,
+            late_until: request.late_until,
+            max_attempts: request.max_attempts,
+        },
     };
     let mut tx = state.db.begin().await.map_err(ContentError::from)?;
     let item = service::update_item(&mut tx, &actor, rules(&state), id, patch).await?;
@@ -637,7 +707,8 @@ async fn update_item(
     Ok(Json(api_item(item)))
 }
 
-/// Deletes a `text` item or an assignment.
+/// Deletes a `text` item or an assignment. Drafts of students and empty grade rows go with an
+/// assignment. It is refused (409) when the assignment has a grade or a submitted attempt.
 #[utoipa::path(
     delete,
     path = "/items/{id}",
@@ -651,6 +722,8 @@ async fn update_item(
         (status = 403, description = "The caller may not change this course's content",
             body = ProblemDetails, content_type = "application/problem+json"),
         (status = 404, description = "No such item, or not visible to the caller",
+            body = ProblemDetails, content_type = "application/problem+json"),
+        (status = 409, description = "The assignment has a grade or a submitted attempt",
             body = ProblemDetails, content_type = "application/problem+json"),
     )
 )]

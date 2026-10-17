@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE assessment.submissions SET content = '{\"v\": 1}' WHERE assignment_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "1dd5f562b237107655eb063851847de98b11cbd16ca1ac7a452a2925462008e0"
+}

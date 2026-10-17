@@ -271,10 +271,10 @@ impl LoginThrottle {
 // ---------------------------------------------------------------------------------------------
 
 /// Creates a user with a password identity and `must_change_password = true` (ADR-0017: the
-/// password is a generated temporary one). The low-level function: it audits nothing. The admin
-/// API goes through [`admin_create_user`] and the server CLI through [`create_user_from_cli`],
-/// which do (ADR-0034).
-pub async fn create_user(
+/// password is a generated temporary one). The low-level function: it audits nothing, so it is
+/// private. The admin API goes through [`admin_create_user`] and the server CLI through
+/// [`create_user_from_cli`], which do (ADR-0034).
+async fn create_user(
     conn: &mut PgConnection,
     new: NewUser,
     password: HashedPassword,
@@ -284,6 +284,17 @@ pub async fn create_user(
         .map_err(email_taken)?;
     repo::insert_password_identity(conn, user.id, password.as_str()).await?;
     Ok(user)
+}
+
+/// Seeds a user for the unit tests of any module, with no audit row. Not compiled into the
+/// server: production code creates users only through the audited functions (ADR-0034).
+#[cfg(test)]
+pub async fn create_user_unaudited_for_tests(
+    conn: &mut PgConnection,
+    new: NewUser,
+    password: HashedPassword,
+) -> Result<User, IdentityError> {
+    create_user(conn, new, password).await
 }
 
 /// Creates a user for the server CLI, where nobody is signed in, and records it in the audit log

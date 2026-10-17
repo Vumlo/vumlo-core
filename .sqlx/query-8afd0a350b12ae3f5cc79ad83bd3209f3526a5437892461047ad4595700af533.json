@@ -1,0 +1,19 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE content.assignments\n         SET due_at = $2, on_deadline = $3, accept_late = $4, late_until = $5, max_attempts = $6\n         WHERE item_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Timestamptz",
+        "Text",
+        "Bool",
+        "Timestamptz",
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "8afd0a350b12ae3f5cc79ad83bd3209f3526a5437892461047ad4595700af533"
+}

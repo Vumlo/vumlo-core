@@ -20,6 +20,13 @@ pub enum Event {
         student_id: Uuid,
         course_id: Uuid,
     },
+    /// A student submitted an attempt (ADR-0035). Saving or discarding a draft emits nothing.
+    SubmissionSubmitted {
+        assignment_id: Uuid,
+        student_id: Uuid,
+        course_id: Uuid,
+        submission_id: Uuid,
+    },
 }
 
 impl Event {
@@ -27,13 +34,14 @@ impl Event {
     pub fn kind(&self) -> &'static str {
         match self {
             Self::GradePublished { .. } => "grade.published",
+            Self::SubmissionSubmitted { .. } => "submission.submitted",
         }
     }
 
     /// The version of the payload shape of [`Event::kind`].
     pub fn version(&self) -> i32 {
         match self {
-            Self::GradePublished { .. } => 1,
+            Self::GradePublished { .. } | Self::SubmissionSubmitted { .. } => 1,
         }
     }
 
@@ -47,6 +55,17 @@ impl Event {
                 "assignment_id": assignment_id,
                 "student_id": student_id,
                 "course_id": course_id,
+            }),
+            Self::SubmissionSubmitted {
+                assignment_id,
+                student_id,
+                course_id,
+                submission_id,
+            } => serde_json::json!({
+                "assignment_id": assignment_id,
+                "student_id": student_id,
+                "course_id": course_id,
+                "submission_id": submission_id,
             }),
         }
     }

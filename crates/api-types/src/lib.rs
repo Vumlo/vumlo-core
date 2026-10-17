@@ -7,11 +7,13 @@ use serde_json::{Map, Value};
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
+mod assessment;
 mod document;
 mod gradebook;
 mod groups;
 mod org;
 
+pub use assessment::*;
 pub use document::*;
 pub use gradebook::*;
 pub use groups::*;
@@ -356,6 +358,17 @@ pub struct Assignment {
     pub max_points: String,
     /// Extra credit: outside the sum that the `hundred` grading scale limits (ADR-0022).
     pub is_bonus: bool,
+    /// The deadline (ADR-0035). `null` when there is none, and always `null` for a type that takes
+    /// no submissions.
+    pub due_at: Option<DateTime<Utc>>,
+    /// What happens to a draft at `due_at`; set exactly when `due_at` is.
+    pub on_deadline: Option<OnDeadline>,
+    /// Whether work is taken after `due_at`; set exactly when `due_at` is.
+    pub accept_late: Option<bool>,
+    /// The end of the late window; `null` means never. Only with `accept_late: true`.
+    pub late_until: Option<DateTime<Utc>>,
+    /// The most attempts a student may submit; `null` means no limit.
+    pub max_attempts: Option<i32>,
 }
 
 /// What the course tree shows of an assignment: everything but `config`.
@@ -366,6 +379,11 @@ pub struct AssignmentSummary {
     /// A decimal string with exactly two decimals, e.g. `"20.00"`.
     pub max_points: String,
     pub is_bonus: bool,
+    pub due_at: Option<DateTime<Utc>>,
+    pub on_deadline: Option<OnDeadline>,
+    pub accept_late: Option<bool>,
+    pub late_until: Option<DateTime<Utc>>,
+    pub max_attempts: Option<i32>,
 }
 
 /// A `text` item or an assignment. `body` is a JSON object the server stores without interpreting it;
@@ -521,6 +539,22 @@ pub struct NewAssignment {
     /// Extra credit, outside the sum that the `hundred` grading scale limits. Defaults to `false`.
     #[serde(default)]
     pub is_bonus: bool,
+    /// The deadline (ADR-0035). With it, `on_deadline` and `accept_late` are required; without it
+    /// neither may be set. Not allowed for `no_submission`.
+    #[serde(default)]
+    pub due_at: Option<DateTime<Utc>>,
+    /// `keep_draft` or `auto_submit` (the latter takes effect with the background worker).
+    #[serde(default)]
+    pub on_deadline: Option<String>,
+    #[serde(default)]
+    pub accept_late: Option<bool>,
+    /// The end of the late window; omit for no end. Needs `accept_late: true` and must be after
+    /// `due_at`.
+    #[serde(default)]
+    pub late_until: Option<DateTime<Utc>>,
+    /// At least 1; omit for unlimited attempts.
+    #[serde(default)]
+    pub max_attempts: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Validate, ToSchema)]
@@ -565,6 +599,33 @@ pub struct UpdateItemRequest {
     /// Assignments only. Omit to keep it.
     #[garde(skip)]
     pub is_bonus: Option<bool>,
+    /// Assignments only (ADR-0035). Omit to keep, `null` to clear, a timestamp to set. The rules
+    /// are checked on the resulting settings: to remove a deadline send `due_at`, `on_deadline`
+    /// and `accept_late` as `null` together.
+    #[serde(default, deserialize_with = "set_or_clear")]
+    #[schema(value_type = Option<DateTime<Utc>>)]
+    #[garde(skip)]
+    pub due_at: Option<Option<DateTime<Utc>>>,
+    /// Assignments only. Omit to keep, `null` to clear, `keep_draft` or `auto_submit` to set.
+    #[serde(default, deserialize_with = "set_or_clear")]
+    #[schema(value_type = Option<String>)]
+    #[garde(skip)]
+    pub on_deadline: Option<Option<String>>,
+    /// Assignments only. Omit to keep, `null` to clear.
+    #[serde(default, deserialize_with = "set_or_clear")]
+    #[schema(value_type = Option<bool>)]
+    #[garde(skip)]
+    pub accept_late: Option<Option<bool>>,
+    /// Assignments only. Omit to keep, `null` to clear.
+    #[serde(default, deserialize_with = "set_or_clear")]
+    #[schema(value_type = Option<DateTime<Utc>>)]
+    #[garde(skip)]
+    pub late_until: Option<Option<DateTime<Utc>>>,
+    /// Assignments only. Omit to keep, `null` for unlimited attempts, a number of at least 1 to set.
+    #[serde(default, deserialize_with = "set_or_clear")]
+    #[schema(value_type = Option<i64>)]
+    #[garde(skip)]
+    pub max_attempts: Option<Option<i64>>,
 }
 
 #[cfg(test)]
@@ -729,12 +790,64 @@ mod content_tests {
             config: Map::new(),
             max_points: "20.00".into(),
             is_bonus: false,
+            due_at: None,
+            on_deadline: None,
+            accept_late: None,
+            late_until: None,
+            max_attempts: None,
         })))
         .unwrap();
         assert_eq!(
             assignment["assignment"],
-            json!({"type": "text", "config": {}, "max_points": "20.00", "is_bonus": false})
+            json!({
+                "type": "text", "config": {}, "max_points": "20.00", "is_bonus": false,
+                "due_at": null, "on_deadline": null, "accept_late": null, "late_until": null,
+                "max_attempts": null
+            })
         );
+    }
+
+    #[test]
+    fn an_update_tells_absent_from_null_for_every_setting() {
+        let update = |value: Value| serde_json::from_value::<UpdateItemRequest>(value).unwrap();
+        let absent = update(json!({}));
+        assert_eq!(absent.due_at, None);
+        assert_eq!(absent.on_deadline, None);
+        assert_eq!(absent.accept_late, None);
+        assert_eq!(absent.late_until, None);
+        assert_eq!(absent.max_attempts, None);
+
+        let cleared = update(json!({
+            "due_at": null, "on_deadline": null, "accept_late": null,
+            "late_until": null, "max_attempts": null
+        }));
+        assert_eq!(cleared.due_at, Some(None));
+        assert_eq!(cleared.on_deadline, Some(None));
+        assert_eq!(cleared.accept_late, Some(None));
+        assert_eq!(cleared.late_until, Some(None));
+        assert_eq!(cleared.max_attempts, Some(None));
+
+        let set = update(json!({
+            "due_at": "2030-01-01T00:00:00Z", "on_deadline": "keep_draft", "accept_late": true,
+            "late_until": "2030-01-02T00:00:00Z", "max_attempts": 3
+        }));
+        assert!(matches!(set.due_at, Some(Some(_))));
+        assert_eq!(set.on_deadline, Some(Some("keep_draft".to_owned())));
+        assert_eq!(set.accept_late, Some(Some(true)));
+        assert_eq!(set.max_attempts, Some(Some(3)));
+    }
+
+    #[test]
+    fn a_new_assignment_has_no_settings_unless_sent() {
+        let bare = new_assignment(json!({"type": "text", "max_points": "5"}));
+        assert_eq!(bare.due_at, None);
+        assert_eq!(bare.on_deadline, None);
+        assert_eq!(bare.accept_late, None);
+        assert_eq!(bare.late_until, None);
+        assert_eq!(bare.max_attempts, None);
+        let set = new_assignment(json!({"on_deadline": "auto_submit", "max_attempts": 2}));
+        assert_eq!(set.on_deadline.as_deref(), Some("auto_submit"));
+        assert_eq!(set.max_attempts, Some(2));
     }
 
     #[test]

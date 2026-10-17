@@ -1,16 +1,16 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT max_points FROM content.assignments WHERE item_id = $1 FOR SHARE",
+  "query": "SELECT due_at FROM content.assignments WHERE item_id = $1",
   "describe": {
     "columns": [
       {
         "ordinal": 0,
-        "name": "max_points",
-        "type_info": "Numeric",
+        "name": "due_at",
+        "type_info": "Timestamptz",
         "origin": {
           "Table": {
             "table": "content.assignments",
-            "name": "max_points"
+            "name": "due_at"
           }
         }
       }
@@ -21,8 +21,8 @@
       ]
     },
     "nullable": [
-      false
+      true
     ]
   },
-  "hash": "cbacc1417234cd62b084f9cf9f609dce09c0217c96cf3d413bcb0c8d0dbff580"
+  "hash": "797e459a634347be27122c6a46a54e18343afe305868c9df9ce4842a24ca4637"
 }
