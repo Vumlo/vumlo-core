@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE identity.identities SET password_hash = $2\n         WHERE subject = (SELECT id::text FROM identity.users WHERE email = $1)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "80962b9522e937f8819df888bf09b80449dec51e2eeff1bd8dd60ac45a27b15a"
+}

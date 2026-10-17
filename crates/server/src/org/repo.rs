@@ -443,8 +443,8 @@ pub async fn list_subgroup_members(
 /// How many sessions of this database wait for a lock of any kind. Tests poll it to know that a
 /// writer is blocked behind another one, instead of sleeping and hoping.
 ///
-/// A runtime query with a constant string: `cargo sqlx prepare` does not cover test-only code, so
-/// a `query!` here would be missing from `.sqlx/` (an exception to AGENTS §8).
+/// A plain runtime query: it reads a system view, not our schema, so there is nothing for sqlx to
+/// check.
 #[cfg(test)]
 pub async fn lock_waiters(conn: &mut PgConnection) -> Result<i64, sqlx::Error> {
     sqlx::query_scalar::<_, i64>(

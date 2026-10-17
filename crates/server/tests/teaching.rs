@@ -1040,13 +1040,16 @@ async fn a_course_is_created_in_an_existing_term_and_an_unknown_term_is_a_422(po
     let http = setup(&pool).await;
     let teacher = user(&pool, &http, "t@x.edu", Role::Teacher).await;
     let term = Uuid::now_v7();
-    sqlx::query("INSERT INTO org.terms (id, name, starts_on, ends_on) VALUES ($1, 'Fall', '2026-09-01', '2027-01-31')")
-        .bind(term)
-        .execute(&pool)
-        .await
-        .unwrap();
+    sqlx::query!(
+        "INSERT INTO org.terms (id, name, starts_on, ends_on)
+         VALUES ($1, 'Fall', '2026-09-01', '2027-01-31')",
+        term
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
     let courses = || async {
-        sqlx::query_scalar::<_, i64>("SELECT count(*) FROM teaching.courses")
+        sqlx::query_scalar!(r#"SELECT count(*) AS "n!" FROM teaching.courses"#)
             .fetch_one(&pool)
             .await
             .unwrap()

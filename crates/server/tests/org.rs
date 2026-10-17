@@ -273,28 +273,24 @@ impl World {
         .await
     }
 
-    async fn count(&self, query: &'static str, id: Uuid) -> i64 {
-        sqlx::query_scalar::<_, i64>(query)
-            .bind(id)
-            .fetch_one(&self.pool)
-            .await
-            .unwrap()
-    }
-
     async fn group_member_count(&self, group: Uuid) -> i64 {
-        self.count(
-            "SELECT count(*) FROM org.group_members WHERE group_id = $1",
-            group,
+        sqlx::query_scalar!(
+            r#"SELECT count(*) AS "n!" FROM org.group_members WHERE group_id = $1"#,
+            group
         )
+        .fetch_one(&self.pool)
         .await
+        .unwrap()
     }
 
     async fn subgroup_member_count(&self, subgroup: Uuid) -> i64 {
-        self.count(
-            "SELECT count(*) FROM org.subgroup_members WHERE subgroup_id = $1",
-            subgroup,
+        sqlx::query_scalar!(
+            r#"SELECT count(*) AS "n!" FROM org.subgroup_members WHERE subgroup_id = $1"#,
+            subgroup
         )
+        .fetch_one(&self.pool)
         .await
+        .unwrap()
     }
 
     async fn patch_user(&self, id: Uuid, body: Value) {
@@ -305,13 +301,15 @@ impl World {
     }
 
     async fn set_names(&self, user: Uuid, name: &str, surname: &str) {
-        sqlx::query("UPDATE identity.users SET name = $2, surname = $3 WHERE id = $1")
-            .bind(user)
-            .bind(name)
-            .bind(surname)
-            .execute(&self.pool)
-            .await
-            .unwrap();
+        sqlx::query!(
+            "UPDATE identity.users SET name = $2, surname = $3 WHERE id = $1",
+            user,
+            name,
+            surname
+        )
+        .execute(&self.pool)
+        .await
+        .unwrap();
     }
 }
 
@@ -1033,8 +1031,7 @@ async fn a_term_that_a_course_uses_cannot_be_deleted(pool: PgPool) {
     );
     w.as_admin("GET", &format!("/terms/{term}"), None).await;
 
-    sqlx::query("DELETE FROM teaching.courses WHERE id = $1")
-        .bind(course)
+    sqlx::query!("DELETE FROM teaching.courses WHERE id = $1", course)
         .execute(&w.pool)
         .await
         .unwrap();

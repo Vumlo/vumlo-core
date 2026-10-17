@@ -37,4 +37,6 @@ jobs:
       - run: cargo fmt --all --check
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: cargo test --workspace
-      - run: cargo sqlx prepare --workspace --check
+      - run: cargo sqlx prepare --workspace --check -- --all-targets
+      - name: Build offline, tests included
+        run: SQLX_OFFLINE=true cargo check --workspace --all-targets

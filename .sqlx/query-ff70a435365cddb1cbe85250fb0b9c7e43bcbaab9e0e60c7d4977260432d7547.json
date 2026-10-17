@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE gradebook.grades SET published_by = $1, published_at = now()",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "ff70a435365cddb1cbe85250fb0b9c7e43bcbaab9e0e60c7d4977260432d7547"
+}

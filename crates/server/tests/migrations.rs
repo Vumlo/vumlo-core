@@ -582,6 +582,8 @@ async fn item_kind(pool: &PgPool, id: uuid::Uuid) -> String {
 
 /// A teacher as the schema before migration 10 stores them: one `display_name`. A runtime query,
 /// because the compile-time macros are checked against the full schema, where that column is gone.
+/// A runtime query on purpose: it writes `display_name`, a column the current schema no longer
+/// has, in a test that stops the migrations before it is renamed.
 async fn insert_user_before_names(
     pool: &PgPool,
     email: &str,
@@ -984,11 +986,12 @@ async fn without_links_effective_members_are_exactly_the_memberships(pool: PgPoo
     let seen = effective_members(&pool).await;
     assert_eq!(seen.len(), 5, "every role, every course");
     assert_eq!(seen, memberships(&pool).await);
-    let sources: Vec<String> =
-        sqlx::query_scalar("SELECT DISTINCT source FROM teaching.effective_members")
-            .fetch_all(&pool)
-            .await
-            .unwrap();
+    let sources = sqlx::query_scalar!(
+        r#"SELECT DISTINCT source AS "source!" FROM teaching.effective_members"#
+    )
+    .fetch_all(&pool)
+    .await
+    .unwrap();
     assert_eq!(sources, ["direct"]);
 
     // It follows the table: a role change and a removal show at once.
@@ -1025,22 +1028,30 @@ async fn exec(pool: &PgPool, sql: &'static str, binds: &[uuid::Uuid]) -> Result<
 }
 
 async fn count(pool: &PgPool, table: &'static str) -> i64 {
-    let sql = match table {
-        "group_members" => "SELECT count(*) FROM org.group_members",
-        "subgroup_members" => "SELECT count(*) FROM org.subgroup_members",
-        "subgroups" => "SELECT count(*) FROM org.subgroups",
+    match table {
+        "group_members" => {
+            sqlx::query_scalar!(r#"SELECT count(*) AS "n!" FROM org.group_members"#)
+                .fetch_one(pool)
+                .await
+        }
+        "subgroup_members" => {
+            sqlx::query_scalar!(r#"SELECT count(*) AS "n!" FROM org.subgroup_members"#)
+                .fetch_one(pool)
+                .await
+        }
+        "subgroups" => {
+            sqlx::query_scalar!(r#"SELECT count(*) AS "n!" FROM org.subgroups"#)
+                .fetch_one(pool)
+                .await
+        }
         _ => panic!("no such table in this helper: {table}"),
-    };
-    sqlx::query_scalar::<_, i64>(sql)
-        .fetch_one(pool)
-        .await
-        .unwrap()
+    }
+    .unwrap()
 }
 
 async fn student(pool: &PgPool, email: &str) -> uuid::Uuid {
     insert_user(pool, email, "student").await.unwrap();
-    sqlx::query_scalar::<_, uuid::Uuid>("SELECT id FROM identity.users WHERE email = $1")
-        .bind(email)
+    sqlx::query_scalar!("SELECT id FROM identity.users WHERE email = $1", email)
         .fetch_one(pool)
         .await
         .unwrap()
@@ -1053,13 +1064,13 @@ async fn insert_term(
     ends: &str,
 ) -> Result<uuid::Uuid, sqlx::Error> {
     let id = uuid::Uuid::now_v7();
-    sqlx::query(
-        "INSERT INTO org.terms (id, name, starts_on, ends_on) VALUES ($1, $2, $3::date, $4::date)",
+    sqlx::query!(
+        "INSERT INTO org.terms (id, name, starts_on, ends_on) VALUES ($1, $2, $3::text::date, $4::text::date)",
+        id,
+        name,
+        starts,
+        ends
     )
-    .bind(id)
-    .bind(name)
-    .bind(starts)
-    .bind(ends)
     .execute(pool)
     .await?;
     Ok(id)
@@ -1067,11 +1078,13 @@ async fn insert_term(
 
 async fn insert_group(pool: &PgPool, name: &str) -> Result<uuid::Uuid, sqlx::Error> {
     let id = uuid::Uuid::now_v7();
-    sqlx::query("INSERT INTO org.groups (id, name) VALUES ($1, $2)")
-        .bind(id)
-        .bind(name)
-        .execute(pool)
-        .await?;
+    sqlx::query!(
+        "INSERT INTO org.groups (id, name) VALUES ($1, $2)",
+        id,
+        name
+    )
+    .execute(pool)
+    .await?;
     Ok(id)
 }
 
@@ -1081,12 +1094,14 @@ async fn insert_subgroup(
     name: &str,
 ) -> Result<uuid::Uuid, sqlx::Error> {
     let id = uuid::Uuid::now_v7();
-    sqlx::query("INSERT INTO org.subgroups (id, group_id, name) VALUES ($1, $2, $3)")
-        .bind(id)
-        .bind(group)
-        .bind(name)
-        .execute(pool)
-        .await?;
+    sqlx::query!(
+        "INSERT INTO org.subgroups (id, group_id, name) VALUES ($1, $2, $3)",
+        id,
+        group,
+        name
+    )
+    .execute(pool)
+    .await?;
     Ok(id)
 }
 
@@ -1259,10 +1274,6 @@ async fn deleting_a_group_deletes_its_subgroups_and_members(pool: PgPool) {
 
 // --- migration 15: group links, exclusions and the live roster (ADR-0033) -----------------------
 
-const LINK: &str =
-    "INSERT INTO teaching.course_groups (id, course_id, group_id, subgroup_id, created_by)
-                    VALUES ($1, $2, $3, $4, $5)";
-
 async fn link(
     pool: &PgPool,
     course: uuid::Uuid,
@@ -1270,46 +1281,57 @@ async fn link(
     subgroup: Option<uuid::Uuid>,
     by: uuid::Uuid,
 ) -> Result<(), sqlx::Error> {
-    sqlx::query(LINK)
-        .bind(uuid::Uuid::now_v7())
-        .bind(course)
-        .bind(group)
-        .bind(subgroup)
-        .bind(by)
-        .execute(pool)
-        .await
-        .map(|_| ())
+    sqlx::query!(
+        "INSERT INTO teaching.course_groups (id, course_id, group_id, subgroup_id, created_by)
+         VALUES ($1, $2, $3, $4, $5)",
+        uuid::Uuid::now_v7(),
+        course,
+        group,
+        subgroup,
+        by
+    )
+    .execute(pool)
+    .await
+    .map(|_| ())
 }
 
 async fn join_group(pool: &PgPool, group: uuid::Uuid, user: uuid::Uuid) {
-    exec(
-        pool,
+    sqlx::query!(
         "INSERT INTO org.group_members (group_id, user_id) VALUES ($1, $2)",
-        &[group, user],
+        group,
+        user
     )
+    .execute(pool)
     .await
     .unwrap();
 }
 
 async fn join_subgroup(pool: &PgPool, subgroup: uuid::Uuid, group: uuid::Uuid, user: uuid::Uuid) {
-    exec(
-        pool,
+    sqlx::query!(
         "INSERT INTO org.subgroup_members (subgroup_id, group_id, user_id) VALUES ($1, $2, $3)",
-        &[subgroup, group, user],
+        subgroup,
+        group,
+        user
     )
+    .execute(pool)
     .await
     .unwrap();
 }
 
 /// (user, role, source) of the course, by user id.
 async fn roster(pool: &PgPool, course: uuid::Uuid) -> Vec<(uuid::Uuid, String, String)> {
-    sqlx::query_as::<_, (uuid::Uuid, String, String)>(
-        "SELECT user_id, role, source FROM teaching.effective_members WHERE course_id = $1 ORDER BY user_id",
+    // A view's columns are inferred as nullable; all three are not null in its definition.
+    sqlx::query!(
+        r#"SELECT user_id AS "user_id!", role AS "role!", source AS "source!"
+           FROM teaching.effective_members WHERE course_id = $1 ORDER BY user_id"#,
+        course
     )
-    .bind(course)
     .fetch_all(pool)
     .await
     .unwrap()
+    .into_iter()
+    .map(|row| (row.user_id, row.role, row.source))
+    .collect()
 }
 
 fn on(list: &[(uuid::Uuid, String, String)], user: uuid::Uuid) -> Option<(&str, &str)> {
@@ -1494,7 +1516,7 @@ async fn a_linked_group_or_subgroup_is_protected_and_a_deleted_course_takes_its_
     )
     .await
     .unwrap();
-    let links: i64 = sqlx::query_scalar("SELECT count(*) FROM teaching.course_groups")
+    let links = sqlx::query_scalar!(r#"SELECT count(*) AS "n!" FROM teaching.course_groups"#)
         .fetch_one(&pool)
         .await
         .unwrap();

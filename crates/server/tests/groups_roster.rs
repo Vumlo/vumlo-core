@@ -288,20 +288,60 @@ impl World {
         .await
     }
 
-    async fn count(&self, sql: &'static str, binds: &[Uuid]) -> i64 {
-        let mut query = sqlx::query_scalar::<_, i64>(sql);
-        for id in binds {
-            query = query.bind(id);
-        }
-        query.fetch_one(&self.pool).await.unwrap()
+    async fn direct_rows(&self, user: Uuid) -> i64 {
+        sqlx::query_scalar!(
+            r#"SELECT count(*) AS "n!" FROM teaching.memberships WHERE course_id = $1 AND user_id = $2"#,
+            self.course,
+            user
+        )
+        .fetch_one(&self.pool)
+        .await
+        .unwrap()
     }
 
-    async fn direct_rows(&self, user: Uuid) -> i64 {
-        self.count(
-            "SELECT count(*) FROM teaching.memberships WHERE course_id = $1 AND user_id = $2",
-            &[self.course, user],
+    async fn grades_of(&self, user: Uuid) -> i64 {
+        sqlx::query_scalar!(
+            r#"SELECT count(*) AS "n!" FROM gradebook.grades WHERE student_id = $1"#,
+            user
         )
+        .fetch_one(&self.pool)
         .await
+        .unwrap()
+    }
+
+    async fn link_rows(&self) -> i64 {
+        sqlx::query_scalar!(r#"SELECT count(*) AS "n!" FROM teaching.course_groups"#)
+            .fetch_one(&self.pool)
+            .await
+            .unwrap()
+    }
+
+    async fn audit_rows(&self) -> i64 {
+        sqlx::query_scalar!(r#"SELECT count(*) AS "n!" FROM events.audit_log"#)
+            .fetch_one(&self.pool)
+            .await
+            .unwrap()
+    }
+
+    async fn set_status(&self, course: Uuid, status: &str) {
+        sqlx::query!(
+            "UPDATE teaching.courses SET status = $2 WHERE id = $1",
+            course,
+            status
+        )
+        .execute(&self.pool)
+        .await
+        .unwrap();
+    }
+
+    async fn make_template(&self, course: Uuid) {
+        sqlx::query!(
+            "UPDATE teaching.courses SET kind = 'template' WHERE id = $1",
+            course
+        )
+        .execute(&self.pool)
+        .await
+        .unwrap();
     }
 }
 
@@ -462,12 +502,7 @@ async fn removing_a_group_student_excludes_them_and_restoring_brings_them_back(p
         "off the gradebook roster"
     );
     assert_eq!(w.exclusions().await, [s.id]);
-    let kept = w
-        .count(
-            "SELECT count(*) FROM gradebook.grades WHERE student_id = $1",
-            &[s.id],
-        )
-        .await;
+    let kept = w.grades_of(s.id).await;
     assert_eq!(kept, 1, "the grade stays");
     let listed = ok(
         &w.as_owner("GET", &format!("/courses/{}/exclusions", w.course), None)
@@ -793,11 +828,7 @@ async fn a_link_of_another_course_cannot_be_removed_through_this_one(pool: PgPoo
     w.as_owner("DELETE", &format!("/courses/{other}/groups/{link}"), None)
         .await
         .problem(404);
-    assert_eq!(
-        w.count("SELECT count(*) FROM teaching.course_groups", &[])
-            .await,
-        1
-    );
+    assert_eq!(w.link_rows().await, 1);
 }
 
 #[sqlx::test(migrator = "server::app::MIGRATOR")]
@@ -1096,11 +1127,7 @@ async fn a_course_is_edited_in_every_status_and_the_edit_is_checked(pool: PgPool
     let w = world(pool).await;
     let fall = term(&w, "Fall").await;
     let draft = common::create_course(&w.http, &w.owner.token, "Draft").await;
-    sqlx::query("UPDATE teaching.courses SET status = 'archived' WHERE id = $1")
-        .bind(w.course)
-        .execute(&w.pool)
-        .await
-        .unwrap();
+    w.set_status(w.course, "archived").await;
     for course in [draft, w.course] {
         let path = format!("/courses/{course}");
         ok(
@@ -1128,11 +1155,7 @@ async fn a_course_is_edited_in_every_status_and_the_edit_is_checked(pool: PgPool
         .problem(422);
 
     // A template has no term, but it can still be renamed and its term cleared.
-    sqlx::query("UPDATE teaching.courses SET kind = 'template' WHERE id = $1")
-        .bind(draft)
-        .execute(&w.pool)
-        .await
-        .unwrap();
+    w.make_template(draft).await;
     let on_template = w
         .as_owner("PATCH", &path, Some(json!({"term_id": fall})))
         .await;
@@ -1155,7 +1178,7 @@ async fn admin_roster_and_edit_writes_are_audited_and_staff_writes_are_not(pool:
     let s = w.new_student("s@x.edu").await;
     w.join(group, &[s.id]).await;
     let fall = term(&w, "Fall").await;
-    let audit_before = w.count("SELECT count(*) FROM events.audit_log", &[]).await;
+    let audit_before = w.audit_rows().await;
 
     // Staff writes leave nothing in the audit log.
     let link = w.link(group, None).await;
@@ -1187,10 +1210,7 @@ async fn admin_roster_and_edit_writes_are_audited_and_staff_writes_are_not(pool:
         .await,
         204,
     );
-    assert_eq!(
-        w.count("SELECT count(*) FROM events.audit_log", &[]).await,
-        audit_before
-    );
+    assert_eq!(w.audit_rows().await, audit_before);
 
     // The admin's are.
     let path = format!("/courses/{}", w.course);
@@ -1234,18 +1254,18 @@ async fn admin_roster_and_edit_writes_are_audited_and_staff_writes_are_not(pool:
         204,
     );
 
-    let rows: Vec<(String, Uuid, Value)> = sqlx::query_as(
+    let rows = sqlx::query!(
         "SELECT action, resource_id, meta FROM events.audit_log
          WHERE resource_type = 'course' AND action <> 'course.create'
            AND actor_id = $1 ORDER BY at, id",
+        w.admin.id
     )
-    .bind(w.admin.id)
     .fetch_all(&w.pool)
     .await
     .unwrap();
     let actions: Vec<_> = rows
         .iter()
-        .map(|(action, id, _)| (action.as_str(), *id))
+        .map(|row| (row.action.as_str(), row.resource_id))
         .collect();
     assert_eq!(
         actions,
@@ -1258,15 +1278,15 @@ async fn admin_roster_and_edit_writes_are_audited_and_staff_writes_are_not(pool:
         ]
     );
     assert_eq!(
-        rows[0].2,
+        rows[0].meta,
         json!({"group_id": group.to_string(), "subgroup_id": null})
     );
     assert_eq!(
-        rows[1].2,
+        rows[1].meta,
         json!({"user_id": s.id.to_string(), "role": "student", "excluded": true})
     );
-    assert_eq!(rows[2].2, json!({"user_id": s.id.to_string()}));
-    assert_eq!(rows[3].2, json!({"fields": ["title", "term_id"]}));
+    assert_eq!(rows[2].meta, json!({"user_id": s.id.to_string()}));
+    assert_eq!(rows[3].meta, json!({"fields": ["title", "term_id"]}));
 }
 
 #[sqlx::test(migrator = "server::app::MIGRATOR")]

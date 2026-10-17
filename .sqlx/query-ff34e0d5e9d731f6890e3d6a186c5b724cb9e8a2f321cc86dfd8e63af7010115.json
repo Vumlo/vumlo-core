@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO teaching.courses (id, title, owner_id, created_by) VALUES ($1, 'Course', $2, $2)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "ff34e0d5e9d731f6890e3d6a186c5b724cb9e8a2f321cc86dfd8e63af7010115"
+}

@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE identity.sessions\n         SET last_seen_at = now() - interval '2 hours', expires_at = now() + interval '1 day'",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "51f0834b8f51572b2656e0837588d4e49e11bc6a60e5c9e9e2587fc336ff6fdd"
+}

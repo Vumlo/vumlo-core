@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE content.modules SET position = 3 - position WHERE id IN ($1, $2)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "c116645bd34097776b8cfc94c4c185d3bbe0eca635185799402d9057f3bf2cce"
+}

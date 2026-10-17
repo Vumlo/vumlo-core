@@ -678,14 +678,14 @@ mod tests {
 
     impl Fixture {
         async fn group_members(&self) -> i64 {
-            sqlx::query_scalar::<_, i64>("SELECT count(*) FROM org.group_members")
+            sqlx::query_scalar!(r#"SELECT count(*) AS "n!" FROM org.group_members"#)
                 .fetch_one(&self.pool)
                 .await
                 .unwrap()
         }
 
         async fn subgroup_members(&self) -> i64 {
-            sqlx::query_scalar::<_, i64>("SELECT count(*) FROM org.subgroup_members")
+            sqlx::query_scalar!(r#"SELECT count(*) AS "n!" FROM org.subgroup_members"#)
                 .fetch_one(&self.pool)
                 .await
                 .unwrap()

@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO identity.users (id, email, name, surname, role) VALUES ($1, $2, 'Test', 'User', $3)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "ee91907d3cd40d72f8dbd1643a15ec2a03f1e2c5a0c9508ff6db6c8b8d64b5b4"
+}

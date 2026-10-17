@@ -668,31 +668,36 @@ mod tests {
 
         /// The cell as stored: draft score, published score, and whether it was never published.
         async fn stored(&self) -> (Option<String>, Option<String>, bool) {
-            sqlx::query_as::<_, (Option<String>, Option<String>, bool)>(
-                "SELECT draft_score::text, published_score::text, published_at IS NULL
-                 FROM gradebook.grades WHERE assignment_id = $1",
+            let row = sqlx::query!(
+                r#"SELECT draft_score::text AS draft, published_score::text AS published,
+                          published_at IS NULL AS "never_published!"
+                   FROM gradebook.grades WHERE assignment_id = $1"#,
+                self.assignment
             )
-            .bind(self.assignment)
             .fetch_one(&self.pool)
             .await
-            .unwrap()
+            .unwrap();
+            (row.draft, row.published, row.never_published)
         }
 
         /// The history of the cell, oldest first: the action and the score after it.
         async fn history(&self) -> Vec<(String, Option<String>)> {
-            sqlx::query_as::<_, (String, Option<String>)>(
-                "SELECT action, score::text FROM gradebook.grade_history
+            sqlx::query!(
+                "SELECT action, score::text AS score FROM gradebook.grade_history
                  WHERE assignment_id = $1 ORDER BY at, id",
+                self.assignment
             )
-            .bind(self.assignment)
             .fetch_all(&self.pool)
             .await
             .unwrap()
+            .into_iter()
+            .map(|row| (row.action, row.score))
+            .collect()
         }
 
         async fn published_events(&self) -> i64 {
-            sqlx::query_scalar::<_, i64>(
-                "SELECT count(*) FROM events.outbox WHERE type = 'grade.published'",
+            sqlx::query_scalar!(
+                r#"SELECT count(*) AS "n!" FROM events.outbox WHERE type = 'grade.published'"#
             )
             .fetch_one(&self.pool)
             .await
@@ -713,24 +718,41 @@ mod tests {
             page.rows[0].cells[0].1.has_unpublished_changes
         }
 
-        async fn count(&self, sql: &'static str) -> i64 {
-            sqlx::query_scalar::<_, i64>(sql)
-                .bind(self.assignment)
-                .fetch_one(&self.pool)
-                .await
-                .unwrap()
+        async fn grades(&self) -> i64 {
+            sqlx::query_scalar!(
+                r#"SELECT count(*) AS "n!" FROM gradebook.grades WHERE assignment_id = $1"#,
+                self.assignment
+            )
+            .fetch_one(&self.pool)
+            .await
+            .unwrap()
         }
 
-        async fn grades(&self) -> i64 {
-            self.count("SELECT count(*) FROM gradebook.grades WHERE assignment_id = $1")
-                .await
+        async fn assignment_rows(&self) -> i64 {
+            sqlx::query_scalar!(
+                r#"SELECT count(*) AS "n!" FROM content.assignments WHERE item_id = $1"#,
+                self.assignment
+            )
+            .fetch_one(&self.pool)
+            .await
+            .unwrap()
+        }
+
+        async fn item_rows(&self) -> i64 {
+            sqlx::query_scalar!(
+                r#"SELECT count(*) AS "n!" FROM content.items WHERE id = $1"#,
+                self.assignment
+            )
+            .fetch_one(&self.pool)
+            .await
+            .unwrap()
         }
 
         async fn max_points(&self) -> String {
-            sqlx::query_scalar::<_, String>(
-                "SELECT max_points::text FROM content.assignments WHERE item_id = $1",
+            sqlx::query_scalar!(
+                r#"SELECT max_points::text AS "max_points!" FROM content.assignments WHERE item_id = $1"#,
+                self.assignment
             )
-            .bind(self.assignment)
             .fetch_one(&self.pool)
             .await
             .unwrap()
@@ -830,11 +852,7 @@ mod tests {
         let result = second.await.unwrap();
         assert!(matches!(result, Err(ContentError::HasGrades)), "{result:?}");
         assert_eq!(f.grades().await, 1);
-        assert_eq!(
-            f.count("SELECT count(*) FROM content.assignments WHERE item_id = $1")
-                .await,
-            1
-        );
+        assert_eq!(f.assignment_rows().await, 1);
     }
 
     /// A delete of the assignment is in flight. A grade write must wait for it and then find
@@ -857,11 +875,7 @@ mod tests {
             "{result:?}"
         );
         assert_eq!(f.grades().await, 0);
-        assert_eq!(
-            f.count("SELECT count(*) FROM content.items WHERE id = $1")
-                .await,
-            0
-        );
+        assert_eq!(f.item_rows().await, 0);
     }
 
     fn history_of(rows: &[(&str, Option<&str>)]) -> Vec<(String, Option<String>)> {
