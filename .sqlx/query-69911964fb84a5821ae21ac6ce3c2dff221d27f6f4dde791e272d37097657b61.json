@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT c.id, c.kind AS \"kind: CourseKind\", c.title,\n                  c.status AS \"status: CourseStatus\", c.owner_id, c.term_id, c.created_at,\n                  m.role AS \"member_role?: CourseRole\"\n           FROM teaching.courses c\n           LEFT JOIN teaching.memberships m ON m.course_id = c.id AND m.user_id = $2\n           WHERE c.id = $1",
+  "query": "UPDATE teaching.courses\n           SET title = COALESCE($2, title),\n               term_id = CASE WHEN $3 THEN $4 ELSE term_id END,\n               updated_at = now()\n           WHERE id = $1\n           RETURNING id, kind AS \"kind: CourseKind\", title,\n                     status AS \"status: CourseStatus\", owner_id, term_id, created_at",
   "describe": {
     "columns": [
       {
@@ -79,22 +79,13 @@
             "name": "created_at"
           }
         }
-      },
-      {
-        "ordinal": 7,
-        "name": "member_role?: CourseRole",
-        "type_info": "Text",
-        "origin": {
-          "Table": {
-            "table": "teaching.memberships",
-            "name": "role"
-          }
-        }
       }
     ],
     "parameters": {
       "Left": [
         "Uuid",
+        "Text",
+        "Bool",
         "Uuid"
       ]
     },
@@ -105,9 +96,8 @@
       false,
       false,
       true,
-      false,
-      true
+      false
     ]
   },
-  "hash": "737f428339b043da8a11337b5f457024d3454a774a59fe85f9a9a800881426f6"
+  "hash": "69911964fb84a5821ae21ac6ce3c2dff221d27f6f4dde791e272d37097657b61"
 }

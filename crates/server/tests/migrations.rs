@@ -944,7 +944,7 @@ async fn memberships(pool: &PgPool) -> Vec<(uuid::Uuid, uuid::Uuid, String)> {
 }
 
 #[sqlx::test(migrator = "server::app::MIGRATOR")]
-async fn effective_members_are_exactly_the_memberships_for_now(pool: PgPool) {
+async fn without_links_effective_members_are_exactly_the_memberships(pool: PgPool) {
     let exists = sqlx::query_scalar!(
         r#"SELECT count(*) AS "n!" FROM information_schema.views
            WHERE table_schema = 'teaching' AND table_name = 'effective_members'"#
@@ -984,6 +984,12 @@ async fn effective_members_are_exactly_the_memberships_for_now(pool: PgPool) {
     let seen = effective_members(&pool).await;
     assert_eq!(seen.len(), 5, "every role, every course");
     assert_eq!(seen, memberships(&pool).await);
+    let sources: Vec<String> =
+        sqlx::query_scalar("SELECT DISTINCT source FROM teaching.effective_members")
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+    assert_eq!(sources, ["direct"]);
 
     // It follows the table: a role change and a removal show at once.
     sqlx::query!(
@@ -1249,4 +1255,251 @@ async fn deleting_a_group_deletes_its_subgroups_and_members(pool: PgPool) {
     assert_eq!(count(&pool, "group_members").await, 0);
     assert_eq!(count(&pool, "subgroups").await, 0);
     assert_eq!(count(&pool, "subgroup_members").await, 0);
+}
+
+// --- migration 15: group links, exclusions and the live roster (ADR-0033) -----------------------
+
+const LINK: &str =
+    "INSERT INTO teaching.course_groups (id, course_id, group_id, subgroup_id, created_by)
+                    VALUES ($1, $2, $3, $4, $5)";
+
+async fn link(
+    pool: &PgPool,
+    course: uuid::Uuid,
+    group: uuid::Uuid,
+    subgroup: Option<uuid::Uuid>,
+    by: uuid::Uuid,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(LINK)
+        .bind(uuid::Uuid::now_v7())
+        .bind(course)
+        .bind(group)
+        .bind(subgroup)
+        .bind(by)
+        .execute(pool)
+        .await
+        .map(|_| ())
+}
+
+async fn join_group(pool: &PgPool, group: uuid::Uuid, user: uuid::Uuid) {
+    exec(
+        pool,
+        "INSERT INTO org.group_members (group_id, user_id) VALUES ($1, $2)",
+        &[group, user],
+    )
+    .await
+    .unwrap();
+}
+
+async fn join_subgroup(pool: &PgPool, subgroup: uuid::Uuid, group: uuid::Uuid, user: uuid::Uuid) {
+    exec(
+        pool,
+        "INSERT INTO org.subgroup_members (subgroup_id, group_id, user_id) VALUES ($1, $2, $3)",
+        &[subgroup, group, user],
+    )
+    .await
+    .unwrap();
+}
+
+/// (user, role, source) of the course, by user id.
+async fn roster(pool: &PgPool, course: uuid::Uuid) -> Vec<(uuid::Uuid, String, String)> {
+    sqlx::query_as::<_, (uuid::Uuid, String, String)>(
+        "SELECT user_id, role, source FROM teaching.effective_members WHERE course_id = $1 ORDER BY user_id",
+    )
+    .bind(course)
+    .fetch_all(pool)
+    .await
+    .unwrap()
+}
+
+fn on(list: &[(uuid::Uuid, String, String)], user: uuid::Uuid) -> Option<(&str, &str)> {
+    list.iter()
+        .find(|(id, _, _)| *id == user)
+        .map(|(_, role, source)| (role.as_str(), source.as_str()))
+}
+
+#[sqlx::test(migrator = "server::app::MIGRATOR")]
+async fn the_students_of_linked_groups_are_on_the_roster_once(pool: PgPool) {
+    let teacher = owner(&pool, "t@x.edu").await;
+    let (a, b, c) = (
+        student(&pool, "a@x.edu").await,
+        student(&pool, "b@x.edu").await,
+        student(&pool, "c@x.edu").await,
+    );
+    let group = insert_group(&pool, "7-A").await.unwrap();
+    let sub = insert_subgroup(&pool, group, "English 1").await.unwrap();
+    for user in [a, b, c] {
+        join_group(&pool, group, user).await;
+    }
+    join_subgroup(&pool, sub, group, a).await;
+    let whole = insert_course(&pool, teacher).await;
+    let part = insert_course(&pool, teacher).await;
+    let both = insert_course(&pool, teacher).await;
+    link(&pool, whole, group, None, teacher).await.unwrap();
+    link(&pool, part, group, Some(sub), teacher).await.unwrap();
+    link(&pool, both, group, None, teacher).await.unwrap();
+    link(&pool, both, group, Some(sub), teacher).await.unwrap();
+
+    let all: Vec<_> = roster(&pool, whole).await;
+    assert_eq!(all.len(), 3);
+    assert!(
+        all.iter()
+            .all(|(_, role, source)| role == "student" && source == "group")
+    );
+    // A subgroup link brings only that subgroup.
+    let only: Vec<_> = roster(&pool, part)
+        .await
+        .into_iter()
+        .map(|(id, _, _)| id)
+        .collect();
+    assert_eq!(only, [a]);
+    // A whole-group link and a link to one of its subgroups: still one row per user.
+    assert_eq!(roster(&pool, both).await.len(), 3);
+
+    // Leaving the group takes the student off every linked course at once.
+    exec(
+        &pool,
+        "DELETE FROM org.group_members WHERE group_id = $1 AND user_id = $2",
+        &[group, a],
+    )
+    .await
+    .unwrap();
+    assert_eq!(on(&roster(&pool, whole).await, a), None);
+    assert!(roster(&pool, part).await.is_empty());
+}
+
+#[sqlx::test(migrator = "server::app::MIGRATOR")]
+async fn a_direct_membership_wins_over_an_exclusion_and_an_exclusion_over_a_group(pool: PgPool) {
+    let teacher = owner(&pool, "t@x.edu").await;
+    let (a, b, c) = (
+        student(&pool, "a@x.edu").await,
+        student(&pool, "b@x.edu").await,
+        student(&pool, "c@x.edu").await,
+    );
+    let group = insert_group(&pool, "7-A").await.unwrap();
+    for user in [a, b, c] {
+        join_group(&pool, group, user).await;
+    }
+    let course = insert_course(&pool, teacher).await;
+    link(&pool, course, group, None, teacher).await.unwrap();
+    // a: a direct assistant and a group student is an assistant. b: excluded. c: nothing special.
+    exec(
+        &pool,
+        "INSERT INTO teaching.memberships (course_id, user_id, role) VALUES ($1, $2, 'assistant')",
+        &[course, a],
+    )
+    .await
+    .unwrap();
+    let exclude = "INSERT INTO teaching.course_exclusions (course_id, user_id, created_by) VALUES ($1, $2, $3)";
+    exec(&pool, exclude, &[course, b, teacher]).await.unwrap();
+
+    let seen = roster(&pool, course).await;
+    assert_eq!(on(&seen, a), Some(("assistant", "direct")));
+    assert_eq!(on(&seen, b), None);
+    assert_eq!(on(&seen, c), Some(("student", "group")));
+
+    // A direct membership beats an exclusion that is still there.
+    exec(
+        &pool,
+        "INSERT INTO teaching.memberships (course_id, user_id, role) VALUES ($1, $2, 'student')",
+        &[course, b],
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        on(&roster(&pool, course).await, b),
+        Some(("student", "direct"))
+    );
+
+    // An exclusion of a user who left the group is inert, and one row per (course, user) holds.
+    exec(
+        &pool,
+        "DELETE FROM org.group_members WHERE group_id = $1 AND user_id = $2",
+        &[group, c],
+    )
+    .await
+    .unwrap();
+    exec(&pool, exclude, &[course, c, teacher]).await.unwrap();
+    assert_eq!(on(&roster(&pool, course).await, c), None);
+    let rows = roster(&pool, course).await;
+    let mut ids: Vec<_> = rows.iter().map(|(id, _, _)| *id).collect();
+    ids.dedup();
+    assert_eq!(ids.len(), rows.len());
+}
+
+#[sqlx::test(migrator = "server::app::MIGRATOR")]
+async fn a_link_names_a_real_group_and_one_of_its_subgroups_and_is_unique(pool: PgPool) {
+    let teacher = owner(&pool, "t@x.edu").await;
+    let group = insert_group(&pool, "7-A").await.unwrap();
+    let other = insert_group(&pool, "7-B").await.unwrap();
+    let sub = insert_subgroup(&pool, group, "English 1").await.unwrap();
+    let course = insert_course(&pool, teacher).await;
+
+    assert_eq!(
+        sqlstate(link(&pool, course, uuid::Uuid::now_v7(), None, teacher).await),
+        "23503"
+    );
+    // A subgroup of another group, and a subgroup that does not exist.
+    assert_eq!(
+        sqlstate(link(&pool, course, other, Some(sub), teacher).await),
+        "23503"
+    );
+    assert_eq!(
+        sqlstate(link(&pool, course, group, Some(uuid::Uuid::now_v7()), teacher).await),
+        "23503"
+    );
+
+    link(&pool, course, group, None, teacher).await.unwrap();
+    link(&pool, course, group, Some(sub), teacher)
+        .await
+        .unwrap();
+    // Null subgroups count as equal: the same whole-group link twice is refused.
+    assert_eq!(
+        sqlstate(link(&pool, course, group, None, teacher).await),
+        "23505"
+    );
+    assert_eq!(
+        sqlstate(link(&pool, course, group, Some(sub), teacher).await),
+        "23505"
+    );
+}
+
+#[sqlx::test(migrator = "server::app::MIGRATOR")]
+async fn a_linked_group_or_subgroup_is_protected_and_a_deleted_course_takes_its_links(
+    pool: PgPool,
+) {
+    let teacher = owner(&pool, "t@x.edu").await;
+    let group = insert_group(&pool, "7-A").await.unwrap();
+    let sub = insert_subgroup(&pool, group, "English 1").await.unwrap();
+    let course = insert_course(&pool, teacher).await;
+    link(&pool, course, group, Some(sub), teacher)
+        .await
+        .unwrap();
+
+    // ON DELETE RESTRICT reports restrict_violation. A subgroup link also protects its group:
+    // the delete would cascade to the linked subgroup.
+    assert_eq!(
+        sqlstate(exec(&pool, "DELETE FROM org.subgroups WHERE id = $1", &[sub]).await),
+        "23001"
+    );
+    assert_eq!(
+        sqlstate(exec(&pool, "DELETE FROM org.groups WHERE id = $1", &[group]).await),
+        "23001"
+    );
+
+    exec(
+        &pool,
+        "DELETE FROM teaching.courses WHERE id = $1",
+        &[course],
+    )
+    .await
+    .unwrap();
+    let links: i64 = sqlx::query_scalar("SELECT count(*) FROM teaching.course_groups")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(links, 0);
+    exec(&pool, "DELETE FROM org.groups WHERE id = $1", &[group])
+        .await
+        .unwrap();
 }

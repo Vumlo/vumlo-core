@@ -338,6 +338,20 @@ pub async fn list_subgroups(
     .await
 }
 
+/// The subgroups of these groups, in id order.
+pub async fn subgroups_of(
+    conn: &mut PgConnection,
+    group_ids: &[Uuid],
+) -> Result<Vec<Subgroup>, sqlx::Error> {
+    sqlx::query_as!(
+        Subgroup,
+        "SELECT id, group_id, name FROM org.subgroups WHERE group_id = ANY($1) ORDER BY id",
+        group_ids
+    )
+    .fetch_all(conn)
+    .await
+}
+
 pub async fn rename_subgroup(
     conn: &mut PgConnection,
     id: Uuid,

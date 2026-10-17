@@ -306,6 +306,9 @@ pub struct Membership {
     pub user_id: Uuid,
     pub role: CourseRole,
     pub is_owner: bool,
+    /// `direct` for a membership written on the course, `group` for a student who comes from a
+    /// linked group or subgroup (ADR-0033).
+    pub source: MemberSource,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]

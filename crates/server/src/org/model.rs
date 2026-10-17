@@ -87,6 +87,14 @@ pub struct GroupMember {
     pub surname: String,
 }
 
+/// A group a course can be linked to, with its subgroups: ids and names, no members (ADR-0033).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GroupOption {
+    pub id: Uuid,
+    pub name: String,
+    pub subgroups: Vec<Subgroup>,
+}
+
 /// Why one entry of a member list was refused.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MemberProblem {

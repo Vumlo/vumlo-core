@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM teaching.course_exclusions WHERE course_id = $1 AND user_id = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "6c9f6ff5d0efcd3fc36a00b3c45971c1e30318fb8a2f17576144c3977b8179ca"
+}

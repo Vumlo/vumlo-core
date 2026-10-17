@@ -110,6 +110,11 @@ pub enum Action {
     /// Read one's own published grades: only a student of a published course (ADR-0028). Staff
     /// and admins use the gradebook instead.
     ViewOwnGrades(CourseAccess),
+    /// Link and unlink groups, read the group options, list and restore exclusions (ADR-0033).
+    /// The rights of the matrix row "Enroll/remove students, link groups". Ignores the status.
+    ManageRoster(CourseAccess),
+    /// Change a course's title and term (ADR-0033). Not a root action. Ignores the status.
+    EditCourse(CourseAccess),
     /// Create, change and delete terms (ADR-0032).
     ManageTerms,
     /// Read terms: the list a course's term is picked from (ADR-0032).
@@ -179,7 +184,9 @@ pub fn authorize(actor: &Actor, action: Action) -> Result<(), PolicyError> {
         Action::ManageContent(access)
         | Action::GradeAssignment(access)
         | Action::PublishGrades(access)
-        | Action::ViewGradebook(access) => is_admin || access.is_staff(),
+        | Action::ViewGradebook(access)
+        | Action::ManageRoster(access)
+        | Action::EditCourse(access) => is_admin || access.is_staff(),
         Action::ViewOwnGrades(access) => {
             access.role == Some(CourseRole::Student) && access.status == CourseStatus::Published
         }
@@ -253,6 +260,39 @@ mod tests {
                     Err(PolicyError),
                     "{action:?} {role:?}"
                 );
+            }
+        }
+    }
+
+    #[test]
+    fn staff_and_admins_manage_the_roster_and_edit_the_course_in_every_status() {
+        let actions: [fn(CourseAccess) -> Action; 2] = [Action::ManageRoster, Action::EditCourse];
+        for make in actions {
+            for status in [Draft, Published, Archived] {
+                for (role, is_owner) in [
+                    (Some(Teacher), true),
+                    (Some(Teacher), false),
+                    (Some(Assistant), false),
+                ] {
+                    let action = make(access(role, is_owner, status));
+                    assert_eq!(
+                        authorize(&actor(Role::Teacher), action),
+                        Ok(()),
+                        "{action:?}"
+                    );
+                }
+                let admin = make(access(None, false, status));
+                assert_eq!(authorize(&actor(Role::Admin), admin), Ok(()), "{admin:?}");
+                for role in [Some(Student), None] {
+                    let action = make(access(role, false, status));
+                    for who in [Role::Student, Role::Teacher] {
+                        assert_eq!(
+                            authorize(&actor(who), action),
+                            Err(PolicyError),
+                            "{action:?}"
+                        );
+                    }
+                }
             }
         }
     }

@@ -10,7 +10,8 @@ use sqlx::PgConnection;
 use uuid::Uuid;
 
 use super::model::{
-    Group, GroupMember, MemberProblem, ModelError, OrgName, Subgroup, Term, TermDates, TermUpdate,
+    Group, GroupMember, GroupOption, MemberProblem, ModelError, OrgName, Subgroup, Term, TermDates,
+    TermUpdate,
 };
 use super::repo;
 use crate::actor::Actor;
@@ -42,6 +43,10 @@ pub enum OrgError {
     SubgroupNameTaken,
     #[error("a course uses this term")]
     TermInUse,
+    #[error("a course uses this group")]
+    GroupInUse,
+    #[error("a course uses this subgroup")]
+    SubgroupInUse,
     /// The positions (in the request's `user_ids`) that were refused, with the reason.
     #[error("some of the users cannot be members")]
     Members(Vec<(usize, MemberProblem)>),
@@ -70,6 +75,16 @@ fn name_taken(error: sqlx::Error, constraint: &str, taken: OrgError) -> OrgError
         {
             taken
         }
+        _ => OrgError::Db(error),
+    }
+}
+
+/// A course's link holds the group or the subgroup: `ON DELETE RESTRICT` reports 23001
+/// (restrict_violation), not 23503. Deleting a group also fails this way when only one of its
+/// subgroups is linked, because the cascade to the subgroup is refused.
+fn in_use(error: sqlx::Error, in_use: OrgError) -> OrgError {
+    match &error {
+        sqlx::Error::Database(db) if db.code().as_deref() == Some("23001") => in_use,
         _ => OrgError::Db(error),
     }
 }
@@ -252,10 +267,43 @@ pub async fn delete_group(
     id: Uuid,
 ) -> Result<(), OrgError> {
     policy::authorize(actor, Action::ManageGroups)?;
-    if repo::delete_group(conn, id).await? == 0 {
+    let deleted = repo::delete_group(conn, id)
+        .await
+        .map_err(|e| in_use(e, OrgError::GroupInUse))?;
+    if deleted == 0 {
         return Err(OrgError::GroupNotFound);
     }
     audit(conn, actor, "group.delete", "group", id, json!({})).await
+}
+
+/// The groups with their subgroups, ids and names only, after `after` (a group id), in id order.
+///
+/// Acts for no user: the caller (`teaching`, for those who may manage a course's roster) has
+/// authorized its own action, as with `identity::find_user`. Groups stay admin-only to read
+/// through this module's own endpoints (ADR-0033).
+pub async fn group_options(
+    conn: &mut PgConnection,
+    page: PageParams,
+) -> Result<Page<GroupOption>, OrgError> {
+    let rows = repo::list_groups(conn, page.after, i64::from(page.limit) + 1).await?;
+    let page = Page::from_rows(rows, page.limit, |group| group.id);
+    let ids: Vec<Uuid> = page.items.iter().map(|group| group.id).collect();
+    let mut subgroups = repo::subgroups_of(conn, &ids).await?;
+    let items = page
+        .items
+        .into_iter()
+        .map(|group| GroupOption {
+            subgroups: subgroups
+                .extract_if(.., |subgroup| subgroup.group_id == group.id)
+                .collect(),
+            id: group.id,
+            name: group.name,
+        })
+        .collect();
+    Ok(Page {
+        items,
+        next: page.next,
+    })
 }
 
 pub async fn list_group_members(
@@ -447,7 +495,9 @@ pub async fn delete_subgroup(
 ) -> Result<(), OrgError> {
     policy::authorize(actor, Action::ManageGroups)?;
     lock_subgroup(conn, id).await?;
-    repo::delete_subgroup(conn, id).await?;
+    repo::delete_subgroup(conn, id)
+        .await
+        .map_err(|e| in_use(e, OrgError::SubgroupInUse))?;
     audit(conn, actor, "subgroup.delete", "subgroup", id, json!({})).await
 }
 
@@ -528,6 +578,20 @@ pub async fn remove_subgroup_member(
         json!({"user_id": user_id}),
     )
     .await
+}
+
+/// A group with these students in it, made the way an admin makes one. For the tests of other
+/// modules that need a group; they must not touch `org`'s tables themselves.
+#[cfg(test)]
+pub async fn seed_group(
+    conn: &mut PgConnection,
+    admin: &Actor,
+    name: &str,
+    students: &[Uuid],
+) -> Result<Uuid, OrgError> {
+    let group = create_group(conn, admin, name).await?;
+    add_group_members(conn, admin, group.id, students).await?;
+    Ok(group.id)
 }
 
 // ---------------------------------------------------------------------------------------------

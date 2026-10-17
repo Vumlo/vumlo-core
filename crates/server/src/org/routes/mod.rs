@@ -67,6 +67,8 @@ impl From<OrgError> for ApiError {
                 Self::Conflict("a subgroup with this name already exists in the group")
             }
             OrgError::TermInUse => Self::Conflict("a course uses this term"),
+            OrgError::GroupInUse => Self::Conflict("a course uses this group"),
+            OrgError::SubgroupInUse => Self::Conflict("a course uses this subgroup"),
             OrgError::Members(refused) => Self::Unprocessable {
                 detail: "the request has invalid fields".to_owned(),
                 errors: refused

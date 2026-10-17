@@ -1,8 +1,11 @@
 //! HTTP edge of `teaching`: extractors, DTO mapping, OpenAPI annotations. Writes open the
 //! transaction, call exactly one service function and commit; reads use a pooled connection.
 
+mod roster;
+
 use api_types::{
-    Course, CreateCourseRequest, Membership, Page, PageQuery, ProblemDetails, PutMemberRequest,
+    Course, CreateCourseRequest, MemberSource, Membership, Page, PageQuery, ProblemDetails,
+    PutMemberRequest, UpdateCourseRequest,
 };
 use axum::Json;
 use axum::extract::{Path, State};
@@ -11,7 +14,7 @@ use utoipa_axum::router::OpenApiRouter;
 use utoipa_axum::routes;
 use uuid::Uuid;
 
-use super::model::{self, CourseKind, CourseTitle, ModelError};
+use super::model::{self, CourseKind, CourseTitle, CourseUpdate, ModelError};
 use super::service::{self, TeachingError};
 use crate::actor::Actor;
 use crate::app::AppState;
@@ -22,11 +25,16 @@ use crate::policy::{CourseRole, CourseStatus};
 pub fn router() -> OpenApiRouter<AppState> {
     OpenApiRouter::new()
         .routes(routes!(create_course))
-        .routes(routes!(get_course))
+        .routes(routes!(get_course, update_course))
         .routes(routes!(publish_course))
         .routes(routes!(list_my_courses))
         .routes(routes!(list_members))
         .routes(routes!(put_member, remove_member))
+        .routes(routes!(roster::list_links, roster::link_group))
+        .routes(routes!(roster::unlink_group))
+        .routes(routes!(roster::group_options))
+        .routes(routes!(roster::list_exclusions))
+        .routes(routes!(roster::restore_exclusion))
 }
 
 impl From<TeachingError> for ApiError {
@@ -36,7 +44,17 @@ impl From<TeachingError> for ApiError {
             TeachingError::Invalid(ModelError::Title) => {
                 Self::invalid_field("title", error.to_string())
             }
-            TeachingError::CourseNotFound | TeachingError::MemberNotFound => Self::NotFound,
+            TeachingError::CourseNotFound
+            | TeachingError::MemberNotFound
+            | TeachingError::LinkNotFound
+            | TeachingError::ExclusionNotFound => Self::NotFound,
+            TeachingError::GroupNotFound => Self::invalid_field("group_id", "no such group"),
+            TeachingError::SubgroupNotValid => {
+                Self::invalid_field("subgroup_id", "no such subgroup in that group")
+            }
+            TeachingError::TemplateHasNoTerm => {
+                Self::invalid_field("term_id", "a template has no term")
+            }
             TeachingError::UserNotFound => Self::invalid_field("user_id", "no such user"),
             TeachingError::TermNotFound => Self::invalid_field("term_id", "no such term"),
             TeachingError::UserDisabled => Self::invalid_field("user_id", "that user is disabled"),
@@ -53,6 +71,7 @@ impl From<TeachingError> for ApiError {
                 Self::Conflict("an archived course cannot be published")
             }
             TeachingError::Identity(e) => e.into(),
+            TeachingError::Org(e) => e.into(),
             TeachingError::Events(e) => {
                 tracing::error!(error = %e, "teaching: audit log error");
                 Self::Internal
@@ -108,16 +127,24 @@ fn api_course(course: model::Course) -> Course {
     }
 }
 
+fn api_source(source: model::MemberSource) -> MemberSource {
+    match source {
+        model::MemberSource::Direct => MemberSource::Direct,
+        model::MemberSource::Group => MemberSource::Group,
+    }
+}
+
 fn api_membership(member: model::Membership) -> Membership {
     Membership {
         course_id: member.course_id,
         user_id: member.user_id,
         role: api_role(member.role),
         is_owner: member.is_owner,
+        source: api_source(member.source),
     }
 }
 
-fn page_params(query: &PageQuery) -> Result<PageParams, ApiError> {
+pub(super) fn page_params(query: &PageQuery) -> Result<PageParams, ApiError> {
     Ok(PageParams::new(query.cursor.as_deref(), query.limit)?)
 }
 
@@ -175,6 +202,45 @@ async fn get_course(
 ) -> Result<Json<Course>, ApiError> {
     let mut conn = state.db.acquire().await.map_err(TeachingError::from)?;
     let course = service::get_course(&mut conn, &actor, id).await?;
+    Ok(Json(api_course(course)))
+}
+
+/// Changes the title and/or the term of a course. Assistants, teachers, owners and admins.
+///
+/// Only the fields present change; `term_id: null` clears the term. A template has no term.
+/// Works in every course status (ADR-0033).
+#[utoipa::path(
+    patch,
+    path = "/courses/{id}",
+    tag = "courses",
+    security(("cookie" = []), ("bearer" = [])),
+    params(("id" = Uuid, Path, description = "Course id")),
+    request_body = UpdateCourseRequest,
+    responses(
+        (status = 200, description = "The course", body = Course),
+        (status = 401, description = "Not logged in", body = ProblemDetails,
+            content_type = "application/problem+json"),
+        (status = 403, description = "The caller may not edit this course",
+            body = ProblemDetails, content_type = "application/problem+json"),
+        (status = 404, description = "No such course, or not visible to the caller",
+            body = ProblemDetails, content_type = "application/problem+json"),
+        (status = 422, description = "Invalid title, an unknown term, or a term on a template",
+            body = ProblemDetails, content_type = "application/problem+json"),
+    )
+)]
+async fn update_course(
+    State(state): State<AppState>,
+    actor: Actor,
+    Path(id): Path<Uuid>,
+    ValidJson(request): ValidJson<UpdateCourseRequest>,
+) -> Result<Json<Course>, ApiError> {
+    let update = CourseUpdate {
+        title: request.title,
+        term_id: request.term_id,
+    };
+    let mut tx = state.db.begin().await.map_err(TeachingError::from)?;
+    let course = service::update_course(&mut tx, &actor, id, update).await?;
+    tx.commit().await.map_err(TeachingError::from)?;
     Ok(Json(api_course(course)))
 }
 
@@ -241,10 +307,11 @@ async fn list_my_courses(
     }))
 }
 
-/// The members of a course, ordered by user id. Anyone who can see the course can see this.
+/// The roster of a course, ordered by user id. Anyone who can see the course can see this.
 ///
-/// Entries carry ids only. The course owner is a `teacher` with `is_owner` set, except when an
-/// admin owns the course: then the owner has no membership and is not listed.
+/// Entries carry ids only. They are the direct members and the students who come from linked
+/// groups (`source`). The course owner is a `teacher` with `is_owner` set, except when an admin
+/// owns the course: then the owner has no membership and is not listed.
 #[utoipa::path(
     get,
     path = "/courses/{id}/members",
@@ -325,7 +392,11 @@ async fn put_member(
     Ok(Json(api_membership(member)))
 }
 
-/// Removes a member from a course. The owner cannot be removed.
+/// Removes a member from the roster of a course. The owner cannot be removed.
+///
+/// A student who is on the roster through a linked group (or who would be, after the direct
+/// membership is deleted) is excluded from this course until the exclusion is restored. Removing
+/// a teacher or an assistant deletes the direct membership only (ADR-0033).
 #[utoipa::path(
     delete,
     path = "/courses/{id}/members/{user_id}",
@@ -341,7 +412,7 @@ async fn put_member(
             content_type = "application/problem+json"),
         (status = 403, description = "The caller may not manage members with this role",
             body = ProblemDetails, content_type = "application/problem+json"),
-        (status = 404, description = "No such course or member", body = ProblemDetails,
+        (status = 404, description = "No such course, or the user is not on its roster", body = ProblemDetails,
             content_type = "application/problem+json"),
         (status = 409, description = "The owner cannot be removed", body = ProblemDetails,
             content_type = "application/problem+json"),

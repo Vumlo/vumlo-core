@@ -136,6 +136,8 @@ pub async fn rename_subgroup(
             content_type = "application/problem+json"),
         (status = 404, description = "No such subgroup", body = ProblemDetails,
             content_type = "application/problem+json"),
+        (status = 409, description = "A course is linked to it", body = ProblemDetails,
+            content_type = "application/problem+json"),
     )
 )]
 pub async fn delete_subgroup(

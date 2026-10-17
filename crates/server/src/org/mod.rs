@@ -6,7 +6,10 @@ mod routes;
 mod service;
 
 pub use model::{
-    Group, GroupMember, MemberProblem, ModelError, OrgName, Subgroup, Term, TermDates, TermUpdate,
+    Group, GroupMember, GroupOption, MemberProblem, ModelError, OrgName, Subgroup, Term, TermDates,
+    TermUpdate,
 };
 pub use routes::router;
-pub use service::{OrgError, record_mode};
+#[cfg(test)]
+pub use service::seed_group;
+pub use service::{OrgError, group_options, record_mode};

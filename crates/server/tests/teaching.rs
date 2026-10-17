@@ -168,6 +168,7 @@ async fn a_teacher_creates_a_draft_course_and_joins_it_as_teacher(pool: PgPool) 
             "user_id": teacher.id.to_string(),
             "role": "teacher",
             "is_owner": true,
+            "source": "direct",
         }])
     );
 }
@@ -475,7 +476,7 @@ async fn members_are_listed_with_ids_only_and_page(pool: PgPool) {
     for item in items {
         let mut keys: Vec<_> = item.as_object().unwrap().keys().cloned().collect();
         keys.sort();
-        assert_eq!(keys, ["course_id", "is_owner", "role", "user_id"]);
+        assert_eq!(keys, ["course_id", "is_owner", "role", "source", "user_id"]);
     }
     let role_of = |id: Uuid| {
         items
@@ -539,6 +540,7 @@ async fn the_owner_adds_and_changes_members(pool: PgPool) {
             "user_id": newcomer.id.to_string(),
             "role": "student",
             "is_owner": false,
+            "source": "direct",
         })
     );
     let promoted = put_member(&w.http, &w.owner.token, w.course, newcomer.id, "assistant").await;
