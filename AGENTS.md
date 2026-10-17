@@ -93,7 +93,10 @@ Modules: `identity`, `org`, `teaching`, `content`, `assessment`, `gradebook`, `f
 - Every table is schema-qualified (`teaching.courses`).
 - Enums are `text` + `CHECK` constraint, not Postgres `ENUM`.
 - Scores are `NUMERIC`, ids are UUID v7, timestamps are `timestamptz`.
-- After changing any query, run `cargo sqlx prepare --workspace` and commit `.sqlx/`.
+- After changing any query, run `cargo sqlx prepare --workspace -- --all-targets` and commit `.sqlx/`.
+  `--all-targets` makes `.sqlx/` cover the tests too, so `query!` is allowed in tests and in
+  `#[cfg(test)]` code like anywhere else. A runtime query is for SQL that is not ours to check
+  (a system view) or whose text is a parameter.
 
 ## 9. API
 
@@ -140,7 +143,8 @@ All of these pass:
     cargo fmt --all --check
     cargo clippy --workspace --all-targets -- -D warnings
     cargo test --workspace
-    cargo sqlx prepare --workspace --check
+    cargo sqlx prepare --workspace --check -- --all-targets
+    SQLX_OFFLINE=true cargo check --workspace --all-targets
 
 ## 15. Git
 

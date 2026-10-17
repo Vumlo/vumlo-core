@@ -64,3 +64,6 @@ What gets easier, what gets harder, what we must remember.
 | 0029 | [A user has a name and a surname](0029-user-name-and-surname.md) |
 | 0030 | [The assignment-row lock covers deletes; the gradebook may ask teaching for course access](0030-gradebook-lock-covers-deletes-and-course-access.md) |
 | 0031 | [The institution mode is required and fixed](0031-institution-mode-required-and-fixed.md) |
+| 0032 | [Terms, groups and subgroups](0032-terms-groups-and-subgroups.md) |
+| 0033 | [Group links, the effective roster and course exclusions](0033-group-links-effective-roster-and-exclusions.md) |
+| 0034 | [Admin writes outside a course are audited](0034-admin-writes-outside-a-course-are-audited.md) |

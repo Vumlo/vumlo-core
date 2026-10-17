@@ -1779,11 +1779,12 @@ async fn admin_writes_are_audited_with_the_course_id_and_staff_writes_are_not(po
     for (_, _, _, meta) in &rows {
         assert_eq!(meta, &json!({"course_id": w.course.to_string()}));
     }
-    let actors: Vec<Uuid> = sqlx::query_scalar!("SELECT DISTINCT actor_id FROM events.audit_log")
-        .fetch_all(&w.pool)
-        .await
-        .unwrap();
-    assert_eq!(actors, [w.admin.id]);
+    let actors: Vec<Option<Uuid>> =
+        sqlx::query_scalar!("SELECT DISTINCT actor_id FROM events.audit_log")
+            .fetch_all(&w.pool)
+            .await
+            .unwrap();
+    assert_eq!(actors, [Some(w.admin.id)]);
 }
 
 #[sqlx::test(migrator = "server::app::MIGRATOR")]

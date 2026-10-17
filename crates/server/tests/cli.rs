@@ -341,3 +341,121 @@ async fn a_missing_mode_stops_the_binary_at_startup(pool: PgPool) {
     assert!(!output.status.success());
     assert!(stderr.contains("institution.mode"), "{stderr}");
 }
+
+/// What the audit log holds: (action, actor, source, resource type, resource id, meta).
+type AuditRow = (
+    String,
+    Option<uuid::Uuid>,
+    String,
+    String,
+    uuid::Uuid,
+    serde_json::Value,
+);
+
+async fn audit_rows(pool: &PgPool) -> Vec<AuditRow> {
+    sqlx::query!(
+        "SELECT action, actor_id, source, resource_type, resource_id, meta
+         FROM events.audit_log ORDER BY at, id"
+    )
+    .fetch_all(pool)
+    .await
+    .unwrap()
+    .into_iter()
+    .map(|r| {
+        (
+            r.action,
+            r.actor_id,
+            r.source,
+            r.resource_type,
+            r.resource_id,
+            r.meta,
+        )
+    })
+    .collect()
+}
+
+/// The id after "Created <role> " in the output.
+fn created_id(output: &Output) -> uuid::Uuid {
+    output
+        .stdout
+        .lines()
+        .find_map(|line| line.strip_prefix("Created "))
+        .and_then(|rest| rest.split(' ').nth(1))
+        .and_then(|id| id.parse().ok())
+        .unwrap_or_else(|| panic!("no id in {:?}", output.stdout))
+}
+
+/// There is nobody to be the actor: the row has no actor and the source `cli` (ADR-0034). A
+/// refused create leaves no row, and the row holds no password and no email.
+#[sqlx::test(migrator = "server::app::MIGRATOR")]
+async fn the_cli_audits_the_accounts_it_creates_with_no_actor_and_the_source_cli(pool: PgPool) {
+    let admin = run(
+        &pool,
+        &[
+            "create-admin",
+            "root@school.edu",
+            "--name",
+            "Root",
+            "--surname",
+            "Admin",
+        ],
+    )
+    .await;
+    assert!(admin.ok, "{}", admin.stderr);
+    let teacher = run(
+        &pool,
+        &[
+            "create-user",
+            "t@school.edu",
+            "--name",
+            "Tea",
+            "--surname",
+            "Cher",
+            "--role",
+            "teacher",
+        ],
+    )
+    .await;
+    assert!(teacher.ok, "{}", teacher.stderr);
+    let refused = run(
+        &pool,
+        &[
+            "create-admin",
+            "ROOT@school.edu",
+            "--name",
+            "Again",
+            "--surname",
+            "Admin",
+        ],
+    )
+    .await;
+    assert!(!refused.ok);
+
+    let rows = audit_rows(&pool).await;
+    assert_eq!(
+        rows,
+        [
+            (
+                "user.create".to_owned(),
+                None,
+                "cli".to_owned(),
+                "user".to_owned(),
+                created_id(&admin),
+                json!({"role": "admin"})
+            ),
+            (
+                "user.create".to_owned(),
+                None,
+                "cli".to_owned(),
+                "user".to_owned(),
+                created_id(&teacher),
+                json!({"role": "teacher"})
+            ),
+        ]
+    );
+    let logged = format!("{rows:?}");
+    for secret in [temporary_password(&admin), temporary_password(&teacher)] {
+        assert!(!logged.contains(&secret));
+    }
+    assert!(!logged.contains("school.edu"));
+}

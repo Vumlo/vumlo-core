@@ -30,6 +30,7 @@ use crate::error::{ApiError, problem_details};
 use crate::gradebook;
 use crate::health;
 use crate::identity::{self, SetupError};
+use crate::org;
 use crate::settings::Settings;
 use crate::teaching;
 
@@ -173,7 +174,8 @@ pub fn router(state: AppState) -> Result<Router, SetupError> {
                 .merge(identity)
                 .merge(teaching::router())
                 .merge(content::router())
-                .merge(gradebook::router()),
+                .merge(gradebook::router())
+                .merge(org::router()),
         )
         .split_for_parts();
     let spec = openapi.clone();

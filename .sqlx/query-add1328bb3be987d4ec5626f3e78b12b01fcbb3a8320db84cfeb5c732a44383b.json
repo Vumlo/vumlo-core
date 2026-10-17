@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE gradebook.grade_history SET score = 6",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "add1328bb3be987d4ec5626f3e78b12b01fcbb3a8320db84cfeb5c732a44383b"
+}

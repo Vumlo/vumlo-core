@@ -143,7 +143,7 @@ async fn create_account(
         .await
         .context("cannot hash the password")?;
     let mut tx = pool.begin().await.context("cannot start a transaction")?;
-    let user = identity::create_user(&mut tx, new, hash)
+    let user = identity::create_user_from_cli(&mut tx, new, hash)
         .await
         .context("cannot create the user")?;
     tx.commit().await.context("cannot commit")?;

@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE teaching.memberships SET role = 'assistant' WHERE course_id = $1 AND user_id = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "eb12840bcf226e0cead14f9dd52251c7c6683f372cb34f45d1dc8eaf7ba661bd"
+}

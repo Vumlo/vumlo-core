@@ -168,6 +168,7 @@ async fn a_teacher_creates_a_draft_course_and_joins_it_as_teacher(pool: PgPool) 
             "user_id": teacher.id.to_string(),
             "role": "teacher",
             "is_owner": true,
+            "source": "direct",
         }])
     );
 }
@@ -475,7 +476,7 @@ async fn members_are_listed_with_ids_only_and_page(pool: PgPool) {
     for item in items {
         let mut keys: Vec<_> = item.as_object().unwrap().keys().cloned().collect();
         keys.sort();
-        assert_eq!(keys, ["course_id", "is_owner", "role", "user_id"]);
+        assert_eq!(keys, ["course_id", "is_owner", "role", "source", "user_id"]);
     }
     let role_of = |id: Uuid| {
         items
@@ -539,6 +540,7 @@ async fn the_owner_adds_and_changes_members(pool: PgPool) {
             "user_id": newcomer.id.to_string(),
             "role": "student",
             "is_owner": false,
+            "source": "direct",
         })
     );
     let promoted = put_member(&w.http, &w.owner.token, w.course, newcomer.id, "assistant").await;
@@ -984,7 +986,7 @@ async fn admin_actions_are_audited_and_other_actions_are_not(pool: PgPool) {
         ]
     );
     for row in &rows {
-        assert_eq!(row.actor_id, admin.id);
+        assert_eq!(row.actor_id, Some(admin.id));
         assert_eq!(row.resource_type, "course");
     }
     assert_eq!(
@@ -1031,4 +1033,70 @@ async fn every_course_endpoint_is_in_the_openapi_document(pool: PgPool) {
             "{method} {path} has no security"
         );
     }
+}
+
+#[sqlx::test(migrator = "server::app::MIGRATOR")]
+async fn a_course_is_created_in_an_existing_term_and_an_unknown_term_is_a_422(pool: PgPool) {
+    let http = setup(&pool).await;
+    let teacher = user(&pool, &http, "t@x.edu", Role::Teacher).await;
+    let term = Uuid::now_v7();
+    sqlx::query!(
+        "INSERT INTO org.terms (id, name, starts_on, ends_on)
+         VALUES ($1, 'Fall', '2026-09-01', '2027-01-31')",
+        term
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    let courses = || async {
+        sqlx::query_scalar!(r#"SELECT count(*) AS "n!" FROM teaching.courses"#)
+            .fetch_one(&pool)
+            .await
+            .unwrap()
+    };
+
+    let unknown = http
+        .post("/courses")
+        .bearer(&teacher.token)
+        .json(&json!({"title": "Algebra", "term_id": Uuid::now_v7()}))
+        .send()
+        .await;
+    let problem = unknown.problem(422);
+    assert_eq!(problem.errors.len(), 1);
+    assert_eq!(problem.errors[0].field, "term_id");
+    assert_eq!(
+        courses().await,
+        0,
+        "nothing was created, and nothing is a 500"
+    );
+
+    let created = http
+        .post("/courses")
+        .bearer(&teacher.token)
+        .json(&json!({"title": "Algebra", "term_id": term}))
+        .send()
+        .await;
+    assert_eq!(created.status, 201);
+    assert_eq!(created.json()["term_id"], term.to_string());
+    let id = created.json()["id"].as_str().unwrap().to_owned();
+    let shown = get(&http, &teacher.token, &format!("/courses/{id}"))
+        .await
+        .json();
+    assert_eq!(shown["term_id"], term.to_string());
+
+    let without = http
+        .post("/courses")
+        .bearer(&teacher.token)
+        .json(&json!({"title": "Geometry"}))
+        .send()
+        .await;
+    assert_eq!(without.status, 201);
+    assert_eq!(without.json()["term_id"], Value::Null);
+    let null = http
+        .post("/courses")
+        .bearer(&teacher.token)
+        .json(&json!({"title": "Calculus", "term_id": null}))
+        .send()
+        .await;
+    assert_eq!(null.json()["term_id"], Value::Null);
 }

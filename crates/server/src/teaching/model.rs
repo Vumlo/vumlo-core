@@ -47,8 +47,19 @@ pub struct Course {
     pub title: String,
     pub status: CourseStatus,
     pub owner_id: Uuid,
+    pub term_id: Option<Uuid>,
     pub created_at: DateTime<Utc>,
 }
+
+/// Where a roster entry comes from (ADR-0033).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MemberSource {
+    /// A membership written on the course. It wins over a group.
+    Direct,
+    /// A student through a linked group or subgroup.
+    Group,
+}
+text_enum!(MemberSource { Direct => "direct", Group => "group" });
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Membership {
@@ -56,6 +67,39 @@ pub struct Membership {
     pub user_id: Uuid,
     pub role: CourseRole,
     pub is_owner: bool,
+    pub source: MemberSource,
+}
+
+/// A user's place on the roster of a course, as the view `teaching.effective_members` has it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RosterEntry {
+    pub role: CourseRole,
+    pub source: MemberSource,
+}
+
+/// The fields of a course update that were sent. `term_id: Some(None)` clears the term.
+#[derive(Debug, Clone, Default)]
+pub struct CourseUpdate {
+    pub title: Option<String>,
+    pub term_id: Option<Option<Uuid>>,
+}
+
+/// A live link of a course to a whole group, or to one of its subgroups.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CourseGroupLink {
+    pub id: Uuid,
+    pub course_id: Uuid,
+    pub group_id: Uuid,
+    pub subgroup_id: Option<Uuid>,
+    pub created_at: DateTime<Utc>,
+}
+
+/// A person taken off the roster of one course although a linked group would put them on it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Exclusion {
+    pub user_id: Uuid,
+    pub created_by: Uuid,
+    pub created_at: DateTime<Utc>,
 }
 
 #[cfg(test)]
@@ -73,6 +117,14 @@ mod tests {
         assert!(CourseTitle::parse("a\nb").is_err());
         assert!(CourseTitle::parse(&"ł".repeat(200)).is_ok());
         assert!(CourseTitle::parse(&"ł".repeat(201)).is_err());
+    }
+
+    #[test]
+    fn member_source_round_trips() {
+        for source in [MemberSource::Direct, MemberSource::Group] {
+            assert_eq!(source.as_str().parse::<MemberSource>(), Ok(source));
+        }
+        assert!("linked".parse::<MemberSource>().is_err());
     }
 
     #[test]

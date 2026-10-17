@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO org.terms (id, name, starts_on, ends_on) VALUES ($1, $2, $3::text::date, $4::text::date)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "434e35f43c6d6fe14f05f55c18ddbc8517956c472a4244aa51daaad59439ada0"
+}

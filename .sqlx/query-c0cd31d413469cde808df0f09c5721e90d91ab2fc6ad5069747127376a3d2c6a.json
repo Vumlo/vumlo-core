@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE teaching.courses SET status = 'archived' WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "c0cd31d413469cde808df0f09c5721e90d91ab2fc6ad5069747127376a3d2c6a"
+}

@@ -110,6 +110,20 @@ pub enum Action {
     /// Read one's own published grades: only a student of a published course (ADR-0028). Staff
     /// and admins use the gradebook instead.
     ViewOwnGrades(CourseAccess),
+    /// Link and unlink groups, read the group options, list and restore exclusions (ADR-0033).
+    /// The rights of the matrix row "Enroll/remove students, link groups". Ignores the status.
+    ManageRoster(CourseAccess),
+    /// Change a course's title and term (ADR-0033). Not a root action. Ignores the status.
+    EditCourse(CourseAccess),
+    /// Create, change and delete terms (ADR-0032).
+    ManageTerms,
+    /// Read terms: the list a course's term is picked from (ADR-0032).
+    ViewTerms,
+    /// Create, change and delete groups, subgroups and their members (ADR-0032).
+    ManageGroups,
+    /// Read groups, subgroups and their members. Admins only until task 015 decides how teachers
+    /// pick a group (ADR-0032).
+    ViewGroups,
 }
 
 /// May `institution` role holders have `course` role (ADR-0004)? Admins hold no course role:
@@ -120,6 +134,11 @@ pub fn course_role_allowed(institution: Role, course: CourseRole) -> bool {
         Role::Teacher => true,
         Role::Student => matches!(course, CourseRole::Assistant | CourseRole::Student),
     }
+}
+
+/// May a user with this institution role be a member of a group? Only students (ADR-0032).
+pub fn group_role_allowed(institution: Role) -> bool {
+    institution == Role::Student
 }
 
 /// True when the actor acts in any course as its implicit owner, without a membership. Such
@@ -138,7 +157,10 @@ pub fn authorize(actor: &Actor, action: Action) -> Result<(), PolicyError> {
     let is_admin = actor.role() == Role::Admin;
     let allowed = match action {
         Action::ManageOwnAccount => true,
-        Action::ManageUsers => is_admin,
+        Action::ManageUsers | Action::ManageTerms | Action::ManageGroups | Action::ViewGroups => {
+            is_admin
+        }
+        Action::ViewTerms => true,
         Action::CreateCourse => matches!(actor.role(), Role::Admin | Role::Teacher),
         Action::ViewOwnCourses => true,
         Action::ViewEditorProfiles => true,
@@ -162,7 +184,9 @@ pub fn authorize(actor: &Actor, action: Action) -> Result<(), PolicyError> {
         Action::ManageContent(access)
         | Action::GradeAssignment(access)
         | Action::PublishGrades(access)
-        | Action::ViewGradebook(access) => is_admin || access.is_staff(),
+        | Action::ViewGradebook(access)
+        | Action::ManageRoster(access)
+        | Action::EditCourse(access) => is_admin || access.is_staff(),
         Action::ViewOwnGrades(access) => {
             access.role == Some(CourseRole::Student) && access.status == CourseStatus::Published
         }
@@ -220,6 +244,75 @@ mod tests {
                 "{role:?}"
             );
         }
+    }
+
+    #[test]
+    fn only_admins_manage_terms_and_groups_and_read_groups() {
+        for action in [
+            Action::ManageTerms,
+            Action::ManageGroups,
+            Action::ViewGroups,
+        ] {
+            assert_eq!(authorize(&actor(Role::Admin), action), Ok(()), "{action:?}");
+            for role in [Role::Teacher, Role::Student] {
+                assert_eq!(
+                    authorize(&actor(role), action),
+                    Err(PolicyError),
+                    "{action:?} {role:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn staff_and_admins_manage_the_roster_and_edit_the_course_in_every_status() {
+        let actions: [fn(CourseAccess) -> Action; 2] = [Action::ManageRoster, Action::EditCourse];
+        for make in actions {
+            for status in [Draft, Published, Archived] {
+                for (role, is_owner) in [
+                    (Some(Teacher), true),
+                    (Some(Teacher), false),
+                    (Some(Assistant), false),
+                ] {
+                    let action = make(access(role, is_owner, status));
+                    assert_eq!(
+                        authorize(&actor(Role::Teacher), action),
+                        Ok(()),
+                        "{action:?}"
+                    );
+                }
+                let admin = make(access(None, false, status));
+                assert_eq!(authorize(&actor(Role::Admin), admin), Ok(()), "{admin:?}");
+                for role in [Some(Student), None] {
+                    let action = make(access(role, false, status));
+                    for who in [Role::Student, Role::Teacher] {
+                        assert_eq!(
+                            authorize(&actor(who), action),
+                            Err(PolicyError),
+                            "{action:?}"
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn every_role_may_read_terms() {
+        for role in [Role::Admin, Role::Teacher, Role::Student] {
+            assert_eq!(
+                authorize(&actor(role), Action::ViewTerms),
+                Ok(()),
+                "{role:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn only_students_are_group_members() {
+        assert!(group_role_allowed(Role::Student));
+        assert!(!group_role_allowed(Role::Teacher));
+        assert!(!group_role_allowed(Role::Admin));
     }
 
     use CourseRole::{Assistant, Student, Teacher};

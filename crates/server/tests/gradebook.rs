@@ -1113,7 +1113,7 @@ async fn admin_grade_writes_are_audited_and_staff_writes_and_reads_are_not(pool:
     let rows = audited(&w.pool).await;
     assert_eq!(rows.len(), 2);
     assert_eq!(rows[0].action, "grade.save");
-    assert_eq!(rows[0].actor_id, w.admin.id);
+    assert_eq!(rows[0].actor_id, Some(w.admin.id));
     assert_eq!(rows[0].resource_type, "assignment");
     assert_eq!(rows[0].resource_id, a);
     assert_eq!(

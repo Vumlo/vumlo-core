@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO org.group_members (group_id, user_id)\n           SELECT $1, u FROM UNNEST($2::uuid[]) AS u\n           ON CONFLICT DO NOTHING\n           RETURNING user_id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "user_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "org.group_members",
+            "name": "user_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "UuidArray"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "25d74af29995e4b23339399a8fb0a1be7255b3b35c091b477b3338187984e648"
+}

@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE teaching.courses SET status = 'draft' WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "986fffed9311acd25924b17c89e5fc257adc5c55a2e1df818ac0e95310b0df94"
+}

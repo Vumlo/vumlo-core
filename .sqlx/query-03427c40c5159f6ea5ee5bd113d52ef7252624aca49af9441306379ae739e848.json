@@ -1,0 +1,41 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT role AS \"role!: CourseRole\", source AS \"source!: MemberSource\"\n           FROM teaching.effective_members\n           WHERE course_id = $1 AND user_id = $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "role!: CourseRole",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "teaching.effective_members",
+            "name": "role"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "source!: MemberSource",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "teaching.effective_members",
+            "name": "source"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      true,
+      true
+    ]
+  },
+  "hash": "03427c40c5159f6ea5ee5bd113d52ef7252624aca49af9441306379ae739e848"
+}

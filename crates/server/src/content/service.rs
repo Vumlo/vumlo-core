@@ -900,10 +900,14 @@ mod tests {
         .await
         .unwrap();
         let owner = Actor::new(user.id, Role::Teacher, Uuid::now_v7());
-        let course =
-            teaching::create_course(&mut tx, &owner, CourseTitle::parse("Algebra").unwrap())
-                .await
-                .unwrap();
+        let course = teaching::create_course(
+            &mut tx,
+            &owner,
+            CourseTitle::parse("Algebra").unwrap(),
+            None,
+        )
+        .await
+        .unwrap();
         tx.commit().await.unwrap();
 
         let title = |text| ContentTitle::parse(text).unwrap();
@@ -993,10 +997,14 @@ mod tests {
         .await
         .unwrap();
         let owner = Actor::new(user.id, Role::Teacher, Uuid::now_v7());
-        let course =
-            teaching::create_course(&mut tx, &owner, CourseTitle::parse("Algebra").unwrap())
-                .await
-                .unwrap();
+        let course = teaching::create_course(
+            &mut tx,
+            &owner,
+            CourseTitle::parse("Algebra").unwrap(),
+            None,
+        )
+        .await
+        .unwrap();
         let module = create_module(
             &mut tx,
             &owner,

@@ -9,9 +9,13 @@ use uuid::Uuid;
 
 mod document;
 mod gradebook;
+mod groups;
+mod org;
 
 pub use document::*;
 pub use gradebook::*;
+pub use groups::*;
+pub use org::*;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct HealthResponse {
@@ -274,6 +278,8 @@ pub struct Course {
     pub title: String,
     pub status: CourseStatus,
     pub owner_id: Uuid,
+    /// The term the course belongs to, if any (ADR-0032).
+    pub term_id: Option<Uuid>,
     pub created_at: DateTime<Utc>,
 }
 
@@ -281,6 +287,10 @@ pub struct Course {
 pub struct CreateCourseRequest {
     #[garde(length(chars, min = 1, max = 200))]
     pub title: String,
+    /// An existing term; an unknown one is a `422` on this field.
+    #[serde(default)]
+    #[garde(skip)]
+    pub term_id: Option<Uuid>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Validate, ToSchema)]
@@ -296,6 +306,9 @@ pub struct Membership {
     pub user_id: Uuid,
     pub role: CourseRole,
     pub is_owner: bool,
+    /// `direct` for a membership written on the course, `group` for a student who comes from a
+    /// linked group or subgroup (ADR-0033).
+    pub source: MemberSource,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]

@@ -1,7 +1,15 @@
-//! The installation record: the institution mode the first start recorded (ADR-0031). Terms and
-//! groups (ADR-0001) are not built yet; there are no endpoints, so this module has no router.
+//! Terms, groups, subgroups and the installation record (ADR-0031, ADR-0032).
 
+mod model;
 mod repo;
+mod routes;
 mod service;
 
-pub use service::{OrgError, record_mode};
+pub use model::{
+    Group, GroupMember, GroupOption, MemberProblem, ModelError, OrgName, Subgroup, Term, TermDates,
+    TermUpdate,
+};
+pub use routes::router;
+#[cfg(test)]
+pub use service::seed_group;
+pub use service::{OrgError, group_options, record_mode};
