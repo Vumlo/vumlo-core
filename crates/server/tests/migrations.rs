@@ -1007,3 +1007,246 @@ async fn effective_members_are_exactly_the_memberships_for_now(pool: PgPool) {
     assert_eq!(seen, memberships(&pool).await);
     assert!(seen.contains(&(other_course, other_student, "assistant".to_owned())));
 }
+
+// --- migration 14: terms, groups and subgroups (ADR-0032) -----------------------------------------
+
+async fn exec(pool: &PgPool, sql: &'static str, binds: &[uuid::Uuid]) -> Result<(), sqlx::Error> {
+    let mut query = sqlx::query(sql);
+    for id in binds {
+        query = query.bind(id);
+    }
+    query.execute(pool).await.map(|_| ())
+}
+
+async fn count(pool: &PgPool, table: &'static str) -> i64 {
+    let sql = match table {
+        "group_members" => "SELECT count(*) FROM org.group_members",
+        "subgroup_members" => "SELECT count(*) FROM org.subgroup_members",
+        "subgroups" => "SELECT count(*) FROM org.subgroups",
+        _ => panic!("no such table in this helper: {table}"),
+    };
+    sqlx::query_scalar::<_, i64>(sql)
+        .fetch_one(pool)
+        .await
+        .unwrap()
+}
+
+async fn student(pool: &PgPool, email: &str) -> uuid::Uuid {
+    insert_user(pool, email, "student").await.unwrap();
+    sqlx::query_scalar::<_, uuid::Uuid>("SELECT id FROM identity.users WHERE email = $1")
+        .bind(email)
+        .fetch_one(pool)
+        .await
+        .unwrap()
+}
+
+async fn insert_term(
+    pool: &PgPool,
+    name: &str,
+    starts: &str,
+    ends: &str,
+) -> Result<uuid::Uuid, sqlx::Error> {
+    let id = uuid::Uuid::now_v7();
+    sqlx::query(
+        "INSERT INTO org.terms (id, name, starts_on, ends_on) VALUES ($1, $2, $3::date, $4::date)",
+    )
+    .bind(id)
+    .bind(name)
+    .bind(starts)
+    .bind(ends)
+    .execute(pool)
+    .await?;
+    Ok(id)
+}
+
+async fn insert_group(pool: &PgPool, name: &str) -> Result<uuid::Uuid, sqlx::Error> {
+    let id = uuid::Uuid::now_v7();
+    sqlx::query("INSERT INTO org.groups (id, name) VALUES ($1, $2)")
+        .bind(id)
+        .bind(name)
+        .execute(pool)
+        .await?;
+    Ok(id)
+}
+
+async fn insert_subgroup(
+    pool: &PgPool,
+    group: uuid::Uuid,
+    name: &str,
+) -> Result<uuid::Uuid, sqlx::Error> {
+    let id = uuid::Uuid::now_v7();
+    sqlx::query("INSERT INTO org.subgroups (id, group_id, name) VALUES ($1, $2, $3)")
+        .bind(id)
+        .bind(group)
+        .bind(name)
+        .execute(pool)
+        .await?;
+    Ok(id)
+}
+
+#[sqlx::test(migrator = "server::app::MIGRATOR")]
+async fn a_term_has_a_trimmed_unique_name_and_dates_in_order(pool: PgPool) {
+    insert_term(&pool, "Fall 2026", "2026-09-01", "2027-01-31")
+        .await
+        .unwrap();
+    insert_term(&pool, "One day", "2026-09-01", "2026-09-01")
+        .await
+        .unwrap();
+
+    assert_eq!(
+        sqlstate(insert_term(&pool, "Fall 2026", "2026-09-01", "2027-01-31").await),
+        "23505"
+    );
+    assert_eq!(
+        sqlstate(insert_term(&pool, "Backwards", "2027-01-31", "2026-09-01").await),
+        "23514"
+    );
+    for name in ["", " padded", "padded ", &"x".repeat(101)] {
+        assert_eq!(
+            sqlstate(insert_term(&pool, name, "2026-09-01", "2027-01-31").await),
+            "23514",
+            "{name:?}"
+        );
+    }
+}
+
+#[sqlx::test(migrator = "server::app::MIGRATOR")]
+async fn a_course_term_must_exist_and_a_used_term_cannot_be_deleted(pool: PgPool) {
+    let teacher = owner(&pool, "t@x.edu").await;
+    let term = insert_term(&pool, "Fall 2026", "2026-09-01", "2027-01-31")
+        .await
+        .unwrap();
+    let course = insert_course(&pool, teacher).await;
+
+    let unknown = exec(
+        &pool,
+        "UPDATE teaching.courses SET term_id = $1 WHERE id = $2",
+        &[uuid::Uuid::now_v7(), course],
+    )
+    .await;
+    assert_eq!(sqlstate(unknown), "23503");
+
+    exec(
+        &pool,
+        "UPDATE teaching.courses SET term_id = $1 WHERE id = $2",
+        &[term, course],
+    )
+    .await
+    .unwrap();
+    // ON DELETE RESTRICT reports restrict_violation.
+    assert_eq!(
+        sqlstate(exec(&pool, "DELETE FROM org.terms WHERE id = $1", &[term]).await),
+        "23001"
+    );
+
+    exec(
+        &pool,
+        "DELETE FROM teaching.courses WHERE id = $1",
+        &[course],
+    )
+    .await
+    .unwrap();
+    exec(&pool, "DELETE FROM org.terms WHERE id = $1", &[term])
+        .await
+        .unwrap();
+}
+
+#[sqlx::test(migrator = "server::app::MIGRATOR")]
+async fn group_and_subgroup_names_are_trimmed_and_unique_where_they_should_be(pool: PgPool) {
+    let group = insert_group(&pool, "7-A").await.unwrap();
+    let other = insert_group(&pool, "7-B").await.unwrap();
+    assert_eq!(sqlstate(insert_group(&pool, "7-A").await), "23505");
+    assert_eq!(sqlstate(insert_group(&pool, " 7-C").await), "23514");
+    assert_eq!(sqlstate(insert_group(&pool, "").await), "23514");
+
+    insert_subgroup(&pool, group, "English 1").await.unwrap();
+    insert_subgroup(&pool, other, "English 1").await.unwrap();
+    assert_eq!(
+        sqlstate(insert_subgroup(&pool, group, "English 1").await),
+        "23505"
+    );
+    assert_eq!(
+        sqlstate(insert_subgroup(&pool, group, "English 2 ").await),
+        "23514"
+    );
+    assert_eq!(
+        sqlstate(insert_subgroup(&pool, uuid::Uuid::now_v7(), "Orphan").await),
+        "23503"
+    );
+}
+
+#[sqlx::test(migrator = "server::app::MIGRATOR")]
+async fn a_subgroup_member_must_be_a_member_of_the_group_and_leaves_with_them(pool: PgPool) {
+    let group = insert_group(&pool, "7-A").await.unwrap();
+    let sub = insert_subgroup(&pool, group, "English 1").await.unwrap();
+    let sub_too = insert_subgroup(&pool, group, "English 2").await.unwrap();
+    let (a, b) = (
+        student(&pool, "a@x.edu").await,
+        student(&pool, "b@x.edu").await,
+    );
+    let add_to_group = "INSERT INTO org.group_members (group_id, user_id) VALUES ($1, $2)";
+    let add_to_sub =
+        "INSERT INTO org.subgroup_members (subgroup_id, group_id, user_id) VALUES ($1, $2, $3)";
+
+    // Not in the group yet: the composite key refuses.
+    assert_eq!(
+        sqlstate(exec(&pool, add_to_sub, &[sub, group, a]).await),
+        "23503"
+    );
+    exec(&pool, add_to_group, &[group, a]).await.unwrap();
+    exec(&pool, add_to_group, &[group, b]).await.unwrap();
+    exec(&pool, add_to_sub, &[sub, group, a]).await.unwrap();
+    exec(&pool, add_to_sub, &[sub_too, group, a]).await.unwrap();
+    exec(&pool, add_to_sub, &[sub, group, b]).await.unwrap();
+    // A subgroup row must name the group the subgroup belongs to.
+    let other = insert_group(&pool, "7-B").await.unwrap();
+    let c = student(&pool, "c@x.edu").await;
+    exec(&pool, add_to_group, &[other, c]).await.unwrap();
+    assert_eq!(
+        sqlstate(exec(&pool, add_to_sub, &[sub, other, c]).await),
+        "23503"
+    );
+    assert_eq!(count(&pool, "subgroup_members").await, 3);
+
+    exec(
+        &pool,
+        "DELETE FROM org.group_members WHERE group_id = $1 AND user_id = $2",
+        &[group, a],
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        count(&pool, "subgroup_members").await,
+        1,
+        "only b is left, in one subgroup"
+    );
+}
+
+#[sqlx::test(migrator = "server::app::MIGRATOR")]
+async fn deleting_a_group_deletes_its_subgroups_and_members(pool: PgPool) {
+    let group = insert_group(&pool, "7-A").await.unwrap();
+    let sub = insert_subgroup(&pool, group, "English 1").await.unwrap();
+    let a = student(&pool, "a@x.edu").await;
+    exec(
+        &pool,
+        "INSERT INTO org.group_members (group_id, user_id) VALUES ($1, $2)",
+        &[group, a],
+    )
+    .await
+    .unwrap();
+    exec(
+        &pool,
+        "INSERT INTO org.subgroup_members (subgroup_id, group_id, user_id) VALUES ($1, $2, $3)",
+        &[sub, group, a],
+    )
+    .await
+    .unwrap();
+
+    exec(&pool, "DELETE FROM org.groups WHERE id = $1", &[group])
+        .await
+        .unwrap();
+
+    assert_eq!(count(&pool, "group_members").await, 0);
+    assert_eq!(count(&pool, "subgroups").await, 0);
+    assert_eq!(count(&pool, "subgroup_members").await, 0);
+}

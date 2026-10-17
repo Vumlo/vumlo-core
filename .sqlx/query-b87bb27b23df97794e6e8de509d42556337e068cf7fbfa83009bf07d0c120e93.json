@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "INSERT INTO teaching.courses (id, title, owner_id, created_by)\n           VALUES ($1, $2, $3, $3)\n           RETURNING id, kind AS \"kind: CourseKind\", title,\n                     status AS \"status: CourseStatus\", owner_id, created_at",
+  "query": "SELECT c.id, c.kind AS \"kind: CourseKind\", c.title,\n                  c.status AS \"status: CourseStatus\", c.owner_id, c.term_id, c.created_at,\n                  m.role AS \"member_role?: CourseRole\"\n           FROM teaching.courses c\n           LEFT JOIN teaching.memberships m ON m.course_id = c.id AND m.user_id = $1\n           WHERE (m.user_id IS NOT NULL OR c.owner_id = $1)\n             AND (c.status = 'published' OR c.owner_id = $1 OR m.role IN ('teacher', 'assistant'))\n             AND ($2::uuid IS NULL OR c.id > $2)\n           ORDER BY c.id\n           LIMIT $3",
   "describe": {
     "columns": [
       {
@@ -60,6 +60,17 @@
       },
       {
         "ordinal": 5,
+        "name": "term_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "teaching.courses",
+            "name": "term_id"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
         "name": "created_at",
         "type_info": "Timestamptz",
         "origin": {
@@ -68,13 +79,24 @@
             "name": "created_at"
           }
         }
+      },
+      {
+        "ordinal": 7,
+        "name": "member_role?: CourseRole",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "teaching.memberships",
+            "name": "role"
+          }
+        }
       }
     ],
     "parameters": {
       "Left": [
         "Uuid",
-        "Text",
-        "Uuid"
+        "Uuid",
+        "Int8"
       ]
     },
     "nullable": [
@@ -83,8 +105,10 @@
       false,
       false,
       false,
+      true,
+      false,
       false
     ]
   },
-  "hash": "f8387982793210160070e7555960e7dc7ba3595992fcd1e4a0041875f01f061f"
+  "hash": "b87bb27b23df97794e6e8de509d42556337e068cf7fbfa83009bf07d0c120e93"
 }

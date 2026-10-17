@@ -20,6 +20,7 @@ struct RawCourseRow {
     title: String,
     status: CourseStatus,
     owner_id: Uuid,
+    term_id: Option<Uuid>,
     created_at: DateTime<Utc>,
     member_role: Option<CourseRole>,
 }
@@ -33,6 +34,7 @@ impl From<RawCourseRow> for CourseRow {
                 title: raw.title,
                 status: raw.status,
                 owner_id: raw.owner_id,
+                term_id: raw.term_id,
                 created_at: raw.created_at,
             },
             role: raw.member_role,
@@ -45,16 +47,18 @@ pub async fn insert_course(
     id: Uuid,
     title: &str,
     owner_id: Uuid,
+    term_id: Option<Uuid>,
 ) -> Result<Course, sqlx::Error> {
     sqlx::query_as!(
         Course,
-        r#"INSERT INTO teaching.courses (id, title, owner_id, created_by)
-           VALUES ($1, $2, $3, $3)
+        r#"INSERT INTO teaching.courses (id, title, owner_id, created_by, term_id)
+           VALUES ($1, $2, $3, $3, $4)
            RETURNING id, kind AS "kind: CourseKind", title,
-                     status AS "status: CourseStatus", owner_id, created_at"#,
+                     status AS "status: CourseStatus", owner_id, term_id, created_at"#,
         id,
         title,
-        owner_id
+        owner_id,
+        term_id
     )
     .fetch_one(conn)
     .await
@@ -69,7 +73,7 @@ pub async fn set_published(
         r#"UPDATE teaching.courses SET status = 'published', updated_at = now()
            WHERE id = $1
            RETURNING id, kind AS "kind: CourseKind", title,
-                     status AS "status: CourseStatus", owner_id, created_at"#,
+                     status AS "status: CourseStatus", owner_id, term_id, created_at"#,
         course_id
     )
     .fetch_one(conn)
@@ -85,7 +89,7 @@ pub async fn find_course(
     let row = sqlx::query_as!(
         RawCourseRow,
         r#"SELECT c.id, c.kind AS "kind: CourseKind", c.title,
-                  c.status AS "status: CourseStatus", c.owner_id, c.created_at,
+                  c.status AS "status: CourseStatus", c.owner_id, c.term_id, c.created_at,
                   m.role AS "member_role?: CourseRole"
            FROM teaching.courses c
            LEFT JOIN teaching.memberships m ON m.course_id = c.id AND m.user_id = $2
@@ -111,7 +115,7 @@ pub async fn lock_course(
     sqlx::query_as!(
         Course,
         r#"SELECT id, kind AS "kind: CourseKind", title,
-                  status AS "status: CourseStatus", owner_id, created_at
+                  status AS "status: CourseStatus", owner_id, term_id, created_at
            FROM teaching.courses
            WHERE id = $1
            FOR UPDATE"#,
@@ -133,7 +137,7 @@ pub async fn list_courses_of(
     let rows = sqlx::query_as!(
         RawCourseRow,
         r#"SELECT c.id, c.kind AS "kind: CourseKind", c.title,
-                  c.status AS "status: CourseStatus", c.owner_id, c.created_at,
+                  c.status AS "status: CourseStatus", c.owner_id, c.term_id, c.created_at,
                   m.role AS "member_role?: CourseRole"
            FROM teaching.courses c
            LEFT JOIN teaching.memberships m ON m.course_id = c.id AND m.user_id = $1

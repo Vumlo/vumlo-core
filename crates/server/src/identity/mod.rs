@@ -10,4 +10,6 @@ pub use model::{
     Role, SessionInfo, SessionKind, SessionToken, TemporaryPassword, User, UserStatus,
 };
 pub use routes::{COOKIE_NAME, SetupError, router};
-pub use service::{IdentityError, LoginThrottle, create_user, find_user, hash_password};
+pub use service::{
+    IdentityError, LoginThrottle, create_user, find_user, find_users, hash_password,
+};

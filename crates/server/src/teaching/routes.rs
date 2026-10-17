@@ -38,6 +38,7 @@ impl From<TeachingError> for ApiError {
             }
             TeachingError::CourseNotFound | TeachingError::MemberNotFound => Self::NotFound,
             TeachingError::UserNotFound => Self::invalid_field("user_id", "no such user"),
+            TeachingError::TermNotFound => Self::invalid_field("term_id", "no such term"),
             TeachingError::UserDisabled => Self::invalid_field("user_id", "that user is disabled"),
             TeachingError::RoleNotAllowed => {
                 Self::invalid_field("role", "this user cannot hold that course role")
@@ -102,6 +103,7 @@ fn api_course(course: model::Course) -> Course {
         title: course.title,
         status: api_status(course.status),
         owner_id: course.owner_id,
+        term_id: course.term_id,
         created_at: course.created_at,
     }
 }
@@ -134,7 +136,8 @@ fn page_params(query: &PageQuery) -> Result<PageParams, ApiError> {
             content_type = "application/problem+json"),
         (status = 403, description = "Not a teacher or admin", body = ProblemDetails,
             content_type = "application/problem+json"),
-        (status = 422, description = "Invalid title", body = ProblemDetails,
+        (status = 422, description = "Invalid title, or a term_id that names no term",
+            body = ProblemDetails,
             content_type = "application/problem+json"),
     )
 )]
@@ -145,7 +148,7 @@ async fn create_course(
 ) -> Result<(StatusCode, Json<Course>), ApiError> {
     let title = CourseTitle::parse(&request.title).map_err(TeachingError::from)?;
     let mut tx = state.db.begin().await.map_err(TeachingError::from)?;
-    let course = service::create_course(&mut tx, &actor, title).await?;
+    let course = service::create_course(&mut tx, &actor, title, request.term_id).await?;
     tx.commit().await.map_err(TeachingError::from)?;
     Ok((StatusCode::CREATED, Json(api_course(course))))
 }

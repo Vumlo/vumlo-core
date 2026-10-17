@@ -276,6 +276,8 @@ pub struct Course {
     pub title: String,
     pub status: CourseStatus,
     pub owner_id: Uuid,
+    /// The term the course belongs to, if any (ADR-0032).
+    pub term_id: Option<Uuid>,
     pub created_at: DateTime<Utc>,
 }
 
@@ -283,6 +285,10 @@ pub struct Course {
 pub struct CreateCourseRequest {
     #[garde(length(chars, min = 1, max = 200))]
     pub title: String,
+    /// An existing term; an unknown one is a `422` on this field.
+    #[serde(default)]
+    #[garde(skip)]
+    pub term_id: Option<Uuid>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Validate, ToSchema)]

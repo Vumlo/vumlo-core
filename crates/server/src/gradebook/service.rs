@@ -512,10 +512,14 @@ mod tests {
         let owner_user = create("owner@x.edu", Role::Teacher).await;
         let student_user = create("student@x.edu", Role::Student).await;
         let owner = Actor::new(owner_user.id, Role::Teacher, Uuid::now_v7());
-        let course =
-            teaching::create_course(&mut tx, &owner, CourseTitle::parse("Algebra").unwrap())
-                .await
-                .unwrap();
+        let course = teaching::create_course(
+            &mut tx,
+            &owner,
+            CourseTitle::parse("Algebra").unwrap(),
+            None,
+        )
+        .await
+        .unwrap();
         teaching::put_member(
             &mut tx,
             &owner,

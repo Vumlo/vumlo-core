@@ -47,6 +47,7 @@ pub struct Course {
     pub title: String,
     pub status: CourseStatus,
     pub owner_id: Uuid,
+    pub term_id: Option<Uuid>,
     pub created_at: DateTime<Utc>,
 }
 

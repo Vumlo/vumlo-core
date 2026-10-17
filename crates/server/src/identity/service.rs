@@ -482,6 +482,12 @@ pub async fn find_user(conn: &mut PgConnection, id: Uuid) -> Result<Option<User>
     Ok(repo::find_user(conn, id).await?)
 }
 
+/// The users with these ids, in no particular order; an id that names no user is absent. Like
+/// [`find_user`], it checks nothing: the caller has authorized its own action.
+pub async fn find_users(conn: &mut PgConnection, ids: &[Uuid]) -> Result<Vec<User>, IdentityError> {
+    Ok(repo::find_users(conn, ids).await?)
+}
+
 pub async fn get_me(conn: &mut PgConnection, actor: &Actor) -> Result<User, IdentityError> {
     policy::authorize(actor, Action::ManageOwnAccount)?;
     repo::find_user(conn, actor.user_id())

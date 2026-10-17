@@ -33,6 +33,9 @@ pub enum TeachingError {
     MemberNotFound,
     #[error("user not found")]
     UserNotFound,
+    /// The `term_id` of a new course names no term.
+    #[error("term not found")]
+    TermNotFound,
     #[error("that user is disabled")]
     UserDisabled,
     #[error("that user cannot hold that course role")]
@@ -96,9 +99,25 @@ pub async fn create_course(
     conn: &mut PgConnection,
     actor: &Actor,
     title: CourseTitle,
+    term_id: Option<Uuid>,
 ) -> Result<Course, TeachingError> {
     policy::authorize(actor, Action::CreateCourse)?;
-    let course = repo::insert_course(conn, Uuid::now_v7(), title.as_str(), actor.user_id()).await?;
+    let course = repo::insert_course(
+        conn,
+        Uuid::now_v7(),
+        title.as_str(),
+        actor.user_id(),
+        term_id,
+    )
+    .await
+    .map_err(|error| match &error {
+        sqlx::Error::Database(db)
+            if db.is_foreign_key_violation() && db.constraint() == Some("courses_term_id_fkey") =>
+        {
+            TeachingError::TermNotFound
+        }
+        _ => TeachingError::Db(error),
+    })?;
     if !implicit_course_owner(actor) {
         repo::upsert_membership(conn, course.id, actor.user_id(), CourseRole::Teacher).await?;
     }
@@ -315,9 +334,14 @@ mod tests {
         let promoted = actor(&pool, &hash, "promoted@x.edu", Role::Teacher).await;
 
         let mut tx = pool.begin().await.unwrap();
-        let course = create_course(&mut tx, &owner, CourseTitle::parse("Algebra").unwrap())
-            .await
-            .unwrap();
+        let course = create_course(
+            &mut tx,
+            &owner,
+            CourseTitle::parse("Algebra").unwrap(),
+            None,
+        )
+        .await
+        .unwrap();
         for (who, role) in [
             (assistant.user_id(), CourseRole::Assistant),
             (promoted.user_id(), CourseRole::Student),
@@ -381,9 +405,14 @@ mod tests {
         let newcomer = actor(&pool, &hash, "newcomer@x.edu", Role::Student).await;
 
         let mut tx = pool.begin().await.unwrap();
-        let course = create_course(&mut tx, &owner, CourseTitle::parse("Algebra").unwrap())
-            .await
-            .unwrap();
+        let course = create_course(
+            &mut tx,
+            &owner,
+            CourseTitle::parse("Algebra").unwrap(),
+            None,
+        )
+        .await
+        .unwrap();
         for (who, role) in [
             (assistant.user_id(), CourseRole::Assistant),
             (enrolled.user_id(), CourseRole::Student),
@@ -451,9 +480,14 @@ mod tests {
         let stranger = actor(&pool, &hash, "stranger@x.edu", Role::Teacher).await;
 
         let mut tx = pool.begin().await.unwrap();
-        let course = create_course(&mut tx, &owner, CourseTitle::parse("Algebra").unwrap())
-            .await
-            .unwrap();
+        let course = create_course(
+            &mut tx,
+            &owner,
+            CourseTitle::parse("Algebra").unwrap(),
+            None,
+        )
+        .await
+        .unwrap();
         put_member(
             &mut tx,
             &owner,

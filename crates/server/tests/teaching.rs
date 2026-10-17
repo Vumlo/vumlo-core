@@ -1032,3 +1032,66 @@ async fn every_course_endpoint_is_in_the_openapi_document(pool: PgPool) {
         );
     }
 }
+
+#[sqlx::test(migrator = "server::app::MIGRATOR")]
+async fn a_course_is_created_in_an_existing_term_and_an_unknown_term_is_a_422(pool: PgPool) {
+    let http = setup(&pool).await;
+    let teacher = user(&pool, &http, "t@x.edu", Role::Teacher).await;
+    let term = Uuid::now_v7();
+    sqlx::query("INSERT INTO org.terms (id, name, starts_on, ends_on) VALUES ($1, 'Fall', '2026-09-01', '2027-01-31')")
+        .bind(term)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let courses = || async {
+        sqlx::query_scalar::<_, i64>("SELECT count(*) FROM teaching.courses")
+            .fetch_one(&pool)
+            .await
+            .unwrap()
+    };
+
+    let unknown = http
+        .post("/courses")
+        .bearer(&teacher.token)
+        .json(&json!({"title": "Algebra", "term_id": Uuid::now_v7()}))
+        .send()
+        .await;
+    let problem = unknown.problem(422);
+    assert_eq!(problem.errors.len(), 1);
+    assert_eq!(problem.errors[0].field, "term_id");
+    assert_eq!(
+        courses().await,
+        0,
+        "nothing was created, and nothing is a 500"
+    );
+
+    let created = http
+        .post("/courses")
+        .bearer(&teacher.token)
+        .json(&json!({"title": "Algebra", "term_id": term}))
+        .send()
+        .await;
+    assert_eq!(created.status, 201);
+    assert_eq!(created.json()["term_id"], term.to_string());
+    let id = created.json()["id"].as_str().unwrap().to_owned();
+    let shown = get(&http, &teacher.token, &format!("/courses/{id}"))
+        .await
+        .json();
+    assert_eq!(shown["term_id"], term.to_string());
+
+    let without = http
+        .post("/courses")
+        .bearer(&teacher.token)
+        .json(&json!({"title": "Geometry"}))
+        .send()
+        .await;
+    assert_eq!(without.status, 201);
+    assert_eq!(without.json()["term_id"], Value::Null);
+    let null = http
+        .post("/courses")
+        .bearer(&teacher.token)
+        .json(&json!({"title": "Calculus", "term_id": null}))
+        .send()
+        .await;
+    assert_eq!(null.json()["term_id"], Value::Null);
+}

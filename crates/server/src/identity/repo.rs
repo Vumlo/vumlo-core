@@ -192,6 +192,19 @@ pub async fn find_user(conn: &mut PgConnection, id: Uuid) -> Result<Option<User>
     .await
 }
 
+pub async fn find_users(conn: &mut PgConnection, ids: &[Uuid]) -> Result<Vec<User>, sqlx::Error> {
+    sqlx::query_as!(
+        User,
+        r#"SELECT id, email, name, surname,
+                  role AS "role: Role", status AS "status: UserStatus",
+                  must_change_password, created_at
+           FROM identity.users WHERE id = ANY($1)"#,
+        ids
+    )
+    .fetch_all(conn)
+    .await
+}
+
 pub async fn find_password_hash(
     conn: &mut PgConnection,
     user_id: Uuid,
