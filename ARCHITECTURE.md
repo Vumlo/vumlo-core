@@ -176,7 +176,8 @@ events
                          -- built; the only event so far is grade.published
   webhook_subscriptions  id, url, secret, event_types[], active
   webhook_deliveries     event_id, subscription_id, attempts, next_attempt_at, status, last_error
-  audit_log              id, actor_id, action, resource_type, resource_id, at, meta (jsonb)
+  audit_log              id, actor_id?, source: api | cli, action, resource_type, resource_id, at, meta (jsonb)
+                         -- built (ADR-0034): an api row has an actor, a cli row (create-admin, create-user) has none (a check)
 ```
 
 Key points:
@@ -197,7 +198,7 @@ Key points:
 - **Extractors:** `Actor` (valid session, active user, no password change pending) rejects with 401 or 403. `PendingActor` also accepts `must_change_password = true` and is used only by logout, `GET /me` and change password. The role is read from the database on every request, so a role change or a disabled account applies at once.
 - **CSRF:** a cookie-authenticated request that is not GET/HEAD/OPTIONS must carry `Origin` equal to `server.public_origin`, and so must a `web` login. Bearer requests are exempt.
 - **Rate limits** on login: per IP (`tower_governor`, key from `server.client_ip_header` when set, else the TCP peer) and per account (in memory, 10 failures per 15 minutes, reset on success). Wrong current passwords on change-password count against the same per-account limit.
-- **Admin rules:** disabling a user deletes all their sessions in the same transaction; a password reset issues a new temporary password and deletes all sessions; the last active admin can be neither demoted nor disabled (409, serialized with a row lock). Changing one's own password revokes the user's other sessions.
+- **Admin rules** (every one of these writes is audited, ADR-0034): disabling a user deletes all their sessions in the same transaction; a password reset issues a new temporary password and deletes all sessions; the last active admin can be neither demoted nor disabled (409, serialized with a row lock). Changing one's own password revokes the user's other sessions.
 
 ## API conventions
 
@@ -245,6 +246,7 @@ Invariants:
 - Course role `teacher` requires institution role `teacher` or `admin`. An institution `student` can be a course `assistant`.
 - An institution `teacher` may join any course as `student`.
 - An `admin` has no membership rows and acts as an implicit owner everywhere. **Every admin action inside a course is written to `audit_log`** (course creation, publishing, adding and removing members; reads are not audited).
+- **Admin writes outside a course are audited too** ([ADR-0034](docs/decisions/0034-admin-writes-outside-a-course-are-audited.md)): in `identity`, `user.create`, `user.rename`, `user.role_change`, `user.disable`, `user.enable` and `user.password_reset` (resource type `user`, the target as the resource), one row for each kind of change, in the same transaction. A refused write, a change that changes nothing, a read and a user's own account actions write nothing. The meta holds ids, roles and field names, never a password, a hash, a token, an email or a name. The server CLI's `create-admin` and `create-user` write `user.create` with no actor and the source `cli`.
 - The owner is also a `teacher` member and can be neither removed nor given another role. A course an admin creates has no owner membership.
 - Putting the role a member already has on the roster changes nothing, also for a student who comes from a linked group. Member, link and exclusion writes lock the course row first and read roles in a later statement, so concurrent writers see each other's committed roles and links.
 - Course endpoints answer 404 to anyone who may not see the course, 403 to those who may see it but not do the action.
