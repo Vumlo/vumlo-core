@@ -1,0 +1,110 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "WITH candidates AS (\n               SELECT user_id AS \"id\" FROM teaching.effective_members\n               WHERE course_id = $1 AND role = 'student'\n             UNION\n               SELECT student_id FROM assessment.submissions\n               WHERE assignment_id = $2 AND status = 'submitted'\n           )\n           SELECT u.id AS student_id, u.name, u.surname,\n                  NOT EXISTS (SELECT 1 FROM teaching.effective_members m\n                              WHERE m.course_id = $1 AND m.user_id = u.id AND m.role = 'student')\n                      AS \"former!\",\n                  s.id AS \"attempt_id?\", s.attempt AS \"attempt?\", s.submitted_at AS \"submitted_at?\",\n                  s.is_late AS \"is_late?\"\n           FROM candidates c\n           JOIN identity.users u ON u.id = c.id\n           LEFT JOIN LATERAL (\n               SELECT id, attempt, submitted_at, is_late FROM assessment.submissions\n               WHERE assignment_id = $2 AND student_id = u.id AND status = 'submitted'\n               ORDER BY attempt DESC LIMIT 1\n           ) s ON true\n           WHERE ($3::uuid IS NULL\n                  OR (u.surname, u.name, u.id) > (SELECT x.surname, x.name, x.id\n                                                  FROM identity.users x WHERE x.id = $3))\n           ORDER BY u.surname, u.name, u.id\n           LIMIT $4",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "student_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "identity.users",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "identity.users",
+            "name": "name"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "surname",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "identity.users",
+            "name": "surname"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "former!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 4,
+        "name": "attempt_id?",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "assessment.submissions",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "attempt?",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "assessment.submissions",
+            "name": "attempt"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "submitted_at?",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "assessment.submissions",
+            "name": "submitted_at"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "is_late?",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "assessment.submissions",
+            "name": "is_late"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      null,
+      false,
+      true,
+      true,
+      false
+    ]
+  },
+  "hash": "bce28c10a7b5fd47783da5747f67ab05019c15159ddaaaffb9cc63a1cac7d9a7"
+}

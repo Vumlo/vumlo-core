@@ -10,6 +10,13 @@ use server::settings::{
 use sqlx::PgPool;
 use tokio::net::TcpListener;
 
+// One copy of the per-test database harness, shared with the library's own unit tests.
+#[path = "../../src/test_support.rs"]
+mod test_support;
+// Not every test binary needs the bare variant.
+#[allow(unused_imports)]
+pub use test_support::{bare_db_test, db_test, wait_until_blocked};
+
 pub const ORIGIN: &str = "https://lms.test";
 
 pub fn test_settings() -> Settings {
@@ -347,4 +354,178 @@ pub async fn publish_course(http: &Http, token: &str, course: uuid::Uuid) {
         "{}",
         String::from_utf8_lossy(&response.body)
     );
+}
+
+// ---------------------------------------------------------------------------------------------
+// A small world for tests that exercise several roles over HTTP
+// ---------------------------------------------------------------------------------------------
+
+pub struct Account {
+    pub id: uuid::Uuid,
+    pub token: String,
+}
+
+/// A running server over a test database, with calls that take a bearer token.
+pub struct Env {
+    pub http: Http,
+    pub pool: PgPool,
+    pub base: String,
+}
+
+impl Env {
+    pub async fn new(pool: PgPool) -> Self {
+        let base = spawn(pool.clone()).await;
+        Self {
+            http: Http::new(&base),
+            pool,
+            base,
+        }
+    }
+
+    pub async fn with_settings(pool: PgPool, settings: Settings) -> Self {
+        let base = spawn_with(pool.clone(), settings).await;
+        Self {
+            http: Http::new(&base),
+            pool,
+            base,
+        }
+    }
+
+    /// Seeds a user who can act right away and logs them in as an app client.
+    pub async fn user(&self, email: &str, role: Role) -> Account {
+        let (id, token) = seed_and_login(&self.pool, &self.http, email, role).await;
+        Account { id, token }
+    }
+
+    pub async fn call(
+        &self,
+        method: &str,
+        token: &str,
+        path: &str,
+        body: Option<serde_json::Value>,
+    ) -> Resp {
+        let request = match method {
+            "GET" => self.http.get(path),
+            "POST" => self.http.post(path),
+            "PUT" => self.http.put(path),
+            "PATCH" => self.http.patch(path),
+            "DELETE" => self.http.delete(path),
+            other => panic!("method {other}"),
+        }
+        .bearer(token);
+        match body {
+            Some(body) => request.json(&body).send().await,
+            None => request.send().await,
+        }
+    }
+
+    /// Calls and asserts the status; returns the JSON body (`null` for an empty one).
+    pub async fn ok(
+        &self,
+        method: &str,
+        token: &str,
+        path: &str,
+        body: Option<serde_json::Value>,
+        status: u16,
+    ) -> serde_json::Value {
+        let response = self.call(method, token, path, body).await;
+        assert_eq!(
+            response.status,
+            status,
+            "{method} {path}: {}",
+            String::from_utf8_lossy(&response.body)
+        );
+        if response.body.is_empty() {
+            serde_json::Value::Null
+        } else {
+            response.json()
+        }
+    }
+
+    /// A published course owned by `owner` with `students` enrolled and one published module.
+    /// Returns the course and the module.
+    pub async fn course(&self, owner: &Account, students: &[&Account]) -> (uuid::Uuid, uuid::Uuid) {
+        use serde_json::json;
+        let course = id_of(
+            &self
+                .ok(
+                    "POST",
+                    &owner.token,
+                    "/courses",
+                    Some(json!({"title": "C"})),
+                    201,
+                )
+                .await,
+        );
+        for student in students {
+            let path = format!("/courses/{course}/members/{}", student.id);
+            self.ok(
+                "PUT",
+                &owner.token,
+                &path,
+                Some(json!({"role": "student"})),
+                200,
+            )
+            .await;
+        }
+        self.ok(
+            "POST",
+            &owner.token,
+            &format!("/courses/{course}/publish"),
+            None,
+            200,
+        )
+        .await;
+        let path = format!("/courses/{course}/modules");
+        let module = id_of(
+            &self
+                .ok(
+                    "POST",
+                    &owner.token,
+                    &path,
+                    Some(json!({"title": "M"})),
+                    201,
+                )
+                .await,
+        );
+        let path = format!("/modules/{module}/publish");
+        self.ok(
+            "POST",
+            &owner.token,
+            &path,
+            Some(json!({"cascade": true})),
+            200,
+        )
+        .await;
+        (course, module)
+    }
+
+    /// A published text assignment worth `points` in `module`.
+    pub async fn assignment(
+        &self,
+        owner: &Account,
+        module: uuid::Uuid,
+        points: &str,
+    ) -> uuid::Uuid {
+        use serde_json::json;
+        let body = json!({"kind": "assignment", "title": "A",
+            "assignment": {"type": "text", "max_points": points}});
+        let path = format!("/modules/{module}/items");
+        let item = id_of(&self.ok("POST", &owner.token, &path, Some(body), 201).await);
+        self.ok(
+            "POST",
+            &owner.token,
+            &format!("/items/{item}/publish"),
+            None,
+            200,
+        )
+        .await;
+        item
+    }
+}
+
+/// A document of the student profile with one paragraph.
+pub fn essay(text: &str) -> serde_json::Value {
+    serde_json::json!({"v": 1, "attachments": [], "blocks": [
+        {"id": "p1", "type": "paragraph", "content": [{"type": "text", "text": text}]}]})
 }

@@ -1,0 +1,26 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT schema_name AS \"name!\" FROM information_schema.schemata\n               WHERE schema_name NOT LIKE 'pg\\_%'\n                 AND schema_name NOT IN ('information_schema', 'public')\n               ORDER BY schema_name",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "name!",
+        "type_info": "Name",
+        "origin": {
+          "Table": {
+            "table": "information_schema.schemata",
+            "name": "schema_name"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "08599300ecb49daec79c373a832bc3e8ae07d9f5a3973bb02de4db6f9e8e5de4"
+}

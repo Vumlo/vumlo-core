@@ -53,6 +53,28 @@ pub async fn find_login(
     }))
 }
 
+/// Locks the user and their password identity `FOR SHARE` until the transaction ends and says
+/// whether the account is still active and the password hash is still `password_hash`. A change of
+/// either waits for this transaction (ADR-0038).
+pub async fn lock_verified_login(
+    conn: &mut PgConnection,
+    user_id: Uuid,
+    password_hash: &str,
+) -> Result<bool, sqlx::Error> {
+    let row = sqlx::query_scalar!(
+        r#"SELECT 1 AS "locked!"
+           FROM identity.users u
+           JOIN identity.identities i ON i.user_id = u.id AND i.provider = 'password'
+           WHERE u.id = $1 AND u.status = 'active' AND i.password_hash = $2
+           FOR SHARE OF u, i"#,
+        user_id,
+        password_hash
+    )
+    .fetch_optional(conn)
+    .await?;
+    Ok(row.is_some())
+}
+
 pub async fn insert_user(
     conn: &mut PgConnection,
     id: Uuid,
@@ -186,6 +208,26 @@ pub async fn find_user(conn: &mut PgConnection, id: Uuid) -> Result<Option<User>
                   role AS "role: Role", status AS "status: UserStatus",
                   must_change_password, created_at
            FROM identity.users WHERE id = $1"#,
+        id
+    )
+    .fetch_optional(conn)
+    .await
+}
+
+/// The user, with their row locked `FOR SHARE` until the transaction ends. A role or status change
+/// of that user waits for this transaction, and a transaction that began after the change sees it
+/// (ADR-0037): the caller reads the role in the same statement that holds the lock.
+pub async fn find_user_shared(
+    conn: &mut PgConnection,
+    id: Uuid,
+) -> Result<Option<User>, sqlx::Error> {
+    sqlx::query_as!(
+        User,
+        r#"SELECT id, email, name, surname,
+                  role AS "role: Role", status AS "status: UserStatus",
+                  must_change_password, created_at
+           FROM identity.users WHERE id = $1
+           FOR SHARE"#,
         id
     )
     .fetch_optional(conn)

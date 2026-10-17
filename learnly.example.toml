@@ -20,6 +20,15 @@ format = "pretty" # "pretty" | "json"
 password_min_length = 12 # 8..=128
 cookie_secure = false     # keep true (the default) in production; false only for plain-HTTP dev
 allowed_domains = []      # used by self-registration (task 004)
+# Login limits (ADR-0038). A client is an IPv4 address or the /64 of an IPv6 one. A school or a
+# lecture hall behind one address raises login_ip_burst (and lowers login_ip_replenish_seconds):
+# with 300 students logging in at the start of a lesson, 50 attempts and one more per second are not
+# enough. Behind a reverse proxy set server.client_ip_header, or every client is the proxy.
+login_ip_burst = 50                # attempts one client may make in a burst (1..=1000000)
+login_ip_replenish_seconds = 1     # seconds until one attempt is given back (1..=3600)
+login_account_max_attempts = 10    # attempts per account per window (1..=1000)
+login_account_window_minutes = 15  # the window (1..=1440)
+max_concurrent_hashes = 8          # password hashes and checks at once, ~19 MiB each (1..=256)
 
 [institution]
 name = "Example University"

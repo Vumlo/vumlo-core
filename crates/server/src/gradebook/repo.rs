@@ -192,11 +192,14 @@ pub struct StudentRow {
     pub user_id: Uuid,
     pub name: String,
     pub surname: String,
+    /// Not on the roster now, but has grades in the course (ADR-0037).
+    pub former: bool,
 }
 
-/// The current student members of the course after `after`, by surname, name and id, at most
-/// `limit`. The cursor is a user id; its place in the order is read from `identity.users`, so it
-/// still works for a student who left.
+/// The students of the course after `after`, by surname, name and id, at most `limit`: the current
+/// students, and the former ones who still have a grade with a value in the course. The cursor is
+/// a user id; its place in the order is read from `identity.users`, so it still works for a
+/// student who left.
 pub async fn students(
     conn: &mut PgConnection,
     course_id: Uuid,
@@ -205,13 +208,25 @@ pub async fn students(
 ) -> Result<Vec<StudentRow>, sqlx::Error> {
     sqlx::query_as!(
         StudentRow,
-        r#"SELECT u.id AS user_id, u.name, u.surname
-           FROM teaching.effective_members m
-           JOIN identity.users u ON u.id = m.user_id
-           WHERE m.course_id = $1 AND m.role = 'student'
-             AND ($2::uuid IS NULL
-                  OR (u.surname, u.name, u.id) > (SELECT c.surname, c.name, c.id
-                                                  FROM identity.users c WHERE c.id = $2))
+        r#"WITH candidates AS (
+               SELECT user_id AS "id" FROM teaching.effective_members
+               WHERE course_id = $1 AND role = 'student'
+             UNION
+               SELECT g.student_id FROM gradebook.grades g
+               JOIN content.items i ON i.id = g.assignment_id
+               WHERE i.course_id = $1
+                 AND (g.draft_score IS NOT NULL OR g.draft_feedback IS NOT NULL
+                      OR g.published_score IS NOT NULL OR g.published_feedback IS NOT NULL)
+           )
+           SELECT u.id AS user_id, u.name, u.surname,
+                  NOT EXISTS (SELECT 1 FROM teaching.effective_members m
+                              WHERE m.course_id = $1 AND m.user_id = u.id AND m.role = 'student')
+                      AS "former!"
+           FROM candidates c
+           JOIN identity.users u ON u.id = c.id
+           WHERE ($2::uuid IS NULL
+                  OR (u.surname, u.name, u.id) > (SELECT x.surname, x.name, x.id
+                                                  FROM identity.users x WHERE x.id = $2))
            ORDER BY u.surname, u.name, u.id
            LIMIT $3"#,
         course_id,
@@ -219,6 +234,49 @@ pub async fn students(
         limit
     )
     .fetch_all(conn)
+    .await
+}
+
+/// Does the user have a grade with a value in an assignment of the course? Then they are a former
+/// student when they are not on the roster.
+pub async fn has_grades_of_student(
+    conn: &mut PgConnection,
+    course_id: Uuid,
+    student_id: Uuid,
+) -> Result<bool, sqlx::Error> {
+    sqlx::query_scalar!(
+        r#"SELECT EXISTS (
+               SELECT 1 FROM gradebook.grades g
+               JOIN content.items i ON i.id = g.assignment_id
+               WHERE i.course_id = $1 AND g.student_id = $2
+                 AND (g.draft_score IS NOT NULL OR g.draft_feedback IS NOT NULL
+                      OR g.published_score IS NOT NULL OR g.published_feedback IS NOT NULL)
+           ) AS "has!""#,
+        course_id,
+        student_id
+    )
+    .fetch_one(conn)
+    .await
+}
+
+/// Does the user have a published grade in the course that they may be shown? (Visibility of the
+/// rows is decided later, row by row.)
+pub async fn has_published_grades(
+    conn: &mut PgConnection,
+    course_id: Uuid,
+    student_id: Uuid,
+) -> Result<bool, sqlx::Error> {
+    sqlx::query_scalar!(
+        r#"SELECT EXISTS (
+               SELECT 1 FROM gradebook.grades g
+               JOIN content.items i ON i.id = g.assignment_id
+               WHERE i.course_id = $1 AND g.student_id = $2
+                 AND (g.published_score IS NOT NULL OR g.published_feedback IS NOT NULL)
+           ) AS "has!""#,
+        course_id,
+        student_id
+    )
+    .fetch_one(conn)
     .await
 }
 
@@ -467,19 +525,4 @@ pub async fn purge_course(conn: &mut PgConnection, course_id: Uuid) -> Result<u6
     .execute(conn)
     .await?;
     Ok(result.rows_affected())
-}
-
-/// How many sessions of this database wait for a lock of any kind. Tests poll it to know that a
-/// writer is blocked behind another one, instead of sleeping and hoping.
-///
-/// A plain runtime query: it reads a system view, not our schema, so there is nothing for sqlx to
-/// check.
-#[cfg(test)]
-pub async fn lock_waiters(conn: &mut PgConnection) -> Result<i64, sqlx::Error> {
-    sqlx::query_scalar::<_, i64>(
-        "SELECT count(*) FROM pg_stat_activity
-         WHERE wait_event_type = 'Lock' AND datname = current_database()",
-    )
-    .fetch_one(conn)
-    .await
 }

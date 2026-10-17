@@ -27,7 +27,7 @@ use crate::actor::Actor;
 use crate::content::{self, OpenError, OpenedAssignment};
 use crate::events::{self, AuditEntry, Event, EventsError};
 use crate::pagination::{Page, PageParams};
-use crate::policy::{self, Action, CourseAccess, PolicyError};
+use crate::policy::{self, Action, CourseAccess, CourseRole, CourseStatus, PolicyError};
 use crate::teaching::{self, TeachingError};
 
 #[derive(Debug, thiserror::Error)]
@@ -46,6 +46,9 @@ pub enum GradebookError {
     /// The student is not a current student member of the course.
     #[error("student not found")]
     StudentNotFound,
+    /// The student left the roster; their grades are kept but cannot be written (ADR-0037).
+    #[error("the student is no longer on the roster")]
+    StudentFormer,
     /// The positions, in the request, of the listed students who are not current students.
     #[error("not a current student of the course")]
     StudentsNotInCourse(Vec<usize>),
@@ -179,7 +182,13 @@ pub async fn save_grade(
     policy::authorize(actor, Action::GradeAssignment(context.access))?;
     let max = lock_max_points(conn, assignment_id).await?;
     if !repo::is_student_member(conn, context.course_id, student_id).await? {
-        return Err(GradebookError::StudentNotFound);
+        return Err(
+            if repo::has_grades_of_student(conn, context.course_id, student_id).await? {
+                GradebookError::StudentFormer
+            } else {
+                GradebookError::StudentNotFound
+            },
+        );
     }
     let (score, feedback) = validate(input, max)?;
     let feedback = feedback.as_ref().map(Feedback::as_str);
@@ -330,6 +339,7 @@ pub async fn gradebook(
                 user_id: student.user_id,
                 name: student.name,
                 surname: student.surname,
+                former: student.former,
                 cells: own,
             }
         })
@@ -342,14 +352,49 @@ pub async fn gradebook(
 }
 
 /// The caller's published grades in the course: only published values, only for assignments the
-/// caller may see now.
+/// caller may see now. Someone who is not on the roster any more (left the group, was disabled and
+/// enabled again, was promoted, was excluded) still reads their own published grades, and nothing
+/// else of the course (ADR-0037).
 pub async fn my_grades(
     conn: &mut PgConnection,
     actor: &Actor,
     course_id: Uuid,
 ) -> Result<Vec<MyGrade>, GradebookError> {
-    let access = course_access(conn, actor, course_id).await?;
-    policy::authorize(actor, Action::ViewOwnGrades(access))?;
+    let access = match course_access(conn, actor, course_id).await {
+        Ok(access) => Some(access),
+        Err(GradebookError::CourseNotFound) => None,
+        Err(other) => return Err(other),
+    };
+    if let Some(access) = access
+        && policy::authorize(actor, Action::ViewOwnGrades(access)).is_ok()
+    {
+        return published_grades(conn, actor, course_id, access).await;
+    }
+    // Not a current student: the grades of a former one, if there are any.
+    let has_rows = repo::has_published_grades(conn, course_id, actor.user_id()).await?;
+    if !has_rows {
+        return Err(match access {
+            Some(_) => GradebookError::Forbidden(PolicyError),
+            None => GradebookError::CourseNotFound,
+        });
+    }
+    policy::authorize(actor, Action::ViewFormerGrades { has_rows })?;
+    // The rows are the user's own, so the course and its status do not matter any more; each
+    // assignment is still shown only while its module and item are open.
+    let access = CourseAccess {
+        role: Some(CourseRole::Student),
+        is_owner: false,
+        status: CourseStatus::Published,
+    };
+    published_grades(conn, actor, course_id, access).await
+}
+
+async fn published_grades(
+    conn: &mut PgConnection,
+    actor: &Actor,
+    course_id: Uuid,
+    access: CourseAccess,
+) -> Result<Vec<MyGrade>, GradebookError> {
     let now = Utc::now();
     let rows = repo::my_published_grades(conn, course_id, actor.user_id(), now).await?;
     Ok(rows
@@ -444,9 +489,9 @@ mod tests {
     //! open, starts a second writer on a task, waits until that writer is observed blocked on a
     //! lock, and only then lets the first one commit. Nothing sleeps: the order is forced by the
     //! locks, not by timing.
+    use crate::test_support::{db_test, wait_until_blocked};
 
     use std::sync::LazyLock;
-    use std::time::Duration;
 
     use serde_json::Map;
     use sqlx::PgPool;
@@ -753,123 +798,116 @@ mod tests {
         }
     }
 
-    /// Returns once a session waits for a lock. Fails if the writer finished instead (it did not
-    /// wait for anything) or if nobody waits within the timeout.
-    async fn wait_until_blocked<T>(pool: &PgPool, writer: &tokio::task::JoinHandle<T>) {
-        let mut conn = pool.acquire().await.unwrap();
-        let waited = tokio::time::timeout(Duration::from_secs(10), async {
-            while !writer.is_finished() && repo::lock_waiters(&mut conn).await.unwrap() < 1 {
-                tokio::task::yield_now().await;
-            }
-        })
-        .await;
-        assert!(waited.is_ok(), "no writer waited for a lock");
-        assert!(
-            !writer.is_finished(),
-            "the second writer finished without waiting for the assignment row"
-        );
-    }
-
     /// A grade write is in flight with an uncommitted score of 8. A lowering to 5 must wait for
     /// it and then see the score. Without the row locks it would not see it and lower the points
     /// under a score of 8.
-    #[sqlx::test(migrator = "crate::app::MIGRATOR")]
-    async fn a_lowering_waits_for_a_grade_write_and_then_sees_its_score(pool: PgPool) {
-        let f = fixture(pool).await;
+    #[tokio::test]
+    async fn a_lowering_waits_for_a_grade_write_and_then_sees_its_score() {
+        db_test(async |pool| {
+            let f = fixture(pool).await;
 
-        let mut first = f.pool.begin().await.unwrap();
-        save_grade(&mut first, &f.owner, f.assignment, f.student, score("8"))
-            .await
-            .unwrap();
-        let second = f.lower_in_background("5");
-        wait_until_blocked(&f.pool, &second).await;
-        first.commit().await.unwrap();
+            let mut first = f.pool.begin().await.unwrap();
+            save_grade(&mut first, &f.owner, f.assignment, f.student, score("8"))
+                .await
+                .unwrap();
+            let second = f.lower_in_background("5");
+            wait_until_blocked(&f.pool, &second).await;
+            first.commit().await.unwrap();
 
-        let result = second.await.unwrap();
-        assert!(
-            matches!(result, Err(ContentError::BelowGivenScores)),
-            "{result:?}"
-        );
-        assert_eq!(f.max_points().await, "10.00");
-        assert_eq!(f.grades().await, 1);
+            let result = second.await.unwrap();
+            assert!(
+                matches!(result, Err(ContentError::BelowGivenScores)),
+                "{result:?}"
+            );
+            assert_eq!(f.max_points().await, "10.00");
+            assert_eq!(f.grades().await, 1);
+        })
+        .await;
     }
 
     /// A lowering to 5 is in flight and holds the row. A grade write of 8, valid against the old
     /// maximum, must wait for it and be checked against the new one. Without the lock the write
     /// would read 10, store 8 and leave a score above `max_points`.
-    #[sqlx::test(migrator = "crate::app::MIGRATOR")]
-    async fn a_grade_write_waits_for_a_lowering_and_is_checked_against_the_new_maximum(
-        pool: PgPool,
-    ) {
-        let f = fixture(pool).await;
+    #[tokio::test]
+    async fn a_grade_write_waits_for_a_lowering_and_is_checked_against_the_new_maximum() {
+        db_test(async |pool| {
+            let f = fixture(pool).await;
 
-        let mut first = f.pool.begin().await.unwrap();
-        content::update_item(&mut first, &f.owner, rules(), f.assignment, lower_to("5"))
-            .await
-            .unwrap();
-        let second = f.save_in_background("8");
-        wait_until_blocked(&f.pool, &second).await;
-        first.commit().await.unwrap();
+            let mut first = f.pool.begin().await.unwrap();
+            content::update_item(&mut first, &f.owner, rules(), f.assignment, lower_to("5"))
+                .await
+                .unwrap();
+            let second = f.save_in_background("8");
+            wait_until_blocked(&f.pool, &second).await;
+            first.commit().await.unwrap();
 
-        let result = second.await.unwrap();
-        match result {
-            Err(GradebookError::Invalid(problems)) => {
-                assert_eq!(problems.len(), 1);
-                assert_eq!(problems[0].field, "score");
-                assert!(
-                    problems[0].message.contains("5.00"),
-                    "{}",
-                    problems[0].message
-                );
+            let result = second.await.unwrap();
+            match result {
+                Err(GradebookError::Invalid(problems)) => {
+                    assert_eq!(problems.len(), 1);
+                    assert_eq!(problems[0].field, "score");
+                    assert!(
+                        problems[0].message.contains("5.00"),
+                        "{}",
+                        problems[0].message
+                    );
+                }
+                other => panic!("expected the score to be refused, got {other:?}"),
             }
-            other => panic!("expected the score to be refused, got {other:?}"),
-        }
-        assert_eq!(f.max_points().await, "5.00");
-        assert_eq!(f.grades().await, 0);
+            assert_eq!(f.max_points().await, "5.00");
+            assert_eq!(f.grades().await, 0);
+        })
+        .await;
     }
 
     /// A grade write is in flight. A delete of the assignment must wait for it and then see the
     /// grade. Without the lock the delete would pass its check, remove the assignment and leave
     /// the grade behind with nothing to belong to.
-    #[sqlx::test(migrator = "crate::app::MIGRATOR")]
-    async fn a_delete_waits_for_a_grade_write_and_then_sees_the_grade(pool: PgPool) {
-        let f = fixture(pool).await;
+    #[tokio::test]
+    async fn a_delete_waits_for_a_grade_write_and_then_sees_the_grade() {
+        db_test(async |pool| {
+            let f = fixture(pool).await;
 
-        let mut first = f.pool.begin().await.unwrap();
-        save_grade(&mut first, &f.owner, f.assignment, f.student, score("8"))
-            .await
-            .unwrap();
-        let second = f.delete_in_background();
-        wait_until_blocked(&f.pool, &second).await;
-        first.commit().await.unwrap();
+            let mut first = f.pool.begin().await.unwrap();
+            save_grade(&mut first, &f.owner, f.assignment, f.student, score("8"))
+                .await
+                .unwrap();
+            let second = f.delete_in_background();
+            wait_until_blocked(&f.pool, &second).await;
+            first.commit().await.unwrap();
 
-        let result = second.await.unwrap();
-        assert!(matches!(result, Err(ContentError::HasGrades)), "{result:?}");
-        assert_eq!(f.grades().await, 1);
-        assert_eq!(f.assignment_rows().await, 1);
+            let result = second.await.unwrap();
+            assert!(matches!(result, Err(ContentError::HasGrades)), "{result:?}");
+            assert_eq!(f.grades().await, 1);
+            assert_eq!(f.assignment_rows().await, 1);
+        })
+        .await;
     }
 
     /// A delete of the assignment is in flight. A grade write must wait for it and then find
     /// that the assignment is gone, instead of storing a grade for it.
-    #[sqlx::test(migrator = "crate::app::MIGRATOR")]
-    async fn a_grade_write_waits_for_a_delete_and_then_finds_the_assignment_gone(pool: PgPool) {
-        let f = fixture(pool).await;
+    #[tokio::test]
+    async fn a_grade_write_waits_for_a_delete_and_then_finds_the_assignment_gone() {
+        db_test(async |pool| {
+            let f = fixture(pool).await;
 
-        let mut first = f.pool.begin().await.unwrap();
-        content::delete_item(&mut first, &f.owner, f.assignment)
-            .await
-            .unwrap();
-        let second = f.save_in_background("8");
-        wait_until_blocked(&f.pool, &second).await;
-        first.commit().await.unwrap();
+            let mut first = f.pool.begin().await.unwrap();
+            content::delete_item(&mut first, &f.owner, f.assignment)
+                .await
+                .unwrap();
+            let second = f.save_in_background("8");
+            wait_until_blocked(&f.pool, &second).await;
+            first.commit().await.unwrap();
 
-        let result = second.await.unwrap();
-        assert!(
-            matches!(result, Err(GradebookError::AssignmentNotFound)),
-            "{result:?}"
-        );
-        assert_eq!(f.grades().await, 0);
-        assert_eq!(f.item_rows().await, 0);
+            let result = second.await.unwrap();
+            assert!(
+                matches!(result, Err(GradebookError::AssignmentNotFound)),
+                "{result:?}"
+            );
+            assert_eq!(f.grades().await, 0);
+            assert_eq!(f.item_rows().await, 0);
+        })
+        .await;
     }
 
     fn history_of(rows: &[(&str, Option<&str>)]) -> Vec<(String, Option<String>)> {
@@ -882,103 +920,110 @@ mod tests {
     /// when a publish starts. The publish must wait for it and copy the draft as it is after the
     /// wait: 15, not the 10 it could have read before. Without that, the student would be shown
     /// a grade that no longer is the teacher's draft, while the history and the event say 15.
-    #[sqlx::test(migrator = "crate::app::MIGRATOR")]
-    async fn a_publish_waits_for_a_draft_save_and_copies_the_draft_as_it_is_after_the_wait(
-        pool: PgPool,
-    ) {
-        let f = fixture_worth(pool, "20").await;
-        f.save_committed("10").await;
+    #[tokio::test]
+    async fn a_publish_waits_for_a_draft_save_and_copies_the_draft_as_it_is_after_the_wait() {
+        db_test(async |pool| {
+            let f = fixture_worth(pool, "20").await;
+            f.save_committed("10").await;
 
-        let mut holder = f.pool.begin().await.unwrap();
-        save_grade(&mut holder, &f.owner, f.assignment, f.student, score("15"))
-            .await
-            .unwrap();
-        let publish = f.publish_in_background();
-        wait_until_blocked(&f.pool, &publish).await;
-        holder.commit().await.unwrap();
+            let mut holder = f.pool.begin().await.unwrap();
+            save_grade(&mut holder, &f.owner, f.assignment, f.student, score("15"))
+                .await
+                .unwrap();
+            let publish = f.publish_in_background();
+            wait_until_blocked(&f.pool, &publish).await;
+            holder.commit().await.unwrap();
 
-        assert_eq!(publish.await.unwrap().unwrap(), [f.student]);
-        let (draft, published, never_published) = f.stored().await;
-        assert_eq!(draft.as_deref(), Some("15.00"));
-        assert_eq!(published.as_deref(), Some("15.00"));
-        assert!(!never_published);
-        assert_eq!(
-            f.history().await,
-            history_of(&[
-                ("save_draft", Some("10.00")),
-                ("save_draft", Some("15.00")),
-                ("publish", Some("15.00")),
-            ])
-        );
-        assert_eq!(f.published_events().await, 1);
+            assert_eq!(publish.await.unwrap().unwrap(), [f.student]);
+            let (draft, published, never_published) = f.stored().await;
+            assert_eq!(draft.as_deref(), Some("15.00"));
+            assert_eq!(published.as_deref(), Some("15.00"));
+            assert!(!never_published);
+            assert_eq!(
+                f.history().await,
+                history_of(&[
+                    ("save_draft", Some("10.00")),
+                    ("save_draft", Some("15.00")),
+                    ("publish", Some("15.00")),
+                ])
+            );
+            assert_eq!(f.published_events().await, 1);
+        })
+        .await;
     }
 
     /// Same start, but the save in flight clears the draft. After the wait there is nothing to
     /// publish for that row: no student is returned, nothing is published, nothing is logged as a
     /// publish and no event is emitted.
-    #[sqlx::test(migrator = "crate::app::MIGRATOR")]
-    async fn a_publish_waits_for_a_clearing_save_and_then_has_nothing_to_publish(pool: PgPool) {
-        let f = fixture(pool).await;
-        f.save_committed("10").await;
+    #[tokio::test]
+    async fn a_publish_waits_for_a_clearing_save_and_then_has_nothing_to_publish() {
+        db_test(async |pool| {
+            let f = fixture(pool).await;
+            f.save_committed("10").await;
 
-        let mut holder = f.pool.begin().await.unwrap();
-        save_grade(
-            &mut holder,
-            &f.owner,
-            f.assignment,
-            f.student,
-            GradeInput {
-                score: None,
-                feedback: None,
-            },
-        )
-        .await
-        .unwrap();
-        let publish = f.publish_in_background();
-        wait_until_blocked(&f.pool, &publish).await;
-        holder.commit().await.unwrap();
+            let mut holder = f.pool.begin().await.unwrap();
+            save_grade(
+                &mut holder,
+                &f.owner,
+                f.assignment,
+                f.student,
+                GradeInput {
+                    score: None,
+                    feedback: None,
+                },
+            )
+            .await
+            .unwrap();
+            let publish = f.publish_in_background();
+            wait_until_blocked(&f.pool, &publish).await;
+            holder.commit().await.unwrap();
 
-        assert!(publish.await.unwrap().unwrap().is_empty());
-        let (draft, published, never_published) = f.stored().await;
-        assert_eq!((draft, published), (None, None));
-        assert!(never_published, "the row was not published");
-        assert_eq!(
-            f.history().await,
-            history_of(&[("save_draft", Some("10.00")), ("save_draft", None)])
-        );
-        assert_eq!(f.published_events().await, 0);
+            assert!(publish.await.unwrap().unwrap().is_empty());
+            let (draft, published, never_published) = f.stored().await;
+            assert_eq!((draft, published), (None, None));
+            assert!(never_published, "the row was not published");
+            assert_eq!(
+                f.history().await,
+                history_of(&[("save_draft", Some("10.00")), ("save_draft", None)])
+            );
+            assert_eq!(f.published_events().await, 0);
+        })
+        .await;
     }
 
     /// The opposite order: a publish has copied the draft (10) and holds the cell. A save of 15
     /// starts and must wait for it. Once the publish commits the save lands on top: the student
     /// keeps the 10 that was published, the draft is 15 and the cell has unpublished changes.
-    #[sqlx::test(migrator = "crate::app::MIGRATOR")]
-    async fn a_draft_save_waits_for_a_publish_and_lands_on_top_of_it(pool: PgPool) {
-        let f = fixture_worth(pool, "20").await;
-        f.save_committed("10").await;
+    #[tokio::test]
+    async fn a_draft_save_waits_for_a_publish_and_lands_on_top_of_it() {
+        db_test(async |pool| {
+            let f = fixture_worth(pool, "20").await;
+            f.save_committed("10").await;
 
-        let mut holder = f.pool.begin().await.unwrap();
-        let published = publish_grades(&mut holder, &f.owner, f.assignment, Students::All)
-            .await
-            .unwrap();
-        assert_eq!(published, [f.student]);
-        let save = f.save_in_background("15");
-        wait_until_blocked(&f.pool, &save).await;
-        holder.commit().await.unwrap();
+            let mut holder = f.pool.begin().await.unwrap();
+            let published = publish_grades(&mut holder, &f.owner, f.assignment, Students::All)
+                .await
+                .unwrap();
+            assert_eq!(published, [f.student]);
+            let save = f.save_in_background("15");
+            wait_until_blocked(&f.pool, &save).await;
+            holder.commit().await.unwrap();
 
-        save.await.unwrap().unwrap();
-        let (draft, published, _) = f.stored().await;
-        assert_eq!(draft.as_deref(), Some("15.00"));
-        assert_eq!(published.as_deref(), Some("10.00"));
-        assert!(f.has_unpublished_changes().await);
-        assert_eq!(
-            f.history().await,
-            history_of(&[
-                ("save_draft", Some("10.00")),
-                ("publish", Some("10.00")),
-                ("save_draft", Some("15.00")),
-            ])
-        );
-        assert_eq!(f.published_events().await, 1);
+            save.await.unwrap().unwrap();
+            let (draft, published, _) = f.stored().await;
+            assert_eq!(draft.as_deref(), Some("15.00"));
+            assert_eq!(published.as_deref(), Some("10.00"));
+            assert!(f.has_unpublished_changes().await);
+            assert_eq!(
+                f.history().await,
+                history_of(&[
+                    ("save_draft", Some("10.00")),
+                    ("publish", Some("10.00")),
+                    ("save_draft", Some("15.00")),
+                ])
+            );
+            assert_eq!(f.published_events().await, 1);
+        })
+        .await;
     }
 }

@@ -10,7 +10,7 @@ Web, mobile and CLI clients run at the same time. Mobile apps cannot be force-up
 - Within v1 changes are additive only: new fields and endpoints, never removals or renames.
 - Errors use RFC 9457 Problem Details; validation errors add `errors: [{field, message}]` (ADR-0018).
 - Lists use cursor pagination: `?cursor=&limit=` → `{items, next_cursor}` (ADR-0018).
-- Non-idempotent POSTs accept an `Idempotency-Key` header.
+- Non-idempotent POSTs accept an `Idempotency-Key` header. *(Deferred, ADR-0039: no endpoint accepts it yet.)*
 - An OpenAPI spec is generated from Rust types. The web and mobile clients are generated from it; the Rust CLI uses the `api-types` crate directly.
 - Auth: cookie for web, bearer token for mobile and CLI (ADR-0003).
 - Two command-line tools: `learnly-server` (the server binary; admin subcommands with direct DB access) and `learnly` (the user CLI; API only).

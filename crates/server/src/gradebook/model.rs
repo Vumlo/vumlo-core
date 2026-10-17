@@ -126,6 +126,9 @@ pub struct GradebookRow {
     pub user_id: Uuid,
     pub name: String,
     pub surname: String,
+    /// Not on the roster now (left, disabled, promoted, excluded); the grades are kept and read-only
+    /// (ADR-0037).
+    pub former: bool,
     pub cells: Vec<(Uuid, Cell)>,
 }
 

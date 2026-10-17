@@ -1,0 +1,21 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT count(*) AS \"n!\" FROM information_schema.columns\n               WHERE table_schema = 'identity' AND table_name = 'users' AND column_name = 'display_name'",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "n!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "e396e408488b9de9f71c6ab94c79207f3b6dd64829f15b4eb3ab8974989b8758"
+}

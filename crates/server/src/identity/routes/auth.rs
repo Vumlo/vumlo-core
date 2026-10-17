@@ -61,17 +61,18 @@ pub async fn login(
         let mut conn = state.db.acquire().await.map_err(IdentityError::from)?;
         service::lookup_login(&mut conn, &throttle, &request.email).await?
     };
-    let user = service::complete_login(&throttle, attempt, &request.password).await?;
+    let login =
+        service::complete_login(&throttle, &state.hashing, attempt, &request.password).await?;
 
     let kind = session_kind(request.client);
     let mut tx = state.db.begin().await.map_err(IdentityError::from)?;
-    let session = service::create_session(&mut tx, &user, kind).await?;
+    let session = service::create_session(&mut tx, &login, kind).await?;
     tx.commit().await.map_err(IdentityError::from)?;
 
     let NewSession {
         token, expires_at, ..
     } = session;
-    let user = api_user(user);
+    let user = api_user(login.user);
     let response = match request.client {
         LoginClient::Web => {
             let cookie = session_cookie(

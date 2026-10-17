@@ -105,7 +105,8 @@ Modules: `identity`, `org`, `teaching`, `content`, `assessment`, `gradebook`, `f
 - Errors are RFC 9457 Problem Details, produced by one `IntoResponse` impl.
 - All error responses, including framework-generated ones (405/408/413, extractor rejections), are Problem Details.
 - Validation failures are `422` with `errors: [{field, message}]` (ADR-0018).
-- Lists use cursor pagination: `?cursor=&limit=` → `{items, next_cursor}` (ADR-0018). `Idempotency-Key` is not implemented yet (needs its own task and table design, see ADR-0012); do not add ad-hoc handling.
+- Lists use cursor pagination: `?cursor=&limit=` → `{items, next_cursor}` (ADR-0018). `Idempotency-Key` is deferred (ADR-0012, ADR-0039): no endpoint reads it, and none gets ad-hoc handling; it needs its own task and table design.
+- A body that cannot be read is `422`, a wrong media type `415`, a database that is busy or down `503` with `Retry-After` (ADR-0039). A database error that is not about availability is a logged `500`.
 
 ## 10. Errors and panics
 
@@ -124,8 +125,9 @@ Modules: `identity`, `org`, `teaching`, `content`, `assessment`, `gradebook`, `f
 ## 12. Tests
 
 - Every change comes with tests that check behavior, not just "it compiles".
-- DB tests use `#[sqlx::test]`. API tests start the real server and call it with `reqwest`.
+- DB tests are `#[tokio::test]` functions that run in `db_test(async |pool| { … })` (ADR-0036); never `#[sqlx::test]`. API tests start the real server and call it with `reqwest`.
   Shared helpers (server spawn, seeding, login) live in `crates/server/tests/common/`.
+- A test never holds a pooled connection across a request to the server, and never waits for a lock with a fixed sleep: it uses `test_support::wait_until_blocked`.
 - **Never delete, skip or weaken a test to make it pass.** If a test looks wrong, say so and stop.
 
 ## 13. Forbidden
@@ -143,6 +145,7 @@ All of these pass:
     cargo fmt --all --check
     cargo clippy --workspace --all-targets -- -D warnings
     cargo test --workspace
+    cargo test --workspace -- --test-threads=16
     cargo sqlx prepare --workspace --check -- --all-targets
     SQLX_OFFLINE=true cargo check --workspace --all-targets
 

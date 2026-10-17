@@ -1,0 +1,79 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id, attempt AS \"attempt!\", content AS \"content: Body\",\n                  submitted_at AS \"submitted_at!\", is_late\n           FROM assessment.submissions\n           WHERE assignment_id = $1 AND student_id = $2 AND status = 'submitted'\n             AND ($3::uuid IS NULL\n                  OR attempt < (SELECT s.attempt FROM assessment.submissions s\n                                WHERE s.id = $3 AND s.assignment_id = $1 AND s.student_id = $2\n                                  AND s.status = 'submitted'))\n           ORDER BY attempt DESC\n           LIMIT $4",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "assessment.submissions",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "attempt!",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "assessment.submissions",
+            "name": "attempt"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "content: Body",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "assessment.submissions",
+            "name": "content"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "submitted_at!",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "assessment.submissions",
+            "name": "submitted_at"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "is_late",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "assessment.submissions",
+            "name": "is_late"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      false,
+      true,
+      false
+    ]
+  },
+  "hash": "afb1efb0fd0a25c70567f3e36e9d16759b3ed3e3176248f83f8c0c4214cf5fe9"
+}

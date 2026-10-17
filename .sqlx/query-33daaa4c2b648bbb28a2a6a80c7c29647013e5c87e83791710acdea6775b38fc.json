@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO org.terms (id, name, starts_on, ends_on)\n             VALUES ($1, 'Fall', '2026-09-01', '2027-01-31')",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "33daaa4c2b648bbb28a2a6a80c7c29647013e5c87e83791710acdea6775b38fc"
+}

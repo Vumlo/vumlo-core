@@ -1,0 +1,74 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT actor_id, action, resource_type, resource_id, meta FROM events.audit_log\n                     WHERE action LIKE 'grade.%' ORDER BY id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "actor_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "events.audit_log",
+            "name": "actor_id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "action",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "events.audit_log",
+            "name": "action"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "resource_type",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "events.audit_log",
+            "name": "resource_type"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "resource_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "events.audit_log",
+            "name": "resource_id"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "meta",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "events.audit_log",
+            "name": "meta"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      true,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "2fef229b72e19ff0779953c2cb3c9ce396e43eefa9b680696be9c27be644994a"
+}

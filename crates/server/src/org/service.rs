@@ -321,23 +321,13 @@ pub async fn list_group_members(
     Ok(Page::from_rows(rows, page.limit, |member| member.user_id))
 }
 
-/// Adds the users to the group and returns the ones who were not members yet. All or nothing:
-/// every entry that is not a student (or not a user) is reported with its position, and then
-/// nothing is added. Someone who is a member already passes whatever their role is now.
-pub async fn add_group_members(
+/// Refuses, with their positions, the entries of `user_ids` that are not members yet and are no
+/// student (or no user). Someone who is a member already passes whatever their role is now.
+async fn check_new_members(
     conn: &mut PgConnection,
-    actor: &Actor,
-    group_id: Uuid,
     user_ids: &[Uuid],
-) -> Result<Vec<Uuid>, OrgError> {
-    policy::authorize(actor, Action::ManageGroups)?;
-    repo::lock_group(conn, group_id)
-        .await?
-        .ok_or(OrgError::GroupNotFound)?;
-    let members: HashSet<Uuid> = repo::group_members_among(conn, group_id, user_ids)
-        .await?
-        .into_iter()
-        .collect();
+    members: &HashSet<Uuid>,
+) -> Result<(), OrgError> {
     let others: Vec<Uuid> = user_ids
         .iter()
         .filter(|id| !members.contains(id))
@@ -360,9 +350,31 @@ pub async fn add_group_members(
             Some(_) => None,
         })
         .collect();
-    if !refused.is_empty() {
-        return Err(OrgError::Members(refused));
+    if refused.is_empty() {
+        Ok(())
+    } else {
+        Err(OrgError::Members(refused))
     }
+}
+
+/// Adds the users to the group and returns the ones who were not members yet. All or nothing:
+/// every entry that is not a student (or not a user) is reported with its position, and then
+/// nothing is added. Someone who is a member already passes whatever their role is now.
+pub async fn add_group_members(
+    conn: &mut PgConnection,
+    actor: &Actor,
+    group_id: Uuid,
+    user_ids: &[Uuid],
+) -> Result<Vec<Uuid>, OrgError> {
+    policy::authorize(actor, Action::ManageGroups)?;
+    repo::lock_group(conn, group_id)
+        .await?
+        .ok_or(OrgError::GroupNotFound)?;
+    let members: HashSet<Uuid> = repo::group_members_among(conn, group_id, user_ids)
+        .await?
+        .into_iter()
+        .collect();
+    check_new_members(conn, user_ids, &members).await?;
     let added = repo::insert_group_members(conn, group_id, &distinct(user_ids)).await?;
     if !added.is_empty() {
         audit(
@@ -376,6 +388,70 @@ pub async fn add_group_members(
         .await?;
     }
     Ok(added)
+}
+
+/// Makes `user_ids` exactly the members of the group (ADR-0037): adds the ones who are not members,
+/// removes the members who are not listed, and returns both lists. All or nothing, like
+/// [`add_group_members`]; the subgroup memberships of a removed member go with them. The rollover
+/// of a class is one call.
+pub async fn replace_group_members(
+    conn: &mut PgConnection,
+    actor: &Actor,
+    group_id: Uuid,
+    user_ids: &[Uuid],
+) -> Result<(Vec<Uuid>, Vec<Uuid>), OrgError> {
+    policy::authorize(actor, Action::ManageGroups)?;
+    repo::lock_group(conn, group_id)
+        .await?
+        .ok_or(OrgError::GroupNotFound)?;
+    let members: HashSet<Uuid> = repo::group_member_ids(conn, group_id)
+        .await?
+        .into_iter()
+        .collect();
+    check_new_members(conn, user_ids, &members).await?;
+    let wanted: HashSet<Uuid> = user_ids.iter().copied().collect();
+    let leaving: Vec<Uuid> = members.difference(&wanted).copied().collect();
+    let removed = repo::delete_group_members(conn, group_id, &leaving).await?;
+    let added = repo::insert_group_members(conn, group_id, &distinct(user_ids)).await?;
+    if !added.is_empty() || !removed.is_empty() {
+        audit(
+            conn,
+            actor,
+            "group.members.replace",
+            "group",
+            group_id,
+            json!({"added": added, "removed": removed}),
+        )
+        .await?;
+    }
+    Ok((added, removed))
+}
+
+/// Removes several users from the group and from its subgroups; the ones who are not members are
+/// skipped. Returns the ones who were removed.
+pub async fn remove_group_members(
+    conn: &mut PgConnection,
+    actor: &Actor,
+    group_id: Uuid,
+    user_ids: &[Uuid],
+) -> Result<Vec<Uuid>, OrgError> {
+    policy::authorize(actor, Action::ManageGroups)?;
+    repo::lock_group(conn, group_id)
+        .await?
+        .ok_or(OrgError::GroupNotFound)?;
+    let removed = repo::delete_group_members(conn, group_id, &distinct(user_ids)).await?;
+    if !removed.is_empty() {
+        audit(
+            conn,
+            actor,
+            "group.members.remove",
+            "group",
+            group_id,
+            json!({"user_ids": removed}),
+        )
+        .await?;
+    }
+    Ok(removed)
 }
 
 /// Removes the user from the group and, with them, from the group's subgroups.
@@ -619,7 +695,7 @@ pub async fn record_mode(
 
 #[cfg(test)]
 mod tests {
-    use std::time::Duration;
+    use crate::test_support::{db_test, wait_until_blocked};
 
     use sqlx::PgPool;
 
@@ -692,82 +768,69 @@ mod tests {
         }
     }
 
-    /// Returns once a session waits for a lock. Fails if the writer finished instead (it did not
-    /// wait for anything) or if nobody waits within the timeout.
-    async fn wait_until_blocked<T>(pool: &PgPool, writer: &tokio::task::JoinHandle<T>) {
-        let mut conn = pool.acquire().await.unwrap();
-        let waited = tokio::time::timeout(Duration::from_secs(10), async {
-            while !writer.is_finished() && repo::lock_waiters(&mut conn).await.unwrap() < 1 {
-                tokio::task::yield_now().await;
-            }
-        })
-        .await;
-        assert!(waited.is_ok(), "no writer waited for a lock");
-        assert!(
-            !writer.is_finished(),
-            "the second writer finished without waiting for the group row"
-        );
-    }
-
     /// A removal from the group is in flight and holds the group lock. An add of the same user to
     /// the subgroup must wait for it and then see that the user is no longer in the group. Without
     /// the lock it would read the old membership, insert, and hit the foreign key (a 500).
-    #[sqlx::test(migrator = "crate::app::MIGRATOR")]
-    async fn an_add_to_a_subgroup_waits_for_a_removal_from_its_group_and_is_refused(pool: PgPool) {
-        let f = fixture(pool).await;
+    #[tokio::test]
+    async fn an_add_to_a_subgroup_waits_for_a_removal_from_its_group_and_is_refused() {
+        db_test(async |pool| {
+            let f = fixture(pool).await;
 
-        let mut first = f.pool.begin().await.unwrap();
-        remove_group_member(&mut first, &f.admin, f.group, f.student)
-            .await
-            .unwrap();
-        let second = tokio::spawn({
-            let (pool, admin, subgroup, student) =
-                (f.pool.clone(), f.admin.clone(), f.subgroup, f.student);
-            async move {
-                let mut tx = pool.begin().await.unwrap();
-                add_subgroup_members(&mut tx, &admin, subgroup, &[student]).await
-            }
-        });
-        wait_until_blocked(&f.pool, &second).await;
-        first.commit().await.unwrap();
+            let mut first = f.pool.begin().await.unwrap();
+            remove_group_member(&mut first, &f.admin, f.group, f.student)
+                .await
+                .unwrap();
+            let second = tokio::spawn({
+                let (pool, admin, subgroup, student) =
+                    (f.pool.clone(), f.admin.clone(), f.subgroup, f.student);
+                async move {
+                    let mut tx = pool.begin().await.unwrap();
+                    add_subgroup_members(&mut tx, &admin, subgroup, &[student]).await
+                }
+            });
+            wait_until_blocked(&f.pool, &second).await;
+            first.commit().await.unwrap();
 
-        let outcome = second.await.unwrap();
-        assert!(
-            matches!(&outcome, Err(OrgError::Members(refused))
-                if refused == &[(0, MemberProblem::NotInGroup)]),
-            "{outcome:?}"
-        );
-        assert_eq!(f.group_members().await, 0);
-        assert_eq!(f.subgroup_members().await, 0);
+            let outcome = second.await.unwrap();
+            assert!(
+                matches!(&outcome, Err(OrgError::Members(refused))
+                    if refused == &[(0, MemberProblem::NotInGroup)]),
+                "{outcome:?}"
+            );
+            assert_eq!(f.group_members().await, 0);
+            assert_eq!(f.subgroup_members().await, 0);
+        })
+        .await;
     }
 
     /// An add to the subgroup is in flight. A removal from the group must wait for it and then
     /// take the user out of the subgroup too, leaving no subgroup row without a group row.
-    #[sqlx::test(migrator = "crate::app::MIGRATOR")]
-    async fn a_removal_from_a_group_waits_for_an_add_to_its_subgroup_and_takes_it_back(
-        pool: PgPool,
-    ) {
-        let f = fixture(pool).await;
+    #[tokio::test]
+    async fn a_removal_from_a_group_waits_for_an_add_to_its_subgroup_and_takes_it_back() {
+        db_test(async |pool| {
+            let f = fixture(pool).await;
 
-        let mut first = f.pool.begin().await.unwrap();
-        let added = add_subgroup_members(&mut first, &f.admin, f.subgroup, &[f.student])
-            .await
-            .unwrap();
-        assert_eq!(added, [f.student]);
-        let second = tokio::spawn({
-            let (pool, admin, group, student) =
-                (f.pool.clone(), f.admin.clone(), f.group, f.student);
-            async move {
-                let mut tx = pool.begin().await.unwrap();
-                remove_group_member(&mut tx, &admin, group, student).await?;
-                tx.commit().await.map_err(OrgError::from)
-            }
-        });
-        wait_until_blocked(&f.pool, &second).await;
-        first.commit().await.unwrap();
+            let mut first = f.pool.begin().await.unwrap();
+            let added = add_subgroup_members(&mut first, &f.admin, f.subgroup, &[f.student])
+                .await
+                .unwrap();
+            assert_eq!(added, [f.student]);
+            let second = tokio::spawn({
+                let (pool, admin, group, student) =
+                    (f.pool.clone(), f.admin.clone(), f.group, f.student);
+                async move {
+                    let mut tx = pool.begin().await.unwrap();
+                    remove_group_member(&mut tx, &admin, group, student).await?;
+                    tx.commit().await.map_err(OrgError::from)
+                }
+            });
+            wait_until_blocked(&f.pool, &second).await;
+            first.commit().await.unwrap();
 
-        second.await.unwrap().unwrap();
-        assert_eq!(f.group_members().await, 0);
-        assert_eq!(f.subgroup_members().await, 0);
+            second.await.unwrap().unwrap();
+            assert_eq!(f.group_members().await, 0);
+            assert_eq!(f.subgroup_members().await, 0);
+        })
+        .await;
     }
 }

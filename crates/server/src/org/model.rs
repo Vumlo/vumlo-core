@@ -1,4 +1,4 @@
-use chrono::{DateTime, NaiveDate, Utc};
+use chrono::{DateTime, Datelike, NaiveDate, Utc};
 use uuid::Uuid;
 
 const NAME_MAX_LEN: usize = 100;
@@ -10,6 +10,10 @@ pub enum ModelError {
     Name,
     #[error("must not be before starts_on")]
     Dates,
+    #[error("must be a date in the years 1 to 9999")]
+    StartsOnRange,
+    #[error("must be a date in the years 1 to 9999")]
+    EndsOnRange,
 }
 
 /// The name of a term, a group or a subgroup: trimmed, 1 to 100 characters, no control
@@ -42,6 +46,15 @@ pub struct TermDates {
 
 impl TermDates {
     pub fn new(starts_on: NaiveDate, ends_on: NaiveDate) -> Result<Self, ModelError> {
+        // PostgreSQL stores dates from 4713 BC, but a term in year 0 or 40 000 is a typo, and the
+        // part of chrono's range below the database's is an error 500 (ADR-0039).
+        let years = 1..=9999;
+        if !years.contains(&starts_on.year()) {
+            return Err(ModelError::StartsOnRange);
+        }
+        if !years.contains(&ends_on.year()) {
+            return Err(ModelError::EndsOnRange);
+        }
         if ends_on >= starts_on {
             Ok(Self { starts_on, ends_on })
         } else {
@@ -123,5 +136,23 @@ mod tests {
         assert!(TermDates::new(day(1), day(1)).is_ok());
         assert!(TermDates::new(day(1), day(30)).is_ok());
         assert_eq!(TermDates::new(day(2), day(1)), Err(ModelError::Dates));
+    }
+
+    #[test]
+    fn a_term_lies_in_the_years_1_to_9999() {
+        let date = |year| NaiveDate::from_ymd_opt(year, 6, 1).unwrap();
+        assert!(TermDates::new(date(1), date(9999)).is_ok());
+        assert_eq!(
+            TermDates::new(date(0), date(2026)),
+            Err(ModelError::StartsOnRange)
+        );
+        assert_eq!(
+            TermDates::new(date(-5000), date(2026)),
+            Err(ModelError::StartsOnRange)
+        );
+        assert_eq!(
+            TermDates::new(date(2026), date(10_000)),
+            Err(ModelError::EndsOnRange)
+        );
     }
 }

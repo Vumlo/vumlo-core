@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT content AS \"content: serde_json::Value\" FROM assessment.submissions\n                   WHERE assignment_id = $1 AND status = 'submitted'",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "content: serde_json::Value",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "assessment.submissions",
+            "name": "content"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "d435297cab6965b295969436638ae6bddd39d0a23db082a0458c57392524c31f"
+}

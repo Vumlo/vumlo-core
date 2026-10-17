@@ -17,7 +17,7 @@ use tokio::net::TcpListener;
 use tokio::signal::unix::{SignalKind, signal};
 use tower_http::limit::RequestBodyLimitLayer;
 use tower_http::timeout::TimeoutLayer;
-use tower_http::trace::{DefaultMakeSpan, DefaultOnResponse, TraceLayer};
+use tower_http::trace::{DefaultOnResponse, TraceLayer};
 use tracing::Level;
 use utoipa::openapi::security::{ApiKey, ApiKeyValue, HttpAuthScheme, HttpBuilder, SecurityScheme};
 use utoipa::{Modify, OpenApi};
@@ -49,6 +49,8 @@ pub struct AppState {
     pub config: Arc<Settings>,
     /// The editor profiles, resolved once from `config.editor` (ADR-0025, ADR-0027).
     pub editor: Arc<EffectiveProfiles>,
+    /// The bound on password hashes and checks that run at once (ADR-0038).
+    pub hashing: Arc<identity::HashGate>,
 }
 
 impl AppState {
@@ -57,10 +59,12 @@ impl AppState {
     /// that names the key and the value, and never at the first request.
     pub fn new(db: PgPool, config: Settings) -> Result<Self, EditorConfigError> {
         let editor = EffectiveProfiles::resolve(&config.editor)?;
+        let hashing = identity::HashGate::new(config.auth.max_concurrent_hashes);
         Ok(Self {
             db,
             config: Arc::new(config),
             editor: Arc::new(editor),
+            hashing: Arc::new(hashing),
         })
     }
 }
@@ -196,7 +200,15 @@ pub fn router(state: AppState) -> Result<Router, SetupError> {
         ))
         .layer(
             TraceLayer::new_for_http()
-                .make_span_with(DefaultMakeSpan::new().level(Level::INFO))
+                .make_span_with(|request: &axum::http::Request<_>| {
+                    // The path, never the query: a query can carry an email address (AGENTS §11).
+                    tracing::info_span!(
+                        "request",
+                        method = %request.method(),
+                        path = %request.uri().path(),
+                        version = ?request.version(),
+                    )
+                })
                 .on_response(DefaultOnResponse::new().level(Level::INFO)),
         )
         .layer(map_response(problem_details)))

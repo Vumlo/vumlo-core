@@ -55,14 +55,8 @@ impl From<AssessmentError> for ApiError {
                 Self::invalid_field("content", "must have some text before it is submitted")
             }
             AssessmentError::Teaching(e) => e.into(),
-            AssessmentError::Events(e) => {
-                tracing::error!(error = %e, "assessment: outbox error");
-                Self::Internal
-            }
-            AssessmentError::Db(e) => {
-                tracing::error!(error = %e, "assessment: database error");
-                Self::Internal
-            }
+            AssessmentError::Events(e) => e.into(),
+            AssessmentError::Db(e) => Self::from_db("assessment", &e),
         }
     }
 }
@@ -93,6 +87,7 @@ fn api_row(row: model::StudentSubmission) -> SubmissionRow {
         student_id: row.student_id,
         name: row.name,
         surname: row.surname,
+        former: row.former,
         status: if row.latest.is_some() {
             SubmissionStatus::Submitted
         } else {

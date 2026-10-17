@@ -83,12 +83,16 @@ pub struct LatestAttempt {
     pub is_late: bool,
 }
 
-/// One current student of the course with their latest submitted attempt, if any.
+/// One student of the course with their latest submitted attempt, if any.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct SubmissionRow {
     pub student_id: Uuid,
     pub name: String,
     pub surname: String,
+    /// Not on the roster now but has a submitted attempt here (ADR-0037). The attempts stay
+    /// readable; a former student cannot be graded.
+    #[serde(default)]
+    pub former: bool,
     pub status: SubmissionStatus,
     pub latest: Option<LatestAttempt>,
 }

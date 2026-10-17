@@ -81,6 +81,37 @@ pub struct AddMembersRequest {
     pub user_ids: Vec<Uuid>,
 }
 
+/// The members a group must have after a rollover (ADR-0037).
+#[derive(Debug, Clone, Serialize, Deserialize, Validate, ToSchema)]
+pub struct ReplaceMembersRequest {
+    /// 0 to 1000 user ids: exactly the students the group has afterwards. All or nothing: an entry
+    /// that is no user or not a student rejects the request, and the `422` names its position as
+    /// `user_ids[i]`. An empty list empties the group.
+    #[garde(length(max = MAX_MEMBERS_PER_REQUEST))]
+    pub user_ids: Vec<Uuid>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct ReplaceMembersResponse {
+    /// The users who were not members before.
+    pub added: Vec<Uuid>,
+    /// The members who are not in the new list.
+    pub removed: Vec<Uuid>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Validate, ToSchema)]
+pub struct RemoveMembersRequest {
+    /// 1 to 1000 user ids. Ids that are not members are skipped.
+    #[garde(length(min = 1, max = MAX_MEMBERS_PER_REQUEST))]
+    pub user_ids: Vec<Uuid>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct RemoveMembersResponse {
+    /// The users who were members and are not any more.
+    pub removed: Vec<Uuid>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct AddMembersResponse {
     /// The users who were not members before. Empty when all of them already were.

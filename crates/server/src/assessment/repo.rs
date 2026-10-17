@@ -160,7 +160,9 @@ pub async fn submit_draft(
     })
 }
 
-/// The submitted attempts of one student, newest first, after the attempt `after` (a row id).
+/// The submitted attempts of one student, newest first, after the attempt `after` (a row id). The
+/// cursor counts only if it is an attempt of this student at this assignment: a row id from
+/// anywhere else would otherwise tell the caller its attempt number.
 pub async fn list_attempts(
     conn: &mut PgConnection,
     assignment_id: Uuid,
@@ -174,7 +176,9 @@ pub async fn list_attempts(
            FROM assessment.submissions
            WHERE assignment_id = $1 AND student_id = $2 AND status = 'submitted'
              AND ($3::uuid IS NULL
-                  OR attempt < (SELECT s.attempt FROM assessment.submissions s WHERE s.id = $3))
+                  OR attempt < (SELECT s.attempt FROM assessment.submissions s
+                                WHERE s.id = $3 AND s.assignment_id = $1 AND s.student_id = $2
+                                  AND s.status = 'submitted'))
            ORDER BY attempt DESC
            LIMIT $4"#,
         assignment_id,
@@ -218,9 +222,10 @@ pub async fn is_student_or_has_attempts(
     .await
 }
 
-/// The current students of the course after `after`, by surname, name and id, at most `limit`,
-/// each with their latest submitted attempt. The cursor is a user id; its place in the order is
-/// read from `identity.users`.
+/// The students of the course after `after`, by surname, name and id, at most `limit`, each with
+/// their latest submitted attempt: the current students, and the former ones who have a submitted
+/// attempt for this assignment (ADR-0037). The cursor is a user id; its place in the order is read
+/// from `identity.users`.
 pub async fn list_students(
     conn: &mut PgConnection,
     course_id: Uuid,
@@ -229,20 +234,29 @@ pub async fn list_students(
     limit: i64,
 ) -> Result<Vec<StudentSubmission>, sqlx::Error> {
     let rows = sqlx::query!(
-        r#"SELECT u.id AS student_id, u.name, u.surname,
+        r#"WITH candidates AS (
+               SELECT user_id AS "id" FROM teaching.effective_members
+               WHERE course_id = $1 AND role = 'student'
+             UNION
+               SELECT student_id FROM assessment.submissions
+               WHERE assignment_id = $2 AND status = 'submitted'
+           )
+           SELECT u.id AS student_id, u.name, u.surname,
+                  NOT EXISTS (SELECT 1 FROM teaching.effective_members m
+                              WHERE m.course_id = $1 AND m.user_id = u.id AND m.role = 'student')
+                      AS "former!",
                   s.id AS "attempt_id?", s.attempt AS "attempt?", s.submitted_at AS "submitted_at?",
                   s.is_late AS "is_late?"
-           FROM teaching.effective_members m
-           JOIN identity.users u ON u.id = m.user_id
+           FROM candidates c
+           JOIN identity.users u ON u.id = c.id
            LEFT JOIN LATERAL (
                SELECT id, attempt, submitted_at, is_late FROM assessment.submissions
                WHERE assignment_id = $2 AND student_id = u.id AND status = 'submitted'
                ORDER BY attempt DESC LIMIT 1
            ) s ON true
-           WHERE m.course_id = $1 AND m.role = 'student'
-             AND ($3::uuid IS NULL
-                  OR (u.surname, u.name, u.id) > (SELECT c.surname, c.name, c.id
-                                                  FROM identity.users c WHERE c.id = $3))
+           WHERE ($3::uuid IS NULL
+                  OR (u.surname, u.name, u.id) > (SELECT x.surname, x.name, x.id
+                                                  FROM identity.users x WHERE x.id = $3))
            ORDER BY u.surname, u.name, u.id
            LIMIT $4"#,
         course_id,
@@ -258,6 +272,7 @@ pub async fn list_students(
             student_id: row.student_id,
             name: row.name,
             surname: row.surname,
+            former: row.former,
             latest: match (row.attempt_id, row.attempt, row.submitted_at, row.is_late) {
                 (Some(id), Some(attempt), Some(submitted_at), Some(is_late)) => {
                     Some(LatestAttempt {
@@ -364,19 +379,4 @@ pub async fn purge_course(conn: &mut PgConnection, course_id: Uuid) -> Result<u6
     .execute(conn)
     .await?;
     Ok(result.rows_affected())
-}
-
-/// How many sessions of this database wait for a lock of any kind. Tests poll it to know that a
-/// writer is blocked behind another one, instead of sleeping and hoping.
-///
-/// A plain runtime query: it reads a system view, not our schema, so there is nothing for sqlx to
-/// check.
-#[cfg(test)]
-pub async fn lock_waiters(conn: &mut PgConnection) -> Result<i64, sqlx::Error> {
-    sqlx::query_scalar::<_, i64>(
-        "SELECT count(*) FROM pg_stat_activity
-         WHERE wait_event_type = 'Lock' AND datname = current_database()",
-    )
-    .fetch_one(conn)
-    .await
 }

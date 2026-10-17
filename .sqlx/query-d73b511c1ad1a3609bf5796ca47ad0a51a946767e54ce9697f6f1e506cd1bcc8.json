@@ -1,0 +1,21 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT count(*) AS \"n!\" FROM information_schema.views\n               WHERE table_schema = 'teaching' AND table_name = 'effective_members'",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "n!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "d73b511c1ad1a3609bf5796ca47ad0a51a946767e54ce9697f6f1e506cd1bcc8"
+}

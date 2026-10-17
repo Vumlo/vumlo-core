@@ -301,6 +301,13 @@ pub struct PutMemberRequest {
     pub role: CourseRole,
 }
 
+/// The new owner of a course (ADR-0037): an active teacher or admin.
+#[derive(Debug, Clone, Serialize, Deserialize, Validate, ToSchema)]
+pub struct TransferOwnershipRequest {
+    #[garde(skip)]
+    pub user_id: Uuid,
+}
+
 /// One member of a course. Only ids: names and emails are fetched through the user endpoints.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct Membership {

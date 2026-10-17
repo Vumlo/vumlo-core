@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE identity.sessions\n             SET kind = 'cli', last_seen_at = now() - interval '2 hours', expires_at = now() + interval '5 days'",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "b93defed8e684af27f2b96a109cfd47cf7d74debaf06ed7676b478409ba3e0f5"
+}

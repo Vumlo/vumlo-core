@@ -82,6 +82,49 @@ pub async fn set_published(
     .await
 }
 
+/// Does the user own a course?
+pub async fn owns_courses(conn: &mut PgConnection, user_id: Uuid) -> Result<bool, sqlx::Error> {
+    sqlx::query_scalar!(
+        r#"SELECT EXISTS (SELECT 1 FROM teaching.courses WHERE owner_id = $1) AS "owns!""#,
+        user_id
+    )
+    .fetch_one(conn)
+    .await
+}
+
+/// Deletes every `teacher` membership of the user and returns the courses they were in.
+pub async fn delete_teacher_memberships(
+    conn: &mut PgConnection,
+    user_id: Uuid,
+) -> Result<Vec<Uuid>, sqlx::Error> {
+    sqlx::query_scalar!(
+        "DELETE FROM teaching.memberships WHERE user_id = $1 AND role = 'teacher'
+         RETURNING course_id",
+        user_id
+    )
+    .fetch_all(conn)
+    .await
+}
+
+/// Hands the course to a new owner.
+pub async fn set_owner(
+    conn: &mut PgConnection,
+    course_id: Uuid,
+    owner_id: Uuid,
+) -> Result<Course, sqlx::Error> {
+    sqlx::query_as!(
+        Course,
+        r#"UPDATE teaching.courses SET owner_id = $2, updated_at = now()
+           WHERE id = $1
+           RETURNING id, kind AS "kind: CourseKind", title,
+                     status AS "status: CourseStatus", owner_id, term_id, created_at"#,
+        course_id,
+        owner_id
+    )
+    .fetch_one(conn)
+    .await
+}
+
 /// The course and `user_id`'s membership in it.
 pub async fn find_course(
     conn: &mut PgConnection,
@@ -130,6 +173,10 @@ pub async fn lock_course(
 /// Courses `user_id` owns or belongs to, after `after`, in id order, at most `limit`. A student
 /// membership only counts once the course is published, the same rule `policy` applies per
 /// course; it lives here too so a page is not emptied by rows the caller may not see.
+///
+/// It starts from the user's own rows (their places on rosters, the courses they own) and joins
+/// the course tables to those, so the cost follows the number of courses the user has, not the
+/// number of courses the installation has (audit 014, A-12).
 pub async fn list_courses_of(
     conn: &mut PgConnection,
     user_id: Uuid,
@@ -141,10 +188,12 @@ pub async fn list_courses_of(
         r#"SELECT c.id, c.kind AS "kind: CourseKind", c.title,
                   c.status AS "status: CourseStatus", c.owner_id, c.term_id, c.created_at,
                   m.role AS "member_role?: CourseRole"
-           FROM teaching.courses c
+           FROM (SELECT course_id AS id FROM teaching.effective_members WHERE user_id = $1
+                 UNION
+                 SELECT id FROM teaching.courses WHERE owner_id = $1) mine
+           JOIN teaching.courses c ON c.id = mine.id
            LEFT JOIN teaching.effective_members m ON m.course_id = c.id AND m.user_id = $1
-           WHERE (m.user_id IS NOT NULL OR c.owner_id = $1)
-             AND (c.status = 'published' OR c.owner_id = $1 OR m.role IN ('teacher', 'assistant'))
+           WHERE (c.status = 'published' OR c.owner_id = $1 OR m.role IN ('teacher', 'assistant'))
              AND ($2::uuid IS NULL OR c.id > $2)
            ORDER BY c.id
            LIMIT $3"#,
@@ -411,21 +460,6 @@ pub async fn in_group_roster(
                           WHERE course_id = $1 AND user_id = $2) AS "found!""#,
         course_id,
         user_id
-    )
-    .fetch_one(conn)
-    .await
-}
-
-/// How many sessions of this database wait for a lock of any kind. Tests poll it to know that a
-/// writer is blocked behind another one, instead of sleeping and hoping.
-///
-/// A plain runtime query: it reads a system view, not our schema, so there is nothing for sqlx to
-/// check.
-#[cfg(test)]
-pub async fn lock_waiters(conn: &mut PgConnection) -> Result<i64, sqlx::Error> {
-    sqlx::query_scalar::<_, i64>(
-        "SELECT count(*) FROM pg_stat_activity
-         WHERE wait_event_type = 'Lock' AND datname = current_database()",
     )
     .fetch_one(conn)
     .await

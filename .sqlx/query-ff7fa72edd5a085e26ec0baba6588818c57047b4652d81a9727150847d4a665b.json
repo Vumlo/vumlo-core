@@ -1,0 +1,52 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT action, resource_id, meta FROM events.audit_log\n             WHERE resource_type = 'course' AND action <> 'course.create'\n               AND actor_id = $1 ORDER BY at, id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "action",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "events.audit_log",
+            "name": "action"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "resource_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "events.audit_log",
+            "name": "resource_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "meta",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "events.audit_log",
+            "name": "meta"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "ff7fa72edd5a085e26ec0baba6588818c57047b4652d81a9727150847d4a665b"
+}

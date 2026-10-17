@@ -355,9 +355,9 @@ mod tests {
     //! transaction open, starts a second on a task, waits until that task is observed blocked on
     //! a lock, and only then lets the first one commit. Nothing sleeps: the order is forced by
     //! the locks, not by timing.
+    use crate::test_support::{db_test, wait_until_blocked};
 
     use std::sync::LazyLock;
-    use std::time::Duration;
 
     use serde_json::{Map, json};
     use sqlx::PgPool;
@@ -602,68 +602,57 @@ mod tests {
         }
     }
 
-    /// Returns once a session waits for a lock. Fails if the writer finished instead (it did not
-    /// wait for anything) or if nobody waits within the timeout.
-    async fn wait_until_blocked<T>(pool: &PgPool, writer: &tokio::task::JoinHandle<T>) {
-        let mut conn = pool.acquire().await.unwrap();
-        let waited = tokio::time::timeout(Duration::from_secs(10), async {
-            while !writer.is_finished() && repo::lock_waiters(&mut conn).await.unwrap() < 1 {
-                tokio::task::yield_now().await;
-            }
-        })
-        .await;
-        assert!(waited.is_ok(), "no writer waited for a lock");
-        assert!(
-            !writer.is_finished(),
-            "the second writer finished without waiting for a lock"
-        );
-    }
-
     // --- the clock is a parameter ----------------------------------------------------------
 
-    #[sqlx::test(migrator = "crate::app::MIGRATOR")]
-    async fn work_at_the_deadline_is_on_time_and_a_moment_later_it_is_not(pool: PgPool) {
-        let f = fixture(pool, due_at_ten(false, None)).await;
-        f.save("on the dot", at(10, 0)).await.unwrap();
-        let attempt = f.submit(at(10, 0)).await.unwrap();
-        assert!(!attempt.is_late);
-        assert_eq!(
-            attempt.submitted_at,
-            at(10, 0),
-            "the stored time is the caller's"
-        );
+    #[tokio::test]
+    async fn work_at_the_deadline_is_on_time_and_a_moment_later_it_is_not() {
+        db_test(async |pool| {
+            let f = fixture(pool, due_at_ten(false, None)).await;
+            f.save("on the dot", at(10, 0)).await.unwrap();
+            let attempt = f.submit(at(10, 0)).await.unwrap();
+            assert!(!attempt.is_late);
+            assert_eq!(
+                attempt.submitted_at,
+                at(10, 0),
+                "the stored time is the caller's"
+            );
 
-        let later = at(10, 0) + chrono::Duration::milliseconds(1);
-        assert!(matches!(
-            f.save("late", later).await,
-            Err(AssessmentError::WindowClosed)
-        ));
-        assert!(matches!(
-            f.submit(later).await,
-            Err(AssessmentError::WindowClosed)
-        ));
+            let later = at(10, 0) + chrono::Duration::milliseconds(1);
+            assert!(matches!(
+                f.save("late", later).await,
+                Err(AssessmentError::WindowClosed)
+            ));
+            assert!(matches!(
+                f.submit(later).await,
+                Err(AssessmentError::WindowClosed)
+            ));
+        })
+        .await;
     }
 
-    #[sqlx::test(migrator = "crate::app::MIGRATOR")]
-    async fn late_work_is_marked_until_late_until_inclusive(pool: PgPool) {
-        let f = fixture(pool, due_at_ten(true, Some(at(12, 0)))).await;
-        f.save("one", at(9, 0)).await.unwrap();
-        assert!(!f.submit(at(9, 0)).await.unwrap().is_late);
-        f.save("two", at(11, 0)).await.unwrap();
-        assert!(f.submit(at(11, 0)).await.unwrap().is_late);
-        f.save("three", at(12, 0)).await.unwrap();
-        assert!(
-            f.submit(at(12, 0)).await.unwrap().is_late,
-            "late_until itself is inside"
-        );
+    #[tokio::test]
+    async fn late_work_is_marked_until_late_until_inclusive() {
+        db_test(async |pool| {
+            let f = fixture(pool, due_at_ten(true, Some(at(12, 0)))).await;
+            f.save("one", at(9, 0)).await.unwrap();
+            assert!(!f.submit(at(9, 0)).await.unwrap().is_late);
+            f.save("two", at(11, 0)).await.unwrap();
+            assert!(f.submit(at(11, 0)).await.unwrap().is_late);
+            f.save("three", at(12, 0)).await.unwrap();
+            assert!(
+                f.submit(at(12, 0)).await.unwrap().is_late,
+                "late_until itself is inside"
+            );
 
-        let after = at(12, 0) + chrono::Duration::milliseconds(1);
-        assert!(matches!(
-            f.save("four", after).await,
-            Err(AssessmentError::WindowClosed)
-        ));
-        assert_eq!(f.rows("submitted").await, 3);
-        assert_eq!(f.rows("draft").await, 0);
+            let after = at(12, 0) + chrono::Duration::milliseconds(1);
+            assert!(matches!(
+                f.save("four", after).await,
+                Err(AssessmentError::WindowClosed)
+            ));
+            assert_eq!(f.rows("submitted").await, 3);
+            assert_eq!(f.rows("draft").await, 0);
+        })
+        .await;
     }
 
     // --- locks -----------------------------------------------------------------------------
@@ -671,122 +660,134 @@ mod tests {
     /// A settings change is in flight and holds the assignment row. A submit that began after it
     /// must wait, and then be judged by the new window: the deadline has passed, so it is refused
     /// and the draft stays.
-    #[sqlx::test(migrator = "crate::app::MIGRATOR")]
-    async fn a_submit_waits_for_a_settings_change_and_sees_the_new_window(pool: PgPool) {
-        let f = fixture(pool, due_at_ten(false, None)).await;
-        f.save("ready", at(9, 0)).await.unwrap();
-        let now = at(9, 30);
+    #[tokio::test]
+    async fn a_submit_waits_for_a_settings_change_and_sees_the_new_window() {
+        db_test(async |pool| {
+            let f = fixture(pool, due_at_ten(false, None)).await;
+            f.save("ready", at(9, 0)).await.unwrap();
+            let now = at(9, 30);
 
-        let mut holder = f.pool.begin().await.unwrap();
-        let patch = ItemPatch {
-            settings: SettingsPatch {
-                due_at: Some(Some(at(9, 0))),
-                ..SettingsPatch::default()
-            },
-            ..ItemPatch::default()
-        };
-        content::update_item(&mut holder, &f.owner, rules(), f.assignment, patch)
-            .await
-            .unwrap();
-        let submit = f.submit_in_background(now);
-        wait_until_blocked(&f.pool, &submit).await;
-        holder.commit().await.unwrap();
+            let mut holder = f.pool.begin().await.unwrap();
+            let patch = ItemPatch {
+                settings: SettingsPatch {
+                    due_at: Some(Some(at(9, 0))),
+                    ..SettingsPatch::default()
+                },
+                ..ItemPatch::default()
+            };
+            content::update_item(&mut holder, &f.owner, rules(), f.assignment, patch)
+                .await
+                .unwrap();
+            let submit = f.submit_in_background(now);
+            wait_until_blocked(&f.pool, &submit).await;
+            holder.commit().await.unwrap();
 
-        let result = submit.await.unwrap();
-        assert!(
-            matches!(result, Err(AssessmentError::WindowClosed)),
-            "{result:?}"
-        );
-        assert_eq!(f.rows("submitted").await, 0);
-        assert_eq!(f.rows("draft").await, 1, "the draft stays");
-        assert_eq!(f.events().await, 0);
+            let result = submit.await.unwrap();
+            assert!(
+                matches!(result, Err(AssessmentError::WindowClosed)),
+                "{result:?}"
+            );
+            assert_eq!(f.rows("submitted").await, 0);
+            assert_eq!(f.rows("draft").await, 1, "the draft stays");
+            assert_eq!(f.events().await, 0);
+        })
+        .await;
     }
 
     /// The opposite order: a submit is in flight and holds the row `FOR SHARE`. A settings change
     /// waits for it. The submit was judged by the old window and stays on time; the change
     /// applies afterwards.
-    #[sqlx::test(migrator = "crate::app::MIGRATOR")]
-    async fn a_settings_change_waits_for_a_submit_in_flight_and_applies_after_it(pool: PgPool) {
-        let f = fixture(pool, due_at_ten(false, None)).await;
-        f.save("ready", at(9, 0)).await.unwrap();
+    #[tokio::test]
+    async fn a_settings_change_waits_for_a_submit_in_flight_and_applies_after_it() {
+        db_test(async |pool| {
+            let f = fixture(pool, due_at_ten(false, None)).await;
+            f.save("ready", at(9, 0)).await.unwrap();
 
-        let mut holder = f.pool.begin().await.unwrap();
-        let attempt = submit(&mut holder, &f.student, f.assignment, &PROFILES, at(9, 30))
+            let mut holder = f.pool.begin().await.unwrap();
+            let attempt = submit(&mut holder, &f.student, f.assignment, &PROFILES, at(9, 30))
+                .await
+                .unwrap();
+            assert!(!attempt.is_late);
+            let change = f.settings_in_background(SettingsPatch {
+                due_at: Some(Some(at(9, 0))),
+                ..SettingsPatch::default()
+            });
+            wait_until_blocked(&f.pool, &change).await;
+            holder.commit().await.unwrap();
+
+            change.await.unwrap().unwrap();
+            assert_eq!(f.rows("submitted").await, 1, "the submit stands");
+            let due = sqlx::query_scalar!(
+                "SELECT due_at FROM content.assignments WHERE item_id = $1",
+                f.assignment
+            )
+            .fetch_one(&f.pool)
             .await
             .unwrap();
-        assert!(!attempt.is_late);
-        let change = f.settings_in_background(SettingsPatch {
-            due_at: Some(Some(at(9, 0))),
-            ..SettingsPatch::default()
-        });
-        wait_until_blocked(&f.pool, &change).await;
-        holder.commit().await.unwrap();
-
-        change.await.unwrap().unwrap();
-        assert_eq!(f.rows("submitted").await, 1, "the submit stands");
-        let due = sqlx::query_scalar!(
-            "SELECT due_at FROM content.assignments WHERE item_id = $1",
-            f.assignment
-        )
-        .fetch_one(&f.pool)
-        .await
-        .unwrap();
-        assert_eq!(due, Some(at(9, 0)));
+            assert_eq!(due, Some(at(9, 0)));
+        })
+        .await;
     }
 
     /// Two submits of one draft: the second waits for the draft row and, once the first commits,
     /// finds no draft. Exactly one attempt and one event exist.
-    #[sqlx::test(migrator = "crate::app::MIGRATOR")]
-    async fn of_two_submits_of_one_draft_exactly_one_wins(pool: PgPool) {
-        let f = fixture(pool, SubmissionSettings::default()).await;
-        f.save("once", at(9, 0)).await.unwrap();
+    #[tokio::test]
+    async fn of_two_submits_of_one_draft_exactly_one_wins() {
+        db_test(async |pool| {
+            let f = fixture(pool, SubmissionSettings::default()).await;
+            f.save("once", at(9, 0)).await.unwrap();
 
-        let mut first = f.pool.begin().await.unwrap();
-        let attempt = submit(&mut first, &f.student, f.assignment, &PROFILES, at(9, 1))
-            .await
-            .unwrap();
-        assert_eq!(attempt.attempt, 1);
-        let second = f.submit_in_background(at(9, 2));
-        wait_until_blocked(&f.pool, &second).await;
-        first.commit().await.unwrap();
+            let mut first = f.pool.begin().await.unwrap();
+            let attempt = submit(&mut first, &f.student, f.assignment, &PROFILES, at(9, 1))
+                .await
+                .unwrap();
+            assert_eq!(attempt.attempt, 1);
+            let second = f.submit_in_background(at(9, 2));
+            wait_until_blocked(&f.pool, &second).await;
+            first.commit().await.unwrap();
 
-        let result = second.await.unwrap();
-        assert!(
-            matches!(result, Err(AssessmentError::NoDraft)),
-            "{result:?}"
-        );
-        assert_eq!(f.rows("submitted").await, 1);
-        assert_eq!(f.rows("draft").await, 0);
-        assert_eq!(f.events().await, 1);
+            let result = second.await.unwrap();
+            assert!(
+                matches!(result, Err(AssessmentError::NoDraft)),
+                "{result:?}"
+            );
+            assert_eq!(f.rows("submitted").await, 1);
+            assert_eq!(f.rows("draft").await, 0);
+            assert_eq!(f.events().await, 1);
+        })
+        .await;
     }
 
     /// A draft save that begins while a submit holds the draft row waits for it and then starts
     /// a new draft: the submitted attempt is not overwritten.
-    #[sqlx::test(migrator = "crate::app::MIGRATOR")]
-    async fn a_draft_save_waits_for_a_submit_and_then_starts_a_new_draft(pool: PgPool) {
-        let f = fixture(pool, SubmissionSettings::default()).await;
-        f.save("first", at(9, 0)).await.unwrap();
+    #[tokio::test]
+    async fn a_draft_save_waits_for_a_submit_and_then_starts_a_new_draft() {
+        db_test(async |pool| {
+            let f = fixture(pool, SubmissionSettings::default()).await;
+            f.save("first", at(9, 0)).await.unwrap();
 
-        let mut holder = f.pool.begin().await.unwrap();
-        submit(&mut holder, &f.student, f.assignment, &PROFILES, at(9, 1))
+            let mut holder = f.pool.begin().await.unwrap();
+            submit(&mut holder, &f.student, f.assignment, &PROFILES, at(9, 1))
+                .await
+                .unwrap();
+            let save = f.save_in_background("second", at(9, 2));
+            wait_until_blocked(&f.pool, &save).await;
+            holder.commit().await.unwrap();
+
+            save.await.unwrap().unwrap();
+            assert_eq!(f.rows("submitted").await, 1);
+            assert_eq!(f.rows("draft").await, 1);
+            let kept = sqlx::query_scalar!(
+                r#"SELECT content AS "content: serde_json::Value" FROM assessment.submissions
+                   WHERE assignment_id = $1 AND status = 'submitted'"#,
+                f.assignment
+            )
+            .fetch_one(&f.pool)
             .await
             .unwrap();
-        let save = f.save_in_background("second", at(9, 2));
-        wait_until_blocked(&f.pool, &save).await;
-        holder.commit().await.unwrap();
-
-        save.await.unwrap().unwrap();
-        assert_eq!(f.rows("submitted").await, 1);
-        assert_eq!(f.rows("draft").await, 1);
-        let kept = sqlx::query_scalar!(
-            r#"SELECT content AS "content: serde_json::Value" FROM assessment.submissions
-               WHERE assignment_id = $1 AND status = 'submitted'"#,
-            f.assignment
-        )
-        .fetch_one(&f.pool)
-        .await
-        .unwrap();
-        assert_eq!(kept, essay("first"), "the attempt keeps what was submitted");
+            assert_eq!(kept, essay("first"), "the attempt keeps what was submitted");
+        })
+        .await;
     }
 
     /// Deletes the assignment in its own transaction on a task and commits when it succeeds.
@@ -815,100 +816,112 @@ mod tests {
     /// A submit is in flight and holds the assignment row `FOR SHARE`. A delete of the assignment
     /// must wait for it and then see the attempt. Without the lock the delete would pass its
     /// check, remove the assignment and leave the attempt with nothing to belong to.
-    #[sqlx::test(migrator = "crate::app::MIGRATOR")]
-    async fn a_delete_waits_for_a_submit_and_then_sees_the_attempt(pool: PgPool) {
-        let f = fixture(pool, SubmissionSettings::default()).await;
-        f.save("ready", at(9, 0)).await.unwrap();
+    #[tokio::test]
+    async fn a_delete_waits_for_a_submit_and_then_sees_the_attempt() {
+        db_test(async |pool| {
+            let f = fixture(pool, SubmissionSettings::default()).await;
+            f.save("ready", at(9, 0)).await.unwrap();
 
-        let mut first = f.pool.begin().await.unwrap();
-        submit(&mut first, &f.student, f.assignment, &PROFILES, at(9, 1))
-            .await
-            .unwrap();
-        let delete = delete_in_background(&f);
-        wait_until_blocked(&f.pool, &delete).await;
-        first.commit().await.unwrap();
+            let mut first = f.pool.begin().await.unwrap();
+            submit(&mut first, &f.student, f.assignment, &PROFILES, at(9, 1))
+                .await
+                .unwrap();
+            let delete = delete_in_background(&f);
+            wait_until_blocked(&f.pool, &delete).await;
+            first.commit().await.unwrap();
 
-        let result = delete.await.unwrap();
-        assert!(
-            matches!(result, Err(ContentError::HasSubmissions)),
-            "{result:?}"
-        );
-        assert_eq!(f.rows("submitted").await, 1);
-        assert_eq!(assignment_rows(&f).await, 1);
+            let result = delete.await.unwrap();
+            assert!(
+                matches!(result, Err(ContentError::HasSubmissions)),
+                "{result:?}"
+            );
+            assert_eq!(f.rows("submitted").await, 1);
+            assert_eq!(assignment_rows(&f).await, 1);
+        })
+        .await;
     }
 
     /// A delete is in flight and holds the row `FOR UPDATE`; the assignment had only a draft. A
     /// submit must wait for it and then find the assignment gone, instead of storing an attempt
     /// for it. The delete purged the draft with it.
-    #[sqlx::test(migrator = "crate::app::MIGRATOR")]
-    async fn a_submit_waits_for_a_delete_and_then_finds_the_assignment_gone(pool: PgPool) {
-        let f = fixture(pool, SubmissionSettings::default()).await;
-        f.save("ready", at(9, 0)).await.unwrap();
+    #[tokio::test]
+    async fn a_submit_waits_for_a_delete_and_then_finds_the_assignment_gone() {
+        db_test(async |pool| {
+            let f = fixture(pool, SubmissionSettings::default()).await;
+            f.save("ready", at(9, 0)).await.unwrap();
 
-        let mut first = f.pool.begin().await.unwrap();
-        content::delete_item(&mut first, &f.owner, f.assignment)
-            .await
-            .unwrap();
-        let second = f.submit_in_background(at(9, 1));
-        wait_until_blocked(&f.pool, &second).await;
-        first.commit().await.unwrap();
+            let mut first = f.pool.begin().await.unwrap();
+            content::delete_item(&mut first, &f.owner, f.assignment)
+                .await
+                .unwrap();
+            let second = f.submit_in_background(at(9, 1));
+            wait_until_blocked(&f.pool, &second).await;
+            first.commit().await.unwrap();
 
-        let result = second.await.unwrap();
-        assert!(
-            matches!(result, Err(AssessmentError::AssignmentNotFound)),
-            "{result:?}"
-        );
-        assert_eq!(f.rows("submitted").await, 0);
-        assert_eq!(
-            f.rows("draft").await,
-            0,
-            "the draft went with the assignment"
-        );
-        assert_eq!(assignment_rows(&f).await, 0);
-        assert_eq!(f.events().await, 0);
+            let result = second.await.unwrap();
+            assert!(
+                matches!(result, Err(AssessmentError::AssignmentNotFound)),
+                "{result:?}"
+            );
+            assert_eq!(f.rows("submitted").await, 0);
+            assert_eq!(
+                f.rows("draft").await,
+                0,
+                "the draft went with the assignment"
+            );
+            assert_eq!(assignment_rows(&f).await, 0);
+            assert_eq!(f.events().await, 0);
+        })
+        .await;
     }
 
     /// The same for a draft save: it waits for the delete and stores nothing for a gone
     /// assignment.
-    #[sqlx::test(migrator = "crate::app::MIGRATOR")]
-    async fn a_draft_save_waits_for_a_delete_and_stores_nothing(pool: PgPool) {
-        let f = fixture(pool, SubmissionSettings::default()).await;
+    #[tokio::test]
+    async fn a_draft_save_waits_for_a_delete_and_stores_nothing() {
+        db_test(async |pool| {
+            let f = fixture(pool, SubmissionSettings::default()).await;
 
-        let mut first = f.pool.begin().await.unwrap();
-        content::delete_item(&mut first, &f.owner, f.assignment)
-            .await
-            .unwrap();
-        let save = f.save_in_background("late", at(9, 1));
-        wait_until_blocked(&f.pool, &save).await;
-        first.commit().await.unwrap();
-
-        let result = save.await.unwrap();
-        assert!(
-            matches!(result, Err(AssessmentError::AssignmentNotFound)),
-            "{result:?}"
-        );
-        assert_eq!(f.rows("draft").await, 0);
-    }
-
-    #[sqlx::test(migrator = "crate::app::MIGRATOR")]
-    async fn the_staff_reads_leave_a_student_with_only_a_draft_without_an_attempt(pool: PgPool) {
-        let f = fixture(pool, SubmissionSettings::default()).await;
-        f.save("DRAFT", at(9, 0)).await.unwrap();
-        let mut conn = f.pool.acquire().await.unwrap();
-        let page = PageParams::new(None, None).unwrap();
-        let listed = list_submissions(&mut conn, &f.owner, f.assignment, page)
-            .await
-            .unwrap();
-        assert_eq!(listed.items.len(), 1);
-        assert_eq!(listed.items[0].latest, None);
-        let attempts =
-            student_attempts(&mut conn, &f.owner, f.assignment, f.student.user_id(), page)
+            let mut first = f.pool.begin().await.unwrap();
+            content::delete_item(&mut first, &f.owner, f.assignment)
                 .await
                 .unwrap();
-        assert!(attempts.items.is_empty());
-        assert!(
-            !has_submitted_in_course(&mut conn, f.course).await.unwrap(),
-            "a draft is not submitted work"
-        );
+            let save = f.save_in_background("late", at(9, 1));
+            wait_until_blocked(&f.pool, &save).await;
+            first.commit().await.unwrap();
+
+            let result = save.await.unwrap();
+            assert!(
+                matches!(result, Err(AssessmentError::AssignmentNotFound)),
+                "{result:?}"
+            );
+            assert_eq!(f.rows("draft").await, 0);
+        })
+        .await;
+    }
+
+    #[tokio::test]
+    async fn the_staff_reads_leave_a_student_with_only_a_draft_without_an_attempt() {
+        db_test(async |pool| {
+            let f = fixture(pool, SubmissionSettings::default()).await;
+            f.save("DRAFT", at(9, 0)).await.unwrap();
+            let mut conn = f.pool.acquire().await.unwrap();
+            let page = PageParams::new(None, None).unwrap();
+            let listed = list_submissions(&mut conn, &f.owner, f.assignment, page)
+                .await
+                .unwrap();
+            assert_eq!(listed.items.len(), 1);
+            assert_eq!(listed.items[0].latest, None);
+            let attempts =
+                student_attempts(&mut conn, &f.owner, f.assignment, f.student.user_id(), page)
+                    .await
+                    .unwrap();
+            assert!(attempts.items.is_empty());
+            assert!(
+                !has_submitted_in_course(&mut conn, f.course).await.unwrap(),
+                "a draft is not submitted work"
+            );
+        })
+        .await;
     }
 }

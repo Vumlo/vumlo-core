@@ -81,14 +81,8 @@ impl From<ContentError> for ApiError {
             ContentError::Gradebook(e) => e.into(),
             ContentError::Assessment(e) => e.into(),
             ContentError::Teaching(e) => e.into(),
-            ContentError::Events(e) => {
-                tracing::error!(error = %e, "content: audit log error");
-                Self::Internal
-            }
-            ContentError::Db(e) => {
-                tracing::error!(error = %e, "content: database error");
-                Self::Internal
-            }
+            ContentError::Events(e) => e.into(),
+            ContentError::Db(e) => Self::from_db("content", &e),
         }
     }
 }

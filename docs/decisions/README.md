@@ -68,3 +68,8 @@ What gets easier, what gets harder, what we must remember.
 | 0033 | [Group links, the effective roster and course exclusions](0033-group-links-effective-roster-and-exclusions.md) |
 | 0034 | [Admin writes outside a course are audited](0034-admin-writes-outside-a-course-are-audited.md) |
 | 0035 | [Submissions: drafts, attempts and deadlines](0035-submissions-drafts-attempts-and-deadlines.md) |
+| 0036 | [Each test gets its own database and its own pool](0036-test-database-harness.md) |
+| 0037 | [Who is on a course: active students, former students, role changes, owner transfer](0037-who-is-on-a-course.md) |
+| 0038 | [Login hardening: sessions against a verified credential, counted attempts, bounded hashing](0038-login-hardening.md) |
+| 0039 | [Input the database cannot store, races, a busy database, unreadable bodies](0039-api-input-and-errors.md) |
+| 0040 | [Who may link a group to a course](0040-who-may-link-a-group.md) |
