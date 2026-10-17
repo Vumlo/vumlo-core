@@ -1640,3 +1640,255 @@ async fn a_submitted_row_is_never_changed_but_a_draft_can_become_one(pool: PgPoo
         assert!(error.to_string().contains("never changed"), "{error}");
     }
 }
+
+// =============================================================================================
+// Deleting what has submitted work
+// =============================================================================================
+
+async fn rows_of(w: &World, assignment: Uuid) -> (i64, i64) {
+    let row = sqlx::query!(
+        r#"SELECT count(*) FILTER (WHERE status = 'draft') AS "drafts!",
+                  count(*) FILTER (WHERE status = 'submitted') AS "submitted!"
+           FROM assessment.submissions WHERE assignment_id = $1"#,
+        assignment
+    )
+    .fetch_one(&w.pool)
+    .await
+    .unwrap();
+    (row.drafts, row.submitted)
+}
+
+async fn item_exists(w: &World, id: Uuid) -> bool {
+    call(w, "GET", &w.owner.token, &format!("/items/{id}"), None)
+        .await
+        .status
+        == 200
+}
+
+#[sqlx::test(migrator = "server::app::MIGRATOR")]
+async fn an_assignment_with_a_submitted_attempt_cannot_be_deleted(pool: PgPool) {
+    let w = world(pool).await;
+    let id = assignment(&w).await;
+    turn_in(&w, &w.student.token, id, "handed in").await;
+    json_of(save(&w, &w.student.token, id, essay("next")).await, 200);
+
+    let response = call(&w, "DELETE", &w.owner.token, &format!("/items/{id}"), None).await;
+    assert_eq!(
+        detail(&response, 409),
+        "it has submitted work: it cannot be deleted"
+    );
+    assert!(item_exists(&w, id).await);
+    assert_eq!(
+        rows_of(&w, id).await,
+        (1, 1),
+        "nothing was purged by the refused delete"
+    );
+    // The admin is held to it too.
+    let response = call(&w, "DELETE", &w.admin.token, &format!("/items/{id}"), None).await;
+    assert_eq!(response.problem(409).status, 409);
+}
+
+#[sqlx::test(migrator = "server::app::MIGRATOR")]
+async fn an_assignment_with_only_drafts_is_deleted_and_the_drafts_go_with_it(pool: PgPool) {
+    let w = world(pool).await;
+    let id = assignment(&w).await;
+    let kept = assignment(&w).await;
+    json_of(save(&w, &w.student.token, id, essay("a")).await, 200);
+    json_of(save(&w, &w.other.token, id, essay("b")).await, 200);
+    json_of(save(&w, &w.student.token, kept, essay("c")).await, 200);
+
+    let response = call(&w, "DELETE", &w.owner.token, &format!("/items/{id}"), None).await;
+    assert_eq!(response.status, 204);
+    assert!(!item_exists(&w, id).await);
+    assert_eq!(rows_of(&w, id).await, (0, 0), "the drafts were purged");
+    assert_eq!(
+        rows_of(&w, kept).await,
+        (1, 0),
+        "another assignment's draft is untouched"
+    );
+}
+
+#[sqlx::test(migrator = "server::app::MIGRATOR")]
+async fn a_module_is_deleted_only_when_no_assignment_below_has_submitted_work(pool: PgPool) {
+    let w = world(pool).await;
+    let sub = id_of(&json_of(
+        call(
+            &w,
+            "POST",
+            &w.owner.token,
+            &format!("/courses/{}/modules", w.course),
+            Some(json!({"title": "Parent"})),
+        )
+        .await,
+        201,
+    ));
+    let child = id_of(&json_of(
+        call(
+            &w,
+            "POST",
+            &w.owner.token,
+            &format!("/courses/{}/modules", w.course),
+            Some(json!({"title": "Child", "parent_id": sub})),
+        )
+        .await,
+        201,
+    ));
+    json_of(
+        call(
+            &w,
+            "POST",
+            &w.owner.token,
+            &format!("/modules/{sub}/publish"),
+            Some(json!({"cascade": true})),
+        )
+        .await,
+        200,
+    );
+    let make = async |module: Uuid| {
+        let item = id_of(&json_of(
+            call(
+                &w,
+                "POST",
+                &w.owner.token,
+                &format!("/modules/{module}/items"),
+                Some(json!({"kind": "assignment", "title": "A",
+                            "assignment": {"type": "text", "max_points": "5"}})),
+            )
+            .await,
+            201,
+        ));
+        json_of(
+            call(
+                &w,
+                "POST",
+                &w.owner.token,
+                &format!("/items/{item}/publish"),
+                None,
+            )
+            .await,
+            200,
+        );
+        item
+    };
+    let direct = make(sub).await;
+    let nested = make(child).await;
+
+    // A draft in the sub-module and an attempt in the parent's own assignment.
+    json_of(
+        save(&w, &w.student.token, nested, essay("draft")).await,
+        200,
+    );
+    turn_in(&w, &w.student.token, direct, "done").await;
+    let response = call(
+        &w,
+        "DELETE",
+        &w.owner.token,
+        &format!("/modules/{sub}"),
+        None,
+    )
+    .await;
+    assert_eq!(response.problem(409).status, 409);
+    assert!(item_exists(&w, direct).await && item_exists(&w, nested).await);
+    assert_eq!(rows_of(&w, nested).await, (1, 0), "nothing was purged");
+
+    // An attempt in the sub-module blocks the parent as well, and the sub-module itself.
+    let parent_only = id_of(&json_of(
+        call(
+            &w,
+            "POST",
+            &w.owner.token,
+            &format!("/courses/{}/modules", w.course),
+            Some(json!({"title": "Other"})),
+        )
+        .await,
+        201,
+    ));
+    let other_child = id_of(&json_of(
+        call(
+            &w,
+            "POST",
+            &w.owner.token,
+            &format!("/courses/{}/modules", w.course),
+            Some(json!({"title": "Other child", "parent_id": parent_only})),
+        )
+        .await,
+        201,
+    ));
+    json_of(
+        call(
+            &w,
+            "POST",
+            &w.owner.token,
+            &format!("/modules/{parent_only}/publish"),
+            Some(json!({"cascade": true})),
+        )
+        .await,
+        200,
+    );
+    let deep = make(other_child).await;
+    turn_in(&w, &w.student.token, deep, "deep").await;
+    for module in [parent_only, other_child] {
+        let response = call(
+            &w,
+            "DELETE",
+            &w.owner.token,
+            &format!("/modules/{module}"),
+            None,
+        )
+        .await;
+        assert_eq!(response.problem(409).status, 409, "{module}");
+    }
+
+    // The attempt guards its item too; a module with drafts alone is deleted.
+    let response = call(
+        &w,
+        "DELETE",
+        &w.owner.token,
+        &format!("/items/{direct}"),
+        None,
+    )
+    .await;
+    assert_eq!(
+        response.problem(409).status,
+        409,
+        "the attempt still guards the item"
+    );
+    let drafts_only = id_of(&json_of(
+        call(
+            &w,
+            "POST",
+            &w.owner.token,
+            &format!("/courses/{}/modules", w.course),
+            Some(json!({"title": "Drafts"})),
+        )
+        .await,
+        201,
+    ));
+    json_of(
+        call(
+            &w,
+            "POST",
+            &w.owner.token,
+            &format!("/modules/{drafts_only}/publish"),
+            Some(json!({"cascade": true})),
+        )
+        .await,
+        200,
+    );
+    let only = make(drafts_only).await;
+    json_of(save(&w, &w.student.token, only, essay("x")).await, 200);
+    let response = call(
+        &w,
+        "DELETE",
+        &w.owner.token,
+        &format!("/modules/{drafts_only}"),
+        None,
+    )
+    .await;
+    assert_eq!(response.status, 204);
+    assert_eq!(
+        rows_of(&w, only).await,
+        (0, 0),
+        "the draft went with the module"
+    );
+}

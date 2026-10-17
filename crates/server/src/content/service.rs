@@ -21,6 +21,7 @@ use super::model::{
 };
 use super::repo::{self, ItemRow, ModuleRow};
 use crate::actor::Actor;
+use crate::assessment::{self, AssessmentError};
 use crate::events::{self, AuditEntry, EventsError};
 use crate::gradebook::{self, GradebookError};
 use crate::policy::{self, Action, CourseAccess, PolicyError, Release};
@@ -72,8 +73,13 @@ pub enum ContentError {
     /// The assignment, or an assignment below the module, has a grade (ADR-0028).
     #[error("it has grades: clear them before deleting")]
     HasGrades,
+    /// The assignment, or an assignment below the module, has a submitted attempt (ADR-0035).
+    #[error("it has submitted work")]
+    HasSubmissions,
     #[error(transparent)]
     Gradebook(GradebookError),
+    #[error(transparent)]
+    Assessment(AssessmentError),
     #[error(transparent)]
     Teaching(TeachingError),
     #[error(transparent)]
@@ -103,6 +109,15 @@ impl From<GradebookError> for ContentError {
         match error {
             GradebookError::HasGrades => Self::HasGrades,
             other => Self::Gradebook(other),
+        }
+    }
+}
+
+impl From<AssessmentError> for ContentError {
+    fn from(error: AssessmentError) -> Self {
+        match error {
+            AssessmentError::HasSubmissions => Self::HasSubmissions,
+            other => Self::Assessment(other),
         }
     }
 }
@@ -487,7 +502,13 @@ pub async fn delete_module(
     if gradebook::has_grades_in_module(conn, id).await? {
         return Err(ContentError::HasGrades);
     }
+    // A submit holds the same row `FOR SHARE`, so an attempt in flight is committed by now
+    // (ADR-0035). Drafts without an attempt go with the module.
+    if assessment::has_submitted_in_module(conn, id).await? {
+        return Err(ContentError::HasSubmissions);
+    }
     gradebook::purge_module(conn, id).await?;
+    assessment::purge_module(conn, id).await?;
     repo::delete_module(conn, id).await?;
     audit(
         conn,
@@ -880,7 +901,11 @@ pub async fn delete_item(
         if gradebook::has_grades_for_assignment(conn, id).await? {
             return Err(ContentError::HasGrades);
         }
+        if assessment::has_submitted_for_assignment(conn, id).await? {
+            return Err(ContentError::HasSubmissions);
+        }
         gradebook::purge_assignment(conn, id).await?;
+        assessment::purge_assignment(conn, id).await?;
     }
     repo::delete_item(conn, id).await?;
     audit(

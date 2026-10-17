@@ -75,7 +75,11 @@ impl From<ContentError> for ApiError {
                 Self::Conflict("max_points cannot be lowered below a score that was already given")
             }
             ContentError::HasGrades => Self::Conflict("it has grades: clear them before deleting"),
+            ContentError::HasSubmissions => {
+                Self::Conflict("it has submitted work: it cannot be deleted")
+            }
             ContentError::Gradebook(e) => e.into(),
+            ContentError::Assessment(e) => e.into(),
             ContentError::Teaching(e) => e.into(),
             ContentError::Events(e) => {
                 tracing::error!(error = %e, "content: audit log error");
@@ -410,7 +414,9 @@ async fn update_module(
     Ok(Json(api_module(module)))
 }
 
-/// Deletes a module together with its sub-modules and all their items.
+/// Deletes a module together with its sub-modules and all their items. Drafts of students and
+/// empty grade rows go with it. It is refused (409) when an assignment below has a grade or a
+/// submitted attempt.
 #[utoipa::path(
     delete,
     path = "/modules/{id}",
@@ -424,6 +430,8 @@ async fn update_module(
         (status = 403, description = "The caller may not change this course's content",
             body = ProblemDetails, content_type = "application/problem+json"),
         (status = 404, description = "No such module, or not visible to the caller",
+            body = ProblemDetails, content_type = "application/problem+json"),
+        (status = 409, description = "An assignment below has a grade or a submitted attempt",
             body = ProblemDetails, content_type = "application/problem+json"),
     )
 )]
@@ -699,7 +707,8 @@ async fn update_item(
     Ok(Json(api_item(item)))
 }
 
-/// Deletes a `text` item or an assignment.
+/// Deletes a `text` item or an assignment. Drafts of students and empty grade rows go with an
+/// assignment. It is refused (409) when the assignment has a grade or a submitted attempt.
 #[utoipa::path(
     delete,
     path = "/items/{id}",
@@ -713,6 +722,8 @@ async fn update_item(
         (status = 403, description = "The caller may not change this course's content",
             body = ProblemDetails, content_type = "application/problem+json"),
         (status = 404, description = "No such item, or not visible to the caller",
+            body = ProblemDetails, content_type = "application/problem+json"),
+        (status = 409, description = "The assignment has a grade or a submitted attempt",
             body = ProblemDetails, content_type = "application/problem+json"),
     )
 )]
