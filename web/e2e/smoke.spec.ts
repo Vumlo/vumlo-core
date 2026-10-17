@@ -1,5 +1,5 @@
 import { expect, test, type ConsoleMessage, type Page } from "@playwright/test";
-import { accounts, courseRoutes, PASSWORD, staticRoutes, type RoleName } from "./routes";
+import { accounts, courseRoutes, PASSWORD, publicRoutes, staticRoutes, type RoleName } from "./routes";
 
 const roles: RoleName[] = ["student", "teacher", "admin"];
 const themes = ["light", "dark"] as const;
@@ -25,7 +25,7 @@ async function signIn(page: Page, role: RoleName) {
 async function open(page: Page, path: string, theme: string, problems: string[]) {
   await page.goto(path);
   await expect(page.locator("html")).toHaveAttribute("data-theme", theme);
-  await expect(page.locator("main h1, main h2, main [contenteditable], main input").first()).toBeVisible();
+  await expect(page.locator("h1, h2, main [contenteditable], main input").first()).toBeVisible();
   await page.waitForLoadState("networkidle");
   await expect(page.getByText("Something went wrong")).toHaveCount(0);
   expect(problems, `console problems on ${path}`).toEqual([]);
@@ -55,6 +55,28 @@ for (const role of roles) {
       const width = await page.evaluate(() => document.documentElement.scrollWidth);
       expect(width, `page width on ${path}`).toBeLessThanOrEqual(390);
     }
+  });
+}
+
+for (const role of roles) {
+  test(`${role} screens open in Ukrainian`, async ({ page }) => {
+    await page.addInitScript(() => localStorage.setItem("learnly.language", "uk"));
+    const problems = watch(page);
+    await page.goto("/login");
+    await page.getByLabel("Електронна пошта").fill(accounts[role]);
+    await page.getByLabel("Пароль", { exact: true }).fill(PASSWORD);
+    await page.getByRole("button", { name: "Увійти", exact: true }).click();
+    await page.waitForURL((u) => !u.pathname.startsWith("/login"));
+    for (const path of staticRoutes[role]) await open(page, path, "light", problems);
+    await expect(page.locator("html")).toHaveAttribute("lang", "uk");
+  });
+}
+
+for (const theme of themes) {
+  test(`pages before sign-in open in ${theme} theme`, async ({ page }) => {
+    await page.addInitScript((t) => localStorage.setItem("learnly.theme", t), theme);
+    const problems = watch(page);
+    for (const path of publicRoutes) await open(page, path, theme, problems);
   });
 }
 

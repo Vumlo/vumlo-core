@@ -1,5 +1,8 @@
 import type { Page } from "@playwright/test";
 
+/** Pages anyone can open without signing in. */
+export const publicRoutes = ["/login", "/register", "/forgot-password", "/reset-password", "/verify-email"];
+
 export type RoleName = "student" | "teacher" | "admin";
 
 export const PASSWORD = "correct horse";
@@ -12,9 +15,9 @@ export const accounts: Record<RoleName, string> = {
 
 /** Screens that do not depend on ids. */
 export const staticRoutes: Record<RoleName, string[]> = {
-  student: ["/", "/courses", "/calendar", "/grades", "/profile"],
-  teacher: ["/", "/courses", "/calendar", "/grading", "/profile"],
-  admin: ["/admin", "/admin/people", "/admin/groups", "/admin/courses", "/admin/institution", "/admin/audit", "/courses", "/calendar", "/profile"],
+  student: ["/", "/courses", "/calendar", "/grades", "/profile", "/search?q=merge", "/search", "/no-such-page"],
+  teacher: ["/", "/courses", "/courses/new", "/calendar", "/grading", "/profile", "/search?q=merge", "/no-such-page"],
+  admin: ["/admin", "/admin/people", "/admin/groups", "/admin/courses", "/admin/institution", "/admin/audit", "/courses", "/calendar", "/profile", "/search?q=merge", "/no-such-page"],
 };
 
 type Tree = { modules: { items: { id: string }[]; submodules: { items: { id: string }[] }[] }[] };
