@@ -25,6 +25,7 @@ pub fn test_settings() -> Settings {
             bind_addr: ([127, 0, 0, 1], 0).into(),
             public_origin: ORIGIN.to_owned(),
             client_ip_header: Some("x-real-ip".to_owned()),
+            allowed_origins: Vec::new(),
         },
         database: DatabaseSettings {
             url: String::new(),
@@ -93,6 +94,13 @@ impl Http {
 
     pub fn post(&self, path: &str) -> Req {
         Req(self.client.post(format!("{}/api/v1{path}", self.base)))
+    }
+
+    pub fn options(&self, path: &str) -> Req {
+        Req(self.client.request(
+            reqwest::Method::OPTIONS,
+            format!("{}/api/v1{path}", self.base),
+        ))
     }
 
     pub fn put(&self, path: &str) -> Req {

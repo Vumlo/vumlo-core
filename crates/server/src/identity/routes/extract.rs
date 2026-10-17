@@ -11,6 +11,7 @@ use crate::app::AppState;
 use crate::error::ApiError;
 use crate::identity::model::SessionToken;
 use crate::identity::service::{self, Authenticated, IdentityError};
+use crate::settings::ServerSettings;
 
 pub const COOKIE_NAME: &str = "learnly_session";
 
@@ -40,11 +41,12 @@ fn credential(headers: &HeaderMap) -> Result<Credential, IdentityError> {
 }
 
 /// CSRF defence for cookie authentication: a request that is not read-only must come from the
-/// configured origin. Bearer requests are not sent by browsers on their own, so they skip it.
+/// public origin or from one of the trusted frontends (ADR-0041). Bearer requests are not sent
+/// by browsers on their own, so they skip it.
 pub(super) fn check_origin(
     method: &Method,
     headers: &HeaderMap,
-    public_origin: &str,
+    server: &ServerSettings,
 ) -> Result<(), IdentityError> {
     if matches!(*method, Method::GET | Method::HEAD | Method::OPTIONS) {
         return Ok(());
@@ -53,7 +55,12 @@ pub(super) fn check_origin(
         .get(header::ORIGIN)
         .and_then(|value| value.to_str().ok())
     {
-        Some(origin) if origin == public_origin => Ok(()),
+        Some(origin)
+            if origin == server.public_origin
+                || server.allowed_origins.iter().any(|o| o == origin) =>
+        {
+            Ok(())
+        }
         _ => Err(IdentityError::OriginMismatch),
     }
 }
@@ -65,11 +72,7 @@ async fn authenticate_request(
     let token = match credential(&parts.headers)? {
         Credential::Bearer(token) => token,
         Credential::Cookie(token) => {
-            check_origin(
-                &parts.method,
-                &parts.headers,
-                &state.config.server.public_origin,
-            )?;
+            check_origin(&parts.method, &parts.headers, &state.config.server)?;
             token
         }
     };
@@ -119,6 +122,15 @@ mod tests {
 
     use super::*;
 
+    fn server(allowed: &[&str]) -> ServerSettings {
+        ServerSettings {
+            bind_addr: ([127, 0, 0, 1], 0).into(),
+            public_origin: "https://a.edu".to_owned(),
+            client_ip_header: None,
+            allowed_origins: allowed.iter().map(|o| (*o).to_owned()).collect(),
+        }
+    }
+
     fn headers(origin: Option<&str>) -> HeaderMap {
         let mut headers = HeaderMap::new();
         if let Some(origin) = origin {
@@ -130,16 +142,14 @@ mod tests {
     #[test]
     fn read_only_methods_need_no_origin() {
         for method in [Method::GET, Method::HEAD, Method::OPTIONS] {
-            assert!(check_origin(&method, &headers(None), "https://a.edu").is_ok());
+            assert!(check_origin(&method, &headers(None), &server(&[])).is_ok());
         }
     }
 
     #[test]
     fn unsafe_methods_need_the_exact_origin() {
         for method in [Method::POST, Method::PATCH, Method::DELETE, Method::PUT] {
-            assert!(
-                check_origin(&method, &headers(Some("https://a.edu")), "https://a.edu").is_ok()
-            );
+            assert!(check_origin(&method, &headers(Some("https://a.edu")), &server(&[])).is_ok());
             for bad in [
                 None,
                 Some("https://evil.test"),
@@ -149,10 +159,41 @@ mod tests {
             ] {
                 assert!(
                     matches!(
-                        check_origin(&method, &headers(bad), "https://a.edu"),
+                        check_origin(&method, &headers(bad), &server(&["https://app.b.edu"])),
                         Err(IdentityError::OriginMismatch)
                     ),
                     "{method} {bad:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn unsafe_methods_also_accept_an_allowed_origin_and_nothing_near_it() {
+        let server = server(&["https://app.b.edu", "http://localhost:5173"]);
+        for method in [Method::POST, Method::PATCH, Method::DELETE, Method::PUT] {
+            for good in [
+                "https://a.edu",
+                "https://app.b.edu",
+                "http://localhost:5173",
+            ] {
+                assert!(check_origin(&method, &headers(Some(good)), &server).is_ok());
+            }
+            for bad in [
+                "https://b.edu",
+                "https://app.b.edu.evil.test",
+                "http://app.b.edu",
+                "https://app.b.edu:8443",
+                "https://APP.b.edu",
+                "https://app.b.edu/",
+                "*",
+            ] {
+                assert!(
+                    matches!(
+                        check_origin(&method, &headers(Some(bad)), &server),
+                        Err(IdentityError::OriginMismatch)
+                    ),
+                    "{method} {bad}"
                 );
             }
         }

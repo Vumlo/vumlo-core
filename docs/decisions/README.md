@@ -73,3 +73,4 @@ What gets easier, what gets harder, what we must remember.
 | 0038 | [Login hardening: sessions against a verified credential, counted attempts, bounded hashing](0038-login-hardening.md) |
 | 0039 | [Input the database cannot store, races, a busy database, unreadable bodies](0039-api-input-and-errors.md) |
 | 0040 | [Who may link a group to a course](0040-who-may-link-a-group.md) |
+| 0041 | [Trusted frontends on another origin](0041-trusted-cross-origin-frontends.md) |
