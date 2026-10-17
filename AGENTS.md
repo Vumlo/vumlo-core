@@ -105,7 +105,8 @@ Modules: `identity`, `org`, `teaching`, `content`, `assessment`, `gradebook`, `f
 - Errors are RFC 9457 Problem Details, produced by one `IntoResponse` impl.
 - All error responses, including framework-generated ones (405/408/413, extractor rejections), are Problem Details.
 - Validation failures are `422` with `errors: [{field, message}]` (ADR-0018).
-- Lists use cursor pagination: `?cursor=&limit=` → `{items, next_cursor}` (ADR-0018). `Idempotency-Key` is not implemented yet (needs its own task and table design, see ADR-0012); do not add ad-hoc handling.
+- Lists use cursor pagination: `?cursor=&limit=` → `{items, next_cursor}` (ADR-0018). `Idempotency-Key` is deferred (ADR-0012, ADR-0039): no endpoint reads it, and none gets ad-hoc handling; it needs its own task and table design.
+- A body that cannot be read is `422`, a wrong media type `415`, a database that is busy or down `503` with `Retry-After` (ADR-0039). A database error that is not about availability is a logged `500`.
 
 ## 10. Errors and panics
 
