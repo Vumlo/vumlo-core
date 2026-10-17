@@ -8,6 +8,13 @@ bind_addr = "127.0.0.1:8080"
 public_origin = "http://localhost:5173"
 # Behind a reverse proxy that overwrites this header, rate limits use it instead of the TCP peer.
 # client_ip_header = "x-real-ip"
+# Trusted browser frontends hosted on another origin (ADR-0041). Each entry is an exact origin:
+# scheme://host[:port], lowercase, no path, no wildcard, no default port. Empty (the default) means
+# no CORS headers at all. A listed origin gets CORS with credentials and may send cookie-authenticated
+# writes, so its JavaScript acts with the user's rights: list only frontends you trust. Cookies are
+# SameSite=Lax, so cookie login works across origins only for a frontend on the same site as the API
+# (app.example.edu -> lms.example.edu); a frontend on another site must use bearer tokens.
+# allowed_origins = ["https://app.example.edu"]
 
 [database]
 url = "postgres://learnly:learnly@localhost:5432/learnly"
