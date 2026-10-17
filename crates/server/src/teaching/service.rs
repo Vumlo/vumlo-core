@@ -514,7 +514,7 @@ pub async fn link_group(
     subgroup_id: Option<Uuid>,
 ) -> Result<(CourseGroupLink, bool), TeachingError> {
     let (_, access) = load(conn, actor, course_id, true).await?;
-    policy::authorize(actor, Action::ManageRoster(access))?;
+    policy::authorize(actor, Action::LinkGroups(access))?;
     let inserted = repo::insert_link(
         conn,
         Uuid::now_v7(),
@@ -559,7 +559,7 @@ pub async fn unlink_group(
     link_id: Uuid,
 ) -> Result<(), TeachingError> {
     let (_, access) = load(conn, actor, course_id, true).await?;
-    policy::authorize(actor, Action::ManageRoster(access))?;
+    policy::authorize(actor, Action::LinkGroups(access))?;
     let link = repo::delete_link(conn, course_id, link_id)
         .await?
         .ok_or(TeachingError::LinkNotFound)?;
@@ -586,7 +586,7 @@ pub async fn group_options(
     page: PageParams,
 ) -> Result<Page<GroupOption>, TeachingError> {
     let (_, access) = load(conn, actor, course_id, false).await?;
-    policy::authorize(actor, Action::ManageRoster(access))?;
+    policy::authorize(actor, Action::LinkGroups(access))?;
     Ok(org::group_options(conn, page).await?)
 }
 

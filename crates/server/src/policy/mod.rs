@@ -138,9 +138,13 @@ pub enum Action {
     /// Read the submitted attempts of a course's students (ADR-0035). Staff and admins, any
     /// course status. Drafts are never read through this: the queries do not select them.
     ViewSubmissions(CourseAccess),
-    /// Link and unlink groups, read the group options, list and restore exclusions (ADR-0033).
-    /// The rights of the matrix row "Enroll/remove students, link groups". Ignores the status.
+    /// List the group links, list and restore exclusions (ADR-0033). The rights of the matrix row
+    /// "Enroll/remove students". Linking itself is [`Action::LinkGroups`]. Ignores the status.
     ManageRoster(CourseAccess),
+    /// Link and unlink groups of the institution to a course and read the groups it can be linked
+    /// to (ADR-0040). The owner, a course teacher and admins, not an assistant: a linked group puts
+    /// its students on the roster, and the roster shows their names. Ignores the status.
+    LinkGroups(CourseAccess),
     /// Change a course's title and term (ADR-0033). Not a root action. Ignores the status.
     EditCourse(CourseAccess),
     /// Create, change and delete terms (ADR-0032).
@@ -189,6 +193,7 @@ impl Action {
             Self::ViewOwnSubmission(access) => Self::ViewOwnSubmission(mine(access)),
             Self::ViewSubmissions(access) => Self::ViewSubmissions(mine(access)),
             Self::ManageRoster(access) => Self::ManageRoster(mine(access)),
+            Self::LinkGroups(access) => Self::LinkGroups(mine(access)),
             Self::EditCourse(access) => Self::EditCourse(mine(access)),
             Self::ManageOwnAccount
             | Self::ManageUsers
@@ -249,7 +254,9 @@ pub fn authorize(actor: &Actor, action: Action) -> Result<(), PolicyError> {
                 || (access.role == Some(CourseRole::Student)
                     && access.status == CourseStatus::Published)
         }
-        Action::PublishCourse(access) => is_admin || access.is_owner_or_teacher(),
+        Action::PublishCourse(access) | Action::LinkGroups(access) => {
+            is_admin || access.is_owner_or_teacher()
+        }
         Action::ManageMembership { access, role } => {
             is_admin
                 || match role {
@@ -376,6 +383,36 @@ mod tests {
                         );
                     }
                 }
+            }
+        }
+    }
+
+    #[test]
+    fn only_the_owner_a_teacher_and_admins_link_groups() {
+        for status in [Draft, Published, Archived] {
+            for (role, is_owner) in [(Some(Teacher), true), (Some(Teacher), false)] {
+                let action = Action::LinkGroups(access(role, is_owner, status));
+                assert_eq!(
+                    authorize(&actor(Role::Teacher), action),
+                    Ok(()),
+                    "{action:?}"
+                );
+            }
+            let admin = Action::LinkGroups(access(None, false, status));
+            assert_eq!(authorize(&actor(Role::Admin), admin), Ok(()));
+            // An assistant is staff and manages the roster, but does not link groups.
+            for (role, who) in [
+                (Some(Assistant), Role::Student),
+                (Some(Assistant), Role::Teacher),
+                (Some(Student), Role::Student),
+                (None, Role::Teacher),
+            ] {
+                let action = Action::LinkGroups(access(role, false, status));
+                assert_eq!(
+                    authorize(&actor(who), action),
+                    Err(PolicyError),
+                    "{action:?}"
+                );
             }
         }
     }

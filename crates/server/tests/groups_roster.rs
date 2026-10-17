@@ -950,7 +950,11 @@ async fn the_group_options_give_staff_groups_and_subgroups_without_member_data()
         w.join(group, &[s.id]).await;
         let path = format!("/courses/{}/group-options", w.course);
 
-        for who in [&w.owner, &w.assistant, &w.admin] {
+        // An assistant manages the roster but does not link groups, so does not choose one (ADR-0040).
+        w.send("GET", &w.assistant.token, &path, None)
+            .await
+            .problem(403);
+        for who in [&w.owner, &w.admin] {
             let page = ok(&w.send("GET", &who.token, &path, None).await, 200);
             let items = page["items"].as_array().unwrap();
             assert_eq!(items.len(), 2);
@@ -1003,17 +1007,25 @@ async fn who_may_manage_links_exclusions_and_the_options() {
         let member = w.new_student("m@x.edu").await;
         common::put_member(&w.http, &w.owner.token, w.course, member.id, "student").await;
         let course = w.course;
-        let calls: Vec<(&str, String, Option<Value>)> = vec![
-            ("GET", format!("/courses/{course}/groups"), None),
+        // The last field: may an assistant do it? Linking and choosing a group are for the owner,
+        // teachers and admins (ADR-0040); listing the links and the exclusions are roster work.
+        let calls: Vec<(&str, String, Option<Value>, bool)> = vec![
+            ("GET", format!("/courses/{course}/groups"), None, true),
             (
                 "POST",
                 format!("/courses/{course}/groups"),
                 Some(json!({"group_id": group})),
+                false,
             ),
-            ("GET", format!("/courses/{course}/group-options"), None),
-            ("GET", format!("/courses/{course}/exclusions"), None),
+            (
+                "GET",
+                format!("/courses/{course}/group-options"),
+                None,
+                false,
+            ),
+            ("GET", format!("/courses/{course}/exclusions"), None, true),
         ];
-        for (method, path, body) in &calls {
+        for (method, path, body, assistant_may) in &calls {
             let anonymous = match body {
                 Some(body) => w.http.post(path).json(body).send().await,
                 None => w.http.get(path).send().await,
@@ -1026,12 +1038,21 @@ async fn who_may_manage_links_exclusions_and_the_options() {
             w.send(method, &w.stranger.token, path, body.clone())
                 .await
                 .problem(404);
-            for staff in [&w.owner, &w.assistant, &w.admin] {
+            for staff in [&w.owner, &w.admin] {
                 let status = w
                     .send(method, &staff.token, path, body.clone())
                     .await
                     .status;
                 assert!(status == 200 || status == 201, "{method} {path}: {status}");
+            }
+            let status = w
+                .send(method, &w.assistant.token, path, body.clone())
+                .await
+                .status;
+            if *assistant_may {
+                assert_eq!(status, 200, "{method} {path}");
+            } else {
+                assert_eq!(status, 403, "{method} {path}");
             }
         }
         // The same students get 404, not 403, in a course they cannot see (a draft).
@@ -1066,6 +1087,14 @@ async fn who_may_manage_links_exclusions_and_the_options() {
         w.send(
             "DELETE",
             &member.token,
+            &format!("/courses/{course}/groups/{link}"),
+            None,
+        )
+        .await
+        .problem(403);
+        w.send(
+            "DELETE",
+            &w.assistant.token,
             &format!("/courses/{course}/groups/{link}"),
             None,
         )
