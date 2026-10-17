@@ -29,3 +29,9 @@
 .langLabel select { min-height: 40px; padding: 0 8px; border: 0; border-radius: 8px; background: transparent; color: var(--text); font-size: 14px; }
 .themeBtn { display: flex; align-items: center; gap: 8px; min-height: 40px; padding: 0 12px; border: 0; border-radius: 8px; background: transparent; color: var(--text); font-size: 14px; }
 .signout { margin: 16px 0 0; text-align: center; font-size: 14px; }
+button.link { padding: 0; border: 0; background: none; cursor: pointer; font-family: inherit; }
+.stack { display: flex; flex-direction: column; gap: 16px; }
+.sent { display: flex; flex-direction: column; align-items: flex-start; gap: 14px; }
+.mailbox { margin-top: 20px; padding: 14px 16px; border: 1px dashed var(--border-strong); border-radius: 10px; font-size: 14px; color: var(--muted); }
+.mailbox strong { color: var(--text); }
+.mailbox ul { margin: 8px 0 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 6px; }

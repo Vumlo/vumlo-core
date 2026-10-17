@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { JetBrains_Mono, Onest } from "next/font/google";
 import type { ReactNode } from "react";
 import { MockProvider } from "@/mocks/MockProvider";
+import { LanguageProvider } from "@/lib/i18n";
 import { ThemeProvider, themeInitScript } from "@/lib/theme";
 import "@/styles/globals.css";
 
@@ -19,7 +20,9 @@ export default function RootLayout({ children }: { children: ReactNode }) {
       </head>
       <body>
         <ThemeProvider>
-          <MockProvider>{children}</MockProvider>
+          <MockProvider>
+            <LanguageProvider>{children}</LanguageProvider>
+          </MockProvider>
         </ThemeProvider>
       </body>
     </html>

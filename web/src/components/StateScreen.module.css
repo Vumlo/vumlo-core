@@ -1,0 +1,6 @@
+.screen { max-width: 520px; margin: 0 auto; padding: 96px 16px 64px; text-align: center; }
+.code { margin: 0 0 8px; font-size: 64px; font-weight: 700; line-height: 1; letter-spacing: -0.02em; color: var(--border-strong); }
+.title { margin: 0 0 8px; font-size: 26px; line-height: 1.2; font-weight: 600; letter-spacing: -0.01em; }
+.message { margin: 0 0 24px; color: var(--muted); }
+.actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px; }
+@media (max-width: 720px) { .screen { padding-top: 56px; } }

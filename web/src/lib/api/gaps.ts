@@ -277,3 +277,25 @@ export type AuditEvent = { id: string; at: string; who: string; what: string; de
 export type AuthRole = Role;
 
 export type { Document };
+
+/** `POST /auth/google/start`: where to send the browser for Google's consent screen (ADR-0017, path 3). */
+export type GoogleStart = { authorization_url: string };
+
+/** Mock only: the mail a real server would send. Lets `pnpm dev:mock` follow a verification or reset link. */
+export type MockMail = { id: string; to: string; kind: "verify" | "reset"; path: string; sent_at: string };
+
+/** One hit of `GET /search`: a course, or a lecture or assignment inside one. */
+export type SearchHit = {
+  kind: "course" | "lecture" | "assignment";
+  id: string;
+  title: string;
+  course_id: string;
+  course_title: string;
+  course_code: string;
+  /** A short piece of text around the match, or null for a course. */
+  snippet: string | null;
+  /** For an assignment, when it is due; null otherwise. */
+  due_at: string | null;
+  /** Draft items are only returned to staff. */
+  status: "draft" | "published";
+};

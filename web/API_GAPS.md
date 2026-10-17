@@ -13,9 +13,29 @@ Spec endpoints the UI uses as they are: auth, `/me`, `/me/sessions`, `/me/passwo
 - **Mocked:** `GET /institution` (any signed-in user, also before sign-in), `GET` and `PATCH /admin/institution`.
 
 ## Sign-in extras
-- **Screens:** Sign in.
-- **Missing:** self-registration ("Create an account"), Google sign-in, password reset by email. ADR-0017 plans all three; the server has none yet.
-- **Mocked:** nothing. The buttons show a message that the feature is not available on this server yet.
+- **Screens:** Sign in, Create an account, Confirm your email, Reset your password, Choose a new password, Google callback.
+- **Missing:** ADR-0017 plans all of it; the server has none yet. Self-registration with a password and a verification link (24 hours, single use), password reset by email, Google sign-in (allowed domain, `email_verified`). Registration and reset answer the same for every address, so a page cannot tell who has an account.
+- **Mocked:**
+  - `POST /auth/register` (`name`, `surname`, `email`, `password`; 202; 422 for an address outside `northfield.edu`), `POST /auth/verify-email` (`token`; 410 when spent).
+  - `POST /auth/password-reset` (`email`; 202), `POST /auth/password-reset/confirm` (`token`, `new_password`; 410 when spent).
+  - `POST /auth/google/start` (`login_hint`) answers `{authorization_url}`; the page opens it. `POST /auth/google/callback` (`code`, `state`) opens the session. The mock skips Google's consent screen and signs in as the account named by `login_hint`.
+  - `GET /mock/outbox`: only in the mock. The pages show a "Mock mailbox" box with the links a real mail would carry. The mock keeps its data in the page, so a full reload forgets pending sign-ups and reset links; follow the links without reloading.
+- **Not mocked:** the "must change password" rule of ADR-0017 (a temporary password may only call change password, logout and `GET /me`). The page does not rely on it; it sends such a session to `/change-password` itself.
+
+## Search
+- **Screens:** Search (the navbar field opens it).
+- **Missing:** `GET /search?q=` over the courses and the lectures and assignments the caller may see. For a student that means published items only (ADR-0010); staff also get drafts. Results carry the kind, titles, a snippet, and for an assignment its due time.
+- **Mocked:** `GET /search?q=` returns up to 50 hits ranked by title match first. A student searching never gets a draft, and keeps getting the published text while there are unpublished edits.
+
+## New course
+- **Screens:** New course.
+- **Missing:** `POST /courses` takes only `title` and `term_id`. The page also sets `code` and `description` (see Course info), and a copy from a template takes no term. The page makes these as follow-up calls, and still opens the settings page if one of them fails.
+- **Mocked:** `PATCH /courses/{id}/info`, `POST /templates/{id}/courses`; the term of a copy is set with the real `PATCH /courses/{id}`.
+
+## Language
+- **Screens:** every screen, Admin Institution (default language), Settings (this device).
+- **Missing:** nothing on the server. The institution default comes from the mocked `GET /institution`.
+- **Note:** ADR-0043 describes the catalogue. Some screens still show English text; see the ADR.
 
 ## Course info
 - **Screens:** the header of every course screen, Courses, Course settings.
@@ -113,10 +133,5 @@ Spec endpoints the UI uses as they are: auth, `/me`, `/me/sessions`, `/me/passwo
 - **Missing:** storing an accent colour and a logo; the design does not say how a chosen accent gets a dark-theme match.
 - **Mocked:** the choice is saved in the mock institution and shown in the preview only. The site keeps its tested accent. Upload is disabled.
 
-## Search
-- **Screens:** navbar.
-- **Missing:** a search over courses and materials. The field filters the course list by title and code in the browser.
-- **Mocked:** nothing.
-
 ## Not API gaps, kept in the browser
-Theme, language, and the layout of the home widgets are saved in `localStorage`, as the design says. No translation catalogue exists: the language setting is stored but not applied.
+Theme, language, and the layout of the home widgets are saved in `localStorage`, as the design says.

@@ -148,7 +148,7 @@ export const coreHandlers = [
   http.post(`${A}/auth/login`, async ({ request }) => {
     const body = (await request.json()) as { email?: string; password?: string };
     const u = getDb().users.find((x) => x.email === (body.email ?? "").trim().toLowerCase());
-    if (!u || u.status !== "active" || u.password !== body.password) throw problem(401, "Unauthorized");
+    if (!u || u.status !== "active" || !u.password || u.password !== body.password) throw problem(401, "Unauthorized");
     localStorage.setItem(SESSION_KEY, u.id);
     u.last_sign_in = MOCK_NOW.toISOString();
     return HttpResponse.json(publicUser(u), { headers: { "Cache-Control": "no-store" } });

@@ -30,9 +30,27 @@ export function useLogout() {
 export function useChangePassword() {
   return useMutation(async (current_password: string, new_password: string) => {
     await api.post("/me/password", { current_password, new_password });
+    temporary = "";
     invalidate("/me");
     return true as const;
   });
+}
+
+let temporary = "";
+
+/** Kept in memory only, so the page that asks for a new password can reuse what was just typed. */
+export function rememberTemporaryPassword(password: string) {
+  temporary = password;
+}
+
+export function temporaryPassword() {
+  return temporary;
+}
+
+/** Where a person lands after signing in: the page they asked for, or their home. */
+export function landingPath(user: Pick<User, "role" | "must_change_password">, next: string | null) {
+  const target = next && next.startsWith("/") && !next.startsWith("//") ? next : user.role === "admin" ? "/admin" : "/";
+  return user.must_change_password ? `/change-password?next=${encodeURIComponent(target)}` : target;
 }
 
 export function fullName(u: Pick<User, "name" | "surname">) {

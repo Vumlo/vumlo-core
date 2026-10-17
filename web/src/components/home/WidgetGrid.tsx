@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Icon } from "@/components/Icon";
+import { useT } from "@/lib/i18n";
 import s from "./WidgetGrid.module.css";
 
 export type WidgetDef = {
@@ -37,6 +38,7 @@ function readLayout(key: string): Partial<Layout> | null {
  * removed and added back. The layout is kept in this browser only (Home design: "saved in this browser").
  */
 export function WidgetGrid({ storageKey, defs, defaultOrder, customizeSlot }: { storageKey: string; defs: WidgetDef[]; defaultOrder: string[]; customizeSlot?: (button: ReactNode) => ReactNode }) {
+  const t = useT();
   const byId = new Map(defs.map((d) => [d.id, d]));
   const ids = useRef(defs.map((d) => d.id));
   const [layout, setLayout] = useState<Layout>({ order: defaultOrder, sizes: {} });
@@ -94,7 +96,7 @@ export function WidgetGrid({ storageKey, defs, defaultOrder, customizeSlot }: { 
   const button = !customizing && (
     <button type="button" className="btn" onClick={() => setCustomizing(true)}>
       <Icon name="tune" size={17} />
-      Customize
+      {t("home.customize")}
     </button>
   );
 
@@ -104,10 +106,10 @@ export function WidgetGrid({ storageKey, defs, defaultOrder, customizeSlot }: { 
       {customizing && (
         <div className={s.banner}>
           <p>
-            <strong>Customize your home.</strong> Drag a widget by its handle or use the arrows. Your layout is saved in this browser.
+            <strong>{t("home.customizeTitle")}</strong> {t("home.customizeLead")}
           </p>
-          <button type="button" className="btn btn-outline" onClick={() => update({ order: defaultOrder, sizes: {} })}>Reset to default</button>
-          <button type="button" className="btn btn-primary" onClick={() => { setCustomizing(false); setMenuFor(null); }}>Done</button>
+          <button type="button" className="btn btn-outline" onClick={() => update({ order: defaultOrder, sizes: {} })}>{t("home.resetDefault")}</button>
+          <button type="button" className="btn btn-primary" onClick={() => { setCustomizing(false); setMenuFor(null); }}>{t("common.done")}</button>
         </div>
       )}
       <div className={s.stack}>
@@ -198,8 +200,8 @@ export function WidgetGrid({ storageKey, defs, defaultOrder, customizeSlot }: { 
       </div>
       {customizing && (
         <section aria-labelledby="more-h" className={s.more} style={{ marginTop: 32 }}>
-          <h2 id="more-h">More widgets</h2>
-          <p className="muted" style={{ margin: "0 2px 12px", fontSize: 14 }}>Added widgets go to the end of your home. You can move them after that.</p>
+          <h2 id="more-h">{t("home.moreWidgets")}</h2>
+          <p className="muted" style={{ margin: "0 2px 12px", fontSize: 14 }}>{t("home.moreLead")}</p>
           {hidden.length > 0 ? (
             <div className={s.moreGrid}>
               {hidden.map((d) => (
@@ -209,7 +211,7 @@ export function WidgetGrid({ storageKey, defs, defaultOrder, customizeSlot }: { 
                     <span className="muted" style={{ fontSize: 13 }}>{label(sizeOf(d))}</span>
                   </div>
                   <p className="muted" style={{ fontSize: 13, margin: "0 0 10px" }}>{d.desc}</p>
-                  <button type="button" className="btn btn-outline" style={{ marginTop: "auto" }} onClick={() => update({ ...layout, order: [...layout.order, d.id] })}>Add to home</button>
+                  <button type="button" className="btn btn-outline" style={{ marginTop: "auto" }} onClick={() => update({ ...layout, order: [...layout.order, d.id] })}>{t("home.addToHome")}</button>
                 </div>
               ))}
             </div>

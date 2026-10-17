@@ -8,16 +8,16 @@ import { useMyWork, useTeachingOverview } from "@/lib/api/hooks/work";
 import type { WorkStatus } from "@/lib/api/gaps";
 import { now } from "@/lib/clock";
 import { statusPill } from "@/lib/course";
-import { dayKey, MONTHS, offsetLabel, parts, relativeCap, timeOf } from "@/lib/format";
+import { dayKey, dayKeyLabel, monthName, offsetLabel, parts, relativeCap, timeOf, weekdayShort } from "@/lib/format";
+import { useT } from "@/lib/i18n";
 import { useMe } from "@/lib/session";
 import s from "./Calendar.module.css";
 
 type Ev = { id: string; courseId: string; code: string; courseTitle: string; title: string; at: string; status: WorkStatus | null; href: string };
 
-const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-const WEEKDAYS_LONG = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 
 export function CalendarScreen() {
+  const t = useT();
   const me = useMe();
   const student = me.data?.role === "student";
   const work = useMyWork();
@@ -66,19 +66,16 @@ export function CalendarScreen() {
   const agenda = [...new Set(upcoming.map((e) => dayKey(e.at)))].map((k) => ({ key: k, items: upcoming.filter((e) => dayKey(e.at) === k) }));
   const shift = (delta: number) => setMonth(({ y, m }) => { const t = m - 1 + delta; return { y: y + Math.floor(t / 12), m: ((t % 12) + 12) % 12 + 1 }; });
 
-  const dayTitle = (key: string) => {
-    const [y, m, d] = key.split("-").map(Number);
-    return `${WEEKDAYS_LONG[(new Date(Date.UTC(y!, m! - 1, d!)).getUTCDay() + 6) % 7]}, ${d} ${MONTHS[m! - 1]}`;
-  };
+  const dayTitle = dayKeyLabel;
 
   return (
     <div className="container">
       <div className={s.head}>
-        <h1 className={s.month}>{MONTHS[month.m - 1]} {month.y}</h1>
-        <button type="button" className="btn" onClick={() => { setMonth({ y: today.y, m: today.m }); setSelected(todayKey); }}>Today</button>
+        <h1 className={s.month}>{monthName(month.m)} {month.y}</h1>
+        <button type="button" className="btn" onClick={() => { setMonth({ y: today.y, m: today.m }); setSelected(todayKey); }}>{t("date.today.cap")}</button>
         <div className={s.arrows}>
-          <button type="button" aria-label="Previous month" onClick={() => shift(-1)}><Icon name="chevronLeft" size={16} strokeWidth={2} /></button>
-          <button type="button" aria-label="Next month" onClick={() => shift(1)}><Icon name="chevronRight" size={16} strokeWidth={2} /></button>
+          <button type="button" aria-label={t("calendar.previous")} onClick={() => shift(-1)}><Icon name="chevronLeft" size={16} strokeWidth={2} /></button>
+          <button type="button" aria-label={t("calendar.next")} onClick={() => shift(1)}><Icon name="chevronRight" size={16} strokeWidth={2} /></button>
         </div>
         <span style={{ flex: "1 1 auto" }} />
         <div role="radiogroup" aria-label="View" className="segmented">
@@ -103,8 +100,8 @@ export function CalendarScreen() {
         <div className={s.body}>
           <div className={s.main}>
             {view === "month" ? (
-              <div role="grid" aria-label={`${MONTHS[month.m - 1]} ${month.y}`} className="card" style={{ overflow: "hidden" }}>
-                <div role="row" className={s.grid}>{WEEKDAYS.map((w) => <div key={w} role="columnheader" className={s.wd}>{w}</div>)}</div>
+              <div role="grid" aria-label={`${monthName(month.m)} ${month.y}`} className="card" style={{ overflow: "hidden" }}>
+                <div role="row" className={s.grid}>{[0, 1, 2, 3, 4, 5, 6].map((w) => <div key={w} role="columnheader" className={s.wd}>{weekdayShort(w)}</div>)}</div>
                 <div className={s.grid}>
                   {cells.map((c, idx) => {
                     const evs = c.out ? [] : byDay(c.key);

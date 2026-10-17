@@ -8,8 +8,9 @@ import { useMyWork } from "@/lib/api/hooks/work";
 import type { MyWorkItem } from "@/lib/api/gaps";
 import { now } from "@/lib/clock";
 import { statusPill } from "@/lib/course";
-import { dayKey, dayLabel, dueLabel, fullDate, greeting, MONTHS, parts, shortDay, sinceLabel, timeOf } from "@/lib/format";
+import { dayKey, dayLabel, dueLabel, fullDate, greeting, monthName, monthOf, parts, weekdayShort, shortDay, sinceLabel, timeOf } from "@/lib/format";
 import type { User } from "@/lib/session";
+import { useT } from "@/lib/i18n";
 import { WidgetGrid, type WidgetDef } from "./WidgetGrid";
 import h from "./Home.module.css";
 
@@ -20,6 +21,7 @@ function Loading() {
 }
 
 export function StudentHome({ user }: { user: User }) {
+  const t = useT();
   const work = useMyWork();
   const cards = useCourseCards();
   const today = now();
@@ -38,7 +40,7 @@ export function StudentHome({ user }: { user: User }) {
 
     return [
       {
-        id: "due", title: "Due soon", desc: "Assignments with the closest deadlines.", sizes: ["2x2", "2x1"],
+        id: "due", title: t("home.s.due"), desc: t("home.s.dueDesc"), sizes: ["2x2", "2x1"],
         link: <Link href="/calendar" style={linkStyle}>Open calendar</Link>,
         render: (_w, hh) => !data ? <Loading /> : upcoming.length === 0 ? <p className={h.empty}>Nothing is due soon.</p> : (
           <div>
@@ -62,7 +64,7 @@ export function StudentHome({ user }: { user: User }) {
         ),
       },
       {
-        id: "continue", title: "Continue", desc: "The draft you worked on last.", sizes: ["1x1"],
+        id: "continue", title: t("home.s.continue"), desc: t("home.s.continueDesc"), sizes: ["1x1"],
         render: () => !data ? <Loading /> : !draft ? <p className={h.empty}>No drafts in progress.</p> : (
           <div className={h.pad}>
             <div className="row" style={{ gap: 10, alignItems: "flex-start" }}>
@@ -77,7 +79,7 @@ export function StudentHome({ user }: { user: User }) {
         ),
       },
       {
-        id: "grades", title: "New grades", desc: "Grades your teachers published recently.", sizes: ["1x2", "2x1"],
+        id: "grades", title: t("home.s.grades"), desc: t("home.s.gradesDesc"), sizes: ["1x2", "2x1"],
         link: <Link href="/grades" style={linkStyle}>All grades</Link>,
         render: (_w, hh) => !data ? <Loading /> : graded.length === 0 ? <p className={h.empty}>No grades have been published yet.</p> : (
           <div>
@@ -97,7 +99,7 @@ export function StudentHome({ user }: { user: User }) {
         ),
       },
       {
-        id: "month", title: MONTHS[tp.m - 1]!, desc: "This month with your deadlines marked.", sizes: ["1x1"], note: `${monthDue.length} deadlines`, phone: false,
+        id: "month", title: monthName(tp.m), desc: t("home.s.monthDesc"), sizes: ["1x1"], note: t.plural("home.s.deadlines", monthDue.length), phone: false,
         render: () => {
           const first = new Date(Date.UTC(tp.y, tp.m - 1, 1)).getUTCDay();
           const lead = (first + 6) % 7;
@@ -107,10 +109,10 @@ export function StudentHome({ user }: { user: User }) {
           while (cells.length % 7) cells.push(0);
           return (
             <div className={h.month}>
-              <div aria-hidden="true" className={h.weekdays}>{["M", "T", "W", "T", "F", "S", "S"].map((d, k) => <span key={k}>{d}</span>)}</div>
+              <div aria-hidden="true" className={h.weekdays}>{[0, 1, 2, 3, 4, 5, 6].map((k) => <span key={k}>{weekdayShort(k).charAt(0)}</span>)}</div>
               <div className={h.cells}>
                 {cells.map((d, k) => (
-                  <span key={k} className={h.cell} aria-label={d ? `${d} ${MONTHS[tp.m - 1]}${d === tp.d ? ", today" : ""}${due.has(d) ? `, due: ${due.get(d)}` : ""}` : undefined}>
+                  <span key={k} className={h.cell} aria-label={d ? `${d} ${monthOf(tp.m)}${d === tp.d ? ", today" : ""}${due.has(d) ? `, due: ${due.get(d)}` : ""}` : undefined}>
                     {d ? <span className={h.day} data-kind={d === tp.d ? "today" : due.has(d) ? "due" : undefined} data-past={d < tp.d}>{d}</span> : null}
                   </span>
                 ))}
@@ -120,7 +122,7 @@ export function StudentHome({ user }: { user: User }) {
         },
       },
       {
-        id: "courses", title: "My courses", desc: "Your courses and what is due next in each.", sizes: ["4x1", "2x2"], phone: false,
+        id: "courses", title: t("home.myCourses"), desc: t("home.s.coursesDesc"), sizes: ["4x1", "2x2"], phone: false,
         link: <Link href="/courses" style={linkStyle}>All courses</Link>,
         render: (w) => !cards.data ? <Loading /> : (
           <div className={h.courses} style={{ gridTemplateColumns: `repeat(${w === 4 ? 4 : 2}, minmax(0, 1fr))` }}>
@@ -138,7 +140,7 @@ export function StudentHome({ user }: { user: User }) {
         ),
       },
       {
-        id: "week", title: "Next 7 days", desc: "Deadlines for the coming week, day by day.", sizes: ["4x1"], phone: false,
+        id: "week", title: t("home.s.week"), desc: t("home.s.weekDesc"), sizes: ["4x1"], phone: false,
         render: () => {
           const days = Array.from({ length: 7 }, (_, k) => new Date(today.getTime() + k * 86_400_000));
           return (

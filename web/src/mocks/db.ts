@@ -1,6 +1,6 @@
 import { MOCK_NOW } from "@/lib/clock";
 import type { Attempt, Course, CourseGroupLink, Group, Item, Membership, Module, Session, Subgroup, SubmissionRow, Term, User } from "@/lib/api/types";
-import type { AuditEvent, Institution, InstitutionAdmin } from "@/lib/api/gaps";
+import type { AuditEvent, Institution, InstitutionAdmin, MockMail } from "@/lib/api/gaps";
 import type { Document } from "@/lib/api/types";
 
 export type DbUser = User & { password: string; last_sign_in: string | null };
@@ -50,6 +50,10 @@ export type Db = {
   sessions: Session[];
   audit: AuditEvent[];
   institution: InstitutionAdmin;
+  /** Mail the mock "sent" and the single-use tokens behind its links. */
+  mail: MockMail[];
+  signups: { token: string; name: string; surname: string; email: string; password: string }[];
+  resets: { token: string; user_id: string }[];
   formResponses: Record<string, { team: string; variant: string; members: string; repo: string; submitted_at: string; late: boolean }[]>;
   quizResults: Record<string, Record<string, { got: string; feedback: string | null }>>;
 };

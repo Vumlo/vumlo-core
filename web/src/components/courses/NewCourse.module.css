@@ -1,0 +1,6 @@
+.form { display: flex; flex-direction: column; gap: 20px; max-width: 720px; padding: 24px; }
+.start { display: flex; flex-direction: column; gap: 12px; margin: 0; padding: 0; border: 0; }
+.start legend { padding: 0; margin-bottom: 8px; }
+.two { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.actions { display: flex; justify-content: flex-end; gap: 12px; }
+@media (max-width: 720px) { .two { grid-template-columns: 1fr; } .form { padding: 16px; } .actions .btn { flex: 1; } }

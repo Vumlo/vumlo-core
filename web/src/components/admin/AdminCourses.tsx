@@ -6,11 +6,11 @@ import { Icon } from "@/components/Icon";
 import { useAdminCourses, useAdminTermStats, useAdminUsers, useChangeOwner, useCreateTerm } from "@/lib/api/hooks/admin";
 import { useTerms } from "@/lib/api/hooks/courses";
 import type { AdminCourseRow } from "@/lib/api/gaps";
-import { MONTHS, plural } from "@/lib/format";
+import { monthShort, plural } from "@/lib/format";
 import s from "./Admin.module.css";
 
 const range = (a: string, b: string) => {
-  const f = (d: string, year: boolean) => { const [y = "", m = "1", day = "1"] = d.split("-"); return `${Number(day)} ${MONTHS[Number(m) - 1]!.slice(0, 3)}${year ? ` ${y}` : ""}`; };
+  const f = (d: string, year: boolean) => { const [y = "", m = "1", day = "1"] = d.split("-"); return `${Number(day)} ${monthShort(Number(m))}${year ? ` ${y}` : ""}`; };
   return `${f(a, a.slice(0, 4) !== b.slice(0, 4))} to ${f(b, true)}`;
 };
 

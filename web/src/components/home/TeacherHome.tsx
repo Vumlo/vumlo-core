@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCourseCards } from "@/lib/api/hooks/courses";
 import { useTeachingOverview } from "@/lib/api/hooks/work";
 import { now } from "@/lib/clock";
+import { useT } from "@/lib/i18n";
 import { daysFromToday, dueLabel, fullDate, greeting, initials, plural, shortDay } from "@/lib/format";
 import type { User } from "@/lib/session";
 import { WidgetGrid, type WidgetDef } from "./WidgetGrid";
@@ -16,6 +17,7 @@ function Loading() {
 }
 
 export function TeacherHome({ user }: { user: User }) {
+  const t = useT();
   const overview = useTeachingOverview();
   const cards = useCourseCards();
   const today = now();
@@ -27,7 +29,7 @@ export function TeacherHome({ user }: { user: User }) {
     const firstContent = o?.unpublished_content[0];
     return [
       {
-        id: "grade", title: "To grade", badge: o?.to_grade.length ?? null, desc: "Submissions waiting for a grade, oldest first.", sizes: ["2x2"],
+        id: "grade", title: t("home.t.grade"), badge: o?.to_grade.length ?? null, desc: t("home.t.gradeDesc"), sizes: ["2x2"],
         link: <Link href="/grading" style={linkStyle}>Open grading</Link>,
         render: () => !o ? <Loading /> : o.to_grade.length === 0 ? <p className={h.empty}>Nothing is waiting for a grade.</p> : (
           <div>
@@ -46,7 +48,7 @@ export function TeacherHome({ user }: { user: User }) {
         ),
       },
       {
-        id: "pub", title: "Not published", desc: "Draft grades students can't see yet.", sizes: ["1x1"],
+        id: "pub", title: t("home.t.pub"), desc: t("home.t.pubDesc"), sizes: ["1x1"],
         render: () => !o ? <Loading /> : (
           <div className={h.pad}>
             {drafts === 0 ? <p className="muted">No draft grades are waiting.</p> : (
@@ -60,7 +62,7 @@ export function TeacherHome({ user }: { user: User }) {
         ),
       },
       {
-        id: "next", title: "Deadlines", desc: "The next assignment deadlines in your courses.", sizes: ["1x2"],
+        id: "next", title: t("home.t.next"), desc: t("home.t.nextDesc"), sizes: ["1x2"],
         render: () => !o ? <Loading /> : o.deadlines.length === 0 ? <p className={h.empty}>No upcoming deadlines.</p> : (
           <div>
             {o.deadlines.slice(0, 4).map((d) => (
@@ -74,7 +76,7 @@ export function TeacherHome({ user }: { user: User }) {
         ),
       },
       {
-        id: "content", title: "Unpublished content", desc: "Drafts and edits students don't see yet.", sizes: ["1x1"],
+        id: "content", title: t("home.t.content"), desc: t("home.t.contentDesc"), sizes: ["1x1"],
         render: () => !o ? <Loading /> : (
           <div className={h.pad}>
             {o.unpublished_content.slice(0, 2).map((c) => (
@@ -88,7 +90,7 @@ export function TeacherHome({ user }: { user: User }) {
         ),
       },
       {
-        id: "courses", title: "My courses", desc: "Courses you teach and what needs you.", sizes: ["4x1", "2x2"], phone: false,
+        id: "courses", title: t("home.myCourses"), desc: t("home.t.coursesDesc"), sizes: ["4x1", "2x2"], phone: false,
         link: <Link href="/courses" style={linkStyle}>All courses</Link>,
         render: (w) => !cards.data ? <Loading /> : (
           <div className={h.courses} style={{ gridTemplateColumns: `repeat(${w === 4 ? 2 : 1}, minmax(0, 1fr))` }}>

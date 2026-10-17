@@ -422,6 +422,6 @@ export function createSeed(): Db {
 
   return {
     users, terms, groups, subgroups, groupMembers, courses, members, links, modules, items, submissions, grades, sessions, audit, institution,
-    formResponses: {}, quizResults,
+    mail: [], signups: [], resets: [], formResponses: {}, quizResults,
   };
 }

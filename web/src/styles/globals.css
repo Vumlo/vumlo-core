@@ -77,6 +77,7 @@ ul { margin: 0; padding: 0; list-style: none; }
 .field { display: flex; flex-direction: column; gap: 6px; }
 .field > label, .label { font-size: 14px; font-weight: 500; }
 .hint { font-size: 13px; color: var(--muted); }
+.field-error { margin: 0; font-size: 13px; color: var(--danger); }
 .input, .select, .textarea {
   width: 100%; min-height: 44px; padding: 0 14px; border: 1px solid var(--border-strong); border-radius: 10px;
   background: var(--input-bg); color: var(--text); outline: 0;

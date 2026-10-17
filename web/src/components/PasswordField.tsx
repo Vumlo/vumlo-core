@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useT } from "@/lib/i18n";
 import s from "./PasswordField.module.css";
 
 type Props = {
@@ -17,6 +18,7 @@ type Props = {
 
 /** A password input with a Show button. Both fields of a change use it, so the value stays masked by default. */
 export function PasswordField({ id, label, value, onChange, autoComplete, invalid, describedBy, trailing, error }: Props) {
+  const t = useT();
   const [shown, setShown] = useState(false);
   return (
     <div className="field">
@@ -34,8 +36,8 @@ export function PasswordField({ id, label, value, onChange, autoComplete, invali
           aria-invalid={invalid ? "true" : "false"}
           aria-describedby={describedBy}
         />
-        <button type="button" className={s.show} aria-label={shown ? "Hide password" : "Show password"} aria-pressed={shown} onClick={() => setShown((x) => !x)}>
-          {shown ? "Hide" : "Show"}
+        <button type="button" className={s.show} aria-label={shown ? t("password.hideLabel") : t("password.showLabel")} aria-pressed={shown} onClick={() => setShown((x) => !x)}>
+          {shown ? t("password.hide") : t("password.show")}
         </button>
       </div>
       {error && <p className="hint" style={{ color: "var(--danger)" }}>{error}</p>}

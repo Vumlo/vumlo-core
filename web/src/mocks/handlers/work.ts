@@ -1,7 +1,7 @@
 import { http, HttpResponse } from "msw";
 import { MOCK_NOW } from "@/lib/clock";
 import { toCents } from "@/lib/points";
-import type { MyWork, QuizResult, TeachingOverview } from "@/lib/api/gaps";
+import type { MyWork, QuizResult, SearchHit, TeachingOverview } from "@/lib/api/gaps";
 import { getDb, uid, type DbSubmission } from "../db";
 import {
   activeStudents, autoScore, canView, courseById, decimal, dueIn, flatItems, forbidden, formOf, fullName, gradeOf, hasUnpublishedChanges, isPublished, isStaff,
@@ -61,7 +61,59 @@ export function toGradeList(courseIds: string[]) {
   return out.sort((a, b) => a.submitted_at.localeCompare(b.submitted_at));
 }
 
+/** All the text in a block document: what a search looks through. */
+function textIn(node: unknown): string {
+  if (typeof node === "string") return "";
+  if (Array.isArray(node)) return node.map(textIn).join(" ");
+  if (node && typeof node === "object") {
+    return Object.entries(node as Record<string, unknown>)
+      .map(([k, v]) => (typeof v === "string" ? (k === "text" || k === "source" ? v : "") : textIn(v)))
+      .join(" ");
+  }
+  return "";
+}
+
+function snippet(text: string, q: string): string | null {
+  const flat = text.replace(/\s+/g, " ").trim();
+  const at = flat.toLowerCase().indexOf(q);
+  if (at < 0) return null;
+  const from = Math.max(0, at - 40);
+  const to = Math.min(flat.length, at + q.length + 80);
+  return `${from > 0 ? "…" : ""}${flat.slice(from, to)}${to < flat.length ? "…" : ""}`;
+}
+
 export const workHandlers = [
+  // GAP: search over the courses and materials the caller can see (API_GAPS.md, "Search").
+  http.get(`${A}/search`, ({ request }) => {
+    const user = requireUser();
+    const q = (new URL(request.url).searchParams.get("q") ?? "").trim().toLowerCase();
+    if (q.length < 2) return HttpResponse.json({ items: [], next_cursor: null });
+    const db = getDb();
+    const hits: SearchHit[] = [];
+    for (const course of db.courses.filter((c) => c.kind === "regular" && canView(user, c))) {
+      const staff = isStaff(user, course);
+      const base = { course_id: course.id, course_title: course.title, course_code: course.code };
+      if (`${course.title} ${course.code} ${course.description}`.toLowerCase().includes(q)) {
+        hits.push({ ...base, kind: "course", id: course.id, title: course.title, snippet: snippet(course.description, q), due_at: null, status: course.status === "draft" ? "draft" : "published" });
+      }
+      for (const item of flatItems(course, staff)) {
+        // A student keeps reading the published text while there are unpublished edits.
+        const body = !staff && item.unpublished_changes ? item.published_body : item.body;
+        const title = !staff && item.published_title ? item.published_title : item.title;
+        const text = textIn(body);
+        if (!`${title} ${text}`.toLowerCase().includes(q)) continue;
+        hits.push({
+          ...base, kind: item.assignment ? "assignment" : "lecture", id: item.id, title, snippet: snippet(text, q),
+          due_at: item.assignment?.due_at ?? null, status: item.status,
+        });
+      }
+    }
+    // Titles first, then text matches; courses before their items.
+    const rank = (h: SearchHit) => (h.title.toLowerCase().includes(q) ? 0 : 1) + (h.kind === "course" ? 0 : 0.5);
+    hits.sort((a, b) => rank(a) - rank(b));
+    return HttpResponse.json({ items: hits.slice(0, 50), next_cursor: null });
+  }),
+
   // ---- own work ----
   http.get(`${A}/assignments/:id/submission`, ({ params }) => {
     const { user } = viewAssignment(String(params.id));

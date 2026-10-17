@@ -1,4 +1,5 @@
 import { now } from "./clock";
+import { language, translate, translatePlural } from "./i18n/core";
 
 /** Deadlines are shown in the institution's time zone (Admin, Institution). */
 let zone = "Europe/Kyiv";
@@ -33,10 +34,37 @@ function formatter(tz: string) {
   return f;
 }
 
-const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-const WEEKDAYS_LONG = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
-export const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
-const MONTHS_SHORT = MONTHS.map((m) => m.slice(0, 3));
+/** English short names, in the order Intl reports them: only used to find the weekday number. */
+const WEEKDAY_KEYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+
+const NAMES = {
+  en: {
+    weekdays: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
+    weekdaysLong: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"],
+    months: ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"],
+    monthsOf: ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"],
+    monthsShort: ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"],
+  },
+  uk: {
+    weekdays: ["пн", "вт", "ср", "чт", "пт", "сб", "нд"],
+    weekdaysLong: ["понеділок", "вівторок", "середа", "четвер", "пʼятниця", "субота", "неділя"],
+    months: ["січень", "лютий", "березень", "квітень", "травень", "червень", "липень", "серпень", "вересень", "жовтень", "листопад", "грудень"],
+    monthsOf: ["січня", "лютого", "березня", "квітня", "травня", "червня", "липня", "серпня", "вересня", "жовтня", "листопада", "грудня"],
+    monthsShort: ["січ", "лют", "бер", "кві", "тра", "чер", "лип", "сер", "вер", "жов", "лис", "гру"],
+  },
+} as const;
+
+const names = () => NAMES[language()];
+const cap = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
+
+/** 1 to 12. The month on its own: a heading, "October 2026". */
+export const monthName = (m: number) => cap(names().months[m - 1] ?? "");
+/** The month after a day number: "23 October", in Ukrainian "23 жовтня". */
+export const monthOf = (m: number) => names().monthsOf[m - 1] ?? "";
+export const monthShort = (m: number) => cap(names().monthsShort[m - 1] ?? "");
+/** 0 is Monday. */
+export const weekdayShort = (wd: number) => cap(names().weekdays[wd] ?? "");
+export const weekdayLong = (wd: number) => cap(names().weekdaysLong[wd] ?? "");
 
 /** The calendar fields of an instant in the institution's zone. */
 export function parts(input: string | Date): Parts {
@@ -47,7 +75,7 @@ export function parts(input: string | Date): Parts {
     y: Number(p.year),
     m: Number(p.month),
     d: Number(p.day),
-    wd: Math.max(0, WEEKDAYS.indexOf(p.weekday ?? "")),
+    wd: Math.max(0, WEEKDAY_KEYS.indexOf(p.weekday ?? "")),
     hh: Number(p.hour),
     mm: Number(p.minute),
   };
@@ -63,48 +91,55 @@ export function timeOf(iso: string | Date) {
 /** "Fri 23 Oct, 23:59" */
 export function dueLabel(iso: string) {
   const p = parts(iso);
-  return `${WEEKDAYS[p.wd]} ${p.d} ${MONTHS_SHORT[p.m - 1]}, ${two(p.hh)}:${two(p.mm)}`;
+  return `${weekdayShort(p.wd)} ${p.d} ${monthShort(p.m)}, ${two(p.hh)}:${two(p.mm)}`;
 }
 
 /** "Fri 23 Oct" */
 export function shortDay(iso: string) {
   const p = parts(iso);
-  return `${WEEKDAYS[p.wd]} ${p.d} ${MONTHS_SHORT[p.m - 1]}`;
+  return `${weekdayShort(p.wd)} ${p.d} ${monthShort(p.m)}`;
 }
 
 /** "23 Oct" */
 export function dayLabel(iso: string) {
   const p = parts(iso);
-  return `${p.d} ${MONTHS_SHORT[p.m - 1]}`;
+  return `${p.d} ${monthShort(p.m)}`;
 }
 
 /** "23 October" */
 export function dayLong(iso: string) {
   const p = parts(iso);
-  return `${p.d} ${MONTHS[p.m - 1]}`;
+  return `${p.d} ${monthOf(p.m)}`;
 }
 
 /** "Friday 23 October at 23:59" */
 export function dueSentence(iso: string) {
   const p = parts(iso);
-  return `${WEEKDAYS_LONG[p.wd]} ${p.d} ${MONTHS[p.m - 1]} at ${two(p.hh)}:${two(p.mm)}`;
+  return translate("date.dueSentence", { weekday: weekdayLong(p.wd), day: p.d, month: monthOf(p.m), time: `${two(p.hh)}:${two(p.mm)}` });
 }
 
 /** "Thursday 29 October" */
 export function weekdayDate(iso: string) {
   const p = parts(iso);
-  return `${WEEKDAYS_LONG[p.wd]} ${p.d} ${MONTHS[p.m - 1]}`;
+  return `${weekdayLong(p.wd)} ${p.d} ${monthOf(p.m)}`;
 }
 
 /** "17 Oct 2026, 15:10" */
 export function dateTime(iso: string) {
   const p = parts(iso);
-  return `${p.d} ${MONTHS_SHORT[p.m - 1]} ${p.y}, ${two(p.hh)}:${two(p.mm)}`;
+  return `${p.d} ${monthShort(p.m)} ${p.y}, ${two(p.hh)}:${two(p.mm)}`;
 }
 
+/** "Saturday, 17 October" */
 export function fullDate(d: Date) {
   const p = parts(d);
-  return `${WEEKDAYS_LONG[p.wd]}, ${p.d} ${MONTHS[p.m - 1]}`;
+  return `${weekdayLong(p.wd)}, ${p.d} ${monthOf(p.m)}`;
+}
+
+/** The weekday and day for a "YYYY-MM-DD" key: "Saturday, 17 October". */
+export function dayKeyLabel(key: string) {
+  const [y = 1970, m = 1, d = 1] = key.split("-").map(Number);
+  return `${weekdayLong((new Date(Date.UTC(y, m - 1, d)).getUTCDay() + 6) % 7)}, ${d} ${monthOf(m)}`;
 }
 
 /** Whole calendar days from today (in the institution zone) to the instant. */
@@ -117,36 +152,60 @@ export function daysFromToday(iso: string) {
 /** "in 6 days", "tomorrow", "today", "3 days ago" */
 export function relative(iso: string) {
   const diff = daysFromToday(iso);
-  if (diff === 0) return "today";
-  if (diff === 1) return "tomorrow";
-  if (diff === -1) return "yesterday";
-  return diff > 0 ? `in ${diff} days` : `${-diff} days ago`;
+  if (diff === 0) return translate("date.today");
+  if (diff === 1) return translate("date.tomorrow");
+  if (diff === -1) return translate("date.yesterday");
+  return diff > 0 ? translatePlural("date.inDays", diff) : translatePlural("date.daysAgo", -diff);
 }
 
 /** "Today", "Tomorrow", "Yesterday", "In 5 days" */
 export function relativeCap(iso: string) {
-  const r = relative(iso);
-  return r.charAt(0).toUpperCase() + r.slice(1);
+  return cap(relative(iso));
 }
 
 /** "today at 09:41", "yesterday at 19:30" or "12 Oct at 14:02" */
 export function sinceLabel(iso: string) {
   const diff = daysFromToday(iso);
-  if (diff === 0) return `today at ${timeOf(iso)}`;
-  if (diff === -1) return `yesterday at ${timeOf(iso)}`;
-  return `${dayLabel(iso)} at ${timeOf(iso)}`;
+  if (diff === 0) return translate("date.todayAt", { time: timeOf(iso) });
+  if (diff === -1) return translate("date.yesterdayAt", { time: timeOf(iso) });
+  return translate("date.dayAt", { day: dayLabel(iso), time: timeOf(iso) });
 }
 
 export function greeting(d: Date) {
   const h = parts(d).hh;
-  return h < 12 ? "Good morning" : h < 18 ? "Good afternoon" : "Good evening";
+  return translate(h < 12 ? "greeting.morning" : h < 18 ? "greeting.afternoon" : "greeting.evening");
 }
 
 export function initials(name: string, surname: string) {
   return `${name.charAt(0)}${surname.charAt(0)}`.toUpperCase();
 }
 
+/** Ukrainian forms of the nouns counted in the UI: one, few (2 to 4), many (0, 5 and up). */
+const UK_UNITS: Record<string, [string, string, string]> = {
+  student: ["студент", "студенти", "студентів"],
+  "former student": ["колишній студент", "колишні студенти", "колишніх студентів"],
+  assistant: ["асистент", "асистенти", "асистентів"],
+  section: ["розділ", "розділи", "розділів"],
+  item: ["матеріал", "матеріали", "матеріалів"],
+  lecture: ["лекція", "лекції", "лекцій"],
+  assignment: ["завдання", "завдання", "завдань"],
+  draft: ["чернетка", "чернетки", "чернеток"],
+  "draft grade": ["чернетка оцінки", "чернетки оцінок", "чернеток оцінок"],
+  "graded item": ["оцінене завдання", "оцінені завдання", "оцінених завдань"],
+  course: ["курс", "курси", "курсів"],
+  team: ["команда", "команди", "команд"],
+  option: ["варіант", "варіанти", "варіантів"],
+  minute: ["хвилина", "хвилини", "хвилин"],
+  hour: ["година", "години", "годин"],
+};
+
+/** "3 students". Pass `many` when the English plural is not the word plus "s". */
 export function plural(n: number, one: string, many = `${one}s`) {
+  const uk = language() === "uk" ? UK_UNITS[one] : undefined;
+  if (uk) {
+    const rule = new Intl.PluralRules("uk").select(n);
+    return `${n} ${rule === "one" ? uk[0] : rule === "few" ? uk[1] : uk[2]}`;
+  }
   return `${n} ${n === 1 ? one : many}`;
 }
 
@@ -166,10 +225,10 @@ export function dayKey(iso: string | Date) {
 /** "Active now", "Last active 2 hours ago" or "Last active 12 October". */
 export function lastActive(iso: string): string {
   const mins = Math.round((now().getTime() - new Date(iso).getTime()) / 60_000);
-  if (mins < 5) return "Active now";
-  if (mins < 60) return `Last active ${plural(mins, "minute")} ago`;
-  if (daysFromToday(iso) === 0) return `Last active ${plural(Math.round(mins / 60), "hour")} ago`;
-  return `Last active ${dayLong(iso)}`;
+  if (mins < 5) return translate("date.activeNow");
+  if (mins < 60) return translate("date.lastActiveAgo", { ago: translatePlural("date.minutesAgo", mins) });
+  if (daysFromToday(iso) === 0) return translate("date.lastActiveAgo", { ago: translatePlural("date.hoursAgo", Math.round(mins / 60)) });
+  return translate("date.lastActiveOn", { day: dayLong(iso) });
 }
 
 /** An ISO instant from a `datetime-local` value ("2026-10-23T23:59") read in the institution's zone. */
