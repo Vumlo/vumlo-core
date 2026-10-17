@@ -38,6 +38,18 @@ pub struct AuthSettings {
     pub cookie_secure: bool,
     /// Stored now, used by self-registration (task 004).
     pub allowed_domains: Vec<String>,
+    /// Login attempts one client may make in a burst. A client is an IPv4 address or an IPv6 /64
+    /// (ADR-0038). A school behind one NAT raises this.
+    pub login_ip_burst: u32,
+    /// Seconds until a client gets one more login attempt back after a burst.
+    pub login_ip_replenish_seconds: u64,
+    /// Failed or in-flight login attempts per account in one window before the account is
+    /// locked for the rest of it.
+    pub login_account_max_attempts: u32,
+    /// The length of that window, in minutes.
+    pub login_account_window_minutes: u64,
+    /// Password hashes and checks that may run at once. Each takes about 19 MiB.
+    pub max_concurrent_hashes: usize,
 }
 
 impl Default for AuthSettings {
@@ -46,6 +58,11 @@ impl Default for AuthSettings {
             password_min_length: 12,
             cookie_secure: true,
             allowed_domains: Vec::new(),
+            login_ip_burst: 50,
+            login_ip_replenish_seconds: 1,
+            login_account_max_attempts: 10,
+            login_account_window_minutes: 15,
+            max_concurrent_hashes: 8,
         }
     }
 }
@@ -198,6 +215,45 @@ impl Settings {
                 "auth.password_min_length must be between 8 and 128".to_owned(),
             ));
         }
+        let ranges = [
+            (
+                "auth.login_ip_burst",
+                u64::from(self.auth.login_ip_burst),
+                1,
+                1_000_000,
+            ),
+            (
+                "auth.login_ip_replenish_seconds",
+                self.auth.login_ip_replenish_seconds,
+                1,
+                3600,
+            ),
+            (
+                "auth.login_account_max_attempts",
+                u64::from(self.auth.login_account_max_attempts),
+                1,
+                1000,
+            ),
+            (
+                "auth.login_account_window_minutes",
+                self.auth.login_account_window_minutes,
+                1,
+                1440,
+            ),
+            (
+                "auth.max_concurrent_hashes",
+                u64::try_from(self.auth.max_concurrent_hashes).unwrap_or(u64::MAX),
+                1,
+                256,
+            ),
+        ];
+        for (key, value, low, high) in ranges {
+            if !(low..=high).contains(&value) {
+                return Err(ConfigError::Message(format!(
+                    "{key} must be between {low} and {high}"
+                )));
+            }
+        }
         let origin = self.server.public_origin.trim_end_matches('/');
         let host = origin
             .strip_prefix("https://")
@@ -318,6 +374,44 @@ mod tests {
         }
         assert!(build(VALID, &[("LEARNLY__AUTH__PASSWORD_MIN_LENGTH", "8")]).is_ok());
         assert!(build(VALID, &[("LEARNLY__AUTH__PASSWORD_MIN_LENGTH", "128")]).is_ok());
+    }
+
+    #[test]
+    fn login_limits_have_defaults_come_from_the_environment_and_are_bounded() {
+        let defaults = build(VALID, &[]).unwrap().auth;
+        assert_eq!(
+            (
+                defaults.login_ip_burst,
+                defaults.login_ip_replenish_seconds,
+                defaults.login_account_max_attempts,
+                defaults.login_account_window_minutes,
+                defaults.max_concurrent_hashes
+            ),
+            (50, 1, 10, 15, 8)
+        );
+        let raised = build(
+            VALID,
+            &[
+                ("LEARNLY__AUTH__LOGIN_IP_BURST", "400"),
+                ("LEARNLY__AUTH__MAX_CONCURRENT_HASHES", "2"),
+            ],
+        )
+        .unwrap()
+        .auth;
+        assert_eq!(
+            (raised.login_ip_burst, raised.max_concurrent_hashes),
+            (400, 2)
+        );
+        for (key, bad) in [
+            ("LOGIN_IP_BURST", "0"),
+            ("LOGIN_IP_REPLENISH_SECONDS", "0"),
+            ("LOGIN_ACCOUNT_MAX_ATTEMPTS", "0"),
+            ("LOGIN_ACCOUNT_WINDOW_MINUTES", "1441"),
+            ("MAX_CONCURRENT_HASHES", "0"),
+        ] {
+            let e = build(VALID, &[(&format!("LEARNLY__AUTH__{key}"), bad)]).unwrap_err();
+            assert!(e.to_string().contains(&key.to_lowercase()), "{e}");
+        }
     }
 
     #[test]

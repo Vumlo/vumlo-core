@@ -53,6 +53,28 @@ pub async fn find_login(
     }))
 }
 
+/// Locks the user and their password identity `FOR SHARE` until the transaction ends and says
+/// whether the account is still active and the password hash is still `password_hash`. A change of
+/// either waits for this transaction (ADR-0038).
+pub async fn lock_verified_login(
+    conn: &mut PgConnection,
+    user_id: Uuid,
+    password_hash: &str,
+) -> Result<bool, sqlx::Error> {
+    let row = sqlx::query_scalar!(
+        r#"SELECT 1 AS "locked!"
+           FROM identity.users u
+           JOIN identity.identities i ON i.user_id = u.id AND i.provider = 'password'
+           WHERE u.id = $1 AND u.status = 'active' AND i.password_hash = $2
+           FOR SHARE OF u, i"#,
+        user_id,
+        password_hash
+    )
+    .fetch_optional(conn)
+    .await?;
+    Ok(row.is_some())
+}
+
 pub async fn insert_user(
     conn: &mut PgConnection,
     id: Uuid,

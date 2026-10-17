@@ -97,7 +97,7 @@ pub async fn create_user(
         role: domain_role(request.role),
     };
     let temporary = TemporaryPassword::generate();
-    let hash = service::hash_password(temporary.expose()).await?;
+    let hash = service::hash_password_gated(&state.hashing, temporary.expose()).await?;
 
     let mut tx = state.db.begin().await.map_err(IdentityError::from)?;
     let user = service::admin_create_user(&mut tx, &actor, new, hash).await?;
@@ -195,7 +195,7 @@ pub async fn reset_password(
 ) -> Result<Response, ApiError> {
     require_admin(&actor)?;
     let temporary = TemporaryPassword::generate();
-    let hash = service::hash_password(temporary.expose()).await?;
+    let hash = service::hash_password_gated(&state.hashing, temporary.expose()).await?;
 
     let mut tx = state.db.begin().await.map_err(IdentityError::from)?;
     service::reset_password(&mut tx, &actor, id, hash).await?;

@@ -18,7 +18,7 @@ use utoipa_axum::router::OpenApiRouter;
 use utoipa_axum::routes;
 
 use super::model::{Role, SessionKind, User, UserStatus};
-use super::service::{IdentityError, LoginThrottle};
+use super::service::{IdentityError, LoginThrottle, THROTTLE_CAPACITY};
 use crate::app::AppState;
 use crate::error::ApiError;
 use crate::settings::Settings;
@@ -31,16 +31,39 @@ pub enum SetupError {
     RateLimit,
 }
 
-/// Burst of 50 and one more per second, per client IP: generous because a whole school may
-/// share one address. The strict limit is per account (`LoginThrottle`).
-const LOGIN_IP_BURST: u32 = 50;
-const LOGIN_IP_PERIOD_SECS: u64 = 1;
+/// How often the limiter forgets clients whose allowance is full again. Without it the state
+/// grows by one entry per client address for as long as the server runs (ADR-0038).
+const LIMITER_CLEANUP_EVERY: std::time::Duration = std::time::Duration::from_secs(60);
 
-/// Rate-limit key: the header the reverse proxy sets (`server.client_ip_header`), else the
-/// TCP peer address.
+/// Calls `prune` every `every` until it answers `false`.
+fn spawn_cleanup(every: std::time::Duration, mut prune: impl FnMut() -> bool + Send + 'static) {
+    tokio::spawn(async move {
+        loop {
+            tokio::time::sleep(every).await;
+            if !prune() {
+                break;
+            }
+        }
+    });
+}
+
+/// The client a request counts against: the address from the header the reverse proxy sets
+/// (`server.client_ip_header`), else the TCP peer. An IPv4 address is a client of its own; an IPv6
+/// address stands for its /64, because whoever holds a /64 can pick any of its 2^64 addresses and
+/// would otherwise get a fresh allowance for each (ADR-0038).
 #[derive(Debug, Clone)]
 struct ClientIp {
     header: Option<header::HeaderName>,
+}
+
+/// The key of an address: IPv4-mapped IPv6 is the IPv4 address, other IPv6 keeps its /64.
+fn client_key(address: std::net::IpAddr) -> std::net::IpAddr {
+    match address.to_canonical() {
+        std::net::IpAddr::V6(v6) => {
+            std::net::IpAddr::V6(std::net::Ipv6Addr::from(u128::from(v6) & (!0u128 << 64)))
+        }
+        v4 => v4,
+    }
 }
 
 impl KeyExtractor for ClientIp {
@@ -59,6 +82,7 @@ impl KeyExtractor for ClientIp {
                     .get::<axum::extract::ConnectInfo<std::net::SocketAddr>>()
                     .map(|info| info.0.ip())
             })
+            .map(client_key)
             .ok_or(GovernorError::UnableToExtractKey)
     }
 }
@@ -73,12 +97,29 @@ pub fn router(settings: &Settings) -> Result<OpenApiRouter<AppState>, SetupError
                 .map_err(|_| SetupError::RateLimit)
         })
         .transpose()?;
+    let auth = &settings.auth;
     let login_limit = GovernorConfigBuilder::default()
-        .per_second(LOGIN_IP_PERIOD_SECS)
-        .burst_size(LOGIN_IP_BURST)
+        .per_second(auth.login_ip_replenish_seconds)
+        .burst_size(auth.login_ip_burst)
         .key_extractor(ClientIp { header })
         .finish()
         .ok_or(SetupError::RateLimit)?;
+    // The task holds only a weak reference: it ends when the router, and with it the limiter, is
+    // dropped.
+    let limiter = Arc::downgrade(login_limit.limiter());
+    spawn_cleanup(LIMITER_CLEANUP_EVERY, move || {
+        let Some(limiter) = limiter.upgrade() else {
+            return false;
+        };
+        limiter.retain_recent();
+        limiter.shrink_to_fit();
+        true
+    });
+    let throttle = LoginThrottle::with_limits(
+        auth.login_account_max_attempts,
+        std::time::Duration::from_secs(auth.login_account_window_minutes.saturating_mul(60)),
+        THROTTLE_CAPACITY,
+    );
     Ok(OpenApiRouter::new()
         .merge(
             OpenApiRouter::new()
@@ -93,7 +134,7 @@ pub fn router(settings: &Settings) -> Result<OpenApiRouter<AppState>, SetupError
         .routes(routes!(admin::list_users, admin::create_user))
         .routes(routes!(admin::update_user))
         .routes(routes!(admin::reset_password))
-        .layer(Extension(Arc::new(LoginThrottle::default()))))
+        .layer(Extension(Arc::new(throttle))))
 }
 
 impl From<IdentityError> for ApiError {
@@ -224,4 +265,111 @@ pub(super) fn session_kind(client: LoginClient) -> SessionKind {
 /// Responses that carry a credential must not be cached.
 pub(super) fn no_store() -> (header::HeaderName, HeaderValue) {
     (header::CACHE_CONTROL, HeaderValue::from_static("no-store"))
+}
+
+#[cfg(test)]
+mod tests {
+    use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::time::Duration;
+
+    use super::*;
+
+    fn v6(text: &str) -> IpAddr {
+        IpAddr::V6(text.parse::<Ipv6Addr>().unwrap())
+    }
+
+    #[test]
+    fn an_ipv6_client_is_its_64_and_an_ipv4_client_is_itself() {
+        let four = IpAddr::V4(Ipv4Addr::new(10, 1, 2, 3));
+        assert_eq!(client_key(four), four);
+        assert_eq!(
+            client_key(v6("2001:db8:1:2:aaaa:bbbb:cccc:dddd")),
+            client_key(v6("2001:db8:1:2:1:2:3:4")),
+            "two addresses of one /64 are one client"
+        );
+        assert_ne!(
+            client_key(v6("2001:db8:1:2::1")),
+            client_key(v6("2001:db8:1:3::1")),
+            "another /64 is another client"
+        );
+        assert_eq!(
+            client_key(v6("::ffff:10.1.2.3")),
+            four,
+            "IPv4-mapped is IPv4"
+        );
+    }
+
+    #[test]
+    fn the_key_comes_from_the_trusted_header_else_from_the_peer() {
+        let with_header = ClientIp {
+            header: Some(header::HeaderName::from_static("x-real-ip")),
+        };
+        let request = |header: Option<&str>| {
+            let mut builder = axum::http::Request::builder();
+            if let Some(value) = header {
+                builder = builder.header("x-real-ip", value);
+            }
+            let mut request = builder.body(()).unwrap();
+            request.extensions_mut().insert(axum::extract::ConnectInfo(
+                std::net::SocketAddr::from(([192, 0, 2, 9], 5000)),
+            ));
+            request
+        };
+        assert_eq!(
+            with_header.extract(&request(Some("2001:db8::7"))).unwrap(),
+            v6("2001:db8::")
+        );
+        assert_eq!(
+            with_header.extract(&request(None)).unwrap(),
+            IpAddr::V4(Ipv4Addr::new(192, 0, 2, 9)),
+            "no header: the peer"
+        );
+        assert_eq!(
+            with_header
+                .extract(&request(Some("not an address")))
+                .unwrap(),
+            IpAddr::V4(Ipv4Addr::new(192, 0, 2, 9))
+        );
+        let peer_only = ClientIp { header: None };
+        assert_eq!(
+            peer_only.extract(&request(Some("2001:db8::7"))).unwrap(),
+            IpAddr::V4(Ipv4Addr::new(192, 0, 2, 9)),
+            "without server.client_ip_header the header is ignored"
+        );
+    }
+
+    #[tokio::test]
+    async fn the_cleanup_runs_until_the_limiter_is_gone() {
+        let calls = Arc::new(AtomicUsize::new(0));
+        let seen = calls.clone();
+        spawn_cleanup(Duration::from_millis(5), move || {
+            seen.fetch_add(1, Ordering::SeqCst) < 2
+        });
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        assert_eq!(
+            calls.load(Ordering::SeqCst),
+            3,
+            "it stopped after answering false"
+        );
+    }
+
+    #[test]
+    fn retain_recent_forgets_clients_whose_allowance_is_full_again() {
+        let config = GovernorConfigBuilder::default()
+            .per_millisecond(5)
+            .burst_size(2)
+            .key_extractor(ClientIp { header: None })
+            .finish()
+            .unwrap();
+        let limiter = config.limiter().clone();
+        for i in 0..1_000u32 {
+            let address = IpAddr::V4(Ipv4Addr::from(0x0a00_0000 + i));
+            let _ = limiter.check_key(&address);
+        }
+        assert_eq!(limiter.len(), 1_000);
+        std::thread::sleep(Duration::from_millis(50));
+        limiter.retain_recent();
+        assert_eq!(limiter.len(), 0);
+    }
 }

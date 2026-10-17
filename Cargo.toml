@@ -23,7 +23,7 @@ serde_json = "1"
 sha2 = "0.11"
 sqlx = { version = "0.9", default-features = false, features = ["postgres", "runtime-tokio", "tls-rustls", "migrate", "macros", "uuid", "chrono", "rust_decimal"] }
 thiserror = "2"
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "signal"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "signal", "sync", "time"] }
 tower-http = { version = "0.7", features = ["trace", "timeout", "limit"] }
 tower_governor = { version = "0.8", default-features = false, features = ["axum"] }
 tracing = "0.1"

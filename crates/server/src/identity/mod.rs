@@ -13,6 +13,6 @@ pub use routes::{COOKIE_NAME, SetupError, router};
 #[cfg(test)]
 pub use service::create_user_unaudited_for_tests;
 pub use service::{
-    IdentityError, LoginThrottle, create_user_from_cli, find_user, find_user_shared, find_users,
-    hash_password,
+    HashGate, IdentityError, LoginThrottle, create_user_from_cli, find_user, find_user_shared,
+    find_users, hash_password, hash_password_gated,
 };

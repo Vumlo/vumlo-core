@@ -15,7 +15,7 @@ use tokio::net::TcpListener;
 mod test_support;
 // Not every test binary needs the bare variant.
 #[allow(unused_imports)]
-pub use test_support::{bare_db_test, db_test};
+pub use test_support::{bare_db_test, db_test, wait_until_blocked};
 
 pub const ORIGIN: &str = "https://lms.test";
 

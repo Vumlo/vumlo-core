@@ -70,6 +70,7 @@ pub async fn change_password(
     };
     let prepared = service::prepare_password_change(
         &throttle,
+        &state.hashing,
         context,
         &request.current_password,
         request.new_password,
