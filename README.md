@@ -36,7 +36,7 @@ Choose `institution.mode` (`school` or `university`) before the first start: it 
 
 Every config key can be overridden with `LEARNLY__<SECTION>__<KEY>`, e.g. `LEARNLY__DATABASE__URL`.
 For plain-HTTP local development set `auth.cookie_secure = false`; keep it `true` in production.
-Behind a reverse proxy set `server.client_ip_header` (e.g. `x-real-ip`) so login rate limits see the client address.
+Behind a reverse proxy set `server.client_ip_header` (e.g. `x-real-ip`) so login rate limits see the client address. The login limits (`auth.login_ip_burst` and the others, see `learnly.example.toml`) can be raised for a school behind one NAT.
 
 ## Test
 
