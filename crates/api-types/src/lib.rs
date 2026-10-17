@@ -9,10 +9,12 @@ use uuid::Uuid;
 
 mod document;
 mod gradebook;
+mod groups;
 mod org;
 
 pub use document::*;
 pub use gradebook::*;
+pub use groups::*;
 pub use org::*;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
