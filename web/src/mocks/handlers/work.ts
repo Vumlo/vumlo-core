@@ -1,0 +1,291 @@
+import { http, HttpResponse } from "msw";
+import { MOCK_NOW } from "@/lib/clock";
+import { toCents } from "@/lib/points";
+import type { MyWork, QuizResult, TeachingOverview } from "@/lib/api/gaps";
+import { getDb, uid, type DbSubmission } from "../db";
+import {
+  activeStudents, autoScore, canView, courseById, decimal, dueIn, flatItems, forbidden, formOf, fullName, gradeOf, hasUnpublishedChanges, isPublished, isStaff,
+  itemById, itemVisibleToStudent, memberOf, notFound, paged, problem, quizOf, requireStaff, requireUser, requireView, scoreQuestion, submissionOf, userById, workItem,
+} from "../logic";
+import { courseInfo } from "./core";
+
+const A = "/api/v1";
+
+function assignmentFor(id: string) {
+  const item = itemById(id);
+  if (!item.assignment) throw notFound();
+  return item;
+}
+
+function viewAssignment(id: string) {
+  const user = requireUser();
+  const item = assignmentFor(id);
+  const course = courseById(item.course_id);
+  if (!canView(user, course)) throw notFound();
+  const staff = isStaff(user, course);
+  if (!staff && !itemVisibleToStudent(item, course)) throw notFound();
+  return { user, item, course, staff };
+}
+
+function staffAssignment(id: string) {
+  const item = assignmentFor(id);
+  const { course, user } = requireStaff(item.course_id);
+  return { item, course, user };
+}
+
+function latestAnswers(sub: DbSubmission | undefined): Record<string, string | string[]> {
+  const content = sub?.attempts[0]?.content as { answers?: Record<string, string | string[]> } | undefined;
+  return content?.answers ?? {};
+}
+
+export function toGradeList(courseIds: string[]) {
+  const db = getDb();
+  const out: TeachingOverview["to_grade"] = [];
+  for (const cid of courseIds) {
+    const c = courseById(cid);
+    const info = courseInfo(c);
+    for (const item of db.items.filter((i) => i.course_id === cid && i.assignment && i.assignment.type !== "no_submission" && toCents(i.assignment.max_points) > 0)) {
+      for (const m of activeStudents(cid)) {
+        const sub = submissionOf(item.id, m.user_id);
+        const g = gradeOf(item.id, m.user_id);
+        if (!sub || sub.attempts.length === 0 || (g && g.draft_score !== null)) continue;
+        const u = userById(m.user_id);
+        const a = sub.attempts[0]!;
+        out.push({
+          student_id: u.id, student_name: u.name, student_surname: u.surname, assignment_id: item.id, assignment_title: item.title, course_id: cid, course_code: info.code,
+          course_title: c.title, submitted_at: a.submitted_at, attempt: a.attempt, max_attempts: item.assignment!.max_attempts ?? null,
+        });
+      }
+    }
+  }
+  return out.sort((a, b) => a.submitted_at.localeCompare(b.submitted_at));
+}
+
+export const workHandlers = [
+  // ---- own work ----
+  http.get(`${A}/assignments/:id/submission`, ({ params }) => {
+    const { user } = viewAssignment(String(params.id));
+    const sub = submissionOf(String(params.id), user.id);
+    return HttpResponse.json({ attempts: sub?.attempts ?? [], draft: sub?.draft ?? null, next_cursor: null });
+  }),
+  http.put(`${A}/assignments/:id/submission/draft`, async ({ request, params }) => {
+    const { user, item, staff } = viewAssignment(String(params.id));
+    if (staff) throw forbidden();
+    const a = item.assignment!;
+    if (a.type === "no_submission") throw problem(409, "Conflict", "Nothing to submit here");
+    if (dueIn(item).closed) throw problem(409, "Conflict", "This assignment is closed");
+    const sub = submissionOf(item.id, user.id);
+    if (a.max_attempts != null && (sub?.attempts.length ?? 0) >= a.max_attempts) throw problem(409, "Conflict", "You have used all attempts");
+    const b = (await request.json()) as { content: unknown };
+    const db = getDb();
+    let s = sub;
+    if (!s) { s = { assignment_id: item.id, student_id: user.id, draft: null, attempts: [] }; db.submissions.push(s); }
+    s.draft = { content: b.content, updated_at: MOCK_NOW.toISOString() };
+    return HttpResponse.json(s.draft);
+  }),
+  http.delete(`${A}/assignments/:id/submission/draft`, ({ params }) => {
+    const { user } = viewAssignment(String(params.id));
+    const s = submissionOf(String(params.id), user.id);
+    if (s) s.draft = null;
+    return new HttpResponse(null, { status: 204 });
+  }),
+  http.post(`${A}/assignments/:id/submission/submit`, ({ params }) => {
+    const { user, item, staff } = viewAssignment(String(params.id));
+    if (staff) throw forbidden();
+    const s = submissionOf(item.id, user.id);
+    if (!s?.draft) throw problem(409, "Conflict", "Save a draft first");
+    const a = item.assignment!;
+    if (dueIn(item).closed) throw problem(409, "Conflict", "This assignment is closed");
+    if (a.max_attempts != null && s.attempts.length >= a.max_attempts) throw problem(409, "Conflict", "You have used all attempts");
+    if (a.type === "form") {
+      const answers = (s.draft.content as { answers?: Record<string, string | string[]> }).answers ?? {};
+      const missing = formOf(item).fields.filter((f) => f.required && (!answers[f.id] || (Array.isArray(answers[f.id]) && (answers[f.id] as string[]).length === 0)));
+      if (missing.length) throw problem(422, "Validation failed", undefined, missing.map((f) => ({ field: f.id, message: `${f.label} is required` })));
+    }
+    const attempt = { id: uid(`attempt:${item.id}:${user.id}:${s.attempts.length + 1}:${Date.now()}`), attempt: s.attempts.length + 1, content: s.draft.content, submitted_at: MOCK_NOW.toISOString(), is_late: !!a.due_at && new Date(a.due_at) < MOCK_NOW };
+    s.attempts.unshift(attempt);
+    s.draft = null;
+    if (a.type === "quiz") {
+      const q = quizOf(item);
+      const hasLong = q.questions.some((x) => x.type === "long" || x.type === "short");
+      if (!hasLong) {
+        let g = gradeOf(item.id, user.id);
+        const score = autoScore(item, latestAnswers(s));
+        const db = getDb();
+        if (!g) { g = { assignment_id: item.id, student_id: user.id, draft_score: null, draft_feedback: null, published_score: null, published_feedback: null, published_at: null, history: [] }; db.grades.push(g); }
+        g.draft_score = score;
+        g.history.unshift({ what: `Scored automatically: ${score}`, at: MOCK_NOW.toISOString() });
+      }
+    }
+    return HttpResponse.json(attempt, { status: 201 });
+  }),
+  http.get(`${A}/assignments/:id/result`, ({ params }) => {
+    const { user, item } = viewAssignment(String(params.id));
+    const g = gradeOf(item.id, user.id);
+    if (!isPublished(g)) throw notFound();
+    const q = quizOf(item);
+    const stored = getDb().quizResults[item.id];
+    const answers = latestAnswers(submissionOf(item.id, user.id));
+    const result: QuizResult = {
+      published_at: g!.published_at!, score: g!.published_score ?? "0.00", max_points: item.assignment!.max_points,
+      questions: q.questions.map((x) => {
+        const given = answers[x.id];
+        const got = stored?.[x.id]?.got ?? scoreQuestion(x, given) ?? "0.00";
+        return {
+          id: x.id, got, points: x.points, correct: x.correct ?? (x.answer ? [x.answer] : []),
+          answer: Array.isArray(given) ? given.join(",") : (given ?? null), feedback: stored?.[x.id]?.feedback ?? null,
+        };
+      }),
+    };
+    return HttpResponse.json(result);
+  }),
+  http.get(`${A}/courses/:id/my-grades`, ({ params }) => {
+    const { course, user } = requireView(String(params.id));
+    const items = flatItems(course, false).filter((i) => i.assignment && isPublished(gradeOf(i.id, user.id))).map((i) => {
+      const g = gradeOf(i.id, user.id)!;
+      return { assignment_id: i.id, title: i.title, max_points: i.assignment!.max_points, is_bonus: i.assignment!.is_bonus, score: g.published_score, feedback: g.published_feedback, published_at: g.published_at! };
+    });
+    return HttpResponse.json({ items });
+  }),
+  http.get(`${A}/me/work`, () => {
+    const user = requireUser();
+    const db = getDb();
+    const mine = db.courses.filter((c) => c.kind === "regular" && c.status !== "draft" && memberOf(c.id, user.id)?.role === "student");
+    const work: MyWork = {
+      courses: mine.map((c) => ({ id: c.id, code: c.code, title: c.title, term_name: db.terms.find((t) => t.id === c.term_id)?.name ?? null, owner_name: `Dr. ${userById(c.owner_id).name} ${userById(c.owner_id).surname}` })),
+      items: mine.flatMap((c) => flatItems(c, false).filter((i) => i.assignment).map((i) => workItem(i, user.id))),
+    };
+    return HttpResponse.json(work);
+  }),
+
+  // ---- staff: submissions and grades ----
+  http.get(`${A}/assignments/:id/submissions`, ({ request, params }) => {
+    const { item, course } = staffAssignment(String(params.id));
+    const db = getDb();
+    const rows = db.members.filter((m) => m.course_id === course.id && m.role === "student" && (!m.left_on || (submissionOf(item.id, m.user_id)?.attempts.length ?? 0) > 0)).map((m) => {
+      const u = userById(m.user_id);
+      const latest = submissionOf(item.id, m.user_id)?.attempts[0];
+      return {
+        student_id: u.id, name: u.name, surname: u.surname, status: latest ? "submitted" : "not_submitted", former: !!m.left_on,
+        latest: latest ? { id: latest.id, attempt: latest.attempt, submitted_at: latest.submitted_at, is_late: latest.is_late } : null,
+      };
+    }).sort((a, b) => a.surname.localeCompare(b.surname) || a.name.localeCompare(b.name));
+    return paged(rows, request);
+  }),
+  http.get(`${A}/assignments/:id/submissions/:sid`, ({ request, params }) => {
+    const { item } = staffAssignment(String(params.id));
+    return paged(submissionOf(item.id, String(params.sid))?.attempts ?? [], request);
+  }),
+  http.put(`${A}/assignments/:id/grades/:sid`, async ({ request, params }) => {
+    const { item, course } = staffAssignment(String(params.id));
+    const m = memberOf(course.id, String(params.sid));
+    if (!m || m.role !== "student") throw notFound();
+    if (m.left_on) throw problem(409, "Conflict", "This student left the course; their grades are locked");
+    const b = (await request.json()) as { score?: string | null; feedback?: string | null };
+    const db = getDb();
+    let g = gradeOf(item.id, m.user_id);
+    if (!g) { g = { assignment_id: item.id, student_id: m.user_id, draft_score: null, draft_feedback: null, published_score: null, published_feedback: null, published_at: null, history: [] }; db.grades.push(g); }
+    if ("score" in b) {
+      const next = b.score === null || b.score === "" || b.score === undefined ? null : decimal(b.score, "score", item.assignment!.max_points);
+      if (next !== g.draft_score) g.history.unshift({ what: next === null ? "Draft cleared" : `Draft set to ${next}`, at: MOCK_NOW.toISOString() });
+      g.draft_score = next;
+    }
+    if ("feedback" in b) g.draft_feedback = b.feedback?.trim() ? b.feedback.trim() : null;
+    return HttpResponse.json({
+      draft_score: g.draft_score, draft_feedback: g.draft_feedback, published_score: g.published_score, published_feedback: g.published_feedback, has_unpublished_changes: hasUnpublishedChanges(g),
+    });
+  }),
+  http.post(`${A}/assignments/:id/grades/publish`, async ({ request, params }) => {
+    const { item, course } = staffAssignment(String(params.id));
+    const b = (await request.json()) as { students: "all" | string[] };
+    const ids = new Set(b.students === "all" ? activeStudents(course.id).map((m) => m.user_id) : b.students);
+    let published = 0;
+    for (const g of getDb().grades.filter((x) => x.assignment_id === item.id && ids.has(x.student_id) && hasUnpublishedChanges(x))) {
+      if (memberOf(course.id, g.student_id)?.left_on) continue;
+      g.published_score = g.draft_score; g.published_feedback = g.draft_feedback;
+      g.published_at = g.draft_score === null && g.draft_feedback === null ? null : MOCK_NOW.toISOString();
+      g.history.unshift({ what: `Published ${g.draft_score ?? "feedback"}`, at: MOCK_NOW.toISOString() });
+      published++;
+    }
+    return HttpResponse.json({ published });
+  }),
+  http.get(`${A}/assignments/:id/grades/:sid/history`, ({ params }) => {
+    const { item } = staffAssignment(String(params.id));
+    return HttpResponse.json({ entries: gradeOf(item.id, String(params.sid))?.history ?? [] });
+  }),
+  http.get(`${A}/courses/:id/gradebook`, ({ request, params }) => {
+    const { course } = requireStaff(String(params.id));
+    const db = getDb();
+    const items = flatItems(course, true).filter((i) => i.assignment && toCents(i.assignment.max_points) > 0);
+    const columns = items.map((i) => ({ assignment_id: i.id, title: i.title, max_points: i.assignment!.max_points, is_bonus: i.assignment!.is_bonus, status: i.status }));
+    const rows = db.members.filter((m) => m.course_id === course.id && m.role === "student" && (!m.left_on || db.grades.some((g) => g.student_id === m.user_id && items.some((i) => i.id === g.assignment_id)))).map((m) => {
+      const u = userById(m.user_id);
+      const cells = items.flatMap((i) => {
+        const g = gradeOf(i.id, m.user_id);
+        return g ? [{ assignment_id: i.id, draft_score: g.draft_score, draft_feedback: g.draft_feedback, published_score: g.published_score, published_feedback: g.published_feedback, has_unpublished_changes: hasUnpublishedChanges(g) }] : [];
+      });
+      return { user_id: u.id, name: u.name, surname: u.surname, former: !!m.left_on, cells };
+    }).sort((a, b) => a.surname.localeCompare(b.surname) || a.name.localeCompare(b.name));
+    const url = new URL(request.url);
+    const limit = Math.min(Number(url.searchParams.get("limit") ?? 50) || 50, 200);
+    const start = Number(url.searchParams.get("cursor") ?? 0) || 0;
+    return HttpResponse.json({ columns, items: rows.slice(start, start + limit), next_cursor: start + limit < rows.length ? String(start + limit) : null });
+  }),
+  http.get(`${A}/assignments/:id/responses`, ({ params }) => {
+    const { item, course } = staffAssignment(String(params.id));
+    if (item.assignment!.type !== "form") throw notFound();
+    const form = formOf(item);
+    const variants = form.fields.find((f) => f.type === "choice");
+    const rows = activeStudents(course.id).flatMap((m) => {
+      const a = submissionOf(item.id, m.user_id)?.attempts[0];
+      if (!a) return [];
+      const ans = (a.content as { answers: Record<string, string | string[]> }).answers;
+      return [{
+        team: String(ans.f1 ?? ""), variant: variants?.options.find((o) => o.id === ans.f2)?.text ?? "",
+        members: (Array.isArray(ans.f3) ? ans.f3 : []).map((id) => fullName(userById(id))).join(", "),
+        repo: String(ans.f4 ?? "").replace(/^https?:\/\//, ""), submitted_at: a.submitted_at, late: a.is_late,
+      }];
+    });
+    const inTeam = new Set(activeStudents(course.id).flatMap((m) => {
+      const a = submissionOf(item.id, m.user_id)?.attempts[0];
+      return a ? ((a.content as { answers: Record<string, string[]> }).answers.f3 ?? []) : [];
+    }));
+    const missing = activeStudents(course.id).filter((m) => !inTeam.has(m.user_id)).map((m) => fullName(userById(m.user_id)));
+    return HttpResponse.json({ total_students: activeStudents(course.id).length, missing, rows: rows.sort((a, b) => b.submitted_at.localeCompare(a.submitted_at)) });
+  }),
+
+  // ---- teacher overview ----
+  http.get(`${A}/me/teaching`, () => {
+    const user = requireUser();
+    const db = getDb();
+    const courses = db.courses.filter((c) => c.kind === "regular" && c.status !== "archived" && memberOf(c.id, user.id) && ["teacher", "assistant"].includes(memberOf(c.id, user.id)!.role));
+    const ids = courses.map((c) => c.id);
+    const to_grade = toGradeList(ids);
+    const unpublished: TeachingOverview["unpublished"] = [];
+    const deadlines: TeachingOverview["deadlines"] = [];
+    const content: TeachingOverview["unpublished_content"] = [];
+    for (const c of courses) {
+      const info = courseInfo(c);
+      for (const item of db.items.filter((i) => i.course_id === c.id)) {
+        if (item.assignment) {
+          const students = activeStudents(c.id);
+          const draftCount = students.filter((s) => { const g = gradeOf(item.id, s.user_id); return !!g && hasUnpublishedChanges(g); }).length;
+          if (draftCount) unpublished.push({ assignment_id: item.id, assignment_title: item.title, course_id: c.id, course_code: info.code, course_title: c.title, draft_count: draftCount, auto_scored: item.assignment.type === "quiz" });
+          const due = item.assignment.due_at;
+          if (due && new Date(due) >= MOCK_NOW) {
+            deadlines.push({
+              assignment_id: item.id, course_id: c.id, course_code: info.code, title: item.title, due_at: due,
+              submitted: students.filter((s) => (submissionOf(item.id, s.user_id)?.attempts.length ?? 0) > 0).length, total: students.length, note: item.status === "draft" ? "not open yet" : null,
+            });
+          }
+        }
+        const parentDraft = db.modules.find((m) => m.id === item.module_id)?.status === "draft";
+        if (item.status === "draft" && !parentDraft) content.push({ item_id: item.id, course_id: c.id, course_code: info.code, title: item.title, note: "draft" });
+        if (item.unpublished_changes) content.push({ item_id: item.id, course_id: c.id, course_code: info.code, title: item.title, note: "edits" });
+      }
+    }
+    const overview: TeachingOverview = { to_grade, unpublished, deadlines: deadlines.sort((a, b) => a.due_at.localeCompare(b.due_at)), unpublished_content: content };
+    return HttpResponse.json(overview);
+  }),
+];
+

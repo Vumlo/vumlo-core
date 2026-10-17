@@ -1,0 +1,146 @@
+"use client";
+
+import Link from "next/link";
+import { usePathname, useRouter } from "next/navigation";
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { Icon } from "@/components/Icon";
+import { navFor } from "@/lib/nav";
+import { fullName, useLogout, useMe, type User } from "@/lib/session";
+import { useTheme } from "@/lib/theme";
+import { initials } from "@/lib/format";
+import { useInstitution } from "@/lib/api/hooks/institution";
+import s from "./Shell.module.css";
+
+function AccountMenu({ user }: { user: User }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const router = useRouter();
+  const logout = useLogout();
+
+  useEffect(() => {
+    if (!open) return;
+    const close = (e: MouseEvent | KeyboardEvent) => {
+      if (e instanceof KeyboardEvent) {
+        if (e.key === "Escape") setOpen(false);
+      } else if (ref.current && !ref.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", close);
+    document.addEventListener("keydown", close);
+    return () => {
+      document.removeEventListener("mousedown", close);
+      document.removeEventListener("keydown", close);
+    };
+  }, [open]);
+
+  async function signOut() {
+    await logout.run();
+    router.replace("/login");
+  }
+
+  return (
+    <div ref={ref} className={s.actions}>
+      <button
+        type="button"
+        className={s.avatarBtn}
+        aria-label={`Account menu, ${fullName(user)}`}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => setOpen((o) => !o)}
+      >
+        <span className="avatar">{initials(user.name, user.surname)}</span>
+      </button>
+      {open && (
+        <div role="menu" aria-label="Account" className={`popover ${s.menu}`}>
+          <div className={s.menuHead}>
+            <div className={s.menuName}>{fullName(user)}</div>
+            <div className={s.menuMeta}>{user.email}</div>
+          </div>
+          <Link role="menuitem" href="/profile" className="menu-item" onClick={() => setOpen(false)}>
+            <Icon name="user" size={16} /> Profile and settings
+          </Link>
+          <button type="button" role="menuitem" className="menu-item" onClick={signOut}>
+            <Icon name="logout" size={16} /> Sign out
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+export function ThemeButton() {
+  const { theme, toggle } = useTheme();
+  const label = theme === "dark" ? "Switch to light theme" : "Switch to dark theme";
+  return (
+    <button type="button" className="icon-btn" aria-label={label} title={label} onClick={toggle}>
+      <Icon name={theme === "dark" ? "sun" : "moon"} size={20} />
+    </button>
+  );
+}
+
+/** The signed-in frame: sticky navbar, phone tabs, and a redirect to /login without a session. */
+export function Shell({ children }: { children: ReactNode }) {
+  const pathname = usePathname();
+  const router = useRouter();
+  const me = useMe();
+  const institution = useInstitution();
+  const institutionName = institution.data?.name ?? "Learnly";
+
+  useEffect(() => {
+    if (me.error?.status === 401) router.replace(`/login?next=${encodeURIComponent(pathname)}`);
+  }, [me.error, pathname, router]);
+
+  if (!me.data) {
+    return <div className="loading" role="status">{me.error && me.error.status !== 401 ? "Could not load your account." : "Loading…"}</div>;
+  }
+  const user = me.data;
+  const nav = navFor(user.role);
+
+  function search(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const q = String(new FormData(e.currentTarget).get("q") ?? "").trim();
+    router.push(q ? `/courses?q=${encodeURIComponent(q)}` : "/courses");
+  }
+
+  return (
+    <>
+      <header className={s.header}>
+        <Link href="/" className={s.brand}>
+          <span aria-hidden="true" className={s.logo}>{institutionName.charAt(0)}</span>
+          <span className={s.brandName}>{institutionName}</span>
+        </Link>
+        <nav aria-label="Main" className={s.nav}>
+          {nav.map((n) => (
+            <Link key={n.href} href={n.href} className={s.navLink} aria-current={n.match(pathname) ? "page" : undefined}>
+              {n.label}
+            </Link>
+          ))}
+        </nav>
+        <span className={s.spacer} />
+        <form role="search" onSubmit={search} className={`search ${s.search}`}>
+          <Icon name="search" size={17} />
+          <input type="search" name="q" aria-label="Search" placeholder="Search courses and materials" />
+        </form>
+        <div className={`${s.actions} ${s.desktopOnly}`}>
+          <ThemeButton />
+        </div>
+        <span className={s.phoneOnly}>
+          <Link href="/courses" className="icon-btn" aria-label="Search" style={{ width: 44, height: 44 }}>
+            <Icon name="search" size={20} />
+          </Link>
+        </span>
+        <AccountMenu user={user} />
+      </header>
+      <main className={s.main}>{children}</main>
+      <nav aria-label="Main" className={s.tabs}>
+        {nav.map((n) => (
+          <Link key={n.href} href={n.href} className={s.tab} aria-current={n.match(pathname) ? "page" : undefined}>
+            <span className={s.tabIcon}><Icon name={n.icon} size={21} /></span>
+            {n.label}
+          </Link>
+        ))}
+      </nav>
+    </>
+  );
+}

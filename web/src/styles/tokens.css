@@ -1,0 +1,86 @@
+/* The only place colours are written. They come from `tokens()` in the design canvas;
+   components refer to them as var(--name). */
+:root {
+  color-scheme: light;
+  --bg: #f3f4f6;
+  --surface: #ffffff;
+  --sunken: #f6f7f9;
+  --hover: #eef0f3;
+  --border: #e0e3e8;
+  --border-strong: #8b93a0;
+  --text: #1a1d23;
+  --muted: #5b6270;
+  --accent: #3b48c4;
+  --accent-text: #ffffff;
+  --accent-fg: #3443b5;
+  --accent-soft: #e9ebfa;
+  --lec-tile: #e4edfa;
+  --lec-fg: #24539f;
+  --asg-tile: #fbebd3;
+  --asg-fg: #874f00;
+  --asg-row: #fffbf5;
+  --ok-soft: #e1f1e5;
+  --ok-fg: #1a6634;
+  --danger: #b42318;
+  --danger-soft: #fdecea;
+  --shadow: 0 1px 2px rgba(20, 24, 32, 0.06), 0 2px 8px rgba(20, 24, 32, 0.04);
+  --ring: #3b48c4;
+  --input-bg: #ffffff;
+  --code-bg: #f6f7f9;
+  --code-kw: #3443b5;
+  --code-num: #874f00;
+  --sel-bg: #c9d0f7;
+  --video-bg: #1a1d23;
+  --video-fg: #ffffff;
+  --video-ctrl: rgba(255, 255, 255, 0.16);
+  /* Accent choices of the institution (Admin, Institution). Preview swatches only. */
+  --swatch-indigo: #3b48c4;
+  --swatch-teal: #0f766e;
+  --swatch-crimson: #b4232f;
+  --swatch-forest: #2f6b2f;
+  --swatch-plum: #7a3e8e;
+  --overlay: rgba(10, 14, 22, 0.45);
+  --popover-shadow: 0 10px 28px rgba(10, 14, 22, 0.18);
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #131518;
+  --surface: #1b1e23;
+  --sunken: #16181c;
+  --hover: #22262c;
+  --border: #2a2e35;
+  --border-strong: #6b7380;
+  --text: #e8eaed;
+  --muted: #a1a8b3;
+  --accent: #8f9cff;
+  --accent-text: #10132a;
+  --accent-fg: #aab4ff;
+  --accent-soft: #262b4b;
+  --lec-tile: #1c2a42;
+  --lec-fg: #8eb5f6;
+  --asg-tile: #37290f;
+  --asg-fg: #eeb75e;
+  --asg-row: #1f1e1b;
+  --ok-soft: #16301f;
+  --ok-fg: #80cf9a;
+  --danger: #ff8b80;
+  --danger-soft: #3a1e1b;
+  --shadow: none;
+  --ring: #8f9cff;
+  --input-bg: #16181c;
+  --code-bg: #16181c;
+  --code-kw: #aab4ff;
+  --code-num: #eeb75e;
+  --sel-bg: #33407a;
+  --video-bg: #0b0d10;
+  --video-fg: #ffffff;
+  --video-ctrl: rgba(255, 255, 255, 0.16);
+  --swatch-indigo: #8f9cff;
+  --swatch-teal: #4fd1c5;
+  --swatch-crimson: #ff8b94;
+  --swatch-forest: #7fd17f;
+  --swatch-plum: #d29be6;
+  --overlay: rgba(0, 0, 0, 0.6);
+  --popover-shadow: 0 10px 28px rgba(0, 0, 0, 0.5);
+}
