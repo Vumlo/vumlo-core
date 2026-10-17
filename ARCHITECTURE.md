@@ -1,6 +1,6 @@
 # Learnly — Architecture
 
-Status: **in progress.** Implemented: the foundation (config, migrations, health, OpenAPI, Problem Details), `identity` + `policy` (users, password login, sessions, admin user management), the first slice of `teaching` (courses, members, publishing) with a minimal `events.audit_log`, the `content` tree (modules, sub-modules, `text` items and assignments of type `text` or `no_submission`, whose bodies are block documents), the `gradebook` (draft and published grades, publishing, the staff gradebook, a student's published grades), the first event in `events.outbox` and the installation record of `org` (the institution mode, ADR-0031). Everything else below is still design.
+Status: **in progress.** Implemented: the foundation (config, migrations, health, OpenAPI, Problem Details), `identity` + `policy` (users, password login, sessions, admin user management), the first slice of `teaching` (courses, members, publishing) with a minimal `events.audit_log`, the `content` tree (modules, sub-modules, `text` items and assignments of type `text` or `no_submission`, whose bodies are block documents), the `gradebook` (draft and published grades, publishing, the staff gradebook, a student's published grades), the first event in `events.outbox`, and `org` with the installation record (the institution mode, ADR-0031) and terms, groups and subgroups (ADR-0032). Everything else below is still design.
 This file is the current picture of the system. Every decision behind it has a record in [`docs/decisions/`](docs/decisions/). If this file and an ADR disagree, the ADR wins and this file gets fixed.
 
 ## Goal
@@ -58,7 +58,7 @@ docs/decisions/
 | Module       | Owns (Postgres schema)          | Responsibility |
 |--------------|---------------------------------|----------------|
 | `identity`   | `identity.*`                    | users, login identities, sessions, tokens |
-| `org`        | `org.*`                         | the installation record (the institution mode, built, ADR-0031); terms and groups (cohorts) planned |
+| `org`        | `org.*`                         | the installation record (the institution mode, ADR-0031); terms, groups (cohorts) and subgroups with their members (ADR-0032) |
 | `teaching`   | `teaching.*`                    | courses, memberships, publishing; group links and course subgroups are planned |
 | `content`    | `content.*`                     | modules, items (`text` items and assignments of type `text` and `no_submission` built, their bodies are block documents (ADR-0025, ADR-0027); other assignment types planned). Planned kinds and types: ADR-0023, ADR-0024. |
 | `assessment` | `assessment.*`                  | submissions, attempts, lateness, auto-grading of quizzes |
@@ -113,17 +113,20 @@ identity
                    status: pending | approved | denied, expires_at    -- CLI login, RFC 8628 (planned)
   email_tokens     -- email verification and password reset (planned, task 004)
 
-org
-  terms            id, name, starts_on, ends_on
-  groups           id, name                            -- cohorts: class 7-A, group PZ-31
-  group_members    group_id, user_id
-  subgroups        id, group_id, name                  -- 7-A English 1/2; one level only
-  subgroup_members subgroup_id, user_id                -- must also be a member of the group
+org                                                -- built: ADR-0031, ADR-0032
+  installation     singleton, mode: school | university     -- one row, written by the first start
+  terms            id, name (trimmed, 1-100, unique), starts_on, ends_on   -- ends_on >= starts_on; flat
+  groups           id, name (trimmed, 1-100, unique), created_at           -- cohorts: class 7-A, group PZ-31
+  group_members    group_id, user_id                   -- primary key together; students only (by the service)
+  subgroups        id, group_id, name                  -- 7-A English 1/2; one level only; unique(group_id, name)
+  subgroup_members subgroup_id, group_id, user_id      -- foreign keys (subgroup_id, group_id) -> subgroups and
+                                                       -- (group_id, user_id) -> group_members, both ON DELETE CASCADE:
+                                                       -- a subgroup member is a group member, and leaves with them
 
 teaching
   courses          id, kind: regular | template, title, term_id?,
                    status: draft | published | archived, owner_id, created_by
-                   -- built: term_id has no foreign key until org.terms exists
+                   -- built: term_id -> org.terms ON DELETE RESTRICT; a term in use cannot be deleted (ADR-0032)
   course_groups    course_id, group_id, subgroup_id?   -- live link; no subgroup = whole group
   memberships      course_id, user_id, role: teacher | assistant | student
   effective_members (VIEW) = memberships ∪ students of linked groups / subgroups
@@ -205,7 +208,7 @@ Key points:
 
 ## Authorization
 
-`policy::authorize(&Actor, Action)` decides every check. The resource an action needs travels inside its `Action` variant, so course-level actions can be added without changing existing callers. Today: `ManageOwnAccount` (any role), `ManageUsers` (admin only), the course actions `CreateCourse`, `ViewOwnCourses`, `ViewCourse`, `PublishCourse`, `ManageMembership`, `DeleteCourse` and `TransferOwnership`, the content actions `ManageContent` and `ViewContent`, `ViewEditorProfiles` (any role), and the gradebook actions `GradeAssignment`, `PublishGrades` and `ViewGradebook` (staff and admins, any course status) and `ViewOwnGrades` (only a student of a published course; staff and admins read the gradebook instead). A course action carries a `CourseAccess` (the actor's course role, whether they own it, and its status), which `teaching` reads from the database; `content` and `gradebook` get it through `teaching::course_access`, the one read function of another module that `gradebook` may call ([ADR-0030](docs/decisions/0030-gradebook-lock-covers-deletes-and-course-access.md)). `ManageContent` covers viewing drafts, editing and publishing content for staff and admins and ignores the course status, so the content of an archived course stays editable until archiving gets its own ADR. `ViewContent` carries the release state of every row on the path to the target and the evaluation time, because `policy` has no clock. The delete and transfer actions have no endpoint yet.
+`policy::authorize(&Actor, Action)` decides every check. The resource an action needs travels inside its `Action` variant, so course-level actions can be added without changing existing callers. Today: `ManageOwnAccount` (any role), `ManageUsers` (admin only), the course actions `CreateCourse`, `ViewOwnCourses`, `ViewCourse`, `PublishCourse`, `ManageMembership`, `DeleteCourse` and `TransferOwnership`, the content actions `ManageContent` and `ViewContent`, `ViewEditorProfiles` (any role), and the gradebook actions `GradeAssignment`, `PublishGrades` and `ViewGradebook` (staff and admins, any course status) and `ViewOwnGrades` (only a student of a published course; staff and admins read the gradebook instead), `ManageTerms`, `ManageGroups` and `ViewGroups` (admins only) and `ViewTerms` (any role), with `group_role_allowed` (only an institution `student` is a group member) next to `course_role_allowed` (ADR-0032). A course action carries a `CourseAccess` (the actor's course role, whether they own it, and its status), which `teaching` reads from the database; `content` and `gradebook` get it through `teaching::course_access`, the one read function of another module that `gradebook` may call ([ADR-0030](docs/decisions/0030-gradebook-lock-covers-deletes-and-course-access.md)). `ManageContent` covers viewing drafts, editing and publishing content for staff and admins and ignores the course status, so the content of an archived course stays editable until archiving gets its own ADR. `ViewContent` carries the release state of every row on the path to the target and the evaluation time, because `policy` has no clock. The delete and transfer actions have no endpoint yet.
 
 There are two levels of roles ([ADR-0004](docs/decisions/0004-roles-and-policy.md)).
 
@@ -284,6 +287,22 @@ The content endpoints (tag `content`, all under `/api/v1`):
 
 Two creates that race for the same last position conflict at commit: the loser gets 409 and retries.
 
+**Terms, groups and subgroups** ([ADR-0032](docs/decisions/0032-terms-groups-and-subgroups.md))
+Admins create, rename, change and delete them; every one of those writes is audited (resource types `term`, `group`, `subgroup`) and none emits an event. Any signed-in user reads terms; groups, subgroups and their members are read by admins only for now. The tags are `terms` and `groups` (subgroups are under `groups`).
+
+| Endpoint | |
+|---|---|
+| `POST /terms`, `GET /terms`, `GET /terms/{id}`, `PATCH /terms/{id}`, `DELETE /terms/{id}` | `ends_on` before `starts_on` is 422 (checked after merging a `PATCH`); a duplicate name is 409; deleting a term that a course uses is 409 (the foreign key) |
+| `POST /groups`, `GET /groups`, `GET /groups/{id}`, `PATCH /groups/{id}` (rename), `DELETE /groups/{id}` | a duplicate name is 409; the delete takes the subgroups and members with it |
+| `GET /groups/{id}/members` | by surname, name and id; the cursor is a user id |
+| `POST /groups/{id}/members` | `{user_ids}`, 1 to 1000; all or nothing and idempotent (`added` lists the new members); an unknown user or a user who is not a student is 422 on `user_ids[i]` |
+| `DELETE /groups/{id}/members/{user_id}` | also removes the user from the group's subgroups |
+| `POST /groups/{id}/subgroups`, `GET /groups/{id}/subgroups` | a name is unique inside the group |
+| `PATCH /subgroups/{id}` (rename), `DELETE /subgroups/{id}` | |
+| `GET /subgroups/{id}/members`, `POST /subgroups/{id}/members`, `DELETE /subgroups/{id}/members/{user_id}` | an entry that is not a member of the group is 422 on `user_ids[i]` |
+
+Every write below a group takes the group row `FOR UPDATE` first and reads memberships in a later statement, so a removal from the group racing with an add to its subgroup ends consistent; the composite foreign key is the backstop. A role change of a user does not remove their memberships. Unknown ids in the path are 404, in the body 422. `POST /courses` takes an optional `term_id`; a term that does not exist is 422 on `term_id`.
+
 **Submission lifecycle** ([ADR-0011](docs/decisions/0011-submissions.md))
 `draft` (autosaved, invisible to staff) → `submitted` (immutable). Resubmitting creates a new attempt, limited by `max_attempts`. At the deadline the draft is kept or auto-submitted according to `on_deadline`. A late submission is allowed only if `accept_late` is set and `now() <= late_until` (if set), and it is marked `is_late`. Staff grade the latest submitted attempt.
 
@@ -304,6 +323,12 @@ Examples: in a school, the template "Algebra 7" becomes courses "Algebra 7-A" an
 - **Disabled students stay in the gradebook.** A disabled user who is a student of a course is still listed and graded; the user status is not filtered.
 - **`teaching.effective_members` is the direct memberships for now.** The gradebook reads the students of a course from this one view (four queries of `gradebook/repo.rs`). When groups arrive the view is redefined to add the students of linked groups and subgroups (ADR-0006), and the gradebook needs no change. The other readers of `teaching.memberships` that mean "is this user a student of the course" must then move to the view: in `teaching/repo.rs`, `find_course` (a student's role), `list_courses_of` and `list_members`. Teachers and assistants stay direct memberships. No module outside `teaching` reads the table directly.
 - **There is no course deletion yet.** When it is added it must lock the assignment rows of the course `FOR UPDATE`, then call `gradebook::has_grades_in_course` (409 if true) and `purge_course`, in one transaction. `teaching` then calls `gradebook` while `gradebook` calls `teaching`: a module-level cycle ([ADR-0030](docs/decisions/0030-gradebook-lock-covers-deletes-and-course-access.md)).
+
+- **The rollover of school classes is manual.** There is no copy-to-next-year action: rename the group and change its members (ADR-0032).
+- **Group reads are admin only.** Teachers and assistants cannot read groups, subgroups or members yet; task 015 (group links) decides how they pick a group for their course.
+- **A role change keeps the memberships.** A user who stops being a student stays in their groups until an admin removes them.
+- **The member lists read `identity.users`** with a read-only JOIN to sort by surname and name, as the gradebook roster does.
+- **A course has no update endpoint**, so its term cannot be changed after creation; a term in use stays undeletable until its courses go.
 
 ## Open questions
 
