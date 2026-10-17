@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT COALESCE(max(attempt), 0) AS \"last!\" FROM assessment.submissions\n           WHERE assignment_id = $1 AND student_id = $2 AND status = 'submitted'",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "last!",
+        "type_info": "Int4",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "c6e2f7a8621483bfe81fece515bf47a0ad6e40be517c6c501aeae92c996c5eaa"
+}

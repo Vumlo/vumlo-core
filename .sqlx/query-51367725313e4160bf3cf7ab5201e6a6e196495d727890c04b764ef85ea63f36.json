@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM assessment.submissions\n         WHERE status = 'draft'\n           AND assignment_id IN (SELECT id FROM content.items WHERE course_id = $1)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "51367725313e4160bf3cf7ab5201e6a6e196495d727890c04b764ef85ea63f36"
+}

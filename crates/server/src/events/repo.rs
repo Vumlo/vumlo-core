@@ -156,7 +156,10 @@ mod tests {
             assignment_id,
             student_id,
             course_id,
-        } = event;
+        } = event
+        else {
+            panic!("the test built a grade.published event");
+        };
         assert_eq!(
             row.payload,
             json!({

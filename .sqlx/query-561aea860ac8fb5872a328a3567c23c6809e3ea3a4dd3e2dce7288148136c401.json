@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE assessment.submissions SET attempt = 2 WHERE assignment_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "561aea860ac8fb5872a328a3567c23c6809e3ea3a4dd3e2dce7288148136c401"
+}

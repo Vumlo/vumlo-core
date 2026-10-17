@@ -25,6 +25,7 @@ use utoipa_axum::router::OpenApiRouter;
 use utoipa_axum::routes;
 use utoipa_scalar::{Scalar, Servable};
 
+use crate::assessment;
 use crate::content::{self, EditorConfigError, EffectiveProfiles};
 use crate::error::{ApiError, problem_details};
 use crate::gradebook;
@@ -175,6 +176,7 @@ pub fn router(state: AppState) -> Result<Router, SetupError> {
                 .merge(teaching::router())
                 .merge(content::router())
                 .merge(gradebook::router())
+                .merge(assessment::router())
                 .merge(org::router()),
         )
         .split_for_parts();
