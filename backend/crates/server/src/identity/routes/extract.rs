@@ -13,7 +13,7 @@ use crate::identity::model::SessionToken;
 use crate::identity::service::{self, Authenticated, IdentityError};
 use crate::settings::ServerSettings;
 
-pub const COOKIE_NAME: &str = "learnly_session";
+pub const COOKIE_NAME: &str = "vumlo_session";
 
 enum Credential {
     Bearer(SessionToken),

@@ -45,7 +45,7 @@ async fn serve_check_refuses_an_unmigrated_database() {
             "{error}"
         );
         assert!(
-            error.to_string().contains("learnly-server migrate"),
+            error.to_string().contains("vumlo-server migrate"),
             "{error}"
         );
 

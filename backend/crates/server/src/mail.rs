@@ -9,7 +9,7 @@ use crate::settings::{MailSettings, MailTransport, SmtpTls};
 
 #[derive(Debug, thiserror::Error)]
 pub enum MailError {
-    #[error("mail.from \"{0}\" is not a mailbox such as \"Learnly <no-reply@example.edu>\"")]
+    #[error("mail.from \"{0}\" is not a mailbox such as \"Vumlo <no-reply@example.edu>\"")]
     From(String),
     #[error("mail.transport.host \"{0}\" cannot be used as an SMTP host")]
     Host(String),
@@ -133,10 +133,10 @@ mod tests {
 
     #[tokio::test]
     async fn a_message_lands_in_the_directory_with_its_recipient_subject_and_body() {
-        let dir = std::env::temp_dir().join(format!("learnly-mail-{}", uuid::Uuid::now_v7()));
+        let dir = std::env::temp_dir().join(format!("vumlo-mail-{}", uuid::Uuid::now_v7()));
         std::fs::create_dir_all(&dir).unwrap();
         let mailer = Mailer::new(
-            &settings(&dir, "Learnly <no-reply@lms.test>"),
+            &settings(&dir, "Vumlo <no-reply@lms.test>"),
             "https://lms.test",
         )
         .unwrap();

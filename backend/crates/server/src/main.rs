@@ -10,7 +10,7 @@ use server::settings::{LogFormat, Settings};
 use sqlx::PgPool;
 
 #[derive(Parser)]
-#[command(name = "learnly-server", version)]
+#[command(name = "vumlo-server", version)]
 struct Cli {
     #[command(subcommand)]
     command: Command,

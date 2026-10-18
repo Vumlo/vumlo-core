@@ -6,7 +6,7 @@ use api_types::{HealthResponse, ProblemDetails};
 use clap::{Parser, Subcommand};
 
 #[derive(Parser)]
-#[command(name = "learnly", version)]
+#[command(name = "vumlo", version)]
 struct Cli {
     #[command(subcommand)]
     command: Command,

@@ -6,5 +6,5 @@ ENV SQLX_OFFLINE=true
 RUN cargo build --release -p server
 
 FROM debian:stable-slim
-COPY --from=build /src/target/release/learnly-server /usr/local/bin/learnly-server
-CMD ["learnly-server", "serve"]
+COPY --from=build /src/target/release/vumlo-server /usr/local/bin/vumlo-server
+CMD ["vumlo-server", "serve"]

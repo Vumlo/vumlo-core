@@ -40,7 +40,7 @@ async fn health_returns_503_problem_when_database_is_unreachable() {
     // Port 1 is closed, so every connection attempt is refused.
     let pool = PgPoolOptions::new()
         .acquire_timeout(Duration::from_secs(1))
-        .connect_lazy("postgres://learnly:learnly@127.0.0.1:1/learnly")
+        .connect_lazy("postgres://vumlo:vumlo@127.0.0.1:1/vumlo")
         .unwrap();
     let base = spawn(pool).await;
 
@@ -129,7 +129,7 @@ async fn openapi_document_declares_cookie_and_bearer_security() {
         let schemes = &doc["components"]["securitySchemes"];
         assert_eq!(schemes["cookie"]["type"], "apiKey");
         assert_eq!(schemes["cookie"]["in"], "cookie");
-        assert_eq!(schemes["cookie"]["name"], "learnly_session");
+        assert_eq!(schemes["cookie"]["name"], "vumlo_session");
         assert_eq!(schemes["bearer"]["type"], "http");
         assert_eq!(schemes["bearer"]["scheme"], "bearer");
         let logout = &doc["paths"]["/api/v1/auth/logout"]["post"];

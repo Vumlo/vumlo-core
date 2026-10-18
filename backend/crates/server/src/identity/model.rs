@@ -213,13 +213,13 @@ impl PersonName {
 #[derive(Debug, Clone)]
 pub struct PasswordPolicy {
     pub min_len: usize,
-    /// Words that must not appear in a password: email, name, surname, institution, "learnly".
+    /// Words that must not appear in a password: email, name, surname, institution, "vumlo".
     pub user_inputs: Vec<String>,
 }
 
 impl PasswordPolicy {
     pub fn new(min_len: usize, email: &str, name: &str, surname: &str, institution: &str) -> Self {
-        let mut user_inputs = vec![email.to_owned(), "learnly".to_owned()];
+        let mut user_inputs = vec![email.to_owned(), "vumlo".to_owned()];
         let (local, domain) = email.split_once('@').unwrap_or_default();
         user_inputs.push(local.to_owned());
         user_inputs.extend(domain.split('.').map(str::to_owned));

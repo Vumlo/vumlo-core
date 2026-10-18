@@ -56,7 +56,7 @@ async fn start(http: &Http, hint: Option<&str>) -> (String, String) {
         .get_all("set-cookie")
         .iter()
         .map(|v| v.to_str().unwrap().to_owned())
-        .find(|line| line.starts_with("learnly_oauth="))
+        .find(|line| line.starts_with("vumlo_oauth="))
         .expect("the binding cookie");
     for attribute in [
         "HttpOnly",
@@ -69,7 +69,7 @@ async fn start(http: &Http, hint: Option<&str>) -> (String, String) {
             "{attribute}: {cookie_line}"
         );
     }
-    let binding = set_cookie(&response, "learnly_oauth").unwrap();
+    let binding = set_cookie(&response, "vumlo_oauth").unwrap();
     (
         response.json()["authorization_url"]
             .as_str()
@@ -85,7 +85,7 @@ async fn callback(http: &Http, code: &str, state: &str, binding: Option<&str>) -
         .origin(ORIGIN)
         .json(&serde_json::json!({"code": code, "state": state}));
     if let Some(binding) = binding {
-        request = request.header("cookie", &format!("learnly_oauth={binding}"));
+        request = request.header("cookie", &format!("vumlo_oauth={binding}"));
     }
     request.send().await
 }
@@ -122,9 +122,9 @@ async fn a_first_sign_in_creates_a_verified_student_and_opens_a_web_session() {
         );
         assert_eq!(user["role"], "student");
         assert_eq!(user["must_change_password"], false);
-        let session = set_cookie(&response, "learnly_session").expect("a session cookie");
+        let session = set_cookie(&response, "vumlo_session").expect("a session cookie");
         assert_eq!(
-            set_cookie(&response, "learnly_oauth").as_deref(),
+            set_cookie(&response, "vumlo_oauth").as_deref(),
             Some(""),
             "the binding is cleared"
         );
@@ -229,7 +229,7 @@ async fn an_expired_attempt_and_a_foreign_origin_are_refused() {
         let foreign = http
             .post("/auth/google/callback")
             .origin("https://evil.test")
-            .header("cookie", &format!("learnly_oauth={binding}"))
+            .header("cookie", &format!("vumlo_oauth={binding}"))
             .json(&serde_json::json!({"code": code, "state": state}))
             .send()
             .await;
@@ -353,7 +353,7 @@ async fn a_disabled_account_cannot_sign_in_with_google() {
         let response = sign_in(&http, &issuer, Person::new("sub-10", "maya@lms.test")).await;
 
         response.problem(403);
-        assert!(set_cookie(&response, "learnly_session").is_none());
+        assert!(set_cookie(&response, "vumlo_session").is_none());
     })
     .await;
 }

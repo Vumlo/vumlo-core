@@ -1,5 +1,5 @@
-# Copy to learnly.toml. Any key can be overridden with LEARNLY__<SECTION>__<KEY>,
-# e.g. LEARNLY__DATABASE__URL.
+# Copy to vumlo.toml. Any key can be overridden with VUMLO__<SECTION>__<KEY>,
+# e.g. VUMLO__DATABASE__URL.
 
 [server]
 bind_addr = "127.0.0.1:8080"
@@ -17,7 +17,7 @@ public_origin = "http://localhost:5173"
 # allowed_origins = ["https://app.example.edu"]
 
 [database]
-url = "postgres://learnly:learnly@localhost:5432/learnly"
+url = "postgres://vumlo:vumlo@localhost:5432/vumlo"
 max_connections = 10
 
 [log]
@@ -42,24 +42,24 @@ max_concurrent_hashes = 8          # password hashes and checks at once, ~19 MiB
 # (a web application) and list redirect_uri as an authorized redirect URI.
 # [auth.google]
 # client_id = "....apps.googleusercontent.com"
-# client_secret = "..."                  # prefer LEARNLY__AUTH__GOOGLE__CLIENT_SECRET
+# client_secret = "..."                  # prefer VUMLO__AUTH__GOOGLE__CLIENT_SECRET
 # redirect_uri = "https://lms.example.edu/auth/google/callback"   # the callback page of the web app
 
 # Outgoing mail (ADR-0045): the links of self-registration and password reset. Without this section
 # both are off (404). Sent by the outbox worker, never inside a request.
 # [mail]
-# from = "Learnly <no-reply@example.edu>"
+# from = "Vumlo <no-reply@example.edu>"
 # link_base = "https://lms.example.edu"  # where the links point; default server.public_origin
 # [mail.transport]
 # kind = "smtp"                          # "smtp" | "file"
 # host = "smtp.example.edu"
 # port = 587                             # default: 587 for starttls, 465 for tls, 25 for none
 # tls = "starttls"                       # "starttls" | "tls" | "none" (none: a local test server)
-# username = "learnly"
-# password = "..."                       # prefer LEARNLY__MAIL__TRANSPORT__PASSWORD
+# username = "vumlo"
+# password = "..."                       # prefer VUMLO__MAIL__TRANSPORT__PASSWORD
 # For development, write every message to a file instead:
 # kind = "file"
-# dir = "/tmp/learnly-mail"
+# dir = "/tmp/vumlo-mail"
 
 [institution]
 name = "Example University"

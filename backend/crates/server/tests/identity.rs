@@ -426,7 +426,7 @@ async fn logout_deletes_the_session_and_clears_the_cookie() {
         assert_eq!(response.status, 204);
         let cleared = response.header("set-cookie");
         assert!(
-            cleared.starts_with("learnly_session=;") && cleared.contains("Max-Age=0"),
+            cleared.starts_with("vumlo_session=;") && cleared.contains("Max-Age=0"),
             "{cleared}"
         );
         http.post("/auth/logout")

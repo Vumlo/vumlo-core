@@ -83,7 +83,7 @@ pub struct Mailbox {
 
 impl Mailbox {
     pub fn new() -> Self {
-        let dir = std::env::temp_dir().join(format!("learnly-mailbox-{}", uuid::Uuid::now_v7()));
+        let dir = std::env::temp_dir().join(format!("vumlo-mailbox-{}", uuid::Uuid::now_v7()));
         std::fs::create_dir_all(&dir).expect("mailbox directory");
         Self { dir }
     }
@@ -93,7 +93,7 @@ impl Mailbox {
         let mut settings = test_settings();
         settings.auth.allowed_domains = vec!["lms.test".to_owned()];
         settings.mail = Some(server::settings::MailSettings {
-            from: "Learnly <no-reply@lms.test>".to_owned(),
+            from: "Vumlo <no-reply@lms.test>".to_owned(),
             link_base: None,
             transport: server::settings::MailTransport::File {
                 dir: self.dir.clone(),
@@ -200,7 +200,7 @@ impl Req {
     }
 
     pub fn cookie(self, token: &str) -> Self {
-        Self(self.0.header("cookie", format!("learnly_session={token}")))
+        Self(self.0.header("cookie", format!("vumlo_session={token}")))
     }
 
     pub fn origin(self, origin: &str) -> Self {
@@ -373,7 +373,7 @@ pub async fn login_web(http: &Http, email: &str, password: &str) -> String {
 pub fn cookie_token(response: &Resp) -> String {
     response
         .header("set-cookie")
-        .strip_prefix("learnly_session=")
+        .strip_prefix("vumlo_session=")
         .and_then(|rest| rest.split(';').next())
         .expect("session cookie")
         .to_owned()

@@ -5,7 +5,7 @@ edition.workspace = true
 publish.workspace = true
 
 [[bin]]
-name = "learnly"
+name = "vumlo"
 path = "src/main.rs"
 
 [dependencies]

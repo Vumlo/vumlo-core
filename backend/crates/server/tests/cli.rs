@@ -1,4 +1,4 @@
-//! Runs the real `learnly-server` binary against a test database.
+//! Runs the real `vumlo-server` binary against a test database.
 
 mod common;
 
@@ -55,17 +55,17 @@ async fn run_in_mode(pool: &PgPool, mode: &str, args: &[&str]) -> Output {
     let url = test_database_url(pool);
     let args: Vec<String> = args.iter().map(|a| (*a).to_owned()).collect();
     tokio::task::spawn_blocking(move || {
-        let output = Command::new(env!("CARGO_BIN_EXE_learnly-server"))
+        let output = Command::new(env!("CARGO_BIN_EXE_vumlo-server"))
             .args(&args)
-            .env("LEARNLY__SERVER__BIND_ADDR", "127.0.0.1:0")
-            .env("LEARNLY__SERVER__PUBLIC_ORIGIN", common::ORIGIN)
-            .env("LEARNLY__DATABASE__URL", url)
-            .env("LEARNLY__DATABASE__MAX_CONNECTIONS", "2")
-            .env("LEARNLY__LOG__FORMAT", "json")
-            .env("LEARNLY__INSTITUTION__NAME", "Test University")
-            .env("LEARNLY__INSTITUTION__MODE", &mode)
+            .env("VUMLO__SERVER__BIND_ADDR", "127.0.0.1:0")
+            .env("VUMLO__SERVER__PUBLIC_ORIGIN", common::ORIGIN)
+            .env("VUMLO__DATABASE__URL", url)
+            .env("VUMLO__DATABASE__MAX_CONNECTIONS", "2")
+            .env("VUMLO__LOG__FORMAT", "json")
+            .env("VUMLO__INSTITUTION__NAME", "Test University")
+            .env("VUMLO__INSTITUTION__MODE", &mode)
             .output()
-            .expect("run learnly-server");
+            .expect("run vumlo-server");
         Output {
             ok: output.status.success(),
             stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
@@ -279,7 +279,7 @@ async fn create_admin_refuses_an_unmigrated_database() {
 
         assert!(!output.ok);
         assert!(
-            output.stderr.contains("learnly-server migrate"),
+            output.stderr.contains("vumlo-server migrate"),
             "{}",
             output.stderr
         );
@@ -338,18 +338,18 @@ async fn a_missing_mode_stops_the_binary_at_startup() {
     db_test(async |pool| {
         let url = test_database_url(&pool);
         let output = tokio::task::spawn_blocking(move || {
-            Command::new(env!("CARGO_BIN_EXE_learnly-server"))
+            Command::new(env!("CARGO_BIN_EXE_vumlo-server"))
                 .arg("serve")
-                .env_remove("LEARNLY__INSTITUTION__MODE")
-                .env("LEARNLY__SERVER__BIND_ADDR", "127.0.0.1:0")
-                .env("LEARNLY__SERVER__PUBLIC_ORIGIN", common::ORIGIN)
-                .env("LEARNLY__DATABASE__URL", url)
-                .env("LEARNLY__DATABASE__MAX_CONNECTIONS", "2")
-                .env("LEARNLY__LOG__FORMAT", "json")
-                .env("LEARNLY__INSTITUTION__NAME", "Test University")
+                .env_remove("VUMLO__INSTITUTION__MODE")
+                .env("VUMLO__SERVER__BIND_ADDR", "127.0.0.1:0")
+                .env("VUMLO__SERVER__PUBLIC_ORIGIN", common::ORIGIN)
+                .env("VUMLO__DATABASE__URL", url)
+                .env("VUMLO__DATABASE__MAX_CONNECTIONS", "2")
+                .env("VUMLO__LOG__FORMAT", "json")
+                .env("VUMLO__INSTITUTION__NAME", "Test University")
                 .current_dir(env!("CARGO_TARGET_TMPDIR"))
                 .output()
-                .expect("run learnly-server")
+                .expect("run vumlo-server")
         })
         .await
         .expect("join");
@@ -358,6 +358,27 @@ async fn a_missing_mode_stops_the_binary_at_startup() {
         assert!(stderr.contains("institution.mode"), "{stderr}");
     })
     .await;
+}
+
+#[tokio::test]
+async fn a_variable_under_the_old_name_stops_the_binary_at_startup() {
+    let output = tokio::task::spawn_blocking(|| {
+        Command::new(env!("CARGO_BIN_EXE_vumlo-server"))
+            .arg("serve")
+            .env("LEARNLY__DATABASE__URL", "postgres://unused")
+            .env_remove("VUMLO__DATABASE__URL")
+            .current_dir(env!("CARGO_TARGET_TMPDIR"))
+            .output()
+            .expect("run vumlo-server")
+    })
+    .await
+    .expect("join");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(!output.status.success());
+    assert!(
+        stderr.contains("LEARNLY__DATABASE__URL was found; rename it to VUMLO__DATABASE__URL"),
+        "{stderr}"
+    );
 }
 
 /// What the audit log holds: (action, actor, source, resource type, resource id, meta).

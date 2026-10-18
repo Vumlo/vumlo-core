@@ -9,7 +9,7 @@ name = "server"
 path = "src/lib.rs"
 
 [[bin]]
-name = "learnly-server"
+name = "vumlo-server"
 path = "src/main.rs"
 
 [dependencies]

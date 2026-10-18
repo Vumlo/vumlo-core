@@ -118,7 +118,7 @@ impl AppState {
 }
 
 #[derive(OpenApi)]
-#[openapi(info(title = "Learnly API"), modifiers(&SecurityAddon))]
+#[openapi(info(title = "Vumlo API"), modifiers(&SecurityAddon))]
 struct ApiDoc;
 
 /// The two ways to authenticate (ADR-0003): the web cookie and the bearer token.
@@ -168,7 +168,7 @@ impl fmt::Display for MigrationCheckError {
             Self::Pending(n) => {
                 write!(
                     f,
-                    "{n} database migration(s) pending; run `learnly-server migrate` first"
+                    "{n} database migration(s) pending; run `vumlo-server migrate` first"
                 )
             }
         }

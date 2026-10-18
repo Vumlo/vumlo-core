@@ -16,7 +16,7 @@ use crate::identity::model::{BrowserBinding, NewSession, SessionKind};
 use crate::identity::service::{self, IdentityError};
 
 /// Ties a started sign-in to its browser (ADR-0047). It is sent to the Google endpoints only.
-const BINDING_COOKIE: &str = "learnly_oauth";
+const BINDING_COOKIE: &str = "vumlo_oauth";
 const BINDING_PATH: &str = "/api/v1/auth/google";
 const BINDING_MAX_AGE_SECS: u64 = 10 * 60;
 

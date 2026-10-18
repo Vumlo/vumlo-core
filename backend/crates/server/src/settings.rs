@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 use std::net::SocketAddr;
+use std::path::Path;
 
 use api_types::ProfileName;
 use config::{Config, ConfigError, Environment, File, FileFormat, Source};
@@ -20,6 +21,29 @@ pub struct Settings {
     /// Outgoing mail (ADR-0045). Absent: the features that must send mail are off.
     #[serde(default)]
     pub mail: Option<MailSettings>,
+}
+
+/// The project used to be called Learnly. A config file or variable under the old name is not read
+/// any more, so it is refused loudly instead of being ignored.
+fn check_renamed(old_file: bool, new_file: bool, vars: &[String]) -> Result<(), ConfigError> {
+    let mut problems = Vec::new();
+    if old_file && !new_file {
+        problems.push("learnly.toml was found; rename it to vumlo.toml".to_owned());
+    }
+    for old in vars.iter().filter(|v| v.starts_with("LEARNLY")) {
+        let new = old.replacen("LEARNLY", "VUMLO", 1);
+        if !vars.contains(&new) {
+            problems.push(format!("{old} was found; rename it to {new}"));
+        }
+    }
+    if problems.is_empty() {
+        Ok(())
+    } else {
+        Err(ConfigError::Message(format!(
+            "the project is now called Vumlo: {}",
+            problems.join("; ")
+        )))
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -263,7 +287,7 @@ impl std::fmt::Debug for Secret {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct MailSettings {
-    /// The sender, `name@example.edu` or `Learnly <no-reply@example.edu>`.
+    /// The sender, `name@example.edu` or `Vumlo <no-reply@example.edu>`.
     pub from: String,
     /// The origin links in mails point to. Default: `server.public_origin`.
     #[serde(default)]
@@ -349,15 +373,22 @@ pub enum LogFormat {
 }
 
 impl Settings {
-    /// Reads the optional `learnly.toml` (the repository root, one level above `backend/`), then
-    /// `LEARNLY__SECTION__KEY` environment overrides.
+    /// Reads the optional `vumlo.toml` (the repository root, one level above `backend/`), then
+    /// `VUMLO__SECTION__KEY` environment overrides.
     /// Only the `[auth]` section has defaults; every other key must come from one of the two sources.
     pub fn load() -> Result<Self, ConfigError> {
+        check_renamed(
+            Path::new("../learnly.toml").exists(),
+            Path::new("../vumlo.toml").exists(),
+            &std::env::vars_os()
+                .filter_map(|(name, _)| name.into_string().ok())
+                .collect::<Vec<_>>(),
+        )?;
         Self::build(
-            File::with_name("../learnly")
+            File::with_name("../vumlo")
                 .format(FileFormat::Toml)
                 .required(false),
-            Environment::with_prefix("LEARNLY").separator("__"),
+            Environment::with_prefix("VUMLO").separator("__"),
         )
     }
 
@@ -520,10 +551,33 @@ mod tests {
             .collect();
         Settings::build(
             File::from_str(toml, FileFormat::Toml),
-            Environment::with_prefix("LEARNLY")
+            Environment::with_prefix("VUMLO")
                 .separator("__")
                 .source(Some(env)),
         )
+    }
+
+    fn names(vars: &[&str]) -> Vec<String> {
+        vars.iter().map(|v| (*v).to_owned()).collect()
+    }
+
+    #[test]
+    fn the_old_config_file_is_refused_unless_the_new_one_exists() {
+        let e = check_renamed(true, false, &[]).unwrap_err().to_string();
+        assert!(e.contains("rename it to vumlo.toml"), "{e}");
+        assert!(check_renamed(true, true, &[]).is_ok());
+        assert!(check_renamed(false, false, &[]).is_ok());
+    }
+
+    #[test]
+    fn an_old_variable_is_refused_and_names_its_replacement() {
+        let vars = names(&["LEARNLY__DATABASE__URL", "LEARNLY_API_ORIGIN", "PATH"]);
+        let e = check_renamed(false, false, &vars).unwrap_err().to_string();
+        assert!(e.contains("rename it to VUMLO__DATABASE__URL"), "{e}");
+        assert!(e.contains("rename it to VUMLO_API_ORIGIN"), "{e}");
+        let both = names(&["LEARNLY__DATABASE__URL", "VUMLO__DATABASE__URL"]);
+        assert!(check_renamed(false, false, &both).is_ok());
+        assert!(check_renamed(false, false, &names(&["VUMLO__LOG__FORMAT"])).is_ok());
     }
 
     #[test]
@@ -538,8 +592,8 @@ mod tests {
         let s = build(
             VALID,
             &[
-                ("LEARNLY__DATABASE__URL", "postgres://other/db"),
-                ("LEARNLY__LOG__FORMAT", "pretty"),
+                ("VUMLO__DATABASE__URL", "postgres://other/db"),
+                ("VUMLO__LOG__FORMAT", "pretty"),
             ],
         )
         .unwrap();
@@ -549,13 +603,13 @@ mod tests {
 
     #[test]
     fn invalid_log_format_is_an_error() {
-        let e = build(VALID, &[("LEARNLY__LOG__FORMAT", "xml")]).unwrap_err();
+        let e = build(VALID, &[("VUMLO__LOG__FORMAT", "xml")]).unwrap_err();
         assert!(e.to_string().contains("xml"), "{e}");
     }
 
     #[test]
     fn invalid_bind_addr_is_an_error() {
-        assert!(build(VALID, &[("LEARNLY__SERVER__BIND_ADDR", "nope")]).is_err());
+        assert!(build(VALID, &[("VUMLO__SERVER__BIND_ADDR", "nope")]).is_err());
     }
 
     #[test]
@@ -579,9 +633,9 @@ mod tests {
         let s = build(
             VALID,
             &[
-                ("LEARNLY__AUTH__PASSWORD_MIN_LENGTH", "16"),
-                ("LEARNLY__AUTH__COOKIE_SECURE", "false"),
-                ("LEARNLY__AUTH__ALLOWED_DOMAINS", "a.edu,b.edu"),
+                ("VUMLO__AUTH__PASSWORD_MIN_LENGTH", "16"),
+                ("VUMLO__AUTH__COOKIE_SECURE", "false"),
+                ("VUMLO__AUTH__ALLOWED_DOMAINS", "a.edu,b.edu"),
             ],
         )
         .unwrap();
@@ -593,11 +647,11 @@ mod tests {
     #[test]
     fn password_min_length_must_be_between_8_and_128() {
         for bad in ["7", "129"] {
-            let e = build(VALID, &[("LEARNLY__AUTH__PASSWORD_MIN_LENGTH", bad)]).unwrap_err();
+            let e = build(VALID, &[("VUMLO__AUTH__PASSWORD_MIN_LENGTH", bad)]).unwrap_err();
             assert!(e.to_string().contains("password_min_length"), "{e}");
         }
-        assert!(build(VALID, &[("LEARNLY__AUTH__PASSWORD_MIN_LENGTH", "8")]).is_ok());
-        assert!(build(VALID, &[("LEARNLY__AUTH__PASSWORD_MIN_LENGTH", "128")]).is_ok());
+        assert!(build(VALID, &[("VUMLO__AUTH__PASSWORD_MIN_LENGTH", "8")]).is_ok());
+        assert!(build(VALID, &[("VUMLO__AUTH__PASSWORD_MIN_LENGTH", "128")]).is_ok());
     }
 
     #[test]
@@ -616,8 +670,8 @@ mod tests {
         let raised = build(
             VALID,
             &[
-                ("LEARNLY__AUTH__LOGIN_IP_BURST", "400"),
-                ("LEARNLY__AUTH__MAX_CONCURRENT_HASHES", "2"),
+                ("VUMLO__AUTH__LOGIN_IP_BURST", "400"),
+                ("VUMLO__AUTH__MAX_CONCURRENT_HASHES", "2"),
             ],
         )
         .unwrap()
@@ -633,7 +687,7 @@ mod tests {
             ("LOGIN_ACCOUNT_WINDOW_MINUTES", "1441"),
             ("MAX_CONCURRENT_HASHES", "0"),
         ] {
-            let e = build(VALID, &[(&format!("LEARNLY__AUTH__{key}"), bad)]).unwrap_err();
+            let e = build(VALID, &[(&format!("VUMLO__AUTH__{key}"), bad)]).unwrap_err();
             assert!(e.to_string().contains(&key.to_lowercase()), "{e}");
         }
     }
@@ -644,7 +698,7 @@ mod tests {
             ("school", GradingScale::Twelve),
             ("university", GradingScale::Hundred),
         ] {
-            let s = build(VALID, &[("LEARNLY__INSTITUTION__MODE", mode)]).unwrap();
+            let s = build(VALID, &[("VUMLO__INSTITUTION__MODE", mode)]).unwrap();
             assert_eq!(s.institution.grading_scale, scale, "{mode}");
         }
     }
@@ -658,8 +712,8 @@ mod tests {
             let s = build(
                 VALID,
                 &[
-                    ("LEARNLY__INSTITUTION__MODE", mode),
-                    ("LEARNLY__INSTITUTION__GRADING_SCALE", text),
+                    ("VUMLO__INSTITUTION__MODE", mode),
+                    ("VUMLO__INSTITUTION__GRADING_SCALE", text),
                 ],
             )
             .unwrap();
@@ -690,7 +744,7 @@ mod tests {
 
     #[test]
     fn an_unknown_mode_is_an_error_that_names_the_key_and_the_value() {
-        let e = build(VALID, &[("LEARNLY__INSTITUTION__MODE", "college")])
+        let e = build(VALID, &[("VUMLO__INSTITUTION__MODE", "college")])
             .unwrap_err()
             .to_string();
         for needle in ["institution.mode", "college", "school", "university"] {
@@ -704,20 +758,20 @@ mod tests {
             build(VALID, &[]).unwrap().institution.mode,
             InstitutionMode::University
         );
-        let s = build(VALID, &[("LEARNLY__INSTITUTION__MODE", "school")]).unwrap();
+        let s = build(VALID, &[("VUMLO__INSTITUTION__MODE", "school")]).unwrap();
         assert_eq!(s.institution.mode, InstitutionMode::School);
     }
 
     #[test]
     fn the_mode_alone_is_enough_without_a_file_value() {
         let toml = VALID.replace("mode = \"university\"", "");
-        let s = build(&toml, &[("LEARNLY__INSTITUTION__MODE", "school")]).unwrap();
+        let s = build(&toml, &[("VUMLO__INSTITUTION__MODE", "school")]).unwrap();
         assert_eq!(s.institution.mode, InstitutionMode::School);
     }
 
     #[test]
     fn an_unknown_grading_scale_is_an_error_that_names_the_value() {
-        let e = build(VALID, &[("LEARNLY__INSTITUTION__GRADING_SCALE", "ten")]).unwrap_err();
+        let e = build(VALID, &[("VUMLO__INSTITUTION__GRADING_SCALE", "ten")]).unwrap_err();
         assert!(e.to_string().contains("ten"), "{e}");
     }
 
@@ -742,7 +796,7 @@ mod tests {
         assert_eq!(i.language, Language::Uk);
         assert_eq!(i.time_zone, chrono_tz::Europe::Kyiv);
         assert_eq!(i.accent, Accent::Teal);
-        let i = build(&toml, &[("LEARNLY__INSTITUTION__ACCENT", "plum")])
+        let i = build(&toml, &[("VUMLO__INSTITUTION__ACCENT", "plum")])
             .unwrap()
             .institution;
         assert_eq!(i.accent, Accent::Plum);
@@ -758,13 +812,13 @@ mod tests {
             ("TIME_ZONE", "+03:00"),
             ("ACCENT", "#ff0000"),
         ] {
-            let e = build(VALID, &[(&format!("LEARNLY__INSTITUTION__{key}"), bad)])
+            let e = build(VALID, &[(&format!("VUMLO__INSTITUTION__{key}"), bad)])
                 .unwrap_err()
                 .to_string();
             let needle = format!("institution.{}", key.to_lowercase());
             assert!(e.contains(&needle), "{key}={bad}: {e}");
         }
-        let e = build(VALID, &[("LEARNLY__INSTITUTION__TIME_ZONE", "Europe/Kyev")])
+        let e = build(VALID, &[("VUMLO__INSTITUTION__TIME_ZONE", "Europe/Kyev")])
             .unwrap_err()
             .to_string();
         assert!(e.contains("Europe/Kyev"), "{e}");
@@ -772,7 +826,7 @@ mod tests {
 
     const MAIL_FILE: &str = r#"
         [mail]
-        from = "Learnly <no-reply@lms.example.edu>"
+        from = "Vumlo <no-reply@lms.example.edu>"
         link_base = "https://lms.example.edu/"
         [mail.transport]
         kind = "file"
@@ -788,7 +842,7 @@ mod tests {
 
         let google = build(
             &toml,
-            &[("LEARNLY__AUTH__GOOGLE__CLIENT_SECRET", "s3cret-value")],
+            &[("VUMLO__AUTH__GOOGLE__CLIENT_SECRET", "s3cret-value")],
         )
         .unwrap()
         .auth
@@ -811,7 +865,7 @@ mod tests {
             .mail
             .unwrap();
 
-        assert_eq!(mail.from, "Learnly <no-reply@lms.example.edu>");
+        assert_eq!(mail.from, "Vumlo <no-reply@lms.example.edu>");
         assert_eq!(mail.link_base.as_deref(), Some("https://lms.example.edu"));
         assert!(matches!(mail.transport, MailTransport::File { ref dir } if dir.ends_with("mail")));
     }
@@ -819,12 +873,12 @@ mod tests {
     #[test]
     fn an_smtp_transport_loads_from_the_file_and_the_environment_and_hides_its_password() {
         let toml = format!(
-            "{VALID}\n[mail]\nfrom = \"no-reply@lms.example.edu\"\n[mail.transport]\nkind = \"smtp\"\nhost = \"mail.example.edu\"\ntls = \"tls\"\nusername = \"learnly\"\n"
+            "{VALID}\n[mail]\nfrom = \"no-reply@lms.example.edu\"\n[mail.transport]\nkind = \"smtp\"\nhost = \"mail.example.edu\"\ntls = \"tls\"\nusername = \"vumlo\"\n"
         );
         let mail = build(
             &toml,
             &[(
-                "LEARNLY__MAIL__TRANSPORT__PASSWORD",
+                "VUMLO__MAIL__TRANSPORT__PASSWORD",
                 "hunter2 is not a secret here",
             )],
         )
@@ -873,7 +927,7 @@ mod tests {
             "https://lms.example.edu"
         );
         for bad in ["lms.example.edu", "https://lms.example.edu/app", "ftp://x"] {
-            let e = build(VALID, &[("LEARNLY__SERVER__PUBLIC_ORIGIN", bad)]).unwrap_err();
+            let e = build(VALID, &[("VUMLO__SERVER__PUBLIC_ORIGIN", bad)]).unwrap_err();
             assert!(e.to_string().contains("public_origin"), "{bad}: {e}");
         }
     }
@@ -884,7 +938,7 @@ mod tests {
         let settings = build(
             VALID,
             &[(
-                "LEARNLY__SERVER__ALLOWED_ORIGINS",
+                "VUMLO__SERVER__ALLOWED_ORIGINS",
                 "https://app.example.edu/,http://localhost:5173,https://[::1]:8443",
             )],
         )
@@ -931,12 +985,12 @@ mod tests {
             "https://",
             "https://[]",
         ] {
-            let e = build(VALID, &[("LEARNLY__SERVER__ALLOWED_ORIGINS", bad)]).unwrap_err();
+            let e = build(VALID, &[("VUMLO__SERVER__ALLOWED_ORIGINS", bad)]).unwrap_err();
             assert!(
                 e.to_string().contains("server.allowed_origins"),
                 "{bad:?}: {e}"
             );
-            let e = build(VALID, &[("LEARNLY__SERVER__PUBLIC_ORIGIN", bad)]).unwrap_err();
+            let e = build(VALID, &[("VUMLO__SERVER__PUBLIC_ORIGIN", bad)]).unwrap_err();
             assert!(
                 e.to_string().contains("server.public_origin"),
                 "{bad:?}: {e}"
@@ -945,7 +999,7 @@ mod tests {
         // One bad entry among good ones is still refused.
         let e = build(
             VALID,
-            &[("LEARNLY__SERVER__ALLOWED_ORIGINS", "https://a.test,*")],
+            &[("VUMLO__SERVER__ALLOWED_ORIGINS", "https://a.test,*")],
         )
         .unwrap_err();
         assert!(e.to_string().contains("server.allowed_origins"), "{e}");
@@ -974,9 +1028,9 @@ mod tests {
         let s = build(
             VALID,
             &[
-                ("LEARNLY__EDITOR__VIDEO_PROVIDERS", "youtube"),
+                ("VUMLO__EDITOR__VIDEO_PROVIDERS", "youtube"),
                 (
-                    "LEARNLY__EDITOR__PROFILES__STUDENT__FEATURES",
+                    "VUMLO__EDITOR__PROFILES__STUDENT__FEATURES",
                     "text_styles,links",
                 ),
             ],
@@ -1013,7 +1067,7 @@ mod tests {
         ] {
             build(&with_editor(extra), &[]).unwrap();
         }
-        let s = build(VALID, &[("LEARNLY__EDITOR__VIDEO_PROVIDERS", "vimeo,nope")]).unwrap();
+        let s = build(VALID, &[("VUMLO__EDITOR__VIDEO_PROVIDERS", "vimeo,nope")]).unwrap();
         assert_eq!(s.editor.video_providers, ["vimeo", "nope"]);
     }
 }

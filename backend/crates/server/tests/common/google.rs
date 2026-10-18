@@ -15,7 +15,7 @@ use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use tokio::net::TcpListener;
 
-pub const CLIENT_ID: &str = "learnly-test-client";
+pub const CLIENT_ID: &str = "vumlo-test-client";
 pub const CLIENT_SECRET: &str = "a client secret that is long enough for HS256";
 pub const REDIRECT_URI: &str = "https://lms.test/auth/google/callback";
 

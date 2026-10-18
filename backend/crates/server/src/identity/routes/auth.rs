@@ -36,7 +36,7 @@ pub(super) fn session_cookie(
 
 /// Logs in with email and password.
 ///
-/// `client = web` sets the `learnly_session` cookie and returns the user. `client = app`
+/// `client = web` sets the `vumlo_session` cookie and returns the user. `client = app`
 /// returns the token, to be sent as `Authorization: Bearer`. Failures never say whether the
 /// email or the password was wrong.
 #[utoipa::path(
