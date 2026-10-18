@@ -16,12 +16,13 @@ use uuid::Uuid;
 use super::google::{Begin, GoogleProfile};
 use super::model::{
     BrowserBinding, Email, EmailToken, HashedPassword, ModelError, NewSession, NewUser, Password,
-    PasswordPolicy, PersonName, Role, SessionInfo, SessionKind, SessionToken, TemporaryPassword,
-    TokenPurpose, User, UserFilter, UserStatus, UserUpdate,
+    PasswordPolicy, PersonName, Role, RoleCounts, SessionInfo, SessionKind, SessionToken,
+    TemporaryPassword, TokenPurpose, User, UserFacts, UserFilter, UserStatus, UserUpdate,
 };
 use super::repo::{self, LoginRecord};
 use crate::actor::Actor;
 use crate::events::{self, AuditEntry, Event, EventsError};
+use crate::org::{self, OrgError};
 use crate::pagination::{Page, PageParams};
 use crate::policy::{self, Action, PolicyError};
 use crate::teaching::{self, TeachingError};
@@ -85,6 +86,8 @@ pub enum IdentityError {
     OwnsCourses,
     #[error(transparent)]
     Teaching(Box<TeachingError>),
+    #[error(transparent)]
+    Org(Box<OrgError>),
     #[error("user not found")]
     UserNotFound,
     #[error("session not found")]
@@ -921,6 +924,41 @@ pub async fn list_users(
     filter.email_contains = filter.email_contains.map(|text| text.to_lowercase());
     let rows = repo::list_users(conn, &filter, page.after, i64::from(page.limit) + 1).await?;
     Ok(Page::from_rows(rows, page.limit, |u| u.id))
+}
+
+/// People by role, and how many are disabled. Admins only (ADR-0053).
+pub async fn user_summary(
+    conn: &mut PgConnection,
+    actor: &Actor,
+) -> Result<RoleCounts, IdentityError> {
+    policy::authorize(actor, Action::ViewAdminReports)?;
+    Ok(repo::role_counts(conn).await?)
+}
+
+/// What one person does in the institution: groups, courses, last sign-in. Admins only
+/// (ADR-0053).
+pub async fn user_facts(
+    conn: &mut PgConnection,
+    actor: &Actor,
+    id: Uuid,
+) -> Result<UserFacts, IdentityError> {
+    policy::authorize(actor, Action::ViewAdminReports)?;
+    let user = repo::find_user(conn, id)
+        .await?
+        .ok_or(IdentityError::UserNotFound)?;
+    let last_login_at = repo::last_login_at(conn, id).await?;
+    let groups = org::groups_of_user(conn, id)
+        .await
+        .map_err(|e| IdentityError::Org(Box::new(e)))?;
+    let courses = teaching::user_course_facts(conn, id)
+        .await
+        .map_err(|e| IdentityError::Teaching(Box::new(e)))?;
+    Ok(UserFacts {
+        user,
+        last_login_at,
+        groups,
+        courses,
+    })
 }
 
 /// Creates a user with a temporary password for an admin. The hash is computed by the caller

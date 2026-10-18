@@ -65,7 +65,7 @@ export function AssignmentPage({ item, courseId, staff }: { item: Item; courseId
     await save.run(emptyDoc());
   }
   async function resubmit() {
-    await save.run(latest ? (latest.content as Document) : emptyDoc());
+    await save.run(latest ? (latest.content as unknown as Document) : emptyDoc());
   }
   async function send() {
     if (timer.current) clearTimeout(timer.current);
@@ -180,7 +180,7 @@ export function AssignmentPage({ item, courseId, staff }: { item: Item; courseId
                     </div>
                     {canEdit && <button type="button" className="btn btn-outline" onClick={resubmit} disabled={save.pending}>{t("asg.resubmit")}</button>}
                   </div>
-                  <div className={s.panelBody}><BlockRenderer doc={latest.content as Document} size={16} /></div>
+                  <div className={s.panelBody}><BlockRenderer doc={latest.content as unknown as Document} size={16} /></div>
                   {canEdit && (
                     <p className={s.panelFoot}>
                       {attemptsLeft === Infinity ? t("asg.again") : t.plural("asg.left", attemptsLeft)} {t("asg.resubmitNote")}
@@ -217,7 +217,7 @@ export function AssignmentPage({ item, courseId, staff }: { item: Item; courseId
                         {t("asg.yourAnswer")}
                         <span className="muted" style={{ fontWeight: 400 }}>{t("asg.attemptSubmitted", { n: latest.attempt, when: dateTime(latest.submitted_at) })}</span>
                       </summary>
-                      <div><BlockRenderer doc={latest.content as Document} size={15} /></div>
+                      <div><BlockRenderer doc={latest.content as unknown as Document} size={15} /></div>
                     </details>
                   )}
                 </section>

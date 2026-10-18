@@ -1,7 +1,7 @@
 import { MOCK_NOW } from "@/lib/clock";
 import type { Attempt, Course, CourseGroupLink, Group, Item, Membership, Module, Session, Subgroup, SubmissionRow, Term, User } from "@/lib/api/types";
-import type { AuditEvent, MockMail } from "@/lib/api/gaps";
-import type { AdminInstitution, Institution } from "@/lib/api/types";
+import type { MockMail } from "@/lib/api/gaps";
+import type { AdminInstitution, AuditKind, AuditRecord, Institution } from "@/lib/api/types";
 import type { Document } from "@/lib/api/types";
 
 export type DbUser = User & { password: string; last_sign_in: string | null };
@@ -51,7 +51,7 @@ export type Db = {
   submissions: DbSubmission[];
   grades: DbGrade[];
   sessions: Session[];
-  audit: AuditEvent[];
+  audit: AuditRecord[];
   institution: AdminInstitution;
   /** Mail the mock "sent" and the single-use tokens behind its links. */
   mail: MockMail[];
@@ -95,6 +95,42 @@ export function at(local: string): string {
   let t = wall.getTime() - offsetMs(wall);
   t = wall.getTime() - offsetMs(new Date(t));
   return new Date(t).toISOString();
+}
+
+/** The kind of an audit entry, derived from its action as the server does (ADR-0053). */
+export function auditKind(action: string): AuditKind {
+  if (action.startsWith("user.")) return "accounts";
+  if (action === "course.owner.transfer") return "owners";
+  if (action.startsWith("course.member.")) return "teachers";
+  if (action.startsWith("group.") || action.startsWith("subgroup.")) return "groups";
+  if (action.startsWith("course.")) return "courses";
+  if (action.startsWith("content.")) return "content";
+  if (action.startsWith("grade.")) return "grades";
+  if (action.startsWith("term.")) return "terms";
+  return "other";
+}
+
+/** One entry of the mock audit log, in the server's shape. */
+export function auditRow(
+  key: string,
+  at: string,
+  actor: { id: string; name: string; surname: string },
+  action: string,
+  resource: { type: string; id: string; label: string | null },
+  meta: Record<string, unknown> = {},
+): AuditRecord {
+  return {
+    id: uid(`audit:${key}`),
+    at,
+    source: "api",
+    kind: auditKind(action),
+    action,
+    actor: { user_id: actor.id, name: actor.name, surname: actor.surname },
+    resource_type: resource.type,
+    resource_id: resource.id,
+    resource_label: resource.label,
+    meta: meta as AuditRecord["meta"],
+  };
 }
 
 export function institutionPublic(i: AdminInstitution): Institution {

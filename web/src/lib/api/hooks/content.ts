@@ -2,6 +2,7 @@
 
 import { api } from "../client";
 import { invalidate, useMutation, useQuery } from "../../query";
+import { configToWire, itemFromWire } from "../sheetWire";
 import type { Document, EditorProfiles, Item, ItemRevision, Module } from "../types";
 
 export type NewItem =
@@ -12,6 +13,8 @@ export type ItemPatch = Partial<{
   title: string;
   body: Document;
   config: Record<string, unknown>;
+  /** The type whose screens shape `config` (`quiz` or `form`); it is converted to the server's shape (ADR-0050, ADR-0051). */
+  configType: string;
   max_points: string;
   due_at: string | null;
   on_deadline: string | null;
@@ -81,17 +84,20 @@ export function usePublishModule(courseId: string) {
 
 export function useCreateItem(courseId: string) {
   return useMutation(async (moduleId: string, item: NewItem) => {
-    const i = await api.post<Item>(`/modules/${moduleId}/items`, item);
+    const wire = item.kind === "assignment" && item.assignment.config ? { ...item, assignment: { ...item.assignment, config: configToWire(item.assignment.type, item.assignment.config) } } : item;
+    const i = await api.post<Item>(`/modules/${moduleId}/items`, wire);
     touched(courseId);
-    return i;
+    return itemFromWire(i);
   });
 }
 
 export function useUpdateItem(courseId: string) {
   return useMutation(async (itemId: string, patch: ItemPatch) => {
-    const i = await api.patch<Item>(`/items/${itemId}`, patch);
+    const { configType, ...rest } = patch;
+    const wire = rest.config && configType ? { ...rest, config: configToWire(configType, rest.config) } : rest;
+    const i = await api.patch<Item>(`/items/${itemId}`, wire);
     touched(courseId);
-    return i;
+    return itemFromWire(i);
   });
 }
 

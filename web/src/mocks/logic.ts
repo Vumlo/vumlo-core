@@ -1,7 +1,8 @@
 import { HttpResponse } from "msw";
 import { MOCK_NOW } from "@/lib/clock";
 import { fromCents, sumPoints, toCents } from "@/lib/points";
-import type { FormConfig, MyWorkItem, QuizConfig, QuizQuestion, WorkStatus } from "@/lib/api/gaps";
+import type { FormConfig, QuizConfig, QuizQuestion } from "@/lib/api/gaps";
+import type { MyWorkItem, WorkStatus } from "@/lib/api/types";
 import type { ContentModule, ContentTree, ItemSummary, Module } from "@/lib/api/types";
 import { getDb, type DbCourse, type DbGrade, type DbItem, type DbMember, type DbSubmission, type DbUser } from "./db";
 
@@ -187,7 +188,7 @@ export function workItem(item: DbItem, studentId: string): MyWorkItem {
   const pub = isPublished(g);
   const a = item.assignment!;
   return {
-    assignment_id: item.id, item_id: item.id, course_id: item.course_id, title: item.title, type: a.type,
+    assignment_id: item.id, course_id: item.course_id, title: item.title, type: a.type,
     due_at: a.due_at ?? null, class_on: item.class_on ?? null, max_points: a.max_points, status: workStatus(item, studentId),
     score: pub ? (g!.published_score ?? null) : null, published_at: pub ? g!.published_at : null,
     draft_saved_at: submissionOf(item.id, studentId)?.draft?.updated_at ?? null,

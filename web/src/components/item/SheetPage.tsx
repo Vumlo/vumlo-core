@@ -7,6 +7,7 @@ import { useCourseInfo, useCoursePeople } from "@/lib/api/hooks/courses";
 import { useMySubmission, useQuizResult, useSaveDraft, useSubmitDraft } from "@/lib/api/hooks/assignments";
 import { useMyGrades } from "@/lib/api/hooks/work";
 import type { Answer, AnswerMap, FormConfig, QuizConfig } from "@/lib/api/gaps";
+import { answersFromWire, answersToWire } from "@/lib/api/sheetWire";
 import { bodyOf, type Item } from "@/lib/api/types";
 import { deadline } from "@/lib/assignment";
 import { initials, timeOf } from "@/lib/format";
@@ -45,7 +46,8 @@ export function SheetPage({ item, courseId, staff, mode }: { item: Item; courseI
   const sub = useMySubmission(staff ? null : item.id);
   const grades = useMyGrades(staff || mode === "form" ? null : courseId);
   const grade = grades.data?.items.find((g) => g.assignment_id === item.id);
-  const resultQ = useQuizResult(grade ? item.id : null);
+  const config = a.config as unknown as QuizConfig & FormConfig;
+  const resultQ = useQuizResult(grade ? item.id : null, config);
   const save = useSaveDraft(item.id);
   const submit = useSubmitDraft(item.id);
   const [local, setLocal] = useState<AnswerMap | null>(null);
@@ -58,20 +60,19 @@ export function SheetPage({ item, courseId, staff, mode }: { item: Item; courseI
   const latest = attempts[0];
   const draft = sub.data?.draft ?? null;
   const attemptsLeft = a.max_attempts == null ? Infinity : a.max_attempts - attempts.length;
-  const answersOf = (c: unknown): AnswerMap => ((c as { answers?: AnswerMap } | undefined)?.answers) ?? {};
+  const answersOf = (c: unknown): AnswerMap => answersFromWire(mode, a.config, c);
   const view: "result" | "submitted" | "answering" | "closed" = grade && mode === "quiz" ? "result" : latest && !draft ? "submitted" : !latest && !draft && dl.closed ? "closed" : "answering";
   const editable = view === "answering" && !staff && dl.open;
   const loading = !staff && (!sub.data || (mode === "quiz" && !grades.data));
 
   const user = me.data;
-  const config = a.config as unknown as QuizConfig & FormConfig;
   const base = local ?? (draft ? answersOf(draft.content) : latest ? answersOf(latest.content) : {});
   const answers: AnswerMap = { ...base };
   if (mode === "form" && user) for (const f of config.fields ?? []) if (f.type === "people" && answers[f.id] === undefined) answers[f.id] = [user.id];
   const questions = mode === "quiz" ? quizQuestions(config) : formQuestions(config, answers);
 
   async function flush(next: AnswerMap) {
-    const r = await save.run({ answers: next });
+    const r = await save.run({ answers: answersToWire(mode, a.config, next) });
     if (r) setSavedAt(r.updated_at);
   }
   function onChange(id: string, value: Answer) {
@@ -91,11 +92,11 @@ export function SheetPage({ item, courseId, staff, mode }: { item: Item; courseI
     if (ok) { setLocal(null); setSavedAt(null); }
   }
   async function edit() {
-    await save.run({ answers: latest ? answersOf(latest.content) : {} });
+    await save.run({ answers: answersToWire(mode, a.config, latest ? answersOf(latest.content) : {}) });
     setLocal(null);
   }
   // Server errors show until the student edits that field.
-  const fieldErrors = Object.fromEntries((submit.error?.errors ?? []).filter((e) => !dismissed.includes(e.field)).map((e) => [e.field, e.message]));
+  const fieldErrors = Object.fromEntries((submit.error?.errors ?? []).map((e) => [e.field.replace(/^content\.answers\./, ""), e.message] as const).filter(([id]) => !dismissed.includes(id)));
 
   const result = useMemo<Record<string, QResult> | undefined>(() => {
     if (!resultQ.data) return undefined;

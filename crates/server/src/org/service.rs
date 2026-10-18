@@ -10,8 +10,8 @@ use sqlx::PgConnection;
 use uuid::Uuid;
 
 use super::model::{
-    Group, GroupMember, GroupOption, MemberProblem, ModelError, OrgName, Subgroup, Term, TermDates,
-    TermUpdate,
+    Group, GroupMember, GroupOption, GroupOverview, MemberProblem, ModelError, OrgName, Subgroup,
+    Term, TermDates, TermUpdate, TermUsage,
 };
 use super::repo;
 use crate::actor::Actor;
@@ -20,6 +20,7 @@ use crate::identity::{self, IdentityError};
 use crate::pagination::{Page, PageParams};
 use crate::policy::{self, Action, PolicyError, group_role_allowed};
 use crate::settings::InstitutionMode;
+use crate::teaching::{self, TeachingError};
 
 #[derive(Debug, thiserror::Error)]
 pub enum OrgError {
@@ -50,6 +51,8 @@ pub enum OrgError {
     /// The positions (in the request's `user_ids`) that were refused, with the reason.
     #[error("some of the users cannot be members")]
     Members(Vec<(usize, MemberProblem)>),
+    #[error(transparent)]
+    Teaching(Box<TeachingError>),
     #[error(transparent)]
     Identity(#[from] IdentityError),
     #[error(transparent)]
@@ -248,6 +251,45 @@ pub async fn get_group(
     repo::find_group(conn, id)
         .await?
         .ok_or(OrgError::GroupNotFound)
+}
+
+/// A group with its people and the courses that use it (ADR-0053). Admins only.
+pub async fn group_overview(
+    conn: &mut PgConnection,
+    actor: &Actor,
+    id: Uuid,
+) -> Result<GroupOverview, OrgError> {
+    policy::authorize(actor, Action::ViewGroups)?;
+    repo::find_group(conn, id)
+        .await?
+        .ok_or(OrgError::GroupNotFound)?;
+    Ok(GroupOverview {
+        group_id: id,
+        members: repo::group_member_lines(conn, id).await?,
+        linked_courses: teaching::linked_courses_of_group(conn, id)
+            .await
+            .map_err(|e| OrgError::Teaching(Box::new(e)))?,
+    })
+}
+
+/// The groups a person is in, by name. The read interface `identity` uses for a person's facts;
+/// the caller has authorized the administrator.
+pub async fn groups_of_user(
+    conn: &mut PgConnection,
+    user_id: Uuid,
+) -> Result<Vec<(Uuid, String)>, OrgError> {
+    Ok(repo::groups_of_user(conn, user_id).await?)
+}
+
+/// How many regular courses each term has, and whether it is current or over on `today`
+/// (ADR-0053). Admins only.
+pub async fn term_stats(
+    conn: &mut PgConnection,
+    actor: &Actor,
+    today: NaiveDate,
+) -> Result<Vec<TermUsage>, OrgError> {
+    policy::authorize(actor, Action::ViewAdminReports)?;
+    Ok(repo::term_usage(conn, today).await?)
 }
 
 pub async fn rename_group(

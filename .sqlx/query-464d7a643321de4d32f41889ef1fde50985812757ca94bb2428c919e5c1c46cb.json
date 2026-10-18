@@ -1,0 +1,83 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT c.id AS course_id, c.code, c.title, o.name AS owner_name,\n                  o.surname AS owner_surname, min(l.created_at) AS \"linked_on!\"\n           FROM teaching.course_groups l\n           JOIN teaching.courses c ON c.id = l.course_id\n           JOIN identity.users o ON o.id = c.owner_id\n           WHERE l.group_id = $1 AND c.kind = 'regular'\n           GROUP BY c.id, c.code, c.title, o.name, o.surname\n           ORDER BY c.code, c.title, c.id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "course_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "teaching.courses",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "code",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "teaching.courses",
+            "name": "code"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "title",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "teaching.courses",
+            "name": "title"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "owner_name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "identity.users",
+            "name": "name"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "owner_surname",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "identity.users",
+            "name": "surname"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "linked_on!",
+        "type_info": "Timestamptz",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      null
+    ]
+  },
+  "hash": "464d7a643321de4d32f41889ef1fde50985812757ca94bb2428c919e5c1c46cb"
+}

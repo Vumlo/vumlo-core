@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE teaching.courses SET description = 'Everything about recursion and trees' WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "05ff394a416c16e487d6f5c9ce4a5c24d02e78f8c9ffca71928c34acc89c6030"
+}

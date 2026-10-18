@@ -2,13 +2,15 @@ use std::time::Duration;
 
 use sqlx::{PgConnection, PgPool};
 
-use super::model::{AuditEntry, Event, Handlers};
+use super::model::{AuditEntry, AuditFilter, AuditRow, Event, Handlers};
 use super::repo;
 use crate::actor::Actor;
-use crate::policy::implicit_course_owner;
+use crate::policy::{self, Action, PolicyError, implicit_course_owner};
 
 #[derive(Debug, thiserror::Error)]
 pub enum EventsError {
+    #[error(transparent)]
+    Forbidden(#[from] PolicyError),
     #[error(transparent)]
     Db(#[from] sqlx::Error),
 }
@@ -23,6 +25,33 @@ pub async fn audit(
 ) -> Result<(), EventsError> {
     repo::insert_audit(conn, Some(actor.user_id()), "api", &entry).await?;
     Ok(())
+}
+
+/// The rows of the audit log, newest first, paged by id (ADR-0053). Admins only.
+pub async fn list_audit(
+    conn: &mut PgConnection,
+    actor: &Actor,
+    mut filter: AuditFilter,
+    before: Option<uuid::Uuid>,
+    limit: i64,
+) -> Result<Vec<AuditRow>, EventsError> {
+    policy::authorize(actor, Action::ViewAdminReports)?;
+    let pattern = filter.text.take().map(|text| like_pattern(text.trim()));
+    Ok(repo::list_audit(conn, &filter, pattern.as_deref(), before, limit).await?)
+}
+
+/// `text` as a `LIKE` pattern that matches it as it is: `%`, `_` and `\` are escaped.
+fn like_pattern(text: &str) -> String {
+    let mut pattern = String::with_capacity(text.len() + 2);
+    pattern.push('%');
+    for c in text.chars() {
+        if matches!(c, '\\' | '%' | '_') {
+            pattern.push('\\');
+        }
+        pattern.push(c);
+    }
+    pattern.push('%');
+    pattern
 }
 
 /// Records something the server CLI did, where nobody is signed in: no actor, the source `cli`

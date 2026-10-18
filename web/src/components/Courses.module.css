@@ -11,8 +11,8 @@
 .todo { display: flex; flex-direction: column; gap: 6px; margin: 14px 0 0; padding: 14px 0 0; border-top: 1px solid var(--border); font-size: 14px; }
 .todo li { display: flex; align-items: flex-start; gap: 10px; }
 .dot { flex: none; width: 8px; height: 8px; margin-top: 7px; border-radius: 50%; background: var(--border-strong); }
-.dot[data-kind="grade"] { background: var(--accent); }
-.dot[data-kind="draft"] { background: var(--asg-fg); }
+.dot[data-kind="to_grade"] { background: var(--accent); }
+.dot[data-kind="draft_grades"] { background: var(--asg-fg); }
 .links { display: flex; gap: 4px; margin-top: 14px; padding-top: 10px; border-top: 1px solid var(--border); }
 .links a { display: inline-flex; align-items: center; min-height: 36px; padding: 0 10px; border-radius: 8px; font-size: 14px; color: var(--accent-fg); }
 .links a:hover { background: var(--hover); }

@@ -1,7 +1,7 @@
 import { http, HttpResponse } from "msw";
 import { MOCK_NOW } from "@/lib/clock";
-import type { AdminCourseRow, AdminGroupOverview, AdminTermStat, AdminUserFacts, AuditEvent } from "@/lib/api/gaps";
-import { getDb, uid } from "../db";
+import type { AdminCourse, GroupOverview, TermStat, UserFacts } from "@/lib/api/types";
+import { auditRow, getDb, uid } from "../db";
 import { activeStudents, fullName, notFound, paged, problem, publicUser, requireAdmin, requireUser, teacherName, userById } from "../logic";
 
 const A = "/api/v1";
@@ -13,9 +13,9 @@ function tempPassword() {
   return `${TEMP[db.audit.length % TEMP.length]}-${TEMP[(db.audit.length * 3 + 1) % TEMP.length]}-${4000 + db.audit.length * 7}`;
 }
 
-function record(who: string, what: string, detail: string, kind: AuditEvent["kind"]) {
+function record(actor: { id: string; name: string; surname: string }, action: string, resource: { type: string; id: string; label: string | null }, meta: Record<string, unknown> = {}) {
   const db = getDb();
-  db.audit.unshift({ id: uid(`audit:${db.audit.length}:${what}`), at: MOCK_NOW.toISOString(), who, what, detail, kind });
+  db.audit.unshift(auditRow(`${db.audit.length}:${action}`, MOCK_NOW.toISOString(), actor, action, resource, meta));
 }
 
 export const adminHandlers = [
@@ -43,24 +43,19 @@ export const adminHandlers = [
     requireAdmin();
     const db = getDb();
     const u = userById(String(params.id));
-    const owned = db.courses.filter((c) => c.owner_id === u.id && c.kind === "regular");
-    const teaches = db.members.filter((m) => m.user_id === u.id && m.role !== "student" && !m.is_owner).map((m) => db.courses.find((c) => c.id === m.course_id)!).filter((c) => c.kind === "regular");
-    const groups = db.groupMembers.filter((g) => g.user_id === u.id).map((g) => db.groups.find((x) => x.id === g.group_id)!.name);
-    const studying = db.members.filter((m) => m.user_id === u.id && m.role === "student" && !m.left_on && db.courses.find((c) => c.id === m.course_id)?.status === "published");
-    const last = u.last_sign_in ? new Date(u.last_sign_in).toLocaleDateString("en-GB", { timeZone: "Europe/Kyiv", day: "numeric", month: "short" }) : "Never";
-    const facts: { k: string; v: string }[] = [{ k: "Last sign-in", v: last }];
-    if (u.role === "student") {
-      facts.push({ k: "Groups", v: groups.length ? groups.join(", ") : "None" }, { k: u.status === "disabled" ? "Grades" : "Courses", v: u.status === "disabled" ? "Kept, locked" : `${studying.length} this term` });
-    } else {
-      if (owned.length) facts.push({ k: "Owns", v: owned.map((c) => c.code).join(", ") });
-      if (teaches.length) facts.push({ k: "Teaches", v: teaches.map((c) => c.code).join(", ") });
-      if (!owned.length && !teaches.length) facts.push({ k: "Courses", v: "None" });
-    }
-    facts.push({ k: "Added", v: new Date(u.created_at).toLocaleDateString("en-GB", { timeZone: "Europe/Kyiv", day: "numeric", month: "short", year: "numeric" }) });
-    let note: string | null = null;
-    if (u.role === "teacher" && owned.length) note = `${u.name} owns ${owned.length} course${owned.length > 1 ? "s" : ""}. To make them a student, give ${owned.map((c) => c.code).join(" and ")} to another teacher first.`;
-    if (u.status === "disabled") note = `${u.name} is disabled, so they can’t sign in. Their grades stay in the gradebooks, locked.`;
-    return HttpResponse.json({ facts, role_note: note } satisfies AdminUserFacts);
+    const line = (c: { id: string; code: string; title: string }) => ({ course_id: c.id, code: c.code, title: c.title });
+    const regular = (id: string) => db.courses.find((c) => c.id === id && c.kind === "regular");
+    const facts: UserFacts = {
+      role: u.role,
+      status: u.status,
+      created_at: u.created_at,
+      last_login_at: u.last_sign_in,
+      groups: db.groupMembers.filter((g) => g.user_id === u.id).map((g) => ({ id: g.group_id, name: db.groups.find((x) => x.id === g.group_id)!.name })),
+      owns: db.courses.filter((c) => c.owner_id === u.id && c.kind === "regular").map(line),
+      teaches: db.members.filter((m) => m.user_id === u.id && m.role !== "student" && !m.is_owner).flatMap((m) => regular(m.course_id) ?? []).map(line),
+      studies: db.members.filter((m) => m.user_id === u.id && m.role === "student" && !m.left_on && regular(m.course_id)?.status === "published").length,
+    };
+    return HttpResponse.json(facts);
   }),
   http.post(`${A}/admin/users`, async ({ request }) => {
     const admin = requireAdmin();
@@ -79,7 +74,7 @@ export const adminHandlers = [
       must_change_password: true, created_at: MOCK_NOW.toISOString(), password: temporary_password, last_sign_in: null,
     };
     db.users.push(user);
-    record(fullName(admin), `added ${fullName(user)}`, `Role ${user.role}.`, "accounts");
+    record(admin, "user.create", { type: "user", id: user.id, label: fullName(user) }, { role: user.role });
     return HttpResponse.json({ user: publicUser(user), temporary_password }, { status: 201, headers: { "Cache-Control": "no-store" } });
   }),
   http.patch(`${A}/admin/users/:id`, async ({ request, params }) => {
@@ -91,11 +86,11 @@ export const adminHandlers = [
       if (u.role === "teacher" && b.role === "student" && db.courses.some((c) => c.owner_id === u.id && c.kind === "regular")) {
         throw problem(409, "Conflict", "This teacher owns courses. Give them to another teacher first.");
       }
-      record(fullName(admin), `changed the role of ${fullName(u)} to ${b.role}`, `Was ${u.role}.`, "accounts");
+      record(admin, "user.role_change", { type: "user", id: u.id, label: fullName(u) }, { from: u.role, to: b.role });
       u.role = b.role;
     }
     if (b.status && b.status !== u.status) {
-      record(fullName(admin), `${b.status === "disabled" ? "disabled" : "enabled"} ${fullName(u)}`, b.status === "disabled" ? "They can’t sign in anymore." : "They can sign in again.", "accounts");
+      record(admin, b.status === "disabled" ? "user.disable" : "user.enable", { type: "user", id: u.id, label: fullName(u) });
       u.status = b.status;
     }
     if (b.name?.trim()) u.name = b.name.trim();
@@ -107,7 +102,7 @@ export const adminHandlers = [
     const u = userById(String(params.id));
     u.password = tempPassword();
     u.must_change_password = true;
-    record(fullName(admin), `set a temporary password for ${fullName(u)}`, "They must change it at next sign-in.", "accounts");
+    record(admin, "user.password_reset", { type: "user", id: u.id, label: fullName(u) });
     return HttpResponse.json({ temporary_password: u.password }, { headers: { "Cache-Control": "no-store" } });
   }),
 
@@ -125,7 +120,7 @@ export const adminHandlers = [
     if (db.groups.some((g) => g.name === name)) throw problem(409, "Conflict", "There is already a group with this name");
     const g = { id: uid(`group:new:${db.groups.length}:${name}`), name, created_at: MOCK_NOW.toISOString() };
     db.groups.push(g);
-    record(fullName(admin), `created the group ${name}`, "", "groups");
+    record(admin, "group.create", { type: "group", id: g.id, label: name });
     return HttpResponse.json(g, { status: 201 });
   }),
   http.get(`${A}/groups/:id/subgroups`, ({ request, params }) => {
@@ -142,13 +137,13 @@ export const adminHandlers = [
     const db = getDb();
     const members = db.groupMembers.filter((g) => g.group_id === params.id).map((g) => ({ g, u: userById(g.user_id) })).sort((a, b) => a.u.surname.localeCompare(b.u.surname));
     const links = db.links.filter((l) => l.group_id === params.id);
-    const overview: AdminGroupOverview = {
+    const overview: GroupOverview = {
       group_id: String(params.id), student_count: members.length, course_count: new Set(links.map((l) => l.course_id)).size,
-      members: members.map(({ g, u }) => ({ user_id: u.id, name: u.name, surname: u.surname, email: u.email, since: g.since })),
+      members: members.map(({ g, u }) => ({ user_id: u.id, name: u.name, surname: u.surname, email: u.email, added_at: g.since })),
       linked_courses: [...new Set(links.map((l) => l.course_id))].map((cid) => {
         const c = db.courses.find((x) => x.id === cid)!;
         const l = links.find((x) => x.course_id === cid)!;
-        return { course_id: cid, code: c.code, title: c.title, owner_name: teacherName(userById(c.owner_id)), linked_on: l.linked_on };
+        return { course_id: cid, code: c.code, title: c.title, owner_name: userById(c.owner_id).name, owner_surname: userById(c.owner_id).surname, linked_on: l.linked_on };
       }),
     };
     return HttpResponse.json(overview);
@@ -165,7 +160,7 @@ export const adminHandlers = [
       db.groupMembers.push({ group_id: group.id, subgroup_id: null, user_id: id, since: MOCK_NOW.toISOString() });
       added++;
     }
-    if (added) record(fullName(admin), `added ${added} student${added > 1 ? "s" : ""} to ${group.name}`, "", "groups");
+    if (added) record(admin, "group.member.add", { type: "group", id: group.id, label: group.name });
     return HttpResponse.json({ added });
   }),
   http.post(`${A}/groups/:id/members/remove`, async ({ request, params }) => {
@@ -179,7 +174,7 @@ export const adminHandlers = [
     const removed = before - db.groupMembers.length;
     // A student who left a linked group leaves its courses; the grades stay and are locked.
     for (const m of db.members.filter((x) => x.source === "group" && b.user_ids.includes(x.user_id) && db.links.some((l) => l.course_id === x.course_id && l.group_id === group.id))) m.left_on = MOCK_NOW.toISOString();
-    if (removed) record(fullName(admin), `removed ${removed} student${removed > 1 ? "s" : ""} from ${group.name}`, "They leave its linked courses; their grades stay, locked.", "groups");
+    if (removed) record(admin, "group.members.remove", { type: "group", id: group.id, label: group.name });
     return HttpResponse.json({ removed });
   }),
   http.put(`${A}/groups/:id/members`, async ({ request, params }) => {
@@ -194,7 +189,7 @@ export const adminHandlers = [
     const added = [...next].filter((x) => !current.has(x));
     db.groupMembers = db.groupMembers.filter((g) => !(g.group_id === group.id && removed.includes(g.user_id)));
     for (const id of added) db.groupMembers.push({ group_id: group.id, subgroup_id: null, user_id: id, since: MOCK_NOW.toISOString() });
-    record(fullName(admin), `replaced the list of ${group.name}`, `${added.length} added, ${removed.length} removed.`, "groups");
+    record(admin, "group.members.replace", { type: "group", id: group.id, label: group.name });
     return HttpResponse.json({ added: added.length, removed: removed.length });
   }),
 
@@ -222,7 +217,7 @@ export const adminHandlers = [
     requireAdmin();
     const db = getDb();
     const today = MOCK_NOW.toISOString().slice(0, 10);
-    const items: AdminTermStat[] = db.terms.map((t) => ({
+    const items: TermStat[] = db.terms.map((t) => ({
       term_id: t.id, courses: db.courses.filter((c) => c.term_id === t.id && c.kind === "regular").length, read_only: t.ends_on < today, current: t.starts_on <= today && today <= t.ends_on,
     }));
     return HttpResponse.json({ items });
@@ -230,8 +225,8 @@ export const adminHandlers = [
   http.get(`${A}/admin/courses`, () => {
     requireAdmin();
     const db = getDb();
-    const items: AdminCourseRow[] = db.courses.filter((c) => c.kind === "regular").map((c) => ({
-      course_id: c.id, code: c.code, title: c.title, owner_id: c.owner_id, owner_name: teacherName(userById(c.owner_id)), term_id: c.term_id ?? null,
+    const items: AdminCourse[] = db.courses.filter((c) => c.kind === "regular").map((c) => ({
+      course_id: c.id, code: c.code, title: c.title, owner_id: c.owner_id, owner_name: userById(c.owner_id).name, owner_surname: userById(c.owner_id).surname, term_id: c.term_id ?? null, term_name: db.terms.find((t) => t.id === c.term_id)?.name ?? null,
       student_count: activeStudents(c.id).length, status: c.status,
     }));
     return HttpResponse.json({ items });
@@ -249,7 +244,10 @@ export const adminHandlers = [
     const kind = q.get("kind");
     const days = Number(q.get("days") ?? 7);
     const since = MOCK_NOW.getTime() - days * 86_400_000;
-    const items = getDb().audit.filter((e) => new Date(e.at).getTime() >= since && (!kind || kind === "all" || e.kind === kind || (kind === "owners" && e.kind === "teachers")) && (!text || `${e.who} ${e.what}`.toLowerCase().includes(text)));
-    return HttpResponse.json({ items });
+    const matches = (e: ReturnType<typeof getDb>["audit"][number]) =>
+      new Date(e.at).getTime() >= since && (!kind || kind === "all" || e.kind === kind) &&
+      (!text || `${e.actor?.name ?? ""} ${e.actor?.surname ?? ""} ${e.action} ${e.resource_label ?? ""}`.toLowerCase().includes(text));
+    const items = getDb().audit.filter(matches);
+    return HttpResponse.json({ items, next_cursor: null });
   }),
 ];

@@ -9,7 +9,8 @@ use sqlx::types::Decimal;
 use uuid::Uuid;
 
 use super::model::{
-    Cell, Column, ColumnStatus, HistoryActor, HistoryEntry, MyGrade, PublishedGrade,
+    Cell, Column, ColumnStatus, DeadlineRow, HistoryActor, HistoryEntry, MyGrade, PublishedGrade,
+    ToGradeRow, UnpublishedContentRow, UnpublishedRow,
 };
 use crate::policy::Release;
 
@@ -40,6 +41,118 @@ pub async fn student_members_among(
            WHERE course_id = $1 AND role = 'student' AND user_id = ANY($2)"#,
         course_id,
         student_ids
+    )
+    .fetch_all(conn)
+    .await
+}
+
+/// The most rows the teacher's "to grade" list shows (ADR-0052).
+pub const TO_GRADE_LIMIT: i64 = 200;
+
+/// The latest attempt of each current student that has no draft score yet, oldest first.
+pub async fn to_grade(
+    conn: &mut PgConnection,
+    course_ids: &[Uuid],
+) -> Result<Vec<ToGradeRow>, sqlx::Error> {
+    sqlx::query_as!(
+        ToGradeRow,
+        r#"SELECT s.student_id, u.name AS student_name, u.surname AS student_surname,
+                  s.assignment_id, i.title AS assignment_title, i.course_id,
+                  s.submitted_at AS "submitted_at!", s.attempt AS "attempt!", a.max_attempts
+           FROM assessment.submissions s
+           JOIN content.items i ON i.id = s.assignment_id
+           JOIN content.assignments a ON a.item_id = i.id
+           JOIN teaching.effective_members m
+             ON m.course_id = i.course_id AND m.user_id = s.student_id AND m.role = 'student'
+           JOIN identity.users u ON u.id = s.student_id
+           LEFT JOIN gradebook.grades g
+             ON g.assignment_id = s.assignment_id AND g.student_id = s.student_id
+           WHERE i.course_id = ANY($1) AND s.status = 'submitted' AND g.draft_score IS NULL
+             AND s.attempt = (SELECT max(x.attempt) FROM assessment.submissions x
+                              WHERE x.assignment_id = s.assignment_id
+                                AND x.student_id = s.student_id AND x.status = 'submitted')
+           ORDER BY s.submitted_at, s.id
+           LIMIT $2"#,
+        course_ids,
+        TO_GRADE_LIMIT
+    )
+    .fetch_all(conn)
+    .await
+}
+
+/// Assignments with draft grades of current students that are not published.
+pub async fn unpublished_grades(
+    conn: &mut PgConnection,
+    course_ids: &[Uuid],
+) -> Result<Vec<UnpublishedRow>, sqlx::Error> {
+    sqlx::query_as!(
+        UnpublishedRow,
+        r#"SELECT g.assignment_id, i.title AS assignment_title, i.course_id,
+                  count(*) AS "draft_count!", (a.type = 'quiz') AS "auto_scored!"
+           FROM gradebook.grades g
+           JOIN content.items i ON i.id = g.assignment_id
+           JOIN content.assignments a ON a.item_id = i.id
+           JOIN teaching.effective_members m
+             ON m.course_id = i.course_id AND m.user_id = g.student_id AND m.role = 'student'
+           WHERE i.course_id = ANY($1)
+             AND (g.draft_score, g.draft_feedback)
+                 IS DISTINCT FROM (g.published_score, g.published_feedback)
+           GROUP BY g.assignment_id, i.title, i.course_id, a.type
+           ORDER BY i.course_id, i.title, g.assignment_id"#,
+        course_ids
+    )
+    .fetch_all(conn)
+    .await
+}
+
+/// Assignments due at or after `now`, soonest first, with how many current students submitted.
+pub async fn deadlines(
+    conn: &mut PgConnection,
+    course_ids: &[Uuid],
+    now: DateTime<Utc>,
+) -> Result<Vec<DeadlineRow>, sqlx::Error> {
+    sqlx::query_as!(
+        DeadlineRow,
+        r#"SELECT a.item_id AS assignment_id, i.title, i.course_id, a.due_at AS "due_at!",
+                  (SELECT count(DISTINCT s.student_id) FROM assessment.submissions s
+                   JOIN teaching.effective_members m
+                     ON m.course_id = i.course_id AND m.user_id = s.student_id
+                    AND m.role = 'student'
+                   WHERE s.assignment_id = a.item_id AND s.status = 'submitted') AS "submitted!",
+                  (SELECT count(*) FROM teaching.effective_members m
+                   WHERE m.course_id = i.course_id AND m.role = 'student') AS "total!",
+                  (i.status = 'draft') AS "not_open!"
+           FROM content.assignments a
+           JOIN content.items i ON i.id = a.item_id
+           WHERE i.course_id = ANY($1) AND a.due_at >= $2
+           ORDER BY a.due_at, i.id"#,
+        course_ids,
+        now
+    )
+    .fetch_all(conn)
+    .await
+}
+
+/// Draft items inside published modules, and published items with edits students do not see.
+pub async fn unpublished_content(
+    conn: &mut PgConnection,
+    course_ids: &[Uuid],
+) -> Result<Vec<UnpublishedContentRow>, sqlx::Error> {
+    sqlx::query_as!(
+        UnpublishedContentRow,
+        r#"SELECT i.id AS item_id, i.title, i.course_id,
+                  (i.status = 'published') AS "edits!"
+           FROM content.items i
+           JOIN content.modules m ON m.id = i.module_id
+           LEFT JOIN content.modules p ON p.id = m.parent_id
+           WHERE i.course_id = ANY($1)
+             AND ((i.status = 'draft' AND m.status = 'published'
+                   AND (p.id IS NULL OR p.status = 'published'))
+                  OR (i.status = 'published'
+                      AND (i.title IS DISTINCT FROM i.published_title
+                           OR i.body IS DISTINCT FROM i.published_body)))
+           ORDER BY i.course_id, i.updated_at DESC, i.id"#,
+        course_ids
     )
     .fetch_all(conn)
     .await

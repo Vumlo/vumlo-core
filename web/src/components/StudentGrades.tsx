@@ -5,7 +5,7 @@ import { useMemo, useState } from "react";
 import { ItemTile } from "@/components/ItemTile";
 import { StatusPill } from "@/components/StatusPill";
 import { useMyWork } from "@/lib/api/hooks/work";
-import type { MyWorkItem } from "@/lib/api/gaps";
+import type { MyWorkItem } from "@/lib/api/types";
 import { now } from "@/lib/clock";
 import { dueShort, statusPill } from "@/lib/course";
 import { sumPoints } from "@/lib/points";
@@ -62,9 +62,9 @@ export function StudentGrades() {
                   {rows.map((r: MyWorkItem) => {
                     const p = statusPill(r.status);
                     return (
-                      <Link key={r.assignment_id} href={`/courses/${r.course_id}/items/${r.item_id}`} role="row" className={s.row}>
+                      <Link key={r.assignment_id} href={`/courses/${r.course_id}/items/${r.assignment_id}`} role="row" className={s.row}>
                         <span role="cell" className={s.cellMain}><ItemTile kind="assignment" small /><span className="ellipsis" style={{ fontWeight: 500 }}>{r.title}</span></span>
-                        <span role="cell" className={s.cellDate}>{dueShort(r.due_at, r.class_on, today)}</span>
+                        <span role="cell" className={s.cellDate}>{dueShort(r.due_at ?? null, r.class_on, today)}</span>
                         <span role="cell" className={s.cellStatus}><StatusPill tone={p.tone}>{p.label}</StatusPill></span>
                         <span role="cell" className={s.cellScore}>
                           <span className={s.score} style={{ fontWeight: r.score ? 600 : 400, color: r.score ? undefined : "var(--muted)" }}>{r.score ?? "—"}</span><span className="muted" style={{ fontSize: 13 }}> / {r.max_points}</span>

@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO events.audit_log (id, actor_id, source, action, resource_type, resource_id)\n             VALUES ($1, NULL, 'cli', 'user.create', 'user', $2)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "001a81ef2c8fad6d5a85351b03e14b58806691ff1869bbcf65d6ec0cf811fb2d"
+}

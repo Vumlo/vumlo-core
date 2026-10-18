@@ -50,7 +50,7 @@ export function FormBuilder({ item, courseId }: { item: Item; courseId: string }
   const t = useT();
   const update = useUpdateItem(courseId);
   const publish = usePublishItem(courseId);
-  const responses = useFormResponses(item.id);
+  const responses = useFormResponses(item.id, item.assignment!.config as unknown as FormConfig);
   const [title, setTitle] = useState(item.title);
   const [cfg, setCfg] = useState<FormConfig>(() => (item.assignment!.config as unknown as FormConfig).fields ? (item.assignment!.config as unknown as FormConfig) : { note: "", fields: [] });
   const [sel, setSel] = useState(0);
@@ -59,7 +59,7 @@ export function FormBuilder({ item, courseId }: { item: Item; courseId: string }
   const [reminded, setReminded] = useState<string | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const draft = useMemo(() => ({ title, cfg }), [title, cfg]);
-  const auto = useAutosave(draft, (d) => update.run(item.id, { title: d.title.trim() || item.title, config: d.cfg as unknown as Record<string, unknown> }));
+  const auto = useAutosave(draft, (d) => update.run(item.id, { title: d.title.trim() || item.title, config: d.cfg as unknown as Record<string, unknown>, configType: "form" }));
   const a = item.assignment!;
   const isDraft = item.status === "draft";
   const f = cfg.fields[Math.min(sel, cfg.fields.length - 1)];

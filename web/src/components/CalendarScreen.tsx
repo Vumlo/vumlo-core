@@ -5,7 +5,7 @@ import { useMemo, useState } from "react";
 import { Icon } from "@/components/Icon";
 import { StatusPill } from "@/components/StatusPill";
 import { useMyWork, useTeachingOverview } from "@/lib/api/hooks/work";
-import type { WorkStatus } from "@/lib/api/gaps";
+import type { WorkStatus } from "@/lib/api/types";
 import { now } from "@/lib/clock";
 import { statusPill } from "@/lib/course";
 import { dayKey, dayKeyLabel, monthName, offsetLabel, parts, relativeCap, timeOf, weekdayShort } from "@/lib/format";
@@ -36,7 +36,7 @@ export function CalendarScreen() {
         const at = i.due_at ?? i.class_on;
         if (!at) continue;
         const c = work.data.courses.find((x) => x.id === i.course_id)!;
-        evs.push({ id: i.assignment_id, courseId: c.id, code: c.code, courseTitle: c.title, title: i.title, at, status: i.status, href: `/courses/${i.course_id}/items/${i.item_id}` });
+        evs.push({ id: i.assignment_id, courseId: c.id, code: c.code, courseTitle: c.title, title: i.title, at, status: i.status, href: `/courses/${i.course_id}/items/${i.assignment_id}` });
         if (!list.some((x) => x.code === c.code)) list.push({ code: c.code, title: c.title });
       }
     } else if (teaching.data) {

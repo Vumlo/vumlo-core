@@ -1,0 +1,101 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT a.item_id AS assignment_id, i.course_id, i.published_title AS \"title!\",\n                  a.type AS \"assignment_type: BuiltinType\", a.due_at, a.class_on,\n                  a.max_points AS \"max_points: MaxPoints\"\n           FROM content.assignments a\n           JOIN content.items i ON i.id = a.item_id\n           JOIN content.modules m ON m.id = i.module_id\n           LEFT JOIN content.modules p ON p.id = m.parent_id\n           WHERE i.course_id = ANY($1)\n             AND i.status = 'published' AND (i.publish_at IS NULL OR i.publish_at <= $2)\n             AND m.status = 'published' AND (m.publish_at IS NULL OR m.publish_at <= $2)\n             AND (p.id IS NULL\n                  OR (p.status = 'published' AND (p.publish_at IS NULL OR p.publish_at <= $2)))\n           ORDER BY i.course_id, a.due_at NULLS LAST, i.id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "assignment_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "content.assignments",
+            "name": "item_id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "course_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "content.items",
+            "name": "course_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "title!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "content.items",
+            "name": "published_title"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "assignment_type: BuiltinType",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "content.assignments",
+            "name": "type"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "due_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "content.assignments",
+            "name": "due_at"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "class_on",
+        "type_info": "Date",
+        "origin": {
+          "Table": {
+            "table": "content.assignments",
+            "name": "class_on"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "max_points: MaxPoints",
+        "type_info": "Numeric",
+        "origin": {
+          "Table": {
+            "table": "content.assignments",
+            "name": "max_points"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "UuidArray",
+        "Timestamptz"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      false,
+      true,
+      true,
+      false
+    ]
+  },
+  "hash": "0131068a63fce3a18b84df2ede082c01b5fd1ca4b55f6fcdbd9544ea198ad4af"
+}

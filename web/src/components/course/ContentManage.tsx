@@ -31,6 +31,15 @@ type Dlg =
 
 const ASSIGNMENT_TYPES = ["text", "quiz", "form", "no_submission"] as const;
 
+/** The server wants a quiz to have a question and a form a field from the start (ADR-0050, ADR-0051). */
+function starterConfig(type: string, points: string): Record<string, unknown> | undefined {
+  if (type === "quiz") {
+    return { questions: [{ id: "q1", type: "single", prompt: "", points, options: [{ id: "o1", text: "" }, { id: "o2", text: "" }], correct: ["o1"] }], shuffle_questions: false, show_correct: true };
+  }
+  if (type === "form") return { note: "", fields: [{ id: "f1", type: "short", label: "Field 1", help: "", required: false, options: [], rules: {}, has_answers: false }] };
+  return undefined;
+}
+
 function itemMeta(i: ItemSummary, m: ItemMeta | undefined): string {
   if (!isAssignment(i)) return `${translate("row.lecture")}${m?.read_minutes ? `, ${translate("row.readMinutes", { n: m.read_minutes })}` : ""}`;
   const a = i.assignment!;
@@ -90,7 +99,7 @@ export function ContentManage({ courseId }: { courseId: string }) {
     if (dlg?.kind !== "new-item") return;
     const made = await createItem.run(dlg.sec.id, dlg.type === "lecture"
       ? { kind: "text", title: text }
-      : { kind: "assignment", title: text, assignment: { type, max_points: type === "form" ? "0.00" : points || "10" } });
+      : { kind: "assignment", title: text, assignment: { type, max_points: points || "10", config: starterConfig(type, points || "10") } });
     if (made) { close(); router.push(`/courses/${courseId}/items/${made.id}/edit`); }
   }
 

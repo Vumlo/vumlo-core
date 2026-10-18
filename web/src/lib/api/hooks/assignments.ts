@@ -2,7 +2,8 @@
 
 import { api } from "../client";
 import { invalidate, useMutation, useQuery } from "../../query";
-import type { AnswerMap, FormResponses, QuizResult } from "../gaps";
+import type { AnswerMap, FormConfig, FormResponses, QuizConfig, QuizResult } from "../gaps";
+import { formResponsesFromWire, quizResultFromWire } from "../sheetWire";
 import type { Attempt, Document, GradeHistoryEntry, GradebookPage, MySubmission, SubmissionRow } from "../types";
 import { fetchAll } from "./util";
 
@@ -32,9 +33,9 @@ export function useSubmitDraft(assignmentId: string) {
   });
 }
 
-/** GAP: per-question result of a graded quiz (API_GAPS.md, "Quiz and form types"). */
-export function useQuizResult(assignmentId: string | null) {
-  return useQuery<QuizResult>(assignmentId ? `/assignments/${assignmentId}/result` : null, () => api.get<QuizResult>(`/assignments/${assignmentId}/result`));
+/** The result of a quiz once its grade is published (ADR-0050); `config` is the quiz as the screens read it. */
+export function useQuizResult(assignmentId: string | null, config: QuizConfig) {
+  return useQuery<QuizResult>(assignmentId ? `/assignments/${assignmentId}/result` : null, async () => quizResultFromWire(await api.get(`/assignments/${assignmentId}/result`), config));
 }
 
 export function useSubmissions(assignmentId: string | null) {
@@ -88,9 +89,9 @@ export function usePublishGrades(assignmentId: string) {
   });
 }
 
-/** GAP: the responses to a form (API_GAPS.md, "Quiz and form types"). */
-export function useFormResponses(assignmentId: string | null) {
-  return useQuery<FormResponses>(assignmentId ? `/assignments/${assignmentId}/responses` : null, () => api.get<FormResponses>(`/assignments/${assignmentId}/responses`));
+/** The responses to a form (ADR-0051), as the fixed columns of the responses table. */
+export function useFormResponses(assignmentId: string | null, config: FormConfig) {
+  return useQuery<FormResponses>(assignmentId ? `/assignments/${assignmentId}/responses` : null, async () => formResponsesFromWire(await api.get(`/assignments/${assignmentId}/responses`), config));
 }
 
 /** The latest submission of every student for several assignments, keyed by assignment id (the gradebook needs "to grade"). */

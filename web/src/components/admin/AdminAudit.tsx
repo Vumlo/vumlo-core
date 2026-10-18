@@ -3,14 +3,15 @@
 import { useState } from "react";
 import { Icon } from "@/components/Icon";
 import { useAuditLog } from "@/lib/api/hooks/admin";
-import type { AuditKind } from "@/lib/api/gaps";
+import type { AuditKind } from "@/lib/api/types";
+import { auditLine } from "@/lib/audit";
 import { dayKey, dayLabel, relativeCap, timeOf, parts, dateTime, weekdayShort } from "@/lib/format";
 import { useT } from "@/lib/i18n";
 import type { MessageKey } from "@/lib/i18n/core";
 import s from "./Admin.module.css";
 
-const KINDS: [AuditKind | "all", MessageKey][] = [["all", "au.all"], ["accounts", "au.accounts"], ["owners", "au.owners"], ["groups", "ag.groups"]];
-const KIND_LABEL: Record<AuditKind, MessageKey> = { accounts: "au.kAccounts", owners: "au.kOwners", teachers: "ap.teachers", groups: "ag.groups" };
+const KINDS: [AuditKind | "all", MessageKey][] = [["all", "au.all"], ["accounts", "au.accounts"], ["owners", "au.owners"], ["teachers", "ap.teachers"], ["groups", "ag.groups"], ["courses", "au.kCourses"], ["content", "au.kContent"], ["grades", "au.kGrades"], ["terms", "au.kTerms"], ["other", "au.kOther"]];
+const KIND_LABEL: Record<AuditKind, MessageKey> = { accounts: "au.kAccounts", owners: "au.kOwners", teachers: "ap.teachers", groups: "ag.groups", courses: "au.kCourses", content: "au.kContent", grades: "au.kGrades", terms: "au.kTerms", other: "au.kOther" };
 
 export function AdminAudit() {
   const t = useT();
@@ -22,7 +23,7 @@ export function AdminAudit() {
   const byDay = [...new Set(events.map((e) => dayKey(e.at)))].map((k) => ({ key: k, items: events.filter((e) => dayKey(e.at) === k) }));
 
   function download() {
-    const rows = [[t("au.time"), t("au.who"), t("au.what"), t("au.detail"), t("au.kind")], ...events.map((e) => [dateTime(e.at), e.who, e.what, e.detail, t(KIND_LABEL[e.kind])])];
+    const rows = [[t("au.time"), t("au.who"), t("au.what"), t("au.detail"), t("au.kind")], ...events.map((e) => { const l = auditLine(e); return [dateTime(e.at), l.who, l.what, l.detail, t(KIND_LABEL[e.kind])]; })];
     const text = rows.map((r) => r.map((c) => `"${c.replace(/"/g, '""')}"`).join(",")).join("\n");
     const url = URL.createObjectURL(new Blob([text], { type: "text/csv" }));
     const a = document.createElement("a");
@@ -51,7 +52,7 @@ export function AdminAudit() {
               {d.items.map((e) => (
                 <li key={e.id} className={s.ev}>
                   <span className={s.time}>{timeOf(e.at)}</span>
-                  <span style={{ flex: "1 1 auto", fontSize: 15 }}><strong style={{ fontWeight: 600 }}>{e.who}</strong> {e.what}<span className="muted" style={{ display: "block", fontSize: 13 }}>{e.detail}</span></span>
+                  <span style={{ flex: "1 1 auto", fontSize: 15 }}><strong style={{ fontWeight: 600 }}>{auditLine(e).who}</strong> {auditLine(e).what}<span className="muted" style={{ display: "block", fontSize: 13 }}>{auditLine(e).detail}</span></span>
                   <span className={s.kind}>{t(KIND_LABEL[e.kind])}</span>
                 </li>
               ))}

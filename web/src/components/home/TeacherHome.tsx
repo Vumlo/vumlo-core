@@ -5,6 +5,7 @@ import { useCourseCards } from "@/lib/api/hooks/courses";
 import { useTeachingOverview } from "@/lib/api/hooks/work";
 import { now } from "@/lib/clock";
 import { useT } from "@/lib/i18n";
+import { todoText } from "@/lib/course";
 import { daysFromToday, dueLabel, fullDate, greeting, initials, plural, shortDay } from "@/lib/format";
 import type { User } from "@/lib/session";
 import { translate } from "@/lib/i18n/core";
@@ -70,7 +71,7 @@ export function TeacherHome({ user }: { user: User }) {
               <Link key={d.assignment_id} href={`/courses/${d.course_id}/items/${d.assignment_id}`} className={h.deadline}>
                 <span className={h.deadWhen}>{dueLabel(d.due_at)}</span>
                 <span className={h.rowTitle} style={{ fontSize: 14 }}>{d.title}</span>
-                <span className={h.rowSub} style={{ fontSize: 12 }}>{d.course_code}, {d.note ?? t("home.submittedOf", { n: d.submitted, total: d.total })}</span>
+                <span className={h.rowSub} style={{ fontSize: 12 }}>{d.course_code}, {d.not_open ? t("home.notOpen") : t("home.submittedOf", { n: d.submitted, total: d.total })}</span>
               </Link>
             ))}
           </div>
@@ -81,8 +82,8 @@ export function TeacherHome({ user }: { user: User }) {
         render: () => !o ? <Loading /> : (
           <div className={h.pad}>
             {o.unpublished_content.slice(0, 2).map((c) => (
-              <p key={`${c.item_id}${c.note}`} style={{ fontSize: 14 }}>
-                <span style={{ fontWeight: 600 }}>{c.title}</span>, {c.note === "edits" ? t("home.edits") : c.course_code}
+              <p key={`${c.item_id}${c.reason}`} style={{ fontSize: 14 }}>
+                <span style={{ fontWeight: 600 }}>{c.title}</span>, {c.reason === "edits" ? t("home.edits") : c.course_code}
               </p>
             ))}
             {o.unpublished_content.length === 0 && <p className="muted">{t("home.allPublished")}</p>}
@@ -102,7 +103,7 @@ export function TeacherHome({ user }: { user: User }) {
                   <span className="muted" style={{ fontSize: 12 }}>{plural(c.student_count, "student")}</span>
                 </span>
                 <span className={h.rowTitle} style={{ marginTop: 4, fontSize: 14, fontWeight: 600 }}>{c.course.title}</span>
-                <span className={h.rowSub} style={{ fontSize: 12 }}>{c.todo.filter((t) => t.kind !== "info").map((t) => t.text).join(", ") || t("home.nothingWaiting")}</span>
+                <span className={h.rowSub} style={{ fontSize: 12 }}>{c.todo.filter((td) => td.kind === "to_grade" || td.kind === "draft_grades").map(todoText).join(", ") || t("home.nothingWaiting")}</span>
               </Link>
             ))}
           </div>

@@ -1,10 +1,12 @@
 import { http, HttpResponse } from "msw";
 import { MOCK_NOW } from "@/lib/clock";
 import { sumPoints, toCents } from "@/lib/points";
-import type { CourseCard } from "@/lib/api/gaps";
+import type { FormConfig } from "@/lib/api/gaps";
+import type { CourseCard } from "@/lib/api/types";
+import { configFromWire, configToWire } from "@/lib/api/sheetWire";
 import { isoToLocal, localToIso } from "@/lib/format";
 import type { CourseInfo, CoursePeople, Item, ServerItemMeta, TemplateSummary } from "@/lib/api/types";
-import { at, getDb, institutionPublic, uid, type DbCourse, type DbItem } from "../db";
+import { at, auditRow, getDb, institutionPublic, uid, type DbCourse, type DbItem } from "../db";
 import {
   activeStudents, canView, contentTree, courseById, decimal, dueIn, flatItems, forbidden, formOf, fullName, gradeOf, hasUnpublishedChanges, isPublished,
   isStaff, itemById, itemVisibleToStudent, memberOf, moduleOf, notFound, ownerOf, paged, problem, publicUser, quizOf, requireStaff, requireUser, requireView,
@@ -67,7 +69,20 @@ function itemFor(item: DbItem, staff: boolean): Item {
     if (published_body) out.body = published_body;
     if (published_title) out.title = published_title;
   }
-  if (!staff && out.assignment) out.assignment = { ...out.assignment, config: studentConfig(item) };
+  if (out.assignment) {
+    const type = out.assignment.type;
+    const ui = staff ? out.assignment.config : studentConfig(item);
+    const wire = configToWire(type, ui) as { fields?: { options?: Record<string, unknown>[]; has_answers?: boolean; rules?: { exclusive?: boolean } }[] };
+    // The facts the server adds to a form when it reads it (ADR-0051 point 5).
+    if (type === "form" && wire.fields) {
+      (ui as unknown as FormConfig).fields.forEach((f, i) => {
+        const w = wire.fields![i]!;
+        if (staff) w.has_answers = f.has_answers;
+        if (f.type === "choice" && w.rules?.exclusive) f.options.forEach((o, k) => { w.options![k] = { ...w.options![k], taken: !!o.taken_by, ...(staff ? { taken_by: o.taken_by } : {}) }; });
+      });
+    }
+    out.assignment = { ...out.assignment, config: wire as unknown as Record<string, never> };
+  }
   return out;
 }
 
@@ -81,7 +96,7 @@ function cards(userId: string): CourseCard[] {
     const staff = isStaff(user, c);
     const myRole = c.owner_id === userId ? "owner" : m.role;
     const base = {
-      course: publicCourse(c), code: c.code, term_name: termName(c), term_ended: termEnded(c), owner_name: teacherName(ownerOf(c)), my_role: myRole,
+      course: publicCourse(c), code: c.code, term_name: termName(c), term_ended: termEnded(c), owner_name: ownerOf(c).name, owner_surname: ownerOf(c).surname, my_role: myRole,
       student_count: activeStudents(c.id).length, assistant_count: db.members.filter((x) => x.course_id === c.id && x.role === "assistant").length,
     } as const;
     if (!staff) {
@@ -109,12 +124,12 @@ function cards(userId: string): CourseCard[] {
         if (g && hasUnpublishedChanges(g)) { drafts++; if (i.assignment!.type === "quiz") draftNote = i.title; }
       }
     }
-    if (toGrade) todo.push({ kind: "grade", text: `${toGrade} ${toGrade === 1 ? "submission" : "submissions"} to grade` });
-    if (drafts) todo.push({ kind: "draft", text: draftNote ? `${drafts} quiz grades scored, not published` : `${drafts} draft grades not published` });
-    const unpub = db.items.filter((i) => i.course_id === c.id && i.kind === "text" && i.status === "draft" && moduleOf(i).status === "published");
-    if (unpub.length) todo.push({ kind: "info", text: `${unpub.length} unpublished lecture${unpub.length > 1 ? "s" : ""}: ${unpub.map((i) => i.title).join(", ")}` });
+    if (toGrade) todo.push({ kind: "to_grade", count: toGrade });
+    if (drafts) todo.push({ kind: "draft_grades", count: drafts, auto_scored: !!draftNote });
+    const unpub = db.items.filter((i) => i.course_id === c.id && i.status === "draft" && moduleOf(i).status === "published");
+    if (unpub.length) todo.push({ kind: "unpublished_items", count: unpub.length, titles: unpub.slice(0, 3).map((i) => i.title) });
     const nextDue = items.filter((i) => i.assignment!.due_at && new Date(i.assignment!.due_at) >= MOCK_NOW).sort((a, b) => a.assignment!.due_at!.localeCompare(b.assignment!.due_at!))[0];
-    if (nextDue) todo.push({ kind: "info", text: `Next deadline: ${nextDue.title}`, due_at: nextDue.assignment!.due_at! });
+    if (nextDue) todo.push({ kind: "next_deadline", assignment_id: nextDue.id, title: nextDue.title, due_at: nextDue.assignment!.due_at! });
     return { ...base, progress: null, next: null, todo };
   });
 }
@@ -296,7 +311,7 @@ export const coreHandlers = [
     if (!memberOf(course.id, target.id)) db.members.push({ course_id: course.id, user_id: target.id, role: "teacher", is_owner: true, source: "direct", group_label: null, left_on: null });
     const previous = userById(course.owner_id);
     course.owner_id = target.id;
-    db.audit.unshift({ id: uid(`audit:${db.audit.length}`), at: MOCK_NOW.toISOString(), who: user.role === "admin" ? fullName(user) : teacherName(user), what: `gave ${course.code} to ${teacherName(target)}`, detail: `Previous owner ${teacherName(previous)}.`, kind: "owners" });
+    db.audit.unshift(auditRow(`${db.audit.length}:transfer`, MOCK_NOW.toISOString(), user, "course.owner.transfer", { type: "course", id: course.id, label: `${course.code} ${course.title}` }, { from: previous.id, to: target.id }));
     return HttpResponse.json(publicCourse(course));
   }),
   http.get(`${A}/courses/:id/content`, ({ params }) => {
@@ -424,7 +439,7 @@ export const coreHandlers = [
     if (b.body) item.body = b.body as Item["body"];
     if (item.assignment) {
       const a = item.assignment;
-      if (b.config) a.config = b.config as Record<string, unknown>;
+      if (b.config) a.config = configFromWire(a.type, b.config as Record<string, unknown>);
       if (b.max_points !== undefined) a.max_points = decimal(b.max_points, "max_points");
       if ("due_at" in b) { a.due_at = (b.due_at as string | null) ?? null; if (!a.due_at) { a.on_deadline = null; a.accept_late = null; a.late_until = null; } }
       if ("on_deadline" in b) a.on_deadline = b.on_deadline as typeof a.on_deadline;
@@ -534,7 +549,7 @@ export const coreHandlers = [
       created_at: MOCK_NOW.toISOString(), updated_at: MOCK_NOW.toISOString(), last_published_at: null, unpublished_changes: false,
       ...(b.kind === "assignment" ? {
         assignment: {
-          type: String(a?.type ?? "text"), config: (a?.config as Record<string, unknown>) ?? {}, max_points: decimal(a?.max_points ?? "10", "max_points"), is_bonus: false,
+          type: String(a?.type ?? "text"), config: configFromWire(String(a?.type ?? "text"), (a?.config as Record<string, unknown>) ?? {}), max_points: decimal(a?.max_points ?? "10", "max_points"), is_bonus: false,
           due_at: (a?.due_at as string | null) ?? null, on_deadline: (a?.on_deadline as "keep_draft" | "auto_submit" | null) ?? null,
           accept_late: (a?.accept_late as boolean | null) ?? null, late_until: null, max_attempts: a?.max_attempts === undefined ? 1 : (a.max_attempts as number | null),
         },

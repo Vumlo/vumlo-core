@@ -1,0 +1,59 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT i.id AS item_id, i.title, i.course_id,\n                  (i.status = 'published') AS \"edits!\"\n           FROM content.items i\n           JOIN content.modules m ON m.id = i.module_id\n           LEFT JOIN content.modules p ON p.id = m.parent_id\n           WHERE i.course_id = ANY($1)\n             AND ((i.status = 'draft' AND m.status = 'published'\n                   AND (p.id IS NULL OR p.status = 'published'))\n                  OR (i.status = 'published'\n                      AND (i.title IS DISTINCT FROM i.published_title\n                           OR i.body IS DISTINCT FROM i.published_body)))\n           ORDER BY i.course_id, i.updated_at DESC, i.id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "item_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "content.items",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "title",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "content.items",
+            "name": "title"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "course_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "content.items",
+            "name": "course_id"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "edits!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "UuidArray"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      null
+    ]
+  },
+  "hash": "ec5ec2afe0c092b3e57b560491e14b4366faa4e6f940d1f806529dd4056ecfae"
+}

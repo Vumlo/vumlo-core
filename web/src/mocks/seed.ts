@@ -1,7 +1,7 @@
 import type { Document, Item, Module } from "@/lib/api/types";
 import type { FormConfig, QuizConfig } from "@/lib/api/gaps";
 import { bullet, code, doc, heading, math, numbered, para, quote, table, video } from "./docs";
-import { at, NOW_ISO, uid, type Db, type DbCourse, type DbItem, type DbMember, type DbSubmission, type DbUser } from "./db";
+import { at, auditRow, NOW_ISO, uid, type Db, type DbCourse, type DbItem, type DbMember, type DbSubmission, type DbUser } from "./db";
 
 export const PASSWORD = "correct horse";
 export const TEMP_PASSWORD = "temporary password";
@@ -404,13 +404,15 @@ export function createSeed(): Db {
     { id: uid("sess:cli"), kind: "cli" as const, name: "Command line", created_at: at("2026-10-12 09:00"), last_seen_at: at("2026-10-12 09:05"), expires_at: at("2027-01-10 09:00"), current: false },
   ];
 
+  const marta = { id: uid("marta"), name: "Marta", surname: "Kovalska" };
+  const voss = { id: elena, name: "Elena", surname: "Voss" };
   const audit = [
-    { id: uid("au1"), at: at("2026-10-17 21:40"), who: "Dr. Elena Voss", what: "linked CS-2, year 2 to CS 305", detail: "19 students joined the course.", kind: "groups" as const },
-    { id: uid("au2"), at: at("2026-10-17 16:05"), who: "Marta Kovalska", what: "set a temporary password for Omar Haddad", detail: "He must change it at next sign-in.", kind: "accounts" as const },
-    { id: uid("au3"), at: at("2026-10-17 11:20"), who: "Dr. Elena Voss", what: "made Oksana Bondar a teacher of CS 305", detail: "Added by the course owner.", kind: "teachers" as const },
-    { id: uid("au4"), at: at("2026-10-15 17:48"), who: "Marta Kovalska", what: "added Omar Haddad", detail: "Role student, group CS-2, year 2.", kind: "accounts" as const },
-    { id: uid("au5"), at: at("2026-10-15 10:05"), who: "Marta Kovalska", what: "disabled Dr. Oleh Marchuk", detail: "He can’t sign in anymore.", kind: "accounts" as const },
-    { id: uid("au6"), at: at("2026-10-15 10:02"), who: "Marta Kovalska", what: "gave PHYS 110 to Dr. Pavlo Hrytsenko", detail: "Previous owner Dr. Oleh Marchuk is leaving the university.", kind: "owners" as const },
+    auditRow("au1", at("2026-10-17 21:40"), voss, "course.group.link", { type: "course", id: cs305, label: "CS 305 Graph Algorithms" }),
+    auditRow("au2", at("2026-10-17 16:05"), marta, "user.password_reset", { type: "user", id: omar, label: "Omar Haddad" }),
+    auditRow("au3", at("2026-10-17 11:20"), voss, "course.member.put", { type: "course", id: cs305, label: "CS 305 Graph Algorithms" }, { user_id: oksana, role: "teacher" }),
+    auditRow("au4", at("2026-10-15 17:48"), marta, "user.create", { type: "user", id: omar, label: "Omar Haddad" }, { role: "student" }),
+    auditRow("au5", at("2026-10-15 10:05"), marta, "user.disable", { type: "user", id: uid("marchuk"), label: "Oleh Marchuk" }),
+    auditRow("au6", at("2026-10-15 10:02"), marta, "course.owner.transfer", { type: "course", id: uid("phys110"), label: "PHYS 110 Physics" }),
   ];
 
   const institution = {

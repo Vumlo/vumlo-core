@@ -6,7 +6,7 @@ import { useState, type FormEvent } from "react";
 import { Icon } from "@/components/Icon";
 import { ItemTile } from "@/components/ItemTile";
 import { useSearch } from "@/lib/api/hooks/work";
-import type { SearchHit } from "@/lib/api/gaps";
+import type { SearchHit } from "@/lib/api/types";
 import { dueLabel } from "@/lib/format";
 import { useT } from "@/lib/i18n";
 import { useMe } from "@/lib/session";

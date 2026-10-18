@@ -18,9 +18,9 @@ use super::document::{
     DocumentErrors, EffectiveProfiles, ValidDocument, plain_text, validate_document,
 };
 use super::model::{
-    Assignment, AssignmentType, BuiltinType, ContentModule, ContentSubModule, ContentTitle, Item,
-    ItemFacts, ItemKind, ItemPatch, ItemStatus, MaxPoints, ModelError, Module, ModulePatch,
-    OpenedAssignment, Revision, SettingProblem,
+    Assignment, AssignmentType, BuiltinType, ContentModule, ContentSubModule, ContentTitle, Hit,
+    HitKind, Item, ItemFacts, ItemKind, ItemPatch, ItemStatus, MaxPoints, ModelError, Module,
+    ModulePatch, MyWork, OpenedAssignment, Revision, SettingProblem, WorkEntry, WorkFacts,
 };
 use super::repo::{self, ItemRow, ModuleRow};
 use super::types::form;
@@ -28,7 +28,7 @@ use crate::actor::Actor;
 use crate::assessment::{self, AssessmentError};
 use crate::events::{self, AuditEntry, EventsError};
 use crate::gradebook::{self, GradebookError};
-use crate::policy::{self, Action, CourseAccess, PolicyError, Release};
+use crate::policy::{self, Action, CourseAccess, CourseStatus, PolicyError, Release};
 use crate::settings::GradingScale;
 use crate::teaching::{self, TeachingError};
 
@@ -83,6 +83,9 @@ pub enum ContentError {
     /// The assignment, or an assignment below the module, has a submitted attempt (ADR-0035).
     #[error("it has submitted work")]
     HasSubmissions,
+    /// The search text is not 2 to 100 characters (ADR-0052).
+    #[error("the search text must be 2 to 100 characters")]
+    BadQuery,
     /// The change touches the part of a quiz or form that is frozen once work was submitted
     /// (ADR-0023, ADR-0050, ADR-0051).
     #[error("the questions or fields cannot change after work was submitted")]
@@ -895,6 +898,197 @@ pub async fn item_meta(
         }
     }
     Ok(facts)
+}
+
+/// Every assignment a student can open in their courses with their own standing on it, and the
+/// courses (ADR-0052). Published values only. Not paged: a student has a bounded number of
+/// courses and a course tree is bounded (ADR-0020).
+pub async fn my_work(
+    conn: &mut PgConnection,
+    actor: &Actor,
+    now: DateTime<Utc>,
+) -> Result<MyWork, ContentError> {
+    let courses = teaching::student_courses(conn, actor).await?;
+    let ids: Vec<Uuid> = courses.iter().map(|card| card.course.id).collect();
+    let standing: HashMap<Uuid, WorkFacts> = repo::student_work(conn, actor.user_id(), &ids, now)
+        .await?
+        .into_iter()
+        .map(|facts| (facts.assignment_id, facts))
+        .collect();
+    let items = repo::open_assignments(conn, &ids, now)
+        .await?
+        .into_iter()
+        .filter_map(|row| {
+            let facts = standing.get(&row.assignment_id)?;
+            Some(WorkEntry {
+                assignment_id: row.assignment_id,
+                course_id: row.course_id,
+                title: row.title,
+                assignment_type: row.assignment_type,
+                due_at: row.due_at,
+                class_on: row.class_on,
+                max_points: row.max_points,
+                status: facts.status,
+                score: facts.score,
+                published_at: facts.published_at,
+                draft_saved_at: facts.draft_saved_at,
+            })
+        })
+        .collect();
+    Ok(MyWork { courses, items })
+}
+
+const SEARCH_MIN_CHARS: usize = 2;
+const SEARCH_MAX_CHARS: usize = 100;
+const SEARCH_LIMIT: usize = 50;
+const SNIPPET_BEFORE: usize = 40;
+const SNIPPET_AFTER: usize = 80;
+
+/// `text` as a `LIKE` pattern that matches it as it is: `%`, `_` and `\` are escaped.
+fn like_pattern(text: &str) -> String {
+    let mut pattern = String::with_capacity(text.len() + 2);
+    pattern.push('%');
+    for c in text.chars() {
+        if matches!(c, '\\' | '%' | '_') {
+            pattern.push('\\');
+        }
+        pattern.push(c);
+    }
+    pattern.push('%');
+    pattern
+}
+
+/// Every `text` string of a document, joined by spaces: what a reader reads, without the markup.
+fn flat_text(value: &Value, out: &mut Vec<String>) {
+    match value {
+        Value::Object(map) => {
+            for (key, inner) in map {
+                match inner {
+                    Value::String(text) if key == "text" => out.push(text.clone()),
+                    other => flat_text(other, out),
+                }
+            }
+        }
+        Value::Array(items) => items.iter().for_each(|item| flat_text(item, out)),
+        _ => {}
+    }
+}
+
+/// A piece of `text` around the first match of `needle` (case-insensitive), with an ellipsis where
+/// it was cut; `None` when `needle` is not in it. Works on characters, never on bytes.
+fn snippet(text: &str, needle: &str) -> Option<String> {
+    let flat: Vec<char> = text
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .chars()
+        .collect();
+    let lower: Vec<char> = flat.iter().flat_map(|c| c.to_lowercase()).collect();
+    let needle: Vec<char> = needle.to_lowercase().chars().collect();
+    // Lowercasing can change the length of a character; positions are only trusted when it did not.
+    if lower.len() != flat.len() || needle.is_empty() {
+        return None;
+    }
+    let at = lower
+        .windows(needle.len())
+        .position(|w| w == needle.as_slice())?;
+    let from = at.saturating_sub(SNIPPET_BEFORE);
+    let to = (at + needle.len() + SNIPPET_AFTER).min(flat.len());
+    let body: String = flat[from..to].iter().collect();
+    Some(format!(
+        "{}{}{}",
+        if from > 0 { "…" } else { "" },
+        body,
+        if to < flat.len() { "…" } else { "" }
+    ))
+}
+
+/// Courses, lectures and assignments of the actor's courses that match `q` (ADR-0052). Students
+/// read the published copy of what students can open; staff read the working copy and drafts.
+/// Title matches come first; at most 50 hits.
+pub async fn search(
+    conn: &mut PgConnection,
+    actor: &Actor,
+    q: &str,
+    now: DateTime<Utc>,
+) -> Result<Vec<Hit>, ContentError> {
+    let q = q.trim();
+    if !(SEARCH_MIN_CHARS..=SEARCH_MAX_CHARS).contains(&q.chars().count()) {
+        return Err(ContentError::BadQuery);
+    }
+    let scope = teaching::course_scope(conn, actor).await?;
+    let lower = q.to_lowercase();
+    let mut hits: Vec<(bool, Hit)> = Vec::new();
+    for scoped in &scope {
+        let course = &scoped.course;
+        let in_title = course.course.title.to_lowercase().contains(&lower)
+            || course.code.to_lowercase().contains(&lower);
+        let described = snippet(&course.description, q);
+        if in_title || described.is_some() {
+            hits.push((
+                in_title,
+                Hit {
+                    kind: HitKind::Course,
+                    id: course.course.id,
+                    title: course.course.title.clone(),
+                    course_id: course.course.id,
+                    course_title: course.course.title.clone(),
+                    course_code: course.code.clone(),
+                    snippet: if in_title { None } else { described },
+                    due_at: None,
+                    draft: course.course.status == CourseStatus::Draft,
+                },
+            ));
+        }
+    }
+    let pattern = like_pattern(q);
+    for staff in [true, false] {
+        let ids: Vec<Uuid> = scope
+            .iter()
+            .filter(|scoped| scoped.staff == staff)
+            .map(|scoped| scoped.course.course.id)
+            .collect();
+        if ids.is_empty() {
+            continue;
+        }
+        let found =
+            repo::search_items(conn, &ids, staff, &pattern, now, SEARCH_LIMIT as i64).await?;
+        for item in found {
+            let Some(scoped) = scope.iter().find(|s| s.course.course.id == item.course_id) else {
+                continue;
+            };
+            let mut words = Vec::new();
+            flat_text(&Value::Object(item.body.0), &mut words);
+            hits.push((
+                item.title_match,
+                Hit {
+                    kind: match item.kind {
+                        ItemKind::Text => HitKind::Lecture,
+                        ItemKind::Assignment => HitKind::Assignment,
+                    },
+                    id: item.id,
+                    title: item.title,
+                    course_id: item.course_id,
+                    course_title: scoped.course.course.title.clone(),
+                    course_code: scoped.course.code.clone(),
+                    snippet: if item.title_match {
+                        None
+                    } else {
+                        snippet(&words.join(" "), q)
+                    },
+                    due_at: item.due_at,
+                    draft: item.status == ItemStatus::Draft,
+                },
+            ));
+        }
+    }
+    // A stable sort keeps the order the queries gave within each group.
+    hits.sort_by_key(|(title_match, _)| !*title_match);
+    Ok(hits
+        .into_iter()
+        .take(SEARCH_LIMIT)
+        .map(|(_, hit)| hit)
+        .collect())
 }
 
 /// Why [`open_assignment`] gave nothing.

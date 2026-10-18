@@ -1110,6 +1110,105 @@ pub async fn student_work(
         .collect())
 }
 
+/// An item that matched a search (ADR-0052).
+pub struct ItemHit {
+    pub id: Uuid,
+    pub course_id: Uuid,
+    pub kind: ItemKind,
+    pub title: String,
+    pub body: Json<Map<String, Value>>,
+    pub status: ItemStatus,
+    pub due_at: Option<DateTime<Utc>>,
+    pub title_match: bool,
+}
+
+/// Items of the courses whose title or body text contains `pattern` (a `LIKE` pattern with the
+/// user's text escaped). Staff read the working copy and every status; a student the published
+/// copy of what students can open at `now`. Title matches come first.
+///
+/// ponytail: a scan of the bodies of the caller's courses; add a trigram or full-text index on the
+/// text of the bodies when a search becomes slow.
+pub async fn search_items(
+    conn: &mut PgConnection,
+    course_ids: &[Uuid],
+    staff: bool,
+    pattern: &str,
+    now: DateTime<Utc>,
+    limit: i64,
+) -> Result<Vec<ItemHit>, sqlx::Error> {
+    sqlx::query_as!(
+        ItemHit,
+        r#"SELECT i.id, i.course_id, i.kind AS "kind: ItemKind",
+                  CASE WHEN $2 THEN i.title ELSE i.published_title END AS "title!",
+                  CASE WHEN $2 THEN i.body ELSE i.published_body END AS "body!: Json<Map<String, Value>>",
+                  i.status AS "status: ItemStatus", a.due_at,
+                  (CASE WHEN $2 THEN i.title ELSE i.published_title END) ILIKE $3 AS "title_match!"
+           FROM content.items i
+           JOIN content.modules m ON m.id = i.module_id
+           LEFT JOIN content.modules p ON p.id = m.parent_id
+           LEFT JOIN content.assignments a ON a.item_id = i.id
+           WHERE i.course_id = ANY($1)
+             AND ($2
+                  OR (i.status = 'published' AND (i.publish_at IS NULL OR i.publish_at <= $4)
+                      AND m.status = 'published' AND (m.publish_at IS NULL OR m.publish_at <= $4)
+                      AND (p.id IS NULL
+                           OR (p.status = 'published'
+                               AND (p.publish_at IS NULL OR p.publish_at <= $4)))))
+             AND ((CASE WHEN $2 THEN i.title ELSE i.published_title END) ILIKE $3
+                  OR jsonb_path_query_array(CASE WHEN $2 THEN i.body ELSE i.published_body END,
+                                            '$.**.text')::text ILIKE $3)
+           ORDER BY 8 DESC, i.updated_at DESC, i.id
+           LIMIT $5"#,
+        course_ids,
+        staff,
+        pattern,
+        now,
+        limit
+    )
+    .fetch_all(conn)
+    .await
+}
+
+/// What a student's work list shows of an assignment (ADR-0052).
+pub struct OpenAssignmentRow {
+    pub assignment_id: Uuid,
+    pub course_id: Uuid,
+    pub title: String,
+    pub assignment_type: BuiltinType,
+    pub due_at: Option<DateTime<Utc>>,
+    pub class_on: Option<NaiveDate>,
+    pub max_points: MaxPoints,
+}
+
+/// The assignments of the courses that students can open at `now`: the item, its module and its
+/// parent are published and released. The title is the published one (ADR-0049).
+pub async fn open_assignments(
+    conn: &mut PgConnection,
+    course_ids: &[Uuid],
+    now: DateTime<Utc>,
+) -> Result<Vec<OpenAssignmentRow>, sqlx::Error> {
+    sqlx::query_as!(
+        OpenAssignmentRow,
+        r#"SELECT a.item_id AS assignment_id, i.course_id, i.published_title AS "title!",
+                  a.type AS "assignment_type: BuiltinType", a.due_at, a.class_on,
+                  a.max_points AS "max_points: MaxPoints"
+           FROM content.assignments a
+           JOIN content.items i ON i.id = a.item_id
+           JOIN content.modules m ON m.id = i.module_id
+           LEFT JOIN content.modules p ON p.id = m.parent_id
+           WHERE i.course_id = ANY($1)
+             AND i.status = 'published' AND (i.publish_at IS NULL OR i.publish_at <= $2)
+             AND m.status = 'published' AND (m.publish_at IS NULL OR m.publish_at <= $2)
+             AND (p.id IS NULL
+                  OR (p.status = 'published' AND (p.publish_at IS NULL OR p.publish_at <= $2)))
+           ORDER BY i.course_id, a.due_at NULLS LAST, i.id"#,
+        course_ids,
+        now
+    )
+    .fetch_all(conn)
+    .await
+}
+
 /// What staff still have to do on each assignment of a course, over the current students. Reads the
 /// draft grade columns, so only a staff path may call it.
 pub async fn staff_counts(

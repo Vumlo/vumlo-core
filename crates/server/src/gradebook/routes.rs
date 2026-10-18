@@ -3,9 +3,10 @@
 //! except the gradebook, which reads three statements from one snapshot.
 
 use api_types::{
-    GradeAction, GradeActor, GradeCell, GradeHistoryEntry, GradebookCell, GradebookColumn,
-    GradebookPage, GradebookRow, MyGrade, MyGrades, Page, PageQuery, ProblemDetails,
-    PublishGradesRequest, PublishGradesResponse, PublishStudents, SaveGradeRequest,
+    CourseRef, Deadline, GradeAction, GradeActor, GradeCell, GradeHistoryEntry, GradebookCell,
+    GradebookColumn, GradebookPage, GradebookRow, MyGrade, MyGrades, Page, PageQuery,
+    ProblemDetails, PublishGradesRequest, PublishGradesResponse, PublishStudents, SaveGradeRequest,
+    TeachingOverview, ToGrade, UnpublishedContent, UnpublishedGrades, UnpublishedReason,
 };
 use axum::Json;
 use axum::extract::{Path, State};
@@ -29,6 +30,7 @@ pub fn router() -> OpenApiRouter<AppState> {
         .routes(routes!(get_gradebook))
         .routes(routes!(get_my_grades))
         .routes(routes!(get_grade_history))
+        .routes(routes!(get_teaching))
 }
 
 impl From<GradebookError> for ApiError {
@@ -294,6 +296,104 @@ async fn get_my_grades(
                 score: grade.score.map(points),
                 feedback: grade.feedback,
                 published_at: grade.published_at,
+            })
+            .collect(),
+    }))
+}
+
+/// What the caller has to do across the courses they teach, assist in or own and that are not
+/// archived (ADR-0052): the work waiting for a grade, draft grades not published, deadlines coming
+/// up and content students cannot read yet. Counts and kinds, not sentences.
+#[utoipa::path(
+    get,
+    path = "/me/teaching",
+    tag = "gradebook",
+    security(("cookie" = []), ("bearer" = [])),
+    responses(
+        (status = 200, description = "The caller's overview", body = TeachingOverview),
+        (status = 401, description = "Not logged in", body = ProblemDetails,
+            content_type = "application/problem+json"),
+    )
+)]
+async fn get_teaching(
+    State(state): State<AppState>,
+    actor: Actor,
+) -> Result<Json<TeachingOverview>, ApiError> {
+    let mut conn = state.db.acquire().await.map_err(GradebookError::from)?;
+    let overview = service::teaching_overview(&mut conn, &actor, chrono::Utc::now()).await?;
+    let refs: std::collections::HashMap<Uuid, CourseRef> = overview
+        .courses
+        .iter()
+        .map(|card| {
+            (
+                card.course.id,
+                CourseRef {
+                    course_id: card.course.id,
+                    course_code: card.code.clone(),
+                    course_title: card.course.title.clone(),
+                },
+            )
+        })
+        .collect();
+    let course = |id: Uuid| {
+        refs.get(&id).cloned().unwrap_or(CourseRef {
+            course_id: id,
+            course_code: String::new(),
+            course_title: String::new(),
+        })
+    };
+    Ok(Json(TeachingOverview {
+        to_grade: overview
+            .to_grade
+            .into_iter()
+            .map(|row| ToGrade {
+                student_id: row.student_id,
+                student_name: row.student_name,
+                student_surname: row.student_surname,
+                assignment_id: row.assignment_id,
+                assignment_title: row.assignment_title,
+                course: course(row.course_id),
+                submitted_at: row.submitted_at,
+                attempt: row.attempt,
+                max_attempts: row.max_attempts,
+            })
+            .collect(),
+        unpublished: overview
+            .unpublished
+            .into_iter()
+            .map(|row| UnpublishedGrades {
+                assignment_id: row.assignment_id,
+                assignment_title: row.assignment_title,
+                course: course(row.course_id),
+                draft_count: row.draft_count,
+                auto_scored: row.auto_scored,
+            })
+            .collect(),
+        deadlines: overview
+            .deadlines
+            .into_iter()
+            .map(|row| Deadline {
+                assignment_id: row.assignment_id,
+                title: row.title,
+                course: course(row.course_id),
+                due_at: row.due_at,
+                submitted: row.submitted,
+                total: row.total,
+                not_open: row.not_open,
+            })
+            .collect(),
+        unpublished_content: overview
+            .unpublished_content
+            .into_iter()
+            .map(|row| UnpublishedContent {
+                item_id: row.item_id,
+                title: row.title,
+                course: course(row.course_id),
+                reason: if row.edits {
+                    UnpublishedReason::Edits
+                } else {
+                    UnpublishedReason::Draft
+                },
             })
             .collect(),
     }))

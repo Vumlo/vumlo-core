@@ -1,12 +1,22 @@
 import { dueLabel, relative, shortDay } from "./format";
-import { translate } from "./i18n/core";
+import { translate, translatePlural } from "./i18n/core";
 import type { MessageKey } from "./i18n/core";
-import type { WorkStatus } from "./api/gaps";
+import type { CardTodo, WorkStatus } from "./api/types";
 import type { ContentModule, ContentSubModule, ContentTree, CourseInfo, ItemMeta, ItemSummary, LinkedGroup } from "./api/types";
 
 /** The owner as a person's name; `null` until the header is loaded. */
 export const ownerName = (info: Pick<CourseInfo, "owner_name" | "owner_surname"> | undefined): string | null =>
   info ? `${info.owner_name} ${info.owner_surname}` : null;
+
+/** A to-do entry of a teacher's card in words (ADR-0052: the server sends kinds and counts). */
+export function todoText(todo: CardTodo): string {
+  switch (todo.kind) {
+    case "to_grade": return translatePlural("todo.toGrade", todo.count, { n: todo.count });
+    case "draft_grades": return translatePlural(todo.auto_scored ? "todo.quizGrades" : "todo.draftGrades", todo.count, { n: todo.count });
+    case "unpublished_items": return translatePlural("todo.unpublished", todo.count, { n: todo.count, titles: todo.titles.join(", ") });
+    case "next_deadline": return translate("todo.nextDeadline", { title: todo.title });
+  }
+}
 
 /** A linked group as the lists show it: the group, and the subgroup after a slash. */
 export const linkedGroupName = (g: Pick<LinkedGroup, "group_name" | "subgroup_name">): string =>

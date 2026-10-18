@@ -71,6 +71,33 @@ pub struct Term {
     pub ends_on: NaiveDate,
 }
 
+/// A person in a group, as the administrator's overview lists them (ADR-0053).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MemberLine {
+    pub user_id: Uuid,
+    pub name: String,
+    pub surname: String,
+    pub email: String,
+    pub added_at: Option<chrono::DateTime<chrono::Utc>>,
+}
+
+/// A group, its people and the courses that use it (ADR-0053).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GroupOverview {
+    pub group_id: Uuid,
+    pub members: Vec<MemberLine>,
+    pub linked_courses: Vec<crate::teaching::LinkedCourseRow>,
+}
+
+/// How many regular courses use a term, and where today stands against it (ADR-0053).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TermUsage {
+    pub term_id: Uuid,
+    pub courses: i64,
+    pub current: bool,
+    pub ended: bool,
+}
+
 /// The fields of a term update that were sent.
 #[derive(Debug, Clone, Default)]
 pub struct TermUpdate {

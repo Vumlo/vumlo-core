@@ -805,6 +805,52 @@ pub struct WorkFacts {
     pub attempts_used: i64,
 }
 
+/// What a search hit is.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HitKind {
+    Course,
+    Lecture,
+    Assignment,
+}
+
+/// One hit of a search (ADR-0052).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Hit {
+    pub kind: HitKind,
+    pub id: Uuid,
+    pub title: String,
+    pub course_id: Uuid,
+    pub course_title: String,
+    pub course_code: String,
+    pub snippet: Option<String>,
+    pub due_at: Option<DateTime<Utc>>,
+    /// Students do not see it yet.
+    pub draft: bool,
+}
+
+/// A student's work list: the courses and the assignments in them (ADR-0052).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MyWork {
+    pub courses: Vec<crate::teaching::CardCourse>,
+    pub items: Vec<WorkEntry>,
+}
+
+/// One assignment on a student's work list, with the student's own standing (ADR-0052).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WorkEntry {
+    pub assignment_id: Uuid,
+    pub course_id: Uuid,
+    pub title: String,
+    pub assignment_type: BuiltinType,
+    pub due_at: Option<DateTime<Utc>>,
+    pub class_on: Option<NaiveDate>,
+    pub max_points: MaxPoints,
+    pub status: WorkStatus,
+    pub score: Option<Decimal>,
+    pub published_at: Option<DateTime<Utc>>,
+    pub draft_saved_at: Option<DateTime<Utc>>,
+}
+
 /// What a teacher still has to do on one assignment, over the current students.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StaffFacts {

@@ -9,6 +9,265 @@
     "version": "0.1.0"
   },
   "paths": {
+    "/api/v1/admin/audit": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "The audit log, newest first and paged: who did what to what, when. `kind` is derived from the\naction; `q` matches the actor, the action or the target; `days` is how far back (1 to 365,\ndefault 7). Admin only. The names are those of today.",
+        "operationId": "list_audit",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "description": "Matches the actor's name, the action or the label of the target; at most 100 characters.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "kind",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/AuditKind"
+            }
+          },
+          {
+            "name": "days",
+            "in": "query",
+            "description": "How many days back, 1 to 365 (default 7).",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Page size, 1 to 100 (default 50).",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A page of entries",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_AuditRecord"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not logged in",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not an admin",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid filter or cursor",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          },
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/admin/courses": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Every regular course of the institution with its owner, term and student count, paged by id.\nAdmin only.",
+        "operationId": "list_admin_courses",
+        "parameters": [
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Page size, 1 to 100 (default 50).",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A page of courses",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_AdminCourse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not logged in",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not an admin",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid cursor",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          },
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/admin/groups/{id}/overview": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "A group with its people (name, email, when they were added) and the courses that use it or one\nof its subgroups. Admin only.",
+        "operationId": "get_group_overview",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Group id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The overview",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GroupOverview"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not logged in",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not an admin",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such group",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          },
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/admin/institution": {
       "get": {
         "tags": [
@@ -23,6 +282,55 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/AdminInstitution"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not logged in",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not an admin",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          },
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/admin/term-stats": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "How many regular courses each term has, whether today (in the institution's time zone) falls in\nit and whether it is over. Admin only.",
+        "operationId": "get_term_stats",
+        "responses": {
+          "200": {
+            "description": "One entry per term, newest first",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TermStats"
                 }
               }
             }
@@ -241,6 +549,55 @@
         ]
       }
     },
+    "/api/v1/admin/users/summary": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "People by institution role (every status), and how many are disabled. Admin only.",
+        "operationId": "user_summary",
+        "responses": {
+          "200": {
+            "description": "The counts",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserSummary"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not logged in",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not an admin",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          },
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/admin/users/{id}": {
       "patch": {
         "tags": [
@@ -324,6 +681,77 @@
           },
           "422": {
             "description": "Invalid name",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          },
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/admin/users/{id}/facts": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "What one person does in the institution: the groups they are in, the courses they own, teach\nand study in, and when they last signed in. No email appears here. Admin only.",
+        "operationId": "user_facts",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "User id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The facts",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserFacts"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not logged in",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not an admin",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such user",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -701,6 +1129,148 @@
           },
           "422": {
             "description": "Invalid cursor",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          },
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/assignments/{id}/responses": {
+      "get": {
+        "tags": [
+          "assessment"
+        ],
+        "summary": "The responses to a form: the latest attempt of every current student who submitted, with their\nanswers, and the students who did not (ADR-0051 point 7). Staff and admins.",
+        "operationId": "get_responses",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Assignment id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The responses",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FormResponses"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not logged in",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller may see the assignment but not its submissions",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such form, or not visible to the caller",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          },
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/assignments/{id}/result": {
+      "get": {
+        "tags": [
+          "assessment"
+        ],
+        "summary": "The caller's result of a quiz, once their grade is published (ADR-0050 point 8): the published\nscore and feedback, what the server scored for each question, the caller's answers and, when\nthe quiz shows its answers, the correct ones. Students of the course only.",
+        "operationId": "get_result",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Assignment id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QuizResult"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not logged in",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller may see the assignment but is not a student of the course",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such quiz, not visible to the caller, or no grade published yet",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -5742,6 +6312,45 @@
         ]
       }
     },
+    "/api/v1/me/course-cards": {
+      "get": {
+        "tags": [
+          "courses"
+        ],
+        "summary": "One card for each regular course the caller takes part in, by title: a student's card has their\nprogress and next deadline, a teacher's has a to-do list with counts and kinds, not sentences.\nA student sees only published and archived courses, and only what students may open in them.",
+        "operationId": "get_course_cards",
+        "responses": {
+          "200": {
+            "description": "The caller's cards",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CourseCards"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not logged in",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          },
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/me/courses": {
       "get": {
         "tags": [
@@ -6010,6 +6619,45 @@
         ]
       }
     },
+    "/api/v1/me/teaching": {
+      "get": {
+        "tags": [
+          "gradebook"
+        ],
+        "summary": "What the caller has to do across the courses they teach, assist in or own and that are not\narchived (ADR-0052): the work waiting for a grade, draft grades not published, deadlines coming\nup and content students cannot read yet. Counts and kinds, not sentences.",
+        "operationId": "get_teaching",
+        "responses": {
+          "200": {
+            "description": "The caller's overview",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TeachingOverview"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not logged in",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          },
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/me/templates": {
       "get": {
         "tags": [
@@ -6061,6 +6709,45 @@
           },
           "422": {
             "description": "Invalid cursor",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          },
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/me/work": {
+      "get": {
+        "tags": [
+          "content"
+        ],
+        "summary": "Every assignment of the courses the caller studies in, with the caller's own standing on it\n(ADR-0052). Only what students can open, with published titles, scores and times.",
+        "operationId": "get_my_work",
+        "responses": {
+          "200": {
+            "description": "The caller's courses and work",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MyWork"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not logged in",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -6249,7 +6936,7 @@
           "content"
         ],
         "summary": "Creates a draft `text` item or assignment as the last item of a module or sub-module.",
-        "description": "`body` is a JSON object that is stored and returned as is; an array or a string is rejected.\nFor an assignment it holds the instructions.\n\n`kind: assignment` requires an `assignment` object `{type, config?, max_points, is_bonus?}`\n(ADR-0021); a `text` item must not carry one. `type` is `text` or `no_submission`, with an empty `config`.\n`max_points` is a decimal string such as `\"20\"` or `\"7.5\"`; a JSON number is rejected. The\ngrading scale limits the points (ADR-0022): at most 12 per assignment on `twelve`, at most\n100 in total over the regular (not bonus) assignments of the course on `hundred`.",
+        "description": "`body` is a JSON object that is stored and returned as is; an array or a string is rejected.\nFor an assignment it holds the instructions.\n\n`kind: assignment` requires an `assignment` object `{type, config?, max_points, is_bonus?}`\n(ADR-0021); a `text` item must not carry one. `type` is `text`, `no_submission`, `quiz` or `form`; the\n`config` of a `quiz` is its questions and must add up to `max_points` (ADR-0050), that of a `form` its\nfields (ADR-0051), and the others take an empty one (a `text` assignment may narrow its editor).\n`max_points` is a decimal string such as `\"20\"` or `\"7.5\"`; a JSON number is rejected. The\ngrading scale limits the points (ADR-0022): at most 12 per assignment on `twelve`, at most\n100 in total over the regular (not bonus) assignments of the course on `hundred`.",
         "operationId": "create_item",
         "parameters": [
           {
@@ -6512,6 +7199,66 @@
           },
           "422": {
             "description": "`cascade` is missing",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          },
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/search": {
+      "get": {
+        "tags": [
+          "content"
+        ],
+        "summary": "Courses, lectures and assignments of the caller's courses that contain `q` (2 to 100\ncharacters), title matches first, at most 50 (ADR-0052). A student searches the published copy\nof what students can open; staff also search drafts and unpublished edits.",
+        "operationId": "search",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "description": "What to look for, 2 to 100 characters.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The hits",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SearchResults"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not logged in",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "A search text that is not 2 to 100 characters",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -7485,6 +8232,56 @@
           }
         }
       },
+      "AdminCourse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/CourseLine"
+          },
+          {
+            "type": "object",
+            "required": [
+              "status",
+              "owner_id",
+              "owner_name",
+              "owner_surname",
+              "student_count"
+            ],
+            "properties": {
+              "owner_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "owner_name": {
+                "type": "string"
+              },
+              "owner_surname": {
+                "type": "string"
+              },
+              "status": {
+                "$ref": "#/components/schemas/CourseStatus"
+              },
+              "student_count": {
+                "type": "integer",
+                "format": "int64"
+              },
+              "term_id": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "uuid"
+              },
+              "term_name": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            }
+          }
+        ],
+        "description": "A course of the institution as the administrator lists it."
+      },
       "AdminInstitution": {
         "allOf": [
           {
@@ -7567,7 +8364,7 @@
           },
           "config": {
             "type": "object",
-            "description": "Settings of the type; an empty object for `text` and `no_submission`."
+            "description": "Settings of the type; an empty object for `no_submission`, the editor narrowing for `text`,\nthe questions for a `quiz` (ADR-0050) and the fields for a `form` (ADR-0051). A student\nnever receives the answer key of a quiz. A form's fields carry the read-only facts\n`has_answers` and, on the options of an exclusive field, `taken` and `taken_by`."
           },
           "due_at": {
             "type": [
@@ -7614,7 +8411,7 @@
           },
           "type": {
             "type": "string",
-            "description": "The assignment type: `text` or `no_submission`. It cannot change."
+            "description": "The assignment type: `text`, `no_submission`, `quiz` or `form`. It cannot change."
           }
         }
       },
@@ -7691,8 +8488,15 @@
             "type": "integer",
             "format": "int32"
           },
+          "auto_scores": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "description": "Staff only, for a `quiz`: the score of each question that was scored by the server, as\ndecimal strings (ADR-0050). A `long_text` question has none."
+          },
           "content": {
-            "$ref": "#/components/schemas/Document"
+            "type": "object"
           },
           "id": {
             "type": "string",
@@ -7728,6 +8532,113 @@
             ]
           }
         }
+      },
+      "AuditActor": {
+        "type": "object",
+        "description": "The person who did it.",
+        "required": [
+          "user_id",
+          "name",
+          "surname"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "surname": {
+            "type": "string"
+          },
+          "user_id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      },
+      "AuditKind": {
+        "type": "string",
+        "description": "What an audit entry is about, derived from its action.",
+        "enum": [
+          "accounts",
+          "owners",
+          "teachers",
+          "groups",
+          "courses",
+          "content",
+          "grades",
+          "terms",
+          "other"
+        ]
+      },
+      "AuditRecord": {
+        "type": "object",
+        "description": "One row of the audit log.",
+        "required": [
+          "id",
+          "at",
+          "source",
+          "kind",
+          "action",
+          "resource_type",
+          "resource_id",
+          "meta"
+        ],
+        "properties": {
+          "action": {
+            "type": "string",
+            "description": "A dotted verb such as `course.owner.transfer`."
+          },
+          "actor": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/AuditActor",
+                "description": "`null` for a row the server CLI wrote."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/AuditKind"
+          },
+          "meta": {
+            "type": "object",
+            "description": "Ids, roles and field names only."
+          },
+          "resource_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "resource_label": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "What the target is called now; `null` when it is gone."
+          },
+          "resource_type": {
+            "type": "string"
+          },
+          "source": {
+            "$ref": "#/components/schemas/AuditSource"
+          }
+        }
+      },
+      "AuditSource": {
+        "type": "string",
+        "description": "Where an audit row was written.",
+        "enum": [
+          "api",
+          "cli"
+        ]
       },
       "Block": {
         "oneOf": [
@@ -8079,6 +8990,166 @@
           }
         }
       },
+      "CardNext": {
+        "type": "object",
+        "description": "The next piece of work a student has to do.",
+        "required": [
+          "assignment_id",
+          "title",
+          "due_at"
+        ],
+        "properties": {
+          "assignment_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "due_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "title": {
+            "type": "string"
+          }
+        }
+      },
+      "CardProgress": {
+        "type": "object",
+        "description": "A student's numbers over the assignments of a course that take submissions.",
+        "required": [
+          "submitted",
+          "total",
+          "graded"
+        ],
+        "properties": {
+          "graded": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "submitted": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "total": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "CardRole": {
+        "type": "string",
+        "description": "The caller's place in a course.",
+        "enum": [
+          "owner",
+          "teacher",
+          "assistant",
+          "student"
+        ]
+      },
+      "CardTodo": {
+        "oneOf": [
+          {
+            "type": "object",
+            "description": "Submitted work with no draft score.",
+            "required": [
+              "count",
+              "kind"
+            ],
+            "properties": {
+              "count": {
+                "type": "integer",
+                "format": "int64"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "to_grade"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "Draft grades that are not published; `auto_scored` when they come from quizzes.",
+            "required": [
+              "count",
+              "auto_scored",
+              "kind"
+            ],
+            "properties": {
+              "auto_scored": {
+                "type": "boolean"
+              },
+              "count": {
+                "type": "integer",
+                "format": "int64"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "draft_grades"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "Draft items inside published modules; at most three titles.",
+            "required": [
+              "count",
+              "titles",
+              "kind"
+            ],
+            "properties": {
+              "count": {
+                "type": "integer",
+                "format": "int64"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "unpublished_items"
+                ]
+              },
+              "titles": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "The next deadline of the course.",
+            "required": [
+              "assignment_id",
+              "title",
+              "due_at",
+              "kind"
+            ],
+            "properties": {
+              "assignment_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "due_at": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "next_deadline"
+                ]
+              },
+              "title": {
+                "type": "string"
+              }
+            }
+          }
+        ],
+        "description": "One thing a teacher has to do in a course. Entries with a count of 0 are left out."
+      },
       "ChangePasswordRequest": {
         "type": "object",
         "required": [
@@ -8263,6 +9334,100 @@
           }
         }
       },
+      "CourseCard": {
+        "type": "object",
+        "description": "One course of the caller on the course list and the home page.",
+        "required": [
+          "course",
+          "code",
+          "term_ended",
+          "owner_name",
+          "owner_surname",
+          "my_role",
+          "student_count",
+          "assistant_count",
+          "todo"
+        ],
+        "properties": {
+          "assistant_count": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "code": {
+            "type": "string"
+          },
+          "course": {
+            "$ref": "#/components/schemas/Course"
+          },
+          "my_role": {
+            "$ref": "#/components/schemas/CardRole"
+          },
+          "next": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/CardNext",
+                "description": "Students only."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "owner_name": {
+            "type": "string"
+          },
+          "owner_surname": {
+            "type": "string"
+          },
+          "progress": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/CardProgress",
+                "description": "Students only."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "student_count": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "term_ended": {
+            "type": "boolean",
+            "description": "The term's last day is before today in the institution's time zone."
+          },
+          "term_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "todo": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CardTodo"
+            },
+            "description": "Staff only."
+          }
+        }
+      },
+      "CourseCards": {
+        "type": "object",
+        "description": "The course cards of the caller.",
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CourseCard"
+            }
+          }
+        }
+      },
       "CourseGroupLink": {
         "type": "object",
         "description": "A live link of a course to a whole group, or to one subgroup of it.",
@@ -8399,6 +9564,27 @@
           "template"
         ]
       },
+      "CourseLine": {
+        "type": "object",
+        "description": "A course as a line of a list.",
+        "required": [
+          "course_id",
+          "code",
+          "title"
+        ],
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "course_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "title": {
+            "type": "string"
+          }
+        }
+      },
       "CoursePeople": {
         "type": "object",
         "required": [
@@ -8418,6 +9604,27 @@
             "items": {
               "$ref": "#/components/schemas/PersonRow"
             }
+          }
+        }
+      },
+      "CourseRef": {
+        "type": "object",
+        "description": "A course, as a line of the teacher's overview.",
+        "required": [
+          "course_id",
+          "course_code",
+          "course_title"
+        ],
+        "properties": {
+          "course_code": {
+            "type": "string"
+          },
+          "course_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "course_title": {
+            "type": "string"
           }
         }
       },
@@ -8595,6 +9802,50 @@
             "$ref": "#/components/schemas/User"
           }
         }
+      },
+      "Deadline": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/CourseRef"
+          },
+          {
+            "type": "object",
+            "required": [
+              "assignment_id",
+              "title",
+              "due_at",
+              "submitted",
+              "total",
+              "not_open"
+            ],
+            "properties": {
+              "assignment_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "due_at": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "not_open": {
+                "type": "boolean",
+                "description": "The assignment is a draft: students do not see it yet."
+              },
+              "submitted": {
+                "type": "integer",
+                "format": "int64"
+              },
+              "title": {
+                "type": "string"
+              },
+              "total": {
+                "type": "integer",
+                "format": "int64"
+              }
+            }
+          }
+        ],
+        "description": "An assignment due from now on."
       },
       "Document": {
         "type": "object",
@@ -8783,6 +10034,75 @@
           }
         }
       },
+      "FormResponseRow": {
+        "type": "object",
+        "description": "The answers of one student to a form: their latest attempt (ADR-0051 point 7).",
+        "required": [
+          "student_id",
+          "name",
+          "surname",
+          "attempt",
+          "submitted_at",
+          "is_late",
+          "answers"
+        ],
+        "properties": {
+          "answers": {
+            "type": "object",
+            "description": "Field id to the answer, as stored."
+          },
+          "attempt": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "is_late": {
+            "type": "boolean"
+          },
+          "name": {
+            "type": "string"
+          },
+          "student_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "submitted_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "surname": {
+            "type": "string"
+          }
+        }
+      },
+      "FormResponses": {
+        "type": "object",
+        "description": "All the responses to a form.",
+        "required": [
+          "total_students",
+          "missing",
+          "rows"
+        ],
+        "properties": {
+          "missing": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/StudentName"
+            },
+            "description": "Current students with no attempt."
+          },
+          "rows": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FormResponseRow"
+            }
+          },
+          "total_students": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The current students of the course."
+          }
+        }
+      },
       "GoogleCallbackRequest": {
         "type": "object",
         "description": "What Google sent back to the web app's callback page.",
@@ -8829,7 +10149,8 @@
         "description": "What a history row records (ADR-0028).",
         "enum": [
           "save_draft",
-          "publish"
+          "publish",
+          "auto_score"
         ]
       },
       "GradeActor": {
@@ -9103,6 +10424,56 @@
           }
         }
       },
+      "GroupMemberLine": {
+        "type": "object",
+        "description": "A person in a group.",
+        "required": [
+          "user_id",
+          "name",
+          "surname",
+          "email"
+        ],
+        "properties": {
+          "added_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "`null` for those who were in the group before the time was recorded."
+          },
+          "email": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "surname": {
+            "type": "string"
+          },
+          "user_id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      },
+      "GroupName": {
+        "type": "object",
+        "description": "A group, by name.",
+        "required": [
+          "id",
+          "name"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          }
+        }
+      },
       "GroupOption": {
         "type": "object",
         "description": "A group a course can be linked to, with its subgroups. Ids and names only: no members.",
@@ -9124,6 +10495,43 @@
             "items": {
               "$ref": "#/components/schemas/SubgroupOption"
             }
+          }
+        }
+      },
+      "GroupOverview": {
+        "type": "object",
+        "description": "A group, its people and the courses that use it.",
+        "required": [
+          "group_id",
+          "student_count",
+          "course_count",
+          "members",
+          "linked_courses"
+        ],
+        "properties": {
+          "course_count": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "group_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "linked_courses": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LinkedCourse"
+            }
+          },
+          "members": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GroupMemberLine"
+            }
+          },
+          "student_count": {
+            "type": "integer",
+            "format": "int64"
           }
         }
       },
@@ -9155,6 +10563,23 @@
             "type": "string"
           }
         }
+      },
+      "HitKind": {
+        "type": "string",
+        "description": "What a search hit is.",
+        "enum": [
+          "course",
+          "lecture",
+          "assignment"
+        ]
+      },
+      "HitStatus": {
+        "type": "string",
+        "description": "Whether a hit is visible to students.",
+        "enum": [
+          "draft",
+          "published"
+        ]
       },
       "Inline": {
         "oneOf": [
@@ -9629,6 +11054,34 @@
         ],
         "description": "What a link may contain: text only."
       },
+      "LinkedCourse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/CourseLine"
+          },
+          {
+            "type": "object",
+            "required": [
+              "owner_name",
+              "owner_surname",
+              "linked_on"
+            ],
+            "properties": {
+              "linked_on": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "owner_name": {
+                "type": "string"
+              },
+              "owner_surname": {
+                "type": "string"
+              }
+            }
+          }
+        ],
+        "description": "A course that uses a group, or one of its subgroups."
+      },
       "LinkedGroup": {
         "type": "object",
         "description": "A group or subgroup linked to the course. Staff only.",
@@ -9903,6 +11356,28 @@
           }
         }
       },
+      "MyWork": {
+        "type": "object",
+        "description": "Every assignment of the caller's courses with the caller's own progress.",
+        "required": [
+          "courses",
+          "items"
+        ],
+        "properties": {
+          "courses": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WorkCourse"
+            }
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WorkItem"
+            }
+          }
+        }
+      },
       "NameRequest": {
         "type": "object",
         "description": "The name of a group or a subgroup, to create or to rename.",
@@ -9939,7 +11414,7 @@
               "object",
               "null"
             ],
-            "description": "Settings of the type, a JSON object. Defaults to `{}`; `text` and `no_submission` have none."
+            "description": "Settings of the type, a JSON object. Defaults to `{}`; `no_submission` has none, a `quiz`\nneeds its questions (ADR-0050) and a `form` its fields (ADR-0051)."
           },
           "due_at": {
             "type": [
@@ -9982,7 +11457,7 @@
           },
           "type": {
             "type": "string",
-            "description": "The assignment type: `text` or `no_submission`."
+            "description": "The assignment type: `text`, `no_submission`, `quiz` or `form`."
           }
         }
       },
@@ -9993,6 +11468,155 @@
           "keep_draft",
           "auto_submit"
         ]
+      },
+      "Page_AdminCourse": {
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/CourseLine"
+                },
+                {
+                  "type": "object",
+                  "required": [
+                    "status",
+                    "owner_id",
+                    "owner_name",
+                    "owner_surname",
+                    "student_count"
+                  ],
+                  "properties": {
+                    "owner_id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "owner_name": {
+                      "type": "string"
+                    },
+                    "owner_surname": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "$ref": "#/components/schemas/CourseStatus"
+                    },
+                    "student_count": {
+                      "type": "integer",
+                      "format": "int64"
+                    },
+                    "term_id": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "uuid"
+                    },
+                    "term_name": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  }
+                }
+              ],
+              "description": "A course of the institution as the administrator lists it."
+            }
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Pass as `cursor` to get the next page; `null` on the last page."
+          }
+        }
+      },
+      "Page_AuditRecord": {
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "description": "One row of the audit log.",
+              "required": [
+                "id",
+                "at",
+                "source",
+                "kind",
+                "action",
+                "resource_type",
+                "resource_id",
+                "meta"
+              ],
+              "properties": {
+                "action": {
+                  "type": "string",
+                  "description": "A dotted verb such as `course.owner.transfer`."
+                },
+                "actor": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/AuditActor",
+                      "description": "`null` for a row the server CLI wrote."
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "at": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "id": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "kind": {
+                  "$ref": "#/components/schemas/AuditKind"
+                },
+                "meta": {
+                  "type": "object",
+                  "description": "Ids, roles and field names only."
+                },
+                "resource_id": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "resource_label": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "description": "What the target is called now; `null` when it is gone."
+                },
+                "resource_type": {
+                  "type": "string"
+                },
+                "source": {
+                  "$ref": "#/components/schemas/AuditSource"
+                }
+              }
+            }
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Pass as `cursor` to get the next page; `null` on the last page."
+          }
+        }
       },
       "Page_Course": {
         "type": "object",
@@ -10831,6 +12455,92 @@
           }
         }
       },
+      "QuizResult": {
+        "type": "object",
+        "description": "The result of a quiz for the student who took it (ADR-0050 point 8). Only once the grade is\npublished.",
+        "required": [
+          "score",
+          "max_points",
+          "published_at",
+          "attempt",
+          "questions"
+        ],
+        "properties": {
+          "attempt": {
+            "type": "integer",
+            "format": "int32",
+            "description": "The attempt the answers belong to: the latest."
+          },
+          "feedback": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The published feedback; `null` when none."
+          },
+          "max_points": {
+            "type": "string"
+          },
+          "published_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "questions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/QuizResultQuestion"
+            }
+          },
+          "score": {
+            "type": "string",
+            "description": "The published score, a decimal string with two decimals."
+          }
+        }
+      },
+      "QuizResultQuestion": {
+        "type": "object",
+        "description": "One question of a quiz result.",
+        "required": [
+          "id",
+          "points"
+        ],
+        "properties": {
+          "answer": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "description": "What the student answered, as stored; `null` when unanswered."
+          },
+          "correct": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "description": "The correct answer: option ids, the number, or the accepted texts. Present only when the quiz\nshows its answers."
+          },
+          "explanation": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "description": "The explanation, a block document. Present only when the quiz shows its answers."
+          },
+          "got": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "What the server scored, a decimal string; `null` for a question graded by hand."
+          },
+          "id": {
+            "type": "string"
+          },
+          "points": {
+            "type": "string"
+          }
+        }
+      },
       "RegisterRequest": {
         "type": "object",
         "description": "Self-registration (ADR-0046). The account is created as a `student` and cannot log in until the\naddress is verified.",
@@ -10980,13 +12690,13 @@
       },
       "SaveDraftRequest": {
         "type": "object",
-        "description": "Replaces the draft of the caller. The document is read as a JSON value so that a rejection can\nname the path inside it, for example `content.blocks[2].props.level`.",
+        "description": "Replaces the draft of the caller. The content is read as a JSON value so that a rejection can\nname the path inside it, for example `content.blocks[2].props.level` or\n`content.answers.q1`. Its shape is that of the assignment's type.",
         "required": [
           "content"
         ],
         "properties": {
           "content": {
-            "$ref": "#/components/schemas/Document"
+            "type": "object"
           }
         }
       },
@@ -11007,6 +12717,74 @@
               "null"
             ],
             "description": "A decimal string with at most two decimals, from 0 to the assignment's `max_points`, e.g.\n`\"7.5\"`; `null` clears the score. A JSON number is rejected."
+          }
+        }
+      },
+      "SearchHit": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/CourseRef"
+          },
+          {
+            "type": "object",
+            "required": [
+              "kind",
+              "id",
+              "title",
+              "status"
+            ],
+            "properties": {
+              "due_at": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "date-time",
+                "description": "For an assignment, when it is due."
+              },
+              "id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "kind": {
+                "$ref": "#/components/schemas/HitKind"
+              },
+              "snippet": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "A short piece of text around the match; `null` for a course or a match in the title."
+              },
+              "status": {
+                "$ref": "#/components/schemas/HitStatus"
+              },
+              "title": {
+                "type": "string"
+              }
+            }
+          }
+        ],
+        "description": "A course, or a lecture or an assignment in one."
+      },
+      "SearchResults": {
+        "type": "object",
+        "description": "The hits, best first. There is no next page: the list is cut at 50.",
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SearchHit"
+            }
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
           }
         }
       },
@@ -11070,6 +12848,27 @@
         "properties": {
           "source": {
             "type": "string"
+          }
+        }
+      },
+      "StudentName": {
+        "type": "object",
+        "description": "A student of the course, named.",
+        "required": [
+          "user_id",
+          "name",
+          "surname"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "surname": {
+            "type": "string"
+          },
+          "user_id": {
+            "type": "string",
+            "format": "uuid"
           }
         }
       },
@@ -11138,7 +12937,7 @@
         ],
         "properties": {
           "content": {
-            "$ref": "#/components/schemas/Document"
+            "type": "object"
           },
           "updated_at": {
             "type": "string",
@@ -11239,6 +13038,42 @@
           }
         }
       },
+      "TeachingOverview": {
+        "type": "object",
+        "description": "What a teacher has to do across all their courses.",
+        "required": [
+          "to_grade",
+          "unpublished",
+          "deadlines",
+          "unpublished_content"
+        ],
+        "properties": {
+          "deadlines": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Deadline"
+            }
+          },
+          "to_grade": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ToGrade"
+            }
+          },
+          "unpublished": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/UnpublishedGrades"
+            }
+          },
+          "unpublished_content": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/UnpublishedContent"
+            }
+          }
+        }
+      },
       "TemplateSummary": {
         "type": "object",
         "description": "A template with what it holds.",
@@ -11313,6 +13148,49 @@
           }
         }
       },
+      "TermStat": {
+        "type": "object",
+        "description": "What one term holds.",
+        "required": [
+          "term_id",
+          "courses",
+          "current",
+          "read_only"
+        ],
+        "properties": {
+          "courses": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Regular courses that use the term."
+          },
+          "current": {
+            "type": "boolean",
+            "description": "Today, in the institution's time zone, falls in the term."
+          },
+          "read_only": {
+            "type": "boolean",
+            "description": "The term has ended."
+          },
+          "term_id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      },
+      "TermStats": {
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TermStat"
+            }
+          }
+        }
+      },
       "TextRun": {
         "type": "object",
         "required": [
@@ -11327,6 +13205,60 @@
           }
         }
       },
+      "ToGrade": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/CourseRef"
+          },
+          {
+            "type": "object",
+            "required": [
+              "student_id",
+              "student_name",
+              "student_surname",
+              "assignment_id",
+              "assignment_title",
+              "submitted_at",
+              "attempt"
+            ],
+            "properties": {
+              "assignment_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "assignment_title": {
+                "type": "string"
+              },
+              "attempt": {
+                "type": "integer",
+                "format": "int32"
+              },
+              "max_attempts": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "int32"
+              },
+              "student_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "student_name": {
+                "type": "string"
+              },
+              "student_surname": {
+                "type": "string"
+              },
+              "submitted_at": {
+                "type": "string",
+                "format": "date-time"
+              }
+            }
+          }
+        ],
+        "description": "A student's latest attempt that has no draft score yet."
+      },
       "TransferOwnershipRequest": {
         "type": "object",
         "description": "The new owner of a course (ADR-0037): an active teacher or admin.",
@@ -11339,6 +13271,76 @@
             "format": "uuid"
           }
         }
+      },
+      "UnpublishedContent": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/CourseRef"
+          },
+          {
+            "type": "object",
+            "required": [
+              "item_id",
+              "title",
+              "reason"
+            ],
+            "properties": {
+              "item_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "reason": {
+                "$ref": "#/components/schemas/UnpublishedReason"
+              },
+              "title": {
+                "type": "string"
+              }
+            }
+          }
+        ],
+        "description": "An item with content students cannot read yet."
+      },
+      "UnpublishedGrades": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/CourseRef"
+          },
+          {
+            "type": "object",
+            "required": [
+              "assignment_id",
+              "assignment_title",
+              "draft_count",
+              "auto_scored"
+            ],
+            "properties": {
+              "assignment_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "assignment_title": {
+                "type": "string"
+              },
+              "auto_scored": {
+                "type": "boolean",
+                "description": "The assignment is a quiz, so the drafts were scored by the server."
+              },
+              "draft_count": {
+                "type": "integer",
+                "format": "int64"
+              }
+            }
+          }
+        ],
+        "description": "An assignment whose draft grades are not published."
+      },
+      "UnpublishedReason": {
+        "type": "string",
+        "description": "Why an item is on the list of unpublished content.",
+        "enum": [
+          "draft",
+          "edits"
+        ]
       },
       "UpdateCourseInfoRequest": {
         "type": "object",
@@ -11601,12 +13603,103 @@
           }
         }
       },
+      "UserFacts": {
+        "type": "object",
+        "description": "What one person does in the institution.",
+        "required": [
+          "role",
+          "status",
+          "created_at",
+          "groups",
+          "owns",
+          "teaches",
+          "studies"
+        ],
+        "properties": {
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "groups": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GroupName"
+            }
+          },
+          "last_login_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "`null` until the person signs in after the server learned to record it."
+          },
+          "owns": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CourseLine"
+            },
+            "description": "Regular courses the person owns."
+          },
+          "role": {
+            "$ref": "#/components/schemas/Role"
+          },
+          "status": {
+            "$ref": "#/components/schemas/UserStatus"
+          },
+          "studies": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Published courses where they are a current student."
+          },
+          "teaches": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CourseLine"
+            },
+            "description": "Regular courses where they are a teacher or an assistant but not the owner."
+          }
+        }
+      },
       "UserStatus": {
         "type": "string",
         "enum": [
           "active",
           "disabled"
         ]
+      },
+      "UserSummary": {
+        "type": "object",
+        "description": "People by institution role, and how many are disabled.",
+        "required": [
+          "all",
+          "student",
+          "teacher",
+          "admin",
+          "disabled"
+        ],
+        "properties": {
+          "admin": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "all": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "disabled": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "student": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "teacher": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
       },
       "VerifyEmailRequest": {
         "type": "object",
@@ -11643,6 +13736,110 @@
           "youtube",
           "vimeo"
         ]
+      },
+      "WorkCourse": {
+        "type": "object",
+        "description": "A course a student studies in.",
+        "required": [
+          "id",
+          "code",
+          "title",
+          "owner_name",
+          "owner_surname"
+        ],
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "owner_name": {
+            "type": "string"
+          },
+          "owner_surname": {
+            "type": "string"
+          },
+          "term_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "title": {
+            "type": "string"
+          }
+        }
+      },
+      "WorkItem": {
+        "type": "object",
+        "description": "One assignment and the caller's own standing on it. Only published values appear.",
+        "required": [
+          "assignment_id",
+          "course_id",
+          "title",
+          "type",
+          "max_points",
+          "status"
+        ],
+        "properties": {
+          "assignment_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "class_on": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The day an in-class assignment takes place, `YYYY-MM-DD`."
+          },
+          "course_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "draft_saved_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "due_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "max_points": {
+            "type": "string"
+          },
+          "published_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "score": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The published score, a decimal string with two decimals."
+          },
+          "status": {
+            "$ref": "#/components/schemas/WorkStatus"
+          },
+          "title": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          }
+        }
       },
       "WorkStatus": {
         "type": "string",

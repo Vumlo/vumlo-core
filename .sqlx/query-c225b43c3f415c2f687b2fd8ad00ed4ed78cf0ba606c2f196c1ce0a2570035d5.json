@@ -1,0 +1,154 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT log.id AS \"id!\", log.at AS \"at!\", log.source AS \"source!\", log.action AS \"action!\",\n                  log.resource_type AS \"resource_type!\", log.resource_id AS \"resource_id!\",\n                  log.meta AS \"meta!: Meta\",\n                  log.actor_id, log.actor_name AS \"actor_name?\", log.actor_surname AS \"actor_surname?\",\n                  log.kind AS \"kind!\", log.label AS \"label?\"\n           FROM (\n               SELECT l.id, l.at, l.source, l.action, l.resource_type, l.resource_id, l.meta,\n                      l.actor_id, a.name AS actor_name, a.surname AS actor_surname,\n                      CASE WHEN l.action LIKE 'user.%' THEN 'accounts'\n                           WHEN l.action = 'course.owner.transfer' THEN 'owners'\n                           WHEN l.action LIKE 'course.member.%' THEN 'teachers'\n                           WHEN l.action LIKE 'group.%' OR l.action LIKE 'subgroup.%' THEN 'groups'\n                           WHEN l.action LIKE 'course.%' THEN 'courses'\n                           WHEN l.action LIKE 'content.%' THEN 'content'\n                           WHEN l.action LIKE 'grade.%' THEN 'grades'\n                           WHEN l.action LIKE 'term.%' THEN 'terms'\n                           ELSE 'other' END AS kind,\n                      CASE l.resource_type\n                          WHEN 'user' THEN ru.name || ' ' || ru.surname\n                          WHEN 'course' THEN concat_ws(' ', NULLIF(rc.code, ''), rc.title)\n                          WHEN 'group' THEN rg.name\n                          WHEN 'subgroup' THEN rs.name\n                          WHEN 'term' THEN rt.name\n                          WHEN 'item' THEN ri.title\n                          WHEN 'assignment' THEN ri.title\n                          WHEN 'module' THEN rm.title\n                      END AS label\n               FROM events.audit_log l\n               LEFT JOIN identity.users a ON a.id = l.actor_id\n               LEFT JOIN identity.users ru ON l.resource_type = 'user' AND ru.id = l.resource_id\n               LEFT JOIN teaching.courses rc ON l.resource_type = 'course' AND rc.id = l.resource_id\n               LEFT JOIN org.groups rg ON l.resource_type = 'group' AND rg.id = l.resource_id\n               LEFT JOIN org.subgroups rs ON l.resource_type = 'subgroup' AND rs.id = l.resource_id\n               LEFT JOIN org.terms rt ON l.resource_type = 'term' AND rt.id = l.resource_id\n               LEFT JOIN content.items ri\n                      ON l.resource_type IN ('item', 'assignment') AND ri.id = l.resource_id\n               LEFT JOIN content.modules rm ON l.resource_type = 'module' AND rm.id = l.resource_id\n               WHERE l.at >= now() - make_interval(days => $2)\n                 AND ($3::uuid IS NULL OR l.id < $3)\n           ) log\n           WHERE ($1::text IS NULL OR log.kind = $1)\n             AND ($4::text IS NULL\n                  OR (log.actor_name || ' ' || log.actor_surname) ILIKE $4\n                  OR log.action ILIKE $4 OR log.label ILIKE $4)\n           ORDER BY log.id DESC\n           LIMIT $5",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id!",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "events.audit_log",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "at!",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "events.audit_log",
+            "name": "at"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "source!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "events.audit_log",
+            "name": "source"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "action!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "events.audit_log",
+            "name": "action"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "resource_type!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "events.audit_log",
+            "name": "resource_type"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "resource_id!",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "events.audit_log",
+            "name": "resource_id"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "meta!: Meta",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "events.audit_log",
+            "name": "meta"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "actor_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "events.audit_log",
+            "name": "actor_id"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "actor_name?",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "identity.users",
+            "name": "name"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "actor_surname?",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "identity.users",
+            "name": "surname"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "kind!",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 11,
+        "name": "label?",
+        "type_info": "Text",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int4",
+        "Uuid",
+        "Text",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      null,
+      null
+    ]
+  },
+  "hash": "c225b43c3f415c2f687b2fd8ad00ed4ed78cf0ba606c2f196c1ce0a2570035d5"
+}

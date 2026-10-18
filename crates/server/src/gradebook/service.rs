@@ -12,7 +12,7 @@
 
 use std::collections::{HashMap, HashSet};
 
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 use serde_json::json;
 use sqlx::PgConnection;
 use sqlx::types::Decimal;
@@ -20,7 +20,7 @@ use uuid::Uuid;
 
 use super::model::{
     Cell, Feedback, FeedbackInput, FieldProblem, GradeInput, GradebookPage, GradebookRow,
-    HistoryEntry, ModelError, MyGrade, PublishedGrade, Score, Students,
+    HistoryEntry, ModelError, MyGrade, PublishedGrade, Score, Students, TeachingOverview,
 };
 use super::repo;
 use crate::actor::Actor;
@@ -261,6 +261,31 @@ pub async fn published_grade(
     student_id: Uuid,
 ) -> Result<Option<PublishedGrade>, GradebookError> {
     Ok(repo::find_published(conn, assignment_id, student_id).await?)
+}
+
+/// What the caller has to do across the courses they teach, assist in or own and that are not
+/// archived (ADR-0052). The lists are bounded by what one person teaches; the queue of work to
+/// grade is cut at [`repo::TO_GRADE_LIMIT`].
+pub async fn teaching_overview(
+    conn: &mut PgConnection,
+    actor: &Actor,
+    now: DateTime<Utc>,
+) -> Result<TeachingOverview, GradebookError> {
+    let courses: Vec<_> = teaching::course_scope(conn, actor)
+        .await
+        .map_err(GradebookError::Teaching)?
+        .into_iter()
+        .filter(|scoped| scoped.staff && scoped.course.course.status != CourseStatus::Archived)
+        .map(|scoped| scoped.course)
+        .collect();
+    let ids: Vec<Uuid> = courses.iter().map(|card| card.course.id).collect();
+    Ok(TeachingOverview {
+        to_grade: repo::to_grade(conn, &ids).await?,
+        unpublished: repo::unpublished_grades(conn, &ids).await?,
+        deadlines: repo::deadlines(conn, &ids, now).await?,
+        unpublished_content: repo::unpublished_content(conn, &ids).await?,
+        courses,
+    })
 }
 
 /// The recorded changes of one student's grade, newest first (ADR-0049). Staff only; a student

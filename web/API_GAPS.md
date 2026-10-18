@@ -19,9 +19,8 @@ Spec endpoints the UI uses as they are: `GET /institution`, `GET /admin/institut
 - **Not mocked:** the "must change password" rule of ADR-0017 (a temporary password may only call change password, logout and `GET /me`). The page does not rely on it; it sends such a session to `/change-password` itself.
 
 ## Search
-- **Screens:** Search (the navbar field opens it).
-- **Missing:** `GET /search?q=` over the courses and the lectures and assignments the caller may see. For a student that means published items only (ADR-0010); staff also get drafts. Results carry the kind, titles, a snippet, and for an assignment its due time.
-- **Mocked:** `GET /search?q=` returns up to 50 hits ranked by title match first. A student searching never gets a draft, and keeps getting the published text while there are unpublished edits.
+- **Server:** done (ADR-0052). `GET /search?q=` (2 to 100 characters) over the caller's courses, titles first, at most 50, students on the published copy. An administrator who is on no roster finds nothing.
+- **Still mocked, on purpose:** the same endpoint in `src/mocks/handlers/work.ts`.
 
 ## New course
 - **Screens:** New course.
@@ -38,14 +37,12 @@ Spec endpoints the UI uses as they are: `GET /institution`, `GET /admin/institut
 - **Still mocked, on purpose:** the same endpoints in `src/mocks/handlers/core.ts`, with the server's shapes, for `pnpm dev:mock` and the Playwright suite. The mock does not make an archived course read-only.
 
 ## Course cards
-- **Screens:** Courses (student and teacher), Home (My courses).
-- **Missing:** one call that returns, per course of the caller: the course, code, term name and whether the term ended, owner name, the caller's role (owner, teacher, assistant, student), student and assistant counts; for a student the progress (submitted, total, graded) and the next deadline; for staff a to-do list (submissions to grade, draft grades not published, unpublished lectures, next deadline).
-- **Mocked:** `GET /me/course-cards`.
+- **Server:** done (ADR-0052). `GET /me/course-cards`: the owner is `owner_name` and `owner_surname`; a teacher's to-do is a list of tagged entries (`to_grade`, `draft_grades`, `unpublished_items`, `next_deadline`) with counts, worded by `todoText` in `src/lib/course.ts`.
+- **Still mocked, on purpose:** the same endpoint in `src/mocks/handlers/core.ts`.
 
 ## My work (assignments with my own progress)
-- **Screens:** Home (Due soon, Continue, New grades, month, Next 7 days), Calendar, Grades.
-- **Missing:** one call for every assignment of the caller's courses with the caller's status (not started, draft, submitted, graded, missed, in class), score, publish time and draft time. With the spec alone this is a content tree, a submission and a grades call per course and per assignment.
-- **Mocked:** `GET /me/work`. Only published scores and feedback are in it (root AGENTS.md section 6).
+- **Server:** done (ADR-0052). `GET /me/work` lists the assignments students can open in the caller's courses with the status of ADR-0049, the published score and times. The class day is a date; the hook turns it into noon of that day.
+- **Still mocked, on purpose:** the same endpoint in `src/mocks/handlers/work.ts`. Only published scores and feedback are in it (root AGENTS.md section 6).
 
 ## Class date of in-class work
 - **Server:** done (ADR-0049). `class_on` is a day (`YYYY-MM-DD`) on `no_submission` assignments, in `PATCH /items/{id}` and `GET /courses/{id}/item-meta`; the hook turns it into noon of that day in the institution's zone.
@@ -60,20 +57,15 @@ Spec endpoints the UI uses as they are: `GET /institution`, `GET /admin/institut
 - **Still mocked, on purpose:** the same endpoints for `pnpm dev:mock`.
 
 ## Teaching overview
-- **Screens:** Teacher home, Grading, Calendar (teacher).
-- **Missing:** the cross-course queue of submissions waiting for a grade, draft grades not published per assignment (with "scored automatically"), the next deadlines with submitted and total counts, unpublished content.
-- **Mocked:** `GET /me/teaching`.
+- **Server:** done (ADR-0052). `GET /me/teaching` returns `to_grade`, `unpublished`, `deadlines` (`not_open`) and `unpublished_content` (`reason: draft | edits`) over the caller's courses that are not archived; the to-grade queue is cut at 200.
+- **Still mocked, on purpose:** the same endpoint in `src/mocks/handlers/work.ts`.
 
 ## Quiz and form assignment types
-- **Screens:** Quiz, Quiz result, Form, Quiz builder, Form builder, Form responses.
-- **Missing:** the types `quiz` and `form` (the server knows `text` and `no_submission`). Their `config`, the shape of a submission, automatic scoring, a result per question, and the responses of a form.
-  - `config` for a quiz: `{questions: [{id, type, prompt, points, options, correct, answer, tolerance, partial_credit, shuffle, grading_notes}], shuffle_questions, show_correct}`. A student never receives `correct`, `answer`, `tolerance` or `grading_notes` before grades are published (ADR-0023).
-  - `config` for a form: `{note, fields: [{id, type, label, help, required, options: [{id, text, taken_by}], rules, has_answers}]}`.
-  - A submission's `content` is `{answers: {id: text | [ids] | block document}}`.
-  - A question's prompt is a plain string here; ADR-0026 wants a block document.
-  - A form is "not graded", but `max_points` must be above 0 (ADR-0021). The mock stores `"0.00"`.
-  - "Remind who hasn't submitted" has no endpoint; the button only shows a message. The CSV download is built in the browser.
-- **Mocked:** `GET /assignments/{id}/result`, `GET /assignments/{id}/responses`, `config` in `/items/{id}`, auto-scoring on submit.
+- **Server:** done (ADR-0050, ADR-0051). `quiz` and `form` are assignment types; `GET /assignments/{id}/result` and `GET /assignments/{id}/responses` are in `openapi.json`. A quiz is scored when it is submitted and its score becomes the draft grade (not when it has a free-text question); a student never receives the answer key.
+- **Differences the screens absorb** (`src/lib/api/sheetWire.ts`, the one place that knows both shapes): the screens keep a prompt and an option as plain text, the server stores block documents; the screens' `single`, `multi`, `short`, `long` are `single_choice`, `multiple_choice`, `short_text`, `long_text`; a single-choice answer is a list with one id; a short-text question has one accepted answer in the screens (the server takes a list); a form's team size `"2-4"` is `rules.min` and `rules.max`; the responses table has fixed columns (team, variant, members, repository), filled from the first short, choice, people and link fields.
+- **Differences in behaviour:** a form needs `max_points` above 0 like any assignment; `taken_by` reaches staff only, a student gets `taken`; the questions and fields are frozen after the first submitted attempt (`409`).
+- **Not built:** "remind who hasn't submitted" (the button only shows a message); the CSV download is built in the browser.
+- **Still mocked, on purpose:** the same endpoints and fields in `src/mocks/handlers`, in the server's shapes.
 
 ## Grade history
 - **Server:** done (ADR-0049). `GET /assignments/{id}/grades/{student_id}/history` returns structured entries (`action`, `score`, `feedback`, `actor`), newest first, cursor-paginated. The drawer words them with the `gb.h*` messages.
@@ -85,24 +77,21 @@ Spec endpoints the UI uses as they are: `GET /institution`, `GET /admin/institut
 - **Mocked:** nothing; the spec endpoints are used.
 
 ## Admin: people
-- **Screens:** Admin, People.
-- **Missing:** counts per role for the filter chips, a person's last sign-in, groups and courses, an import of people from CSV (the CLI has `import-users` planned).
-- **Mocked:** `GET /admin/users/summary`, `GET /admin/users/{id}/facts`. The import creates the people one by one with `POST /admin/users`.
+- **Server:** done (ADR-0053). `GET /admin/users/summary` and `GET /admin/users/{id}/facts` (groups, owned and taught courses, courses studied, last sign-in); the details list and the role note are worded by the screen.
+- **Still missing:** an import of people from CSV (the import creates the people one by one with `POST /admin/users`).
+- **Still mocked, on purpose:** the same endpoints in `src/mocks/handlers/admin.ts`.
 
 ## Admin: groups
-- **Screens:** Admin, Groups.
-- **Missing:** group members with email and join date, student and course counts, the courses a group is linked to with their owners.
-- **Mocked:** `GET /admin/groups/{id}/overview`.
+- **Server:** done (ADR-0053). `GET /admin/groups/{id}/overview`: members with email and the day they joined (`added_at` is `null` for those who were in before it was recorded), counts, and the courses that use the group.
+- **Still mocked, on purpose:** the same endpoint in `src/mocks/handlers/admin.ts`.
 
 ## Admin: terms and courses
-- **Screens:** Admin, Terms and courses.
-- **Missing:** the number of courses per term and whether a term is current or read only; a list of every course with owner, student count and status.
-- **Mocked:** `GET /admin/term-stats`, `GET /admin/courses`. Changing an owner is the real `PUT /courses/{id}/owner`.
+- **Server:** done (ADR-0053). `GET /admin/term-stats` (courses, `current`, `read_only` for each term) and `GET /admin/courses` (paged). Changing an owner is the real `PUT /courses/{id}/owner`.
+- **Still mocked, on purpose:** the same endpoints in `src/mocks/handlers/admin.ts`.
 
 ## Admin: audit log
-- **Screens:** Admin, Audit log.
-- **Missing:** a read endpoint for `events.audit_log` with filters (person, kind of change, period).
-- **Mocked:** `GET /admin/audit?q=&kind=&days=`. Changes made through the mock add entries.
+- **Server:** done (ADR-0053). `GET /admin/audit?q=&kind=&days=`: entries with the action, the actor, what the target is called and the metadata; `src/lib/audit.ts` words each action. The kinds are `accounts`, `owners`, `teachers`, `groups`, `courses`, `content`, `grades`, `terms`, `other`. Names are those of today, and details such as the previous owner are not worded.
+- **Still mocked, on purpose:** the same endpoint in `src/mocks/handlers/admin.ts`; changes made through the mock add entries.
 
 ## Admin: logo
 - **Screens:** Admin, Institution.

@@ -4,6 +4,67 @@
  */
 
 export interface paths {
+    "/api/v1/admin/audit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The audit log, newest first and paged: who did what to what, when. `kind` is derived from the
+         *     action; `q` matches the actor, the action or the target; `days` is how far back (1 to 365,
+         *     default 7). Admin only. The names are those of today.
+         */
+        get: operations["list_audit"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/courses": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Every regular course of the institution with its owner, term and student count, paged by id.
+         *     Admin only.
+         */
+        get: operations["list_admin_courses"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/groups/{id}/overview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * A group with its people (name, email, when they were added) and the courses that use it or one
+         *     of its subgroups. Admin only.
+         */
+        get: operations["get_group_overview"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/institution": {
         parameters: {
             query?: never;
@@ -16,6 +77,26 @@ export interface paths {
          *     change in the configuration file (ADR-0044).
          */
         get: operations["get_admin_institution"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/term-stats": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * How many regular courses each term has, whether today (in the institution's time zone) falls in
+         *     it and whether it is over. Admin only.
+         */
+        get: operations["get_term_stats"];
         put?: never;
         post?: never;
         delete?: never;
@@ -46,6 +127,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/users/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** People by institution role (every status), and how many are disabled. Admin only. */
+        get: operations["user_summary"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/users/{id}": {
         parameters: {
             query?: never;
@@ -65,6 +163,26 @@ export interface paths {
          *     nor disabled.
          */
         patch: operations["update_user"];
+        trace?: never;
+    };
+    "/api/v1/admin/users/{id}/facts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * What one person does in the institution: the groups they are in, the courses they own, teach
+         *     and study in, and when they last signed in. No email appears here. Admin only.
+         */
+        get: operations["user_facts"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/v1/admin/users/{id}/reset-password": {
@@ -147,6 +265,47 @@ export interface paths {
          *     A student with no grade has an empty history.
          */
         get: operations["get_grade_history"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/assignments/{id}/responses": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The responses to a form: the latest attempt of every current student who submitted, with their
+         *     answers, and the students who did not (ADR-0051 point 7). Staff and admins.
+         */
+        get: operations["get_responses"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/assignments/{id}/result": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The caller's result of a quiz, once their grade is published (ADR-0050 point 8): the published
+         *     score and feedback, what the server scored for each question, the caller's answers and, when
+         *     the quiz shows its answers, the correct ones. Students of the course only.
+         */
+        get: operations["get_result"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1216,6 +1375,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/me/course-cards": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * One card for each regular course the caller takes part in, by title: a student's card has their
+         *     progress and next deadline, a teacher's has a to-do list with counts and kinds, not sentences.
+         *     A student sees only published and archived courses, and only what students may open in them.
+         */
+        get: operations["get_course_cards"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/me/courses": {
         parameters: {
             query?: never;
@@ -1291,6 +1471,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/me/teaching": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * What the caller has to do across the courses they teach, assist in or own and that are not
+         *     archived (ADR-0052): the work waiting for a grade, draft grades not published, deadlines coming
+         *     up and content students cannot read yet. Counts and kinds, not sentences.
+         */
+        get: operations["get_teaching"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/me/templates": {
         parameters: {
             query?: never;
@@ -1303,6 +1504,26 @@ export interface paths {
          *     each holds.
          */
         get: operations["list_templates"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/me/work": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Every assignment of the courses the caller studies in, with the caller's own standing on it
+         *     (ADR-0052). Only what students can open, with published titles, scores and times.
+         */
+        get: operations["get_my_work"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1348,7 +1569,9 @@ export interface paths {
          *     For an assignment it holds the instructions.
          *
          *     `kind: assignment` requires an `assignment` object `{type, config?, max_points, is_bonus?}`
-         *     (ADR-0021); a `text` item must not carry one. `type` is `text` or `no_submission`, with an empty `config`.
+         *     (ADR-0021); a `text` item must not carry one. `type` is `text`, `no_submission`, `quiz` or `form`; the
+         *     `config` of a `quiz` is its questions and must add up to `max_points` (ADR-0050), that of a `form` its
+         *     fields (ADR-0051), and the others take an empty one (a `text` assignment may narrow its editor).
          *     `max_points` is a decimal string such as `"20"` or `"7.5"`; a JSON number is rejected. The
          *     grading scale limits the points (ADR-0022): at most 12 per assignment on `twelve`, at most
          *     100 in total over the regular (not bonus) assignments of the course on `hundred`.
@@ -1393,6 +1616,27 @@ export interface paths {
          *     changes `publish_at`: a module scheduled for later stays hidden from students until then.
          */
         post: operations["publish_module"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Courses, lectures and assignments of the caller's courses that contain `q` (2 to 100
+         *     characters), title matches first, at most 50 (ADR-0052). A student searches the published copy
+         *     of what students can open; staff also search drafts and unpublished edits.
+         */
+        get: operations["search"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1533,6 +1777,19 @@ export interface components {
             /** @description The users who were not members before. Empty when all of them already were. */
             added: string[];
         };
+        /** @description A course of the institution as the administrator lists it. */
+        AdminCourse: components["schemas"]["CourseLine"] & {
+            /** Format: uuid */
+            owner_id: string;
+            owner_name: string;
+            owner_surname: string;
+            status: components["schemas"]["CourseStatus"];
+            /** Format: int64 */
+            student_count: number;
+            /** Format: uuid */
+            term_id?: string | null;
+            term_name?: string | null;
+        };
         /**
          * @description What an admin sees: the public profile and the settings that are not public. Read-only; they
          *     change in the config file (ADR-0044).
@@ -1564,7 +1821,12 @@ export interface components {
              *     `null` for any other type.
              */
             class_on?: string | null;
-            /** @description Settings of the type; an empty object for `text` and `no_submission`. */
+            /**
+             * @description Settings of the type; an empty object for `no_submission`, the editor narrowing for `text`,
+             *     the questions for a `quiz` (ADR-0050) and the fields for a `form` (ADR-0051). A student
+             *     never receives the answer key of a quiz. A form's fields carry the read-only facts
+             *     `has_answers` and, on the options of an exclusive field, `taken` and `taken_by`.
+             */
             config: Record<string, never>;
             /**
              * Format: date-time
@@ -1587,7 +1849,7 @@ export interface components {
             /** @description A decimal string with exactly two decimals, e.g. `"20.00"`. */
             max_points: string;
             on_deadline?: components["schemas"]["OnDeadline"] | null;
-            /** @description The assignment type: `text` or `no_submission`. It cannot change. */
+            /** @description The assignment type: `text`, `no_submission`, `quiz` or `form`. It cannot change. */
             type: string;
         };
         /** @description What the course tree shows of an assignment: everything but `config`. */
@@ -1609,7 +1871,12 @@ export interface components {
         Attempt: {
             /** Format: int32 */
             attempt: number;
-            content: components["schemas"]["Document"];
+            /**
+             * @description Staff only, for a `quiz`: the score of each question that was scored by the server, as
+             *     decimal strings (ADR-0050). A `long_text` question has none.
+             */
+            auto_scores?: Record<string, never> | null;
+            content: Record<string, never>;
             /** Format: uuid */
             id: string;
             /** @description True when it was submitted after `due_at`, inside the late window. */
@@ -1622,6 +1889,42 @@ export interface components {
             items: components["schemas"]["Attempt"][];
             next_cursor?: string | null;
         };
+        /** @description The person who did it. */
+        AuditActor: {
+            name: string;
+            surname: string;
+            /** Format: uuid */
+            user_id: string;
+        };
+        /**
+         * @description What an audit entry is about, derived from its action.
+         * @enum {string}
+         */
+        AuditKind: "accounts" | "owners" | "teachers" | "groups" | "courses" | "content" | "grades" | "terms" | "other";
+        /** @description One row of the audit log. */
+        AuditRecord: {
+            /** @description A dotted verb such as `course.owner.transfer`. */
+            action: string;
+            actor?: components["schemas"]["AuditActor"] | null;
+            /** Format: date-time */
+            at: string;
+            /** Format: uuid */
+            id: string;
+            kind: components["schemas"]["AuditKind"];
+            /** @description Ids, roles and field names only. */
+            meta: Record<string, never>;
+            /** Format: uuid */
+            resource_id: string;
+            /** @description What the target is called now; `null` when it is gone. */
+            resource_label?: string | null;
+            resource_type: string;
+            source: components["schemas"]["AuditSource"];
+        };
+        /**
+         * @description Where an audit row was written.
+         * @enum {string}
+         */
+        AuditSource: "api" | "cli";
         /**
          * @description One block. `id` is 1 to 64 characters from `[A-Za-z0-9_-]`, unique in the document and
          *     generated by the client. `props`, `content` and `children` are left out when empty.
@@ -1705,6 +2008,55 @@ export interface components {
         Candidates: {
             items: components["schemas"]["Candidate"][];
         };
+        /** @description The next piece of work a student has to do. */
+        CardNext: {
+            /** Format: uuid */
+            assignment_id: string;
+            /** Format: date-time */
+            due_at: string;
+            title: string;
+        };
+        /** @description A student's numbers over the assignments of a course that take submissions. */
+        CardProgress: {
+            /** Format: int64 */
+            graded: number;
+            /** Format: int64 */
+            submitted: number;
+            /** Format: int64 */
+            total: number;
+        };
+        /**
+         * @description The caller's place in a course.
+         * @enum {string}
+         */
+        CardRole: "owner" | "teacher" | "assistant" | "student";
+        /** @description One thing a teacher has to do in a course. Entries with a count of 0 are left out. */
+        CardTodo: {
+            /** Format: int64 */
+            count: number;
+            /** @enum {string} */
+            kind: "to_grade";
+        } | {
+            auto_scored: boolean;
+            /** Format: int64 */
+            count: number;
+            /** @enum {string} */
+            kind: "draft_grades";
+        } | {
+            /** Format: int64 */
+            count: number;
+            /** @enum {string} */
+            kind: "unpublished_items";
+            titles: string[];
+        } | {
+            /** Format: uuid */
+            assignment_id: string;
+            /** Format: date-time */
+            due_at: string;
+            /** @enum {string} */
+            kind: "next_deadline";
+            title: string;
+        };
         ChangePasswordRequest: {
             current_password: string;
             new_password: string;
@@ -1753,6 +2105,29 @@ export interface components {
              */
             term_id?: string | null;
             title: string;
+        };
+        /** @description One course of the caller on the course list and the home page. */
+        CourseCard: {
+            /** Format: int64 */
+            assistant_count: number;
+            code: string;
+            course: components["schemas"]["Course"];
+            my_role: components["schemas"]["CardRole"];
+            next?: components["schemas"]["CardNext"] | null;
+            owner_name: string;
+            owner_surname: string;
+            progress?: components["schemas"]["CardProgress"] | null;
+            /** Format: int64 */
+            student_count: number;
+            /** @description The term's last day is before today in the institution's time zone. */
+            term_ended: boolean;
+            term_name?: string | null;
+            /** @description Staff only. */
+            todo: components["schemas"]["CardTodo"][];
+        };
+        /** @description The course cards of the caller. */
+        CourseCards: {
+            items: components["schemas"]["CourseCard"][];
         };
         /** @description A live link of a course to a whole group, or to one subgroup of it. */
         CourseGroupLink: {
@@ -1817,10 +2192,24 @@ export interface components {
         };
         /** @enum {string} */
         CourseKind: "regular" | "template";
+        /** @description A course as a line of a list. */
+        CourseLine: {
+            code: string;
+            /** Format: uuid */
+            course_id: string;
+            title: string;
+        };
         CoursePeople: {
             /** @description Empty for a student. */
             groups: components["schemas"]["LinkedGroup"][];
             people: components["schemas"]["PersonRow"][];
+        };
+        /** @description A course, as a line of the teacher's overview. */
+        CourseRef: {
+            course_code: string;
+            /** Format: uuid */
+            course_id: string;
+            course_title: string;
         };
         /**
          * @description A user's role inside one course. The owner is a `teacher` flagged `is_owner`.
@@ -1880,6 +2269,20 @@ export interface components {
             /** @description Shown once. The user must change it at first login. */
             temporary_password: string;
             user: components["schemas"]["User"];
+        };
+        /** @description An assignment due from now on. */
+        Deadline: components["schemas"]["CourseRef"] & {
+            /** Format: uuid */
+            assignment_id: string;
+            /** Format: date-time */
+            due_at: string;
+            /** @description The assignment is a draft: students do not see it yet. */
+            not_open: boolean;
+            /** Format: int64 */
+            submitted: number;
+            title: string;
+            /** Format: int64 */
+            total: number;
         };
         /** @description A block document. `attachments` must be empty for now and is optional on input. */
         Document: {
@@ -1942,6 +2345,31 @@ export interface components {
             field: string;
             message: string;
         };
+        /** @description The answers of one student to a form: their latest attempt (ADR-0051 point 7). */
+        FormResponseRow: {
+            /** @description Field id to the answer, as stored. */
+            answers: Record<string, never>;
+            /** Format: int32 */
+            attempt: number;
+            is_late: boolean;
+            name: string;
+            /** Format: uuid */
+            student_id: string;
+            /** Format: date-time */
+            submitted_at: string;
+            surname: string;
+        };
+        /** @description All the responses to a form. */
+        FormResponses: {
+            /** @description Current students with no attempt. */
+            missing: components["schemas"]["StudentName"][];
+            rows: components["schemas"]["FormResponseRow"][];
+            /**
+             * Format: int64
+             * @description The current students of the course.
+             */
+            total_students: number;
+        };
         /** @description What Google sent back to the web app's callback page. */
         GoogleCallbackRequest: {
             code: string;
@@ -1960,7 +2388,7 @@ export interface components {
          * @description What a history row records (ADR-0028).
          * @enum {string}
          */
-        GradeAction: "save_draft" | "publish";
+        GradeAction: "save_draft" | "publish" | "auto_score";
         /** @description Who made a change. */
         GradeActor: {
             name: string;
@@ -2063,12 +2491,42 @@ export interface components {
             /** Format: uuid */
             user_id: string;
         };
+        /** @description A person in a group. */
+        GroupMemberLine: {
+            /**
+             * Format: date-time
+             * @description `null` for those who were in the group before the time was recorded.
+             */
+            added_at?: string | null;
+            email: string;
+            name: string;
+            surname: string;
+            /** Format: uuid */
+            user_id: string;
+        };
+        /** @description A group, by name. */
+        GroupName: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+        };
         /** @description A group a course can be linked to, with its subgroups. Ids and names only: no members. */
         GroupOption: {
             /** Format: uuid */
             id: string;
             name: string;
             subgroups: components["schemas"]["SubgroupOption"][];
+        };
+        /** @description A group, its people and the courses that use it. */
+        GroupOverview: {
+            /** Format: int64 */
+            course_count: number;
+            /** Format: uuid */
+            group_id: string;
+            linked_courses: components["schemas"]["LinkedCourse"][];
+            members: components["schemas"]["GroupMemberLine"][];
+            /** Format: int64 */
+            student_count: number;
         };
         HeadingProps: {
             /**
@@ -2081,6 +2539,16 @@ export interface components {
             database: string;
             status: string;
         };
+        /**
+         * @description What a search hit is.
+         * @enum {string}
+         */
+        HitKind: "course" | "lecture" | "assignment";
+        /**
+         * @description Whether a hit is visible to students.
+         * @enum {string}
+         */
+        HitStatus: "draft" | "published";
         /** @description A run of inline content. */
         Inline: (components["schemas"]["TextRun"] & {
             /** @enum {string} */
@@ -2250,6 +2718,13 @@ export interface components {
             /** @enum {string} */
             type: "text";
         };
+        /** @description A course that uses a group, or one of its subgroups. */
+        LinkedCourse: components["schemas"]["CourseLine"] & {
+            /** Format: date-time */
+            linked_on: string;
+            owner_name: string;
+            owner_surname: string;
+        };
         /** @description A group or subgroup linked to the course. Staff only. */
         LinkedGroup: {
             group_name: string;
@@ -2357,6 +2832,11 @@ export interface components {
             /** @description Pass as `cursor` to get the older attempts; `null` on the last page. */
             next_cursor?: string | null;
         };
+        /** @description Every assignment of the caller's courses with the caller's own progress. */
+        MyWork: {
+            courses: components["schemas"]["WorkCourse"][];
+            items: components["schemas"]["WorkItem"][];
+        };
         /** @description The name of a group or a subgroup, to create or to rename. */
         NameRequest: {
             /**
@@ -2374,7 +2854,10 @@ export interface components {
              *     `no_submission`.
              */
             class_on?: string | null;
-            /** @description Settings of the type, a JSON object. Defaults to `{}`; `text` and `no_submission` have none. */
+            /**
+             * @description Settings of the type, a JSON object. Defaults to `{}`; `no_submission` has none, a `quiz`
+             *     needs its questions (ADR-0050) and a `form` its fields (ADR-0051).
+             */
             config?: Record<string, never> | null;
             /**
              * Format: date-time
@@ -2402,7 +2885,7 @@ export interface components {
             max_points?: string;
             /** @description `keep_draft` or `auto_submit` (the latter takes effect with the background worker). */
             on_deadline?: string | null;
-            /** @description The assignment type: `text` or `no_submission`. */
+            /** @description The assignment type: `text`, `no_submission`, `quiz` or `form`. */
             type?: string;
         };
         /**
@@ -2411,6 +2894,44 @@ export interface components {
          * @enum {string}
          */
         OnDeadline: "keep_draft" | "auto_submit";
+        Page_AdminCourse: {
+            items: (components["schemas"]["CourseLine"] & {
+                /** Format: uuid */
+                owner_id: string;
+                owner_name: string;
+                owner_surname: string;
+                status: components["schemas"]["CourseStatus"];
+                /** Format: int64 */
+                student_count: number;
+                /** Format: uuid */
+                term_id?: string | null;
+                term_name?: string | null;
+            })[];
+            /** @description Pass as `cursor` to get the next page; `null` on the last page. */
+            next_cursor?: string | null;
+        };
+        Page_AuditRecord: {
+            items: {
+                /** @description A dotted verb such as `course.owner.transfer`. */
+                action: string;
+                actor?: components["schemas"]["AuditActor"] | null;
+                /** Format: date-time */
+                at: string;
+                /** Format: uuid */
+                id: string;
+                kind: components["schemas"]["AuditKind"];
+                /** @description Ids, roles and field names only. */
+                meta: Record<string, never>;
+                /** Format: uuid */
+                resource_id: string;
+                /** @description What the target is called now; `null` when it is gone. */
+                resource_label?: string | null;
+                resource_type: string;
+                source: components["schemas"]["AuditSource"];
+            }[];
+            /** @description Pass as `cursor` to get the next page; `null` on the last page. */
+            next_cursor?: string | null;
+        };
         Page_Course: {
             items: {
                 /** Format: date-time */
@@ -2663,6 +3184,41 @@ export interface components {
             role: components["schemas"]["CourseRole"];
         };
         /**
+         * @description The result of a quiz for the student who took it (ADR-0050 point 8). Only once the grade is
+         *     published.
+         */
+        QuizResult: {
+            /**
+             * Format: int32
+             * @description The attempt the answers belong to: the latest.
+             */
+            attempt: number;
+            /** @description The published feedback; `null` when none. */
+            feedback?: string | null;
+            max_points: string;
+            /** Format: date-time */
+            published_at: string;
+            questions: components["schemas"]["QuizResultQuestion"][];
+            /** @description The published score, a decimal string with two decimals. */
+            score: string;
+        };
+        /** @description One question of a quiz result. */
+        QuizResultQuestion: {
+            /** @description What the student answered, as stored; `null` when unanswered. */
+            answer?: Record<string, never> | null;
+            /**
+             * @description The correct answer: option ids, the number, or the accepted texts. Present only when the quiz
+             *     shows its answers.
+             */
+            correct?: Record<string, never> | null;
+            /** @description The explanation, a block document. Present only when the quiz shows its answers. */
+            explanation?: Record<string, never> | null;
+            /** @description What the server scored, a decimal string; `null` for a question graded by hand. */
+            got?: string | null;
+            id: string;
+            points: string;
+        };
+        /**
          * @description Self-registration (ADR-0046). The account is created as a `student` and cannot log in until the
          *     address is verified.
          */
@@ -2715,11 +3271,12 @@ export interface components {
         /** @enum {string} */
         Role: "admin" | "teacher" | "student";
         /**
-         * @description Replaces the draft of the caller. The document is read as a JSON value so that a rejection can
-         *     name the path inside it, for example `content.blocks[2].props.level`.
+         * @description Replaces the draft of the caller. The content is read as a JSON value so that a rejection can
+         *     name the path inside it, for example `content.blocks[2].props.level` or
+         *     `content.answers.q1`. Its shape is that of the assignment's type.
          */
         SaveDraftRequest: {
-            content: components["schemas"]["Document"];
+            content: Record<string, never>;
         };
         /**
          * @description Replaces the draft cell of one student. Both keys are required: a `PUT` replaces the whole
@@ -2736,6 +3293,26 @@ export interface components {
              *     `"7.5"`; `null` clears the score. A JSON number is rejected.
              */
             score?: string | null;
+        };
+        /** @description A course, or a lecture or an assignment in one. */
+        SearchHit: components["schemas"]["CourseRef"] & {
+            /**
+             * Format: date-time
+             * @description For an assignment, when it is due.
+             */
+            due_at?: string | null;
+            /** Format: uuid */
+            id: string;
+            kind: components["schemas"]["HitKind"];
+            /** @description A short piece of text around the match; `null` for a course or a match in the title. */
+            snippet?: string | null;
+            status: components["schemas"]["HitStatus"];
+            title: string;
+        };
+        /** @description The hits, best first. There is no next page: the list is cut at 50. */
+        SearchResults: {
+            items: components["schemas"]["SearchHit"][];
+            next_cursor?: string | null;
         };
         Session: {
             /** Format: date-time */
@@ -2756,6 +3333,13 @@ export interface components {
         /** @description The source of a formula or a diagram, as plain text. The server never renders it. */
         SourceProps: {
             source: string;
+        };
+        /** @description A student of the course, named. */
+        StudentName: {
+            name: string;
+            surname: string;
+            /** Format: uuid */
+            user_id: string;
         };
         Styles: {
             bold?: boolean;
@@ -2779,7 +3363,7 @@ export interface components {
         };
         /** @description The caller's draft: the one unsubmitted document of a student for an assignment. */
         SubmissionDraft: {
-            content: components["schemas"]["Document"];
+            content: Record<string, never>;
             /** Format: date-time */
             updated_at: string;
         };
@@ -2813,6 +3397,13 @@ export interface components {
             /** @description Rows of cells; a cell is a line of inline runs. All rows have the same number of cells. */
             rows: components["schemas"]["Inline"][][][];
         };
+        /** @description What a teacher has to do across all their courses. */
+        TeachingOverview: {
+            deadlines: components["schemas"]["Deadline"][];
+            to_grade: components["schemas"]["ToGrade"][];
+            unpublished: components["schemas"]["UnpublishedGrades"][];
+            unpublished_content: components["schemas"]["UnpublishedContent"][];
+        };
         /** @description A template with what it holds. */
         TemplateSummary: {
             /** Format: int32 */
@@ -2841,15 +3432,70 @@ export interface components {
             /** Format: date */
             starts_on: string;
         };
+        /** @description What one term holds. */
+        TermStat: {
+            /**
+             * Format: int64
+             * @description Regular courses that use the term.
+             */
+            courses: number;
+            /** @description Today, in the institution's time zone, falls in the term. */
+            current: boolean;
+            /** @description The term has ended. */
+            read_only: boolean;
+            /** Format: uuid */
+            term_id: string;
+        };
+        TermStats: {
+            items: components["schemas"]["TermStat"][];
+        };
         TextRun: {
             styles?: components["schemas"]["Styles"];
             text: string;
+        };
+        /** @description A student's latest attempt that has no draft score yet. */
+        ToGrade: components["schemas"]["CourseRef"] & {
+            /** Format: uuid */
+            assignment_id: string;
+            assignment_title: string;
+            /** Format: int32 */
+            attempt: number;
+            /** Format: int32 */
+            max_attempts?: number | null;
+            /** Format: uuid */
+            student_id: string;
+            student_name: string;
+            student_surname: string;
+            /** Format: date-time */
+            submitted_at: string;
         };
         /** @description The new owner of a course (ADR-0037): an active teacher or admin. */
         TransferOwnershipRequest: {
             /** Format: uuid */
             user_id: string;
         };
+        /** @description An item with content students cannot read yet. */
+        UnpublishedContent: components["schemas"]["CourseRef"] & {
+            /** Format: uuid */
+            item_id: string;
+            reason: components["schemas"]["UnpublishedReason"];
+            title: string;
+        };
+        /** @description An assignment whose draft grades are not published. */
+        UnpublishedGrades: components["schemas"]["CourseRef"] & {
+            /** Format: uuid */
+            assignment_id: string;
+            assignment_title: string;
+            /** @description The assignment is a quiz, so the drafts were scored by the server. */
+            auto_scored: boolean;
+            /** Format: int64 */
+            draft_count: number;
+        };
+        /**
+         * @description Why an item is on the list of unpublished content.
+         * @enum {string}
+         */
+        UnpublishedReason: "draft" | "edits";
         /** @description Only the fields present change. */
         UpdateCourseInfoRequest: {
             /** @description At most 32 characters after trimming; empty clears the code. */
@@ -2943,8 +3589,43 @@ export interface components {
             status: components["schemas"]["UserStatus"];
             surname: string;
         };
+        /** @description What one person does in the institution. */
+        UserFacts: {
+            /** Format: date-time */
+            created_at: string;
+            groups: components["schemas"]["GroupName"][];
+            /**
+             * Format: date-time
+             * @description `null` until the person signs in after the server learned to record it.
+             */
+            last_login_at?: string | null;
+            /** @description Regular courses the person owns. */
+            owns: components["schemas"]["CourseLine"][];
+            role: components["schemas"]["Role"];
+            status: components["schemas"]["UserStatus"];
+            /**
+             * Format: int64
+             * @description Published courses where they are a current student.
+             */
+            studies: number;
+            /** @description Regular courses where they are a teacher or an assistant but not the owner. */
+            teaches: components["schemas"]["CourseLine"][];
+        };
         /** @enum {string} */
         UserStatus: "active" | "disabled";
+        /** @description People by institution role, and how many are disabled. */
+        UserSummary: {
+            /** Format: int64 */
+            admin: number;
+            /** Format: int64 */
+            all: number;
+            /** Format: int64 */
+            disabled: number;
+            /** Format: int64 */
+            student: number;
+            /** Format: int64 */
+            teacher: number;
+        };
         /** @description The token from the verification mail. */
         VerifyEmailRequest: {
             token: string;
@@ -2959,6 +3640,37 @@ export interface components {
          * @enum {string}
          */
         VideoProvider: "youtube" | "vimeo";
+        /** @description A course a student studies in. */
+        WorkCourse: {
+            code: string;
+            /** Format: uuid */
+            id: string;
+            owner_name: string;
+            owner_surname: string;
+            term_name?: string | null;
+            title: string;
+        };
+        /** @description One assignment and the caller's own standing on it. Only published values appear. */
+        WorkItem: {
+            /** Format: uuid */
+            assignment_id: string;
+            /** @description The day an in-class assignment takes place, `YYYY-MM-DD`. */
+            class_on?: string | null;
+            /** Format: uuid */
+            course_id: string;
+            /** Format: date-time */
+            draft_saved_at?: string | null;
+            /** Format: date-time */
+            due_at?: string | null;
+            max_points: string;
+            /** Format: date-time */
+            published_at?: string | null;
+            /** @description The published score, a decimal string with two decimals. */
+            score?: string | null;
+            status: components["schemas"]["WorkStatus"];
+            title: string;
+            type: string;
+        };
         /**
          * @description Where a student stands on an assignment.
          * @enum {string}
@@ -2973,6 +3685,163 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    list_audit: {
+        parameters: {
+            query?: {
+                /** @description Matches the actor's name, the action or the label of the target; at most 100 characters. */
+                q?: string;
+                kind?: components["schemas"]["AuditKind"];
+                /** @description How many days back, 1 to 365 (default 7). */
+                days?: number;
+                cursor?: string;
+                /** @description Page size, 1 to 100 (default 50). */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A page of entries */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Page_AuditRecord"];
+                };
+            };
+            /** @description Not logged in */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Not an admin */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Invalid filter or cursor */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    list_admin_courses: {
+        parameters: {
+            query?: {
+                cursor?: string;
+                /** @description Page size, 1 to 100 (default 50). */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A page of courses */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Page_AdminCourse"];
+                };
+            };
+            /** @description Not logged in */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Not an admin */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Invalid cursor */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    get_group_overview: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Group id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The overview */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GroupOverview"];
+                };
+            };
+            /** @description Not logged in */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Not an admin */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description No such group */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
     get_admin_institution: {
         parameters: {
             query?: never;
@@ -2989,6 +3858,44 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AdminInstitution"];
+                };
+            };
+            /** @description Not logged in */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Not an admin */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    get_term_stats: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description One entry per term, newest first */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TermStats"];
                 };
             };
             /** @description Not logged in */
@@ -3126,6 +4033,44 @@ export interface operations {
             };
         };
     };
+    user_summary: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The counts */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserSummary"];
+                };
+            };
+            /** @description Not logged in */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Not an admin */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
     update_user: {
         parameters: {
             query?: never;
@@ -3189,6 +4134,56 @@ export interface operations {
             };
             /** @description Invalid name */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    user_facts: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description User id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The facts */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserFacts"];
+                };
+            };
+            /** @description Not logged in */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Not an admin */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description No such user */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -3432,6 +4427,106 @@ export interface operations {
             };
             /** @description Invalid cursor */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    get_responses: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Assignment id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The responses */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FormResponses"];
+                };
+            };
+            /** @description Not logged in */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The caller may see the assignment but not its submissions */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description No such form, or not visible to the caller */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    get_result: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Assignment id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QuizResult"];
+                };
+            };
+            /** @description Not logged in */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The caller may see the assignment but is not a student of the course */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description No such quiz, not visible to the caller, or no grade published yet */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -7002,6 +8097,35 @@ export interface operations {
             };
         };
     };
+    get_course_cards: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The caller's cards */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CourseCards"];
+                };
+            };
+            /** @description Not logged in */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
     list_my_courses: {
         parameters: {
             query?: {
@@ -7183,6 +8307,35 @@ export interface operations {
             };
         };
     };
+    get_teaching: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The caller's overview */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TeachingOverview"];
+                };
+            };
+            /** @description Not logged in */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
     list_templates: {
         parameters: {
             query?: {
@@ -7216,6 +8369,35 @@ export interface operations {
             };
             /** @description Invalid cursor */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    get_my_work: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The caller's courses and work */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MyWork"];
+                };
+            };
+            /** @description Not logged in */
+            401: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -7540,6 +8722,47 @@ export interface operations {
                 };
             };
             /** @description `cascade` is missing */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    search: {
+        parameters: {
+            query: {
+                /** @description What to look for, 2 to 100 characters. */
+                q: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The hits */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SearchResults"];
+                };
+            };
+            /** @description Not logged in */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description A search text that is not 2 to 100 characters */
             422: {
                 headers: {
                     [name: string]: unknown;

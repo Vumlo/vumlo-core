@@ -102,6 +102,9 @@ pub enum Action {
     /// Read the institution settings an admin sees, including the mode and the allowed domains
     /// (ADR-0044). The public profile needs no action: it needs no session.
     ViewInstitutionSettings,
+    /// Read the administrator reports: people summary and facts, courses of the institution, term
+    /// statistics and the audit log (ADR-0053).
+    ViewAdminReports,
     /// Create a course; the creator becomes its owner.
     CreateCourse,
     /// List the courses one belongs to. Which ones is decided per course by `ViewCourse`.
@@ -226,6 +229,7 @@ impl Action {
             Self::ManageOwnAccount
             | Self::ManageUsers
             | Self::ViewInstitutionSettings
+            | Self::ViewAdminReports
             | Self::CreateCourse
             | Self::ViewOwnCourses
             | Self::ViewEditorProfiles
@@ -253,6 +257,7 @@ impl Action {
             Self::ManageOwnAccount
             | Self::ManageUsers
             | Self::ViewInstitutionSettings
+            | Self::ViewAdminReports
             | Self::CreateCourse
             | Self::ViewOwnCourses
             | Self::ViewCourse(_)
@@ -325,6 +330,7 @@ pub fn authorize(actor: &Actor, action: Action) -> Result<(), PolicyError> {
         Action::ManageOwnAccount => true,
         Action::ManageUsers
         | Action::ViewInstitutionSettings
+        | Action::ViewAdminReports
         | Action::ManageTerms
         | Action::ManageGroups
         | Action::ViewGroups => is_admin,
@@ -436,6 +442,7 @@ mod tests {
     fn only_admins_manage_terms_and_groups_and_read_groups() {
         for action in [
             Action::ViewInstitutionSettings,
+            Action::ViewAdminReports,
             Action::ManageTerms,
             Action::ManageGroups,
             Action::ViewGroups,

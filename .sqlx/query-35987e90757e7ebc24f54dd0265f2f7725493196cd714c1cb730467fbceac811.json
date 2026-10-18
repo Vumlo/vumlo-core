@@ -1,0 +1,66 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT g.assignment_id, i.title AS assignment_title, i.course_id,\n                  count(*) AS \"draft_count!\", (a.type = 'quiz') AS \"auto_scored!\"\n           FROM gradebook.grades g\n           JOIN content.items i ON i.id = g.assignment_id\n           JOIN content.assignments a ON a.item_id = i.id\n           JOIN teaching.effective_members m\n             ON m.course_id = i.course_id AND m.user_id = g.student_id AND m.role = 'student'\n           WHERE i.course_id = ANY($1)\n             AND (g.draft_score, g.draft_feedback)\n                 IS DISTINCT FROM (g.published_score, g.published_feedback)\n           GROUP BY g.assignment_id, i.title, i.course_id, a.type\n           ORDER BY i.course_id, i.title, g.assignment_id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "assignment_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "gradebook.grades",
+            "name": "assignment_id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "assignment_title",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "content.items",
+            "name": "title"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "course_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "content.items",
+            "name": "course_id"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "draft_count!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 4,
+        "name": "auto_scored!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "UuidArray"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      null,
+      null
+    ]
+  },
+  "hash": "35987e90757e7ebc24f54dd0265f2f7725493196cd714c1cb730467fbceac811"
+}

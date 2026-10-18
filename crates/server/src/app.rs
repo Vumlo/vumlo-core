@@ -229,7 +229,8 @@ pub fn router(state: AppState) -> Result<Router, SetupError> {
                 .merge(content::router())
                 .merge(gradebook::router())
                 .merge(assessment::router())
-                .merge(org::router()),
+                .merge(org::router())
+                .merge(crate::events::router()),
         )
         .split_for_parts();
     let spec = openapi.clone();
