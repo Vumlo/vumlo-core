@@ -10,10 +10,25 @@ Rust (stable, via rustup) and Docker with the Compose plugin.
 
 ## Run
 
+The database and the API run in Docker; the web app runs on the host (Node 22+, pnpm).
+
+```
+docker compose up -d --build --wait    # PostgreSQL 18 on :5432, API on 127.0.0.1:8080 (migrates first)
+docker compose exec server learnly-server create-admin you@example.edu --name Your --surname Name
+cd web && pnpm install && pnpm dev     # http://localhost:3000, /api/v1 is proxied to :8080
+```
+
+`pnpm dev:mock` runs the web app against in-browser mocks instead, with no backend. Set the institution
+before the first start with `LEARNLY_INSTITUTION_MODE` (`school` or `university`, default `university`) and
+`LEARNLY_INSTITUTION_NAME` in `.env`; the mode cannot be changed later. If the web app is not on
+`http://localhost:3000`, set `LEARNLY_PUBLIC_ORIGIN` to its origin.
+
+Without Docker for the API:
+
 ```
 cp .env.example .env
 cp learnly.example.toml learnly.toml   # set server.public_origin, institution.name and institution.mode
-docker compose up -d --wait            # PostgreSQL 18 on :5432
+docker compose up -d --wait postgres   # PostgreSQL 18 on :5432
 cargo run -p server -- migrate         # apply migrations
 cargo run -p server -- create-admin you@example.edu --name Your --surname Name
 cargo run -p server -- serve           # http://127.0.0.1:8080

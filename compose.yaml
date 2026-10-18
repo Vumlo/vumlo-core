@@ -17,5 +17,26 @@ services:
       timeout: 3s
       retries: 30
 
+  # The API. The web app runs outside Docker and reaches it on http://127.0.0.1:8080.
+  server:
+    build: .
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: ["sh", "-c", "learnly-server migrate && exec learnly-server serve"]
+    environment:
+      LEARNLY__SERVER__BIND_ADDR: "0.0.0.0:8080"
+      # The origin the browser uses: the web app on :3000, which proxies /api/v1 here.
+      LEARNLY__SERVER__PUBLIC_ORIGIN: ${LEARNLY_PUBLIC_ORIGIN:-http://localhost:3000}
+      LEARNLY__DATABASE__URL: postgres://learnly:learnly@postgres:5432/learnly
+      LEARNLY__DATABASE__MAX_CONNECTIONS: "10"
+      LEARNLY__LOG__FORMAT: pretty
+      LEARNLY__AUTH__COOKIE_SECURE: "false" # plain HTTP, local use only
+      LEARNLY__INSTITUTION__NAME: ${LEARNLY_INSTITUTION_NAME:-Example University}
+      # Recorded in the database on first start and cannot be changed later (ADR-0031).
+      LEARNLY__INSTITUTION__MODE: ${LEARNLY_INSTITUTION_MODE:-university}
+    ports:
+      - "127.0.0.1:8080:8080"
+
 volumes:
   postgres-data:
