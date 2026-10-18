@@ -43,15 +43,20 @@ learnly-server admin subcommands (on the server)  ──────────
 ## Repository layout
 
 ```
-crates/
-  server/      # library + binary `learnly-server`: HTTP API, modules, worker, admin subcommands; build.rs
-  api-types/   # request/response types shared with the Rust CLI; OpenAPI source
-  cli/         # binary `learnly`: user CLI (API client)
-migrations/
+backend/       # Cargo workspace; run every cargo command here
+  crates/
+    server/    # library + binary `learnly-server`: HTTP API, modules, worker, admin subcommands; build.rs
+    api-types/ # request/response types shared with the Rust CLI; OpenAPI source
+    cli/       # binary `learnly`: user CLI (API client)
+  migrations/
+  .sqlx/
+  Dockerfile
+web/           # Next.js frontend (ADR-0042)
 docs/decisions/
+.env, learnly.toml, compose.yaml   # shared by backend and web; stay in the root
 ```
 
-**Migrations** are plain `.sql` files in `migrations/`, append-only, embedded into `learnly-server` at compile time with `sqlx::migrate!` and applied by `learnly-server migrate`. `serve` refuses to start while any are pending, and then checks the institution mode against `org.installation` (ADR-0031). `crates/server/build.rs` tells Cargo to rebuild when anything in `migrations/` changes, so a new file is always picked up. The `.sqlx/` folder holds the offline query data for `query!` in the code and in the tests (`cargo sqlx prepare --workspace -- --all-targets`) and is committed; CI also builds every target offline (`SQLX_OFFLINE=true cargo check --workspace --all-targets`).
+**Migrations** are plain `.sql` files in `backend/migrations/`, append-only, embedded into `learnly-server` at compile time with `sqlx::migrate!` and applied by `learnly-server migrate`. `serve` refuses to start while any are pending, and then checks the institution mode against `org.installation` (ADR-0031). `backend/crates/server/build.rs` tells Cargo to rebuild when anything in `migrations/` changes, so a new file is always picked up. The `backend/.sqlx/` folder holds the offline query data for `query!` in the code and in the tests (`cargo sqlx prepare --workspace -- --all-targets`) and is committed; CI also builds every target offline (`SQLX_OFFLINE=true cargo check --workspace --all-targets`).
 
 ## Modules (inside `server`)
 
@@ -77,7 +82,7 @@ Rules ([ADR-0001](docs/decisions/0001-modular-monolith.md)):
 ### Module layout ([ADR-0016](docs/decisions/0016-module-layout-and-transactions.md))
 
 ```
-crates/server/src/
+backend/crates/server/src/
   lib.rs    main.rs   app.rs   error.rs   actor.rs   settings.rs   health.rs
   <module>/
     mod.rs      # the only public surface: pub fn router(), pub service functions, pub types
@@ -235,7 +240,7 @@ Key points:
 
 ## Configuration
 
-`learnly.toml`, any key overridable with `LEARNLY__SECTION__KEY` (see `learnly.example.toml`):
+`learnly.toml` (repository root), any key overridable with `LEARNLY__SECTION__KEY` (see `learnly.example.toml`):
 `server.bind_addr`, `server.public_origin`, `server.client_ip_header?`, `server.allowed_origins` (default empty; every origin key must look like `https://host[:port]`, lowercase, no path and no default port, or the server does not start), `database.url`, `database.max_connections`, `log.format`, `institution.name`, `institution.mode`, an optional `[auth.google]` section (`client_id`, `client_secret`, `redirect_uri`, `issuer`; [ADR-0047](docs/decisions/0047-google-sign-in.md)), an optional `[mail]` section (`from`, `link_base`, and `transport.kind` = `smtp` | `file`; [ADR-0045](docs/decisions/0045-outbox-worker-and-mail.md)), the optional profile keys `institution.short_name`, `language`, `time_zone` and `accent` ([ADR-0044](docs/decisions/0044-institution-profile-in-the-config.md): validated at startup, served by `GET /institution` and the admin-only `GET /admin/institution`, never writable through the API), and an optional `[auth]` section (`password_min_length` = 12, `cookie_secure` = true, `allowed_domains` = [], the domains that may sign up (ADR-0046), and the login limits of ADR-0038 listed under Identity and sessions). `institution.mode` (`school` | `university`) is **required, has no default and is fixed for the life of the installation** ([ADR-0031](docs/decisions/0031-institution-mode-required-and-fixed.md)): a missing or unknown value stops the server at startup, naming the key and the allowed values. The first start records the mode in `org.installation` (one row); a later start whose config says another mode refuses to start and names both values. The check, `org::record_mode(&mut conn, mode)`, runs in `main.rs` before the server binds (`serve`), after the migrations (`migrate`) and before `create-admin` / `create-user`; it is insert-if-absent, then read, so concurrent first starts cannot store two modes. `institution.grading_scale` (`twelve` | `hundred`) limits assignment points, see [ADR-0022](docs/decisions/0022-grading-scale-setting.md); optional, and when absent it follows the mode (school gives `twelve`, university gives `hundred`). The scale is resolved once, when the `[institution]` section loads (`TryFrom<InstitutionSection> for InstitutionSettings`, which also checks the mode); `institution.grading_scale` in the loaded settings is the scale that applies, and nothing else reads the raw key. `editor.profiles.<name>.features` and `editor.video_providers` (default `["youtube", "vimeo"]`; an empty list switches video off) narrow what a place of the editor allows, see [ADR-0025](docs/decisions/0025-block-documents.md) and [ADR-0027](docs/decisions/0027-document-types-and-video-blocks.md). The configuration is plain data. A configuration can only narrow: `AppState::new` resolves it once, when the server starts, and one that widens a profile or names an unknown profile, feature or provider stops the server there with a message that names the key and the value. Handlers and services receive the resolved profiles from `AppState`. Planned: `editor.html` (default `false`).
 
 ## Authorization

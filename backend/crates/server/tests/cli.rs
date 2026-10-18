@@ -19,7 +19,7 @@ fn database_url() -> String {
     if let Ok(url) = std::env::var("DATABASE_URL") {
         return url;
     }
-    let env_file = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/../../.env"))
+    let env_file = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/../../../.env"))
         .expect("DATABASE_URL is not set and there is no .env");
     env_file
         .lines()

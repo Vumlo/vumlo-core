@@ -349,11 +349,12 @@ pub enum LogFormat {
 }
 
 impl Settings {
-    /// Reads the optional `learnly.toml`, then `LEARNLY__SECTION__KEY` environment overrides.
+    /// Reads the optional `learnly.toml` (the repository root, one level above `backend/`), then
+    /// `LEARNLY__SECTION__KEY` environment overrides.
     /// Only the `[auth]` section has defaults; every other key must come from one of the two sources.
     pub fn load() -> Result<Self, ConfigError> {
         Self::build(
-            File::with_name("learnly")
+            File::with_name("../learnly")
                 .format(FileFormat::Toml)
                 .required(false),
             Environment::with_prefix("LEARNLY").separator("__"),
