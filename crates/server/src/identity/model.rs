@@ -362,6 +362,35 @@ impl fmt::Debug for EmailToken {
     }
 }
 
+/// The random value that ties a started Google sign-in to the browser that started it: it is set as
+/// a cookie by `start` and must come back with the callback (ADR-0047). Only its SHA-256 is stored.
+#[derive(Clone, PartialEq, Eq)]
+pub struct BrowserBinding(String);
+
+impl BrowserBinding {
+    pub fn generate() -> Self {
+        Self(random_base64url::<32>())
+    }
+
+    pub fn from_presented(raw: &str) -> Option<Self> {
+        EmailToken::from_presented(raw).map(|token| Self(token.0))
+    }
+
+    pub fn expose(&self) -> &str {
+        &self.0
+    }
+
+    pub fn hash(&self) -> [u8; 32] {
+        Sha256::digest(self.0.as_bytes()).into()
+    }
+}
+
+impl fmt::Debug for BrowserBinding {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("BrowserBinding(***)")
+    }
+}
+
 /// An opaque session credential. Only its SHA-256 is stored.
 #[derive(Clone, PartialEq, Eq)]
 pub struct SessionToken(String);

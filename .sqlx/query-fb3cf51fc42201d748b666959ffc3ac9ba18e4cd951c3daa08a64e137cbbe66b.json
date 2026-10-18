@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM identity.oauth_states WHERE expires_at < now()",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "fb3cf51fc42201d748b666959ffc3ac9ba18e4cd951c3daa08a64e137cbbe66b"
+}

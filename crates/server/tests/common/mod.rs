@@ -1,6 +1,8 @@
 // Each test binary compiles this module and uses only some helpers.
 #![allow(dead_code)]
 
+pub mod google;
+
 use server::app::{self, AppState};
 use server::identity::{self, Email, Role, TemporaryPassword};
 use server::settings::{

@@ -3,6 +3,7 @@
 mod admin;
 mod auth;
 mod extract;
+mod google;
 mod me;
 
 use std::sync::Arc;
@@ -17,6 +18,7 @@ use tower_governor::key_extractor::KeyExtractor;
 use utoipa_axum::router::OpenApiRouter;
 use utoipa_axum::routes;
 
+use super::google::GoogleError;
 use super::model::{Role, SessionKind, User, UserStatus};
 use super::service::{IdentityError, LoginThrottle, THROTTLE_CAPACITY};
 use crate::app::AppState;
@@ -146,6 +148,8 @@ pub fn router(settings: &Settings) -> Result<OpenApiRouter<AppState>, SetupError
                 .routes(routes!(auth::verify_email))
                 .routes(routes!(auth::request_password_reset))
                 .routes(routes!(auth::confirm_password_reset))
+                .routes(routes!(google::start))
+                .routes(routes!(google::callback))
                 .layer(GovernorLayer::new(client_limiter()?)),
         )
         .routes(routes!(auth::logout))
@@ -187,6 +191,19 @@ impl From<IdentityError> for ApiError {
             IdentityError::EmailDomainNotAllowed => {
                 Self::invalid_field("email", "this email domain cannot sign up")
             }
+            IdentityError::GoogleAttemptInvalid => {
+                Self::Unauthorized("the sign-in attempt is not valid")
+            }
+            IdentityError::Google(GoogleError::Rejected) => {
+                Self::Unauthorized("Google did not accept the sign-in")
+            }
+            IdentityError::Google(GoogleError::Unavailable) => {
+                Self::ServiceUnavailable("Google sign-in is not available, try again")
+            }
+            IdentityError::GoogleAccountNotAllowed => {
+                Self::Forbidden("this Google account cannot sign in here")
+            }
+            IdentityError::AccountDisabled => Self::Forbidden("the account is disabled"),
             IdentityError::EmailTaken => Self::Conflict("the email is already in use"),
             IdentityError::ConcurrentChange => {
                 Self::Conflict("the account changed while the request was running, try again")

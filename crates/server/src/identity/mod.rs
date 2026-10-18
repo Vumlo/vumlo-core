@@ -1,11 +1,13 @@
 //! Users, login identities and sessions (ADR-0003, ADR-0017).
 
+mod google;
 mod handler;
 mod model;
 mod repo;
 mod routes;
 mod service;
 
+pub use google::{Google, GoogleSetupError};
 pub use handler::{MailContext, event_handlers};
 pub use model::{
     Email, EmailToken, HashedPassword, ModelError, NewSession, NewUser, Password, PasswordPolicy,

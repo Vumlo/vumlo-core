@@ -190,6 +190,36 @@ impl fmt::Debug for PasswordResetConfirmRequest {
     }
 }
 
+/// Starts sign-in with Google (ADR-0047).
+#[derive(Debug, Clone, Default, Serialize, Deserialize, Validate, ToSchema)]
+pub struct GoogleStartRequest {
+    /// An address to pre-fill on Google's page.
+    #[garde(inner(length(max = 254)))]
+    pub login_hint: Option<String>,
+}
+
+/// Where to send the browser for Google's consent screen.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct GoogleStartResponse {
+    pub authorization_url: String,
+}
+
+/// What Google sent back to the web app's callback page.
+#[derive(Clone, Serialize, Deserialize, Validate, ToSchema)]
+pub struct GoogleCallbackRequest {
+    #[garde(length(min = 1, max = 2048))]
+    pub code: String,
+    #[garde(length(min = 1, max = 512))]
+    pub state: String,
+}
+
+impl fmt::Debug for GoogleCallbackRequest {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("GoogleCallbackRequest")
+            .finish_non_exhaustive()
+    }
+}
+
 #[derive(Clone, Serialize, Deserialize, Validate, ToSchema)]
 pub struct ChangePasswordRequest {
     #[garde(length(min = 1, max = 1024))]

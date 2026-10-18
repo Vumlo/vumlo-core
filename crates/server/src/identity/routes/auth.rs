@@ -20,9 +20,13 @@ use crate::identity::service::{
 
 /// The browsers' maximum cookie lifetime. The session's own `expires_at` decides validity, so
 /// a sliding session is not cut short by the cookie.
-const COOKIE_MAX_AGE_SECS: u64 = 400 * 24 * 60 * 60;
+pub(super) const COOKIE_MAX_AGE_SECS: u64 = 400 * 24 * 60 * 60;
 
-fn session_cookie(token: &str, max_age_secs: u64, secure: bool) -> Result<HeaderValue, ApiError> {
+pub(super) fn session_cookie(
+    token: &str,
+    max_age_secs: u64,
+    secure: bool,
+) -> Result<HeaderValue, ApiError> {
     let secure = if secure { "; Secure" } else { "" };
     HeaderValue::from_str(&format!(
         "{COOKIE_NAME}={token}; Max-Age={max_age_secs}; Path=/; HttpOnly; SameSite=Lax{secure}"

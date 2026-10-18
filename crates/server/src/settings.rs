@@ -43,8 +43,11 @@ pub struct ServerSettings {
 pub struct AuthSettings {
     pub password_min_length: usize,
     pub cookie_secure: bool,
-    /// Stored now, used by self-registration (task 004).
+    /// The email domains that may sign up, by password (ADR-0046) or with Google (ADR-0047).
+    /// Empty: nobody.
     pub allowed_domains: Vec<String>,
+    /// Sign-in with Google (ADR-0047). Absent: the two endpoints are off.
+    pub google: Option<GoogleSettings>,
     /// Login attempts one client may make in a burst. A client is an IPv4 address or an IPv6 /64
     /// (ADR-0038). A school behind one NAT raises this.
     pub login_ip_burst: u32,
@@ -65,6 +68,7 @@ impl Default for AuthSettings {
             password_min_length: 12,
             cookie_secure: true,
             allowed_domains: Vec::new(),
+            google: None,
             login_ip_burst: 50,
             login_ip_replenish_seconds: 1,
             login_account_max_attempts: 10,
@@ -72,6 +76,24 @@ impl Default for AuthSettings {
             max_concurrent_hashes: 8,
         }
     }
+}
+
+/// The `[auth.google]` section (ADR-0047). Plain data: `Google::new` checks the two URLs when the
+/// server starts.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct GoogleSettings {
+    pub client_id: String,
+    pub client_secret: Secret,
+    /// Where Google sends the browser back: the callback page of the web app.
+    pub redirect_uri: String,
+    /// Default: Google. Another issuer is for a test server.
+    #[serde(default = "default_google_issuer")]
+    pub issuer: String,
+}
+
+fn default_google_issuer() -> String {
+    "https://accounts.google.com".to_owned()
 }
 
 /// The `[institution]` section as it is loaded. `mode` has no default (ADR-0031).
@@ -221,6 +243,10 @@ pub enum GradingScale {
 pub struct Secret(String);
 
 impl Secret {
+    pub fn new(value: impl Into<String>) -> Self {
+        Self(value.into())
+    }
+
     pub fn expose(&self) -> &str {
         &self.0
     }
@@ -751,6 +777,29 @@ mod tests {
         kind = "file"
         dir = "/tmp/mail"
     "#;
+
+    #[test]
+    fn google_is_optional_has_a_default_issuer_and_hides_its_secret() {
+        assert!(build(VALID, &[]).unwrap().auth.google.is_none());
+        let toml = format!(
+            "{VALID}\n[auth.google]\nclient_id = \"id\"\nredirect_uri = \"https://lms.example.edu/auth/google/callback\"\n"
+        );
+
+        let google = build(
+            &toml,
+            &[("LEARNLY__AUTH__GOOGLE__CLIENT_SECRET", "s3cret-value")],
+        )
+        .unwrap()
+        .auth
+        .google
+        .unwrap();
+
+        assert_eq!(google.issuer, "https://accounts.google.com");
+        assert_eq!(google.client_secret.expose(), "s3cret-value");
+        assert!(!format!("{google:?}").contains("s3cret-value"));
+        // The secret is required: without it the section is refused.
+        assert!(build(&toml, &[]).is_err());
+    }
 
     #[test]
     fn mail_is_optional_and_a_file_transport_loads() {

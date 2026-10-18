@@ -56,6 +56,8 @@ pub struct AppState {
     pub hashing: Arc<identity::HashGate>,
     /// Outgoing mail (ADR-0045); `None` without `[mail]`, and the features that must send mail are off.
     pub mailer: Option<Arc<Mailer>>,
+    /// Sign-in with Google (ADR-0047); `None` without `[auth.google]`, and its endpoints are `404`.
+    pub google: Option<Arc<identity::Google>>,
 }
 
 /// The configuration cannot be applied. The message names the key and the value.
@@ -65,6 +67,8 @@ pub enum StateError {
     Editor(#[from] EditorConfigError),
     #[error(transparent)]
     Mail(#[from] MailError),
+    #[error(transparent)]
+    Google(#[from] identity::GoogleSetupError),
 }
 
 impl AppState {
@@ -79,12 +83,19 @@ impl AppState {
             .as_ref()
             .map(|mail| Mailer::new(mail, &config.server.public_origin).map(Arc::new))
             .transpose()?;
+        let google = config
+            .auth
+            .google
+            .as_ref()
+            .map(|google| identity::Google::new(google).map(Arc::new))
+            .transpose()?;
         Ok(Self {
             db,
             config: Arc::new(config),
             editor: Arc::new(editor),
             hashing: Arc::new(hashing),
             mailer,
+            google,
         })
     }
 

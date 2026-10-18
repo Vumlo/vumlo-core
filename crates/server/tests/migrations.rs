@@ -1766,3 +1766,49 @@ async fn email_tokens_are_hashed_unique_and_expire_after_they_are_made() {
     })
     .await;
 }
+
+// ADR-0047.
+
+#[tokio::test]
+async fn a_google_sign_in_attempt_is_found_by_two_hashes_and_expires_after_it_starts() {
+    db_test(async |pool| {
+        let insert = |state: Vec<u8>, browser: Vec<u8>, minutes: i32| {
+            let pool = pool.clone();
+            async move {
+                sqlx::query!(
+                    "INSERT INTO identity.oauth_states
+                         (state_hash, browser_hash, nonce, pkce_verifier, expires_at)
+                     VALUES ($1, $2, 'n', 'v', now() + make_interval(mins => $3))",
+                    state,
+                    browser,
+                    minutes
+                )
+                .execute(&pool)
+                .await
+            }
+        };
+
+        insert(vec![1; 32], vec![2; 32], 10).await.unwrap();
+        assert_eq!(
+            sqlstate(insert(vec![1; 32], vec![3; 32], 10).await),
+            "23505",
+            "one row per state"
+        );
+        assert_eq!(
+            sqlstate(insert(vec![4; 31], vec![2; 32], 10).await),
+            "23514",
+            "a sha-256"
+        );
+        assert_eq!(
+            sqlstate(insert(vec![5; 32], vec![2; 5], 10).await),
+            "23514",
+            "a sha-256"
+        );
+        assert_eq!(
+            sqlstate(insert(vec![6; 32], vec![2; 32], 0).await),
+            "23514",
+            "expires later"
+        );
+    })
+    .await;
+}

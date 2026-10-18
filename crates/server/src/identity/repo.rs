@@ -607,6 +607,107 @@ pub async fn find_token_account(
     .await
 }
 
+/// Stores one started Google sign-in and forgets the expired ones (ADR-0047).
+pub async fn insert_oauth_state(
+    conn: &mut PgConnection,
+    state_hash: &[u8],
+    browser_hash: &[u8],
+    nonce: &str,
+    pkce_verifier: &str,
+    lifetime_secs: i64,
+) -> Result<(), sqlx::Error> {
+    sqlx::query!("DELETE FROM identity.oauth_states WHERE expires_at < now()")
+        .execute(&mut *conn)
+        .await?;
+    sqlx::query!(
+        "INSERT INTO identity.oauth_states
+             (state_hash, browser_hash, nonce, pkce_verifier, expires_at)
+         VALUES ($1, $2, $3, $4, now() + make_interval(secs => $5))",
+        state_hash,
+        browser_hash,
+        nonce,
+        pkce_verifier,
+        lifetime_secs as f64
+    )
+    .execute(conn)
+    .await?;
+    Ok(())
+}
+
+/// Reads and deletes the state in one statement, so it can be used once. It matches only for the
+/// browser that started it and only before it expires.
+pub async fn take_oauth_state(
+    conn: &mut PgConnection,
+    state_hash: &[u8],
+    browser_hash: &[u8],
+) -> Result<Option<(String, String)>, sqlx::Error> {
+    let row = sqlx::query!(
+        "DELETE FROM identity.oauth_states
+         WHERE state_hash = $1 AND browser_hash = $2 AND expires_at > now()
+         RETURNING nonce, pkce_verifier",
+        state_hash,
+        browser_hash
+    )
+    .fetch_optional(conn)
+    .await?;
+    Ok(row.map(|row| (row.nonce, row.pkce_verifier)))
+}
+
+/// The user a Google subject is linked to, locked with the row of the identity.
+pub async fn find_google_user(
+    conn: &mut PgConnection,
+    subject: &str,
+) -> Result<Option<Uuid>, sqlx::Error> {
+    sqlx::query_scalar!(
+        "SELECT user_id FROM identity.identities WHERE provider = 'google' AND subject = $1",
+        subject
+    )
+    .fetch_optional(conn)
+    .await
+}
+
+pub async fn insert_google_identity(
+    conn: &mut PgConnection,
+    user_id: Uuid,
+    subject: &str,
+) -> Result<(), sqlx::Error> {
+    sqlx::query!(
+        "INSERT INTO identity.identities (id, user_id, provider, subject)
+         VALUES ($1, $2, 'google', $3)",
+        Uuid::now_v7(),
+        user_id,
+        subject
+    )
+    .execute(conn)
+    .await?;
+    Ok(())
+}
+
+pub async fn delete_password_identity(
+    conn: &mut PgConnection,
+    user_id: Uuid,
+) -> Result<(), sqlx::Error> {
+    sqlx::query!(
+        "DELETE FROM identity.identities WHERE user_id = $1 AND provider = 'password'",
+        user_id
+    )
+    .execute(conn)
+    .await?;
+    Ok(())
+}
+
+/// Locks the user `FOR SHARE` and says whether the account is active (ADR-0038).
+pub async fn lock_active_user(conn: &mut PgConnection, user_id: Uuid) -> Result<bool, sqlx::Error> {
+    let row = sqlx::query_scalar!(
+        r#"SELECT 1 AS "locked!" FROM identity.users
+           WHERE id = $1 AND status = 'active' FOR SHARE"#,
+        user_id
+    )
+    .fetch_optional(conn)
+    .await?;
+    Ok(row.is_some())
+}
+
 pub async fn find_account_by_email(
     conn: &mut PgConnection,
     email: &str,

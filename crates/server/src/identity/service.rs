@@ -13,10 +13,11 @@ use sha2::{Digest, Sha256};
 use sqlx::PgConnection;
 use uuid::Uuid;
 
+use super::google::{Begin, GoogleProfile};
 use super::model::{
-    Email, EmailToken, HashedPassword, ModelError, NewSession, NewUser, Password, PasswordPolicy,
-    PersonName, Role, SessionInfo, SessionKind, SessionToken, TemporaryPassword, TokenPurpose,
-    User, UserFilter, UserStatus, UserUpdate,
+    BrowserBinding, Email, EmailToken, HashedPassword, ModelError, NewSession, NewUser, Password,
+    PasswordPolicy, PersonName, Role, SessionInfo, SessionKind, SessionToken, TemporaryPassword,
+    TokenPurpose, User, UserFilter, UserStatus, UserUpdate,
 };
 use super::repo::{self, LoginRecord};
 use crate::actor::Actor;
@@ -63,6 +64,16 @@ pub enum IdentityError {
     TokenInvalid,
     #[error("the email domain is not allowed to register")]
     EmailDomainNotAllowed,
+    /// The Google sign-in attempt is unknown, used, expired or from another browser (ADR-0047).
+    #[error("the sign-in attempt is not valid")]
+    GoogleAttemptInvalid,
+    #[error(transparent)]
+    Google(#[from] super::google::GoogleError),
+    /// The Google account has no verified email, or its domain may not sign up.
+    #[error("this Google account cannot sign in here")]
+    GoogleAccountNotAllowed,
+    #[error("the account is disabled")]
+    AccountDisabled,
     #[error("the email is already in use")]
     EmailTaken,
     #[error("the account changed while the request was running")]
@@ -746,6 +757,154 @@ pub async fn mint_email_token(
         name: account.name,
         surname: account.surname,
     }))
+}
+
+// ---------------------------------------------------------------------------------------------
+// Sign-in with Google (ADR-0047)
+// ---------------------------------------------------------------------------------------------
+
+/// How long a started Google sign-in can be finished.
+const GOOGLE_ATTEMPT_LIFETIME_SECS: i64 = 10 * 60;
+
+/// Remembers a started sign-in and returns the value to set as the browser's cookie.
+pub async fn start_google_sign_in(
+    conn: &mut PgConnection,
+    begin: &Begin,
+) -> Result<BrowserBinding, IdentityError> {
+    let binding = BrowserBinding::generate();
+    repo::insert_oauth_state(
+        conn,
+        &Sha256::digest(begin.state.as_bytes()),
+        &binding.hash(),
+        &begin.nonce,
+        &begin.pkce_verifier,
+        GOOGLE_ATTEMPT_LIFETIME_SECS,
+    )
+    .await?;
+    Ok(binding)
+}
+
+/// What a started sign-in remembered: the nonce the ID token must carry and the PKCE verifier.
+pub struct GoogleAttempt {
+    pub nonce: String,
+    pub pkce_verifier: String,
+}
+
+/// Uses the attempt up. It exists only for the browser that started it, once, for ten minutes.
+pub async fn take_google_attempt(
+    conn: &mut PgConnection,
+    state: &str,
+    binding: Option<&BrowserBinding>,
+) -> Result<GoogleAttempt, IdentityError> {
+    let binding = binding.ok_or(IdentityError::GoogleAttemptInvalid)?;
+    let (nonce, pkce_verifier) =
+        repo::take_oauth_state(conn, &Sha256::digest(state.as_bytes()), &binding.hash())
+            .await?
+            .ok_or(IdentityError::GoogleAttemptInvalid)?;
+    Ok(GoogleAttempt {
+        nonce,
+        pkce_verifier,
+    })
+}
+
+/// A name for the account from what Google sent, cut to the limit; `fallback` when there is none.
+fn google_name(
+    given: Option<&str>,
+    fallback: &str,
+    surname: bool,
+) -> Result<PersonName, ModelError> {
+    let text = given
+        .map(str::trim)
+        .filter(|text| !text.is_empty() && !text.chars().any(char::is_control))
+        .unwrap_or(fallback);
+    let cut: String = text.chars().take(100).collect();
+    if surname {
+        PersonName::surname(&cut)
+    } else {
+        PersonName::name(&cut)
+    }
+}
+
+/// Finds, links or creates the account of a verified Google profile (ADR-0047, point 5). Returns
+/// the user to open a session for.
+pub async fn sign_in_with_google(
+    conn: &mut PgConnection,
+    profile: &GoogleProfile,
+    allowed_domains: &[String],
+) -> Result<User, IdentityError> {
+    let email = Email::parse(&profile.email).map_err(|_| IdentityError::GoogleAccountNotAllowed)?;
+    let domain = email.as_str().rsplit_once('@').map_or("", |(_, d)| d);
+    let allowed = allowed_domains
+        .iter()
+        .any(|allowed| allowed.eq_ignore_ascii_case(domain));
+    if !profile.email_verified || !allowed {
+        return Err(IdentityError::GoogleAccountNotAllowed);
+    }
+
+    let user_id = match repo::find_google_user(conn, &profile.subject).await? {
+        Some(user_id) => user_id,
+        None => match repo::lock_account_by_email(conn, email.as_str()).await? {
+            Some(account) => {
+                repo::insert_google_identity(conn, account.id, &profile.subject).await?;
+                if !account.email_verified {
+                    // Whoever pre-registered this address chose a password for it. Google has just
+                    // shown that the address belongs to someone else, so that password goes.
+                    repo::delete_password_identity(conn, account.id).await?;
+                    repo::void_email_tokens(conn, account.id, TokenPurpose::Verify).await?;
+                    repo::delete_sessions_of(conn, account.id).await?;
+                    repo::mark_email_verified(conn, account.id).await?;
+                }
+                account.id
+            }
+            None => {
+                let local = email.as_str().split('@').next().unwrap_or_default();
+                let new = NewUser {
+                    name: google_name(profile.given_name.as_deref(), local, false)?,
+                    surname: google_name(profile.family_name.as_deref(), "Student", true)?,
+                    email,
+                    role: Role::Student,
+                };
+                let user = repo::insert_user(conn, Uuid::now_v7(), &new, false)
+                    .await
+                    .map_err(email_taken)?;
+                repo::insert_google_identity(conn, user.id, &profile.subject).await?;
+                user.id
+            }
+        },
+    };
+    let user = repo::find_user_shared(conn, user_id)
+        .await?
+        .ok_or(IdentityError::UserNotFound)?;
+    if user.status != UserStatus::Active {
+        return Err(IdentityError::AccountDisabled);
+    }
+    Ok(user)
+}
+
+/// A session for a user who has just proved themselves some other way than with a password. The
+/// user is locked and checked again, like in [`create_session`].
+pub async fn create_session_for(
+    conn: &mut PgConnection,
+    user: &User,
+    kind: SessionKind,
+) -> Result<NewSession, IdentityError> {
+    if !repo::lock_active_user(conn, user.id).await? {
+        return Err(IdentityError::AccountDisabled);
+    }
+    let token = SessionToken::generate();
+    let expires_at = repo::insert_session(
+        conn,
+        user.id,
+        &token.hash(),
+        kind,
+        kind.initial_lifetime().num_seconds(),
+    )
+    .await?;
+    Ok(NewSession {
+        token,
+        kind,
+        expires_at,
+    })
 }
 
 // ---------------------------------------------------------------------------------------------

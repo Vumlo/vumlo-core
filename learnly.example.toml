@@ -37,6 +37,14 @@ login_account_max_attempts = 10    # attempts per account per window (1..=1000)
 login_account_window_minutes = 15  # the window (1..=1440)
 max_concurrent_hashes = 8          # password hashes and checks at once, ~19 MiB each (1..=256)
 
+# Sign-in with Google (ADR-0047). Without this section the two endpoints answer 404. A Google
+# account needs a verified email in allowed_domains. Create the client in the Google Cloud console
+# (a web application) and list redirect_uri as an authorized redirect URI.
+# [auth.google]
+# client_id = "....apps.googleusercontent.com"
+# client_secret = "..."                  # prefer LEARNLY__AUTH__GOOGLE__CLIENT_SECRET
+# redirect_uri = "https://lms.example.edu/auth/google/callback"   # the callback page of the web app
+
 # Outgoing mail (ADR-0045): the links of self-registration and password reset. Without this section
 # both are off (404). Sent by the outbox worker, never inside a request.
 # [mail]
