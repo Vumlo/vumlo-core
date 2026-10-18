@@ -11,7 +11,7 @@ use super::model::TokenPurpose;
 use super::service;
 use crate::events::{HandlerError, HandlerFuture, Handlers, OutboxEvent};
 use crate::mail::{MailError, Mailer};
-use crate::settings::Language;
+use vumlo_config::Language;
 
 /// What the handlers need besides the pool.
 #[derive(Clone)]

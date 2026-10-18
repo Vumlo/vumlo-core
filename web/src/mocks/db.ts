@@ -134,7 +134,7 @@ export function auditRow(
 }
 
 export function institutionPublic(i: AdminInstitution): Institution {
-  return { name: i.name, short_name: i.short_name, accent: i.accent, language: i.language, time_zone: i.time_zone, grading_scale: i.grading_scale };
+  return { name: i.name, short_name: i.short_name, language: i.language, time_zone: i.time_zone, grading_scale: i.grading_scale };
 }
 
 export type { Document, SubmissionRow };

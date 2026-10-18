@@ -12,8 +12,6 @@ pub mod org;
 pub mod pagination;
 mod points;
 pub mod policy;
-pub mod settings;
 pub mod teaching;
 #[cfg(test)]
 mod test_support;
-mod text_enum;

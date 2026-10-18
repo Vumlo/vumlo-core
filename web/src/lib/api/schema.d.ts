@@ -1761,11 +1761,6 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
-        /**
-         * @description The accent colour of the web app.
-         * @enum {string}
-         */
-        Accent: "indigo" | "teal" | "crimson" | "forest" | "plum";
         AddMembersRequest: {
             /**
              * @description 1 to 1000 user ids. All or nothing: one bad entry rejects the request, and the `422`
@@ -2566,7 +2561,6 @@ export interface components {
         };
         /** @description The public profile of the institution: what a page needs before anyone signs in (ADR-0044). */
         Institution: {
-            accent: components["schemas"]["Accent"];
             grading_scale: components["schemas"]["GradingScale"];
             language: components["schemas"]["Language"];
             name: string;

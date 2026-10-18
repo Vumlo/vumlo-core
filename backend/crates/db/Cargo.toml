@@ -1,0 +1,19 @@
+[package]
+name = "db"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+argon2.workspace = true
+base64.workspace = true
+rand.workspace = true
+serde_json.workspace = true
+sqlx.workspace = true
+thiserror.workspace = true
+uuid.workspace = true
+vumlo-config.workspace = true
+zxcvbn.workspace = true
+
+[lints]
+workspace = true

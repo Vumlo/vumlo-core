@@ -1,5 +1,14 @@
-# Copy to vumlo.toml. Any key can be overridden with VUMLO__<SECTION>__<KEY>,
-# e.g. VUMLO__DATABASE__URL.
+# Copy to vumlo.toml (or run `vumlo-cli init`). Precedence, lowest first: the defaults below,
+# this file, VUMLO__<SECTION>__<KEY> environment variables, then --set section.key=value flags.
+# Check it with `vumlo-cli config check`.
+#
+# Secrets never go in this file. They come from the environment (or the env file named by
+# [cli].env_file): DATABASE_URL, VUMLO__AUTH__GOOGLE__CLIENT_SECRET, VUMLO__MAIL__TRANSPORT__PASSWORD.
+# A secret written here stops the server and `vumlo-cli config check`.
+#
+# Changing the file means: restart the server. Changing [institution] or [modules] also means
+# `vumlo-cli brand apply`, then rebuilding the web app.
+config_version = 1
 
 [server]
 bind_addr = "127.0.0.1:8080"
@@ -17,11 +26,18 @@ public_origin = "http://localhost:5173"
 # allowed_origins = ["https://app.example.edu"]
 
 [database]
-url = "postgres://vumlo:vumlo@localhost:5432/vumlo"
+# The URL is a secret: DATABASE_URL=postgres://user:password@host:5432/vumlo in the environment.
 max_connections = 10
 
 [log]
 format = "pretty" # "pretty" | "json"
+
+[web]
+dir = "web" # where `vumlo-cli build web` runs the web build, relative to this file
+
+[cli]
+env_file = ".env"   # the secrets file vumlo-cli reads (KEY=VALUE lines); never overrides the environment
+# core_url = "http://127.0.0.1:8080"   # where `vumlo-cli doctor` reaches the core; default server.public_origin
 
 [auth]
 password_min_length = 12 # 8..=128
@@ -42,7 +58,7 @@ max_concurrent_hashes = 8          # password hashes and checks at once, ~19 MiB
 # (a web application) and list redirect_uri as an authorized redirect URI.
 # [auth.google]
 # client_id = "....apps.googleusercontent.com"
-# client_secret = "..."                  # prefer VUMLO__AUTH__GOOGLE__CLIENT_SECRET
+# The client secret is VUMLO__AUTH__GOOGLE__CLIENT_SECRET in the environment, not a key here.
 # redirect_uri = "https://lms.example.edu/auth/google/callback"   # the callback page of the web app
 
 # Outgoing mail (ADR-0045): the links of self-registration and password reset. Without this section
@@ -56,7 +72,7 @@ max_concurrent_hashes = 8          # password hashes and checks at once, ~19 MiB
 # port = 587                             # default: 587 for starttls, 465 for tls, 25 for none
 # tls = "starttls"                       # "starttls" | "tls" | "none" (none: a local test server)
 # username = "vumlo"
-# password = "..."                       # prefer VUMLO__MAIL__TRANSPORT__PASSWORD
+# The SMTP password is VUMLO__MAIL__TRANSPORT__PASSWORD in the environment, not a key here.
 # For development, write every message to a file instead:
 # kind = "file"
 # dir = "/tmp/vumlo-mail"
@@ -76,7 +92,14 @@ mode = "university"
 # short_name = "Example"   # 1-50 characters; default: name
 # language = "en"          # "en" | "uk"; default "en"
 # time_zone = "Europe/Kyiv" # an IANA zone name; default "UTC"
-# accent = "indigo"        # "indigo" | "teal" | "crimson" | "forest" | "plum"; default "indigo"
+# The logo `vumlo-cli brand apply` builds the favicon and the app icons from: a path (relative to
+# this file) or an http(s) URL to a PNG, JPEG, WebP or SVG. Optional.
+# logo = "brand/logo.svg"
+
+# Optional add-on modules (ADR-0054). Each is compiled in with a Cargo feature of the same name
+# and switched on here; `vumlo-cli modules list` shows which this build has. Off by default.
+# [modules]
+# some-module = true
 
 [editor]
 # What the document editor may offer. A configuration can only narrow what the code allows;

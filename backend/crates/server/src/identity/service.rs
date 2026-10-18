@@ -6,8 +6,7 @@ use std::collections::HashMap;
 use std::sync::{LazyLock, Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
-use argon2::password_hash::{PasswordHasher, PasswordVerifier};
-use argon2::{Algorithm, Argon2, Params, Version};
+use argon2::password_hash::PasswordVerifier;
 use serde_json::json;
 use sha2::{Digest, Sha256};
 use sqlx::PgConnection;
@@ -26,11 +25,6 @@ use crate::org::{self, OrgError};
 use crate::pagination::{Page, PageParams};
 use crate::policy::{self, Action, PolicyError};
 use crate::teaching::{self, TeachingError};
-
-/// OWASP's Argon2id minimum: 19 MiB, 2 iterations, 1 lane (ADR-0017).
-const ARGON2_MEMORY_KIB: u32 = 19 * 1024;
-const ARGON2_ITERATIONS: u32 = 2;
-const ARGON2_LANES: u32 = 1;
 
 const LOGIN_MAX_ATTEMPTS: u32 = 10;
 const LOGIN_WINDOW: Duration = Duration::from_secs(15 * 60);
@@ -112,26 +106,14 @@ fn email_taken(error: sqlx::Error) -> IdentityError {
 // Passwords
 // ---------------------------------------------------------------------------------------------
 
-static ARGON2: LazyLock<Result<Argon2<'static>, argon2::Error>> = LazyLock::new(|| {
-    let params = Params::new(ARGON2_MEMORY_KIB, ARGON2_ITERATIONS, ARGON2_LANES, None)?;
-    Ok(Argon2::new(Algorithm::Argon2id, Version::V0x13, params))
-});
-
 /// Verified when the account does not exist, so the response time is the same either way.
 /// Computed lazily on a blocking thread, with the same parameters as real hashes.
 static DUMMY_HASH: LazyLock<Option<String>> = LazyLock::new(|| {
-    hash_blocking(TemporaryPassword::generate().expose())
+    db::identity::hash(TemporaryPassword::generate().expose())
+        .map(|hash| hash.as_str().to_owned())
         .map_err(|e| tracing::error!(error = %e, "cannot compute the dummy password hash"))
         .ok()
 });
-
-fn hash_blocking(password: &str) -> Result<String, String> {
-    let argon2 = ARGON2.as_ref().map_err(|e| e.to_string())?;
-    argon2
-        .hash_password(password.as_bytes())
-        .map(|hash| hash.to_string())
-        .map_err(|e| e.to_string())
-}
 
 /// How many password hashes and checks run at once. Each takes about 19 MiB and a core for tens
 /// of milliseconds, and the login limit is per client, so without a global bound a crowd of
@@ -156,8 +138,8 @@ impl HashGate {
     }
 }
 
-fn hashed(result: Result<String, String>) -> Result<HashedPassword, IdentityError> {
-    result.map(HashedPassword::new).map_err(|e| {
+fn hashed(result: Result<HashedPassword, String>) -> Result<HashedPassword, IdentityError> {
+    result.map_err(|e| {
         tracing::error!(error = %e, "password hashing failed");
         IdentityError::Hashing
     })
@@ -167,7 +149,7 @@ fn hashed(result: Result<String, String>) -> Result<HashedPassword, IdentityErro
 /// server's own CLI and for tests; a request goes through [`hash_password_gated`].
 pub async fn hash_password(password: &str) -> Result<HashedPassword, IdentityError> {
     let password = password.to_owned();
-    let result = tokio::task::spawn_blocking(move || hash_blocking(&password))
+    let result = tokio::task::spawn_blocking(move || db::identity::hash(&password))
         .await
         .map_err(|e| {
             tracing::error!(error = %e, "password hashing task failed");
@@ -182,7 +164,7 @@ pub async fn hash_password_gated(
     password: &str,
 ) -> Result<HashedPassword, IdentityError> {
     let password = password.to_owned();
-    hashed(gate.run(move || hash_blocking(&password)).await?)
+    hashed(gate.run(move || db::identity::hash(&password)).await?)
 }
 
 /// Checks `password` against `hash` on a blocking thread, once the gate has a free permit. With no
@@ -193,7 +175,7 @@ pub(super) async fn verify_password(
     hash: Option<String>,
 ) -> Result<bool, IdentityError> {
     gate.run(move || {
-        let Ok(argon2) = ARGON2.as_ref() else {
+        let Ok(argon2) = db::identity::argon2() else {
             tracing::error!("argon2 parameters are invalid");
             return Err(IdentityError::Hashing);
         };

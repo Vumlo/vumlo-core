@@ -23,7 +23,7 @@ use super::model::{Role, SessionKind, User, UserStatus};
 use super::service::{IdentityError, LoginThrottle, THROTTLE_CAPACITY};
 use crate::app::AppState;
 use crate::error::ApiError;
-use crate::settings::Settings;
+use vumlo_config::Settings;
 
 pub use extract::COOKIE_NAME;
 

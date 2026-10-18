@@ -8189,17 +8189,6 @@
   },
   "components": {
     "schemas": {
-      "Accent": {
-        "type": "string",
-        "description": "The accent colour of the web app.",
-        "enum": [
-          "indigo",
-          "teal",
-          "crimson",
-          "forest",
-          "plum"
-        ]
-      },
       "AddMembersRequest": {
         "type": "object",
         "required": [
@@ -10660,13 +10649,9 @@
           "short_name",
           "language",
           "time_zone",
-          "accent",
           "grading_scale"
         ],
         "properties": {
-          "accent": {
-            "$ref": "#/components/schemas/Accent"
-          },
           "grading_scale": {
             "$ref": "#/components/schemas/GradingScale"
           },

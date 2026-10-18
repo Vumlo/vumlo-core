@@ -36,7 +36,7 @@ services:
       VUMLO__SERVER__BIND_ADDR: "0.0.0.0:8080"
       # The origin the browser uses: the web app on :3000, which proxies /api/v1 here.
       VUMLO__SERVER__PUBLIC_ORIGIN: ${VUMLO_PUBLIC_ORIGIN:-http://localhost:3000}
-      VUMLO__DATABASE__URL: postgres://vumlo:vumlo@postgres:5432/vumlo
+      DATABASE_URL: postgres://vumlo:vumlo@postgres:5432/vumlo
       VUMLO__DATABASE__MAX_CONNECTIONS: "10"
       VUMLO__LOG__FORMAT: pretty
       VUMLO__AUTH__COOKIE_SECURE: "false" # plain HTTP, local use only

@@ -53,7 +53,12 @@ Health check: `curl localhost:8080/api/v1/health` or `cargo run -p cli -- health
 
 Choose `institution.mode` (`school` or `university`) before the first start: it is required, the first command that uses the database records it, and it cannot be changed later (a different value stops the server). The grading scale follows it unless `institution.grading_scale` is set.
 
-Every config key can be overridden with `VUMLO__<SECTION>__<KEY>`, e.g. `VUMLO__DATABASE__URL`.
+The configuration is read by one shared crate (`backend/crates/config`), in this order, later wins:
+the defaults, `vumlo.toml`, `VUMLO__<SECTION>__<KEY>` environment variables, `--set section.key=value`
+flags. Secrets are never in `vumlo.toml`: the database URL is `DATABASE_URL`, the Google client secret
+`VUMLO__AUTH__GOOGLE__CLIENT_SECRET`, the SMTP password `VUMLO__MAIL__TRANSPORT__PASSWORD`; put them in
+the environment or in `.env` (read when the variable is not already set). A secret in the file, or a key
+the schema does not know (a typo, or the removed `institution.accent`), stops the server.
 For plain-HTTP local development set `auth.cookie_secure = false`; keep it `true` in production.
 Behind a reverse proxy set `server.client_ip_header` (e.g. `x-real-ip`) so login rate limits see the client address. The login limits (`auth.login_ip_burst` and the others, see `vumlo.example.toml`) can be raised for a school behind one NAT. A frontend hosted on another origin is allowed with `server.allowed_origins` (ADR-0041; read the SameSite note in `vumlo.example.toml` first).
 

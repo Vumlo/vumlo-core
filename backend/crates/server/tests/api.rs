@@ -5,8 +5,8 @@ use std::time::Duration;
 use api_types::{HealthResponse, ProblemDetails};
 use common::{db_test, spawn, spawn_with, test_settings};
 use server::app::AppState;
-use server::settings::ProfileSettings;
 use sqlx::postgres::PgPoolOptions;
+use vumlo_config::ProfileSettings;
 
 fn content_type(response: &reqwest::Response) -> &str {
     response.headers()["content-type"]

@@ -1041,7 +1041,6 @@ export const en = {
   "ai.nameLook": "Name and look",
   "ai.fullName": "Full name",
   "ai.shortName": "Short name",
-  "ai.accent": "Accent colour",
   "ai.preview": "Preview",
   "ai.langTime": "Language and time",
   "ai.defaultLang": "Default language",

@@ -5,9 +5,9 @@ use common::{
 };
 use serde_json::{Value, json};
 use server::identity::Role;
-use server::settings::{EditorSettings, GradingScale, ProfileSettings, Settings};
 use sqlx::PgPool;
 use uuid::Uuid;
+use vumlo_config::{EditorSettings, GradingScale, ProfileSettings, Settings};
 
 const FUTURE: &str = "2099-01-01T00:00:00Z";
 const PAST: &str = "2000-01-01T00:00:00Z";

@@ -1084,7 +1084,6 @@ export const uk: Record<Keys, string> & Extra = {
   "ai.nameLook": "Назва й вигляд",
   "ai.fullName": "Повна назва",
   "ai.shortName": "Коротка назва",
-  "ai.accent": "Акцентний колір",
   "ai.preview": "Попередній перегляд",
   "ai.langTime": "Мова й час",
   "ai.defaultLang": "Мова за замовчуванням",

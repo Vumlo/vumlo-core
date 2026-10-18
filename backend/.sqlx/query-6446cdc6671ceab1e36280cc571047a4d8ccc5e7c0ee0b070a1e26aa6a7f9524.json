@@ -1,11 +1,11 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT mode AS \"mode: InstitutionMode\" FROM org.installation",
+  "query": "SELECT mode AS \"mode!\" FROM org.installation",
   "describe": {
     "columns": [
       {
         "ordinal": 0,
-        "name": "mode: InstitutionMode",
+        "name": "mode!",
         "type_info": "Text",
         "origin": {
           "Table": {
@@ -22,5 +22,5 @@
       false
     ]
   },
-  "hash": "20e50f85842222cc32b5de6a567e9673b3ace0bd1b78721ac6cb2be8719262c9"
+  "hash": "6446cdc6671ceab1e36280cc571047a4d8ccc5e7c0ee0b070a1e26aa6a7f9524"
 }

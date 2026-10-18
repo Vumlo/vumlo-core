@@ -203,7 +203,7 @@ async fn parallel_guesses_cannot_get_past_the_account_limit() {
 
 // --- the per-client limit (A-09) --------------------------------------------------------------
 
-fn settings_with(burst: u32) -> server::settings::Settings {
+fn settings_with(burst: u32) -> vumlo_config::Settings {
     let mut settings = common::test_settings();
     settings.auth.login_ip_burst = burst;
     // Slow enough that nothing is replenished while the test runs.

@@ -6,12 +6,18 @@ use server::app::{self, AppState};
 use server::events;
 use server::identity::{self, Email, NewUser, PersonName, Role, TemporaryPassword};
 use server::org;
-use server::settings::{LogFormat, Settings};
 use sqlx::PgPool;
+use vumlo_config::{LogFormat, Options, Settings};
 
 #[derive(Parser)]
 #[command(name = "vumlo-server", version)]
 struct Cli {
+    /// The configuration file. Default: ./vumlo.toml, then ../vumlo.toml.
+    #[arg(long, global = true, value_name = "PATH")]
+    config: Option<std::path::PathBuf>,
+    /// Override one key, e.g. `--set server.bind_addr=0.0.0.0:8080`. Secrets cannot be set this way.
+    #[arg(long = "set", global = true, value_name = "KEY=VALUE")]
+    set: Vec<String>,
     #[command(subcommand)]
     command: Command,
 }
@@ -59,7 +65,13 @@ async fn main() -> ExitCode {
 }
 
 async fn run(cli: Cli) -> anyhow::Result<()> {
-    let settings = Settings::load().context("invalid configuration")?;
+    let options = Options {
+        config: cli.config,
+        set: cli.set,
+    };
+    let settings = vumlo_config::load_process(&options, &[])
+        .context("invalid configuration")?
+        .settings;
     init_tracing(settings.log.format);
     let pool = app::connect(&settings)
         .await
@@ -85,9 +97,11 @@ async fn run(cli: Cli) -> anyhow::Result<()> {
             tracing::info!("shut down");
         }
         Command::Migrate => {
-            app::MIGRATOR.run(&pool).await.context("migration failed")?;
+            let applied = db::migrate(&pool, "core", &db::MIGRATOR)
+                .await
+                .context("migration failed")?;
             record_mode(&pool, &settings).await?;
-            tracing::info!("migrations applied");
+            tracing::info!(applied = applied.len(), "migrations applied");
         }
         Command::CreateAdmin {
             email,

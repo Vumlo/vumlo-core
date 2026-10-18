@@ -9,7 +9,7 @@ use openidconnect::{
 };
 use tokio::sync::OnceCell;
 
-use crate::settings::GoogleSettings;
+use vumlo_config::GoogleSettings;
 
 /// The configuration cannot be applied. The message names the key and the value.
 #[derive(Debug, thiserror::Error)]

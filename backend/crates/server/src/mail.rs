@@ -5,7 +5,7 @@ use lettre::message::{Mailbox, header::ContentType};
 use lettre::transport::smtp::authentication::Credentials;
 use lettre::{AsyncFileTransport, AsyncSmtpTransport, AsyncTransport, Message, Tokio1Executor};
 
-use crate::settings::{MailSettings, MailTransport, SmtpTls};
+use vumlo_config::{MailSettings, MailTransport, SmtpTls};
 
 #[derive(Debug, thiserror::Error)]
 pub enum MailError {

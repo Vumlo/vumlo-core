@@ -1,5 +1,7 @@
 /// Defines `as_str`, `FromStr` and the sqlx impls for a fieldless enum stored as `text`.
-/// Stored as `text` + CHECK (AGENTS §8), not as a Postgres ENUM.
+/// Stored as `text` + CHECK (AGENTS §8), not as a Postgres ENUM. The crate that uses it needs
+/// `sqlx`.
+#[macro_export]
 macro_rules! text_enum {
     ($name:ident { $($variant:ident => $text:literal),+ $(,)? }) => {
         impl $name {
@@ -41,5 +43,3 @@ macro_rules! text_enum {
         }
     };
 }
-
-pub(crate) use text_enum;

@@ -2,7 +2,7 @@ use api_types::{Feature, ProfileName, VideoProvider};
 use serde_json::{Value, json};
 
 use super::*;
-use crate::settings::{EditorSettings, ProfileSettings};
+use vumlo_config::{EditorSettings, ProfileSettings};
 
 fn doc(blocks: Value) -> Value {
     json!({"v": 1, "blocks": blocks, "attachments": []})

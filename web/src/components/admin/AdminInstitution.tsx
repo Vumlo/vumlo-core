@@ -9,7 +9,6 @@ export function AdminInstitution() {
   const inst = useAdminInstitution();
   const i = inst.data;
   if (!i) return <p className="loading" role="status">{t("common.loading")}</p>;
-  const swatch = `var(--swatch-${i.accent})`;
 
   return (
     <>
@@ -21,10 +20,9 @@ export function AdminInstitution() {
           <dl className={s.dl} style={{ gridTemplateColumns: "180px 1fr", fontSize: 15 }}>
             <dt>{t("ai.fullName")}</dt><dd>{i.name}</dd>
             <dt>{t("ai.shortName")}</dt><dd>{i.short_name}</dd>
-            <dt>{t("ai.accent")}</dt><dd><span aria-hidden="true" className={s.dot} style={{ background: swatch }} /> {i.accent}</dd>
           </dl>
           <p style={{ fontSize: 14, fontWeight: 500, margin: "16px 0 8px" }}>{t("ai.preview")}</p>
-          <div className={s.preview}><span aria-hidden="true" className={s.logo} style={{ background: swatch }}>{i.name.charAt(0)}</span><span style={{ fontWeight: 600 }}>{i.name}</span><span className="muted" style={{ marginLeft: "auto", fontSize: 14 }}>{t("nav.home")}</span></div>
+          <div className={s.preview}><span aria-hidden="true" className={s.logo} style={{ background: "var(--accent)" }}>{i.name.charAt(0)}</span><span style={{ fontWeight: 600 }}>{i.name}</span><span className="muted" style={{ marginLeft: "auto", fontSize: 14 }}>{t("nav.home")}</span></div>
         </section>
         <section aria-labelledby="lg-h" className={`card ${s.section}`}>
           <h2 id="lg-h" style={{ fontSize: 18, fontWeight: 600, marginBottom: 14 }}>{t("ai.langTime")}</h2>
