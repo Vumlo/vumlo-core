@@ -155,6 +155,47 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/assignments/{id}/responses": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The responses to a form: the latest attempt of every current student who submitted, with their
+         *     answers, and the students who did not (ADR-0051 point 7). Staff and admins.
+         */
+        get: operations["get_responses"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/assignments/{id}/result": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The caller's result of a quiz, once their grade is published (ADR-0050 point 8): the published
+         *     score and feedback, what the server scored for each question, the caller's answers and, when
+         *     the quiz shows its answers, the correct ones. Students of the course only.
+         */
+        get: operations["get_result"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/assignments/{id}/submission": {
         parameters: {
             query?: never;
@@ -1348,7 +1389,9 @@ export interface paths {
          *     For an assignment it holds the instructions.
          *
          *     `kind: assignment` requires an `assignment` object `{type, config?, max_points, is_bonus?}`
-         *     (ADR-0021); a `text` item must not carry one. `type` is `text` or `no_submission`, with an empty `config`.
+         *     (ADR-0021); a `text` item must not carry one. `type` is `text`, `no_submission`, `quiz` or `form`; the
+         *     `config` of a `quiz` is its questions and must add up to `max_points` (ADR-0050), that of a `form` its
+         *     fields (ADR-0051), and the others take an empty one (a `text` assignment may narrow its editor).
          *     `max_points` is a decimal string such as `"20"` or `"7.5"`; a JSON number is rejected. The
          *     grading scale limits the points (ADR-0022): at most 12 per assignment on `twelve`, at most
          *     100 in total over the regular (not bonus) assignments of the course on `hundred`.
@@ -1564,7 +1607,12 @@ export interface components {
              *     `null` for any other type.
              */
             class_on?: string | null;
-            /** @description Settings of the type; an empty object for `text` and `no_submission`. */
+            /**
+             * @description Settings of the type; an empty object for `no_submission`, the editor narrowing for `text`,
+             *     the questions for a `quiz` (ADR-0050) and the fields for a `form` (ADR-0051). A student
+             *     never receives the answer key of a quiz. A form's fields carry the read-only facts
+             *     `has_answers` and, on the options of an exclusive field, `taken` and `taken_by`.
+             */
             config: Record<string, never>;
             /**
              * Format: date-time
@@ -1587,7 +1635,7 @@ export interface components {
             /** @description A decimal string with exactly two decimals, e.g. `"20.00"`. */
             max_points: string;
             on_deadline?: components["schemas"]["OnDeadline"] | null;
-            /** @description The assignment type: `text` or `no_submission`. It cannot change. */
+            /** @description The assignment type: `text`, `no_submission`, `quiz` or `form`. It cannot change. */
             type: string;
         };
         /** @description What the course tree shows of an assignment: everything but `config`. */
@@ -1609,7 +1657,12 @@ export interface components {
         Attempt: {
             /** Format: int32 */
             attempt: number;
-            content: components["schemas"]["Document"];
+            /**
+             * @description Staff only, for a `quiz`: the score of each question that was scored by the server, as
+             *     decimal strings (ADR-0050). A `long_text` question has none.
+             */
+            auto_scores?: Record<string, never> | null;
+            content: Record<string, never>;
             /** Format: uuid */
             id: string;
             /** @description True when it was submitted after `due_at`, inside the late window. */
@@ -1942,6 +1995,31 @@ export interface components {
             field: string;
             message: string;
         };
+        /** @description The answers of one student to a form: their latest attempt (ADR-0051 point 7). */
+        FormResponseRow: {
+            /** @description Field id to the answer, as stored. */
+            answers: Record<string, never>;
+            /** Format: int32 */
+            attempt: number;
+            is_late: boolean;
+            name: string;
+            /** Format: uuid */
+            student_id: string;
+            /** Format: date-time */
+            submitted_at: string;
+            surname: string;
+        };
+        /** @description All the responses to a form. */
+        FormResponses: {
+            /** @description Current students with no attempt. */
+            missing: components["schemas"]["StudentName"][];
+            rows: components["schemas"]["FormResponseRow"][];
+            /**
+             * Format: int64
+             * @description The current students of the course.
+             */
+            total_students: number;
+        };
         /** @description What Google sent back to the web app's callback page. */
         GoogleCallbackRequest: {
             code: string;
@@ -1960,7 +2038,7 @@ export interface components {
          * @description What a history row records (ADR-0028).
          * @enum {string}
          */
-        GradeAction: "save_draft" | "publish";
+        GradeAction: "save_draft" | "publish" | "auto_score";
         /** @description Who made a change. */
         GradeActor: {
             name: string;
@@ -2374,7 +2452,10 @@ export interface components {
              *     `no_submission`.
              */
             class_on?: string | null;
-            /** @description Settings of the type, a JSON object. Defaults to `{}`; `text` and `no_submission` have none. */
+            /**
+             * @description Settings of the type, a JSON object. Defaults to `{}`; `no_submission` has none, a `quiz`
+             *     needs its questions (ADR-0050) and a `form` its fields (ADR-0051).
+             */
             config?: Record<string, never> | null;
             /**
              * Format: date-time
@@ -2402,7 +2483,7 @@ export interface components {
             max_points?: string;
             /** @description `keep_draft` or `auto_submit` (the latter takes effect with the background worker). */
             on_deadline?: string | null;
-            /** @description The assignment type: `text` or `no_submission`. */
+            /** @description The assignment type: `text`, `no_submission`, `quiz` or `form`. */
             type?: string;
         };
         /**
@@ -2663,6 +2744,41 @@ export interface components {
             role: components["schemas"]["CourseRole"];
         };
         /**
+         * @description The result of a quiz for the student who took it (ADR-0050 point 8). Only once the grade is
+         *     published.
+         */
+        QuizResult: {
+            /**
+             * Format: int32
+             * @description The attempt the answers belong to: the latest.
+             */
+            attempt: number;
+            /** @description The published feedback; `null` when none. */
+            feedback?: string | null;
+            max_points: string;
+            /** Format: date-time */
+            published_at: string;
+            questions: components["schemas"]["QuizResultQuestion"][];
+            /** @description The published score, a decimal string with two decimals. */
+            score: string;
+        };
+        /** @description One question of a quiz result. */
+        QuizResultQuestion: {
+            /** @description What the student answered, as stored; `null` when unanswered. */
+            answer?: Record<string, never> | null;
+            /**
+             * @description The correct answer: option ids, the number, or the accepted texts. Present only when the quiz
+             *     shows its answers.
+             */
+            correct?: Record<string, never> | null;
+            /** @description The explanation, a block document. Present only when the quiz shows its answers. */
+            explanation?: Record<string, never> | null;
+            /** @description What the server scored, a decimal string; `null` for a question graded by hand. */
+            got?: string | null;
+            id: string;
+            points: string;
+        };
+        /**
          * @description Self-registration (ADR-0046). The account is created as a `student` and cannot log in until the
          *     address is verified.
          */
@@ -2715,11 +2831,12 @@ export interface components {
         /** @enum {string} */
         Role: "admin" | "teacher" | "student";
         /**
-         * @description Replaces the draft of the caller. The document is read as a JSON value so that a rejection can
-         *     name the path inside it, for example `content.blocks[2].props.level`.
+         * @description Replaces the draft of the caller. The content is read as a JSON value so that a rejection can
+         *     name the path inside it, for example `content.blocks[2].props.level` or
+         *     `content.answers.q1`. Its shape is that of the assignment's type.
          */
         SaveDraftRequest: {
-            content: components["schemas"]["Document"];
+            content: Record<string, never>;
         };
         /**
          * @description Replaces the draft cell of one student. Both keys are required: a `PUT` replaces the whole
@@ -2757,6 +2874,13 @@ export interface components {
         SourceProps: {
             source: string;
         };
+        /** @description A student of the course, named. */
+        StudentName: {
+            name: string;
+            surname: string;
+            /** Format: uuid */
+            user_id: string;
+        };
         Styles: {
             bold?: boolean;
             /** @description Inline code. */
@@ -2779,7 +2903,7 @@ export interface components {
         };
         /** @description The caller's draft: the one unsubmitted document of a student for an assignment. */
         SubmissionDraft: {
-            content: components["schemas"]["Document"];
+            content: Record<string, never>;
             /** Format: date-time */
             updated_at: string;
         };
@@ -3432,6 +3556,106 @@ export interface operations {
             };
             /** @description Invalid cursor */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    get_responses: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Assignment id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The responses */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FormResponses"];
+                };
+            };
+            /** @description Not logged in */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The caller may see the assignment but not its submissions */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description No such form, or not visible to the caller */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    get_result: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Assignment id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QuizResult"];
+                };
+            };
+            /** @description Not logged in */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The caller may see the assignment but is not a student of the course */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description No such quiz, not visible to the caller, or no grade published yet */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

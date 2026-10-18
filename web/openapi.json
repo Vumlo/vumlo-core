@@ -720,6 +720,148 @@
         ]
       }
     },
+    "/api/v1/assignments/{id}/responses": {
+      "get": {
+        "tags": [
+          "assessment"
+        ],
+        "summary": "The responses to a form: the latest attempt of every current student who submitted, with their\nanswers, and the students who did not (ADR-0051 point 7). Staff and admins.",
+        "operationId": "get_responses",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Assignment id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The responses",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FormResponses"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not logged in",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller may see the assignment but not its submissions",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such form, or not visible to the caller",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          },
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/assignments/{id}/result": {
+      "get": {
+        "tags": [
+          "assessment"
+        ],
+        "summary": "The caller's result of a quiz, once their grade is published (ADR-0050 point 8): the published\nscore and feedback, what the server scored for each question, the caller's answers and, when\nthe quiz shows its answers, the correct ones. Students of the course only.",
+        "operationId": "get_result",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Assignment id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QuizResult"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not logged in",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller may see the assignment but is not a student of the course",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such quiz, not visible to the caller, or no grade published yet",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          },
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/assignments/{id}/submission": {
       "get": {
         "tags": [
@@ -6249,7 +6391,7 @@
           "content"
         ],
         "summary": "Creates a draft `text` item or assignment as the last item of a module or sub-module.",
-        "description": "`body` is a JSON object that is stored and returned as is; an array or a string is rejected.\nFor an assignment it holds the instructions.\n\n`kind: assignment` requires an `assignment` object `{type, config?, max_points, is_bonus?}`\n(ADR-0021); a `text` item must not carry one. `type` is `text` or `no_submission`, with an empty `config`.\n`max_points` is a decimal string such as `\"20\"` or `\"7.5\"`; a JSON number is rejected. The\ngrading scale limits the points (ADR-0022): at most 12 per assignment on `twelve`, at most\n100 in total over the regular (not bonus) assignments of the course on `hundred`.",
+        "description": "`body` is a JSON object that is stored and returned as is; an array or a string is rejected.\nFor an assignment it holds the instructions.\n\n`kind: assignment` requires an `assignment` object `{type, config?, max_points, is_bonus?}`\n(ADR-0021); a `text` item must not carry one. `type` is `text`, `no_submission`, `quiz` or `form`; the\n`config` of a `quiz` is its questions and must add up to `max_points` (ADR-0050), that of a `form` its\nfields (ADR-0051), and the others take an empty one (a `text` assignment may narrow its editor).\n`max_points` is a decimal string such as `\"20\"` or `\"7.5\"`; a JSON number is rejected. The\ngrading scale limits the points (ADR-0022): at most 12 per assignment on `twelve`, at most\n100 in total over the regular (not bonus) assignments of the course on `hundred`.",
         "operationId": "create_item",
         "parameters": [
           {
@@ -7567,7 +7709,7 @@
           },
           "config": {
             "type": "object",
-            "description": "Settings of the type; an empty object for `text` and `no_submission`."
+            "description": "Settings of the type; an empty object for `no_submission`, the editor narrowing for `text`,\nthe questions for a `quiz` (ADR-0050) and the fields for a `form` (ADR-0051). A student\nnever receives the answer key of a quiz. A form's fields carry the read-only facts\n`has_answers` and, on the options of an exclusive field, `taken` and `taken_by`."
           },
           "due_at": {
             "type": [
@@ -7614,7 +7756,7 @@
           },
           "type": {
             "type": "string",
-            "description": "The assignment type: `text` or `no_submission`. It cannot change."
+            "description": "The assignment type: `text`, `no_submission`, `quiz` or `form`. It cannot change."
           }
         }
       },
@@ -7691,8 +7833,15 @@
             "type": "integer",
             "format": "int32"
           },
+          "auto_scores": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "description": "Staff only, for a `quiz`: the score of each question that was scored by the server, as\ndecimal strings (ADR-0050). A `long_text` question has none."
+          },
           "content": {
-            "$ref": "#/components/schemas/Document"
+            "type": "object"
           },
           "id": {
             "type": "string",
@@ -8783,6 +8932,75 @@
           }
         }
       },
+      "FormResponseRow": {
+        "type": "object",
+        "description": "The answers of one student to a form: their latest attempt (ADR-0051 point 7).",
+        "required": [
+          "student_id",
+          "name",
+          "surname",
+          "attempt",
+          "submitted_at",
+          "is_late",
+          "answers"
+        ],
+        "properties": {
+          "answers": {
+            "type": "object",
+            "description": "Field id to the answer, as stored."
+          },
+          "attempt": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "is_late": {
+            "type": "boolean"
+          },
+          "name": {
+            "type": "string"
+          },
+          "student_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "submitted_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "surname": {
+            "type": "string"
+          }
+        }
+      },
+      "FormResponses": {
+        "type": "object",
+        "description": "All the responses to a form.",
+        "required": [
+          "total_students",
+          "missing",
+          "rows"
+        ],
+        "properties": {
+          "missing": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/StudentName"
+            },
+            "description": "Current students with no attempt."
+          },
+          "rows": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FormResponseRow"
+            }
+          },
+          "total_students": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The current students of the course."
+          }
+        }
+      },
       "GoogleCallbackRequest": {
         "type": "object",
         "description": "What Google sent back to the web app's callback page.",
@@ -8829,7 +9047,8 @@
         "description": "What a history row records (ADR-0028).",
         "enum": [
           "save_draft",
-          "publish"
+          "publish",
+          "auto_score"
         ]
       },
       "GradeActor": {
@@ -9939,7 +10158,7 @@
               "object",
               "null"
             ],
-            "description": "Settings of the type, a JSON object. Defaults to `{}`; `text` and `no_submission` have none."
+            "description": "Settings of the type, a JSON object. Defaults to `{}`; `no_submission` has none, a `quiz`\nneeds its questions (ADR-0050) and a `form` its fields (ADR-0051)."
           },
           "due_at": {
             "type": [
@@ -9982,7 +10201,7 @@
           },
           "type": {
             "type": "string",
-            "description": "The assignment type: `text` or `no_submission`."
+            "description": "The assignment type: `text`, `no_submission`, `quiz` or `form`."
           }
         }
       },
@@ -10831,6 +11050,92 @@
           }
         }
       },
+      "QuizResult": {
+        "type": "object",
+        "description": "The result of a quiz for the student who took it (ADR-0050 point 8). Only once the grade is\npublished.",
+        "required": [
+          "score",
+          "max_points",
+          "published_at",
+          "attempt",
+          "questions"
+        ],
+        "properties": {
+          "attempt": {
+            "type": "integer",
+            "format": "int32",
+            "description": "The attempt the answers belong to: the latest."
+          },
+          "feedback": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The published feedback; `null` when none."
+          },
+          "max_points": {
+            "type": "string"
+          },
+          "published_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "questions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/QuizResultQuestion"
+            }
+          },
+          "score": {
+            "type": "string",
+            "description": "The published score, a decimal string with two decimals."
+          }
+        }
+      },
+      "QuizResultQuestion": {
+        "type": "object",
+        "description": "One question of a quiz result.",
+        "required": [
+          "id",
+          "points"
+        ],
+        "properties": {
+          "answer": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "description": "What the student answered, as stored; `null` when unanswered."
+          },
+          "correct": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "description": "The correct answer: option ids, the number, or the accepted texts. Present only when the quiz\nshows its answers."
+          },
+          "explanation": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "description": "The explanation, a block document. Present only when the quiz shows its answers."
+          },
+          "got": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "What the server scored, a decimal string; `null` for a question graded by hand."
+          },
+          "id": {
+            "type": "string"
+          },
+          "points": {
+            "type": "string"
+          }
+        }
+      },
       "RegisterRequest": {
         "type": "object",
         "description": "Self-registration (ADR-0046). The account is created as a `student` and cannot log in until the\naddress is verified.",
@@ -10980,13 +11285,13 @@
       },
       "SaveDraftRequest": {
         "type": "object",
-        "description": "Replaces the draft of the caller. The document is read as a JSON value so that a rejection can\nname the path inside it, for example `content.blocks[2].props.level`.",
+        "description": "Replaces the draft of the caller. The content is read as a JSON value so that a rejection can\nname the path inside it, for example `content.blocks[2].props.level` or\n`content.answers.q1`. Its shape is that of the assignment's type.",
         "required": [
           "content"
         ],
         "properties": {
           "content": {
-            "$ref": "#/components/schemas/Document"
+            "type": "object"
           }
         }
       },
@@ -11073,6 +11378,27 @@
           }
         }
       },
+      "StudentName": {
+        "type": "object",
+        "description": "A student of the course, named.",
+        "required": [
+          "user_id",
+          "name",
+          "surname"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "surname": {
+            "type": "string"
+          },
+          "user_id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      },
       "Styles": {
         "type": "object",
         "properties": {
@@ -11138,7 +11464,7 @@
         ],
         "properties": {
           "content": {
-            "$ref": "#/components/schemas/Document"
+            "type": "object"
           },
           "updated_at": {
             "type": "string",

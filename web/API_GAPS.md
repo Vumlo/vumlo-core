@@ -65,15 +65,11 @@ Spec endpoints the UI uses as they are: `GET /institution`, `GET /admin/institut
 - **Mocked:** `GET /me/teaching`.
 
 ## Quiz and form assignment types
-- **Screens:** Quiz, Quiz result, Form, Quiz builder, Form builder, Form responses.
-- **Missing:** the types `quiz` and `form` (the server knows `text` and `no_submission`). Their `config`, the shape of a submission, automatic scoring, a result per question, and the responses of a form.
-  - `config` for a quiz: `{questions: [{id, type, prompt, points, options, correct, answer, tolerance, partial_credit, shuffle, grading_notes}], shuffle_questions, show_correct}`. A student never receives `correct`, `answer`, `tolerance` or `grading_notes` before grades are published (ADR-0023).
-  - `config` for a form: `{note, fields: [{id, type, label, help, required, options: [{id, text, taken_by}], rules, has_answers}]}`.
-  - A submission's `content` is `{answers: {id: text | [ids] | block document}}`.
-  - A question's prompt is a plain string here; ADR-0026 wants a block document.
-  - A form is "not graded", but `max_points` must be above 0 (ADR-0021). The mock stores `"0.00"`.
-  - "Remind who hasn't submitted" has no endpoint; the button only shows a message. The CSV download is built in the browser.
-- **Mocked:** `GET /assignments/{id}/result`, `GET /assignments/{id}/responses`, `config` in `/items/{id}`, auto-scoring on submit.
+- **Server:** done (ADR-0050, ADR-0051). `quiz` and `form` are assignment types; `GET /assignments/{id}/result` and `GET /assignments/{id}/responses` are in `openapi.json`. A quiz is scored when it is submitted and its score becomes the draft grade (not when it has a free-text question); a student never receives the answer key.
+- **Differences the screens absorb** (`src/lib/api/sheetWire.ts`, the one place that knows both shapes): the screens keep a prompt and an option as plain text, the server stores block documents; the screens' `single`, `multi`, `short`, `long` are `single_choice`, `multiple_choice`, `short_text`, `long_text`; a single-choice answer is a list with one id; a short-text question has one accepted answer in the screens (the server takes a list); a form's team size `"2-4"` is `rules.min` and `rules.max`; the responses table has fixed columns (team, variant, members, repository), filled from the first short, choice, people and link fields.
+- **Differences in behaviour:** a form needs `max_points` above 0 like any assignment; `taken_by` reaches staff only, a student gets `taken`; the questions and fields are frozen after the first submitted attempt (`409`).
+- **Not built:** "remind who hasn't submitted" (the button only shows a message); the CSV download is built in the browser.
+- **Still mocked, on purpose:** the same endpoints and fields in `src/mocks/handlers`, in the server's shapes.
 
 ## Grade history
 - **Server:** done (ADR-0049). `GET /assignments/{id}/grades/{student_id}/history` returns structured entries (`action`, `score`, `feedback`, `actor`), newest first, cursor-paginated. The drawer words them with the `gb.h*` messages.

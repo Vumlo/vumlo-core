@@ -47,7 +47,7 @@ export function QuizBuilder({ item, courseId }: { item: Item; courseId: string }
 
   const total = useMemo(() => sumPoints(cfg.questions.map((q) => (Number.isNaN(toCents(q.points)) ? "0" : q.points))), [cfg.questions]);
   const draft = useMemo(() => ({ title, cfg, total }), [title, cfg, total]);
-  const auto = useAutosave(draft, (d) => update.run(item.id, { title: d.title.trim() || item.title, config: d.cfg as unknown as Record<string, unknown>, ...(toCents(d.total) > 0 ? { max_points: d.total } : {}) }));
+  const auto = useAutosave(draft, (d) => update.run(item.id, { title: d.title.trim() || item.title, config: d.cfg as unknown as Record<string, unknown>, configType: "quiz", ...(toCents(d.total) > 0 ? { max_points: d.total } : {}) }));
   const a = item.assignment!;
   const isDraft = item.status === "draft";
   const q = cfg.questions[Math.min(sel, cfg.questions.length - 1)];

@@ -1,7 +1,8 @@
 import { http, HttpResponse } from "msw";
 import { MOCK_NOW } from "@/lib/clock";
 import { sumPoints, toCents } from "@/lib/points";
-import type { CourseCard } from "@/lib/api/gaps";
+import type { CourseCard, FormConfig } from "@/lib/api/gaps";
+import { configFromWire, configToWire } from "@/lib/api/sheetWire";
 import { isoToLocal, localToIso } from "@/lib/format";
 import type { CourseInfo, CoursePeople, Item, ServerItemMeta, TemplateSummary } from "@/lib/api/types";
 import { at, getDb, institutionPublic, uid, type DbCourse, type DbItem } from "../db";
@@ -67,7 +68,20 @@ function itemFor(item: DbItem, staff: boolean): Item {
     if (published_body) out.body = published_body;
     if (published_title) out.title = published_title;
   }
-  if (!staff && out.assignment) out.assignment = { ...out.assignment, config: studentConfig(item) };
+  if (out.assignment) {
+    const type = out.assignment.type;
+    const ui = staff ? out.assignment.config : studentConfig(item);
+    const wire = configToWire(type, ui) as { fields?: { options?: Record<string, unknown>[]; has_answers?: boolean; rules?: { exclusive?: boolean } }[] };
+    // The facts the server adds to a form when it reads it (ADR-0051 point 5).
+    if (type === "form" && wire.fields) {
+      (ui as unknown as FormConfig).fields.forEach((f, i) => {
+        const w = wire.fields![i]!;
+        if (staff) w.has_answers = f.has_answers;
+        if (f.type === "choice" && w.rules?.exclusive) f.options.forEach((o, k) => { w.options![k] = { ...w.options![k], taken: !!o.taken_by, ...(staff ? { taken_by: o.taken_by } : {}) }; });
+      });
+    }
+    out.assignment = { ...out.assignment, config: wire as unknown as Record<string, never> };
+  }
   return out;
 }
 
@@ -424,7 +438,7 @@ export const coreHandlers = [
     if (b.body) item.body = b.body as Item["body"];
     if (item.assignment) {
       const a = item.assignment;
-      if (b.config) a.config = b.config as Record<string, unknown>;
+      if (b.config) a.config = configFromWire(a.type, b.config as Record<string, unknown>);
       if (b.max_points !== undefined) a.max_points = decimal(b.max_points, "max_points");
       if ("due_at" in b) { a.due_at = (b.due_at as string | null) ?? null; if (!a.due_at) { a.on_deadline = null; a.accept_late = null; a.late_until = null; } }
       if ("on_deadline" in b) a.on_deadline = b.on_deadline as typeof a.on_deadline;
@@ -534,7 +548,7 @@ export const coreHandlers = [
       created_at: MOCK_NOW.toISOString(), updated_at: MOCK_NOW.toISOString(), last_published_at: null, unpublished_changes: false,
       ...(b.kind === "assignment" ? {
         assignment: {
-          type: String(a?.type ?? "text"), config: (a?.config as Record<string, unknown>) ?? {}, max_points: decimal(a?.max_points ?? "10", "max_points"), is_bonus: false,
+          type: String(a?.type ?? "text"), config: configFromWire(String(a?.type ?? "text"), (a?.config as Record<string, unknown>) ?? {}), max_points: decimal(a?.max_points ?? "10", "max_points"), is_bonus: false,
           due_at: (a?.due_at as string | null) ?? null, on_deadline: (a?.on_deadline as "keep_draft" | "auto_submit" | null) ?? null,
           accept_late: (a?.accept_late as boolean | null) ?? null, late_until: null, max_attempts: a?.max_attempts === undefined ? 1 : (a.max_attempts as number | null),
         },

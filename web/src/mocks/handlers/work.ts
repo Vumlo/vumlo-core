@@ -1,7 +1,8 @@
 import { http, HttpResponse } from "msw";
 import { MOCK_NOW } from "@/lib/clock";
 import { toCents } from "@/lib/points";
-import type { MyWork, QuizResult, SearchHit, TeachingOverview } from "@/lib/api/gaps";
+import type { AnswerMap, MyWork, SearchHit, TeachingOverview } from "@/lib/api/gaps";
+import { answersFromWire, answersToWire } from "@/lib/api/sheetWire";
 import { getDb, uid, type DbSubmission } from "../db";
 import {
   activeStudents, autoScore, canView, courseById, decimal, dueIn, flatItems, forbidden, formOf, fullName, gradeOf, hasUnpublishedChanges, isPublished, isStaff,
@@ -25,6 +26,23 @@ function viewAssignment(id: string) {
   const staff = isStaff(user, course);
   if (!staff && !itemVisibleToStudent(item, course)) throw notFound();
   return { user, item, course, staff };
+}
+
+type MockItem = ReturnType<typeof assignmentFor>;
+
+/** The content of a quiz or form submission as the server stores it, from what the mock keeps. */
+function wireContent(item: MockItem, content: unknown): unknown {
+  const a = item.assignment!;
+  if (a.type !== "quiz" && a.type !== "form") return content;
+  const answers = (content as { answers?: AnswerMap } | null)?.answers ?? {};
+  return { answers: answersToWire(a.type, a.config, answers) };
+}
+
+/** What the mock keeps of the content a client sent. */
+function uiContent(item: MockItem, content: unknown): unknown {
+  const a = item.assignment!;
+  if (a.type !== "quiz" && a.type !== "form") return content;
+  return { answers: answersFromWire(a.type, a.config, content) };
 }
 
 function staffAssignment(id: string) {
@@ -118,7 +136,12 @@ export const workHandlers = [
   http.get(`${A}/assignments/:id/submission`, ({ params }) => {
     const { user } = viewAssignment(String(params.id));
     const sub = submissionOf(String(params.id), user.id);
-    return HttpResponse.json({ attempts: sub?.attempts ?? [], draft: sub?.draft ?? null, next_cursor: null });
+    const item = itemById(String(params.id));
+    return HttpResponse.json({
+      attempts: (sub?.attempts ?? []).map((a) => ({ ...a, content: wireContent(item, a.content) })),
+      draft: sub?.draft ? { ...sub.draft, content: wireContent(item, sub.draft.content) } : null,
+      next_cursor: null,
+    });
   }),
   http.put(`${A}/assignments/:id/submission/draft`, async ({ request, params }) => {
     const { user, item, staff } = viewAssignment(String(params.id));
@@ -132,8 +155,8 @@ export const workHandlers = [
     const db = getDb();
     let s = sub;
     if (!s) { s = { assignment_id: item.id, student_id: user.id, draft: null, attempts: [] }; db.submissions.push(s); }
-    s.draft = { content: b.content, updated_at: MOCK_NOW.toISOString() };
-    return HttpResponse.json(s.draft);
+    s.draft = { content: uiContent(item, b.content), updated_at: MOCK_NOW.toISOString() };
+    return HttpResponse.json({ ...s.draft, content: wireContent(item, s.draft.content) });
   }),
   http.delete(`${A}/assignments/:id/submission/draft`, ({ params }) => {
     const { user } = viewAssignment(String(params.id));
@@ -152,14 +175,14 @@ export const workHandlers = [
     if (a.type === "form") {
       const answers = (s.draft.content as { answers?: Record<string, string | string[]> }).answers ?? {};
       const missing = formOf(item).fields.filter((f) => f.required && (!answers[f.id] || (Array.isArray(answers[f.id]) && (answers[f.id] as string[]).length === 0)));
-      if (missing.length) throw problem(422, "Validation failed", undefined, missing.map((f) => ({ field: f.id, message: `${f.label} is required` })));
+      if (missing.length) throw problem(422, "Validation failed", undefined, missing.map((f) => ({ field: `content.answers.${f.id}`, message: "is required" })));
     }
     const attempt = { id: uid(`attempt:${item.id}:${user.id}:${s.attempts.length + 1}:${Date.now()}`), attempt: s.attempts.length + 1, content: s.draft.content, submitted_at: MOCK_NOW.toISOString(), is_late: !!a.due_at && new Date(a.due_at) < MOCK_NOW };
     s.attempts.unshift(attempt);
     s.draft = null;
     if (a.type === "quiz") {
       const q = quizOf(item);
-      const hasLong = q.questions.some((x) => x.type === "long" || x.type === "short");
+      const hasLong = q.questions.some((x) => x.type === "long");
       if (!hasLong) {
         let g = gradeOf(item.id, user.id);
         const score = autoScore(item, latestAnswers(s));
@@ -169,7 +192,7 @@ export const workHandlers = [
         g.history.unshift({ action: "save_draft", score, feedback: null, actor_id: null, at: MOCK_NOW.toISOString() });
       }
     }
-    return HttpResponse.json(attempt, { status: 201 });
+    return HttpResponse.json({ ...attempt, content: wireContent(item, attempt.content) }, { status: 201 });
   }),
   http.get(`${A}/assignments/:id/result`, ({ params }) => {
     const { user, item } = viewAssignment(String(params.id));
@@ -178,16 +201,15 @@ export const workHandlers = [
     const q = quizOf(item);
     const stored = getDb().quizResults[item.id];
     const answers = latestAnswers(submissionOf(item.id, user.id));
-    const result: QuizResult = {
-      published_at: g!.published_at!, score: g!.published_score ?? "0.00", max_points: item.assignment!.max_points,
-      questions: q.questions.map((x) => {
-        const given = answers[x.id];
-        const got = stored?.[x.id]?.got ?? scoreQuestion(x, given) ?? "0.00";
-        return {
-          id: x.id, got, points: x.points, correct: x.correct ?? (x.answer ? [x.answer] : []),
-          answer: Array.isArray(given) ? given.join(",") : (given ?? null), feedback: stored?.[x.id]?.feedback ?? null,
-        };
-      }),
+    const wired = answersToWire("quiz", item.assignment!.config, answers);
+    const result = {
+      score: g!.published_score ?? "0.00", max_points: item.assignment!.max_points, published_at: g!.published_at!, feedback: g!.published_feedback,
+      attempt: submissionOf(item.id, user.id)?.attempts[0]?.attempt ?? 1,
+      questions: q.questions.map((x) => ({
+        id: x.id, points: x.points, got: x.type === "long" ? null : (stored?.[x.id]?.got ?? scoreQuestion(x, answers[x.id]) ?? "0.00"),
+        answer: wired[x.id] ?? null,
+        ...(q.show_correct ? { correct: x.type === "single" || x.type === "multi" ? (x.correct ?? []) : x.type === "number" ? x.answer : x.type === "short" ? [x.answer] : null } : {}),
+      })),
     };
     return HttpResponse.json(result);
   }),
@@ -226,7 +248,7 @@ export const workHandlers = [
   }),
   http.get(`${A}/assignments/:id/submissions/:sid`, ({ request, params }) => {
     const { item } = staffAssignment(String(params.id));
-    return paged(submissionOf(item.id, String(params.sid))?.attempts ?? [], request);
+    return paged((submissionOf(item.id, String(params.sid))?.attempts ?? []).map((a) => ({ ...a, content: wireContent(item, a.content) })), request);
   }),
   http.put(`${A}/assignments/:id/grades/:sid`, async ({ request, params }) => {
     const { item, course, user } = staffAssignment(String(params.id));
@@ -291,24 +313,16 @@ export const workHandlers = [
   http.get(`${A}/assignments/:id/responses`, ({ params }) => {
     const { item, course } = staffAssignment(String(params.id));
     if (item.assignment!.type !== "form") throw notFound();
-    const form = formOf(item);
-    const variants = form.fields.find((f) => f.type === "choice");
-    const rows = activeStudents(course.id).flatMap((m) => {
+    const students = activeStudents(course.id);
+    const rows = students.flatMap((m) => {
       const a = submissionOf(item.id, m.user_id)?.attempts[0];
       if (!a) return [];
-      const ans = (a.content as { answers: Record<string, string | string[]> }).answers;
-      return [{
-        team: String(ans.f1 ?? ""), variant: variants?.options.find((o) => o.id === ans.f2)?.text ?? "",
-        members: (Array.isArray(ans.f3) ? ans.f3 : []).map((id) => fullName(userById(id))).join(", "),
-        repo: String(ans.f4 ?? "").replace(/^https?:\/\//, ""), submitted_at: a.submitted_at, late: a.is_late,
-      }];
+      const u = userById(m.user_id);
+      return [{ student_id: u.id, name: u.name, surname: u.surname, attempt: a.attempt, submitted_at: a.submitted_at, is_late: a.is_late, answers: (wireContent(item, a.content) as { answers: Record<string, unknown> }).answers }];
     });
-    const inTeam = new Set(activeStudents(course.id).flatMap((m) => {
-      const a = submissionOf(item.id, m.user_id)?.attempts[0];
-      return a ? ((a.content as { answers: Record<string, string[]> }).answers.f3 ?? []) : [];
-    }));
-    const missing = activeStudents(course.id).filter((m) => !inTeam.has(m.user_id)).map((m) => fullName(userById(m.user_id)));
-    return HttpResponse.json({ total_students: activeStudents(course.id).length, missing, rows: rows.sort((a, b) => b.submitted_at.localeCompare(a.submitted_at)) });
+    const done = new Set(rows.map((r) => r.student_id));
+    const missing = students.filter((m) => !done.has(m.user_id)).map((m) => ({ user_id: m.user_id, name: userById(m.user_id).name, surname: userById(m.user_id).surname }));
+    return HttpResponse.json({ total_students: students.length, missing, rows: rows.sort((a, b) => b.submitted_at.localeCompare(a.submitted_at)) });
   }),
 
   // ---- teacher overview ----
