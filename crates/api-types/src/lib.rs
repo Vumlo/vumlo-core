@@ -134,6 +134,62 @@ pub enum LoginResponse {
     Web(User),
 }
 
+/// Self-registration (ADR-0046). The account is created as a `student` and cannot log in until the
+/// address is verified.
+#[derive(Clone, Serialize, Deserialize, Validate, ToSchema)]
+pub struct RegisterRequest {
+    #[garde(length(chars, min = 1, max = 100))]
+    pub name: String,
+    #[garde(length(chars, min = 1, max = 100))]
+    pub surname: String,
+    /// Its domain must be one the institution allows.
+    #[garde(length(min = 1, max = 254))]
+    pub email: String,
+    #[garde(length(max = 1024))]
+    pub password: String,
+}
+
+impl fmt::Debug for RegisterRequest {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("RegisterRequest").finish_non_exhaustive()
+    }
+}
+
+/// The token from the verification mail.
+#[derive(Clone, Serialize, Deserialize, Validate, ToSchema)]
+pub struct VerifyEmailRequest {
+    #[garde(length(min = 1, max = 200))]
+    pub token: String,
+}
+
+impl fmt::Debug for VerifyEmailRequest {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("VerifyEmailRequest").finish_non_exhaustive()
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Validate, ToSchema)]
+pub struct PasswordResetRequest {
+    #[garde(length(min = 1, max = 254))]
+    pub email: String,
+}
+
+/// The token from the reset mail and the password to set.
+#[derive(Clone, Serialize, Deserialize, Validate, ToSchema)]
+pub struct PasswordResetConfirmRequest {
+    #[garde(length(min = 1, max = 200))]
+    pub token: String,
+    #[garde(length(max = 1024))]
+    pub new_password: String,
+}
+
+impl fmt::Debug for PasswordResetConfirmRequest {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("PasswordResetConfirmRequest")
+            .finish_non_exhaustive()
+    }
+}
+
 #[derive(Clone, Serialize, Deserialize, Validate, ToSchema)]
 pub struct ChangePasswordRequest {
     #[garde(length(min = 1, max = 1024))]

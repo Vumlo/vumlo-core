@@ -7,6 +7,7 @@ pub mod events;
 pub mod gradebook;
 mod health;
 pub mod identity;
+pub mod mail;
 pub mod org;
 pub mod pagination;
 mod points;

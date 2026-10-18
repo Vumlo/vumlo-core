@@ -1629,3 +1629,140 @@ async fn a_linked_group_or_subgroup_is_protected_and_a_deleted_course_takes_its_
     })
     .await;
 }
+
+// ADR-0045, ADR-0046.
+
+#[tokio::test]
+async fn migration_21_gives_existing_outbox_rows_their_worker_columns() {
+    bare_db_test(async |pool| {
+        app::MIGRATOR.run_to(20, &pool).await.unwrap();
+        for processed in [true, false] {
+            sqlx::query(
+                "INSERT INTO events.outbox (id, type, payload, processed_at)
+                 VALUES ($1, 'grade.published', '{}', CASE WHEN $2 THEN now() END)",
+            )
+            .bind(uuid::Uuid::now_v7())
+            .bind(processed)
+            .execute(&pool)
+            .await
+            .unwrap();
+        }
+
+        app::MIGRATOR.run(&pool).await.unwrap();
+
+        let rows = sqlx::query!(
+            r#"SELECT attempts, failed_at IS NULL AS "not_failed!", last_error,
+                      run_after <= now() AS "due!", processed_at IS NOT NULL AS "processed!"
+               FROM events.outbox ORDER BY id"#
+        )
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+        assert_eq!(rows.len(), 2);
+        assert!(
+            rows.iter()
+                .all(|r| r.attempts == 0 && r.not_failed && r.last_error.is_none() && r.due)
+        );
+        assert_eq!(rows.iter().filter(|r| r.processed).count(), 1);
+        app::ensure_migrated(&pool).await.unwrap();
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn a_processed_outbox_row_is_not_also_failed() {
+    db_test(async |pool| {
+        let id = uuid::Uuid::now_v7();
+        sqlx::query!(
+            "INSERT INTO events.outbox (id, type, payload) VALUES ($1, 'grade.published', '{}')",
+            id
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let both = sqlx::query!(
+            "UPDATE events.outbox SET processed_at = now(), failed_at = now() WHERE id = $1",
+            id
+        )
+        .execute(&pool)
+        .await;
+        assert_eq!(sqlstate(both), "23514");
+        let negative = sqlx::query!("UPDATE events.outbox SET attempts = -1 WHERE id = $1", id)
+            .execute(&pool)
+            .await;
+        assert_eq!(sqlstate(negative), "23514");
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn migration_22_counts_every_existing_account_as_verified() {
+    bare_db_test(async |pool| {
+        app::MIGRATOR.run_to(21, &pool).await.unwrap();
+        for email in ["a@x.edu", "b@x.edu"] {
+            insert_user(&pool, email, "student").await.unwrap();
+        }
+        sqlx::query!("UPDATE identity.users SET email_verified_at = NULL")
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        app::MIGRATOR.run(&pool).await.unwrap();
+
+        let unverified = sqlx::query_scalar!(
+            r#"SELECT count(*) AS "n!" FROM identity.users
+               WHERE email_verified_at IS DISTINCT FROM created_at"#
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(unverified, 0);
+        app::ensure_migrated(&pool).await.unwrap();
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn email_tokens_are_hashed_unique_and_expire_after_they_are_made() {
+    db_test(async |pool| {
+        insert_user(&pool, "a@x.edu", "student").await.unwrap();
+        let user = sqlx::query_scalar!("SELECT id FROM identity.users")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        let insert = |purpose: &'static str, hash: Vec<u8>, hours: i32| {
+            let pool = pool.clone();
+            async move {
+                sqlx::query!(
+                    "INSERT INTO identity.email_tokens (id, user_id, purpose, token_hash, expires_at)
+                     VALUES ($1, $2, $3, $4, now() + make_interval(hours => $5))",
+                    uuid::Uuid::now_v7(),
+                    user,
+                    purpose,
+                    hash,
+                    hours
+                )
+                .execute(&pool)
+                .await
+            }
+        };
+
+        insert("verify", vec![1; 32], 24).await.unwrap();
+        assert_eq!(sqlstate(insert("verify", vec![1; 32], 24).await), "23505", "unique");
+        assert_eq!(sqlstate(insert("other", vec![2; 32], 24).await), "23514", "purpose");
+        assert_eq!(sqlstate(insert("verify", vec![3; 31], 24).await), "23514", "a sha-256");
+        assert_eq!(sqlstate(insert("reset", vec![4; 32], 0).await), "23514", "expires later");
+
+        sqlx::query!("DELETE FROM identity.users WHERE id = $1", user)
+            .execute(&pool)
+            .await
+            .unwrap();
+        let left = sqlx::query_scalar!(r#"SELECT count(*) AS "n!" FROM identity.email_tokens"#)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(left, 0, "tokens go with their user");
+    })
+    .await;
+}

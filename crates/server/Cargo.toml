@@ -24,6 +24,7 @@ chrono-tz.workspace = true
 clap.workspace = true
 config.workspace = true
 garde.workspace = true
+lettre.workspace = true
 rand.workspace = true
 serde.workspace = true
 serde_json.workspace = true

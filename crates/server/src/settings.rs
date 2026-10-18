@@ -17,6 +17,9 @@ pub struct Settings {
     pub institution: InstitutionSettings,
     #[serde(default)]
     pub editor: EditorSettings,
+    /// Outgoing mail (ADR-0045). Absent: the features that must send mail are off.
+    #[serde(default)]
+    pub mail: Option<MailSettings>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -212,6 +215,69 @@ pub enum GradingScale {
     Hundred,
 }
 
+/// A value that must not reach a log: it shows as `***` in `Debug` (AGENTS section 11).
+#[derive(Clone, PartialEq, Eq, Deserialize)]
+#[serde(transparent)]
+pub struct Secret(String);
+
+impl Secret {
+    pub fn expose(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::fmt::Debug for Secret {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("Secret(***)")
+    }
+}
+
+/// The `[mail]` section (ADR-0045). Plain data: `Mailer::new` checks the address and the host when
+/// the server starts.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MailSettings {
+    /// The sender, `name@example.edu` or `Learnly <no-reply@example.edu>`.
+    pub from: String,
+    /// The origin links in mails point to. Default: `server.public_origin`.
+    #[serde(default)]
+    pub link_base: Option<String>,
+    pub transport: MailTransport,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(tag = "kind", rename_all = "lowercase", deny_unknown_fields)]
+pub enum MailTransport {
+    /// An SMTP relay.
+    Smtp {
+        host: String,
+        /// Default: 465 for `tls`, 587 for `starttls`, 25 for `none`.
+        #[serde(default)]
+        port: Option<u16>,
+        #[serde(default)]
+        tls: SmtpTls,
+        #[serde(default)]
+        username: Option<String>,
+        #[serde(default)]
+        password: Option<Secret>,
+    },
+    /// One `.eml` file per message in `dir`: for development and tests.
+    File { dir: std::path::PathBuf },
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SmtpTls {
+    /// Plain connection upgraded with STARTTLS (port 587).
+    #[default]
+    Starttls,
+    /// TLS from the first byte (port 465).
+    Tls,
+    /// No encryption: a local test server such as Mailpit.
+    #[serde(rename = "none")]
+    Off,
+}
+
 /// What the document editor may offer (ADR-0025, ADR-0027). Plain data: `AppState::new` applies
 /// it to the profiles in code (it can only narrow them) and rejects what does not fit.
 #[derive(Debug, Clone, Deserialize)]
@@ -339,6 +405,9 @@ impl Settings {
         self.server.public_origin = origin("server.public_origin", &self.server.public_origin)?;
         for entry in &mut self.server.allowed_origins {
             *entry = origin("server.allowed_origins", entry)?;
+        }
+        if let Some(link_base) = self.mail.as_mut().and_then(|mail| mail.link_base.as_mut()) {
+            *link_base = origin("mail.link_base", link_base)?;
         }
         Ok(())
     }
@@ -672,6 +741,79 @@ mod tests {
             .unwrap_err()
             .to_string();
         assert!(e.contains("Europe/Kyev"), "{e}");
+    }
+
+    const MAIL_FILE: &str = r#"
+        [mail]
+        from = "Learnly <no-reply@lms.example.edu>"
+        link_base = "https://lms.example.edu/"
+        [mail.transport]
+        kind = "file"
+        dir = "/tmp/mail"
+    "#;
+
+    #[test]
+    fn mail_is_optional_and_a_file_transport_loads() {
+        assert!(build(VALID, &[]).unwrap().mail.is_none());
+
+        let mail = build(&format!("{VALID}{MAIL_FILE}"), &[])
+            .unwrap()
+            .mail
+            .unwrap();
+
+        assert_eq!(mail.from, "Learnly <no-reply@lms.example.edu>");
+        assert_eq!(mail.link_base.as_deref(), Some("https://lms.example.edu"));
+        assert!(matches!(mail.transport, MailTransport::File { ref dir } if dir.ends_with("mail")));
+    }
+
+    #[test]
+    fn an_smtp_transport_loads_from_the_file_and_the_environment_and_hides_its_password() {
+        let toml = format!(
+            "{VALID}\n[mail]\nfrom = \"no-reply@lms.example.edu\"\n[mail.transport]\nkind = \"smtp\"\nhost = \"mail.example.edu\"\ntls = \"tls\"\nusername = \"learnly\"\n"
+        );
+        let mail = build(
+            &toml,
+            &[(
+                "LEARNLY__MAIL__TRANSPORT__PASSWORD",
+                "hunter2 is not a secret here",
+            )],
+        )
+        .unwrap()
+        .mail
+        .unwrap();
+
+        let MailTransport::Smtp {
+            ref host,
+            port,
+            tls,
+            ref password,
+            ..
+        } = mail.transport
+        else {
+            panic!("an smtp transport");
+        };
+        assert_eq!(
+            (host.as_str(), port, tls),
+            ("mail.example.edu", None, SmtpTls::Tls)
+        );
+        assert_eq!(
+            password.as_ref().unwrap().expose(),
+            "hunter2 is not a secret here"
+        );
+        let shown = format!("{mail:?}");
+        assert!(!shown.contains("hunter2"), "{shown}");
+    }
+
+    #[test]
+    fn a_bad_mail_section_stops_the_server_and_names_the_key() {
+        let unknown = format!("{VALID}{}", MAIL_FILE.replace("dir =", "directory ="));
+        assert!(build(&unknown, &[]).is_err());
+        let bad_base = format!(
+            "{VALID}{}",
+            MAIL_FILE.replace("https://lms.example.edu/", "lms.example.edu/app")
+        );
+        let e = build(&bad_base, &[]).unwrap_err().to_string();
+        assert!(e.contains("mail.link_base"), "{e}");
     }
 
     #[test]

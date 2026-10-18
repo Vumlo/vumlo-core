@@ -45,6 +45,7 @@ pub fn test_settings() -> Settings {
             grading_scale: GradingScale::Hundred,
         },
         editor: EditorSettings::default(),
+        mail: None,
     }
 }
 
@@ -54,6 +55,12 @@ pub async fn spawn(db: PgPool) -> String {
 }
 
 pub async fn spawn_with(db: PgPool, settings: Settings) -> String {
+    spawn_app(db, settings).await.0
+}
+
+/// Like [`spawn_with`], and also returns the state the server runs on, so a test can deliver the
+/// outbox by hand with `events::process_once(&state.db, &state.event_handlers())`.
+pub async fn spawn_app(db: PgPool, settings: Settings) -> (String, AppState) {
     let listener = TcpListener::bind("127.0.0.1:0")
         .await
         .expect("bind test listener");
@@ -61,10 +68,71 @@ pub async fn spawn_with(db: PgPool, settings: Settings) -> String {
     let state = AppState::new(db, settings).expect("test app state");
     tokio::spawn(app::serve(
         listener,
-        app::router(state).expect("test router"),
+        app::router(state.clone()).expect("test router"),
         std::future::pending(),
     ));
-    format!("http://{addr}")
+    (format!("http://{addr}"), state)
+}
+
+/// A directory the file mail transport writes to (ADR-0045). Removed when dropped.
+pub struct Mailbox {
+    dir: std::path::PathBuf,
+}
+
+impl Mailbox {
+    pub fn new() -> Self {
+        let dir = std::env::temp_dir().join(format!("learnly-mailbox-{}", uuid::Uuid::now_v7()));
+        std::fs::create_dir_all(&dir).expect("mailbox directory");
+        Self { dir }
+    }
+
+    /// Settings that send mail to this directory and let people sign up from `lms.test`.
+    pub fn settings(&self) -> Settings {
+        let mut settings = test_settings();
+        settings.auth.allowed_domains = vec!["lms.test".to_owned()];
+        settings.mail = Some(server::settings::MailSettings {
+            from: "Learnly <no-reply@lms.test>".to_owned(),
+            link_base: None,
+            transport: server::settings::MailTransport::File {
+                dir: self.dir.clone(),
+            },
+        });
+        settings
+    }
+
+    /// The text of every message so far, oldest first, with quoted-printable undone.
+    pub fn messages(&self) -> Vec<String> {
+        let mut files: Vec<_> = std::fs::read_dir(&self.dir)
+            .expect("read mailbox")
+            .map(|entry| entry.expect("entry").path())
+            .collect();
+        files.sort_by_key(|path| std::fs::metadata(path).and_then(|m| m.modified()).ok());
+        files
+            .into_iter()
+            .map(|path| {
+                std::fs::read_to_string(path)
+                    .expect("read message")
+                    .replace("=\r\n", "")
+                    .replace("=\n", "")
+                    .replace("=3D", "=")
+            })
+            .collect()
+    }
+
+    /// The `token=` value of the last link in `message`.
+    pub fn token_in(message: &str) -> String {
+        let start = message.rfind("token=").expect("a link with a token") + "token=".len();
+        message[start..]
+            .chars()
+            .take_while(|c| c.is_ascii_alphanumeric() || *c == '-' || *c == '_')
+            .collect()
+    }
+}
+
+impl Drop for Mailbox {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.dir);
+    }
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -204,8 +272,9 @@ pub async fn seed_pending_user(pool: &PgPool, email: &str, role: Role) -> String
     let id = uuid::Uuid::now_v7();
     let mut tx = pool.begin().await.expect("begin");
     sqlx::query!(
-        "INSERT INTO identity.users (id, email, name, surname, role, must_change_password)
-         VALUES ($1, $2, 'Test', 'User', $3, true)",
+        "INSERT INTO identity.users
+             (id, email, name, surname, role, must_change_password, email_verified_at)
+         VALUES ($1, $2, 'Test', 'User', $3, true, now())",
         id,
         email.as_str(),
         role.as_str()

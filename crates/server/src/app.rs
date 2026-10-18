@@ -29,9 +29,11 @@ use utoipa_scalar::{Scalar, Servable};
 use crate::assessment;
 use crate::content::{self, EditorConfigError, EffectiveProfiles};
 use crate::error::{ApiError, problem_details};
+use crate::events::Handlers;
 use crate::gradebook;
 use crate::health;
 use crate::identity::{self, SetupError};
+use crate::mail::{MailError, Mailer};
 use crate::org;
 use crate::settings::Settings;
 use crate::teaching;
@@ -52,21 +54,55 @@ pub struct AppState {
     pub editor: Arc<EffectiveProfiles>,
     /// The bound on password hashes and checks that run at once (ADR-0038).
     pub hashing: Arc<identity::HashGate>,
+    /// Outgoing mail (ADR-0045); `None` without `[mail]`, and the features that must send mail are off.
+    pub mailer: Option<Arc<Mailer>>,
+}
+
+/// The configuration cannot be applied. The message names the key and the value.
+#[derive(Debug, thiserror::Error)]
+pub enum StateError {
+    #[error(transparent)]
+    Editor(#[from] EditorConfigError),
+    #[error(transparent)]
+    Mail(#[from] MailError),
 }
 
 impl AppState {
     /// The composition root of the shared state. It resolves the editor configuration, so a
     /// configuration that does not fit the profiles in code fails here, at startup, with an error
     /// that names the key and the value, and never at the first request.
-    pub fn new(db: PgPool, config: Settings) -> Result<Self, EditorConfigError> {
+    pub fn new(db: PgPool, config: Settings) -> Result<Self, StateError> {
         let editor = EffectiveProfiles::resolve(&config.editor)?;
         let hashing = identity::HashGate::new(config.auth.max_concurrent_hashes);
+        let mailer = config
+            .mail
+            .as_ref()
+            .map(|mail| Mailer::new(mail, &config.server.public_origin).map(Arc::new))
+            .transpose()?;
         Ok(Self {
             db,
             config: Arc::new(config),
             editor: Arc::new(editor),
             hashing: Arc::new(hashing),
+            mailer,
         })
+    }
+
+    /// The outbox handlers of every module (ADR-0045), for `events::run_worker` and for tests that
+    /// deliver by hand with `events::process_once`.
+    pub fn event_handlers(&self) -> Handlers {
+        let mut handlers = Handlers::default();
+        if let Some(mailer) = &self.mailer {
+            handlers = handlers.merge(identity::event_handlers(
+                self.db.clone(),
+                identity::MailContext {
+                    mailer: mailer.clone(),
+                    language: self.config.institution.language,
+                    institution_name: self.config.institution.name.clone(),
+                },
+            ));
+        }
+        handlers
     }
 }
 

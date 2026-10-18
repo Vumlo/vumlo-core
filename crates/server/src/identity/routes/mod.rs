@@ -88,43 +88,65 @@ impl KeyExtractor for ClientIp {
 }
 
 pub fn router(settings: &Settings) -> Result<OpenApiRouter<AppState>, SetupError> {
-    let header = settings
-        .server
-        .client_ip_header
-        .as_deref()
-        .map(|name| {
-            name.parse::<header::HeaderName>()
-                .map_err(|_| SetupError::RateLimit)
-        })
-        .transpose()?;
     let auth = &settings.auth;
-    let login_limit = GovernorConfigBuilder::default()
-        .per_second(auth.login_ip_replenish_seconds)
-        .burst_size(auth.login_ip_burst)
-        .key_extractor(ClientIp { header })
-        .finish()
-        .ok_or(SetupError::RateLimit)?;
-    // The task holds only a weak reference: it ends when the router, and with it the limiter, is
-    // dropped.
-    let limiter = Arc::downgrade(login_limit.limiter());
-    spawn_cleanup(LIMITER_CLEANUP_EVERY, move || {
-        let Some(limiter) = limiter.upgrade() else {
-            return false;
-        };
-        limiter.retain_recent();
-        limiter.shrink_to_fit();
-        true
-    });
+    // A per-client limiter built from the login limits of ADR-0038, with the task that forgets idle
+    // clients. Each call makes an allowance of its own. A closure, because the type of the config
+    // is not nameable here.
+    let client_limiter = || -> Result<_, SetupError> {
+        let header = settings
+            .server
+            .client_ip_header
+            .as_deref()
+            .map(|name| {
+                name.parse::<header::HeaderName>()
+                    .map_err(|_| SetupError::RateLimit)
+            })
+            .transpose()?;
+        let config = GovernorConfigBuilder::default()
+            .per_second(auth.login_ip_replenish_seconds)
+            .burst_size(auth.login_ip_burst)
+            .key_extractor(ClientIp { header })
+            .finish()
+            .ok_or(SetupError::RateLimit)?;
+        // The task holds only a weak reference: it ends when the router, and with it the limiter,
+        // is dropped.
+        let limiter = Arc::downgrade(config.limiter());
+        spawn_cleanup(LIMITER_CLEANUP_EVERY, move || {
+            let Some(limiter) = limiter.upgrade() else {
+                return false;
+            };
+            limiter.retain_recent();
+            limiter.shrink_to_fit();
+            true
+        });
+        Ok(config)
+    };
     let throttle = LoginThrottle::with_limits(
         auth.login_account_max_attempts,
         std::time::Duration::from_secs(auth.login_account_window_minutes.saturating_mul(60)),
         THROTTLE_CAPACITY,
     );
+    // The same limits, counted per address, for the requests that send mail (ADR-0046).
+    let mail_throttle = MailThrottle(LoginThrottle::with_limits(
+        auth.login_account_max_attempts,
+        std::time::Duration::from_secs(auth.login_account_window_minutes.saturating_mul(60)),
+        THROTTLE_CAPACITY,
+    ));
     Ok(OpenApiRouter::new()
         .merge(
             OpenApiRouter::new()
                 .routes(routes!(auth::login))
-                .layer(GovernorLayer::new(login_limit)),
+                .layer(GovernorLayer::new(client_limiter()?)),
+        )
+        // Registration and recovery have an allowance of their own, so a lecture hall of students
+        // signing in does not use up the allowance of a student signing up (ADR-0046).
+        .merge(
+            OpenApiRouter::new()
+                .routes(routes!(auth::register))
+                .routes(routes!(auth::verify_email))
+                .routes(routes!(auth::request_password_reset))
+                .routes(routes!(auth::confirm_password_reset))
+                .layer(GovernorLayer::new(client_limiter()?)),
         )
         .routes(routes!(auth::logout))
         .routes(routes!(me::get_me))
@@ -134,7 +156,8 @@ pub fn router(settings: &Settings) -> Result<OpenApiRouter<AppState>, SetupError
         .routes(routes!(admin::list_users, admin::create_user))
         .routes(routes!(admin::update_user))
         .routes(routes!(admin::reset_password))
-        .layer(Extension(Arc::new(throttle))))
+        .layer(Extension(Arc::new(throttle)))
+        .layer(Extension(Arc::new(mail_throttle))))
 }
 
 impl From<IdentityError> for ApiError {
@@ -156,6 +179,13 @@ impl From<IdentityError> for ApiError {
             }
             IdentityError::PasswordUnchanged => {
                 Self::invalid_field("new_password", "must differ from the current password")
+            }
+            IdentityError::EmailNotVerified => {
+                Self::Forbidden("the email address is not verified yet")
+            }
+            IdentityError::TokenInvalid => Self::Gone("this link has been used or has expired"),
+            IdentityError::EmailDomainNotAllowed => {
+                Self::invalid_field("email", "this email domain cannot sign up")
             }
             IdentityError::EmailTaken => Self::Conflict("the email is already in use"),
             IdentityError::ConcurrentChange => {
@@ -183,19 +213,28 @@ impl From<super::model::ModelError> for ApiError {
             ModelError::Email => Self::invalid_field("email", error.to_string()),
             ModelError::Name => Self::invalid_field("name", error.to_string()),
             ModelError::Surname => Self::invalid_field("surname", error.to_string()),
-            ModelError::Password(reasons) => Self::Unprocessable {
-                detail: "the password does not meet the policy".to_owned(),
-                errors: reasons
-                    .into_iter()
-                    .map(|message| api_types::FieldError {
-                        field: "new_password".to_owned(),
-                        message,
-                    })
-                    .collect(),
-            },
+            ModelError::Password(reasons) => password_error("new_password", reasons),
         }
     }
 }
+
+/// The `422` of a password that breaks the policy, blaming `field`.
+pub(super) fn password_error(field: &str, reasons: Vec<String>) -> ApiError {
+    ApiError::Unprocessable {
+        detail: "the password does not meet the policy".to_owned(),
+        errors: reasons
+            .into_iter()
+            .map(|message| api_types::FieldError {
+                field: field.to_owned(),
+                message,
+            })
+            .collect(),
+    }
+}
+
+/// Counts the requests that make the server send mail, per address (ADR-0046). Its own type, so
+/// it is not mixed up with the login throttle in the request extensions.
+pub(super) struct MailThrottle(pub(super) LoginThrottle);
 
 pub(super) fn api_role(role: Role) -> api_types::Role {
     match role {

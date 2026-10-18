@@ -1,0 +1,186 @@
+//! Outgoing mail (ADR-0045): plain-text messages over SMTP, or into a directory for development
+//! and tests. Built once from `[mail]`; a bad address or host stops the server at startup.
+
+use lettre::message::{Mailbox, header::ContentType};
+use lettre::transport::smtp::authentication::Credentials;
+use lettre::{AsyncFileTransport, AsyncSmtpTransport, AsyncTransport, Message, Tokio1Executor};
+
+use crate::settings::{MailSettings, MailTransport, SmtpTls};
+
+#[derive(Debug, thiserror::Error)]
+pub enum MailError {
+    #[error("mail.from \"{0}\" is not a mailbox such as \"Learnly <no-reply@example.edu>\"")]
+    From(String),
+    #[error("mail.transport.host \"{0}\" cannot be used as an SMTP host")]
+    Host(String),
+    #[error("the recipient address is not valid")]
+    Recipient,
+    #[error("cannot build the message: {0}")]
+    Message(#[from] lettre::error::Error),
+    /// The server refused or could not be reached. The text comes from the transport and holds no
+    /// message content.
+    #[error("cannot send the message: {0}")]
+    Send(String),
+}
+
+enum Transport {
+    Smtp(AsyncSmtpTransport<Tokio1Executor>),
+    File(AsyncFileTransport<Tokio1Executor>),
+}
+
+pub struct Mailer {
+    from: Mailbox,
+    link_base: String,
+    transport: Transport,
+}
+
+impl Mailer {
+    /// `public_origin` is the default for `mail.link_base`.
+    pub fn new(settings: &MailSettings, public_origin: &str) -> Result<Self, MailError> {
+        let from = settings
+            .from
+            .parse::<Mailbox>()
+            .map_err(|_| MailError::From(settings.from.clone()))?;
+        let transport = match &settings.transport {
+            MailTransport::File { dir } => {
+                Transport::File(AsyncFileTransport::<Tokio1Executor>::new(dir))
+            }
+            MailTransport::Smtp {
+                host,
+                port,
+                tls,
+                username,
+                password,
+            } => {
+                let bad_host = |_| MailError::Host(host.clone());
+                let mut builder = match tls {
+                    SmtpTls::Starttls => AsyncSmtpTransport::<Tokio1Executor>::starttls_relay(host)
+                        .map_err(bad_host)?,
+                    SmtpTls::Tls => {
+                        AsyncSmtpTransport::<Tokio1Executor>::relay(host).map_err(bad_host)?
+                    }
+                    SmtpTls::Off => AsyncSmtpTransport::<Tokio1Executor>::builder_dangerous(host),
+                };
+                if let Some(port) = port {
+                    builder = builder.port(*port);
+                }
+                if let (Some(user), Some(password)) = (username, password) {
+                    builder = builder
+                        .credentials(Credentials::new(user.clone(), password.expose().to_owned()));
+                }
+                Transport::Smtp(builder.build())
+            }
+        };
+        Ok(Self {
+            from,
+            link_base: settings
+                .link_base
+                .clone()
+                .unwrap_or_else(|| public_origin.to_owned()),
+            transport,
+        })
+    }
+
+    /// A link into the web app: `path` starts with `/`.
+    pub fn link(&self, path: &str) -> String {
+        format!("{}{path}", self.link_base)
+    }
+
+    pub async fn send(
+        &self,
+        to_name: &str,
+        to_address: &str,
+        subject: &str,
+        body: String,
+    ) -> Result<(), MailError> {
+        let address = to_address
+            .parse::<lettre::Address>()
+            .map_err(|_| MailError::Recipient)?;
+        let message = Message::builder()
+            .from(self.from.clone())
+            .to(Mailbox::new(Some(to_name.to_owned()), address))
+            .subject(subject)
+            .header(ContentType::TEXT_PLAIN)
+            .body(body)?;
+        match &self.transport {
+            Transport::Smtp(smtp) => smtp
+                .send(message)
+                .await
+                .map(|_| ())
+                .map_err(|e| MailError::Send(e.to_string())),
+            Transport::File(file) => file
+                .send(message)
+                .await
+                .map(|_| ())
+                .map_err(|e| MailError::Send(e.to_string())),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn settings(dir: &std::path::Path, from: &str) -> MailSettings {
+        MailSettings {
+            from: from.to_owned(),
+            link_base: None,
+            transport: MailTransport::File {
+                dir: dir.to_owned(),
+            },
+        }
+    }
+
+    #[tokio::test]
+    async fn a_message_lands_in_the_directory_with_its_recipient_subject_and_body() {
+        let dir = std::env::temp_dir().join(format!("learnly-mail-{}", uuid::Uuid::now_v7()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let mailer = Mailer::new(
+            &settings(&dir, "Learnly <no-reply@lms.test>"),
+            "https://lms.test",
+        )
+        .unwrap();
+
+        mailer
+            .send(
+                "Maya Okafor",
+                "maya@lms.test",
+                "Hello",
+                "Body line".to_owned(),
+            )
+            .await
+            .unwrap();
+
+        let files: Vec<_> = std::fs::read_dir(&dir).unwrap().collect();
+        assert_eq!(files.len(), 1);
+        let text = std::fs::read_to_string(files[0].as_ref().unwrap().path()).unwrap();
+        for needle in [
+            "maya@lms.test",
+            "no-reply@lms.test",
+            "Subject: Hello",
+            "Body line",
+        ] {
+            assert!(text.contains(needle), "{needle}: {text}");
+        }
+        assert_eq!(
+            mailer.link("/verify-email?token=t"),
+            "https://lms.test/verify-email?token=t"
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_bad_sender_is_refused_with_the_key_and_the_value() {
+        let error = Mailer::new(
+            &settings(std::path::Path::new("."), "not a mailbox"),
+            "https://x.test",
+        )
+        .err()
+        .unwrap()
+        .to_string();
+        assert!(
+            error.contains("mail.from") && error.contains("not a mailbox"),
+            "{error}"
+        );
+    }
+}

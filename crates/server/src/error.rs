@@ -20,6 +20,8 @@ pub enum ApiError {
     /// The caller is known but may not do this.
     Forbidden(&'static str),
     Conflict(&'static str),
+    /// The resource existed once and is gone for good, e.g. a spent or expired link.
+    Gone(&'static str),
     Unprocessable {
         detail: String,
         errors: Vec<FieldError>,
@@ -65,6 +67,7 @@ impl ApiError {
             Self::Unauthorized(_) => StatusCode::UNAUTHORIZED,
             Self::Forbidden(_) => StatusCode::FORBIDDEN,
             Self::Conflict(_) => StatusCode::CONFLICT,
+            Self::Gone(_) => StatusCode::GONE,
             Self::Unprocessable { .. } => StatusCode::UNPROCESSABLE_ENTITY,
             Self::TooManyRequests { .. } => StatusCode::TOO_MANY_REQUESTS,
             Self::ServiceUnavailable(_) => StatusCode::SERVICE_UNAVAILABLE,
@@ -120,7 +123,7 @@ impl IntoResponse for ApiError {
                 extra_headers.push((header::WWW_AUTHENTICATE, HeaderValue::from_static("Bearer")));
                 (Some(detail.to_owned()), Vec::new())
             }
-            Self::Forbidden(detail) | Self::Conflict(detail) => {
+            Self::Forbidden(detail) | Self::Conflict(detail) | Self::Gone(detail) => {
                 (Some(detail.to_owned()), Vec::new())
             }
             Self::ServiceUnavailable(detail) => {
