@@ -168,6 +168,7 @@ fn operations(c: &Ctx, other_user: Uuid) -> Vec<Call> {
             None,
         ),
         // The institution's own: admins only.
+        call("GET", "/admin/institution".into(), None),
         call("GET", "/admin/users".into(), None),
         call(
             "POST",
@@ -648,6 +649,7 @@ async fn the_list_of_operations_is_the_api() {
         // Operations that need no sign-in or only a session of one's own are not in the list above.
         let own: BTreeSet<String> = [
             "GET /health",
+            "GET /institution",
             "POST /auth/login",
             "POST /auth/logout",
             "GET /me",

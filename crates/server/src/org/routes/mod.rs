@@ -2,6 +2,7 @@
 //! call exactly one service function and commit; reads use a pooled connection.
 
 mod groups;
+mod institution;
 mod subgroups;
 mod terms;
 
@@ -17,6 +18,8 @@ use crate::pagination::{self, PageParams};
 
 pub fn router() -> OpenApiRouter<AppState> {
     OpenApiRouter::new()
+        .routes(routes!(institution::get_institution))
+        .routes(routes!(institution::get_admin_institution))
         .routes(routes!(terms::create_term, terms::list_terms))
         .routes(routes!(
             terms::get_term,

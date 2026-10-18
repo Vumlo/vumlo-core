@@ -47,6 +47,12 @@ mode = "university"
 # Limits assignment points: "twelve" = at most 12 per assignment, "hundred" = the regular
 # assignments of a course add up to at most 100. Optional; by default it follows the mode.
 # grading_scale = "hundred"
+# What the web app shows before anyone signs in (ADR-0044). All optional. They are read at startup:
+# changing one means editing this file and restarting.
+# short_name = "Example"   # 1-50 characters; default: name
+# language = "en"          # "en" | "uk"; default "en"
+# time_zone = "Europe/Kyiv" # an IANA zone name; default "UTC"
+# accent = "indigo"        # "indigo" | "teal" | "crimson" | "forest" | "plum"; default "indigo"
 
 [editor]
 # What the document editor may offer. A configuration can only narrow what the code allows;

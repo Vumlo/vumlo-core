@@ -13,6 +13,7 @@ axum = "0.8"
 axum-extra = { version = "0.12", default-features = false, features = ["cookie"] }
 base64 = "0.23"
 chrono = { version = "0.4", features = ["serde"] }
+chrono-tz = { version = "0.10", default-features = false }
 clap = { version = "4", features = ["derive"] }
 config = { version = "0.15", default-features = false, features = ["toml"] }
 garde = { version = "0.23", features = ["derive"] }

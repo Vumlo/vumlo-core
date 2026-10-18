@@ -82,6 +82,9 @@ pub enum Action {
     ManageOwnAccount,
     /// Create, list, change, disable and reset users, institution-wide.
     ManageUsers,
+    /// Read the institution settings an admin sees, including the mode and the allowed domains
+    /// (ADR-0044). The public profile needs no action: it needs no session.
+    ViewInstitutionSettings,
     /// Create a course; the creator becomes its owner.
     CreateCourse,
     /// List the courses one belongs to. Which ones is decided per course by `ViewCourse`.
@@ -197,6 +200,7 @@ impl Action {
             Self::EditCourse(access) => Self::EditCourse(mine(access)),
             Self::ManageOwnAccount
             | Self::ManageUsers
+            | Self::ViewInstitutionSettings
             | Self::CreateCourse
             | Self::ViewOwnCourses
             | Self::ViewEditorProfiles
@@ -241,9 +245,11 @@ pub fn authorize(actor: &Actor, action: Action) -> Result<(), PolicyError> {
     let is_admin = actor.role() == Role::Admin;
     let allowed = match action {
         Action::ManageOwnAccount => true,
-        Action::ManageUsers | Action::ManageTerms | Action::ManageGroups | Action::ViewGroups => {
-            is_admin
-        }
+        Action::ManageUsers
+        | Action::ViewInstitutionSettings
+        | Action::ManageTerms
+        | Action::ManageGroups
+        | Action::ViewGroups => is_admin,
         Action::ViewTerms => true,
         Action::CreateCourse => matches!(actor.role(), Role::Admin | Role::Teacher),
         Action::ViewOwnCourses => true,
@@ -339,6 +345,7 @@ mod tests {
     #[test]
     fn only_admins_manage_terms_and_groups_and_read_groups() {
         for action in [
+            Action::ViewInstitutionSettings,
             Action::ManageTerms,
             Action::ManageGroups,
             Action::ViewGroups,

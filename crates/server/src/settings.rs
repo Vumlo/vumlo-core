@@ -76,6 +76,13 @@ impl Default for AuthSettings {
 #[serde(try_from = "InstitutionSection")]
 pub struct InstitutionSettings {
     pub name: String,
+    /// The name for narrow places such as the navbar; `name` when the key is absent (ADR-0044).
+    pub short_name: String,
+    /// The language the web app starts in (ADR-0043, ADR-0044).
+    pub language: Language,
+    /// The institution's IANA time zone, checked at startup (ADR-0044).
+    pub time_zone: chrono_tz::Tz,
+    pub accent: Accent,
     /// Chosen before the first start and fixed for the life of the installation (ADR-0031).
     pub mode: InstitutionMode,
     /// The grading scale that applies: `institution.grading_scale` when set, else the one the
@@ -88,8 +95,12 @@ pub struct InstitutionSettings {
 #[derive(Deserialize)]
 struct InstitutionSection {
     name: String,
+    short_name: Option<String>,
     mode: Option<String>,
     grading_scale: Option<GradingScale>,
+    language: Option<String>,
+    time_zone: Option<String>,
+    accent: Option<String>,
 }
 
 impl TryFrom<InstitutionSection> for InstitutionSettings {
@@ -108,13 +119,79 @@ impl TryFrom<InstitutionSection> for InstitutionSettings {
             InstitutionMode::School => GradingScale::Twelve,
             InstitutionMode::University => GradingScale::Hundred,
         };
+        let short_name = match section.short_name {
+            None => section.name.clone(),
+            Some(text) => {
+                let text = text.trim().to_owned();
+                if !(1..=50).contains(&text.chars().count()) {
+                    return Err("institution.short_name must be 1 to 50 characters long".to_owned());
+                }
+                text
+            }
+        };
+        let language = match section.language {
+            None => Language::En,
+            Some(text) => text.parse().map_err(|_| {
+                format!("institution.language \"{text}\" is not valid: set it to \"en\" or \"uk\"")
+            })?,
+        };
+        let accent = match section.accent {
+            None => Accent::Indigo,
+            Some(text) => text.parse().map_err(|_| {
+                format!(
+                    "institution.accent \"{text}\" is not valid: set it to \"indigo\", \"teal\", \
+                     \"crimson\", \"forest\" or \"plum\""
+                )
+            })?,
+        };
+        let time_zone = match section.time_zone {
+            None => chrono_tz::UTC,
+            Some(text) => text.parse().map_err(|_| {
+                format!(
+                    "institution.time_zone \"{text}\" is not valid: set it to an IANA zone name \
+                     such as \"Europe/Kyiv\" or \"UTC\""
+                )
+            })?,
+        };
         Ok(Self {
             name: section.name,
+            short_name,
+            language,
+            time_zone,
+            accent,
             mode,
             grading_scale: section.grading_scale.unwrap_or(implied),
         })
     }
 }
+
+/// The interface language an institution starts in (ADR-0043, ADR-0044).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Language {
+    En,
+    Uk,
+}
+
+text_enum!(Language { En => "en", Uk => "uk" });
+
+/// The accent colour of the web app. The values are the ones the web app has a palette for
+/// (ADR-0044).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Accent {
+    Indigo,
+    Teal,
+    Crimson,
+    Forest,
+    Plum,
+}
+
+text_enum!(Accent {
+    Indigo => "indigo",
+    Teal => "teal",
+    Crimson => "crimson",
+    Forest => "forest",
+    Plum => "plum",
+});
 
 /// What kind of institution this installation serves (ADR-0002, ADR-0031).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -546,6 +623,55 @@ mod tests {
     fn an_unknown_grading_scale_is_an_error_that_names_the_value() {
         let e = build(VALID, &[("LEARNLY__INSTITUTION__GRADING_SCALE", "ten")]).unwrap_err();
         assert!(e.to_string().contains("ten"), "{e}");
+    }
+
+    #[test]
+    fn the_institution_profile_has_defaults() {
+        let i = build(VALID, &[]).unwrap().institution;
+        assert_eq!(i.short_name, "Example University");
+        assert_eq!(i.language, Language::En);
+        assert_eq!(i.time_zone, chrono_tz::UTC);
+        assert_eq!(i.accent, Accent::Indigo);
+    }
+
+    #[test]
+    fn the_institution_profile_is_read_from_the_file_and_the_environment() {
+        let toml = VALID.replace(
+            "mode = \"university\"",
+            "mode = \"university\"\n        short_name = \" Example \"\n        language = \"uk\"\n        \
+             time_zone = \"Europe/Kyiv\"\n        accent = \"teal\"",
+        );
+        let i = build(&toml, &[]).unwrap().institution;
+        assert_eq!(i.short_name, "Example");
+        assert_eq!(i.language, Language::Uk);
+        assert_eq!(i.time_zone, chrono_tz::Europe::Kyiv);
+        assert_eq!(i.accent, Accent::Teal);
+        let i = build(&toml, &[("LEARNLY__INSTITUTION__ACCENT", "plum")])
+            .unwrap()
+            .institution;
+        assert_eq!(i.accent, Accent::Plum);
+    }
+
+    #[test]
+    fn a_bad_institution_profile_value_stops_the_server_and_names_the_key_and_the_value() {
+        for (key, bad) in [
+            ("SHORT_NAME", ""),
+            ("SHORT_NAME", &"x".repeat(51)),
+            ("LANGUAGE", "fr"),
+            ("TIME_ZONE", "Europe/Kyev"),
+            ("TIME_ZONE", "+03:00"),
+            ("ACCENT", "#ff0000"),
+        ] {
+            let e = build(VALID, &[(&format!("LEARNLY__INSTITUTION__{key}"), bad)])
+                .unwrap_err()
+                .to_string();
+            let needle = format!("institution.{}", key.to_lowercase());
+            assert!(e.contains(&needle), "{key}={bad}: {e}");
+        }
+        let e = build(VALID, &[("LEARNLY__INSTITUTION__TIME_ZONE", "Europe/Kyev")])
+            .unwrap_err()
+            .to_string();
+        assert!(e.contains("Europe/Kyev"), "{e}");
     }
 
     #[test]
