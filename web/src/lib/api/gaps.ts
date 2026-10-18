@@ -48,26 +48,6 @@ export type MyWork = {
   items: MyWorkItem[];
 };
 
-/** `GET /courses/{id}/item-meta`: per-item facts the content tree lacks. */
-export type ItemMeta = {
-  read_minutes?: number;
-  class_on?: string | null;
-  edited?: boolean;
-  /** Student view. */
-  status?: WorkStatus;
-  score?: Points | null;
-  draft_saved_at?: string | null;
-  published_at?: string | null;
-  attempts_used?: number;
-  /** Staff view. */
-  submitted?: number;
-  to_grade?: number;
-  draft_grades?: number;
-  graded_total?: number;
-};
-
-export type ItemMetaMap = { items: Record<string, ItemMeta> };
-
 export type TeachingOverview = {
   to_grade: {
     student_id: string;
@@ -104,9 +84,6 @@ export type TeachingOverview = {
   unpublished_content: { item_id: string; course_id: string; course_code: string; title: string; note: "draft" | "edits" }[];
 };
 
-export type GradeHistory = { entries: { what: string; at: string }[] };
-
-export type ItemRevision = { has_unpublished_changes: boolean; last_published_at: string | null; size_bytes: number };
 
 // ---- quizzes and forms (assignment types the server does not have yet) ----
 

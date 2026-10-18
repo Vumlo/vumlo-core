@@ -166,7 +166,7 @@ export const workHandlers = [
         const db = getDb();
         if (!g) { g = { assignment_id: item.id, student_id: user.id, draft_score: null, draft_feedback: null, published_score: null, published_feedback: null, published_at: null, history: [] }; db.grades.push(g); }
         g.draft_score = score;
-        g.history.unshift({ what: `Scored automatically: ${score}`, at: MOCK_NOW.toISOString() });
+        g.history.unshift({ action: "save_draft", score, feedback: null, actor_id: null, at: MOCK_NOW.toISOString() });
       }
     }
     return HttpResponse.json(attempt, { status: 201 });
@@ -229,7 +229,7 @@ export const workHandlers = [
     return paged(submissionOf(item.id, String(params.sid))?.attempts ?? [], request);
   }),
   http.put(`${A}/assignments/:id/grades/:sid`, async ({ request, params }) => {
-    const { item, course } = staffAssignment(String(params.id));
+    const { item, course, user } = staffAssignment(String(params.id));
     const m = memberOf(course.id, String(params.sid));
     if (!m || m.role !== "student") throw notFound();
     if (m.left_on) throw problem(409, "Conflict", "This student left the course; their grades are locked");
@@ -239,16 +239,16 @@ export const workHandlers = [
     if (!g) { g = { assignment_id: item.id, student_id: m.user_id, draft_score: null, draft_feedback: null, published_score: null, published_feedback: null, published_at: null, history: [] }; db.grades.push(g); }
     if ("score" in b) {
       const next = b.score === null || b.score === "" || b.score === undefined ? null : decimal(b.score, "score", item.assignment!.max_points);
-      if (next !== g.draft_score) g.history.unshift({ what: next === null ? "Draft cleared" : `Draft set to ${next}`, at: MOCK_NOW.toISOString() });
       g.draft_score = next;
     }
     if ("feedback" in b) g.draft_feedback = b.feedback?.trim() ? b.feedback.trim() : null;
+    g.history.unshift({ action: "save_draft", score: g.draft_score, feedback: g.draft_feedback, actor_id: user.id, at: MOCK_NOW.toISOString() });
     return HttpResponse.json({
       draft_score: g.draft_score, draft_feedback: g.draft_feedback, published_score: g.published_score, published_feedback: g.published_feedback, has_unpublished_changes: hasUnpublishedChanges(g),
     });
   }),
   http.post(`${A}/assignments/:id/grades/publish`, async ({ request, params }) => {
-    const { item, course } = staffAssignment(String(params.id));
+    const { item, course, user } = staffAssignment(String(params.id));
     const b = (await request.json()) as { students: "all" | string[] };
     const ids = new Set(b.students === "all" ? activeStudents(course.id).map((m) => m.user_id) : b.students);
     let published = 0;
@@ -256,14 +256,19 @@ export const workHandlers = [
       if (memberOf(course.id, g.student_id)?.left_on) continue;
       g.published_score = g.draft_score; g.published_feedback = g.draft_feedback;
       g.published_at = g.draft_score === null && g.draft_feedback === null ? null : MOCK_NOW.toISOString();
-      g.history.unshift({ what: `Published ${g.draft_score ?? "feedback"}`, at: MOCK_NOW.toISOString() });
+      g.history.unshift({ action: "publish", score: g.published_score, feedback: g.published_feedback, actor_id: user.id, at: MOCK_NOW.toISOString() });
       published++;
     }
     return HttpResponse.json({ published });
   }),
   http.get(`${A}/assignments/:id/grades/:sid/history`, ({ params }) => {
     const { item } = staffAssignment(String(params.id));
-    return HttpResponse.json({ entries: gradeOf(item.id, String(params.sid))?.history ?? [] });
+    const rows = gradeOf(item.id, String(params.sid))?.history ?? [];
+    const items = rows.map((h, n) => {
+      const a = h.actor_id ? userById(h.actor_id) : null;
+      return { id: uid(`${item.id}:${params.sid}:${n}`), action: h.action, score: h.score, feedback: h.feedback, actor: a ? { user_id: a.id, name: a.name, surname: a.surname } : null, at: h.at };
+    });
+    return HttpResponse.json({ items, next_cursor: null });
   }),
   http.get(`${A}/courses/:id/gradebook`, ({ request, params }) => {
     const { course } = requireStaff(String(params.id));

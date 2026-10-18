@@ -48,19 +48,16 @@ Spec endpoints the UI uses as they are: `GET /institution`, `GET /admin/institut
 - **Mocked:** `GET /me/work`. Only published scores and feedback are in it (root AGENTS.md section 6).
 
 ## Class date of in-class work
-- **Screens:** Course content, Done in class, Calendar, Course content (teacher).
-- **Missing:** the date a `no_submission` assignment takes place. The server keeps `due_at` `null` for that type, so the design's "In class on Thursday 29 October" has no field.
-- **Mocked:** `class_on` in `GET /courses/{id}/item-meta` and in `PATCH /items/{id}`.
+- **Server:** done (ADR-0049). `class_on` is a day (`YYYY-MM-DD`) on `no_submission` assignments, in `PATCH /items/{id}` and `GET /courses/{id}/item-meta`; the hook turns it into noon of that day in the institution's zone.
+- **Still mocked, on purpose:** the same fields in `src/mocks/handlers/core.ts`.
 
 ## Item meta
-- **Screens:** Course content, the outline of every course screen, Course content (teacher).
-- **Missing:** read time of a lecture, the class date, for a student the status, score, draft time, publish time and attempts used per assignment, for staff the "edited" flag and per-assignment counts (submitted, to grade, draft grades).
-- **Mocked:** `GET /courses/{id}/item-meta`.
+- **Server:** done (ADR-0049). `GET /courses/{id}/item-meta` gives read time, class day, a student's status, score, draft and publish times and attempts used, and for staff the "edited" flag and per-assignment counts.
+- **Still mocked, on purpose:** `src/mocks/handlers/core.ts`, in the wire shape.
 
 ## Unpublished changes
-- **Screens:** Lecture editor, Course content (the "Edited" label), Teacher home (Unpublished content).
-- **Missing:** a published version next to the edited one. ADR-0010 says edits to published content are visible at once and there are no draft revisions in v1, so this contradicts it.
-- **Mocked:** `GET /items/{id}/revision`, `POST /items/{id}/revision/publish`. A student keeps seeing the previous body and title until the changes are published.
+- **Server:** done (ADR-0049, supersedes the last decision of ADR-0010). `GET /items/{id}/revision` and `POST /items/{id}/revision/publish`; a student keeps seeing the published title and body until the changes are published.
+- **Still mocked, on purpose:** the same endpoints for `pnpm dev:mock`.
 
 ## Teaching overview
 - **Screens:** Teacher home, Grading, Calendar (teacher).
@@ -79,9 +76,8 @@ Spec endpoints the UI uses as they are: `GET /institution`, `GET /admin/institut
 - **Mocked:** `GET /assignments/{id}/result`, `GET /assignments/{id}/responses`, `config` in `/items/{id}`, auto-scoring on submit.
 
 ## Grade history
-- **Screens:** Gradebook (drawer).
-- **Missing:** the recorded changes of one grade ("Draft set to 22.50, today 14:02").
-- **Mocked:** `GET /assignments/{id}/grades/{student_id}/history`.
+- **Server:** done (ADR-0049). `GET /assignments/{id}/grades/{student_id}/history` returns structured entries (`action`, `score`, `feedback`, `actor`), newest first, cursor-paginated. The drawer words them with the `gb.h*` messages.
+- **Still mocked, on purpose:** the same endpoint in `src/mocks/handlers/work.ts`.
 
 ## Gradebook cells
 - **Screens:** Gradebook.

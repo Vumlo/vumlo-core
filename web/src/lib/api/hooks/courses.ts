@@ -2,8 +2,9 @@
 
 import { api } from "../client";
 import { invalidate, useMutation, useQuery } from "../../query";
-import type { CourseCard, ItemMetaMap } from "../gaps";
-import type { Candidate, ContentTree, Course, CourseGroupLink, CourseInfo, CoursePeople, GroupOption, Item, Membership, TemplateSummary, Term } from "../types";
+import { localToIso } from "../../format";
+import type { CourseCard } from "../gaps";
+import type { Candidate, ContentTree, Course, CourseGroupLink, CourseInfo, CoursePeople, GroupOption, Item, ItemMetaMap, Membership, ServerItemMeta, TemplateSummary, Term } from "../types";
 import { fetchAll } from "./util";
 
 export function useMyCourses() {
@@ -33,9 +34,19 @@ export function useContentTree(courseId: string | null) {
   return useQuery<ContentTree>(courseId ? `/courses/${courseId}/content` : null, () => api.get<ContentTree>(`/courses/${courseId}/content`));
 }
 
-/** GAP: read time, class date, student progress and staff counts per item (API_GAPS.md, "Item meta"). */
+/**
+ * Read time, class day, student progress and staff counts per item (ADR-0049). The server sends the
+ * class day as a date; the screens get it as noon of that day in the institution's zone.
+ */
 export function useItemMeta(courseId: string | null) {
-  return useQuery<ItemMetaMap>(courseId ? `/courses/${courseId}/item-meta` : null, () => api.get<ItemMetaMap>(`/courses/${courseId}/item-meta`));
+  return useQuery<ItemMetaMap>(courseId ? `/courses/${courseId}/item-meta` : null, async () => {
+    const wire = await api.get<{ items: Record<string, ServerItemMeta> }>(`/courses/${courseId}/item-meta`);
+    return {
+      items: Object.fromEntries(
+        Object.entries(wire.items).map(([id, meta]) => [id, { ...meta, class_on: meta.class_on ? localToIso(`${meta.class_on}T12:00`) : null }]),
+      ),
+    };
+  });
 }
 
 export function useItem(id: string | null) {

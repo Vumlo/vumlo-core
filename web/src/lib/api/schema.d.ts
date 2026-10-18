@@ -134,6 +134,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/assignments/{id}/grades/{student_id}/history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The recorded changes of one student's grade on an assignment, newest first. Staff only.
+         * @description Every draft save and every publish is a row with the values after it and the person who made it.
+         *     A student with no grade has an empty history.
+         */
+        get: operations["get_grade_history"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/assignments/{id}/submission": {
         parameters: {
             query?: never;
@@ -670,6 +691,28 @@ export interface paths {
         patch: operations["update_course_info"];
         trace?: never;
     };
+    "/api/v1/courses/{id}/item-meta": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The facts of every item of the course that the tree does not carry, by item id.
+         * @description Everyone gets the reading time of a lecture and the class day of in-class work. Staff also get
+         *     `edited` and the counts of what to grade; a student gets their own standing, with published
+         *     values only.
+         */
+        get: operations["get_item_meta"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/courses/{id}/members": {
         parameters: {
             query?: never;
@@ -1087,10 +1130,12 @@ export interface paths {
         head?: never;
         /**
          * Changes an item's title, body and/or `publish_at` (`null` clears it). A `body` replaces the
-         *     whole body. Edits to a published item are visible at once (ADR-0010).
+         *     whole body. The title and body of a published item are a working copy: students keep reading the
+         *     published one until `POST /items/{id}/revision/publish` (ADR-0049). An assignment's `config`,
+         *     points and deadline settings apply at once.
          * @description For an assignment `config`, `max_points` and `is_bonus` may change too; the grading scale
-         *     limits apply when `max_points` is raised or a bonus assignment becomes regular. They are
-         *     rejected for a `text` item. `type` and `kind` cannot change: sending them has no effect.
+         *     limits apply when `max_points` is raised or a bonus assignment becomes regular. `class_on` is
+         *     for `no_submission` assignments. They are rejected for a `text` item. `type` and `kind` cannot change: sending them has no effect.
          */
         patch: operations["update_item"];
         trace?: never;
@@ -1106,6 +1151,44 @@ export interface paths {
         put?: never;
         /** Publishes a `text` item or an assignment. Idempotent; never changes `publish_at`. */
         post: operations["publish_item"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/items/{id}/revision": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Whether a published item has changes that students do not see yet. Staff only. */
+        get: operations["get_revision"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/items/{id}/revision/publish": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Gives students the working title and body of a published item (ADR-0049).
+         * @description A draft has nothing to publish a revision of: publish the item (`409`). Not in an archived
+         *     course.
+         */
+        post: operations["publish_revision"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1475,6 +1558,12 @@ export interface components {
         Assignment: {
             /** @description Whether work is taken after `due_at`; set exactly when `due_at` is. */
             accept_late?: boolean | null;
+            /**
+             * Format: date
+             * @description The day an in-class (`no_submission`) assignment takes place, `YYYY-MM-DD` (ADR-0049);
+             *     `null` for any other type.
+             */
+            class_on?: string | null;
             /** @description Settings of the type; an empty object for `text` and `no_submission`. */
             config: Record<string, never>;
             /**
@@ -1867,6 +1956,18 @@ export interface components {
         GoogleStartResponse: {
             authorization_url: string;
         };
+        /**
+         * @description What a history row records (ADR-0028).
+         * @enum {string}
+         */
+        GradeAction: "save_draft" | "publish";
+        /** @description Who made a change. */
+        GradeActor: {
+            name: string;
+            surname: string;
+            /** Format: uuid */
+            user_id: string;
+        };
         /** @description One cell as staff see it: both slots. Never sent to a student. */
         GradeCell: {
             draft_feedback?: string | null;
@@ -1876,6 +1977,19 @@ export interface components {
             has_unpublished_changes: boolean;
             published_feedback?: string | null;
             published_score?: string | null;
+        };
+        /** @description One recorded change of a grade (ADR-0049). Data, not a sentence: the client words it. */
+        GradeHistoryEntry: {
+            action: components["schemas"]["GradeAction"];
+            actor?: components["schemas"]["GradeActor"] | null;
+            /** Format: date-time */
+            at: string;
+            /** @description The feedback after the change; `null` when none. */
+            feedback?: string | null;
+            /** Format: uuid */
+            id: string;
+            /** @description The score after the change, a decimal string with two decimals; `null` when none. */
+            score?: string | null;
         };
         /**
          * @description The grade of one student in one column. A cell exists only where a grade row exists: the
@@ -2026,6 +2140,74 @@ export interface components {
         };
         /** @enum {string} */
         ItemKind: "text" | "assignment";
+        /**
+         * @description The facts of one item that the course tree does not carry. Only the facts that apply to the
+         *     item and to the caller are present.
+         */
+        ItemMeta: {
+            /** Format: int32 */
+            attempts_used?: number | null;
+            /**
+             * Format: date
+             * @description In-class assignments: the day they take place.
+             */
+            class_on?: string | null;
+            /**
+             * Format: int32
+             * @description Staff: grades whose draft differs from what is published.
+             */
+            draft_grades?: number | null;
+            /** Format: date-time */
+            draft_saved_at?: string | null;
+            /** @description Staff: the item is published and has changes students do not see yet. */
+            edited?: boolean | null;
+            /**
+             * Format: int32
+             * @description Staff: current students of the course.
+             */
+            graded_total?: number | null;
+            /** Format: date-time */
+            published_at?: string | null;
+            /**
+             * Format: int32
+             * @description Lectures: minutes to read the body the caller sees, at least 1.
+             */
+            read_minutes?: number | null;
+            /** @description Students: the published score; absent until grades are published. */
+            score?: string | null;
+            status?: components["schemas"]["WorkStatus"] | null;
+            /**
+             * Format: int32
+             * @description Staff, assignments: current students who submitted at least once.
+             */
+            submitted?: number | null;
+            /**
+             * Format: int32
+             * @description Staff: of those, the ones without a score yet.
+             */
+            to_grade?: number | null;
+        };
+        /** @description The facts by item id, for the items the caller may see. */
+        ItemMetaMap: {
+            items: {
+                [key: string]: components["schemas"]["ItemMeta"];
+            };
+        };
+        /** @description What the editor shows about the unpublished changes of an item. */
+        ItemRevision: {
+            /** @description The working title or body differs from what students read. */
+            has_unpublished_changes: boolean;
+            /**
+             * Format: date-time
+             * @description When students last got a new version; `null` for an item never published.
+             */
+            last_published_at?: string | null;
+            /**
+             * Format: int64
+             * @description The size of the working body as JSON.
+             */
+            size_bytes: number;
+        };
         /** @description An item in the course tree: everything but the body. */
         ItemSummary: {
             assignment?: components["schemas"]["AssignmentSummary"] | null;
@@ -2186,6 +2368,12 @@ export interface components {
         /** @description The assignment part of a new item of kind `assignment` (ADR-0021). */
         NewAssignment: {
             accept_late?: boolean | null;
+            /**
+             * Format: date
+             * @description The day an in-class assignment takes place, `YYYY-MM-DD` (ADR-0049). Only for
+             *     `no_submission`.
+             */
+            class_on?: string | null;
             /** @description Settings of the type, a JSON object. Defaults to `{}`; `text` and `no_submission` have none. */
             config?: Record<string, never> | null;
             /**
@@ -2270,6 +2458,22 @@ export interface components {
                 created_by: string;
                 /** Format: uuid */
                 user_id: string;
+            }[];
+            /** @description Pass as `cursor` to get the next page; `null` on the last page. */
+            next_cursor?: string | null;
+        };
+        Page_GradeHistoryEntry: {
+            items: {
+                action: components["schemas"]["GradeAction"];
+                actor?: components["schemas"]["GradeActor"] | null;
+                /** Format: date-time */
+                at: string;
+                /** @description The feedback after the change; `null` when none. */
+                feedback?: string | null;
+                /** Format: uuid */
+                id: string;
+                /** @description The score after the change, a decimal string with two decimals; `null` when none. */
+                score?: string | null;
             }[];
             /** @description Pass as `cursor` to get the next page; `null` on the last page. */
             next_cursor?: string | null;
@@ -2667,6 +2871,12 @@ export interface components {
             /** @description Assignments only. Omit to keep, `null` to clear. */
             accept_late?: boolean | null;
             body?: components["schemas"]["Document"] | null;
+            /**
+             * Format: date
+             * @description `no_submission` assignments only (ADR-0049). Omit to keep, `null` to clear, a day
+             *     (`YYYY-MM-DD`) to set.
+             */
+            class_on?: string | null;
             /** @description Assignments only: replaces the config. Omit to keep it. */
             config?: Record<string, never> | null;
             /**
@@ -2749,6 +2959,11 @@ export interface components {
          * @enum {string}
          */
         VideoProvider: "youtube" | "vimeo";
+        /**
+         * @description Where a student stands on an assignment.
+         * @enum {string}
+         */
+        WorkStatus: "not_started" | "draft" | "submitted" | "graded" | "missed" | "in_class";
     };
     responses: never;
     parameters: never;
@@ -3151,6 +3366,71 @@ export interface operations {
                 };
             };
             /** @description Invalid `score` or `feedback` */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    get_grade_history: {
+        parameters: {
+            query?: {
+                cursor?: string;
+                /** @description Page size, 1 to 100 (default 50). */
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                /** @description Assignment id */
+                id: string;
+                /** @description The student */
+                student_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A page of history entries */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Page_GradeHistoryEntry"];
+                };
+            };
+            /** @description Not logged in */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The caller may not read the gradebook */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description No such assignment, or not visible to the caller */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Invalid cursor */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -4881,6 +5161,47 @@ export interface operations {
             };
         };
     };
+    get_item_meta: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Course id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The facts by item id */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ItemMetaMap"];
+                };
+            };
+            /** @description Not logged in */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description No such course, or not visible to the caller */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
     list_members: {
         parameters: {
             query?: {
@@ -6534,6 +6855,115 @@ export interface operations {
             };
             /** @description No such item, or not visible to the caller */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    get_revision: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Item id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The revision */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ItemRevision"];
+                };
+            };
+            /** @description Not logged in */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Only staff see revisions */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description No such item, or not visible to the caller */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    publish_revision: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Item id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The revision after publishing */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ItemRevision"];
+                };
+            };
+            /** @description Not logged in */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The caller may not change this course's content */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description No such item, or not visible to the caller */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The item is a draft, or the course is archived */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

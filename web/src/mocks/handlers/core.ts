@@ -1,8 +1,9 @@
 import { http, HttpResponse } from "msw";
 import { MOCK_NOW } from "@/lib/clock";
 import { sumPoints, toCents } from "@/lib/points";
-import type { CourseCard, ItemMeta } from "@/lib/api/gaps";
-import type { CourseInfo, CoursePeople, Item, TemplateSummary } from "@/lib/api/types";
+import type { CourseCard } from "@/lib/api/gaps";
+import { isoToLocal, localToIso } from "@/lib/format";
+import type { CourseInfo, CoursePeople, Item, ServerItemMeta, TemplateSummary } from "@/lib/api/types";
 import { at, getDb, institutionPublic, uid, type DbCourse, type DbItem } from "../db";
 import {
   activeStudents, canView, contentTree, courseById, decimal, dueIn, flatItems, forbidden, formOf, fullName, gradeOf, hasUnpublishedChanges, isPublished,
@@ -118,12 +119,12 @@ function cards(userId: string): CourseCard[] {
   });
 }
 
-export function itemMeta(c: DbCourse, userId: string, staff: boolean): Record<string, ItemMeta> {
-  const out: Record<string, ItemMeta> = {};
+export function itemMeta(c: DbCourse, userId: string, staff: boolean): Record<string, ServerItemMeta> {
+  const out: Record<string, ServerItemMeta> = {};
   for (const i of flatItems(c, staff)) {
-    const meta: ItemMeta = {};
+    const meta: ServerItemMeta = {};
     if (i.read_minutes) meta.read_minutes = i.read_minutes;
-    if (i.class_on) meta.class_on = i.class_on;
+    if (i.class_on) meta.class_on = isoToLocal(i.class_on).slice(0, 10);
     if (i.assignment && !staff) {
       const w = workItem(i, userId);
       meta.status = w.status; meta.score = w.score; meta.draft_saved_at = w.draft_saved_at; meta.published_at = w.published_at;
@@ -431,7 +432,7 @@ export const coreHandlers = [
       if ("late_until" in b) a.late_until = b.late_until as string | null;
       if ("max_attempts" in b) a.max_attempts = b.max_attempts as number | null;
     }
-    if ("class_on" in b) item.class_on = (b.class_on as string | null) ?? null;
+    if ("class_on" in b) item.class_on = b.class_on ? localToIso(`${b.class_on as string}T12:00`) : null;
     if ("publish_at" in b) item.publish_at = b.publish_at as string | null;
     item.updated_at = MOCK_NOW.toISOString();
     return HttpResponse.json(itemFor(item, true));

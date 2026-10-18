@@ -7,6 +7,16 @@ export type Role = S["Role"];
 export type Course = S["Course"];
 export type CourseRole = S["CourseRole"];
 export type Term = S["Term"];
+export type ItemRevision = S["ItemRevision"];
+export type GradeHistoryEntry = S["GradeHistoryEntry"];
+/** What the server sends per item: `class_on` is a day (`YYYY-MM-DD`). */
+export type ServerItemMeta = S["ItemMeta"];
+/**
+ * `GET /courses/{id}/item-meta` per item as the screens use it: `class_on` is an instant, noon of
+ * the class day in the institution's time zone, so a date never slips to the day before.
+ */
+export type ItemMeta = Omit<S["ItemMeta"], "class_on"> & { class_on?: string | null };
+export type ItemMetaMap = { items: Record<string, ItemMeta> };
 export type CourseInfo = S["CourseInfo"];
 export type TemplateSummary = S["TemplateSummary"];
 export type PersonRow = S["PersonRow"];

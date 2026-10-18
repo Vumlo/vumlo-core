@@ -6,7 +6,7 @@ import { ItemTile } from "@/components/ItemTile";
 import { StatusPill } from "@/components/StatusPill";
 import { useContentTree, useCourseInfo, useItemMeta } from "@/lib/api/hooks/courses";
 import { useMyGrades } from "@/lib/api/hooks/work";
-import type { ItemMeta } from "@/lib/api/gaps";
+import type { ItemMeta } from "@/lib/api/types";
 import type { ItemSummary } from "@/lib/api/types";
 import { now } from "@/lib/clock";
 import { allItems, dueShort, isAssignment, sections, statusPill, typeLabel } from "@/lib/course";

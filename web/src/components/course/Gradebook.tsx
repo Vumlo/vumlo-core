@@ -6,7 +6,7 @@ import { BlockRenderer } from "@/components/doc/BlockRenderer";
 import { Icon } from "@/components/Icon";
 import { useContentTree, useCoursePeople } from "@/lib/api/hooks/courses";
 import { useCourseSubmissions, useGradebook, useGradeHistory, usePublishAllDrafts, useSaveGrade, useStudentAttempts, usePublishGrades } from "@/lib/api/hooks/assignments";
-import type { Document, GradebookCell, GradebookColumn, GradebookRow } from "@/lib/api/types";
+import type { Document, GradeHistoryEntry, GradebookCell, GradebookColumn, GradebookRow } from "@/lib/api/types";
 import { now } from "@/lib/clock";
 import { allItems } from "@/lib/course";
 import { dayLabel, dueLabel, initials, plural, sinceLabel, weekdayDate, timeOf } from "@/lib/format";
@@ -14,6 +14,15 @@ import { validScore } from "@/lib/points";
 import { CourseHeader } from "./CourseHeader";
 import { useT } from "@/lib/i18n";
 import s from "./Gradebook.module.css";
+
+/** One recorded change as a line: the server sends the action and the values, the screen words them. */
+function historyLine(h: GradeHistoryEntry, t: ReturnType<typeof useT>): string {
+  const what =
+    h.action === "publish"
+      ? h.score ? t("gb.hPublished", { score: h.score }) : h.feedback ? t("gb.hPublishedFeedback") : t("gb.hWithdrawn")
+      : h.score ? t("gb.hDraft", { score: h.score }) : h.feedback ? t("gb.hDraftFeedback") : t("gb.hCleared");
+  return h.actor ? `${what}, ${h.actor.name} ${h.actor.surname}` : what;
+}
 
 type Sel = { studentId: string; assignmentId: string };
 type CellState = "pub" | "draft" | "grade" | "none";
@@ -88,8 +97,8 @@ function Drawer({ sel, row, col, cell, toGrade, onClose }: { sel: Sel; row: Grad
       <div>
         <h3 style={{ fontSize: 14, fontWeight: 600, marginBottom: 6 }}>{t("gb.history")}</h3>
         <ol className={s.hist}>
-          {(history.data?.entries ?? []).map((h, i) => <li key={i}><span>{h.what}</span><span className="muted">{sinceLabel(h.at)}</span></li>)}
-          {history.data?.entries.length === 0 && <li className="muted">{t("gb.noChanges")}</li>}
+          {(history.data ?? []).map((h) => <li key={h.id}><span>{historyLine(h, t)}</span><span className="muted">{sinceLabel(h.at)}</span></li>)}
+          {history.data?.length === 0 && <li className="muted">{t("gb.noChanges")}</li>}
         </ol>
         <p className="muted" style={{ marginTop: 8, fontSize: 12 }}>{t("gb.recorded")}</p>
       </div>

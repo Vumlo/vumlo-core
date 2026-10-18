@@ -609,6 +609,117 @@
         ]
       }
     },
+    "/api/v1/assignments/{id}/grades/{student_id}/history": {
+      "get": {
+        "tags": [
+          "gradebook"
+        ],
+        "summary": "The recorded changes of one student's grade on an assignment, newest first. Staff only.",
+        "description": "Every draft save and every publish is a row with the values after it and the person who made it.\nA student with no grade has an empty history.",
+        "operationId": "get_grade_history",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Assignment id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "student_id",
+            "in": "path",
+            "description": "The student",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Page size, 1 to 100 (default 50).",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A page of history entries",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_GradeHistoryEntry"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not logged in",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller may not read the gradebook",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such assignment, or not visible to the caller",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid cursor",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          },
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/assignments/{id}/submission": {
       "get": {
         "tags": [
@@ -3007,6 +3118,68 @@
         ]
       }
     },
+    "/api/v1/courses/{id}/item-meta": {
+      "get": {
+        "tags": [
+          "content"
+        ],
+        "summary": "The facts of every item of the course that the tree does not carry, by item id.",
+        "description": "Everyone gets the reading time of a lecture and the class day of in-class work. Staff also get\n`edited` and the counts of what to grade; a student gets their own standing, with published\nvalues only.",
+        "operationId": "get_item_meta",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Course id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The facts by item id",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ItemMetaMap"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not logged in",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such course, or not visible to the caller",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          },
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/courses/{id}/members": {
       "get": {
         "tags": [
@@ -5218,8 +5391,8 @@
         "tags": [
           "content"
         ],
-        "summary": "Changes an item's title, body and/or `publish_at` (`null` clears it). A `body` replaces the\nwhole body. Edits to a published item are visible at once (ADR-0010).",
-        "description": "For an assignment `config`, `max_points` and `is_bonus` may change too; the grading scale\nlimits apply when `max_points` is raised or a bonus assignment becomes regular. They are\nrejected for a `text` item. `type` and `kind` cannot change: sending them has no effect.",
+        "summary": "Changes an item's title, body and/or `publish_at` (`null` clears it). A `body` replaces the\nwhole body. The title and body of a published item are a working copy: students keep reading the\npublished one until `POST /items/{id}/revision/publish` (ADR-0049). An assignment's `config`,\npoints and deadline settings apply at once.",
+        "description": "For an assignment `config`, `max_points` and `is_bonus` may change too; the grading scale\nlimits apply when `max_points` is raised or a bonus assignment becomes regular. `class_on` is\nfor `no_submission` assignments. They are rejected for a `text` item. `type` and `kind` cannot change: sending them has no effect.",
         "operationId": "update_item",
         "parameters": [
           {
@@ -5357,6 +5530,159 @@
           },
           "404": {
             "description": "No such item, or not visible to the caller",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          },
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/items/{id}/revision": {
+      "get": {
+        "tags": [
+          "content"
+        ],
+        "summary": "Whether a published item has changes that students do not see yet. Staff only.",
+        "operationId": "get_revision",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Item id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The revision",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ItemRevision"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not logged in",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Only staff see revisions",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such item, or not visible to the caller",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          },
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/items/{id}/revision/publish": {
+      "post": {
+        "tags": [
+          "content"
+        ],
+        "summary": "Gives students the working title and body of a published item (ADR-0049).",
+        "description": "A draft has nothing to publish a revision of: publish the item (`409`). Not in an archived\ncourse.",
+        "operationId": "publish_revision",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Item id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The revision after publishing",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ItemRevision"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not logged in",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller may not change this course's content",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such item, or not visible to the caller",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The item is a draft, or the course is archived",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -7231,6 +7557,14 @@
             ],
             "description": "Whether work is taken after `due_at`; set exactly when `due_at` is."
           },
+          "class_on": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date",
+            "description": "The day an in-class (`no_submission`) assignment takes place, `YYYY-MM-DD` (ADR-0049);\n`null` for any other type."
+          },
           "config": {
             "type": "object",
             "description": "Settings of the type; an empty object for `text` and `no_submission`."
@@ -8490,6 +8824,35 @@
           }
         }
       },
+      "GradeAction": {
+        "type": "string",
+        "description": "What a history row records (ADR-0028).",
+        "enum": [
+          "save_draft",
+          "publish"
+        ]
+      },
+      "GradeActor": {
+        "type": "object",
+        "description": "Who made a change.",
+        "required": [
+          "user_id",
+          "name",
+          "surname"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "surname": {
+            "type": "string"
+          },
+          "user_id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      },
       "GradeCell": {
         "type": "object",
         "description": "One cell as staff see it: both slots. Never sent to a student.",
@@ -8525,6 +8888,53 @@
               "string",
               "null"
             ]
+          }
+        }
+      },
+      "GradeHistoryEntry": {
+        "type": "object",
+        "description": "One recorded change of a grade (ADR-0049). Data, not a sentence: the client words it.",
+        "required": [
+          "id",
+          "action",
+          "at"
+        ],
+        "properties": {
+          "action": {
+            "$ref": "#/components/schemas/GradeAction"
+          },
+          "actor": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/GradeActor",
+                "description": "`null` when no person made the change."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "feedback": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The feedback after the change; `null` when none."
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "score": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The score after the change, a decimal string with two decimals; `null` when none."
           }
         }
       },
@@ -8938,6 +9348,157 @@
           "text",
           "assignment"
         ]
+      },
+      "ItemMeta": {
+        "type": "object",
+        "description": "The facts of one item that the course tree does not carry. Only the facts that apply to the\nitem and to the caller are present.",
+        "properties": {
+          "attempts_used": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "class_on": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date",
+            "description": "In-class assignments: the day they take place."
+          },
+          "draft_grades": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "Staff: grades whose draft differs from what is published.",
+            "minimum": 0
+          },
+          "draft_saved_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "edited": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "Staff: the item is published and has changes students do not see yet."
+          },
+          "graded_total": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "Staff: current students of the course.",
+            "minimum": 0
+          },
+          "published_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "read_minutes": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "Lectures: minutes to read the body the caller sees, at least 1.",
+            "minimum": 0
+          },
+          "score": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Students: the published score; absent until grades are published."
+          },
+          "status": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/WorkStatus",
+                "description": "Students, assignments: the caller's own standing."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "submitted": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "Staff, assignments: current students who submitted at least once.",
+            "minimum": 0
+          },
+          "to_grade": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "Staff: of those, the ones without a score yet.",
+            "minimum": 0
+          }
+        }
+      },
+      "ItemMetaMap": {
+        "type": "object",
+        "description": "The facts by item id, for the items the caller may see.",
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/ItemMeta"
+            },
+            "propertyNames": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "ItemRevision": {
+        "type": "object",
+        "description": "What the editor shows about the unpublished changes of an item.",
+        "required": [
+          "has_unpublished_changes",
+          "size_bytes"
+        ],
+        "properties": {
+          "has_unpublished_changes": {
+            "type": "boolean",
+            "description": "The working title or body differs from what students read."
+          },
+          "last_published_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "When students last got a new version; `null` for an item never published."
+          },
+          "size_bytes": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The size of the working body as JSON."
+          }
+        }
       },
       "ItemSummary": {
         "type": "object",
@@ -9365,6 +9926,14 @@
               "null"
             ]
           },
+          "class_on": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date",
+            "description": "The day an in-class assignment takes place, `YYYY-MM-DD` (ADR-0049). Only for\n`no_submission`."
+          },
           "config": {
             "type": [
               "object",
@@ -9567,6 +10136,71 @@
                 "user_id": {
                   "type": "string",
                   "format": "uuid"
+                }
+              }
+            }
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Pass as `cursor` to get the next page; `null` on the last page."
+          }
+        }
+      },
+      "Page_GradeHistoryEntry": {
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "description": "One recorded change of a grade (ADR-0049). Data, not a sentence: the client words it.",
+              "required": [
+                "id",
+                "action",
+                "at"
+              ],
+              "properties": {
+                "action": {
+                  "$ref": "#/components/schemas/GradeAction"
+                },
+                "actor": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/GradeActor",
+                      "description": "`null` when no person made the change."
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "at": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "feedback": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "description": "The feedback after the change; `null` when none."
+                },
+                "id": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "score": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "description": "The score after the change, a decimal string with two decimals; `null` when none."
                 }
               }
             }
@@ -10768,6 +11402,14 @@
               }
             ]
           },
+          "class_on": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date",
+            "description": "`no_submission` assignments only (ADR-0049). Omit to keep, `null` to clear, a day\n(`YYYY-MM-DD`) to set."
+          },
           "config": {
             "type": [
               "object",
@@ -11000,6 +11642,18 @@
         "enum": [
           "youtube",
           "vimeo"
+        ]
+      },
+      "WorkStatus": {
+        "type": "string",
+        "description": "Where a student stands on an assignment.",
+        "enum": [
+          "not_started",
+          "draft",
+          "submitted",
+          "graded",
+          "missed",
+          "in_class"
         ]
       }
     },

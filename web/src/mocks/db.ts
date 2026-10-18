@@ -30,8 +30,10 @@ export type DbGrade = {
   published_score: string | null;
   published_feedback: string | null;
   published_at: string | null;
-  history: { what: string; at: string }[];
+  history: DbHistory[];
 };
+/** One recorded change of a grade, as the server's `grade_history` row (ADR-0049). */
+export type DbHistory = { action: "save_draft" | "publish"; score: string | null; feedback: string | null; actor_id: string | null; at: string };
 export type DbGroupMember = { group_id: string; subgroup_id: string | null; user_id: string; since: string };
 export type DbLink = CourseGroupLink & { linked_on: string };
 

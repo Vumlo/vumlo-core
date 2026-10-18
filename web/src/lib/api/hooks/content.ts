@@ -2,8 +2,7 @@
 
 import { api } from "../client";
 import { invalidate, useMutation, useQuery } from "../../query";
-import type { ItemRevision } from "../gaps";
-import type { Document, EditorProfiles, Item, Module } from "../types";
+import type { Document, EditorProfiles, Item, ItemRevision, Module } from "../types";
 
 export type NewItem =
   | { kind: "text"; title: string; body?: Document }
@@ -20,7 +19,7 @@ export type ItemPatch = Partial<{
   late_until: string | null;
   max_attempts: number | null;
   publish_at: string | null;
-  /** GAP: the date of in-class work (API_GAPS.md, "Done in class"). */
+  /** The day of in-class work, `YYYY-MM-DD`; `null` clears it (ADR-0049). */
   class_on: string | null;
 }>;
 
@@ -34,7 +33,7 @@ export function useEditorProfiles() {
   return useQuery<EditorProfiles>("/editor/profiles", () => api.get<EditorProfiles>("/editor/profiles"));
 }
 
-/** GAP: unpublished changes of a published item (API_GAPS.md, "Unpublished changes"). */
+/** Whether a published item has changes that students do not see yet (ADR-0049). */
 export function useItemRevision(itemId: string | null) {
   return useQuery<ItemRevision>(itemId ? `/items/${itemId}/revision` : null, () => api.get<ItemRevision>(`/items/${itemId}/revision`));
 }

@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useState } from "react";
 import { Icon } from "@/components/Icon";
-import type { ItemMeta } from "@/lib/api/gaps";
+import type { ItemMeta } from "@/lib/api/types";
 import type { ContentTree } from "@/lib/api/types";
 import { isAssignment, kindOf, outlineMark, sections } from "@/lib/course";
 import { useT } from "@/lib/i18n";

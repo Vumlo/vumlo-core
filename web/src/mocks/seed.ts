@@ -341,10 +341,10 @@ export function createSeed(): Db {
     const g = gradeFor(assignmentId, student);
     g.draft_score = score; g.draft_feedback = feedback; g.published_score = score; g.published_feedback = feedback; g.published_at = at(when);
   };
-  const setDraftGrade = (assignmentId: string, student: string, score: string, history: { what: string; at: string }[]) => {
+  const setDraftGrade = (assignmentId: string, student: string, score: string, history: { score: string; at: string; auto?: boolean }[]) => {
     const g = gradeFor(assignmentId, student);
     g.draft_score = score;
-    g.history = history.map((h) => ({ what: h.what, at: h.at }));
+    g.history = history.map((h) => ({ action: "save_draft" as const, score: h.score, feedback: null, actor_id: h.auto ? null : elena, at: h.at }));
   };
   const answerDoc = (text: string, source?: string): Document =>
     doc(para(text), ...(source ? [code("python", source)] : []));
@@ -363,10 +363,10 @@ export function createSeed(): Db {
   submit(aMerge, ivan, "2026-10-16 21:12", answerDoc("Recursive merge sort.", MERGE_CODE));
   submit(aMerge, omar, "2026-10-16 09:30", answerDoc("Recursive merge sort.", MERGE_CODE));
   submit(aMerge, aiko, "2026-10-14 12:00", answerDoc("Recursive merge sort.", MERGE_CODE));
-  setDraftGrade(aMerge, daniel, "22.50", [{ what: "Draft set to 22.50", at: at("2026-10-17 14:02") }, { what: "Draft set to 20.00", at: at("2026-10-16 19:30") }]);
-  setDraftGrade(aMerge, sofia, "29.00", [{ what: "Draft set to 29.00", at: at("2026-10-16 17:00") }]);
-  setDraftGrade(aMerge, omar, "27.50", [{ what: "Draft set to 27.50", at: at("2026-10-16 18:00") }]);
-  setDraftGrade(aMerge, aiko, "28.00", [{ what: "Draft set to 28.00", at: at("2026-10-16 18:20") }]);
+  setDraftGrade(aMerge, daniel, "22.50", [{ score: "22.50", at: at("2026-10-17 14:02") }, { score: "20.00", at: at("2026-10-16 19:30") }]);
+  setDraftGrade(aMerge, sofia, "29.00", [{ score: "29.00", at: at("2026-10-16 17:00") }]);
+  setDraftGrade(aMerge, omar, "27.50", [{ score: "27.50", at: at("2026-10-16 18:00") }]);
+  setDraftGrade(aMerge, aiko, "28.00", [{ score: "28.00", at: at("2026-10-16 18:20") }]);
   // Presentations
   publish(aPres0, maya, "13.00", "2026-10-09 18:00", "A clear example with the contact list. You ran two minutes over, so leave out the second example next time.");
   // Form: Maya's draft, two other teams submitted.
@@ -390,7 +390,7 @@ export function createSeed(): Db {
   submit(aBfs, s305[1]!, "2026-10-15 23:41", answerDoc("BFS with a deque."));
   s305.slice(0, 12).forEach((s, i) => {
     submit(aPaths, s, `2026-10-16 1${i % 10}:00`, { answers: { q1: "a", q2: "7" } });
-    setDraftGrade(aPaths, s, "10.00", [{ what: "Scored automatically: 10.00", at: at("2026-10-16 23:00") }]);
+    setDraftGrade(aPaths, s, "10.00", [{ score: "10.00", auto: true, at: at("2026-10-16 23:00") }]);
   });
   void aDijk;
 

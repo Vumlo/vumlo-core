@@ -1,8 +1,8 @@
 import { dueLabel, relative, shortDay } from "./format";
 import { translate } from "./i18n/core";
 import type { MessageKey } from "./i18n/core";
-import type { ItemMeta, WorkStatus } from "./api/gaps";
-import type { ContentModule, ContentSubModule, ContentTree, CourseInfo, ItemSummary, LinkedGroup } from "./api/types";
+import type { WorkStatus } from "./api/gaps";
+import type { ContentModule, ContentSubModule, ContentTree, CourseInfo, ItemMeta, ItemSummary, LinkedGroup } from "./api/types";
 
 /** The owner as a person's name; `null` until the header is loaded. */
 export const ownerName = (info: Pick<CourseInfo, "owner_name" | "owner_surname"> | undefined): string | null =>
