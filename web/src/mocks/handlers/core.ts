@@ -1,7 +1,8 @@
 import { http, HttpResponse } from "msw";
 import { MOCK_NOW } from "@/lib/clock";
 import { sumPoints, toCents } from "@/lib/points";
-import type { CourseCard, FormConfig } from "@/lib/api/gaps";
+import type { FormConfig } from "@/lib/api/gaps";
+import type { CourseCard } from "@/lib/api/types";
 import { configFromWire, configToWire } from "@/lib/api/sheetWire";
 import { isoToLocal, localToIso } from "@/lib/format";
 import type { CourseInfo, CoursePeople, Item, ServerItemMeta, TemplateSummary } from "@/lib/api/types";
@@ -95,7 +96,7 @@ function cards(userId: string): CourseCard[] {
     const staff = isStaff(user, c);
     const myRole = c.owner_id === userId ? "owner" : m.role;
     const base = {
-      course: publicCourse(c), code: c.code, term_name: termName(c), term_ended: termEnded(c), owner_name: teacherName(ownerOf(c)), my_role: myRole,
+      course: publicCourse(c), code: c.code, term_name: termName(c), term_ended: termEnded(c), owner_name: ownerOf(c).name, owner_surname: ownerOf(c).surname, my_role: myRole,
       student_count: activeStudents(c.id).length, assistant_count: db.members.filter((x) => x.course_id === c.id && x.role === "assistant").length,
     } as const;
     if (!staff) {
@@ -123,12 +124,12 @@ function cards(userId: string): CourseCard[] {
         if (g && hasUnpublishedChanges(g)) { drafts++; if (i.assignment!.type === "quiz") draftNote = i.title; }
       }
     }
-    if (toGrade) todo.push({ kind: "grade", text: `${toGrade} ${toGrade === 1 ? "submission" : "submissions"} to grade` });
-    if (drafts) todo.push({ kind: "draft", text: draftNote ? `${drafts} quiz grades scored, not published` : `${drafts} draft grades not published` });
-    const unpub = db.items.filter((i) => i.course_id === c.id && i.kind === "text" && i.status === "draft" && moduleOf(i).status === "published");
-    if (unpub.length) todo.push({ kind: "info", text: `${unpub.length} unpublished lecture${unpub.length > 1 ? "s" : ""}: ${unpub.map((i) => i.title).join(", ")}` });
+    if (toGrade) todo.push({ kind: "to_grade", count: toGrade });
+    if (drafts) todo.push({ kind: "draft_grades", count: drafts, auto_scored: !!draftNote });
+    const unpub = db.items.filter((i) => i.course_id === c.id && i.status === "draft" && moduleOf(i).status === "published");
+    if (unpub.length) todo.push({ kind: "unpublished_items", count: unpub.length, titles: unpub.slice(0, 3).map((i) => i.title) });
     const nextDue = items.filter((i) => i.assignment!.due_at && new Date(i.assignment!.due_at) >= MOCK_NOW).sort((a, b) => a.assignment!.due_at!.localeCompare(b.assignment!.due_at!))[0];
-    if (nextDue) todo.push({ kind: "info", text: `Next deadline: ${nextDue.title}`, due_at: nextDue.assignment!.due_at! });
+    if (nextDue) todo.push({ kind: "next_deadline", assignment_id: nextDue.id, title: nextDue.title, due_at: nextDue.assignment!.due_at! });
     return { ...base, progress: null, next: null, todo };
   });
 }

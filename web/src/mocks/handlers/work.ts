@@ -1,7 +1,9 @@
 import { http, HttpResponse } from "msw";
 import { MOCK_NOW } from "@/lib/clock";
+import { isoToLocal } from "@/lib/format";
 import { toCents } from "@/lib/points";
-import type { AnswerMap, MyWork, SearchHit, TeachingOverview } from "@/lib/api/gaps";
+import type { AnswerMap } from "@/lib/api/gaps";
+import type { MyWork, SearchHit, TeachingOverview } from "@/lib/api/types";
 import { answersFromWire, answersToWire } from "@/lib/api/sheetWire";
 import { getDb, uid, type DbSubmission } from "../db";
 import {
@@ -101,7 +103,7 @@ function snippet(text: string, q: string): string | null {
 }
 
 export const workHandlers = [
-  // GAP: search over the courses and materials the caller can see (API_GAPS.md, "Search").
+  // Search over the courses and materials the caller can see (ADR-0052).
   http.get(`${A}/search`, ({ request }) => {
     const user = requireUser();
     const q = (new URL(request.url).searchParams.get("q") ?? "").trim().toLowerCase();
@@ -226,8 +228,8 @@ export const workHandlers = [
     const db = getDb();
     const mine = db.courses.filter((c) => c.kind === "regular" && c.status !== "draft" && memberOf(c.id, user.id)?.role === "student");
     const work: MyWork = {
-      courses: mine.map((c) => ({ id: c.id, code: c.code, title: c.title, term_name: db.terms.find((t) => t.id === c.term_id)?.name ?? null, owner_name: `Dr. ${userById(c.owner_id).name} ${userById(c.owner_id).surname}` })),
-      items: mine.flatMap((c) => flatItems(c, false).filter((i) => i.assignment).map((i) => workItem(i, user.id))),
+      courses: mine.map((c) => ({ id: c.id, code: c.code, title: c.title, term_name: db.terms.find((t) => t.id === c.term_id)?.name ?? null, owner_name: userById(c.owner_id).name, owner_surname: userById(c.owner_id).surname })),
+      items: mine.flatMap((c) => flatItems(c, false).filter((i) => i.assignment).map((i) => { const w = workItem(i, user.id); return { ...w, class_on: w.class_on ? isoToLocal(w.class_on).slice(0, 10) : null }; })),
     };
     return HttpResponse.json(work);
   }),
@@ -345,14 +347,14 @@ export const workHandlers = [
           const due = item.assignment.due_at;
           if (due && new Date(due) >= MOCK_NOW) {
             deadlines.push({
-              assignment_id: item.id, course_id: c.id, course_code: info.code, title: item.title, due_at: due,
-              submitted: students.filter((s) => (submissionOf(item.id, s.user_id)?.attempts.length ?? 0) > 0).length, total: students.length, note: item.status === "draft" ? "not open yet" : null,
+              assignment_id: item.id, course_id: c.id, course_code: info.code, course_title: c.title, title: item.title, due_at: due,
+              submitted: students.filter((s) => (submissionOf(item.id, s.user_id)?.attempts.length ?? 0) > 0).length, total: students.length, not_open: item.status === "draft",
             });
           }
         }
         const parentDraft = db.modules.find((m) => m.id === item.module_id)?.status === "draft";
-        if (item.status === "draft" && !parentDraft) content.push({ item_id: item.id, course_id: c.id, course_code: info.code, title: item.title, note: "draft" });
-        if (item.unpublished_changes) content.push({ item_id: item.id, course_id: c.id, course_code: info.code, title: item.title, note: "edits" });
+        if (item.status === "draft" && !parentDraft) content.push({ item_id: item.id, course_id: c.id, course_code: info.code, course_title: c.title, title: item.title, reason: "draft" });
+        if (item.unpublished_changes) content.push({ item_id: item.id, course_id: c.id, course_code: info.code, course_title: c.title, title: item.title, reason: "edits" });
       }
     }
     const overview: TeachingOverview = { to_grade, unpublished, deadlines: deadlines.sort((a, b) => a.due_at.localeCompare(b.due_at)), unpublished_content: content };

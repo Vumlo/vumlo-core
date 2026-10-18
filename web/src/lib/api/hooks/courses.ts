@@ -3,8 +3,8 @@
 import { api } from "../client";
 import { invalidate, useMutation, useQuery } from "../../query";
 import { localToIso } from "../../format";
-import type { CourseCard } from "../gaps";
-import type { Candidate, ContentTree, Course, CourseGroupLink, CourseInfo, CoursePeople, GroupOption, Item, ItemMetaMap, Membership, ServerItemMeta, TemplateSummary, Term } from "../types";
+
+import type { Candidate, ContentTree, Course, CourseCard, CourseGroupLink, CourseInfo, CoursePeople, GroupOption, Item, ItemMetaMap, Membership, ServerItemMeta, TemplateSummary, Term } from "../types";
 import { itemFromWire } from "../sheetWire";
 import { fetchAll } from "./util";
 
@@ -21,7 +21,7 @@ export function useCourseInfo(id: string | null) {
   return useQuery<CourseInfo>(id ? `/courses/${id}/info` : null, () => api.get<CourseInfo>(`/courses/${id}/info`));
 }
 
-/** GAP: aggregate for the course cards (API_GAPS.md, "Course cards"). */
+/** The course cards: progress for a student, a to-do list for staff (ADR-0052). */
 export function useCourseCards() {
   return useQuery<CourseCard[]>("/me/course-cards", async () => (await api.get<{ items: CourseCard[] }>("/me/course-cards")).items);
 }

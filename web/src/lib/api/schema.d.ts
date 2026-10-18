@@ -1257,6 +1257,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/me/course-cards": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * One card for each regular course the caller takes part in, by title: a student's card has their
+         *     progress and next deadline, a teacher's has a to-do list with counts and kinds, not sentences.
+         *     A student sees only published and archived courses, and only what students may open in them.
+         */
+        get: operations["get_course_cards"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/me/courses": {
         parameters: {
             query?: never;
@@ -1332,6 +1353,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/me/teaching": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * What the caller has to do across the courses they teach, assist in or own and that are not
+         *     archived (ADR-0052): the work waiting for a grade, draft grades not published, deadlines coming
+         *     up and content students cannot read yet. Counts and kinds, not sentences.
+         */
+        get: operations["get_teaching"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/me/templates": {
         parameters: {
             query?: never;
@@ -1344,6 +1386,26 @@ export interface paths {
          *     each holds.
          */
         get: operations["list_templates"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/me/work": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Every assignment of the courses the caller studies in, with the caller's own standing on it
+         *     (ADR-0052). Only what students can open, with published titles, scores and times.
+         */
+        get: operations["get_my_work"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1436,6 +1498,27 @@ export interface paths {
          *     changes `publish_at`: a module scheduled for later stays hidden from students until then.
          */
         post: operations["publish_module"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Courses, lectures and assignments of the caller's courses that contain `q` (2 to 100
+         *     characters), title matches first, at most 50 (ADR-0052). A student searches the published copy
+         *     of what students can open; staff also search drafts and unpublished edits.
+         */
+        get: operations["search"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1758,6 +1841,55 @@ export interface components {
         Candidates: {
             items: components["schemas"]["Candidate"][];
         };
+        /** @description The next piece of work a student has to do. */
+        CardNext: {
+            /** Format: uuid */
+            assignment_id: string;
+            /** Format: date-time */
+            due_at: string;
+            title: string;
+        };
+        /** @description A student's numbers over the assignments of a course that take submissions. */
+        CardProgress: {
+            /** Format: int64 */
+            graded: number;
+            /** Format: int64 */
+            submitted: number;
+            /** Format: int64 */
+            total: number;
+        };
+        /**
+         * @description The caller's place in a course.
+         * @enum {string}
+         */
+        CardRole: "owner" | "teacher" | "assistant" | "student";
+        /** @description One thing a teacher has to do in a course. Entries with a count of 0 are left out. */
+        CardTodo: {
+            /** Format: int64 */
+            count: number;
+            /** @enum {string} */
+            kind: "to_grade";
+        } | {
+            auto_scored: boolean;
+            /** Format: int64 */
+            count: number;
+            /** @enum {string} */
+            kind: "draft_grades";
+        } | {
+            /** Format: int64 */
+            count: number;
+            /** @enum {string} */
+            kind: "unpublished_items";
+            titles: string[];
+        } | {
+            /** Format: uuid */
+            assignment_id: string;
+            /** Format: date-time */
+            due_at: string;
+            /** @enum {string} */
+            kind: "next_deadline";
+            title: string;
+        };
         ChangePasswordRequest: {
             current_password: string;
             new_password: string;
@@ -1806,6 +1938,29 @@ export interface components {
              */
             term_id?: string | null;
             title: string;
+        };
+        /** @description One course of the caller on the course list and the home page. */
+        CourseCard: {
+            /** Format: int64 */
+            assistant_count: number;
+            code: string;
+            course: components["schemas"]["Course"];
+            my_role: components["schemas"]["CardRole"];
+            next?: components["schemas"]["CardNext"] | null;
+            owner_name: string;
+            owner_surname: string;
+            progress?: components["schemas"]["CardProgress"] | null;
+            /** Format: int64 */
+            student_count: number;
+            /** @description The term's last day is before today in the institution's time zone. */
+            term_ended: boolean;
+            term_name?: string | null;
+            /** @description Staff only. */
+            todo: components["schemas"]["CardTodo"][];
+        };
+        /** @description The course cards of the caller. */
+        CourseCards: {
+            items: components["schemas"]["CourseCard"][];
         };
         /** @description A live link of a course to a whole group, or to one subgroup of it. */
         CourseGroupLink: {
@@ -1875,6 +2030,13 @@ export interface components {
             groups: components["schemas"]["LinkedGroup"][];
             people: components["schemas"]["PersonRow"][];
         };
+        /** @description A course, as a line of the teacher's overview. */
+        CourseRef: {
+            course_code: string;
+            /** Format: uuid */
+            course_id: string;
+            course_title: string;
+        };
         /**
          * @description A user's role inside one course. The owner is a `teacher` flagged `is_owner`.
          * @enum {string}
@@ -1933,6 +2095,20 @@ export interface components {
             /** @description Shown once. The user must change it at first login. */
             temporary_password: string;
             user: components["schemas"]["User"];
+        };
+        /** @description An assignment due from now on. */
+        Deadline: components["schemas"]["CourseRef"] & {
+            /** Format: uuid */
+            assignment_id: string;
+            /** Format: date-time */
+            due_at: string;
+            /** @description The assignment is a draft: students do not see it yet. */
+            not_open: boolean;
+            /** Format: int64 */
+            submitted: number;
+            title: string;
+            /** Format: int64 */
+            total: number;
         };
         /** @description A block document. `attachments` must be empty for now and is optional on input. */
         Document: {
@@ -2159,6 +2335,16 @@ export interface components {
             database: string;
             status: string;
         };
+        /**
+         * @description What a search hit is.
+         * @enum {string}
+         */
+        HitKind: "course" | "lecture" | "assignment";
+        /**
+         * @description Whether a hit is visible to students.
+         * @enum {string}
+         */
+        HitStatus: "draft" | "published";
         /** @description A run of inline content. */
         Inline: (components["schemas"]["TextRun"] & {
             /** @enum {string} */
@@ -2434,6 +2620,11 @@ export interface components {
             draft?: components["schemas"]["SubmissionDraft"] | null;
             /** @description Pass as `cursor` to get the older attempts; `null` on the last page. */
             next_cursor?: string | null;
+        };
+        /** @description Every assignment of the caller's courses with the caller's own progress. */
+        MyWork: {
+            courses: components["schemas"]["WorkCourse"][];
+            items: components["schemas"]["WorkItem"][];
         };
         /** @description The name of a group or a subgroup, to create or to rename. */
         NameRequest: {
@@ -2854,6 +3045,26 @@ export interface components {
              */
             score?: string | null;
         };
+        /** @description A course, or a lecture or an assignment in one. */
+        SearchHit: components["schemas"]["CourseRef"] & {
+            /**
+             * Format: date-time
+             * @description For an assignment, when it is due.
+             */
+            due_at?: string | null;
+            /** Format: uuid */
+            id: string;
+            kind: components["schemas"]["HitKind"];
+            /** @description A short piece of text around the match; `null` for a course or a match in the title. */
+            snippet?: string | null;
+            status: components["schemas"]["HitStatus"];
+            title: string;
+        };
+        /** @description The hits, best first. There is no next page: the list is cut at 50. */
+        SearchResults: {
+            items: components["schemas"]["SearchHit"][];
+            next_cursor?: string | null;
+        };
         Session: {
             /** Format: date-time */
             created_at: string;
@@ -2937,6 +3148,13 @@ export interface components {
             /** @description Rows of cells; a cell is a line of inline runs. All rows have the same number of cells. */
             rows: components["schemas"]["Inline"][][][];
         };
+        /** @description What a teacher has to do across all their courses. */
+        TeachingOverview: {
+            deadlines: components["schemas"]["Deadline"][];
+            to_grade: components["schemas"]["ToGrade"][];
+            unpublished: components["schemas"]["UnpublishedGrades"][];
+            unpublished_content: components["schemas"]["UnpublishedContent"][];
+        };
         /** @description A template with what it holds. */
         TemplateSummary: {
             /** Format: int32 */
@@ -2969,11 +3187,49 @@ export interface components {
             styles?: components["schemas"]["Styles"];
             text: string;
         };
+        /** @description A student's latest attempt that has no draft score yet. */
+        ToGrade: components["schemas"]["CourseRef"] & {
+            /** Format: uuid */
+            assignment_id: string;
+            assignment_title: string;
+            /** Format: int32 */
+            attempt: number;
+            /** Format: int32 */
+            max_attempts?: number | null;
+            /** Format: uuid */
+            student_id: string;
+            student_name: string;
+            student_surname: string;
+            /** Format: date-time */
+            submitted_at: string;
+        };
         /** @description The new owner of a course (ADR-0037): an active teacher or admin. */
         TransferOwnershipRequest: {
             /** Format: uuid */
             user_id: string;
         };
+        /** @description An item with content students cannot read yet. */
+        UnpublishedContent: components["schemas"]["CourseRef"] & {
+            /** Format: uuid */
+            item_id: string;
+            reason: components["schemas"]["UnpublishedReason"];
+            title: string;
+        };
+        /** @description An assignment whose draft grades are not published. */
+        UnpublishedGrades: components["schemas"]["CourseRef"] & {
+            /** Format: uuid */
+            assignment_id: string;
+            assignment_title: string;
+            /** @description The assignment is a quiz, so the drafts were scored by the server. */
+            auto_scored: boolean;
+            /** Format: int64 */
+            draft_count: number;
+        };
+        /**
+         * @description Why an item is on the list of unpublished content.
+         * @enum {string}
+         */
+        UnpublishedReason: "draft" | "edits";
         /** @description Only the fields present change. */
         UpdateCourseInfoRequest: {
             /** @description At most 32 characters after trimming; empty clears the code. */
@@ -3083,6 +3339,37 @@ export interface components {
          * @enum {string}
          */
         VideoProvider: "youtube" | "vimeo";
+        /** @description A course a student studies in. */
+        WorkCourse: {
+            code: string;
+            /** Format: uuid */
+            id: string;
+            owner_name: string;
+            owner_surname: string;
+            term_name?: string | null;
+            title: string;
+        };
+        /** @description One assignment and the caller's own standing on it. Only published values appear. */
+        WorkItem: {
+            /** Format: uuid */
+            assignment_id: string;
+            /** @description The day an in-class assignment takes place, `YYYY-MM-DD`. */
+            class_on?: string | null;
+            /** Format: uuid */
+            course_id: string;
+            /** Format: date-time */
+            draft_saved_at?: string | null;
+            /** Format: date-time */
+            due_at?: string | null;
+            max_points: string;
+            /** Format: date-time */
+            published_at?: string | null;
+            /** @description The published score, a decimal string with two decimals. */
+            score?: string | null;
+            status: components["schemas"]["WorkStatus"];
+            title: string;
+            type: string;
+        };
         /**
          * @description Where a student stands on an assignment.
          * @enum {string}
@@ -7226,6 +7513,35 @@ export interface operations {
             };
         };
     };
+    get_course_cards: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The caller's cards */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CourseCards"];
+                };
+            };
+            /** @description Not logged in */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
     list_my_courses: {
         parameters: {
             query?: {
@@ -7407,6 +7723,35 @@ export interface operations {
             };
         };
     };
+    get_teaching: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The caller's overview */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TeachingOverview"];
+                };
+            };
+            /** @description Not logged in */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
     list_templates: {
         parameters: {
             query?: {
@@ -7440,6 +7785,35 @@ export interface operations {
             };
             /** @description Invalid cursor */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    get_my_work: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The caller's courses and work */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MyWork"];
+                };
+            };
+            /** @description Not logged in */
+            401: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -7764,6 +8138,47 @@ export interface operations {
                 };
             };
             /** @description `cascade` is missing */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    search: {
+        parameters: {
+            query: {
+                /** @description What to look for, 2 to 100 characters. */
+                q: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The hits */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SearchResults"];
+                };
+            };
+            /** @description Not logged in */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description A search text that is not 2 to 100 characters */
             422: {
                 headers: {
                     [name: string]: unknown;

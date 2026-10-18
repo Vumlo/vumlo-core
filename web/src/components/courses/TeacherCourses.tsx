@@ -6,6 +6,7 @@ import { useMemo, useState } from "react";
 import { Dialog } from "@/components/Dialog";
 import { Icon } from "@/components/Icon";
 import { useCourseCards, useCreateFromTemplate, useTemplates } from "@/lib/api/hooks/courses";
+import { todoText } from "@/lib/course";
 import { dayLong, dueLabel, plural } from "@/lib/format";
 import { useT } from "@/lib/i18n";
 import type { MessageKey } from "@/lib/i18n/core";
@@ -80,9 +81,9 @@ export function TeacherCourses() {
                 {c.todo.length > 0 && (
                   <ul className={s.todo}>
                     {c.todo.map((td) => (
-                      <li key={td.text}>
+                      <li key={td.kind}>
                         <span aria-hidden="true" className={s.dot} data-kind={td.kind} />
-                        <span>{td.due_at ? `${td.text}, ${dueLabel(td.due_at)}` : td.text}</span>
+                        <span>{td.kind === "next_deadline" ? `${todoText(td)}, ${dueLabel(td.due_at)}` : todoText(td)}</span>
                       </li>
                     ))}
                   </ul>

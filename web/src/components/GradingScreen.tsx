@@ -5,7 +5,7 @@ import { useState } from "react";
 import { ItemTile } from "@/components/ItemTile";
 import { usePublishGrades } from "@/lib/api/hooks/assignments";
 import { useTeachingOverview } from "@/lib/api/hooks/work";
-import type { TeachingOverview } from "@/lib/api/gaps";
+import type { TeachingOverview } from "@/lib/api/types";
 import { dueLabel, initials, plural } from "@/lib/format";
 import { useT } from "@/lib/i18n";
 import s from "./GradingScreen.module.css";

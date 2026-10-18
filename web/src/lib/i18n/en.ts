@@ -408,6 +408,16 @@ export const en = {
   "home.allPublished": "Everything is published.",
   "home.openContent": "Open content",
   "home.nothingWaiting": "Nothing waiting",
+  "home.notOpen": "not open yet",
+  "todo.toGrade.one": "{n} submission to grade",
+  "todo.toGrade.other": "{n} submissions to grade",
+  "todo.draftGrades.one": "{n} draft grade not published",
+  "todo.draftGrades.other": "{n} draft grades not published",
+  "todo.quizGrades.one": "{n} quiz grade scored, not published",
+  "todo.quizGrades.other": "{n} quiz grades scored, not published",
+  "todo.unpublished.one": "{n} unpublished item: {titles}",
+  "todo.unpublished.other": "{n} unpublished items: {titles}",
+  "todo.nextDeadline": "Next deadline: {title}",
 
   // course people
   "people.ownerTeacher": "Owner, teacher",

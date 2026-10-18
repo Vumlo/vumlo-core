@@ -19,9 +19,8 @@ Spec endpoints the UI uses as they are: `GET /institution`, `GET /admin/institut
 - **Not mocked:** the "must change password" rule of ADR-0017 (a temporary password may only call change password, logout and `GET /me`). The page does not rely on it; it sends such a session to `/change-password` itself.
 
 ## Search
-- **Screens:** Search (the navbar field opens it).
-- **Missing:** `GET /search?q=` over the courses and the lectures and assignments the caller may see. For a student that means published items only (ADR-0010); staff also get drafts. Results carry the kind, titles, a snippet, and for an assignment its due time.
-- **Mocked:** `GET /search?q=` returns up to 50 hits ranked by title match first. A student searching never gets a draft, and keeps getting the published text while there are unpublished edits.
+- **Server:** done (ADR-0052). `GET /search?q=` (2 to 100 characters) over the caller's courses, titles first, at most 50, students on the published copy. An administrator who is on no roster finds nothing.
+- **Still mocked, on purpose:** the same endpoint in `src/mocks/handlers/work.ts`.
 
 ## New course
 - **Screens:** New course.
@@ -38,14 +37,12 @@ Spec endpoints the UI uses as they are: `GET /institution`, `GET /admin/institut
 - **Still mocked, on purpose:** the same endpoints in `src/mocks/handlers/core.ts`, with the server's shapes, for `pnpm dev:mock` and the Playwright suite. The mock does not make an archived course read-only.
 
 ## Course cards
-- **Screens:** Courses (student and teacher), Home (My courses).
-- **Missing:** one call that returns, per course of the caller: the course, code, term name and whether the term ended, owner name, the caller's role (owner, teacher, assistant, student), student and assistant counts; for a student the progress (submitted, total, graded) and the next deadline; for staff a to-do list (submissions to grade, draft grades not published, unpublished lectures, next deadline).
-- **Mocked:** `GET /me/course-cards`.
+- **Server:** done (ADR-0052). `GET /me/course-cards`: the owner is `owner_name` and `owner_surname`; a teacher's to-do is a list of tagged entries (`to_grade`, `draft_grades`, `unpublished_items`, `next_deadline`) with counts, worded by `todoText` in `src/lib/course.ts`.
+- **Still mocked, on purpose:** the same endpoint in `src/mocks/handlers/core.ts`.
 
 ## My work (assignments with my own progress)
-- **Screens:** Home (Due soon, Continue, New grades, month, Next 7 days), Calendar, Grades.
-- **Missing:** one call for every assignment of the caller's courses with the caller's status (not started, draft, submitted, graded, missed, in class), score, publish time and draft time. With the spec alone this is a content tree, a submission and a grades call per course and per assignment.
-- **Mocked:** `GET /me/work`. Only published scores and feedback are in it (root AGENTS.md section 6).
+- **Server:** done (ADR-0052). `GET /me/work` lists the assignments students can open in the caller's courses with the status of ADR-0049, the published score and times. The class day is a date; the hook turns it into noon of that day.
+- **Still mocked, on purpose:** the same endpoint in `src/mocks/handlers/work.ts`. Only published scores and feedback are in it (root AGENTS.md section 6).
 
 ## Class date of in-class work
 - **Server:** done (ADR-0049). `class_on` is a day (`YYYY-MM-DD`) on `no_submission` assignments, in `PATCH /items/{id}` and `GET /courses/{id}/item-meta`; the hook turns it into noon of that day in the institution's zone.
@@ -60,9 +57,8 @@ Spec endpoints the UI uses as they are: `GET /institution`, `GET /admin/institut
 - **Still mocked, on purpose:** the same endpoints for `pnpm dev:mock`.
 
 ## Teaching overview
-- **Screens:** Teacher home, Grading, Calendar (teacher).
-- **Missing:** the cross-course queue of submissions waiting for a grade, draft grades not published per assignment (with "scored automatically"), the next deadlines with submitted and total counts, unpublished content.
-- **Mocked:** `GET /me/teaching`.
+- **Server:** done (ADR-0052). `GET /me/teaching` returns `to_grade`, `unpublished`, `deadlines` (`not_open`) and `unpublished_content` (`reason: draft | edits`) over the caller's courses that are not archived; the to-grade queue is cut at 200.
+- **Still mocked, on purpose:** the same endpoint in `src/mocks/handlers/work.ts`.
 
 ## Quiz and form assignment types
 - **Server:** done (ADR-0050, ADR-0051). `quiz` and `form` are assignment types; `GET /assignments/{id}/result` and `GET /assignments/{id}/responses` are in `openapi.json`. A quiz is scored when it is submitted and its score becomes the draft grade (not when it has a free-text question); a student never receives the answer key.

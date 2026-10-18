@@ -5,7 +5,7 @@ import { ItemTile } from "@/components/ItemTile";
 import { StatusPill } from "@/components/StatusPill";
 import { useCourseCards } from "@/lib/api/hooks/courses";
 import { useMyWork } from "@/lib/api/hooks/work";
-import type { MyWorkItem } from "@/lib/api/gaps";
+import type { MyWorkItem } from "@/lib/api/types";
 import { now } from "@/lib/clock";
 import { statusPill } from "@/lib/course";
 import { dayKey, dayLabel, dueLabel, fullDate, greeting, monthName, monthOf, parts, weekdayShort, shortDay, sinceLabel, timeOf } from "@/lib/format";
@@ -15,7 +15,7 @@ import { translate } from "@/lib/i18n/core";
 import { WidgetGrid, type WidgetDef } from "./WidgetGrid";
 import h from "./Home.module.css";
 
-const itemHref = (w: Pick<MyWorkItem, "course_id" | "item_id">) => `/courses/${w.course_id}/items/${w.item_id}`;
+const itemHref = (w: Pick<MyWorkItem, "course_id" | "assignment_id">) => `/courses/${w.course_id}/items/${w.assignment_id}`;
 
 function Loading() {
   return <p className={h.empty} role="status">{translate("common.loading")}</p>;
