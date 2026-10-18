@@ -79,7 +79,7 @@ max_concurrent_hashes = 8          # password hashes and checks at once, ~19 MiB
 # dir = "/tmp/vumlo-mail"
 
 [institution]
-name = "Example University"
+name = "Vumlo"
 # REQUIRED. Choose it before the first start: it is recorded in the database then and cannot be
 # changed later (a different value stops the server).
 #   "school"     - every piece of work is graded 1-12; the default grading scale is "twelve"
@@ -94,8 +94,9 @@ mode = "university"
 # language = "en"          # "en" | "uk"; default "en"
 # time_zone = "Europe/Kyiv" # an IANA zone name; default "UTC"
 # The logo `vumlo-cli brand apply` builds the favicon and the app icons from: a path (relative to
-# this file) or an http(s) URL to a PNG, JPEG, WebP or SVG. Optional.
-# logo = "brand/logo.svg"
+# this file) or an http(s) URL to a PNG, JPEG, WebP or SVG. Optional. The file below is a PLACEHOLDER
+# that ships with Vumlo: replace it with your institution's logo, or point this at your own file.
+logo = "brand/logo.svg"
 
 # Optional add-on modules (ADR-0054). Each is compiled in with a Cargo feature of the same name
 # and switched on here; `vumlo-cli modules list` shows which this build has. Off by default.

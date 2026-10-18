@@ -205,6 +205,47 @@ async fn brand_apply_is_idempotent_and_starts_from_scratch() {
     .await;
 }
 
+/// What `init` writes and the placeholder logo of the repository: an installation with no assets
+/// of its own builds, and the institution's own logo replaces every trace of the placeholder.
+#[tokio::test]
+async fn the_placeholder_brand_builds_and_is_replaced_completely() {
+    const EXAMPLE: &str = include_str!("../../../../deploy/vumlo.example.toml");
+    const PLACEHOLDER: &str = include_str!("../../../../brand/logo.svg");
+    db_test(async |pool| {
+        let env = Env::with_config(&pool, EXAMPLE);
+        std::fs::create_dir_all(env.path("brand")).unwrap();
+        std::fs::write(env.path("brand/logo.svg"), PLACEHOLDER).unwrap();
+
+        let out = env.run(&["brand", "apply"]).await;
+
+        assert!(out.ok, "{}", out.stderr);
+        let files = tree(&env.path(".vumlo/generated"));
+        let client: Value = serde_json::from_slice(&files["client-config.json"]).unwrap();
+        assert_eq!(client["public"]["institution"]["name"], "Vumlo");
+        assert_eq!(client["logo"], "logo.svg");
+        assert!(files.contains_key("favicon.ico") && files.contains_key("icon-512.png"));
+
+        std::fs::write(env.path("logo.png"), png_logo()).unwrap();
+        let own = EXAMPLE.replace("logo = \"brand/logo.svg\"", "logo = \"logo.png\"");
+        std::fs::write(env.path("vumlo.toml"), own).unwrap();
+        let out = env.run(&["brand", "apply"]).await;
+
+        assert!(out.ok, "{}", out.stderr);
+        let files = tree(&env.path(".vumlo/generated"));
+        assert!(!files.contains_key("logo.svg"), "the placeholder is gone");
+        assert_eq!(files["logo.png"], png_logo());
+        let icon = image::load_from_memory(&files["icon-512.png"])
+            .unwrap()
+            .to_rgba8();
+        let middle = icon.get_pixel(256, 256).0;
+        assert!(
+            middle[0] > middle[2],
+            "red, not the placeholder grey: {middle:?}"
+        );
+    })
+    .await;
+}
+
 #[tokio::test]
 async fn a_dry_run_writes_nothing() {
     db_test(async |pool| {
