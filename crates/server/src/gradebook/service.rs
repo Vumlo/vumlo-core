@@ -20,7 +20,7 @@ use uuid::Uuid;
 
 use super::model::{
     Cell, Feedback, FeedbackInput, FieldProblem, GradeInput, GradebookPage, GradebookRow,
-    ModelError, MyGrade, Score, Students,
+    HistoryEntry, ModelError, MyGrade, PublishedGrade, Score, Students,
 };
 use super::repo;
 use crate::actor::Actor;
@@ -206,7 +206,7 @@ pub async fn save_grade(
         assignment_id,
         student_id,
         "save_draft",
-        actor.user_id(),
+        Some(actor.user_id()),
         score,
         feedback,
     )
@@ -220,6 +220,69 @@ pub async fn save_grade(
     )
     .await?;
     Ok(cell)
+}
+
+/// Writes the score a quiz earned as the draft score of the student's cell and records an
+/// `auto_score` history entry with no person (ADR-0050 point 5). The draft feedback and the
+/// published value stay. It authorizes nothing: `assessment` calls it from the submit of a current
+/// student, which holds the assignment row `FOR SHARE`. Emits no event (ADR-0007).
+pub async fn save_auto_grade(
+    conn: &mut PgConnection,
+    assignment_id: Uuid,
+    student_id: Uuid,
+    score: Decimal,
+) -> Result<(), GradebookError> {
+    let max = lock_max_points(conn, assignment_id).await?;
+    if score < Decimal::ZERO || score > max {
+        return Err(GradebookError::Invalid(vec![FieldProblem {
+            field: "score",
+            message: "the quiz score is outside 0 to max_points".to_owned(),
+        }]));
+    }
+    let feedback = repo::upsert_auto_score(conn, assignment_id, student_id, score).await?;
+    repo::insert_history(
+        conn,
+        assignment_id,
+        student_id,
+        "auto_score",
+        None,
+        Some(score),
+        feedback.as_deref(),
+    )
+    .await?;
+    Ok(())
+}
+
+/// What was published for one student on one assignment, or `None` before anything was. It
+/// authorizes nothing: the caller has shown that the reader is that student (ADR-0050 point 8).
+pub async fn published_grade(
+    conn: &mut PgConnection,
+    assignment_id: Uuid,
+    student_id: Uuid,
+) -> Result<Option<PublishedGrade>, GradebookError> {
+    Ok(repo::find_published(conn, assignment_id, student_id).await?)
+}
+
+/// The recorded changes of one student's grade, newest first (ADR-0049). Staff only; a student
+/// with no grade has an empty history.
+pub async fn grade_history(
+    conn: &mut PgConnection,
+    actor: &Actor,
+    assignment_id: Uuid,
+    student_id: Uuid,
+    page: PageParams,
+) -> Result<Page<HistoryEntry>, GradebookError> {
+    let context = open_assignment(conn, actor, assignment_id).await?;
+    policy::authorize(actor, Action::ViewGradebook(context.access))?;
+    let rows = repo::list_history(
+        conn,
+        assignment_id,
+        student_id,
+        page.after,
+        i64::from(page.limit) + 1,
+    )
+    .await?;
+    Ok(Page::from_rows(rows, page.limit, |entry| entry.id))
 }
 
 /// Copies draft to published for the students of the course, in this transaction, only where the
@@ -268,7 +331,7 @@ pub async fn publish_grades(
             assignment_id,
             row.student_id,
             "publish",
-            actor.user_id(),
+            Some(actor.user_id()),
             row.score,
             row.feedback.as_deref(),
         )
@@ -374,7 +437,7 @@ pub async fn my_grades(
     let has_rows = repo::has_published_grades(conn, course_id, actor.user_id()).await?;
     if !has_rows {
         return Err(match access {
-            Some(_) => GradebookError::Forbidden(PolicyError),
+            Some(_) => GradebookError::Forbidden(PolicyError::Denied),
             None => GradebookError::CourseNotFound,
         });
     }
@@ -589,6 +652,7 @@ mod tests {
                 max_points: MaxPoints::parse(points).unwrap(),
                 is_bonus: false,
                 settings: SubmissionSettings::default(),
+                class_on: None,
             }),
         )
         .await

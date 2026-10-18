@@ -1,10 +1,72 @@
-//! Request and response types of terms, groups and subgroups (ADR-0032). Dates are `YYYY-MM-DD`.
+//! Request and response types of terms, groups and subgroups (ADR-0032) and of the institution
+//! profile (ADR-0044). Dates are `YYYY-MM-DD`.
 
 use chrono::{DateTime, NaiveDate, Utc};
 use garde::Validate;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 use uuid::Uuid;
+
+/// The interface language an institution starts in (ADR-0043).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum Language {
+    En,
+    Uk,
+}
+
+/// The accent colour of the web app.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum Accent {
+    Indigo,
+    Teal,
+    Crimson,
+    Forest,
+    Plum,
+}
+
+/// How points relate to the grade (ADR-0022).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum GradingScale {
+    /// At most 12 points per assignment.
+    Twelve,
+    /// The regular assignments of a course add up to at most 100 points.
+    Hundred,
+}
+
+/// What kind of institution the installation serves (ADR-0031).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum InstitutionMode {
+    School,
+    University,
+}
+
+/// The public profile of the institution: what a page needs before anyone signs in (ADR-0044).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct Institution {
+    pub name: String,
+    /// For narrow places such as the navbar.
+    pub short_name: String,
+    pub language: Language,
+    /// An IANA zone name, e.g. `Europe/Kyiv`.
+    pub time_zone: String,
+    pub accent: Accent,
+    pub grading_scale: GradingScale,
+}
+
+/// What an admin sees: the public profile and the settings that are not public. Read-only; they
+/// change in the config file (ADR-0044).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct AdminInstitution {
+    #[serde(flatten)]
+    pub institution: Institution,
+    pub mode: InstitutionMode,
+    /// The email domains self-registration accepts (ADR-0017).
+    pub allowed_domains: Vec<String>,
+}
 
 /// The most users one request may add to a group or a subgroup.
 pub const MAX_MEMBERS_PER_REQUEST: usize = 1000;

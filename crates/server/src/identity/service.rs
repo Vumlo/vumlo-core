@@ -13,14 +13,15 @@ use sha2::{Digest, Sha256};
 use sqlx::PgConnection;
 use uuid::Uuid;
 
+use super::google::{Begin, GoogleProfile};
 use super::model::{
-    HashedPassword, ModelError, NewSession, NewUser, Password, PasswordPolicy, PersonName, Role,
-    SessionInfo, SessionKind, SessionToken, TemporaryPassword, User, UserFilter, UserStatus,
-    UserUpdate,
+    BrowserBinding, Email, EmailToken, HashedPassword, ModelError, NewSession, NewUser, Password,
+    PasswordPolicy, PersonName, Role, SessionInfo, SessionKind, SessionToken, TemporaryPassword,
+    TokenPurpose, User, UserFilter, UserStatus, UserUpdate,
 };
 use super::repo::{self, LoginRecord};
 use crate::actor::Actor;
-use crate::events::{self, AuditEntry, EventsError};
+use crate::events::{self, AuditEntry, Event, EventsError};
 use crate::pagination::{Page, PageParams};
 use crate::policy::{self, Action, PolicyError};
 use crate::teaching::{self, TeachingError};
@@ -55,6 +56,24 @@ pub enum IdentityError {
     WrongCurrentPassword,
     #[error("the new password equals the current one")]
     PasswordUnchanged,
+    /// The password was right, but the address is not verified yet (ADR-0046).
+    #[error("the email address is not verified")]
+    EmailNotVerified,
+    /// A verification or reset token that is unknown, used, expired or malformed.
+    #[error("the link is not valid any more")]
+    TokenInvalid,
+    #[error("the email domain is not allowed to register")]
+    EmailDomainNotAllowed,
+    /// The Google sign-in attempt is unknown, used, expired or from another browser (ADR-0047).
+    #[error("the sign-in attempt is not valid")]
+    GoogleAttemptInvalid,
+    #[error(transparent)]
+    Google(#[from] super::google::GoogleError),
+    /// The Google account has no verified email, or its domain may not sign up.
+    #[error("this Google account cannot sign in here")]
+    GoogleAccountNotAllowed,
+    #[error("the account is disabled")]
+    AccountDisabled,
     #[error("the email is already in use")]
     EmailTaken,
     #[error("the account changed while the request was running")]
@@ -412,6 +431,9 @@ pub async fn complete_login(
     match record {
         Some(record) if verified && record.user.status == UserStatus::Active => {
             throttle.reset(&key);
+            if !record.email_verified {
+                return Err(IdentityError::EmailNotVerified);
+            }
             Ok(VerifiedLogin {
                 user: record.user,
                 password_hash: record.password_hash,
@@ -490,6 +512,399 @@ pub async fn logout(conn: &mut PgConnection, actor: &Actor) -> Result<(), Identi
     policy::authorize(actor, Action::ManageOwnAccount)?;
     repo::delete_session(conn, actor.session_id(), actor.user_id()).await?;
     Ok(())
+}
+
+// ---------------------------------------------------------------------------------------------
+// Registration, verification and password reset (ADR-0046)
+// ---------------------------------------------------------------------------------------------
+
+/// A registration that passed every check and is hashed, ready for [`register`].
+pub struct PreparedRegistration {
+    new: NewUser,
+    password: HashedPassword,
+}
+
+/// What a registration is checked against: the configuration, not the request.
+pub struct RegistrationRules<'a> {
+    pub allowed_domains: &'a [String],
+    pub password_min_length: usize,
+    pub institution_name: &'a str,
+}
+
+/// The slow, database-free half of a registration: checks the address's domain, the names and the
+/// password policy, then hashes. It always hashes, so the time does not depend on whether the
+/// address has an account.
+pub async fn prepare_registration(
+    gate: &HashGate,
+    rules: RegistrationRules<'_>,
+    name: &str,
+    surname: &str,
+    email: &str,
+    password: String,
+) -> Result<PreparedRegistration, IdentityError> {
+    let email = Email::parse(email)?;
+    let name = PersonName::name(name)?;
+    let surname = PersonName::surname(surname)?;
+    let domain = email.as_str().rsplit_once('@').map_or("", |(_, d)| d);
+    if !rules
+        .allowed_domains
+        .iter()
+        .any(|allowed| allowed.eq_ignore_ascii_case(domain))
+    {
+        return Err(IdentityError::EmailDomainNotAllowed);
+    }
+    let policy = PasswordPolicy::new(
+        rules.password_min_length,
+        email.as_str(),
+        name.as_str(),
+        surname.as_str(),
+        rules.institution_name,
+    );
+    let password = Password::parse(password, &policy)?;
+    let password = hash_password_gated(gate, password.expose()).await?;
+    Ok(PreparedRegistration {
+        new: NewUser {
+            email,
+            name,
+            surname,
+            role: Role::Student,
+        },
+        password,
+    })
+}
+
+/// Creates the unverified account, or, for an unverified active student, replaces what the earlier
+/// registration chose; any other account is left alone. Emits the event that sends the link in all
+/// the first two cases and does nothing else, so the caller answers the same either way.
+pub async fn register(
+    conn: &mut PgConnection,
+    prepared: PreparedRegistration,
+) -> Result<(), IdentityError> {
+    let PreparedRegistration { new, password } = prepared;
+    let id = Uuid::now_v7();
+    if let Some(user_id) = repo::insert_registered_user(conn, id, &new).await? {
+        repo::insert_password_identity(conn, user_id, password.as_str()).await?;
+        events::emit(conn, Event::EmailVerificationRequested { user_id }).await?;
+        return Ok(());
+    }
+    let Some(account) = repo::lock_account_by_email(conn, new.email.as_str()).await? else {
+        return Ok(());
+    };
+    if account.status == UserStatus::Active
+        && account.role == Role::Student
+        && !account.email_verified
+    {
+        repo::update_names(conn, account.id, new.name.as_str(), new.surname.as_str()).await?;
+        repo::upsert_password_hash(conn, account.id, password.as_str()).await?;
+        repo::void_email_tokens(conn, account.id, TokenPurpose::Verify).await?;
+        events::emit(
+            conn,
+            Event::EmailVerificationRequested {
+                user_id: account.id,
+            },
+        )
+        .await?;
+    }
+    Ok(())
+}
+
+/// Uses the verification token up and marks its address verified.
+pub async fn verify_email(
+    conn: &mut PgConnection,
+    token: Option<EmailToken>,
+) -> Result<(), IdentityError> {
+    let token = token.ok_or(IdentityError::TokenInvalid)?;
+    let user_id = repo::consume_email_token(conn, &token.hash(), TokenPurpose::Verify)
+        .await?
+        .ok_or(IdentityError::TokenInvalid)?;
+    repo::mark_email_verified(conn, user_id).await?;
+    Ok(())
+}
+
+/// Emits the event that sends a reset link, for an active account. An unknown, malformed or
+/// disabled address does nothing and is not an error: the caller answers the same (ADR-0046).
+pub async fn request_password_reset(
+    conn: &mut PgConnection,
+    email: &str,
+) -> Result<(), IdentityError> {
+    let Ok(email) = Email::parse(email) else {
+        return Ok(());
+    };
+    if let Some(account) = repo::find_account_by_email(conn, email.as_str()).await?
+        && account.status == UserStatus::Active
+    {
+        events::emit(
+            conn,
+            Event::PasswordResetRequested {
+                user_id: account.id,
+            },
+        )
+        .await?;
+    }
+    Ok(())
+}
+
+/// Whose reset it is: what the password policy needs as context.
+pub struct ResetTarget {
+    email: String,
+    name: String,
+    surname: String,
+}
+
+/// Looks the reset token up without using it up. A missing, spent or expired token, or one of a
+/// disabled account, is [`IdentityError::TokenInvalid`], and that is decided before the password is
+/// looked at.
+pub async fn check_reset_token(
+    conn: &mut PgConnection,
+    token: Option<&EmailToken>,
+) -> Result<ResetTarget, IdentityError> {
+    let token = token.ok_or(IdentityError::TokenInvalid)?;
+    let account = repo::find_token_account(conn, &token.hash(), TokenPurpose::Reset)
+        .await?
+        .filter(|account| account.status == UserStatus::Active)
+        .ok_or(IdentityError::TokenInvalid)?;
+    Ok(ResetTarget {
+        email: account.email,
+        name: account.name,
+        surname: account.surname,
+    })
+}
+
+/// A new password that passed the policy and is hashed, ready for [`confirm_password_reset`].
+pub struct PreparedReset {
+    password: HashedPassword,
+}
+
+pub async fn prepare_password_reset(
+    gate: &HashGate,
+    target: ResetTarget,
+    new_password: String,
+    min_len: usize,
+    institution: &str,
+) -> Result<PreparedReset, IdentityError> {
+    let policy = PasswordPolicy::new(
+        min_len,
+        &target.email,
+        &target.name,
+        &target.surname,
+        institution,
+    );
+    let password = Password::parse(new_password, &policy)?;
+    let password = hash_password_gated(gate, password.expose()).await?;
+    Ok(PreparedReset { password })
+}
+
+/// Uses the token up, sets the password and revokes every session of the user. The link proved
+/// the mailbox, so the address counts as verified too.
+pub async fn confirm_password_reset(
+    conn: &mut PgConnection,
+    token: Option<&EmailToken>,
+    prepared: PreparedReset,
+) -> Result<(), IdentityError> {
+    let token = token.ok_or(IdentityError::TokenInvalid)?;
+    let user_id = repo::consume_email_token(conn, &token.hash(), TokenPurpose::Reset)
+        .await?
+        .ok_or(IdentityError::TokenInvalid)?;
+    let account = repo::find_user_shared(conn, user_id)
+        .await?
+        .filter(|user| user.status == UserStatus::Active)
+        .ok_or(IdentityError::TokenInvalid)?;
+    repo::upsert_password_hash(conn, account.id, prepared.password.as_str()).await?;
+    repo::mark_email_verified(conn, account.id).await?;
+    repo::set_must_change_password(conn, account.id, false).await?;
+    repo::void_email_tokens(conn, account.id, TokenPurpose::Reset).await?;
+    repo::delete_sessions_of(conn, account.id).await?;
+    Ok(())
+}
+
+/// Who a link is for and the token that is in it. The token exists only here and in the mail.
+pub struct MintedToken {
+    pub token: EmailToken,
+    pub email: String,
+    pub name: String,
+    pub surname: String,
+}
+
+/// The first half of sending a link, run by the outbox handler (ADR-0045, ADR-0046): voids the
+/// user's earlier unused tokens of this purpose and stores the hash of a new one. `None` when the
+/// event no longer applies (the address is verified already, the account is disabled or gone).
+pub async fn mint_email_token(
+    conn: &mut PgConnection,
+    user_id: Uuid,
+    purpose: TokenPurpose,
+) -> Result<Option<MintedToken>, IdentityError> {
+    let Some(account) = repo::find_account(conn, user_id).await? else {
+        return Ok(None);
+    };
+    let applies = account.status == UserStatus::Active
+        && (purpose == TokenPurpose::Reset || !account.email_verified);
+    if !applies {
+        return Ok(None);
+    }
+    repo::void_email_tokens(conn, user_id, purpose).await?;
+    let token = EmailToken::generate();
+    repo::insert_email_token(
+        conn,
+        user_id,
+        purpose,
+        &token.hash(),
+        purpose.lifetime().num_seconds(),
+    )
+    .await?;
+    Ok(Some(MintedToken {
+        token,
+        email: account.email,
+        name: account.name,
+        surname: account.surname,
+    }))
+}
+
+// ---------------------------------------------------------------------------------------------
+// Sign-in with Google (ADR-0047)
+// ---------------------------------------------------------------------------------------------
+
+/// How long a started Google sign-in can be finished.
+const GOOGLE_ATTEMPT_LIFETIME_SECS: i64 = 10 * 60;
+
+/// Remembers a started sign-in and returns the value to set as the browser's cookie.
+pub async fn start_google_sign_in(
+    conn: &mut PgConnection,
+    begin: &Begin,
+) -> Result<BrowserBinding, IdentityError> {
+    let binding = BrowserBinding::generate();
+    repo::insert_oauth_state(
+        conn,
+        &Sha256::digest(begin.state.as_bytes()),
+        &binding.hash(),
+        &begin.nonce,
+        &begin.pkce_verifier,
+        GOOGLE_ATTEMPT_LIFETIME_SECS,
+    )
+    .await?;
+    Ok(binding)
+}
+
+/// What a started sign-in remembered: the nonce the ID token must carry and the PKCE verifier.
+pub struct GoogleAttempt {
+    pub nonce: String,
+    pub pkce_verifier: String,
+}
+
+/// Uses the attempt up. It exists only for the browser that started it, once, for ten minutes.
+pub async fn take_google_attempt(
+    conn: &mut PgConnection,
+    state: &str,
+    binding: Option<&BrowserBinding>,
+) -> Result<GoogleAttempt, IdentityError> {
+    let binding = binding.ok_or(IdentityError::GoogleAttemptInvalid)?;
+    let (nonce, pkce_verifier) =
+        repo::take_oauth_state(conn, &Sha256::digest(state.as_bytes()), &binding.hash())
+            .await?
+            .ok_or(IdentityError::GoogleAttemptInvalid)?;
+    Ok(GoogleAttempt {
+        nonce,
+        pkce_verifier,
+    })
+}
+
+/// A name for the account from what Google sent, cut to the limit; `fallback` when there is none.
+fn google_name(
+    given: Option<&str>,
+    fallback: &str,
+    surname: bool,
+) -> Result<PersonName, ModelError> {
+    let text = given
+        .map(str::trim)
+        .filter(|text| !text.is_empty() && !text.chars().any(char::is_control))
+        .unwrap_or(fallback);
+    let cut: String = text.chars().take(100).collect();
+    if surname {
+        PersonName::surname(&cut)
+    } else {
+        PersonName::name(&cut)
+    }
+}
+
+/// Finds, links or creates the account of a verified Google profile (ADR-0047, point 5). Returns
+/// the user to open a session for.
+pub async fn sign_in_with_google(
+    conn: &mut PgConnection,
+    profile: &GoogleProfile,
+    allowed_domains: &[String],
+) -> Result<User, IdentityError> {
+    let email = Email::parse(&profile.email).map_err(|_| IdentityError::GoogleAccountNotAllowed)?;
+    let domain = email.as_str().rsplit_once('@').map_or("", |(_, d)| d);
+    let allowed = allowed_domains
+        .iter()
+        .any(|allowed| allowed.eq_ignore_ascii_case(domain));
+    if !profile.email_verified || !allowed {
+        return Err(IdentityError::GoogleAccountNotAllowed);
+    }
+
+    let user_id = match repo::find_google_user(conn, &profile.subject).await? {
+        Some(user_id) => user_id,
+        None => match repo::lock_account_by_email(conn, email.as_str()).await? {
+            Some(account) => {
+                repo::insert_google_identity(conn, account.id, &profile.subject).await?;
+                if !account.email_verified {
+                    // Whoever pre-registered this address chose a password for it. Google has just
+                    // shown that the address belongs to someone else, so that password goes.
+                    repo::delete_password_identity(conn, account.id).await?;
+                    repo::void_email_tokens(conn, account.id, TokenPurpose::Verify).await?;
+                    repo::delete_sessions_of(conn, account.id).await?;
+                    repo::mark_email_verified(conn, account.id).await?;
+                }
+                account.id
+            }
+            None => {
+                let local = email.as_str().split('@').next().unwrap_or_default();
+                let new = NewUser {
+                    name: google_name(profile.given_name.as_deref(), local, false)?,
+                    surname: google_name(profile.family_name.as_deref(), "Student", true)?,
+                    email,
+                    role: Role::Student,
+                };
+                let user = repo::insert_user(conn, Uuid::now_v7(), &new, false)
+                    .await
+                    .map_err(email_taken)?;
+                repo::insert_google_identity(conn, user.id, &profile.subject).await?;
+                user.id
+            }
+        },
+    };
+    let user = repo::find_user_shared(conn, user_id)
+        .await?
+        .ok_or(IdentityError::UserNotFound)?;
+    if user.status != UserStatus::Active {
+        return Err(IdentityError::AccountDisabled);
+    }
+    Ok(user)
+}
+
+/// A session for a user who has just proved themselves some other way than with a password. The
+/// user is locked and checked again, like in [`create_session`].
+pub async fn create_session_for(
+    conn: &mut PgConnection,
+    user: &User,
+    kind: SessionKind,
+) -> Result<NewSession, IdentityError> {
+    if !repo::lock_active_user(conn, user.id).await? {
+        return Err(IdentityError::AccountDisabled);
+    }
+    let token = SessionToken::generate();
+    let expires_at = repo::insert_session(
+        conn,
+        user.id,
+        &token.hash(),
+        kind,
+        kind.initial_lifetime().num_seconds(),
+    )
+    .await?;
+    Ok(NewSession {
+        token,
+        kind,
+        expires_at,
+    })
 }
 
 // ---------------------------------------------------------------------------------------------

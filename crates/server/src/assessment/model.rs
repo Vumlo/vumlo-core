@@ -1,8 +1,11 @@
+use std::collections::HashSet;
+
 use chrono::{DateTime, Utc};
 use serde_json::{Map, Value};
+use sqlx::types::Decimal;
 use uuid::Uuid;
 
-use crate::content::SubmissionSettings;
+use crate::content::{Holders, ResultQuestion, SubmissionSettings};
 use crate::pagination::Page;
 
 /// The unsubmitted document of a student for an assignment (ADR-0011). Only its owner reads it.
@@ -20,6 +23,54 @@ pub struct Attempt {
     pub content: Map<String, Value>,
     pub submitted_at: DateTime<Utc>,
     pub is_late: bool,
+    /// The per-question scores of a quiz (ADR-0050). Read only on the staff path: a student's
+    /// reads never fill it.
+    pub auto_scores: Option<Map<String, Value>>,
+}
+
+/// A current student, named.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StudentName {
+    pub user_id: Uuid,
+    pub name: String,
+    pub surname: String,
+}
+
+/// The latest attempt of a student with its content (ADR-0051).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LatestContent {
+    pub student: StudentName,
+    pub attempt: i32,
+    pub submitted_at: DateTime<Utc>,
+    pub is_late: bool,
+    pub content: Map<String, Value>,
+}
+
+/// The responses to a form (ADR-0051 point 7).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Responses {
+    pub total_students: i64,
+    pub missing: Vec<StudentName>,
+    pub rows: Vec<LatestContent>,
+}
+
+/// What a form's config shows besides what was configured (ADR-0051 point 5).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct FormFacts {
+    /// Ids of the fields that have an answer in a latest attempt.
+    pub answered: HashSet<String>,
+    pub holders: Holders,
+}
+
+/// A quiz result as the service builds it (ADR-0050 point 8).
+#[derive(Debug, Clone, PartialEq)]
+pub struct QuizResult {
+    pub score: Decimal,
+    pub max_points: Decimal,
+    pub published_at: DateTime<Utc>,
+    pub feedback: Option<String>,
+    pub attempt: i32,
+    pub questions: Vec<ResultQuestion>,
 }
 
 /// A student's own work: the draft, if any, and a page of attempts, newest first.

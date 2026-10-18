@@ -1,0 +1,47 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT published_title, published_body, last_published_at IS NOT NULL AS \"stamped!\"\n                       FROM content.items WHERE id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "published_title",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "content.items",
+            "name": "published_title"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "published_body",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "content.items",
+            "name": "published_body"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "stamped!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      true,
+      true,
+      null
+    ]
+  },
+  "hash": "4398ecda9b4f138841d3fcb282e62ec8b23b1a6c9b2e564ac3c0ccbfd15dcdfc"
+}

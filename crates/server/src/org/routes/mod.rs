@@ -2,6 +2,7 @@
 //! call exactly one service function and commit; reads use a pooled connection.
 
 mod groups;
+mod institution;
 mod subgroups;
 mod terms;
 
@@ -17,6 +18,8 @@ use crate::pagination::{self, PageParams};
 
 pub fn router() -> OpenApiRouter<AppState> {
     OpenApiRouter::new()
+        .routes(routes!(institution::get_institution))
+        .routes(routes!(institution::get_admin_institution))
         .routes(routes!(terms::create_term, terms::list_terms))
         .routes(routes!(
             terms::get_term,
@@ -54,7 +57,7 @@ pub fn router() -> OpenApiRouter<AppState> {
 impl From<OrgError> for ApiError {
     fn from(error: OrgError) -> Self {
         match error {
-            OrgError::Forbidden(_) => Self::Forbidden("not allowed"),
+            OrgError::Forbidden(policy) => policy.into(),
             OrgError::Invalid(ModelError::Name) => Self::invalid_field("name", error.to_string()),
             OrgError::Invalid(ModelError::Dates | ModelError::EndsOnRange) => {
                 Self::invalid_field("ends_on", error.to_string())

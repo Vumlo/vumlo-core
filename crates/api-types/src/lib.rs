@@ -8,15 +8,19 @@ use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
 mod assessment;
+mod courses;
 mod document;
 mod gradebook;
 mod groups;
+mod items;
 mod org;
 
 pub use assessment::*;
+pub use courses::*;
 pub use document::*;
 pub use gradebook::*;
 pub use groups::*;
+pub use items::*;
 pub use org::*;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
@@ -132,6 +136,92 @@ impl fmt::Debug for AppLoginResponse {
 pub enum LoginResponse {
     App(AppLoginResponse),
     Web(User),
+}
+
+/// Self-registration (ADR-0046). The account is created as a `student` and cannot log in until the
+/// address is verified.
+#[derive(Clone, Serialize, Deserialize, Validate, ToSchema)]
+pub struct RegisterRequest {
+    #[garde(length(chars, min = 1, max = 100))]
+    pub name: String,
+    #[garde(length(chars, min = 1, max = 100))]
+    pub surname: String,
+    /// Its domain must be one the institution allows.
+    #[garde(length(min = 1, max = 254))]
+    pub email: String,
+    #[garde(length(max = 1024))]
+    pub password: String,
+}
+
+impl fmt::Debug for RegisterRequest {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("RegisterRequest").finish_non_exhaustive()
+    }
+}
+
+/// The token from the verification mail.
+#[derive(Clone, Serialize, Deserialize, Validate, ToSchema)]
+pub struct VerifyEmailRequest {
+    #[garde(length(min = 1, max = 200))]
+    pub token: String,
+}
+
+impl fmt::Debug for VerifyEmailRequest {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("VerifyEmailRequest").finish_non_exhaustive()
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Validate, ToSchema)]
+pub struct PasswordResetRequest {
+    #[garde(length(min = 1, max = 254))]
+    pub email: String,
+}
+
+/// The token from the reset mail and the password to set.
+#[derive(Clone, Serialize, Deserialize, Validate, ToSchema)]
+pub struct PasswordResetConfirmRequest {
+    #[garde(length(min = 1, max = 200))]
+    pub token: String,
+    #[garde(length(max = 1024))]
+    pub new_password: String,
+}
+
+impl fmt::Debug for PasswordResetConfirmRequest {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("PasswordResetConfirmRequest")
+            .finish_non_exhaustive()
+    }
+}
+
+/// Starts sign-in with Google (ADR-0047).
+#[derive(Debug, Clone, Default, Serialize, Deserialize, Validate, ToSchema)]
+pub struct GoogleStartRequest {
+    /// An address to pre-fill on Google's page.
+    #[garde(inner(length(max = 254)))]
+    pub login_hint: Option<String>,
+}
+
+/// Where to send the browser for Google's consent screen.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct GoogleStartResponse {
+    pub authorization_url: String,
+}
+
+/// What Google sent back to the web app's callback page.
+#[derive(Clone, Serialize, Deserialize, Validate, ToSchema)]
+pub struct GoogleCallbackRequest {
+    #[garde(length(min = 1, max = 2048))]
+    pub code: String,
+    #[garde(length(min = 1, max = 512))]
+    pub state: String,
+}
+
+impl fmt::Debug for GoogleCallbackRequest {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("GoogleCallbackRequest")
+            .finish_non_exhaustive()
+    }
 }
 
 #[derive(Clone, Serialize, Deserialize, Validate, ToSchema)]
@@ -355,10 +445,13 @@ pub struct Module {
 /// The assignment part of an item of kind `assignment` (ADR-0021).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct Assignment {
-    /// The assignment type: `text` or `no_submission`. It cannot change.
+    /// The assignment type: `text`, `no_submission`, `quiz` or `form`. It cannot change.
     #[serde(rename = "type")]
     pub assignment_type: String,
-    /// Settings of the type; an empty object for `text` and `no_submission`.
+    /// Settings of the type; an empty object for `no_submission`, the editor narrowing for `text`,
+    /// the questions for a `quiz` (ADR-0050) and the fields for a `form` (ADR-0051). A student
+    /// never receives the answer key of a quiz. A form's fields carry the read-only facts
+    /// `has_answers` and, on the options of an exclusive field, `taken` and `taken_by`.
     #[schema(value_type = Object)]
     pub config: Map<String, Value>,
     /// A decimal string with exactly two decimals, e.g. `"20.00"`.
@@ -376,6 +469,9 @@ pub struct Assignment {
     pub late_until: Option<DateTime<Utc>>,
     /// The most attempts a student may submit; `null` means no limit.
     pub max_attempts: Option<i32>,
+    /// The day an in-class (`no_submission`) assignment takes place, `YYYY-MM-DD` (ADR-0049);
+    /// `null` for any other type.
+    pub class_on: Option<chrono::NaiveDate>,
 }
 
 /// What the course tree shows of an assignment: everything but `config`.
@@ -532,10 +628,11 @@ fn optional_points_text<'de, D: Deserializer<'de>>(
 /// The assignment part of a new item of kind `assignment` (ADR-0021).
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct NewAssignment {
-    /// The assignment type: `text` or `no_submission`.
+    /// The assignment type: `text`, `no_submission`, `quiz` or `form`.
     #[serde(rename = "type", default)]
     pub assignment_type: String,
-    /// Settings of the type, a JSON object. Defaults to `{}`; `text` and `no_submission` have none.
+    /// Settings of the type, a JSON object. Defaults to `{}`; `no_submission` has none, a `quiz`
+    /// needs its questions (ADR-0050) and a `form` its fields (ADR-0051).
     #[serde(default)]
     #[schema(value_type = Option<Object>)]
     pub config: Option<Map<String, Value>>,
@@ -562,6 +659,10 @@ pub struct NewAssignment {
     /// At least 1; omit for unlimited attempts.
     #[serde(default)]
     pub max_attempts: Option<i64>,
+    /// The day an in-class assignment takes place, `YYYY-MM-DD` (ADR-0049). Only for
+    /// `no_submission`.
+    #[serde(default)]
+    pub class_on: Option<chrono::NaiveDate>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Validate, ToSchema)]
@@ -633,6 +734,12 @@ pub struct UpdateItemRequest {
     #[schema(value_type = Option<i64>)]
     #[garde(skip)]
     pub max_attempts: Option<Option<i64>>,
+    /// `no_submission` assignments only (ADR-0049). Omit to keep, `null` to clear, a day
+    /// (`YYYY-MM-DD`) to set.
+    #[serde(default, deserialize_with = "set_or_clear")]
+    #[schema(value_type = Option<chrono::NaiveDate>)]
+    #[garde(skip)]
+    pub class_on: Option<Option<chrono::NaiveDate>>,
 }
 
 #[cfg(test)]
@@ -802,6 +909,7 @@ mod content_tests {
             accept_late: None,
             late_until: None,
             max_attempts: None,
+            class_on: None,
         })))
         .unwrap();
         assert_eq!(
@@ -809,7 +917,7 @@ mod content_tests {
             json!({
                 "type": "text", "config": {}, "max_points": "20.00", "is_bonus": false,
                 "due_at": null, "on_deadline": null, "accept_late": null, "late_until": null,
-                "max_attempts": null
+                "max_attempts": null, "class_on": null
             })
         );
     }

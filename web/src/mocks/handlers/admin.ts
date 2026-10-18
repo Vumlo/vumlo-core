@@ -242,16 +242,6 @@ export const adminHandlers = [
     requireAdmin();
     return HttpResponse.json(getDb().institution);
   }),
-  http.patch(`${A}/admin/institution`, async ({ request }) => {
-    const admin = requireAdmin();
-    const b = (await request.json()) as Record<string, string>;
-    const inst = getDb().institution;
-    if (b.name !== undefined && !b.name.trim()) throw problem(422, "Validation failed", undefined, [{ field: "name", message: "The full name can’t be empty" }]);
-    for (const k of ["name", "short_name", "accent", "language", "time_zone"] as const) if (b[k] !== undefined) (inst as Record<string, unknown>)[k] = b[k];
-    inst.changed_at = MOCK_NOW.toISOString();
-    inst.changed_by = fullName(admin);
-    return HttpResponse.json(inst);
-  }),
   http.get(`${A}/admin/audit`, ({ request }) => {
     requireAdmin();
     const q = new URL(request.url).searchParams;

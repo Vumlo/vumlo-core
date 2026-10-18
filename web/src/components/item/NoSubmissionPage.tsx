@@ -6,7 +6,7 @@ import { Icon } from "@/components/Icon";
 import { useCourseInfo, useItemMeta } from "@/lib/api/hooks/courses";
 import { useMyGrades } from "@/lib/api/hooks/work";
 import { now } from "@/lib/clock";
-import { typeLabel } from "@/lib/course";
+import { ownerName, typeLabel } from "@/lib/course";
 import { dayLong, initials, relative, weekdayDate } from "@/lib/format";
 import { wholePoints } from "@/lib/points";
 import { bodyOf, type Item } from "@/lib/api/types";
@@ -25,8 +25,7 @@ export function NoSubmissionPage({ item, courseId, staff }: { item: Item; course
   const grade = grades.data?.items.find((g) => g.assignment_id === item.id);
   const classOn = meta.data?.items[item.id]?.class_on ?? null;
   const past = !!classOn && new Date(classOn) < now();
-  const owner = info.data?.owner_name ?? t("item.yourTeacher");
-  const [n = "", ...r] = owner.replace(/^Dr\. /, "").split(" ");
+  const owner = ownerName(info.data) ?? t("item.yourTeacher");
 
   const sentence = classOn ? (
     <>
@@ -75,7 +74,7 @@ export function NoSubmissionPage({ item, courseId, staff }: { item: Item; course
                 </div>
                 {grade.feedback && (
                   <div className={s.comment} style={{ display: "flex", gap: 10 }}>
-                    <span aria-hidden="true" className={s.avatar} style={{ flex: "none" }}>{initials(n, r.join(" "))}</span>
+                    <span aria-hidden="true" className={s.avatar} style={{ flex: "none" }}>{initials(info.data?.owner_name ?? "", info.data?.owner_surname ?? "")}</span>
                     <p style={{ fontSize: 15, lineHeight: 1.6 }}><strong>{owner}: </strong>{grade.feedback}</p>
                   </div>
                 )}

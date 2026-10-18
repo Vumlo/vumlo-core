@@ -44,7 +44,8 @@ function LoginForm() {
         {failed && (
           <div role="alert" className="alert alert-danger" style={{ marginBottom: 20 }}>
             <Icon name="info" size={18} style={{ flex: "none", marginTop: 1 }} />
-            <span>{t("login.failed")}</span>
+            {/* 403 after the form was sent: the password was right but the address is not verified (ADR-0046). */}
+            <span>{login.error?.status === 403 ? t("login.notVerified") : t("login.failed")}</span>
           </div>
         )}
         {google.error && (

@@ -1,8 +1,9 @@
 import { http, HttpResponse } from "msw";
 import { MOCK_NOW } from "@/lib/clock";
 import { sumPoints, toCents } from "@/lib/points";
-import type { CourseCard, CourseInfo, CoursePeople, ItemMeta, Template } from "@/lib/api/gaps";
-import type { Item } from "@/lib/api/types";
+import type { CourseCard } from "@/lib/api/gaps";
+import { isoToLocal, localToIso } from "@/lib/format";
+import type { CourseInfo, CoursePeople, Item, ServerItemMeta, TemplateSummary } from "@/lib/api/types";
 import { at, getDb, institutionPublic, uid, type DbCourse, type DbItem } from "../db";
 import {
   activeStudents, canView, contentTree, courseById, decimal, dueIn, flatItems, forbidden, formOf, fullName, gradeOf, hasUnpublishedChanges, isPublished,
@@ -18,12 +19,13 @@ export function courseInfo(c: DbCourse): CourseInfo {
   const all = db.members.filter((m) => m.course_id === c.id);
   const graded = flatItems(c, true).filter((i) => i.assignment && toCents(i.assignment.max_points) > 0 && !i.assignment.is_bonus && i.status === "published");
   return {
-    course_id: c.id, code: c.code, description: c.description, term_name: termName(c), owner_name: teacherName(ownerOf(c)), owner_email: ownerOf(c).email,
+    course_id: c.id, code: c.code, description: c.description, term_name: termName(c),
+    owner_name: ownerOf(c).name, owner_surname: ownerOf(c).surname, owner_email: ownerOf(c).email,
     student_count: all.filter((m) => m.role === "student" && !m.left_on).length,
     former_count: all.filter((m) => m.role === "student" && m.left_on).length,
     assistant_count: all.filter((m) => m.role === "assistant").length,
-    updated_at: db.items.filter((i) => i.course_id === c.id).map((i) => i.updated_at).sort().at(-1) ?? c.created_at,
-    settings_saved_at: c.settings_saved_at,
+    updated_at: c.settings_saved_at ?? c.created_at,
+    content_updated_at: db.items.filter((i) => i.course_id === c.id).map((i) => i.updated_at).sort().at(-1) ?? null,
     total_points: sumPoints(graded.map((i) => i.assignment!.max_points)), graded_items: graded.length,
     has_grades: db.grades.some((g) => db.items.some((i) => i.id === g.assignment_id && i.course_id === c.id)),
   };
@@ -117,12 +119,12 @@ function cards(userId: string): CourseCard[] {
   });
 }
 
-export function itemMeta(c: DbCourse, userId: string, staff: boolean): Record<string, ItemMeta> {
-  const out: Record<string, ItemMeta> = {};
+export function itemMeta(c: DbCourse, userId: string, staff: boolean): Record<string, ServerItemMeta> {
+  const out: Record<string, ServerItemMeta> = {};
   for (const i of flatItems(c, staff)) {
-    const meta: ItemMeta = {};
+    const meta: ServerItemMeta = {};
     if (i.read_minutes) meta.read_minutes = i.read_minutes;
-    if (i.class_on) meta.class_on = i.class_on;
+    if (i.class_on) meta.class_on = isoToLocal(i.class_on).slice(0, 10);
     if (i.assignment && !staff) {
       const w = workItem(i, userId);
       meta.status = w.status; meta.score = w.score; meta.draft_saved_at = w.draft_saved_at; meta.published_at = w.published_at;
@@ -204,12 +206,12 @@ export const coreHandlers = [
   http.get(`${A}/me/templates`, () => {
     const u = requireUser();
     const db = getDb();
-    const items: Template[] = db.courses.filter((c) => c.kind === "template" && c.owner_id === u.id).map((c) => {
+    const items: TemplateSummary[] = db.courses.filter((c) => c.kind === "template" && c.owner_id === u.id).map((c) => {
       const mods = db.modules.filter((m) => m.course_id === c.id);
       const its = db.items.filter((i) => i.course_id === c.id);
       return { course: publicCourse(c), sections: mods.length, lectures: its.filter((i) => i.kind === "text").length, assignments: its.filter((i) => i.kind === "assignment").length, updated_at: c.template_updated_at ?? c.created_at };
     });
-    return HttpResponse.json({ items });
+    return HttpResponse.json({ items, next_cursor: null });
   }),
   http.post(`${A}/templates/:id/courses`, async ({ request, params }) => {
     const u = requireUser();
@@ -341,14 +343,14 @@ export const coreHandlers = [
       const u = userById(m.user_id);
       return {
         user_id: u.id, name: u.name, surname: u.surname, email: staff ? u.email : null, role: m.role, is_owner: m.is_owner, source: m.source,
-        group: m.group_label, former: !!m.left_on, left_on: m.left_on,
+        group: m.group_label, former: !!m.left_on,
       };
     }).sort((a, b) => Number(b.role !== "student") - Number(a.role !== "student") || a.surname.localeCompare(b.surname));
     const groups = staff ? db.links.filter((l) => l.course_id === course.id).map((l) => {
       const g = db.groups.find((x) => x.id === l.group_id)!;
       const sub = db.subgroups.find((x) => x.id === l.subgroup_id);
       const count = db.groupMembers.filter((gm) => gm.group_id === l.group_id && (!l.subgroup_id || gm.subgroup_id === l.subgroup_id)).length;
-      return { link_id: l.id, name: sub ? `Group ${sub.name}` : g.name, student_count: count, linked_on: l.linked_on };
+      return { link_id: l.id, group_name: g.name, subgroup_name: sub?.name ?? null, student_count: count, linked_at: l.linked_on };
     }) : [];
     return HttpResponse.json({ people, groups } satisfies CoursePeople);
   }),
@@ -430,7 +432,7 @@ export const coreHandlers = [
       if ("late_until" in b) a.late_until = b.late_until as string | null;
       if ("max_attempts" in b) a.max_attempts = b.max_attempts as number | null;
     }
-    if ("class_on" in b) item.class_on = (b.class_on as string | null) ?? null;
+    if ("class_on" in b) item.class_on = b.class_on ? localToIso(`${b.class_on as string}T12:00`) : null;
     if ("publish_at" in b) item.publish_at = b.publish_at as string | null;
     item.updated_at = MOCK_NOW.toISOString();
     return HttpResponse.json(itemFor(item, true));

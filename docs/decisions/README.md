@@ -76,3 +76,11 @@ What gets easier, what gets harder, what we must remember.
 | 0041 | [Trusted frontends on another origin](0041-trusted-cross-origin-frontends.md) |
 | 0042 | [Web frontend: Next.js, client-rendered, typed hooks over a generated API schema](0042-web-frontend-stack.md) |
 | 0043 | [Web interface language: a typed catalogue in the repository, no library](0043-web-interface-language.md) |
+| 0044 | [The institution profile lives in the config; `chrono-tz`](0044-institution-profile-in-the-config.md) |
+| 0045 | [The outbox worker and mail delivery](0045-outbox-worker-and-mail.md) |
+| 0046 | [Self-registration, email verification and password reset](0046-self-registration-verification-and-password-reset.md) |
+| 0047 | [Google sign-in (the web redirect flow)](0047-google-sign-in.md) |
+| 0048 | [Course info, archiving, deletion, templates and the people of a course](0048-course-archive-deletion-templates-and-people.md) |
+| 0049 | [Unpublished revisions, class dates, per-item facts and grade history](0049-unpublished-revisions-class-dates-and-item-meta.md) |
+| 0050 | [The `quiz` assignment type](0050-the-quiz-type.md) |
+| 0051 | [The `form` assignment type](0051-the-form-type.md) |

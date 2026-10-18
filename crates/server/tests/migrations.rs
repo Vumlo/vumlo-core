@@ -1629,3 +1629,460 @@ async fn a_linked_group_or_subgroup_is_protected_and_a_deleted_course_takes_its_
     })
     .await;
 }
+
+// ADR-0045, ADR-0046.
+
+#[tokio::test]
+async fn migration_21_gives_existing_outbox_rows_their_worker_columns() {
+    bare_db_test(async |pool| {
+        app::MIGRATOR.run_to(20, &pool).await.unwrap();
+        for processed in [true, false] {
+            sqlx::query(
+                "INSERT INTO events.outbox (id, type, payload, processed_at)
+                 VALUES ($1, 'grade.published', '{}', CASE WHEN $2 THEN now() END)",
+            )
+            .bind(uuid::Uuid::now_v7())
+            .bind(processed)
+            .execute(&pool)
+            .await
+            .unwrap();
+        }
+
+        app::MIGRATOR.run(&pool).await.unwrap();
+
+        let rows = sqlx::query!(
+            r#"SELECT attempts, failed_at IS NULL AS "not_failed!", last_error,
+                      run_after <= now() AS "due!", processed_at IS NOT NULL AS "processed!"
+               FROM events.outbox ORDER BY id"#
+        )
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+        assert_eq!(rows.len(), 2);
+        assert!(
+            rows.iter()
+                .all(|r| r.attempts == 0 && r.not_failed && r.last_error.is_none() && r.due)
+        );
+        assert_eq!(rows.iter().filter(|r| r.processed).count(), 1);
+        app::ensure_migrated(&pool).await.unwrap();
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn a_processed_outbox_row_is_not_also_failed() {
+    db_test(async |pool| {
+        let id = uuid::Uuid::now_v7();
+        sqlx::query!(
+            "INSERT INTO events.outbox (id, type, payload) VALUES ($1, 'grade.published', '{}')",
+            id
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let both = sqlx::query!(
+            "UPDATE events.outbox SET processed_at = now(), failed_at = now() WHERE id = $1",
+            id
+        )
+        .execute(&pool)
+        .await;
+        assert_eq!(sqlstate(both), "23514");
+        let negative = sqlx::query!("UPDATE events.outbox SET attempts = -1 WHERE id = $1", id)
+            .execute(&pool)
+            .await;
+        assert_eq!(sqlstate(negative), "23514");
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn migration_22_counts_every_existing_account_as_verified() {
+    bare_db_test(async |pool| {
+        app::MIGRATOR.run_to(21, &pool).await.unwrap();
+        for email in ["a@x.edu", "b@x.edu"] {
+            insert_user(&pool, email, "student").await.unwrap();
+        }
+        sqlx::query!("UPDATE identity.users SET email_verified_at = NULL")
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        app::MIGRATOR.run(&pool).await.unwrap();
+
+        let unverified = sqlx::query_scalar!(
+            r#"SELECT count(*) AS "n!" FROM identity.users
+               WHERE email_verified_at IS DISTINCT FROM created_at"#
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(unverified, 0);
+        app::ensure_migrated(&pool).await.unwrap();
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn email_tokens_are_hashed_unique_and_expire_after_they_are_made() {
+    db_test(async |pool| {
+        insert_user(&pool, "a@x.edu", "student").await.unwrap();
+        let user = sqlx::query_scalar!("SELECT id FROM identity.users")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        let insert = |purpose: &'static str, hash: Vec<u8>, hours: i32| {
+            let pool = pool.clone();
+            async move {
+                sqlx::query!(
+                    "INSERT INTO identity.email_tokens (id, user_id, purpose, token_hash, expires_at)
+                     VALUES ($1, $2, $3, $4, now() + make_interval(hours => $5))",
+                    uuid::Uuid::now_v7(),
+                    user,
+                    purpose,
+                    hash,
+                    hours
+                )
+                .execute(&pool)
+                .await
+            }
+        };
+
+        insert("verify", vec![1; 32], 24).await.unwrap();
+        assert_eq!(sqlstate(insert("verify", vec![1; 32], 24).await), "23505", "unique");
+        assert_eq!(sqlstate(insert("other", vec![2; 32], 24).await), "23514", "purpose");
+        assert_eq!(sqlstate(insert("verify", vec![3; 31], 24).await), "23514", "a sha-256");
+        assert_eq!(sqlstate(insert("reset", vec![4; 32], 0).await), "23514", "expires later");
+
+        sqlx::query!("DELETE FROM identity.users WHERE id = $1", user)
+            .execute(&pool)
+            .await
+            .unwrap();
+        let left = sqlx::query_scalar!(r#"SELECT count(*) AS "n!" FROM identity.email_tokens"#)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(left, 0, "tokens go with their user");
+    })
+    .await;
+}
+
+// ADR-0047.
+
+#[tokio::test]
+async fn a_google_sign_in_attempt_is_found_by_two_hashes_and_expires_after_it_starts() {
+    db_test(async |pool| {
+        let insert = |state: Vec<u8>, browser: Vec<u8>, minutes: i32| {
+            let pool = pool.clone();
+            async move {
+                sqlx::query!(
+                    "INSERT INTO identity.oauth_states
+                         (state_hash, browser_hash, nonce, pkce_verifier, expires_at)
+                     VALUES ($1, $2, 'n', 'v', now() + make_interval(mins => $3))",
+                    state,
+                    browser,
+                    minutes
+                )
+                .execute(&pool)
+                .await
+            }
+        };
+
+        insert(vec![1; 32], vec![2; 32], 10).await.unwrap();
+        assert_eq!(
+            sqlstate(insert(vec![1; 32], vec![3; 32], 10).await),
+            "23505",
+            "one row per state"
+        );
+        assert_eq!(
+            sqlstate(insert(vec![4; 31], vec![2; 32], 10).await),
+            "23514",
+            "a sha-256"
+        );
+        assert_eq!(
+            sqlstate(insert(vec![5; 32], vec![2; 5], 10).await),
+            "23514",
+            "a sha-256"
+        );
+        assert_eq!(
+            sqlstate(insert(vec![6; 32], vec![2; 32], 0).await),
+            "23514",
+            "expires later"
+        );
+    })
+    .await;
+}
+
+// ADR-0048.
+
+#[tokio::test]
+async fn a_course_has_an_empty_code_and_description_until_they_are_set_and_both_are_bounded() {
+    db_test(async |pool| {
+        let teacher = owner(&pool, "t@x.edu").await;
+        let course = insert_course(&pool, teacher).await;
+        let row = sqlx::query!(
+            "SELECT code, description FROM teaching.courses WHERE id = $1",
+            course
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!((row.code.as_str(), row.description.as_str()), ("", ""));
+
+        let set = |code: String, description: String| {
+            let pool = pool.clone();
+            async move {
+                sqlx::query!(
+                    "UPDATE teaching.courses SET code = $2, description = $3 WHERE id = $1",
+                    course,
+                    code,
+                    description
+                )
+                .execute(&pool)
+                .await
+            }
+        };
+        set("CS 305".into(), "x".repeat(300)).await.unwrap();
+        assert_eq!(
+            sqlstate(set("c".repeat(33), String::new()).await),
+            "23514",
+            "code length"
+        );
+        assert_eq!(
+            sqlstate(set(" CS".into(), String::new()).await),
+            "23514",
+            "code is trimmed"
+        );
+        assert_eq!(
+            sqlstate(set(String::new(), "y".repeat(301)).await),
+            "23514",
+            "description length"
+        );
+        assert_eq!(
+            sqlstate(set(String::new(), " d".into()).await),
+            "23514",
+            "description is trimmed"
+        );
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn group_roster_links_has_a_row_per_link_where_the_roster_has_one_per_student() {
+    db_test(async |pool| {
+        let teacher = owner(&pool, "t@x.edu").await;
+        let a = student(&pool, "a@x.edu").await;
+        let group = insert_group(&pool, "7-A").await.unwrap();
+        let sub = insert_subgroup(&pool, group, "English 1").await.unwrap();
+        join_group(&pool, group, a).await;
+        join_subgroup(&pool, sub, group, a).await;
+        let course = insert_course(&pool, teacher).await;
+        link(&pool, course, group, None, teacher).await.unwrap();
+        link(&pool, course, group, Some(sub), teacher)
+            .await
+            .unwrap();
+
+        let rows = sqlx::query_scalar!(
+            r#"SELECT count(DISTINCT link_id) AS "n!" FROM teaching.group_roster_links
+               WHERE course_id = $1 AND user_id = $2"#,
+            course,
+            a
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(rows, 2, "one row per link");
+        assert_eq!(
+            roster(&pool, course).await.len(),
+            1,
+            "still one student on the roster"
+        );
+    })
+    .await;
+}
+
+// ADR-0049.
+
+#[tokio::test]
+async fn migration_26_gives_published_items_a_published_copy_and_leaves_drafts_without_one() {
+    bare_db_test(async |pool| {
+        app::MIGRATOR.run_to(25, &pool).await.unwrap();
+        let teacher = owner(&pool, "t@x.edu").await;
+        let course = insert_course(&pool, teacher).await;
+        let module = insert_module_row(&pool, course, None, 1).await.unwrap();
+        let live = insert_item_of_kind(&pool, module, course, 1, "text")
+            .await
+            .unwrap();
+        let draft = insert_item_of_kind(&pool, module, course, 2, "text")
+            .await
+            .unwrap();
+        sqlx::query!(
+            "UPDATE content.items SET status = 'published', title = 'Live', body = $2 WHERE id = $1",
+            live,
+            serde_json::json!({"v": 1})
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        app::MIGRATOR.run(&pool).await.unwrap();
+
+        let row = |id: uuid::Uuid| {
+            let pool = pool.clone();
+            async move {
+                sqlx::query!(
+                    r#"SELECT published_title, published_body, last_published_at IS NOT NULL AS "stamped!"
+                       FROM content.items WHERE id = $1"#,
+                    id
+                )
+                .fetch_one(&pool)
+                .await
+                .unwrap()
+            }
+        };
+        let published = row(live).await;
+        assert_eq!(published.published_title.as_deref(), Some("Live"));
+        assert_eq!(published.published_body, Some(serde_json::json!({"v": 1})));
+        assert!(published.stamped);
+        let waiting = row(draft).await;
+        assert!(waiting.published_title.is_none() && waiting.published_body.is_none());
+        assert!(!waiting.stamped);
+        app::ensure_migrated(&pool).await.unwrap();
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn a_published_item_needs_its_published_copy_and_only_in_class_work_has_a_class_day() {
+    db_test(async |pool| {
+        let teacher = owner(&pool, "t@x.edu").await;
+        let course = insert_course(&pool, teacher).await;
+        let module = insert_module_row(&pool, course, None, 1).await.unwrap();
+        let item = insert_item_of_kind(&pool, module, course, 1, "assignment")
+            .await
+            .unwrap();
+
+        let publish = sqlx::query!(
+            "UPDATE content.items SET status = 'published' WHERE id = $1",
+            item
+        )
+        .execute(&pool)
+        .await;
+        assert_eq!(sqlstate(publish), "23514", "published needs a copy");
+        sqlx::query!(
+            "UPDATE content.items
+             SET status = 'published', published_title = title, published_body = body,
+                 last_published_at = now()
+             WHERE id = $1",
+            item
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        insert_assignment_row(&pool, item, "10", serde_json::json!({}))
+            .await
+            .unwrap();
+        let on_text = sqlx::query!(
+            "UPDATE content.assignments SET class_on = '2026-10-29' WHERE item_id = $1",
+            item
+        )
+        .execute(&pool)
+        .await;
+        assert_eq!(
+            sqlstate(on_text),
+            "23514",
+            "a text assignment has no class day"
+        );
+        sqlx::query!(
+            "UPDATE content.assignments SET type = 'no_submission', class_on = '2026-10-29'
+             WHERE item_id = $1",
+            item
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+    })
+    .await;
+}
+
+// --- migration 27: quiz scores and grades without a person ---------------------------------------
+
+#[tokio::test]
+async fn only_a_submitted_attempt_has_scores_and_only_an_auto_score_has_no_person() {
+    db_test(async |pool| {
+        let student = owner(&pool, "s@x.edu").await;
+        let assignment = uuid::Uuid::now_v7();
+
+        let insert = |status: &'static str, scores: Option<serde_json::Value>| {
+            let pool = pool.clone();
+            async move {
+                sqlx::query!(
+                    "INSERT INTO assessment.submissions
+                         (id, assignment_id, student_id, status, attempt, content, submitted_at,
+                          auto_scores)
+                     VALUES ($1, $2, $3, $4, CASE WHEN $4 = 'submitted' THEN 1 END, '{}',
+                             CASE WHEN $4 = 'submitted' THEN now() END, $5)",
+                    uuid::Uuid::now_v7(),
+                    assignment,
+                    student,
+                    status,
+                    scores
+                )
+                .execute(&pool)
+                .await
+            }
+        };
+        let scores = serde_json::json!({"q1": "2.00"});
+        assert_eq!(
+            sqlstate(insert("draft", Some(scores.clone())).await),
+            "23514",
+            "a draft has no scores"
+        );
+        assert_eq!(
+            sqlstate(insert("submitted", Some(serde_json::json!(["x"]))).await),
+            "23514",
+            "the scores are an object"
+        );
+        insert("submitted", Some(scores)).await.unwrap();
+
+        // A draft grade the server wrote has no person; a history row has none only for `auto_score`.
+        sqlx::query!(
+            "INSERT INTO gradebook.grades (assignment_id, student_id, draft_score, draft_updated_by)
+             VALUES ($1, $2, 3, NULL)",
+            assignment,
+            student
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        let history = |action: &'static str, actor: Option<uuid::Uuid>| {
+            let pool = pool.clone();
+            async move {
+                sqlx::query!(
+                    "INSERT INTO gradebook.grade_history
+                         (id, assignment_id, student_id, action, actor_id, score)
+                     VALUES ($1, $2, $3, $4, $5, 3)",
+                    uuid::Uuid::now_v7(),
+                    assignment,
+                    student,
+                    action,
+                    actor
+                )
+                .execute(&pool)
+                .await
+            }
+        };
+        history("auto_score", None).await.unwrap();
+        history("save_draft", Some(student)).await.unwrap();
+        history("publish", Some(student)).await.unwrap();
+        for (action, actor) in [
+            ("auto_score", Some(student)),
+            ("save_draft", None),
+            ("publish", None),
+        ] {
+            assert_eq!(sqlstate(history(action, actor).await), "23514", "{action}");
+        }
+    })
+    .await;
+}

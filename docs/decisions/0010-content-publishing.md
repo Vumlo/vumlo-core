@@ -1,6 +1,6 @@
 # 0010. Content publishing
 
-Status: Accepted
+Status: Accepted; its last decision (edits to published content are visible at once) is superseded by [ADR-0049](0049-unpublished-revisions-class-dates-and-item-meta.md)
 
 ## Context
 Teachers prepare lessons and assignments in advance, finish them later, publish several at once, or schedule them.

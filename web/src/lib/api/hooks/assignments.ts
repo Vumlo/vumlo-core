@@ -2,8 +2,8 @@
 
 import { api } from "../client";
 import { invalidate, useMutation, useQuery } from "../../query";
-import type { AnswerMap, FormResponses, GradeHistory, QuizResult } from "../gaps";
-import type { Attempt, Document, GradebookPage, MySubmission, SubmissionRow } from "../types";
+import type { AnswerMap, FormResponses, QuizResult } from "../gaps";
+import type { Attempt, Document, GradeHistoryEntry, GradebookPage, MySubmission, SubmissionRow } from "../types";
 import { fetchAll } from "./util";
 
 export function useMySubmission(assignmentId: string | null) {
@@ -62,11 +62,10 @@ export function useGradebook(courseId: string | null) {
   });
 }
 
-/** GAP: the change history of one grade (API_GAPS.md, "Grade history"). */
+/** The recorded changes of one grade, newest first (ADR-0049). The drawer shows the latest ones. */
 export function useGradeHistory(assignmentId: string | null, studentId: string | null) {
-  return useQuery<GradeHistory>(assignmentId && studentId ? `/assignments/${assignmentId}/grades/${studentId}/history` : null, () =>
-    api.get<GradeHistory>(`/assignments/${assignmentId}/grades/${studentId}/history`),
-  );
+  const path = `/assignments/${assignmentId}/grades/${studentId}/history?limit=20`;
+  return useQuery<GradeHistoryEntry[]>(assignmentId && studentId ? path : null, async () => (await api.get<{ items: GradeHistoryEntry[] }>(path)).items);
 }
 
 export function useSaveGrade(assignmentId: string) {

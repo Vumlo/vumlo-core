@@ -1,8 +1,16 @@
 import { dueLabel, relative, shortDay } from "./format";
 import { translate } from "./i18n/core";
 import type { MessageKey } from "./i18n/core";
-import type { ItemMeta, WorkStatus } from "./api/gaps";
-import type { ContentModule, ContentSubModule, ContentTree, ItemSummary } from "./api/types";
+import type { WorkStatus } from "./api/gaps";
+import type { ContentModule, ContentSubModule, ContentTree, CourseInfo, ItemMeta, ItemSummary, LinkedGroup } from "./api/types";
+
+/** The owner as a person's name; `null` until the header is loaded. */
+export const ownerName = (info: Pick<CourseInfo, "owner_name" | "owner_surname"> | undefined): string | null =>
+  info ? `${info.owner_name} ${info.owner_surname}` : null;
+
+/** A linked group as the lists show it: the group, and the subgroup after a slash. */
+export const linkedGroupName = (g: Pick<LinkedGroup, "group_name" | "subgroup_name">): string =>
+  g.subgroup_name ? `${g.group_name} / ${g.subgroup_name}` : g.group_name;
 
 export type Section = (ContentModule | ContentSubModule) & { depth: 0 | 1 };
 

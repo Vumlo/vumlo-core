@@ -10,9 +10,8 @@ import type {
   AdminUserSummary,
   AuditEvent,
   AuditKind,
-  InstitutionAdmin,
 } from "../gaps";
-import type { CreateUserResponse, Group, Role, Subgroup, Term, User } from "../types";
+import type { AdminInstitution, CreateUserResponse, Group, Role, Subgroup, Term, User } from "../types";
 import { fetchAll } from "./util";
 
 export type UserFilter = { role?: Role; status?: "disabled"; email?: string };
@@ -130,17 +129,7 @@ export function useCreateTerm() {
 }
 
 export function useAdminInstitution() {
-  return useQuery<InstitutionAdmin>("/admin/institution", () => api.get<InstitutionAdmin>("/admin/institution"));
-}
-
-/** GAP: institution settings are config-file only today (API_GAPS.md, "Institution"). */
-export function useSaveInstitution() {
-  return useMutation(async (patch: Partial<Pick<InstitutionAdmin, "name" | "short_name" | "accent" | "language" | "time_zone">>) => {
-    const r = await api.patch<InstitutionAdmin>("/admin/institution", patch);
-    invalidate("/admin/institution");
-    invalidate("/institution");
-    return r;
-  });
+  return useQuery<AdminInstitution>("/admin/institution", () => api.get<AdminInstitution>("/admin/institution"));
 }
 
 /** GAP: the audit log has no read endpoint (API_GAPS.md, "Audit log"). */

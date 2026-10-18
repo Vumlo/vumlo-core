@@ -9,6 +9,55 @@
     "version": "0.1.0"
   },
   "paths": {
+    "/api/v1/admin/institution": {
+      "get": {
+        "tags": [
+          "institution"
+        ],
+        "summary": "The institution profile with the settings that are not public. Admin only, read-only: they\nchange in the configuration file (ADR-0044).",
+        "operationId": "get_admin_institution",
+        "responses": {
+          "200": {
+            "description": "The institution settings",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminInstitution"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not logged in",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not an admin",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          },
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/admin/users": {
       "get": {
         "tags": [
@@ -541,6 +590,117 @@
           },
           "422": {
             "description": "Invalid `score` or `feedback`",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          },
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/assignments/{id}/grades/{student_id}/history": {
+      "get": {
+        "tags": [
+          "gradebook"
+        ],
+        "summary": "The recorded changes of one student's grade on an assignment, newest first. Staff only.",
+        "description": "Every draft save and every publish is a row with the values after it and the person who made it.\nA student with no grade has an empty history.",
+        "operationId": "get_grade_history",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Assignment id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "student_id",
+            "in": "path",
+            "description": "The student",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Page size, 1 to 100 (default 50).",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A page of history entries",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_GradeHistoryEntry"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not logged in",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller may not read the gradebook",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such assignment, or not visible to the caller",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid cursor",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -1166,6 +1326,149 @@
         ]
       }
     },
+    "/api/v1/auth/google/callback": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Finishes sign-in with Google: checks the state against the browser's cookie, exchanges the\ncode, verifies the ID token and opens a web session, like a password login with `client: web`.",
+        "description": "The Google account needs a verified email in one of `auth.allowed_domains`. A first sign-in\ncreates a `student`; an existing account with that address is linked.",
+        "operationId": "callback",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GoogleCallbackRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Signed in; the session cookie is set",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LoginResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "The attempt is unknown, used, expired or from another browser, or Google did not accept it",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "A different origin, a Google account that may not sign in here, or a disabled account",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Sign-in with Google is not configured",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many requests",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Google cannot be reached",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/google/start": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Starts sign-in with Google: answers the URL to send the browser to and sets a cookie that ties\nthe attempt to this browser. Off (`404`) without `[auth.google]`.",
+        "operationId": "start",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GoogleStartRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Where to send the browser",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GoogleStartResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Sign-in with Google is not configured",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many requests",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Google cannot be reached",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/auth/login": {
       "post": {
         "tags": [
@@ -1278,6 +1581,205 @@
             "bearer": []
           }
         ]
+      }
+    },
+    "/api/v1/auth/password-reset": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Mails a link that lets the owner of an account choose a new password.",
+        "description": "The answer is the same for every address (ADR-0046). Off (`404`) without `[mail]`.",
+        "operationId": "request_password_reset",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PasswordResetRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "Accepted; if the address has an account, a mail is on its way"
+          },
+          "404": {
+            "description": "Password reset is off: the server has no mail configured",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many requests",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/password-reset/confirm": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Sets a new password with the token from the reset mail.",
+        "description": "Revokes every session of the user. A spent or expired link is `410` and is decided before the\npassword is looked at.",
+        "operationId": "confirm_password_reset",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PasswordResetConfirmRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "The password is set; the user can log in with it"
+          },
+          "410": {
+            "description": "The link is unknown, used or expired",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "A password that breaks the policy; `errors` explains why",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many requests",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/register": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Creates an account for the address and mails a link that verifies it.",
+        "description": "The answer is the same for every address, so a page cannot tell who has an account (ADR-0046).\nThe account cannot log in until the link is used. Off (`404`) without `[mail]`.",
+        "operationId": "register",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegisterRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "Accepted; if the address can sign up, a mail is on its way"
+          },
+          "404": {
+            "description": "Self-registration is off: the server has no mail configured",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "An address outside the allowed domains, or a password that breaks the policy",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many requests",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/verify-email": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Verifies the address with the token from the mail. Does not sign anyone in.",
+        "operationId": "verify_email",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VerifyEmailRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "The address is verified; the account can log in"
+          },
+          "410": {
+            "description": "The link is unknown, used or expired",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many requests",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/v1/courses": {
@@ -1410,12 +1912,85 @@
           }
         ]
       },
+      "delete": {
+        "tags": [
+          "courses"
+        ],
+        "summary": "Deletes a course with its content, members and links. The owner or an admin, in every status.",
+        "description": "A course in which any grade has a value or any work was submitted cannot be deleted: archive\nit instead.",
+        "operationId": "delete_course",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Course id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Deleted"
+          },
+          "401": {
+            "description": "Not logged in",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Only the owner or an admin may delete a course",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such course, or not visible to the caller",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The course has grades or submitted work",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          },
+          {
+            "bearer": []
+          }
+        ]
+      },
       "patch": {
         "tags": [
           "courses"
         ],
         "summary": "Changes the title and/or the term of a course. Assistants, teachers, owners and admins.",
-        "description": "Only the fields present change; `term_id: null` clears the term. A template has no term.\nWorks in every course status (ADR-0033).",
+        "description": "Only the fields present change; `term_id: null` clears the term. A template has no term.\nWorks on a draft and a published course; an archived one takes no change (ADR-0048).",
         "operationId": "update_course",
         "parameters": [
           {
@@ -1480,8 +2055,179 @@
               }
             }
           },
+          "409": {
+            "description": "The course is archived",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
           "422": {
             "description": "Invalid title, an unknown term, or a term on a template",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          },
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/courses/{id}/archive": {
+      "post": {
+        "tags": [
+          "courses"
+        ],
+        "summary": "Archives a course: it stays readable, for students too, and takes no more changes. Owner,\ncourse teacher or admin. Idempotent.",
+        "operationId": "archive_course",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Course id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The archived course",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Course"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not logged in",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller may not archive this course",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such course, or not visible to the caller",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          },
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/courses/{id}/candidates": {
+      "get": {
+        "tags": [
+          "courses"
+        ],
+        "summary": "Active people who are not on the course and match `q` in their name, surname or email: at\nmost 20, ordered by surname. Whoever manages the roster (assistants included).",
+        "operationId": "get_candidates",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Course id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "description": "Part of a name, surname or email: at least 2 characters.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Up to 20 people",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Candidates"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not logged in",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller may not manage this roster",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such course, or not visible to the caller",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "A search text shorter than two characters",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -2212,6 +2958,228 @@
         ]
       }
     },
+    "/api/v1/courses/{id}/info": {
+      "get": {
+        "tags": [
+          "courses"
+        ],
+        "summary": "The header of a course: code, description, term, owner, counts and the points it adds up to.\nAnyone who may view the course.",
+        "operationId": "get_course_info",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Course id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The course header",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CourseInfo"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not logged in",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such course, or not visible to the caller",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          },
+          {
+            "bearer": []
+          }
+        ]
+      },
+      "patch": {
+        "tags": [
+          "courses"
+        ],
+        "summary": "Changes the code and/or the description of a course. Assistants, teachers, owners and admins;\nnot in an archived course. Only the fields present change; an empty one clears the field.",
+        "operationId": "update_course_info",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Course id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateCourseInfoRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "The course header after the change",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CourseInfo"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not logged in",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller may not edit this course",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such course, or not visible to the caller",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The course is archived",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "A code or a description that is too long",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          },
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/courses/{id}/item-meta": {
+      "get": {
+        "tags": [
+          "content"
+        ],
+        "summary": "The facts of every item of the course that the tree does not carry, by item id.",
+        "description": "Everyone gets the reading time of a lecture and the class day of in-class work. Staff also get\n`edited` and the counts of what to grade; a student gets their own standing, with published\nvalues only.",
+        "operationId": "get_item_meta",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Course id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The facts by item id",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ItemMetaMap"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not logged in",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such course, or not visible to the caller",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          },
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/courses/{id}/members": {
       "get": {
         "tags": [
@@ -2859,6 +3827,68 @@
         ]
       }
     },
+    "/api/v1/courses/{id}/people": {
+      "get": {
+        "tags": [
+          "courses"
+        ],
+        "summary": "The people on a course with their names. Anyone who may view the course.",
+        "description": "Staff also get the emails, the former students (ADR-0037) and the linked groups; a student gets\nnames and groups of classmates and no address.",
+        "operationId": "get_people",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Course id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The people",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CoursePeople"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not logged in",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such course, or not visible to the caller",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          },
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/courses/{id}/publish": {
       "post": {
         "tags": [
@@ -2922,6 +3952,169 @@
           },
           "409": {
             "description": "The course is archived",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          },
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/courses/{id}/restore": {
+      "post": {
+        "tags": [
+          "courses"
+        ],
+        "summary": "Takes a course out of the archive. It is published again, also when it was a draft before.\nOwner, course teacher or admin. Idempotent.",
+        "operationId": "restore_course",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Course id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The restored course",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Course"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not logged in",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller may not restore this course",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such course, or not visible to the caller",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          },
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/courses/{id}/template": {
+      "post": {
+        "tags": [
+          "courses"
+        ],
+        "summary": "Makes a template from a course: a copy of its whole tree, as drafts, owned by the caller.",
+        "description": "Anyone who can edit the course's content and may create courses. Members, groups, deadlines,\nsubmissions and grades are not copied. Works on an archived course.",
+        "operationId": "make_template",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Course id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MakeTemplateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "The new template",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Course"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not logged in",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller may not do this",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such course, or not visible to the caller",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid title",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -4041,6 +5234,27 @@
         }
       }
     },
+    "/api/v1/institution": {
+      "get": {
+        "tags": [
+          "institution"
+        ],
+        "summary": "The public profile of the institution. No session needed: the sign-in page shows it.",
+        "operationId": "get_institution",
+        "responses": {
+          "200": {
+            "description": "The institution profile",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Institution"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/items/{id}": {
       "get": {
         "tags": [
@@ -4177,8 +5391,8 @@
         "tags": [
           "content"
         ],
-        "summary": "Changes an item's title, body and/or `publish_at` (`null` clears it). A `body` replaces the\nwhole body. Edits to a published item are visible at once (ADR-0010).",
-        "description": "For an assignment `config`, `max_points` and `is_bonus` may change too; the grading scale\nlimits apply when `max_points` is raised or a bonus assignment becomes regular. They are\nrejected for a `text` item. `type` and `kind` cannot change: sending them has no effect.",
+        "summary": "Changes an item's title, body and/or `publish_at` (`null` clears it). A `body` replaces the\nwhole body. The title and body of a published item are a working copy: students keep reading the\npublished one until `POST /items/{id}/revision/publish` (ADR-0049). An assignment's `config`,\npoints and deadline settings apply at once.",
+        "description": "For an assignment `config`, `max_points` and `is_bonus` may change too; the grading scale\nlimits apply when `max_points` is raised or a bonus assignment becomes regular. `class_on` is\nfor `no_submission` assignments. They are rejected for a `text` item. `type` and `kind` cannot change: sending them has no effect.",
         "operationId": "update_item",
         "parameters": [
           {
@@ -4316,6 +5530,159 @@
           },
           "404": {
             "description": "No such item, or not visible to the caller",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          },
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/items/{id}/revision": {
+      "get": {
+        "tags": [
+          "content"
+        ],
+        "summary": "Whether a published item has changes that students do not see yet. Staff only.",
+        "operationId": "get_revision",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Item id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The revision",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ItemRevision"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not logged in",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Only staff see revisions",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such item, or not visible to the caller",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          },
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/items/{id}/revision/publish": {
+      "post": {
+        "tags": [
+          "content"
+        ],
+        "summary": "Gives students the working title and body of a published item (ADR-0049).",
+        "description": "A draft has nothing to publish a revision of: publish the item (`409`). Not in an archived\ncourse.",
+        "operationId": "publish_revision",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Item id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The revision after publishing",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ItemRevision"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not logged in",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller may not change this course's content",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such item, or not visible to the caller",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The item is a draft, or the course is archived",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -4624,6 +5991,76 @@
           },
           "404": {
             "description": "No such session of this user",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          },
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/me/templates": {
+      "get": {
+        "tags": [
+          "courses"
+        ],
+        "summary": "The templates the caller owns or teaches, with how many sections, lectures and assignments\neach holds.",
+        "operationId": "list_templates",
+        "parameters": [
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Page size, 1 to 100 (default 50).",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A page of templates",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_TemplateSummary"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not logged in",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid cursor",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -5531,6 +6968,97 @@
         ]
       }
     },
+    "/api/v1/templates/{id}/courses": {
+      "post": {
+        "tags": [
+          "courses"
+        ],
+        "summary": "Makes a draft course from a template: a copy of its whole tree, as drafts, owned by the caller.",
+        "operationId": "create_from_template",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Template id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateFromTemplateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "The new course",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Course"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not logged in",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller may not do this",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such template, or not visible to the caller",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid title or an unknown term",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          },
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/terms": {
       "get": {
         "tags": [
@@ -5914,6 +7442,17 @@
   },
   "components": {
     "schemas": {
+      "Accent": {
+        "type": "string",
+        "description": "The accent colour of the web app.",
+        "enum": [
+          "indigo",
+          "teal",
+          "crimson",
+          "forest",
+          "plum"
+        ]
+      },
       "AddMembersRequest": {
         "type": "object",
         "required": [
@@ -5945,6 +7484,33 @@
             "description": "The users who were not members before. Empty when all of them already were."
           }
         }
+      },
+      "AdminInstitution": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Institution"
+          },
+          {
+            "type": "object",
+            "required": [
+              "mode",
+              "allowed_domains"
+            ],
+            "properties": {
+              "allowed_domains": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "The email domains self-registration accepts (ADR-0017)."
+              },
+              "mode": {
+                "$ref": "#/components/schemas/InstitutionMode"
+              }
+            }
+          }
+        ],
+        "description": "What an admin sees: the public profile and the settings that are not public. Read-only; they\nchange in the config file (ADR-0044)."
       },
       "AllStudents": {
         "type": "string",
@@ -5990,6 +7556,14 @@
               "null"
             ],
             "description": "Whether work is taken after `due_at`; set exactly when `due_at` is."
+          },
+          "class_on": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date",
+            "description": "The day an in-class (`no_submission`) assignment takes place, `YYYY-MM-DD` (ADR-0049);\n`null` for any other type."
           },
           "config": {
             "type": "object",
@@ -6460,6 +8034,51 @@
         ],
         "description": "One block. `id` is 1 to 64 characters from `[A-Za-z0-9_-]`, unique in the document and\ngenerated by the client. `props`, `content` and `children` are left out when empty."
       },
+      "Candidate": {
+        "type": "object",
+        "description": "Someone who could be added to the course.",
+        "required": [
+          "user_id",
+          "name",
+          "surname",
+          "email",
+          "role"
+        ],
+        "properties": {
+          "email": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "role": {
+            "$ref": "#/components/schemas/Role",
+            "description": "The institution role."
+          },
+          "surname": {
+            "type": "string"
+          },
+          "user_id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      },
+      "Candidates": {
+        "type": "object",
+        "description": "At most 20, best order first. Not paged.",
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Candidate"
+            }
+          }
+        }
+      },
       "ChangePasswordRequest": {
         "type": "object",
         "required": [
@@ -6680,12 +8299,127 @@
           }
         }
       },
+      "CourseInfo": {
+        "type": "object",
+        "description": "The header of every course screen. A read model: nothing here is stored as it is shown.",
+        "required": [
+          "course_id",
+          "code",
+          "description",
+          "owner_name",
+          "owner_surname",
+          "owner_email",
+          "student_count",
+          "former_count",
+          "assistant_count",
+          "updated_at",
+          "total_points",
+          "graded_items",
+          "has_grades"
+        ],
+        "properties": {
+          "assistant_count": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "code": {
+            "type": "string",
+            "description": "The short code, e.g. `CS 305`; empty when none is set."
+          },
+          "content_updated_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "When a module or item last changed; `null` for a course with no content."
+          },
+          "course_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "description": {
+            "type": "string"
+          },
+          "former_count": {
+            "type": "integer",
+            "format": "int32",
+            "description": "People who left the roster but have results in the course (ADR-0037).",
+            "minimum": 0
+          },
+          "graded_items": {
+            "type": "integer",
+            "format": "int32",
+            "description": "How many assignments that sum counts.",
+            "minimum": 0
+          },
+          "has_grades": {
+            "type": "boolean",
+            "description": "A grade has a value in the course, so it cannot be deleted, only archived."
+          },
+          "owner_email": {
+            "type": "string",
+            "description": "The owner is the person to ask, so everyone who can view the course gets this address."
+          },
+          "owner_name": {
+            "type": "string"
+          },
+          "owner_surname": {
+            "type": "string"
+          },
+          "student_count": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Current students: on the roster and active.",
+            "minimum": 0
+          },
+          "term_name": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The name of the course's term; `null` without a term."
+          },
+          "total_points": {
+            "type": "string",
+            "description": "The sum of `max_points` of the regular assignments the caller may see."
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When the course row (title, term, code, description, status, owner) last changed."
+          }
+        }
+      },
       "CourseKind": {
         "type": "string",
         "enum": [
           "regular",
           "template"
         ]
+      },
+      "CoursePeople": {
+        "type": "object",
+        "required": [
+          "people",
+          "groups"
+        ],
+        "properties": {
+          "groups": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LinkedGroup"
+            },
+            "description": "Empty for a student."
+          },
+          "people": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PersonRow"
+            }
+          }
+        }
       },
       "CourseRole": {
         "type": "string",
@@ -6720,6 +8454,27 @@
           },
           "title": {
             "type": "string"
+          }
+        }
+      },
+      "CreateFromTemplateRequest": {
+        "type": "object",
+        "description": "Makes a draft course from a template.",
+        "properties": {
+          "term_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid",
+            "description": "An existing term; an unknown one is a `422` on this field."
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The new course's title; the template's own when absent."
           }
         }
       },
@@ -7028,6 +8783,76 @@
           }
         }
       },
+      "GoogleCallbackRequest": {
+        "type": "object",
+        "description": "What Google sent back to the web app's callback page.",
+        "required": [
+          "code",
+          "state"
+        ],
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          }
+        }
+      },
+      "GoogleStartRequest": {
+        "type": "object",
+        "description": "Starts sign-in with Google (ADR-0047).",
+        "properties": {
+          "login_hint": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "An address to pre-fill on Google's page."
+          }
+        }
+      },
+      "GoogleStartResponse": {
+        "type": "object",
+        "description": "Where to send the browser for Google's consent screen.",
+        "required": [
+          "authorization_url"
+        ],
+        "properties": {
+          "authorization_url": {
+            "type": "string"
+          }
+        }
+      },
+      "GradeAction": {
+        "type": "string",
+        "description": "What a history row records (ADR-0028).",
+        "enum": [
+          "save_draft",
+          "publish"
+        ]
+      },
+      "GradeActor": {
+        "type": "object",
+        "description": "Who made a change.",
+        "required": [
+          "user_id",
+          "name",
+          "surname"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "surname": {
+            "type": "string"
+          },
+          "user_id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      },
       "GradeCell": {
         "type": "object",
         "description": "One cell as staff see it: both slots. Never sent to a student.",
@@ -7063,6 +8888,53 @@
               "string",
               "null"
             ]
+          }
+        }
+      },
+      "GradeHistoryEntry": {
+        "type": "object",
+        "description": "One recorded change of a grade (ADR-0049). Data, not a sentence: the client words it.",
+        "required": [
+          "id",
+          "action",
+          "at"
+        ],
+        "properties": {
+          "action": {
+            "$ref": "#/components/schemas/GradeAction"
+          },
+          "actor": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/GradeActor",
+                "description": "`null` when no person made the change."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "feedback": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The feedback after the change; `null` when none."
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "score": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The score after the change, a decimal string with two decimals; `null` when none."
           }
         }
       },
@@ -7179,6 +9051,14 @@
             "format": "uuid"
           }
         }
+      },
+      "GradingScale": {
+        "type": "string",
+        "description": "How points relate to the grade (ADR-0022).",
+        "enum": [
+          "twelve",
+          "hundred"
+        ]
       },
       "Group": {
         "type": "object",
@@ -7347,6 +9227,48 @@
         ],
         "description": "A run of inline content."
       },
+      "Institution": {
+        "type": "object",
+        "description": "The public profile of the institution: what a page needs before anyone signs in (ADR-0044).",
+        "required": [
+          "name",
+          "short_name",
+          "language",
+          "time_zone",
+          "accent",
+          "grading_scale"
+        ],
+        "properties": {
+          "accent": {
+            "$ref": "#/components/schemas/Accent"
+          },
+          "grading_scale": {
+            "$ref": "#/components/schemas/GradingScale"
+          },
+          "language": {
+            "$ref": "#/components/schemas/Language"
+          },
+          "name": {
+            "type": "string"
+          },
+          "short_name": {
+            "type": "string",
+            "description": "For narrow places such as the navbar."
+          },
+          "time_zone": {
+            "type": "string",
+            "description": "An IANA zone name, e.g. `Europe/Kyiv`."
+          }
+        }
+      },
+      "InstitutionMode": {
+        "type": "string",
+        "description": "What kind of institution the installation serves (ADR-0031).",
+        "enum": [
+          "school",
+          "university"
+        ]
+      },
       "Item": {
         "type": "object",
         "description": "A `text` item or an assignment. `body` is a JSON object the server stores without interpreting it;\nfor an assignment it holds the instructions.",
@@ -7427,6 +9349,157 @@
           "assignment"
         ]
       },
+      "ItemMeta": {
+        "type": "object",
+        "description": "The facts of one item that the course tree does not carry. Only the facts that apply to the\nitem and to the caller are present.",
+        "properties": {
+          "attempts_used": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "class_on": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date",
+            "description": "In-class assignments: the day they take place."
+          },
+          "draft_grades": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "Staff: grades whose draft differs from what is published.",
+            "minimum": 0
+          },
+          "draft_saved_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "edited": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "Staff: the item is published and has changes students do not see yet."
+          },
+          "graded_total": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "Staff: current students of the course.",
+            "minimum": 0
+          },
+          "published_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "read_minutes": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "Lectures: minutes to read the body the caller sees, at least 1.",
+            "minimum": 0
+          },
+          "score": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Students: the published score; absent until grades are published."
+          },
+          "status": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/WorkStatus",
+                "description": "Students, assignments: the caller's own standing."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "submitted": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "Staff, assignments: current students who submitted at least once.",
+            "minimum": 0
+          },
+          "to_grade": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "Staff: of those, the ones without a score yet.",
+            "minimum": 0
+          }
+        }
+      },
+      "ItemMetaMap": {
+        "type": "object",
+        "description": "The facts by item id, for the items the caller may see.",
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/ItemMeta"
+            },
+            "propertyNames": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "ItemRevision": {
+        "type": "object",
+        "description": "What the editor shows about the unpublished changes of an item.",
+        "required": [
+          "has_unpublished_changes",
+          "size_bytes"
+        ],
+        "properties": {
+          "has_unpublished_changes": {
+            "type": "boolean",
+            "description": "The working title or body differs from what students read."
+          },
+          "last_published_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "When students last got a new version; `null` for an item never published."
+          },
+          "size_bytes": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The size of the working body as JSON."
+          }
+        }
+      },
       "ItemSummary": {
         "type": "object",
         "description": "An item in the course tree: everything but the body.",
@@ -7474,6 +9547,14 @@
             "type": "string"
           }
         }
+      },
+      "Language": {
+        "type": "string",
+        "description": "The interface language an institution starts in (ADR-0043).",
+        "enum": [
+          "en",
+          "uk"
+        ]
       },
       "LatestAttempt": {
         "type": "object",
@@ -7548,6 +9629,42 @@
         ],
         "description": "What a link may contain: text only."
       },
+      "LinkedGroup": {
+        "type": "object",
+        "description": "A group or subgroup linked to the course. Staff only.",
+        "required": [
+          "link_id",
+          "group_name",
+          "student_count",
+          "linked_at"
+        ],
+        "properties": {
+          "group_name": {
+            "type": "string"
+          },
+          "link_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "linked_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "student_count": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Current students the link brings (active, not excluded).",
+            "minimum": 0
+          },
+          "subgroup_name": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Set when the link is to one subgroup."
+          }
+        }
+      },
       "LoginClient": {
         "type": "string",
         "enum": [
@@ -7584,6 +9701,19 @@
           }
         ],
         "description": "`client = web` returns the user (the token is in the cookie); `client = app` returns the token too."
+      },
+      "MakeTemplateRequest": {
+        "type": "object",
+        "description": "Makes a template from a course.",
+        "properties": {
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The template's title; the course's own when absent."
+          }
+        }
       },
       "MemberSource": {
         "type": "string",
@@ -7796,6 +9926,14 @@
               "null"
             ]
           },
+          "class_on": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date",
+            "description": "The day an in-class assignment takes place, `YYYY-MM-DD` (ADR-0049). Only for\n`no_submission`."
+          },
           "config": {
             "type": [
               "object",
@@ -7998,6 +10136,71 @@
                 "user_id": {
                   "type": "string",
                   "format": "uuid"
+                }
+              }
+            }
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Pass as `cursor` to get the next page; `null` on the last page."
+          }
+        }
+      },
+      "Page_GradeHistoryEntry": {
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "description": "One recorded change of a grade (ADR-0049). Data, not a sentence: the client words it.",
+              "required": [
+                "id",
+                "action",
+                "at"
+              ],
+              "properties": {
+                "action": {
+                  "$ref": "#/components/schemas/GradeAction"
+                },
+                "actor": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/GradeActor",
+                      "description": "`null` when no person made the change."
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "at": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "feedback": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "description": "The feedback after the change; `null` when none."
+                },
+                "id": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "score": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "description": "The score after the change, a decimal string with two decimals; `null` when none."
                 }
               }
             }
@@ -8281,6 +10484,60 @@
           }
         }
       },
+      "Page_TemplateSummary": {
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "description": "A template with what it holds.",
+              "required": [
+                "course",
+                "sections",
+                "lectures",
+                "assignments",
+                "updated_at"
+              ],
+              "properties": {
+                "assignments": {
+                  "type": "integer",
+                  "format": "int32",
+                  "minimum": 0
+                },
+                "course": {
+                  "$ref": "#/components/schemas/Course"
+                },
+                "lectures": {
+                  "type": "integer",
+                  "format": "int32",
+                  "minimum": 0
+                },
+                "sections": {
+                  "type": "integer",
+                  "format": "int32",
+                  "description": "Modules and sub-modules.",
+                  "minimum": 0
+                },
+                "updated_at": {
+                  "type": "string",
+                  "format": "date-time"
+                }
+              }
+            }
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Pass as `cursor` to get the next page; `null` on the last page."
+          }
+        }
+      },
       "Page_Term": {
         "type": "object",
         "required": [
@@ -8381,6 +10638,85 @@
               "null"
             ],
             "description": "Pass as `cursor` to get the next page; `null` on the last page."
+          }
+        }
+      },
+      "PasswordResetConfirmRequest": {
+        "type": "object",
+        "description": "The token from the reset mail and the password to set.",
+        "required": [
+          "token",
+          "new_password"
+        ],
+        "properties": {
+          "new_password": {
+            "type": "string"
+          },
+          "token": {
+            "type": "string"
+          }
+        }
+      },
+      "PasswordResetRequest": {
+        "type": "object",
+        "required": [
+          "email"
+        ],
+        "properties": {
+          "email": {
+            "type": "string"
+          }
+        }
+      },
+      "PersonRow": {
+        "type": "object",
+        "description": "One person on a course.",
+        "required": [
+          "user_id",
+          "name",
+          "surname",
+          "role",
+          "is_owner",
+          "source",
+          "former"
+        ],
+        "properties": {
+          "email": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Staff only: students never get another person's address."
+          },
+          "former": {
+            "type": "boolean",
+            "description": "Off the roster but with results in the course. Staff only (ADR-0037)."
+          },
+          "group": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "For a student who comes from a linked group: the group's name, and the subgroup's after a\nslash when the link is to a subgroup."
+          },
+          "is_owner": {
+            "type": "boolean"
+          },
+          "name": {
+            "type": "string"
+          },
+          "role": {
+            "$ref": "#/components/schemas/CourseRole"
+          },
+          "source": {
+            "$ref": "#/components/schemas/MemberSource"
+          },
+          "surname": {
+            "type": "string"
+          },
+          "user_id": {
+            "type": "string",
+            "format": "uuid"
           }
         }
       },
@@ -8492,6 +10828,31 @@
         "properties": {
           "role": {
             "$ref": "#/components/schemas/CourseRole"
+          }
+        }
+      },
+      "RegisterRequest": {
+        "type": "object",
+        "description": "Self-registration (ADR-0046). The account is created as a `student` and cannot log in until the\naddress is verified.",
+        "required": [
+          "name",
+          "surname",
+          "email",
+          "password"
+        ],
+        "properties": {
+          "email": {
+            "type": "string",
+            "description": "Its domain must be one the institution allows."
+          },
+          "name": {
+            "type": "string"
+          },
+          "password": {
+            "type": "string"
+          },
+          "surname": {
+            "type": "string"
           }
         }
       },
@@ -8878,6 +11239,42 @@
           }
         }
       },
+      "TemplateSummary": {
+        "type": "object",
+        "description": "A template with what it holds.",
+        "required": [
+          "course",
+          "sections",
+          "lectures",
+          "assignments",
+          "updated_at"
+        ],
+        "properties": {
+          "assignments": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "course": {
+            "$ref": "#/components/schemas/Course"
+          },
+          "lectures": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "sections": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Modules and sub-modules.",
+            "minimum": 0
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
       "TemporaryPasswordResponse": {
         "type": "object",
         "required": [
@@ -8943,6 +11340,26 @@
           }
         }
       },
+      "UpdateCourseInfoRequest": {
+        "type": "object",
+        "description": "Only the fields present change.",
+        "properties": {
+          "code": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "At most 32 characters after trimming; empty clears the code."
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "At most 300 characters after trimming; empty clears the description."
+          }
+        }
+      },
       "UpdateCourseRequest": {
         "type": "object",
         "description": "Only the fields present change.",
@@ -8984,6 +11401,14 @@
                 "type": "null"
               }
             ]
+          },
+          "class_on": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date",
+            "description": "`no_submission` assignments only (ADR-0049). Omit to keep, `null` to clear, a day\n(`YYYY-MM-DD`) to set."
           },
           "config": {
             "type": [
@@ -9183,6 +11608,18 @@
           "disabled"
         ]
       },
+      "VerifyEmailRequest": {
+        "type": "object",
+        "description": "The token from the verification mail.",
+        "required": [
+          "token"
+        ],
+        "properties": {
+          "token": {
+            "type": "string"
+          }
+        }
+      },
       "VideoProps": {
         "type": "object",
         "required": [
@@ -9205,6 +11642,18 @@
         "enum": [
           "youtube",
           "vimeo"
+        ]
+      },
+      "WorkStatus": {
+        "type": "string",
+        "description": "Where a student stands on an assignment.",
+        "enum": [
+          "not_started",
+          "draft",
+          "submitted",
+          "graded",
+          "missed",
+          "in_class"
         ]
       }
     },

@@ -17,6 +17,9 @@ pub struct Settings {
     pub institution: InstitutionSettings,
     #[serde(default)]
     pub editor: EditorSettings,
+    /// Outgoing mail (ADR-0045). Absent: the features that must send mail are off.
+    #[serde(default)]
+    pub mail: Option<MailSettings>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -40,8 +43,11 @@ pub struct ServerSettings {
 pub struct AuthSettings {
     pub password_min_length: usize,
     pub cookie_secure: bool,
-    /// Stored now, used by self-registration (task 004).
+    /// The email domains that may sign up, by password (ADR-0046) or with Google (ADR-0047).
+    /// Empty: nobody.
     pub allowed_domains: Vec<String>,
+    /// Sign-in with Google (ADR-0047). Absent: the two endpoints are off.
+    pub google: Option<GoogleSettings>,
     /// Login attempts one client may make in a burst. A client is an IPv4 address or an IPv6 /64
     /// (ADR-0038). A school behind one NAT raises this.
     pub login_ip_burst: u32,
@@ -62,6 +68,7 @@ impl Default for AuthSettings {
             password_min_length: 12,
             cookie_secure: true,
             allowed_domains: Vec::new(),
+            google: None,
             login_ip_burst: 50,
             login_ip_replenish_seconds: 1,
             login_account_max_attempts: 10,
@@ -71,11 +78,36 @@ impl Default for AuthSettings {
     }
 }
 
+/// The `[auth.google]` section (ADR-0047). Plain data: `Google::new` checks the two URLs when the
+/// server starts.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct GoogleSettings {
+    pub client_id: String,
+    pub client_secret: Secret,
+    /// Where Google sends the browser back: the callback page of the web app.
+    pub redirect_uri: String,
+    /// Default: Google. Another issuer is for a test server.
+    #[serde(default = "default_google_issuer")]
+    pub issuer: String,
+}
+
+fn default_google_issuer() -> String {
+    "https://accounts.google.com".to_owned()
+}
+
 /// The `[institution]` section as it is loaded. `mode` has no default (ADR-0031).
 #[derive(Debug, Clone, Deserialize)]
 #[serde(try_from = "InstitutionSection")]
 pub struct InstitutionSettings {
     pub name: String,
+    /// The name for narrow places such as the navbar; `name` when the key is absent (ADR-0044).
+    pub short_name: String,
+    /// The language the web app starts in (ADR-0043, ADR-0044).
+    pub language: Language,
+    /// The institution's IANA time zone, checked at startup (ADR-0044).
+    pub time_zone: chrono_tz::Tz,
+    pub accent: Accent,
     /// Chosen before the first start and fixed for the life of the installation (ADR-0031).
     pub mode: InstitutionMode,
     /// The grading scale that applies: `institution.grading_scale` when set, else the one the
@@ -88,8 +120,12 @@ pub struct InstitutionSettings {
 #[derive(Deserialize)]
 struct InstitutionSection {
     name: String,
+    short_name: Option<String>,
     mode: Option<String>,
     grading_scale: Option<GradingScale>,
+    language: Option<String>,
+    time_zone: Option<String>,
+    accent: Option<String>,
 }
 
 impl TryFrom<InstitutionSection> for InstitutionSettings {
@@ -108,13 +144,79 @@ impl TryFrom<InstitutionSection> for InstitutionSettings {
             InstitutionMode::School => GradingScale::Twelve,
             InstitutionMode::University => GradingScale::Hundred,
         };
+        let short_name = match section.short_name {
+            None => section.name.clone(),
+            Some(text) => {
+                let text = text.trim().to_owned();
+                if !(1..=50).contains(&text.chars().count()) {
+                    return Err("institution.short_name must be 1 to 50 characters long".to_owned());
+                }
+                text
+            }
+        };
+        let language = match section.language {
+            None => Language::En,
+            Some(text) => text.parse().map_err(|_| {
+                format!("institution.language \"{text}\" is not valid: set it to \"en\" or \"uk\"")
+            })?,
+        };
+        let accent = match section.accent {
+            None => Accent::Indigo,
+            Some(text) => text.parse().map_err(|_| {
+                format!(
+                    "institution.accent \"{text}\" is not valid: set it to \"indigo\", \"teal\", \
+                     \"crimson\", \"forest\" or \"plum\""
+                )
+            })?,
+        };
+        let time_zone = match section.time_zone {
+            None => chrono_tz::UTC,
+            Some(text) => text.parse().map_err(|_| {
+                format!(
+                    "institution.time_zone \"{text}\" is not valid: set it to an IANA zone name \
+                     such as \"Europe/Kyiv\" or \"UTC\""
+                )
+            })?,
+        };
         Ok(Self {
             name: section.name,
+            short_name,
+            language,
+            time_zone,
+            accent,
             mode,
             grading_scale: section.grading_scale.unwrap_or(implied),
         })
     }
 }
+
+/// The interface language an institution starts in (ADR-0043, ADR-0044).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Language {
+    En,
+    Uk,
+}
+
+text_enum!(Language { En => "en", Uk => "uk" });
+
+/// The accent colour of the web app. The values are the ones the web app has a palette for
+/// (ADR-0044).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Accent {
+    Indigo,
+    Teal,
+    Crimson,
+    Forest,
+    Plum,
+}
+
+text_enum!(Accent {
+    Indigo => "indigo",
+    Teal => "teal",
+    Crimson => "crimson",
+    Forest => "forest",
+    Plum => "plum",
+});
 
 /// What kind of institution this installation serves (ADR-0002, ADR-0031).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -133,6 +235,73 @@ pub enum GradingScale {
     Twelve,
     /// The regular assignments of a course add up to at most 100 points.
     Hundred,
+}
+
+/// A value that must not reach a log: it shows as `***` in `Debug` (AGENTS section 11).
+#[derive(Clone, PartialEq, Eq, Deserialize)]
+#[serde(transparent)]
+pub struct Secret(String);
+
+impl Secret {
+    pub fn new(value: impl Into<String>) -> Self {
+        Self(value.into())
+    }
+
+    pub fn expose(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::fmt::Debug for Secret {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("Secret(***)")
+    }
+}
+
+/// The `[mail]` section (ADR-0045). Plain data: `Mailer::new` checks the address and the host when
+/// the server starts.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MailSettings {
+    /// The sender, `name@example.edu` or `Learnly <no-reply@example.edu>`.
+    pub from: String,
+    /// The origin links in mails point to. Default: `server.public_origin`.
+    #[serde(default)]
+    pub link_base: Option<String>,
+    pub transport: MailTransport,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(tag = "kind", rename_all = "lowercase", deny_unknown_fields)]
+pub enum MailTransport {
+    /// An SMTP relay.
+    Smtp {
+        host: String,
+        /// Default: 465 for `tls`, 587 for `starttls`, 25 for `none`.
+        #[serde(default)]
+        port: Option<u16>,
+        #[serde(default)]
+        tls: SmtpTls,
+        #[serde(default)]
+        username: Option<String>,
+        #[serde(default)]
+        password: Option<Secret>,
+    },
+    /// One `.eml` file per message in `dir`: for development and tests.
+    File { dir: std::path::PathBuf },
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SmtpTls {
+    /// Plain connection upgraded with STARTTLS (port 587).
+    #[default]
+    Starttls,
+    /// TLS from the first byte (port 465).
+    Tls,
+    /// No encryption: a local test server such as Mailpit.
+    #[serde(rename = "none")]
+    Off,
 }
 
 /// What the document editor may offer (ADR-0025, ADR-0027). Plain data: `AppState::new` applies
@@ -262,6 +431,9 @@ impl Settings {
         self.server.public_origin = origin("server.public_origin", &self.server.public_origin)?;
         for entry in &mut self.server.allowed_origins {
             *entry = origin("server.allowed_origins", entry)?;
+        }
+        if let Some(link_base) = self.mail.as_mut().and_then(|mail| mail.link_base.as_mut()) {
+            *link_base = origin("mail.link_base", link_base)?;
         }
         Ok(())
     }
@@ -546,6 +718,151 @@ mod tests {
     fn an_unknown_grading_scale_is_an_error_that_names_the_value() {
         let e = build(VALID, &[("LEARNLY__INSTITUTION__GRADING_SCALE", "ten")]).unwrap_err();
         assert!(e.to_string().contains("ten"), "{e}");
+    }
+
+    #[test]
+    fn the_institution_profile_has_defaults() {
+        let i = build(VALID, &[]).unwrap().institution;
+        assert_eq!(i.short_name, "Example University");
+        assert_eq!(i.language, Language::En);
+        assert_eq!(i.time_zone, chrono_tz::UTC);
+        assert_eq!(i.accent, Accent::Indigo);
+    }
+
+    #[test]
+    fn the_institution_profile_is_read_from_the_file_and_the_environment() {
+        let toml = VALID.replace(
+            "mode = \"university\"",
+            "mode = \"university\"\n        short_name = \" Example \"\n        language = \"uk\"\n        \
+             time_zone = \"Europe/Kyiv\"\n        accent = \"teal\"",
+        );
+        let i = build(&toml, &[]).unwrap().institution;
+        assert_eq!(i.short_name, "Example");
+        assert_eq!(i.language, Language::Uk);
+        assert_eq!(i.time_zone, chrono_tz::Europe::Kyiv);
+        assert_eq!(i.accent, Accent::Teal);
+        let i = build(&toml, &[("LEARNLY__INSTITUTION__ACCENT", "plum")])
+            .unwrap()
+            .institution;
+        assert_eq!(i.accent, Accent::Plum);
+    }
+
+    #[test]
+    fn a_bad_institution_profile_value_stops_the_server_and_names_the_key_and_the_value() {
+        for (key, bad) in [
+            ("SHORT_NAME", ""),
+            ("SHORT_NAME", &"x".repeat(51)),
+            ("LANGUAGE", "fr"),
+            ("TIME_ZONE", "Europe/Kyev"),
+            ("TIME_ZONE", "+03:00"),
+            ("ACCENT", "#ff0000"),
+        ] {
+            let e = build(VALID, &[(&format!("LEARNLY__INSTITUTION__{key}"), bad)])
+                .unwrap_err()
+                .to_string();
+            let needle = format!("institution.{}", key.to_lowercase());
+            assert!(e.contains(&needle), "{key}={bad}: {e}");
+        }
+        let e = build(VALID, &[("LEARNLY__INSTITUTION__TIME_ZONE", "Europe/Kyev")])
+            .unwrap_err()
+            .to_string();
+        assert!(e.contains("Europe/Kyev"), "{e}");
+    }
+
+    const MAIL_FILE: &str = r#"
+        [mail]
+        from = "Learnly <no-reply@lms.example.edu>"
+        link_base = "https://lms.example.edu/"
+        [mail.transport]
+        kind = "file"
+        dir = "/tmp/mail"
+    "#;
+
+    #[test]
+    fn google_is_optional_has_a_default_issuer_and_hides_its_secret() {
+        assert!(build(VALID, &[]).unwrap().auth.google.is_none());
+        let toml = format!(
+            "{VALID}\n[auth.google]\nclient_id = \"id\"\nredirect_uri = \"https://lms.example.edu/auth/google/callback\"\n"
+        );
+
+        let google = build(
+            &toml,
+            &[("LEARNLY__AUTH__GOOGLE__CLIENT_SECRET", "s3cret-value")],
+        )
+        .unwrap()
+        .auth
+        .google
+        .unwrap();
+
+        assert_eq!(google.issuer, "https://accounts.google.com");
+        assert_eq!(google.client_secret.expose(), "s3cret-value");
+        assert!(!format!("{google:?}").contains("s3cret-value"));
+        // The secret is required: without it the section is refused.
+        assert!(build(&toml, &[]).is_err());
+    }
+
+    #[test]
+    fn mail_is_optional_and_a_file_transport_loads() {
+        assert!(build(VALID, &[]).unwrap().mail.is_none());
+
+        let mail = build(&format!("{VALID}{MAIL_FILE}"), &[])
+            .unwrap()
+            .mail
+            .unwrap();
+
+        assert_eq!(mail.from, "Learnly <no-reply@lms.example.edu>");
+        assert_eq!(mail.link_base.as_deref(), Some("https://lms.example.edu"));
+        assert!(matches!(mail.transport, MailTransport::File { ref dir } if dir.ends_with("mail")));
+    }
+
+    #[test]
+    fn an_smtp_transport_loads_from_the_file_and_the_environment_and_hides_its_password() {
+        let toml = format!(
+            "{VALID}\n[mail]\nfrom = \"no-reply@lms.example.edu\"\n[mail.transport]\nkind = \"smtp\"\nhost = \"mail.example.edu\"\ntls = \"tls\"\nusername = \"learnly\"\n"
+        );
+        let mail = build(
+            &toml,
+            &[(
+                "LEARNLY__MAIL__TRANSPORT__PASSWORD",
+                "hunter2 is not a secret here",
+            )],
+        )
+        .unwrap()
+        .mail
+        .unwrap();
+
+        let MailTransport::Smtp {
+            ref host,
+            port,
+            tls,
+            ref password,
+            ..
+        } = mail.transport
+        else {
+            panic!("an smtp transport");
+        };
+        assert_eq!(
+            (host.as_str(), port, tls),
+            ("mail.example.edu", None, SmtpTls::Tls)
+        );
+        assert_eq!(
+            password.as_ref().unwrap().expose(),
+            "hunter2 is not a secret here"
+        );
+        let shown = format!("{mail:?}");
+        assert!(!shown.contains("hunter2"), "{shown}");
+    }
+
+    #[test]
+    fn a_bad_mail_section_stops_the_server_and_names_the_key() {
+        let unknown = format!("{VALID}{}", MAIL_FILE.replace("dir =", "directory ="));
+        assert!(build(&unknown, &[]).is_err());
+        let bad_base = format!(
+            "{VALID}{}",
+            MAIL_FILE.replace("https://lms.example.edu/", "lms.example.edu/app")
+        );
+        let e = build(&bad_base, &[]).unwrap_err().to_string();
+        assert!(e.contains("mail.link_base"), "{e}");
     }
 
     #[test]

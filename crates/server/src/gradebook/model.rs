@@ -7,6 +7,33 @@ use crate::text_enum::text_enum;
 
 const FEEDBACK_MAX_LEN: usize = 4000;
 
+/// One row of `gradebook.grade_history`: the values after a save or a publish (ADR-0028).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HistoryEntry {
+    pub id: Uuid,
+    /// `save_draft`, `publish` or `auto_score` (a quiz scored by the server, no person).
+    pub action: String,
+    pub score: Option<Decimal>,
+    pub feedback: Option<String>,
+    pub actor: Option<HistoryActor>,
+    pub at: DateTime<Utc>,
+}
+
+/// The published slot of one cell: what the student may read (ADR-0028).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PublishedGrade {
+    pub score: Option<Decimal>,
+    pub feedback: Option<String>,
+    pub published_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HistoryActor {
+    pub user_id: Uuid,
+    pub name: String,
+    pub surname: String,
+}
+
 /// A value that failed validation. Each variant maps to one field of the API.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum ModelError {

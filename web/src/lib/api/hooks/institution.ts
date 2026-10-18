@@ -2,9 +2,9 @@
 
 import { api } from "../client";
 import { useQuery } from "../../query";
-import type { Institution } from "../gaps";
+import type { Institution } from "../types";
 
-/** GAP: no institution endpoint yet (API_GAPS.md, "Institution"). */
+/** The public profile; also served before sign-in (ADR-0044). */
 export function useInstitution() {
   return useQuery<Institution>("/institution", () => api.get<Institution>("/institution"));
 }

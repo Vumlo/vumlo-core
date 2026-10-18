@@ -2,14 +2,15 @@ use std::collections::BTreeSet;
 use std::fmt;
 
 use api_types::{Feature, ProfileName};
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, NaiveDate, Utc};
 use serde_json::{Map, Value};
 use sqlx::Postgres;
 use sqlx::postgres::{PgTypeInfo, PgValueRef};
 use sqlx::types::Decimal;
 use uuid::Uuid;
 
-use super::document::{DocumentErrors, EffectiveProfiles, ValidDocument, validate_document_within};
+use super::document::{DocumentErrors, EffectiveProfiles, validate_document_within};
+use super::types::{AutoGrade, Claims, Stage, ValidContent, form, quiz};
 use crate::points;
 use crate::policy::{CourseAccess, Release};
 use crate::text_enum::text_enum;
@@ -23,7 +24,7 @@ pub enum ModelError {
     Title,
     #[error("must be a number above 0 and at most 9999.99, with at most two decimals")]
     MaxPoints,
-    #[error("unknown assignment type; available: text, no_submission")]
+    #[error("unknown assignment type; available: text, no_submission, quiz, form")]
     AssignmentType,
     #[error("{0}")]
     Config(String),
@@ -123,22 +124,51 @@ impl<'r> sqlx::Decode<'r, Postgres> for MaxPoints {
 /// What an assignment type must provide (ADR-0008). It is the future plugin boundary, so it stays
 /// small: auto-grading joins it with its own task.
 pub trait AssignmentType {
-    /// `Ok` when `config` is a valid configuration for this type.
-    fn validate_config(&self, config: &Map<String, Value>) -> Result<(), ModelError>;
+    /// `Ok` when `config` is a valid configuration for this type, as the institution's editor
+    /// profiles narrow what it may contain.
+    fn validate_config(
+        &self,
+        config: &Map<String, Value>,
+        profiles: &EffectiveProfiles,
+    ) -> Result<(), ModelError>;
+
+    /// What `max_points` must equal, for a type whose questions carry the points (ADR-0050).
+    fn points_total(&self, config: &Map<String, Value>) -> Option<Decimal>;
+
+    /// Removes from a config the facts the server adds when it reads one (ADR-0051 point 5).
+    fn strip_computed(&self, config: &mut Map<String, Value>);
 
     /// Whether a student submits something for this type. Only such a type has the deadline
     /// settings of [`SubmissionSettings`] (ADR-0035).
     fn takes_submissions(&self) -> bool;
 
-    /// Checks the `content` of a draft against the type, as narrowed by the institution's
-    /// configuration (`profiles`) and by the assignment's own `config` (ADR-0025, ADR-0023). It
-    /// is called only for a type that takes submissions.
+    /// Checks the `content` of a draft or an attempt against the type, as narrowed by the
+    /// institution's configuration (`profiles`) and by the assignment's own `config` (ADR-0025,
+    /// ADR-0023). It is called only for a type that takes submissions.
     fn validate_submission(
         &self,
         config: &Map<String, Value>,
         content: &Value,
+        stage: Stage,
         profiles: &EffectiveProfiles,
-    ) -> Result<ValidDocument, DocumentErrors>;
+    ) -> Result<ValidContent, DocumentErrors>;
+
+    /// The `config` as a student may read it: without the answer key (ADR-0023, ADR-0050).
+    fn student_config(&self, config: &Map<String, Value>) -> Map<String, Value>;
+
+    /// The part of `config` that is frozen once work has been submitted, or `None` when none is
+    /// (ADR-0023).
+    fn structure(&self, config: &Map<String, Value>) -> Option<Value>;
+
+    /// Scores a submitted attempt by itself; `None` for a type graded by hand (ADR-0050).
+    fn auto_grade(
+        &self,
+        config: &Map<String, Value>,
+        content: &Map<String, Value>,
+    ) -> Option<AutoGrade>;
+
+    /// What the content of an attempt claims from the rest of the course (ADR-0051).
+    fn claims(&self, config: &Map<String, Value>, content: &Map<String, Value>) -> Claims;
 }
 
 /// The types built into the server. The database column is plain text (ADR-0008).
@@ -147,8 +177,17 @@ pub enum BuiltinType {
     Text,
     /// Nothing is submitted: oral answers, class work, paper tests (ADR-0023). Graded by hand.
     NoSubmission,
+    /// Questions with an answer key, scored at submit (ADR-0050).
+    Quiz,
+    /// Fields the student fills in, graded by hand (ADR-0051).
+    Form,
 }
-text_enum!(BuiltinType { Text => "text", NoSubmission => "no_submission" });
+text_enum!(BuiltinType {
+    Text => "text",
+    NoSubmission => "no_submission",
+    Quiz => "quiz",
+    Form => "form",
+});
 
 impl BuiltinType {
     /// An unknown or not-yet-built type is an error that does not repeat the input.
@@ -204,11 +243,32 @@ pub fn editor_features(config: &Map<String, Value>) -> Result<Option<Vec<Feature
     Ok(Some(chosen))
 }
 
+/// `config.editor.features` can only narrow the student profile (ADR-0025): a feature it lists
+/// that the effective profile, after the institution's configuration, does not have is refused.
+fn check_editor_features(
+    config: &Map<String, Value>,
+    profiles: &EffectiveProfiles,
+) -> Result<(), ModelError> {
+    let allowed = &profiles.profile(ProfileName::Student).features;
+    for (index, feature) in editor_features(config)?.into_iter().flatten().enumerate() {
+        if !allowed.contains(&feature) {
+            return Err(ModelError::Config(format!(
+                "`editor.features[{index}]` is not a feature of the student profile"
+            )));
+        }
+    }
+    Ok(())
+}
+
 impl AssignmentType for BuiltinType {
-    fn validate_config(&self, config: &Map<String, Value>) -> Result<(), ModelError> {
+    fn validate_config(
+        &self,
+        config: &Map<String, Value>,
+        profiles: &EffectiveProfiles,
+    ) -> Result<(), ModelError> {
         match self {
             // `text` can only narrow what the student's editor offers (ADR-0025).
-            Self::Text => editor_features(config).map(|_| ()),
+            Self::Text => check_editor_features(config, profiles),
             // This type needs no settings; any field is a mistake.
             Self::NoSubmission => match config.keys().next() {
                 None => Ok(()),
@@ -217,12 +277,27 @@ impl AssignmentType for BuiltinType {
                     self.as_str()
                 ))),
             },
+            Self::Quiz => quiz::validate_config(config, profiles),
+            Self::Form => form::validate_config(config),
+        }
+    }
+
+    fn points_total(&self, config: &Map<String, Value>) -> Option<Decimal> {
+        match self {
+            Self::Quiz => quiz::points_total(config),
+            Self::Text | Self::NoSubmission | Self::Form => None,
+        }
+    }
+
+    fn strip_computed(&self, config: &mut Map<String, Value>) {
+        if *self == Self::Form {
+            form::strip_computed(config);
         }
     }
 
     fn takes_submissions(&self) -> bool {
         match self {
-            Self::Text => true,
+            Self::Text | Self::Quiz | Self::Form => true,
             Self::NoSubmission => false,
         }
     }
@@ -231,8 +306,9 @@ impl AssignmentType for BuiltinType {
         &self,
         config: &Map<String, Value>,
         content: &Value,
+        stage: Stage,
         profiles: &EffectiveProfiles,
-    ) -> Result<ValidDocument, DocumentErrors> {
+    ) -> Result<ValidContent, DocumentErrors> {
         match self {
             Self::Text => {
                 // A config that cannot be read narrows nothing further here: `validate_config`
@@ -242,8 +318,44 @@ impl AssignmentType for BuiltinType {
                     .flatten()
                     .map(|features| features.into_iter().collect());
                 validate_document_within(content, ProfileName::Student, profiles, within.as_ref())
+                    .map(ValidContent::from)
             }
             Self::NoSubmission => Err(DocumentErrors::one("", "this type takes no submissions")),
+            Self::Quiz => quiz::validate_submission(config, content, stage, profiles),
+            Self::Form => form::validate_submission(config, content, stage),
+        }
+    }
+
+    fn student_config(&self, config: &Map<String, Value>) -> Map<String, Value> {
+        match self {
+            Self::Quiz => quiz::student_config(config),
+            Self::Text | Self::NoSubmission | Self::Form => config.clone(),
+        }
+    }
+
+    fn structure(&self, config: &Map<String, Value>) -> Option<Value> {
+        match self {
+            Self::Quiz => quiz::structure(config),
+            Self::Form => form::structure(config),
+            Self::Text | Self::NoSubmission => None,
+        }
+    }
+
+    fn auto_grade(
+        &self,
+        config: &Map<String, Value>,
+        content: &Map<String, Value>,
+    ) -> Option<AutoGrade> {
+        match self {
+            Self::Quiz => quiz::auto_grade(config, content),
+            Self::Text | Self::NoSubmission | Self::Form => None,
+        }
+    }
+
+    fn claims(&self, config: &Map<String, Value>, content: &Map<String, Value>) -> Claims {
+        match self {
+            Self::Form => form::claims(config, content),
+            Self::Text | Self::NoSubmission | Self::Quiz => Claims::default(),
         }
     }
 }
@@ -432,6 +544,8 @@ pub struct Assignment {
     pub max_points: MaxPoints,
     pub is_bonus: bool,
     pub settings: SubmissionSettings,
+    /// The day an in-class (`no_submission`) assignment takes place (ADR-0049).
+    pub class_on: Option<NaiveDate>,
 }
 
 /// What the course tree shows of an assignment.
@@ -490,8 +604,19 @@ pub struct Item {
     pub publish_at: Option<DateTime<Utc>>,
     /// Present exactly for items of kind `assignment`.
     pub assignment: Option<Assignment>,
+    /// What students read; `None` until the item is published first (ADR-0049). `title` and `body`
+    /// above are the working copy that staff edit.
+    pub published: Option<PublishedSlot>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+}
+
+/// The title and body of an item as its students read them (ADR-0049).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PublishedSlot {
+    pub title: String,
+    pub body: Map<String, Value>,
+    pub at: DateTime<Utc>,
 }
 
 impl Item {
@@ -500,6 +625,22 @@ impl Item {
             published: self.status == ItemStatus::Published,
             publish_at: self.publish_at,
         }
+    }
+
+    /// The working copy differs from what students read. False for an item never published.
+    pub fn has_unpublished_changes(&self) -> bool {
+        self.published
+            .as_ref()
+            .is_some_and(|slot| slot.title != self.title || slot.body != self.body)
+    }
+
+    /// The item as a student sees it: the published title and body in place of the working ones.
+    pub fn as_seen_by_students(mut self) -> Self {
+        if let Some(slot) = self.published.take() {
+            self.title = slot.title;
+            self.body = slot.body;
+        }
+        self
     }
 }
 
@@ -562,6 +703,8 @@ pub struct ItemPatch {
     pub max_points: Option<MaxPoints>,
     pub is_bonus: Option<bool>,
     pub settings: SettingsPatch,
+    /// `Some(None)` clears the class day. Only an in-class assignment has one.
+    pub class_on: Option<Option<NaiveDate>>,
 }
 
 impl ItemPatch {
@@ -577,13 +720,174 @@ impl ItemPatch {
         self.config.is_some()
             || self.max_points.is_some()
             || self.is_bonus.is_some()
+            || self.class_on.is_some()
             || !self.settings.is_empty()
     }
+}
+
+/// What the editor needs to know about an item's unpublished changes (ADR-0049).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Revision {
+    pub has_unpublished_changes: bool,
+    pub last_published_at: Option<DateTime<Utc>>,
+    /// The size of the working body as JSON.
+    pub size_bytes: i64,
+}
+
+impl Revision {
+    pub fn of(item: &Item) -> Self {
+        Self {
+            has_unpublished_changes: item.has_unpublished_changes(),
+            last_published_at: item.published.as_ref().map(|slot| slot.at),
+            size_bytes: serde_json::to_vec(&item.body)
+                .map_or(0, |bytes| i64::try_from(bytes.len()).unwrap_or(i64::MAX)),
+        }
+    }
+}
+
+/// Where a student stands on an assignment (ADR-0049, point 6).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WorkStatus {
+    NotStarted,
+    Draft,
+    Submitted,
+    Graded,
+    /// The window closed with nothing submitted.
+    Missed,
+    /// In-class work: nothing to submit.
+    InClass,
+}
+text_enum!(WorkStatus {
+    NotStarted => "not_started",
+    Draft => "draft",
+    Submitted => "submitted",
+    Graded => "graded",
+    Missed => "missed",
+    InClass => "in_class",
+});
+
+impl WorkStatus {
+    /// The one rule: a published value wins, then in-class work, then an attempt, then a draft, then
+    /// a closed window, then nothing yet.
+    pub fn of(
+        graded: bool,
+        takes_submissions: bool,
+        attempts: i64,
+        has_draft: bool,
+        closed: bool,
+    ) -> Self {
+        if graded {
+            Self::Graded
+        } else if !takes_submissions {
+            Self::InClass
+        } else if attempts > 0 {
+            Self::Submitted
+        } else if has_draft {
+            Self::Draft
+        } else if closed {
+            Self::Missed
+        } else {
+            Self::NotStarted
+        }
+    }
+}
+
+/// A student's own standing on one assignment. Only published values appear here (AGENTS section 6).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WorkFacts {
+    pub assignment_id: Uuid,
+    pub course_id: Uuid,
+    pub status: WorkStatus,
+    /// The published score; `None` before grades are published.
+    pub score: Option<Decimal>,
+    pub published_at: Option<DateTime<Utc>>,
+    pub draft_saved_at: Option<DateTime<Utc>>,
+    pub attempts_used: i64,
+}
+
+/// What a teacher still has to do on one assignment, over the current students.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StaffFacts {
+    pub assignment_id: Uuid,
+    pub submitted: i64,
+    pub to_grade: i64,
+    pub draft_grades: i64,
+    pub graded_total: i64,
+}
+
+/// The facts of one item that the tree does not carry (ADR-0049, point 5).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ItemFacts {
+    pub read_minutes: Option<i64>,
+    pub class_on: Option<NaiveDate>,
+    /// Staff: published, with changes students do not see yet.
+    pub edited: Option<bool>,
+    /// A student's own standing (students only).
+    pub work: Option<WorkFacts>,
+    /// The counts for teachers (staff only).
+    pub staff: Option<StaffFacts>,
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_status_of_work_follows_one_order_of_rules() {
+        use WorkStatus::*;
+        // (graded, takes_submissions, attempts, draft, closed)
+        let cases = [
+            ((true, true, 2, true, true), Graded),
+            ((true, false, 0, false, false), Graded),
+            ((false, false, 0, false, true), InClass),
+            ((false, true, 1, true, true), Submitted),
+            ((false, true, 0, true, true), Draft),
+            ((false, true, 0, false, true), Missed),
+            ((false, true, 0, false, false), NotStarted),
+        ];
+        for ((graded, takes, attempts, draft, closed), expected) in cases {
+            assert_eq!(
+                WorkStatus::of(graded, takes, attempts, draft, closed),
+                expected,
+                "{graded} {takes} {attempts} {draft} {closed}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_revision_knows_what_changed_since_the_item_was_published() {
+        let mut item = Item {
+            id: Uuid::nil(),
+            module_id: Uuid::nil(),
+            course_id: Uuid::nil(),
+            position: 1,
+            kind: ItemKind::Text,
+            title: "Lecture".to_owned(),
+            body: Map::new(),
+            status: ItemStatus::Draft,
+            publish_at: None,
+            assignment: None,
+            published: None,
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        };
+        assert!(
+            !item.has_unpublished_changes(),
+            "a draft has nothing to compare with"
+        );
+        item.published = Some(PublishedSlot {
+            title: "Lecture".to_owned(),
+            body: Map::new(),
+            at: Utc::now(),
+        });
+        assert!(!item.has_unpublished_changes());
+        item.title = "Lecture, revised".to_owned();
+        assert!(item.has_unpublished_changes());
+        let seen = item.clone().as_seen_by_students();
+        assert_eq!(seen.title, "Lecture");
+        assert!(seen.published.is_none());
+        assert!(Revision::of(&item).has_unpublished_changes);
+    }
 
     #[test]
     fn title_is_trimmed_and_bounded() {
@@ -660,31 +964,40 @@ mod tests {
     }
 
     #[test]
-    fn the_type_enum_parses_text_and_no_submission_and_nothing_else() {
-        assert_eq!(BuiltinType::parse("text"), Ok(BuiltinType::Text));
-        assert_eq!(BuiltinType::Text.as_str(), "text");
-        assert_eq!(
-            BuiltinType::parse("no_submission"),
-            Ok(BuiltinType::NoSubmission)
-        );
-        assert_eq!(BuiltinType::NoSubmission.as_str(), "no_submission");
-        for bad in ["form", "", "Text", "No_Submission", "no-submission"] {
+    fn the_type_enum_parses_the_four_builtin_types_and_nothing_else() {
+        for (text, kind) in [
+            ("text", BuiltinType::Text),
+            ("no_submission", BuiltinType::NoSubmission),
+            ("quiz", BuiltinType::Quiz),
+            ("form", BuiltinType::Form),
+        ] {
+            assert_eq!(BuiltinType::parse(text), Ok(kind));
+            assert_eq!(kind.as_str(), text);
+        }
+        for bad in ["file", "", "Text", "Quiz", "No_Submission", "no-submission"] {
             assert_eq!(
                 BuiltinType::parse(bad),
                 Err(ModelError::AssignmentType),
                 "{bad:?}"
             );
         }
-        assert!(!ModelError::AssignmentType.to_string().contains("form"));
+        let message = ModelError::AssignmentType.to_string();
+        for name in ["text", "no_submission", "quiz", "form"] {
+            assert!(message.contains(name), "{message}");
+        }
+        assert!(!message.contains("file"));
     }
 
     #[test]
     fn the_text_and_no_submission_types_take_an_empty_config_only() {
+        let profiles = EffectiveProfiles::unrestricted();
         for assignment_type in [BuiltinType::Text, BuiltinType::NoSubmission] {
             let mut config = Map::new();
-            assert_eq!(assignment_type.validate_config(&config), Ok(()));
+            assert_eq!(assignment_type.validate_config(&config, &profiles), Ok(()));
             config.insert("limit".to_owned(), Value::from(5));
-            let error = assignment_type.validate_config(&config).unwrap_err();
+            let error = assignment_type
+                .validate_config(&config, &profiles)
+                .unwrap_err();
             let message = error.to_string();
             assert!(message.contains("limit"), "{message}");
             assert!(message.contains(assignment_type.as_str()), "{message}");
@@ -956,18 +1269,27 @@ mod tests {
         let config = serde_json::json!({"editor": {"features": ["blink"]}});
         assert!(
             BuiltinType::Text
-                .validate_config(config.as_object().unwrap())
+                .validate_config(
+                    config.as_object().unwrap(),
+                    &EffectiveProfiles::unrestricted()
+                )
                 .is_err()
         );
         let config = serde_json::json!({"editor": {"features": ["code"]}});
         assert!(
             BuiltinType::Text
-                .validate_config(config.as_object().unwrap())
+                .validate_config(
+                    config.as_object().unwrap(),
+                    &EffectiveProfiles::unrestricted()
+                )
                 .is_ok()
         );
         assert!(
             BuiltinType::NoSubmission
-                .validate_config(config.as_object().unwrap())
+                .validate_config(
+                    config.as_object().unwrap(),
+                    &EffectiveProfiles::unrestricted()
+                )
                 .is_err()
         );
     }

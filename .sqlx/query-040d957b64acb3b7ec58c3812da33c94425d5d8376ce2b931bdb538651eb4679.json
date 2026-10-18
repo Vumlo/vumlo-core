@@ -1,0 +1,188 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE content.items\n           SET title = COALESCE($2::text, title),\n               body = COALESCE($3::jsonb, body),\n               publish_at = CASE WHEN $4 THEN $5::timestamptz ELSE publish_at END,\n               updated_at = now()\n           WHERE id = $1\n           RETURNING id, module_id, course_id, position, kind AS \"kind: ItemKind\", title,\n                     body AS \"body: Body\", status AS \"status: ItemStatus\", publish_at,\n                     published_title, published_body AS \"published_body?: Body\",\n                     last_published_at, created_at, updated_at",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "content.items",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "module_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "content.items",
+            "name": "module_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "course_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "content.items",
+            "name": "course_id"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "position",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "content.items",
+            "name": "position"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "kind: ItemKind",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "content.items",
+            "name": "kind"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "title",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "content.items",
+            "name": "title"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "body: Body",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "content.items",
+            "name": "body"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "status: ItemStatus",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "content.items",
+            "name": "status"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "publish_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "content.items",
+            "name": "publish_at"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "published_title",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "content.items",
+            "name": "published_title"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "published_body?: Body",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "content.items",
+            "name": "published_body"
+          }
+        }
+      },
+      {
+        "ordinal": 11,
+        "name": "last_published_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "content.items",
+            "name": "last_published_at"
+          }
+        }
+      },
+      {
+        "ordinal": 12,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "content.items",
+            "name": "created_at"
+          }
+        }
+      },
+      {
+        "ordinal": 13,
+        "name": "updated_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "content.items",
+            "name": "updated_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Jsonb",
+        "Bool",
+        "Timestamptz"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "040d957b64acb3b7ec58c3812da33c94425d5d8376ce2b931bdb538651eb4679"
+}

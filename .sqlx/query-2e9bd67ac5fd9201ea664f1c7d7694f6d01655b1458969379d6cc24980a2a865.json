@@ -1,0 +1,62 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT role, status, must_change_password, email_verified_at FROM identity.users\n             WHERE email = 'maya@lms.test'",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "role",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "identity.users",
+            "name": "role"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "status",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "identity.users",
+            "name": "status"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "must_change_password",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "identity.users",
+            "name": "must_change_password"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "email_verified_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "identity.users",
+            "name": "email_verified_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "2e9bd67ac5fd9201ea664f1c7d7694f6d01655b1458969379d6cc24980a2a865"
+}

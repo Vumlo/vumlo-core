@@ -2,8 +2,9 @@
 
 import { api } from "../client";
 import { invalidate, useMutation, useQuery } from "../../query";
-import type { Candidate, CourseCard, CourseInfo, CoursePeople, ItemMetaMap, Template } from "../gaps";
-import type { ContentTree, Course, CourseGroupLink, GroupOption, Item, Membership, Term } from "../types";
+import { localToIso } from "../../format";
+import type { CourseCard } from "../gaps";
+import type { Candidate, ContentTree, Course, CourseGroupLink, CourseInfo, CoursePeople, GroupOption, Item, ItemMetaMap, Membership, ServerItemMeta, TemplateSummary, Term } from "../types";
 import { fetchAll } from "./util";
 
 export function useMyCourses() {
@@ -14,7 +15,7 @@ export function useCourse(id: string | null) {
   return useQuery<Course>(id ? `/courses/${id}` : null, () => api.get<Course>(`/courses/${id}`));
 }
 
-/** GAP: code, term name, owner name and counts (API_GAPS.md, "Course info"). */
+/** The header of every course screen: code, term name, owner and counts (ADR-0048). */
 export function useCourseInfo(id: string | null) {
   return useQuery<CourseInfo>(id ? `/courses/${id}/info` : null, () => api.get<CourseInfo>(`/courses/${id}/info`));
 }
@@ -24,25 +25,35 @@ export function useCourseCards() {
   return useQuery<CourseCard[]>("/me/course-cards", async () => (await api.get<{ items: CourseCard[] }>("/me/course-cards")).items);
 }
 
-/** GAP: templates with their content counts (API_GAPS.md, "Templates"). */
+/** The caller's templates with their content counts (ADR-0048). */
 export function useTemplates() {
-  return useQuery<Template[]>("/me/templates", async () => (await api.get<{ items: Template[] }>("/me/templates")).items);
+  return useQuery<TemplateSummary[]>("/me/templates", () => fetchAll<TemplateSummary>("/me/templates"));
 }
 
 export function useContentTree(courseId: string | null) {
   return useQuery<ContentTree>(courseId ? `/courses/${courseId}/content` : null, () => api.get<ContentTree>(`/courses/${courseId}/content`));
 }
 
-/** GAP: read time, class date, student progress and staff counts per item (API_GAPS.md, "Item meta"). */
+/**
+ * Read time, class day, student progress and staff counts per item (ADR-0049). The server sends the
+ * class day as a date; the screens get it as noon of that day in the institution's zone.
+ */
 export function useItemMeta(courseId: string | null) {
-  return useQuery<ItemMetaMap>(courseId ? `/courses/${courseId}/item-meta` : null, () => api.get<ItemMetaMap>(`/courses/${courseId}/item-meta`));
+  return useQuery<ItemMetaMap>(courseId ? `/courses/${courseId}/item-meta` : null, async () => {
+    const wire = await api.get<{ items: Record<string, ServerItemMeta> }>(`/courses/${courseId}/item-meta`);
+    return {
+      items: Object.fromEntries(
+        Object.entries(wire.items).map(([id, meta]) => [id, { ...meta, class_on: meta.class_on ? localToIso(`${meta.class_on}T12:00`) : null }]),
+      ),
+    };
+  });
 }
 
 export function useItem(id: string | null) {
   return useQuery<Item>(id ? `/items/${id}` : null, () => api.get<Item>(`/items/${id}`));
 }
 
-/** GAP: the members endpoint has ids only (API_GAPS.md, "People"). */
+/** The roster with names; staff also get emails, former students and linked groups (ADR-0048). */
 export function useCoursePeople(courseId: string | null) {
   return useQuery<CoursePeople>(courseId ? `/courses/${courseId}/people` : null, () => api.get<CoursePeople>(`/courses/${courseId}/people`));
 }
@@ -72,7 +83,6 @@ export function useUpdateCourse(courseId: string) {
   });
 }
 
-/** GAP: code and description are not on the course (API_GAPS.md, "Course info"). */
 export function useUpdateCourseInfo(courseId: string) {
   return useMutation(async (patch: { code?: string; description?: string }) => {
     const r = await api.patch<CourseInfo>(`/courses/${courseId}/info`, patch);
@@ -89,7 +99,6 @@ export function useCreateCourse() {
   });
 }
 
-/** GAP: copy a template into a new course (API_GAPS.md, "Templates"). */
 export function useCreateFromTemplate() {
   return useMutation(async (templateId: string, title: string) => {
     const c = await api.post<Course>(`/templates/${templateId}/courses`, { title });
@@ -98,7 +107,6 @@ export function useCreateFromTemplate() {
   });
 }
 
-/** GAP: make a template from a course (API_GAPS.md, "Templates"). */
 export function useMakeTemplate(courseId: string) {
   return useMutation(async () => {
     const c = await api.post<Course>(`/courses/${courseId}/template`);
@@ -107,7 +115,7 @@ export function useMakeTemplate(courseId: string) {
   });
 }
 
-/** GAP: archive and restore are not in the API (API_GAPS.md, "Archive"). */
+/** An archived course stays readable and takes no changes; restoring publishes it (ADR-0048). */
 export function useArchiveCourse(courseId: string) {
   return useMutation(async (archive: boolean) => {
     const c = await api.post<Course>(`/courses/${courseId}/${archive ? "archive" : "restore"}`);
@@ -162,12 +170,12 @@ export function useUnlinkGroup(courseId: string) {
   });
 }
 
-/** GAP: teachers cannot list users, so there is no way to find someone to add (API_GAPS.md, "People"). */
+/** People to add to the course: at least two characters, at most 20 answers (ADR-0048). */
 export function useCandidates(courseId: string | null, q: string) {
   return useQuery<Candidate[]>(courseId ? `/courses/${courseId}/candidates?q=${encodeURIComponent(q)}` : null, async () => (await api.get<{ items: Candidate[] }>(`/courses/${courseId}/candidates?q=${encodeURIComponent(q)}`)).items);
 }
 
-/** GAP: deleting a course has no endpoint (API_GAPS.md, "Archive and delete"). */
+/** `409` once a grade has a value or work was submitted: archive the course then. */
 export function useDeleteCourse(courseId: string) {
   return useMutation(async () => {
     await api.delete(`/courses/${courseId}`);

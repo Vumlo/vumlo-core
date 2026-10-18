@@ -1,6 +1,7 @@
 import { MOCK_NOW } from "@/lib/clock";
 import type { Attempt, Course, CourseGroupLink, Group, Item, Membership, Module, Session, Subgroup, SubmissionRow, Term, User } from "@/lib/api/types";
-import type { AuditEvent, Institution, InstitutionAdmin, MockMail } from "@/lib/api/gaps";
+import type { AuditEvent, MockMail } from "@/lib/api/gaps";
+import type { AdminInstitution, Institution } from "@/lib/api/types";
 import type { Document } from "@/lib/api/types";
 
 export type DbUser = User & { password: string; last_sign_in: string | null };
@@ -29,8 +30,10 @@ export type DbGrade = {
   published_score: string | null;
   published_feedback: string | null;
   published_at: string | null;
-  history: { what: string; at: string }[];
+  history: DbHistory[];
 };
+/** One recorded change of a grade, as the server's `grade_history` row (ADR-0049). */
+export type DbHistory = { action: "save_draft" | "publish"; score: string | null; feedback: string | null; actor_id: string | null; at: string };
 export type DbGroupMember = { group_id: string; subgroup_id: string | null; user_id: string; since: string };
 export type DbLink = CourseGroupLink & { linked_on: string };
 
@@ -49,7 +52,7 @@ export type Db = {
   grades: DbGrade[];
   sessions: Session[];
   audit: AuditEvent[];
-  institution: InstitutionAdmin;
+  institution: AdminInstitution;
   /** Mail the mock "sent" and the single-use tokens behind its links. */
   mail: MockMail[];
   signups: { token: string; name: string; surname: string; email: string; password: string }[];
@@ -94,8 +97,8 @@ export function at(local: string): string {
   return new Date(t).toISOString();
 }
 
-export function institutionPublic(i: InstitutionAdmin): Institution {
-  return { name: i.name, short_name: i.short_name, accent: i.accent, language: i.language, time_zone: i.time_zone, grading_scale: i.server.grading_scale };
+export function institutionPublic(i: AdminInstitution): Institution {
+  return { name: i.name, short_name: i.short_name, accent: i.accent, language: i.language, time_zone: i.time_zone, grading_scale: i.grading_scale };
 }
 
 export type { Document, SubmissionRow };

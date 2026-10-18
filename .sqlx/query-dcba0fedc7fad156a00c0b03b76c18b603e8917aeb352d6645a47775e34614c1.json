@@ -1,0 +1,162 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT m.title AS module, m.status AS module_status, m.parent_id IS NOT NULL AS \"is_sub!\",\n                      m.publish_at IS NULL AS \"no_publish_at!\",\n                      i.title AS \"item?\", i.status AS \"item_status?\", i.kind AS \"kind?\",\n                      a.type AS \"type?\", a.max_points AS \"max_points?\", a.is_bonus AS \"is_bonus?\",\n                      a.max_attempts AS \"max_attempts?\", a.due_at AS \"due_at?\", a.on_deadline AS \"on_deadline?\"\n               FROM content.modules m\n               LEFT JOIN content.items i ON i.module_id = m.id\n               LEFT JOIN content.assignments a ON a.item_id = i.id\n               WHERE m.course_id = $1 ORDER BY m.parent_id NULLS FIRST, i.position",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "module",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "content.modules",
+            "name": "title"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "module_status",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "content.modules",
+            "name": "status"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "is_sub!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 3,
+        "name": "no_publish_at!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 4,
+        "name": "item?",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "content.items",
+            "name": "title"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "item_status?",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "content.items",
+            "name": "status"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "kind?",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "content.items",
+            "name": "kind"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "type?",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "content.assignments",
+            "name": "type"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "max_points?",
+        "type_info": "Numeric",
+        "origin": {
+          "Table": {
+            "table": "content.assignments",
+            "name": "max_points"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "is_bonus?",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "content.assignments",
+            "name": "is_bonus"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "max_attempts?",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "content.assignments",
+            "name": "max_attempts"
+          }
+        }
+      },
+      {
+        "ordinal": 11,
+        "name": "due_at?",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "content.assignments",
+            "name": "due_at"
+          }
+        }
+      },
+      {
+        "ordinal": 12,
+        "name": "on_deadline?",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "content.assignments",
+            "name": "on_deadline"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      null,
+      null,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "dcba0fedc7fad156a00c0b03b76c18b603e8917aeb352d6645a47775e34614c1"
+}

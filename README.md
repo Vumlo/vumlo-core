@@ -18,6 +18,9 @@ docker compose exec server learnly-server create-admin you@example.edu --name Yo
 cd web && pnpm install && pnpm dev     # http://localhost:3000, /api/v1 is proxied to :8080
 ```
 
+Mail the API sends (sign-up and password-reset links) lands in Mailpit at http://127.0.0.1:8025. People
+at `LEARNLY_ALLOWED_DOMAINS` (default `example.edu`) may sign up themselves.
+
 `pnpm dev:mock` runs the web app against in-browser mocks instead, with no backend. Set the institution
 before the first start with `LEARNLY_INSTITUTION_MODE` (`school` or `university`, default `university`) and
 `LEARNLY_INSTITUTION_NAME` in `.env`; the mode cannot be changed later. If the web app is not on

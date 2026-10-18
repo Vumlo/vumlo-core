@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE identity.oauth_states SET created_at = now() - interval '11 minutes', expires_at = now() - interval '1 minute'",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "d2a5834e67e6b396ab3af8e9de964a8aef0c41bd4602f3f4cbae1d810a898eb4"
+}

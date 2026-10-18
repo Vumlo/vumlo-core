@@ -1,0 +1,80 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE assessment.submissions\n           SET status = 'submitted', attempt = $2, submitted_at = $3, is_late = $4,\n               auto_scores = $5, updated_at = now()\n           WHERE id = $1\n           RETURNING id, attempt AS \"attempt!\", content AS \"content: Body\",\n                     submitted_at AS \"submitted_at!\", is_late",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "assessment.submissions",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "attempt!",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "assessment.submissions",
+            "name": "attempt"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "content: Body",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "assessment.submissions",
+            "name": "content"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "submitted_at!",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "assessment.submissions",
+            "name": "submitted_at"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "is_late",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "assessment.submissions",
+            "name": "is_late"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Int4",
+        "Timestamptz",
+        "Bool",
+        "Jsonb"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      false,
+      true,
+      false
+    ]
+  },
+  "hash": "c7ff55eec6fb059bbbb2cd8f3aa64c3476b6019944691b405f87fbf696334de2"
+}

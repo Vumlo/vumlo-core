@@ -1,0 +1,31 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO identity.users (id, email, name, surname, role, must_change_password)\n         VALUES ($1, $2, $3, $4, 'student', false)\n         ON CONFLICT (email) DO NOTHING\n         RETURNING id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "identity.users",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "f327ff75491203c7271a113281d7a34d570aeb4dea2f38423bece666d1964378"
+}

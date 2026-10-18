@@ -3,7 +3,7 @@
 //!
 //! A module or item the actor may not view does not exist as far as they can tell (404): an
 //! unknown id, an id in a course they cannot see and a draft they may not open all give the same
-//! error. Only after that does `ManageContent` decide between going ahead and 403.
+//! error. Only after that does `EditContent` decide between going ahead and 403.
 
 use std::collections::{HashMap, HashSet};
 
@@ -14,12 +14,16 @@ use sqlx::PgConnection;
 use sqlx::types::Decimal;
 use uuid::Uuid;
 
-use super::document::{DocumentErrors, EffectiveProfiles, ValidDocument, validate_document};
+use super::document::{
+    DocumentErrors, EffectiveProfiles, ValidDocument, plain_text, validate_document,
+};
 use super::model::{
-    Assignment, AssignmentType, ContentModule, ContentSubModule, ContentTitle, Item, ItemKind,
-    ItemPatch, ModelError, Module, ModulePatch, OpenedAssignment, SettingProblem, editor_features,
+    Assignment, AssignmentType, BuiltinType, ContentModule, ContentSubModule, ContentTitle, Item,
+    ItemFacts, ItemKind, ItemPatch, ItemStatus, MaxPoints, ModelError, Module, ModulePatch,
+    OpenedAssignment, Revision, SettingProblem,
 };
 use super::repo::{self, ItemRow, ModuleRow};
+use super::types::form;
 use crate::actor::Actor;
 use crate::assessment::{self, AssessmentError};
 use crate::events::{self, AuditEntry, EventsError};
@@ -64,6 +68,9 @@ pub enum ContentError {
     /// A concurrent change got in the way (a position taken, a parent deleted). Retry.
     #[error("a concurrent change conflicts with this one")]
     Conflict,
+    /// A revision can only be published for an item that is published (ADR-0049).
+    #[error("the item is a draft: publish it first")]
+    ItemNotPublished,
     /// The settings break a rule once the change is applied (ADR-0035); one entry per field.
     #[error("the settings are invalid")]
     Settings(Vec<SettingProblem>),
@@ -76,6 +83,10 @@ pub enum ContentError {
     /// The assignment, or an assignment below the module, has a submitted attempt (ADR-0035).
     #[error("it has submitted work")]
     HasSubmissions,
+    /// The change touches the part of a quiz or form that is frozen once work was submitted
+    /// (ADR-0023, ADR-0050, ADR-0051).
+    #[error("the questions or fields cannot change after work was submitted")]
+    StructureFrozen,
     #[error(transparent)]
     Gradebook(GradebookError),
     #[error(transparent)]
@@ -214,7 +225,7 @@ async fn manage_module(
     id: Uuid,
 ) -> Result<ModuleRow, ContentError> {
     let (row, access) = open_module(conn, actor, id).await?;
-    policy::authorize(actor, Action::ManageContent(access))?;
+    policy::authorize(actor, Action::EditContent(access))?;
     Ok(row)
 }
 
@@ -240,7 +251,7 @@ async fn manage_item(
     id: Uuid,
 ) -> Result<ItemRow, ContentError> {
     let (row, access) = open_item(conn, actor, id).await?;
-    policy::authorize(actor, Action::ManageContent(access))?;
+    policy::authorize(actor, Action::EditContent(access))?;
     Ok(row)
 }
 
@@ -251,7 +262,7 @@ async fn manage_course(
     course_id: Uuid,
 ) -> Result<CourseAccess, ContentError> {
     let access = teaching::course_access(conn, actor, course_id).await?;
-    policy::authorize(actor, Action::ManageContent(access))?;
+    policy::authorize(actor, Action::EditContent(access))?;
     Ok(access)
 }
 
@@ -394,6 +405,55 @@ pub async fn create_module(
     )
     .await?;
     Ok(module)
+}
+
+/// What a course header shows about the content, as the actor may see it (ADR-0048).
+pub struct CourseSummary {
+    /// The sum of `max_points` of the regular assignments (the bonus ones are extra).
+    pub total_points: sqlx::types::Decimal,
+    pub graded_items: i64,
+    /// When a module or an item last changed; `None` for a course with no content.
+    pub changed_at: Option<chrono::DateTime<Utc>>,
+}
+
+/// The numbers of the course header. Staff count every assignment, others only those open to
+/// students now (the rule of [`get_tree`]).
+pub async fn course_summary(
+    conn: &mut PgConnection,
+    actor: &Actor,
+    course_id: Uuid,
+) -> Result<CourseSummary, ContentError> {
+    let access = teaching::course_access(conn, actor, course_id).await?;
+    let sees_drafts = policy::authorize(actor, Action::ManageContent(access)).is_ok();
+    let (total_points, graded_items, changed_at) =
+        repo::course_summary(conn, course_id, (!sees_drafts).then(Utc::now)).await?;
+    Ok(CourseSummary {
+        total_points,
+        graded_items,
+        changed_at,
+    })
+}
+
+/// Locks every assignment row of the course `FOR UPDATE`, for the delete of the course (ADR-0035
+/// point 12): a grade write or a submit in flight holds one of them, so the checks that follow, in
+/// later statements, see what it committed. The caller has authorized the delete.
+pub async fn lock_course_assignments(
+    conn: &mut PgConnection,
+    course_id: Uuid,
+) -> Result<(), ContentError> {
+    repo::lock_assignments_of_course(conn, course_id).await?;
+    Ok(())
+}
+
+/// Copies the whole tree of `from` into the empty course `to`, all as drafts (ADR-0048). The caller
+/// has authorized both courses.
+pub async fn copy_course_content(
+    conn: &mut PgConnection,
+    from: Uuid,
+    to: Uuid,
+) -> Result<(), ContentError> {
+    repo::copy_course(conn, from, to).await?;
+    Ok(())
 }
 
 /// The course's content as the actor may see it. Staff see everything; others only what is open
@@ -637,15 +697,15 @@ pub async fn create_item(
     module_id: Uuid,
     title: ContentTitle,
     body: Option<Value>,
-    assignment: Option<Assignment>,
+    mut assignment: Option<Assignment>,
 ) -> Result<Item, ContentError> {
     let row = manage_module(conn, actor, module_id).await?;
     let course_id = row.module.course_id;
-    if let Some(assignment) = &assignment {
-        assignment
-            .assignment_type
-            .validate_config(&assignment.config)?;
-        check_editor_features(&assignment.config, rules.profiles)?;
+    if let Some(assignment) = &mut assignment {
+        let kind = assignment.assignment_type;
+        kind.strip_computed(&mut assignment.config);
+        kind.validate_config(&assignment.config, rules.profiles)?;
+        check_points_total(kind, &assignment.config, assignment.max_points)?;
     }
     let body = document(body.as_ref(), rules.profiles)?;
     if let Some(assignment) = &assignment {
@@ -699,12 +759,142 @@ pub fn editor_profiles<'a>(
     Ok(profiles)
 }
 
+/// An item as the actor may read it: staff get the working copy, a student the published title and
+/// body (ADR-0049).
 pub async fn get_item(
     conn: &mut PgConnection,
     actor: &Actor,
     id: Uuid,
 ) -> Result<Item, ContentError> {
-    Ok(open_item(conn, actor, id).await?.0.item)
+    let (row, access) = open_item(conn, actor, id).await?;
+    let staff = policy::authorize(actor, Action::ManageContent(access)).is_ok();
+    let mut item = if staff {
+        row.item
+    } else {
+        row.item.as_seen_by_students()
+    };
+    if let Some(assignment) = &mut item.assignment {
+        let kind = assignment.assignment_type;
+        // A student never receives the answer key (ADR-0023, ADR-0050 point 6).
+        if !staff {
+            assignment.config = kind.student_config(&assignment.config);
+        }
+        if kind == BuiltinType::Form {
+            let facts = assessment::form_facts(conn, id, kind, &assignment.config).await?;
+            form::decorate(
+                &mut assignment.config,
+                &facts.answered,
+                &facts.holders,
+                staff,
+                actor.user_id(),
+            );
+        }
+    }
+    Ok(item)
+}
+
+/// Whether a published item has changes students do not see, and since when they read what they
+/// read. Staff only.
+pub async fn get_revision(
+    conn: &mut PgConnection,
+    actor: &Actor,
+    id: Uuid,
+) -> Result<Revision, ContentError> {
+    let (row, access) = open_item(conn, actor, id).await?;
+    policy::authorize(actor, Action::ManageContent(access))?;
+    Ok(Revision::of(&row.item))
+}
+
+/// Publishes the working title and body of a published item (ADR-0049). A draft has nothing to
+/// publish a revision of: publish the item.
+pub async fn publish_revision(
+    conn: &mut PgConnection,
+    actor: &Actor,
+    id: Uuid,
+) -> Result<Revision, ContentError> {
+    let row = manage_item(conn, actor, id).await?;
+    if row.item.status != ItemStatus::Published {
+        return Err(ContentError::ItemNotPublished);
+    }
+    let item = repo::publish_revision(conn, id)
+        .await?
+        .ok_or(ContentError::ItemNotFound)?;
+    audit(
+        conn,
+        actor,
+        "content.item.revision_publish",
+        "item",
+        id,
+        item.course_id,
+    )
+    .await?;
+    Ok(Revision::of(&item))
+}
+
+/// Words per minute of a reading time (ADR-0049).
+const WORDS_PER_MINUTE: usize = 200;
+
+/// The minutes a lecture takes to read: its words over 200, rounded up, at least one.
+fn read_minutes(body: &serde_json::Map<String, serde_json::Value>) -> Option<i64> {
+    let document: api_types::Document =
+        serde_json::from_value(serde_json::Value::Object(body.clone())).ok()?;
+    let words = plain_text(&document).split_whitespace().count();
+    i64::try_from(words.div_ceil(WORDS_PER_MINUTE).max(1)).ok()
+}
+
+/// The facts of every item of the course that the actor may see (ADR-0049, point 5). Staff get
+/// the counts of what to grade and which items have unpublished changes; a student of the course
+/// gets their own standing. Not paged: a course tree is bounded (ADR-0020).
+pub async fn item_meta(
+    conn: &mut PgConnection,
+    actor: &Actor,
+    course_id: Uuid,
+) -> Result<HashMap<Uuid, ItemFacts>, ContentError> {
+    let access = teaching::course_access(conn, actor, course_id).await?;
+    let staff = policy::authorize(actor, Action::ManageContent(access)).is_ok();
+    let tree = get_tree(conn, actor, course_id).await?;
+    let visible: HashSet<Uuid> = tree
+        .iter()
+        .flat_map(|top| {
+            top.items
+                .iter()
+                .chain(top.submodules.iter().flat_map(|s| s.items.iter()))
+        })
+        .map(|item| item.id)
+        .collect();
+    let mut facts: HashMap<Uuid, ItemFacts> = visible
+        .iter()
+        .map(|id| (*id, ItemFacts::default()))
+        .collect();
+    for (id, body) in repo::lecture_bodies(conn, course_id, staff).await? {
+        if let Some(entry) = facts.get_mut(&id) {
+            entry.read_minutes = read_minutes(&body);
+        }
+    }
+    for (id, day) in repo::class_days(conn, course_id).await? {
+        if let Some(entry) = facts.get_mut(&id) {
+            entry.class_on = Some(day);
+        }
+    }
+    if staff {
+        for id in repo::edited_items(conn, course_id).await? {
+            if let Some(entry) = facts.get_mut(&id) {
+                entry.edited = Some(true);
+            }
+        }
+        for counts in repo::staff_counts(conn, course_id).await? {
+            if let Some(entry) = facts.get_mut(&counts.assignment_id) {
+                entry.staff = Some(counts);
+            }
+        }
+    } else if access.is_student() {
+        for work in repo::student_work(conn, actor.user_id(), &[course_id], Utc::now()).await? {
+            if let Some(entry) = facts.get_mut(&work.assignment_id) {
+                entry.work = Some(work);
+            }
+        }
+    }
+    Ok(facts)
 }
 
 /// Why [`open_assignment`] gave nothing.
@@ -756,21 +946,19 @@ pub async fn lock_assignment_shared(
     repo::lock_assignment_shared(conn, assignment_id).await
 }
 
-/// `config.editor.features` can only narrow the student profile (ADR-0025): a feature it lists
-/// that the effective profile, after the institution's configuration, does not have is refused.
-fn check_editor_features(
+/// A type whose questions carry the points needs `max_points` to be their sum (ADR-0050 point 1).
+fn check_points_total(
+    kind: BuiltinType,
     config: &serde_json::Map<String, Value>,
-    profiles: &EffectiveProfiles,
-) -> Result<(), ModelError> {
-    let allowed = &profiles.profile(ProfileName::Student).features;
-    for (index, feature) in editor_features(config)?.into_iter().flatten().enumerate() {
-        if !allowed.contains(&feature) {
-            return Err(ModelError::Config(format!(
-                "`editor.features[{index}]` is not a feature of the student profile"
-            )));
-        }
+    max_points: MaxPoints,
+) -> Result<(), ContentError> {
+    match kind.points_total(config) {
+        Some(total) if total != max_points.value() => Err(ContentError::PointsLimit {
+            field: "max_points",
+            message: format!("must equal the sum of the points of the questions ({total:.2})"),
+        }),
+        _ => Ok(()),
     }
-    Ok(())
 }
 
 /// Changes the title, body and/or `publish_at`, and for an assignment its `config`, `max_points`
@@ -784,7 +972,7 @@ pub async fn update_item(
     actor: &Actor,
     rules: ItemRules<'_>,
     id: Uuid,
-    patch: ItemPatch,
+    mut patch: ItemPatch,
 ) -> Result<Item, ContentError> {
     let row = manage_item(conn, actor, id).await?;
     if patch.is_empty() {
@@ -798,14 +986,15 @@ pub async fn update_item(
             "max_points"
         } else if patch.is_bonus.is_some() {
             "is_bonus"
+        } else if patch.class_on.is_some() {
+            "class_on"
         } else {
             patch.settings.first_field()
         };
         return Err(ContentError::NotAnAssignment { field });
     }
-    if let (Some(config), Some(assignment)) = (&patch.config, &row.item.assignment) {
-        assignment.assignment_type.validate_config(config)?;
-        check_editor_features(config, rules.profiles)?;
+    if let (Some(config), Some(assignment)) = (&mut patch.config, &row.item.assignment) {
+        assignment.assignment_type.strip_computed(config);
     }
     let body = document(patch.body.as_ref(), rules.profiles)?;
     let mut settings = None;
@@ -829,6 +1018,28 @@ pub async fn update_item(
                     .resolve(&patch.settings, current.assignment_type.takes_submissions())
                     .map_err(ContentError::Settings)?,
             );
+        }
+        if matches!(patch.class_on, Some(Some(_))) && current.assignment_type.takes_submissions() {
+            return Err(ContentError::Settings(vec![SettingProblem {
+                field: "class_on",
+                message: "only an in-class assignment has a class day".to_owned(),
+            }]));
+        }
+        if patch.config.is_some() || patch.max_points.is_some() {
+            let kind = current.assignment_type;
+            let config = patch.config.as_ref().unwrap_or(&current.config);
+            if patch.config.is_some() {
+                kind.validate_config(config, rules.profiles)?;
+            }
+            check_points_total(kind, config, patch.max_points.unwrap_or(current.max_points))?;
+            // The structure is frozen once work was submitted (ADR-0023); the assignment row is
+            // locked, so no submit slips in between this check and the write.
+            if patch.config.is_some()
+                && kind.structure(&current.config) != kind.structure(config)
+                && assessment::has_submitted_for_assignment(conn, id).await?
+            {
+                return Err(ContentError::StructureFrozen);
+            }
         }
         if points_change {
             let points = patch.max_points.unwrap_or(current.max_points);
@@ -880,6 +1091,7 @@ pub async fn update_item(
                 patch.max_points,
                 patch.is_bonus,
                 settings,
+                patch.class_on,
             )
             .await?
             .ok_or(ContentError::ItemNotFound)?,
@@ -1098,6 +1310,7 @@ mod tests {
             max_points: MaxPoints::parse(points).unwrap(),
             is_bonus,
             settings: Default::default(),
+            class_on: None,
         }
     }
 

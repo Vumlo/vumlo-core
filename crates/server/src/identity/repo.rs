@@ -4,11 +4,25 @@ use chrono::{DateTime, Utc};
 use sqlx::PgConnection;
 use uuid::Uuid;
 
-use super::model::{NewUser, Role, SessionInfo, SessionKind, User, UserFilter, UserStatus};
+use super::model::{
+    NewUser, Role, SessionInfo, SessionKind, TokenPurpose, User, UserFilter, UserStatus,
+};
 
 pub struct LoginRecord {
     pub user: User,
     pub password_hash: String,
+    pub email_verified: bool,
+}
+
+/// What registration, the reset request and the mail handler need to know about an account.
+pub struct AccountRow {
+    pub id: Uuid,
+    pub email: String,
+    pub name: String,
+    pub surname: String,
+    pub role: Role,
+    pub status: UserStatus,
+    pub email_verified: bool,
 }
 
 pub struct SessionLookup {
@@ -30,7 +44,8 @@ pub async fn find_login(
         r#"SELECT u.id, u.email, u.name, u.surname,
                   u.role AS "role: Role", u.status AS "status: UserStatus",
                   u.must_change_password, u.created_at,
-                  i.password_hash AS "password_hash!"
+                  i.password_hash AS "password_hash!",
+                  u.email_verified_at IS NOT NULL AS "email_verified!"
            FROM identity.users u
            JOIN identity.identities i ON i.user_id = u.id AND i.provider = 'password'
            WHERE u.email = $1"#,
@@ -50,6 +65,7 @@ pub async fn find_login(
             created_at: r.created_at,
         },
         password_hash: r.password_hash,
+        email_verified: r.email_verified,
     }))
 }
 
@@ -83,8 +99,9 @@ pub async fn insert_user(
 ) -> Result<User, sqlx::Error> {
     sqlx::query_as!(
         User,
-        r#"INSERT INTO identity.users (id, email, name, surname, role, must_change_password)
-           VALUES ($1, $2, $3, $4, $5, $6)
+        r#"INSERT INTO identity.users
+               (id, email, name, surname, role, must_change_password, email_verified_at)
+           VALUES ($1, $2, $3, $4, $5, $6, now())
            RETURNING id, email, name, surname,
                      role AS "role: Role", status AS "status: UserStatus",
                      must_change_password, created_at"#,
@@ -430,4 +447,278 @@ pub async fn upsert_password_hash(
     .execute(conn)
     .await?;
     Ok(())
+}
+
+/// Creates the account of a self-registration: a `student` whose address is not verified. `None`
+/// when the address already has an account, so concurrent registrations cannot fail each other.
+pub async fn insert_registered_user(
+    conn: &mut PgConnection,
+    id: Uuid,
+    new: &NewUser,
+) -> Result<Option<Uuid>, sqlx::Error> {
+    sqlx::query_scalar!(
+        "INSERT INTO identity.users (id, email, name, surname, role, must_change_password)
+         VALUES ($1, $2, $3, $4, 'student', false)
+         ON CONFLICT (email) DO NOTHING
+         RETURNING id",
+        id,
+        new.email.as_str(),
+        new.name.as_str(),
+        new.surname.as_str()
+    )
+    .fetch_optional(conn)
+    .await
+}
+
+/// The account with this address (already normalized), locked until the transaction ends.
+pub async fn lock_account_by_email(
+    conn: &mut PgConnection,
+    email: &str,
+) -> Result<Option<AccountRow>, sqlx::Error> {
+    sqlx::query_as!(
+        AccountRow,
+        r#"SELECT id, email, name, surname, role AS "role: Role", status AS "status: UserStatus",
+                  email_verified_at IS NOT NULL AS "email_verified!"
+           FROM identity.users WHERE email = $1 FOR UPDATE"#,
+        email
+    )
+    .fetch_optional(conn)
+    .await
+}
+
+pub async fn find_account(
+    conn: &mut PgConnection,
+    id: Uuid,
+) -> Result<Option<AccountRow>, sqlx::Error> {
+    sqlx::query_as!(
+        AccountRow,
+        r#"SELECT id, email, name, surname, role AS "role: Role", status AS "status: UserStatus",
+                  email_verified_at IS NOT NULL AS "email_verified!"
+           FROM identity.users WHERE id = $1"#,
+        id
+    )
+    .fetch_optional(conn)
+    .await
+}
+
+pub async fn update_names(
+    conn: &mut PgConnection,
+    id: Uuid,
+    name: &str,
+    surname: &str,
+) -> Result<(), sqlx::Error> {
+    sqlx::query!(
+        "UPDATE identity.users SET name = $2, surname = $3, updated_at = now() WHERE id = $1",
+        id,
+        name,
+        surname
+    )
+    .execute(conn)
+    .await?;
+    Ok(())
+}
+
+pub async fn mark_email_verified(conn: &mut PgConnection, id: Uuid) -> Result<(), sqlx::Error> {
+    sqlx::query!(
+        "UPDATE identity.users
+         SET email_verified_at = COALESCE(email_verified_at, now()), updated_at = now()
+         WHERE id = $1",
+        id
+    )
+    .execute(conn)
+    .await?;
+    Ok(())
+}
+
+/// Voids the unused tokens of a user and purpose; returns how many there were.
+pub async fn void_email_tokens(
+    conn: &mut PgConnection,
+    user_id: Uuid,
+    purpose: TokenPurpose,
+) -> Result<u64, sqlx::Error> {
+    let result = sqlx::query!(
+        "UPDATE identity.email_tokens SET used_at = now()
+         WHERE user_id = $1 AND purpose = $2 AND used_at IS NULL",
+        user_id,
+        purpose.as_str()
+    )
+    .execute(conn)
+    .await?;
+    Ok(result.rows_affected())
+}
+
+pub async fn insert_email_token(
+    conn: &mut PgConnection,
+    user_id: Uuid,
+    purpose: TokenPurpose,
+    token_hash: &[u8],
+    lifetime_secs: i64,
+) -> Result<(), sqlx::Error> {
+    sqlx::query!(
+        "INSERT INTO identity.email_tokens (id, user_id, purpose, token_hash, expires_at)
+         VALUES ($1, $2, $3, $4, now() + make_interval(secs => $5))",
+        Uuid::now_v7(),
+        user_id,
+        purpose.as_str(),
+        token_hash,
+        lifetime_secs as f64
+    )
+    .execute(conn)
+    .await?;
+    Ok(())
+}
+
+/// Uses the token up: one conditional update, so of two requests with the same token exactly one
+/// gets the user id. `None`: unknown, used or expired.
+pub async fn consume_email_token(
+    conn: &mut PgConnection,
+    token_hash: &[u8],
+    purpose: TokenPurpose,
+) -> Result<Option<Uuid>, sqlx::Error> {
+    sqlx::query_scalar!(
+        "UPDATE identity.email_tokens SET used_at = now()
+         WHERE token_hash = $1 AND purpose = $2 AND used_at IS NULL AND expires_at > now()
+         RETURNING user_id",
+        token_hash,
+        purpose.as_str()
+    )
+    .fetch_optional(conn)
+    .await
+}
+
+/// The account a usable token belongs to, without using the token up.
+pub async fn find_token_account(
+    conn: &mut PgConnection,
+    token_hash: &[u8],
+    purpose: TokenPurpose,
+) -> Result<Option<AccountRow>, sqlx::Error> {
+    sqlx::query_as!(
+        AccountRow,
+        r#"SELECT u.id, u.email, u.name, u.surname, u.role AS "role: Role",
+                  u.status AS "status: UserStatus",
+                  u.email_verified_at IS NOT NULL AS "email_verified!"
+           FROM identity.email_tokens t
+           JOIN identity.users u ON u.id = t.user_id
+           WHERE t.token_hash = $1 AND t.purpose = $2 AND t.used_at IS NULL AND t.expires_at > now()"#,
+        token_hash,
+        purpose.as_str()
+    )
+    .fetch_optional(conn)
+    .await
+}
+
+/// Stores one started Google sign-in and forgets the expired ones (ADR-0047).
+pub async fn insert_oauth_state(
+    conn: &mut PgConnection,
+    state_hash: &[u8],
+    browser_hash: &[u8],
+    nonce: &str,
+    pkce_verifier: &str,
+    lifetime_secs: i64,
+) -> Result<(), sqlx::Error> {
+    sqlx::query!("DELETE FROM identity.oauth_states WHERE expires_at < now()")
+        .execute(&mut *conn)
+        .await?;
+    sqlx::query!(
+        "INSERT INTO identity.oauth_states
+             (state_hash, browser_hash, nonce, pkce_verifier, expires_at)
+         VALUES ($1, $2, $3, $4, now() + make_interval(secs => $5))",
+        state_hash,
+        browser_hash,
+        nonce,
+        pkce_verifier,
+        lifetime_secs as f64
+    )
+    .execute(conn)
+    .await?;
+    Ok(())
+}
+
+/// Reads and deletes the state in one statement, so it can be used once. It matches only for the
+/// browser that started it and only before it expires.
+pub async fn take_oauth_state(
+    conn: &mut PgConnection,
+    state_hash: &[u8],
+    browser_hash: &[u8],
+) -> Result<Option<(String, String)>, sqlx::Error> {
+    let row = sqlx::query!(
+        "DELETE FROM identity.oauth_states
+         WHERE state_hash = $1 AND browser_hash = $2 AND expires_at > now()
+         RETURNING nonce, pkce_verifier",
+        state_hash,
+        browser_hash
+    )
+    .fetch_optional(conn)
+    .await?;
+    Ok(row.map(|row| (row.nonce, row.pkce_verifier)))
+}
+
+/// The user a Google subject is linked to, locked with the row of the identity.
+pub async fn find_google_user(
+    conn: &mut PgConnection,
+    subject: &str,
+) -> Result<Option<Uuid>, sqlx::Error> {
+    sqlx::query_scalar!(
+        "SELECT user_id FROM identity.identities WHERE provider = 'google' AND subject = $1",
+        subject
+    )
+    .fetch_optional(conn)
+    .await
+}
+
+pub async fn insert_google_identity(
+    conn: &mut PgConnection,
+    user_id: Uuid,
+    subject: &str,
+) -> Result<(), sqlx::Error> {
+    sqlx::query!(
+        "INSERT INTO identity.identities (id, user_id, provider, subject)
+         VALUES ($1, $2, 'google', $3)",
+        Uuid::now_v7(),
+        user_id,
+        subject
+    )
+    .execute(conn)
+    .await?;
+    Ok(())
+}
+
+pub async fn delete_password_identity(
+    conn: &mut PgConnection,
+    user_id: Uuid,
+) -> Result<(), sqlx::Error> {
+    sqlx::query!(
+        "DELETE FROM identity.identities WHERE user_id = $1 AND provider = 'password'",
+        user_id
+    )
+    .execute(conn)
+    .await?;
+    Ok(())
+}
+
+/// Locks the user `FOR SHARE` and says whether the account is active (ADR-0038).
+pub async fn lock_active_user(conn: &mut PgConnection, user_id: Uuid) -> Result<bool, sqlx::Error> {
+    let row = sqlx::query_scalar!(
+        r#"SELECT 1 AS "locked!" FROM identity.users
+           WHERE id = $1 AND status = 'active' FOR SHARE"#,
+        user_id
+    )
+    .fetch_optional(conn)
+    .await?;
+    Ok(row.is_some())
+}
+
+pub async fn find_account_by_email(
+    conn: &mut PgConnection,
+    email: &str,
+) -> Result<Option<AccountRow>, sqlx::Error> {
+    sqlx::query_as!(
+        AccountRow,
+        r#"SELECT id, email, name, surname, role AS "role: Role", status AS "status: UserStatus",
+                  email_verified_at IS NOT NULL AS "email_verified!"
+           FROM identity.users WHERE email = $1"#,
+        email
+    )
+    .fetch_optional(conn)
+    .await
 }

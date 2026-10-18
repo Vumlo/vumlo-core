@@ -41,6 +41,40 @@ pub struct SaveGradeRequest {
     pub feedback: Option<Value>,
 }
 
+/// What a history row records (ADR-0028).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum GradeAction {
+    /// A draft was saved.
+    SaveDraft,
+    /// The draft was published (an empty one retracts the published value).
+    Publish,
+    /// A quiz was scored by the server when the student submitted it (ADR-0050); no person.
+    AutoScore,
+}
+
+/// Who made a change.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct GradeActor {
+    pub user_id: Uuid,
+    pub name: String,
+    pub surname: String,
+}
+
+/// One recorded change of a grade (ADR-0049). Data, not a sentence: the client words it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct GradeHistoryEntry {
+    pub id: Uuid,
+    pub action: GradeAction,
+    /// The score after the change, a decimal string with two decimals; `null` when none.
+    pub score: Option<String>,
+    /// The feedback after the change; `null` when none.
+    pub feedback: Option<String>,
+    /// `null` when no person made the change.
+    pub actor: Option<GradeActor>,
+    pub at: DateTime<Utc>,
+}
+
 /// The only value of the `students` selector that is not a list.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub enum AllStudents {

@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE content.assignments SET type = 'no_submission', class_on = '2026-10-29'\n             WHERE item_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "9e2b83f3af5d015352aaec8c890d3922a059fc32f4309a8719773cdbcc3c6e65"
+}

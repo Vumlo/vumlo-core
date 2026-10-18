@@ -8,7 +8,9 @@ use sqlx::PgConnection;
 use sqlx::types::Decimal;
 use uuid::Uuid;
 
-use super::model::{Cell, Column, ColumnStatus, MyGrade};
+use super::model::{
+    Cell, Column, ColumnStatus, HistoryActor, HistoryEntry, MyGrade, PublishedGrade,
+};
 use crate::policy::Release;
 
 pub async fn is_student_member(
@@ -76,13 +78,59 @@ pub async fn upsert_draft(
     .await
 }
 
-/// Appends one history row. `score` and `feedback` are the values after the action.
+/// Replaces the draft score of one cell with the score a quiz earned and leaves the draft feedback
+/// alone; no person made the change (ADR-0050 point 5). Returns the draft feedback, which the
+/// history row repeats.
+pub async fn upsert_auto_score(
+    conn: &mut PgConnection,
+    assignment_id: Uuid,
+    student_id: Uuid,
+    score: Decimal,
+) -> Result<Option<String>, sqlx::Error> {
+    sqlx::query_scalar!(
+        r#"INSERT INTO gradebook.grades (assignment_id, student_id, draft_score, draft_updated_by)
+           VALUES ($1, $2, $3, NULL)
+           ON CONFLICT (assignment_id, student_id) DO UPDATE
+           SET draft_score = EXCLUDED.draft_score,
+               draft_updated_by = NULL,
+               draft_updated_at = now()
+           RETURNING draft_feedback"#,
+        assignment_id,
+        student_id,
+        score
+    )
+    .fetch_one(conn)
+    .await
+}
+
+/// The published value of one cell, if a score or feedback was ever published. Selects
+/// `published_*` only (AGENTS section 6).
+pub async fn find_published(
+    conn: &mut PgConnection,
+    assignment_id: Uuid,
+    student_id: Uuid,
+) -> Result<Option<PublishedGrade>, sqlx::Error> {
+    sqlx::query_as!(
+        PublishedGrade,
+        r#"SELECT published_score AS score, published_feedback AS feedback,
+                  published_at AS "published_at!"
+           FROM gradebook.grades
+           WHERE assignment_id = $1 AND student_id = $2 AND published_at IS NOT NULL"#,
+        assignment_id,
+        student_id
+    )
+    .fetch_optional(conn)
+    .await
+}
+
+/// Appends one history row. `score` and `feedback` are the values after the action. `actor_id`
+/// is `None` only for `auto_score`.
 pub async fn insert_history(
     conn: &mut PgConnection,
     assignment_id: Uuid,
     student_id: Uuid,
     action: &str,
-    actor_id: Uuid,
+    actor_id: Option<Uuid>,
     score: Option<Decimal>,
     feedback: Option<&str>,
 ) -> Result<(), sqlx::Error> {
@@ -101,6 +149,49 @@ pub async fn insert_history(
     .execute(conn)
     .await?;
     Ok(())
+}
+
+/// The recorded changes of one cell, newest first: ids below `before`, at most `limit`. Staff
+/// read it, so the people who made the changes are named.
+pub async fn list_history(
+    conn: &mut PgConnection,
+    assignment_id: Uuid,
+    student_id: Uuid,
+    before: Option<Uuid>,
+    limit: i64,
+) -> Result<Vec<HistoryEntry>, sqlx::Error> {
+    let rows = sqlx::query!(
+        r#"SELECT h.id, h.action, h.score, h.feedback, h.at,
+                  h.actor_id AS "actor_id?", u.name AS "actor_name?", u.surname AS "actor_surname?"
+           FROM gradebook.grade_history h
+           LEFT JOIN identity.users u ON u.id = h.actor_id
+           WHERE h.assignment_id = $1 AND h.student_id = $2 AND ($3::uuid IS NULL OR h.id < $3)
+           ORDER BY h.id DESC
+           LIMIT $4"#,
+        assignment_id,
+        student_id,
+        before,
+        limit
+    )
+    .fetch_all(conn)
+    .await?;
+    Ok(rows
+        .into_iter()
+        .map(|row| HistoryEntry {
+            id: row.id,
+            action: row.action,
+            score: row.score,
+            feedback: row.feedback,
+            actor: row.actor_id.zip(row.actor_name).zip(row.actor_surname).map(
+                |((user_id, name), surname)| HistoryActor {
+                    user_id,
+                    name,
+                    surname,
+                },
+            ),
+            at: row.at,
+        })
+        .collect())
 }
 
 /// Locks, in student-id order, the rows of current student members whose draft differs from the
@@ -340,7 +431,7 @@ pub async fn my_published_grades(
     open_at: DateTime<Utc>,
 ) -> Result<Vec<MyGradeRow>, sqlx::Error> {
     let rows = sqlx::query!(
-        r#"SELECT i.id AS assignment_id, i.title, a.max_points, a.is_bonus,
+        r#"SELECT i.id AS assignment_id, i.published_title AS "title!", a.max_points, a.is_bonus,
                   g.published_score, g.published_feedback, g.published_at AS "published_at!",
                   i.status = 'published' AS "item_published!", i.publish_at AS item_publish_at,
                   m.status = 'published' AS "module_published!", m.publish_at AS module_publish_at,

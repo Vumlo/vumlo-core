@@ -1,0 +1,41 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT draft_score, draft_updated_by FROM gradebook.grades\n             WHERE assignment_id = $1 AND student_id = $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "draft_score",
+        "type_info": "Numeric",
+        "origin": {
+          "Table": {
+            "table": "gradebook.grades",
+            "name": "draft_score"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "draft_updated_by",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "gradebook.grades",
+            "name": "draft_updated_by"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      true,
+      true
+    ]
+  },
+  "hash": "1e6d951e5af53e4d5545eca466ff048bde89178827fcfeb3353648a055f51087"
+}

@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE identity.users SET email_verified_at = NULL",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "912e0e85cf7b299a214c6551c9df5622b891b2d8f49ac344ddd633274f2874ea"
+}

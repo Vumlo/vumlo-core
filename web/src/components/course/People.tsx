@@ -4,7 +4,8 @@ import { useState } from "react";
 import { Dialog } from "@/components/Dialog";
 import { Icon } from "@/components/Icon";
 import { useCandidates, useCoursePeople, useGroupOptions, useLinkGroup, usePutMember, useRemoveMember, useUnlinkGroup } from "@/lib/api/hooks/courses";
-import type { PersonRow } from "@/lib/api/gaps";
+import type { PersonRow } from "@/lib/api/types";
+import { linkedGroupName } from "@/lib/course";
 import { dayLong, initials, plural } from "@/lib/format";
 import { useMe } from "@/lib/session";
 import { CourseHeader } from "./CourseHeader";
@@ -167,8 +168,8 @@ export function People({ courseId }: { courseId: string }) {
                 {people.data.groups.map((g) => (
                   <div key={g.link_id} className={`card ${s.group}`}>
                     <span className="grow">
-                      <span style={{ display: "block", fontWeight: 600 }}>{g.name}</span>
-                      <span className="muted" style={{ display: "block", fontSize: 13 }}>{plural(g.student_count, "student")}, {t("people.linkedOn", { day: dayLong(g.linked_on) })}</span>
+                      <span style={{ display: "block", fontWeight: 600 }}>{linkedGroupName(g)}</span>
+                      <span className="muted" style={{ display: "block", fontSize: 13 }}>{plural(g.student_count, "student")}, {t("people.linkedOn", { day: dayLong(g.linked_at) })}</span>
                     </span>
                     <button type="button" className="btn btn-quiet" style={{ color: "var(--danger)", minHeight: 36, fontSize: 13 }} onClick={() => void unlink.run(g.link_id)}>{t("people.unlink")}</button>
                   </div>
@@ -227,7 +228,7 @@ export function People({ courseId }: { courseId: string }) {
                       <div key={p.user_id} className="card row" style={{ gap: 12, minHeight: 56, padding: "8px 18px" }}>
                         <span aria-hidden="true" className={s.avatarSm} style={{ width: 30, height: 30 }}>{initials(p.name, p.surname)}</span>
                         <span className="grow muted">{p.name} {p.surname}</span>
-                        <span className="muted" style={{ fontSize: 13 }}>{t("people.leftOn", { day: p.left_on ? dayLong(p.left_on) : "" })}</span>
+                        <span className="muted" style={{ fontSize: 13 }}>{t("people.left")}</span>
                       </div>
                     ))}
                   </>

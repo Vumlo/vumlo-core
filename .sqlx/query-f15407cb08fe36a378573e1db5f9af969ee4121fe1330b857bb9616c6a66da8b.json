@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO identity.oauth_states\n             (state_hash, browser_hash, nonce, pkce_verifier, expires_at)\n         VALUES ($1, $2, $3, $4, now() + make_interval(secs => $5))",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Bytea",
+        "Bytea",
+        "Text",
+        "Text",
+        "Float8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "f15407cb08fe36a378573e1db5f9af969ee4121fe1330b857bb9616c6a66da8b"
+}

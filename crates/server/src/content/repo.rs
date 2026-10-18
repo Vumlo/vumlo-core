@@ -1,6 +1,6 @@
 //! SQL only. Every function takes the connection it runs on and never begins a transaction.
 
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, NaiveDate, Utc};
 use serde_json::{Map, Value};
 use sqlx::PgConnection;
 use sqlx::types::Json;
@@ -9,8 +9,9 @@ use uuid::Uuid;
 use sqlx::types::Decimal;
 
 use super::model::{
-    Assignment, AssignmentSummary, BuiltinType, Item, ItemKind, ItemStatus, ItemSummary, MaxPoints,
-    Module, ModuleStatus, OnDeadline, SubmissionSettings,
+    Assignment, AssignmentSummary, AssignmentType, BuiltinType, Item, ItemKind, ItemStatus,
+    ItemSummary, MaxPoints, Module, ModuleStatus, OnDeadline, PublishedSlot, StaffFacts,
+    SubmissionSettings, WorkFacts, WorkStatus,
 };
 use crate::policy::Release;
 
@@ -46,8 +47,24 @@ struct RawItem {
     body: Body,
     status: ItemStatus,
     publish_at: Option<DateTime<Utc>>,
+    published_title: Option<String>,
+    published_body: Option<Body>,
+    last_published_at: Option<DateTime<Utc>>,
     created_at: DateTime<Utc>,
     updated_at: DateTime<Utc>,
+}
+
+/// The three columns of the published slot are set together (a CHECK of the table).
+fn published_slot(
+    title: Option<String>,
+    body: Option<Body>,
+    at: Option<DateTime<Utc>>,
+) -> Option<PublishedSlot> {
+    Some(PublishedSlot {
+        title: title?,
+        body: body?.0,
+        at: at?,
+    })
 }
 
 impl From<RawItem> for Item {
@@ -63,6 +80,11 @@ impl From<RawItem> for Item {
             status: raw.status,
             publish_at: raw.publish_at,
             assignment: None,
+            published: published_slot(
+                raw.published_title,
+                raw.published_body,
+                raw.last_published_at,
+            ),
             created_at: raw.created_at,
             updated_at: raw.updated_at,
         }
@@ -76,6 +98,7 @@ struct JoinedAssignment {
     max_points: Option<MaxPoints>,
     is_bonus: Option<bool>,
     settings: SubmissionSettings,
+    class_on: Option<NaiveDate>,
 }
 
 impl JoinedAssignment {
@@ -86,6 +109,7 @@ impl JoinedAssignment {
             max_points: self.max_points?,
             is_bonus: self.is_bonus?,
             settings: self.settings,
+            class_on: self.class_on,
         })
     }
 
@@ -313,7 +337,9 @@ pub async fn publish_draft_items_below(
     module_id: Uuid,
 ) -> Result<u64, sqlx::Error> {
     let result = sqlx::query!(
-        "UPDATE content.items SET status = 'published', updated_at = now()
+        "UPDATE content.items
+         SET status = 'published', published_title = title, published_body = body,
+             last_published_at = now(), updated_at = now()
          WHERE status = 'draft'
            AND (module_id = $1 OR module_id IN (SELECT id FROM content.modules WHERE parent_id = $1))",
         module_id
@@ -345,7 +371,8 @@ pub async fn insert_item(
                    $4, $5, $6)
            RETURNING id, module_id, course_id, position, kind AS "kind: ItemKind", title,
                      body AS "body: Body", status AS "status: ItemStatus", publish_at,
-                     created_at, updated_at"#,
+                     published_title, published_body AS "published_body?: Body",
+                     last_published_at, created_at, updated_at"#,
         id,
         module_id,
         course_id,
@@ -362,12 +389,15 @@ pub async fn find_item(conn: &mut PgConnection, id: Uuid) -> Result<Option<ItemR
     let row = sqlx::query!(
         r#"SELECT i.id, i.module_id, i.course_id, i.position, i.kind AS "kind: ItemKind", i.title,
                   i.body AS "body: Body", i.status AS "status: ItemStatus", i.publish_at,
+                  i.published_title, i.published_body AS "published_body?: Body",
+                  i.last_published_at,
                   i.created_at, i.updated_at,
                   m.status AS "module_status: ModuleStatus", m.publish_at AS module_publish_at,
                   p.status AS "parent_status?: ModuleStatus", p.publish_at AS parent_publish_at,
                   a.type AS "assignment_type?: BuiltinType", a.config AS "assignment_config?: Body",
                   a.max_points AS "assignment_max_points?: MaxPoints",
                   a.is_bonus AS "assignment_is_bonus?",
+                  a.class_on AS assignment_class_on,
                   a.due_at AS assignment_due_at,
                   a.on_deadline AS "assignment_on_deadline?: OnDeadline",
                   a.accept_late AS assignment_accept_late,
@@ -405,8 +435,14 @@ pub async fn find_item(conn: &mut PgConnection, id: Uuid) -> Result<Option<ItemR
                     late_until: row.assignment_late_until,
                     max_attempts: row.assignment_max_attempts,
                 },
+                class_on: row.assignment_class_on,
             }
             .full(),
+            published: published_slot(
+                row.published_title,
+                row.published_body,
+                row.last_published_at,
+            ),
             created_at: row.created_at,
             updated_at: row.updated_at,
         },
@@ -437,7 +473,8 @@ pub async fn update_item(
            WHERE id = $1
            RETURNING id, module_id, course_id, position, kind AS "kind: ItemKind", title,
                      body AS "body: Body", status AS "status: ItemStatus", publish_at,
-                     created_at, updated_at"#,
+                     published_title, published_body AS "published_body?: Body",
+                     last_published_at, created_at, updated_at"#,
         id,
         title,
         body.map(Json) as Option<Json<&Map<String, Value>>>,
@@ -483,15 +520,42 @@ pub async fn reorder_items(
     Ok(result.rows_affected())
 }
 
-/// Publishes a draft item. `None` when it was not a draft, so nothing is touched.
+/// Publishes a draft item: its working title and body become what students read (ADR-0049).
+/// `None` when it was not a draft, so nothing is touched.
 pub async fn publish_item(conn: &mut PgConnection, id: Uuid) -> Result<Option<Item>, sqlx::Error> {
     let raw = sqlx::query_as!(
         RawItem,
-        r#"UPDATE content.items SET status = 'published', updated_at = now()
+        r#"UPDATE content.items
+           SET status = 'published', published_title = title, published_body = body,
+               last_published_at = now(), updated_at = now()
            WHERE id = $1 AND status = 'draft'
            RETURNING id, module_id, course_id, position, kind AS "kind: ItemKind", title,
                      body AS "body: Body", status AS "status: ItemStatus", publish_at,
-                     created_at, updated_at"#,
+                     published_title, published_body AS "published_body?: Body",
+                     last_published_at, created_at, updated_at"#,
+        id
+    )
+    .fetch_optional(conn)
+    .await?;
+    Ok(raw.map(Item::from))
+}
+
+/// Publishes the working title and body of a published item (ADR-0049). `None` when the item is
+/// a draft or gone.
+pub async fn publish_revision(
+    conn: &mut PgConnection,
+    id: Uuid,
+) -> Result<Option<Item>, sqlx::Error> {
+    let raw = sqlx::query_as!(
+        RawItem,
+        r#"UPDATE content.items
+           SET published_title = title, published_body = body, last_published_at = now(),
+               updated_at = now()
+           WHERE id = $1 AND status = 'published'
+           RETURNING id, module_id, course_id, position, kind AS "kind: ItemKind", title,
+                     body AS "body: Body", status AS "status: ItemStatus", publish_at,
+                     published_title, published_body AS "published_body?: Body",
+                     last_published_at, created_at, updated_at"#,
         id
     )
     .fetch_optional(conn)
@@ -519,7 +583,9 @@ pub async fn tree(
         r#"SELECT m.id, m.course_id, m.parent_id, m.position, m.title,
                   m.status AS "status: ModuleStatus", m.publish_at, m.created_at, m.updated_at,
                   p.status AS "parent_status?: ModuleStatus", p.publish_at AS parent_publish_at,
-                  i.id AS "item_id?", i.kind AS "item_kind?: ItemKind", i.title AS "item_title?",
+                  i.id AS "item_id?", i.kind AS "item_kind?: ItemKind",
+                  CASE WHEN $2::timestamptz IS NULL THEN i.title ELSE i.published_title END
+                      AS "item_title?",
                   i.status AS "item_status?: ItemStatus", i.publish_at AS item_publish_at,
                   i.position AS "item_position?",
                   a.type AS "assignment_type?: BuiltinType",
@@ -583,6 +649,7 @@ pub async fn tree(
                             late_until: row.assignment_late_until,
                             max_attempts: row.assignment_max_attempts,
                         },
+                        class_on: None,
                     }
                     .summary(),
                 }),
@@ -655,6 +722,7 @@ struct RawAssignment {
     accept_late: Option<bool>,
     late_until: Option<DateTime<Utc>>,
     max_attempts: Option<i32>,
+    class_on: Option<NaiveDate>,
 }
 
 impl From<RawAssignment> for Assignment {
@@ -671,6 +739,7 @@ impl From<RawAssignment> for Assignment {
                 late_until: raw.late_until,
                 max_attempts: raw.max_attempts,
             },
+            class_on: raw.class_on,
         }
     }
 }
@@ -686,12 +755,12 @@ pub async fn insert_assignment(
         RawAssignment,
         r#"INSERT INTO content.assignments
                (item_id, type, config, max_points, is_bonus,
-                due_at, on_deadline, accept_late, late_until, max_attempts)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+                due_at, on_deadline, accept_late, late_until, max_attempts, class_on)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
            RETURNING type AS "assignment_type: BuiltinType", config AS "config: Body",
                      max_points AS "max_points: MaxPoints", is_bonus,
                      due_at, on_deadline AS "on_deadline: OnDeadline", accept_late, late_until,
-                     max_attempts"#,
+                     max_attempts, class_on"#,
         item_id,
         assignment.assignment_type.as_str(),
         Json(&assignment.config) as Json<&Map<String, Value>>,
@@ -701,7 +770,8 @@ pub async fn insert_assignment(
         settings.on_deadline.map(OnDeadline::as_str),
         settings.accept_late,
         settings.late_until,
-        settings.max_attempts
+        settings.max_attempts,
+        assignment.class_on
     )
     .fetch_one(conn)
     .await?;
@@ -717,7 +787,7 @@ pub async fn find_assignment(
         r#"SELECT type AS "assignment_type: BuiltinType", config AS "config: Body",
                   max_points AS "max_points: MaxPoints", is_bonus,
                   due_at, on_deadline AS "on_deadline: OnDeadline", accept_late, late_until,
-                  max_attempts
+                  max_attempts, class_on
            FROM content.assignments WHERE item_id = $1"#,
         item_id
     )
@@ -740,7 +810,7 @@ pub async fn lock_assignment(
         r#"SELECT type AS "assignment_type: BuiltinType", config AS "config: Body",
                   max_points AS "max_points: MaxPoints", is_bonus,
                   due_at, on_deadline AS "on_deadline: OnDeadline", accept_late, late_until,
-                  max_attempts
+                  max_attempts, class_on
            FROM content.assignments WHERE item_id = $1
            FOR UPDATE"#,
         item_id
@@ -762,7 +832,7 @@ pub async fn lock_assignment_shared(
         r#"SELECT type AS "assignment_type: BuiltinType", config AS "config: Body",
                   max_points AS "max_points: MaxPoints", is_bonus,
                   due_at, on_deadline AS "on_deadline: OnDeadline", accept_late, late_until,
-                  max_attempts
+                  max_attempts, class_on
            FROM content.assignments WHERE item_id = $1
            FOR SHARE"#,
         item_id
@@ -791,6 +861,95 @@ pub async fn lock_assignments_below(
     .await
 }
 
+/// Locks every assignment of a course `FOR UPDATE`, in id order (see [`lock_assignments_below`]).
+/// Returns their ids.
+pub async fn lock_assignments_of_course(
+    conn: &mut PgConnection,
+    course_id: Uuid,
+) -> Result<Vec<Uuid>, sqlx::Error> {
+    sqlx::query_scalar!(
+        "SELECT a.item_id FROM content.assignments a
+         JOIN content.items i ON i.id = a.item_id
+         WHERE i.course_id = $1
+         ORDER BY a.item_id
+         FOR UPDATE OF a",
+        course_id
+    )
+    .fetch_all(conn)
+    .await
+}
+
+/// What the course header shows about the content: the sum of the regular assignments' points
+/// (bonus ones are extra and left out), how many there are, and when anything last changed. With
+/// `open_at`, only what a student may see at that moment counts (the rule of [`tree`]).
+pub async fn course_summary(
+    conn: &mut PgConnection,
+    course_id: Uuid,
+    open_at: Option<DateTime<Utc>>,
+) -> Result<(Decimal, i64, Option<DateTime<Utc>>), sqlx::Error> {
+    let row = sqlx::query!(
+        r#"SELECT COALESCE(sum(a.max_points) FILTER (WHERE NOT a.is_bonus), 0) AS "total!",
+                  count(a.item_id) FILTER (WHERE NOT a.is_bonus) AS "graded!",
+                  (SELECT max(updated_at) FROM (
+                       SELECT updated_at FROM content.modules WHERE course_id = $1
+                       UNION ALL
+                       SELECT updated_at FROM content.items WHERE course_id = $1) changes)
+                      AS changed
+           FROM content.items i
+           JOIN content.assignments a ON a.item_id = i.id
+           JOIN content.modules m ON m.id = i.module_id
+           LEFT JOIN content.modules p ON p.id = m.parent_id
+           WHERE i.course_id = $1
+             AND ($2::timestamptz IS NULL
+                  OR (i.status = 'published' AND (i.publish_at IS NULL OR i.publish_at <= $2)
+                      AND m.status = 'published' AND (m.publish_at IS NULL OR m.publish_at <= $2)
+                      AND (p.id IS NULL
+                           OR (p.status = 'published'
+                               AND (p.publish_at IS NULL OR p.publish_at <= $2)))))"#,
+        course_id,
+        open_at
+    )
+    .fetch_one(conn)
+    .await?;
+    Ok((row.total, row.graded, row.changed))
+}
+
+/// Copies the whole tree of `from` into `to` (ADR-0048): modules, sub-modules, items and
+/// assignments, all as drafts. One statement gives every module and item a new id, so a failure
+/// leaves nothing half copied. What is not copied: publication (`publish_at`), deadlines, the late
+/// rule and anything a student or a grader produced.
+pub async fn copy_course(conn: &mut PgConnection, from: Uuid, to: Uuid) -> Result<(), sqlx::Error> {
+    sqlx::query!(
+        "WITH module_map AS (
+             SELECT id AS old_id, uuidv7() AS new_id FROM content.modules WHERE course_id = $1),
+         item_map AS (
+             SELECT id AS old_id, uuidv7() AS new_id FROM content.items WHERE course_id = $1),
+         new_modules AS (
+             INSERT INTO content.modules (id, course_id, parent_id, position, title, status)
+             SELECT mm.new_id, $2, pm.new_id, m.position, m.title, 'draft'
+             FROM content.modules m
+             JOIN module_map mm ON mm.old_id = m.id
+             LEFT JOIN module_map pm ON pm.old_id = m.parent_id
+             RETURNING id),
+         new_items AS (
+             INSERT INTO content.items (id, module_id, course_id, position, kind, title, body, status)
+             SELECT im.new_id, mm.new_id, $2, i.position, i.kind, i.title, i.body, 'draft'
+             FROM content.items i
+             JOIN item_map im ON im.old_id = i.id
+             JOIN module_map mm ON mm.old_id = i.module_id
+             RETURNING id)
+         INSERT INTO content.assignments (item_id, type, config, max_points, is_bonus, max_attempts)
+         SELECT im.new_id, a.type, a.config, a.max_points, a.is_bonus, a.max_attempts
+         FROM content.assignments a
+         JOIN item_map im ON im.old_id = a.item_id",
+        from,
+        to
+    )
+    .execute(conn)
+    .await?;
+    Ok(())
+}
+
 /// Each field is kept when `None`. `settings` replaces all five settings together: the caller has
 /// resolved them against the locked row.
 pub async fn update_assignment(
@@ -800,6 +959,7 @@ pub async fn update_assignment(
     max_points: Option<MaxPoints>,
     is_bonus: Option<bool>,
     settings: Option<SubmissionSettings>,
+    class_on: Option<Option<NaiveDate>>,
 ) -> Result<Option<Assignment>, sqlx::Error> {
     let new = settings.unwrap_or_default();
     let raw = sqlx::query_as!(
@@ -813,12 +973,13 @@ pub async fn update_assignment(
                accept_late = CASE WHEN $5 THEN $8::boolean ELSE accept_late END,
                late_until = CASE WHEN $5 THEN $9::timestamptz ELSE late_until END,
                max_attempts = CASE WHEN $5 THEN $10::integer ELSE max_attempts END,
+               class_on = CASE WHEN $11 THEN $12::date ELSE class_on END,
                updated_at = now()
            WHERE item_id = $1
            RETURNING type AS "assignment_type: BuiltinType", config AS "config: Body",
                      max_points AS "max_points: MaxPoints", is_bonus,
                      due_at, on_deadline AS "on_deadline: OnDeadline", accept_late, late_until,
-                     max_attempts"#,
+                     max_attempts, class_on"#,
         item_id,
         config.map(Json) as Option<Json<&Map<String, Value>>>,
         max_points.map(MaxPoints::value),
@@ -828,11 +989,172 @@ pub async fn update_assignment(
         new.on_deadline.map(OnDeadline::as_str),
         new.accept_late,
         new.late_until,
-        new.max_attempts
+        new.max_attempts,
+        class_on.is_some(),
+        class_on.flatten()
     )
     .fetch_optional(conn)
     .await?;
     Ok(raw.map(Assignment::from))
+}
+
+// ---------------------------------------------------------------------------------------------
+// Per-item facts (ADR-0049). Read models: they join the tables of `assessment`, `gradebook` and
+// `teaching` and write nothing.
+// ---------------------------------------------------------------------------------------------
+
+/// The body of every `text` item of the course: the working one for staff, the published one for
+/// students. An item students cannot read yet has no published body and is left out.
+pub async fn lecture_bodies(
+    conn: &mut PgConnection,
+    course_id: Uuid,
+    working_copy: bool,
+) -> Result<Vec<(Uuid, Map<String, Value>)>, sqlx::Error> {
+    let rows = sqlx::query!(
+        r#"SELECT id, CASE WHEN $2 THEN body ELSE published_body END AS "body?: Body"
+           FROM content.items WHERE course_id = $1 AND kind = 'text'"#,
+        course_id,
+        working_copy
+    )
+    .fetch_all(conn)
+    .await?;
+    Ok(rows
+        .into_iter()
+        .filter_map(|row| Some((row.id, row.body?.0)))
+        .collect())
+}
+
+/// The class days of the course's in-class assignments.
+pub async fn class_days(
+    conn: &mut PgConnection,
+    course_id: Uuid,
+) -> Result<Vec<(Uuid, NaiveDate)>, sqlx::Error> {
+    let rows = sqlx::query!(
+        r#"SELECT a.item_id, a.class_on AS "class_on!" FROM content.assignments a
+           JOIN content.items i ON i.id = a.item_id
+           WHERE i.course_id = $1 AND a.class_on IS NOT NULL"#,
+        course_id
+    )
+    .fetch_all(conn)
+    .await?;
+    Ok(rows.into_iter().map(|r| (r.item_id, r.class_on)).collect())
+}
+
+/// Published items whose working copy differs from what students read.
+pub async fn edited_items(
+    conn: &mut PgConnection,
+    course_id: Uuid,
+) -> Result<Vec<Uuid>, sqlx::Error> {
+    sqlx::query_scalar!(
+        "SELECT id FROM content.items
+         WHERE course_id = $1 AND status = 'published'
+           AND (title IS DISTINCT FROM published_title OR body IS DISTINCT FROM published_body)",
+        course_id
+    )
+    .fetch_all(conn)
+    .await
+}
+
+/// A student's standing on every assignment of the given courses (see [`WorkStatus::of`]). Only
+/// published grade columns are selected: nothing here can show a draft value (AGENTS section 6).
+/// The caller keeps the assignments the student may see.
+pub async fn student_work(
+    conn: &mut PgConnection,
+    student_id: Uuid,
+    course_ids: &[Uuid],
+    now: DateTime<Utc>,
+) -> Result<Vec<WorkFacts>, sqlx::Error> {
+    let rows = sqlx::query!(
+        r#"SELECT a.item_id AS assignment_id, i.course_id,
+                  a.type AS "assignment_type: BuiltinType",
+                  COALESCE(a.due_at IS NOT NULL
+                           AND CASE WHEN a.accept_late THEN a.late_until ELSE a.due_at END < $3,
+                           false) AS "closed!",
+                  (SELECT s.updated_at FROM assessment.submissions s
+                   WHERE s.assignment_id = a.item_id AND s.student_id = $1
+                     AND s.status = 'draft') AS draft_saved_at,
+                  (SELECT count(*) FROM assessment.submissions s
+                   WHERE s.assignment_id = a.item_id AND s.student_id = $1
+                     AND s.status = 'submitted') AS "attempts!",
+                  g.published_score,
+                  (g.published_score IS NOT NULL OR g.published_feedback IS NOT NULL)
+                      AS "graded!",
+                  g.published_at
+           FROM content.assignments a
+           JOIN content.items i ON i.id = a.item_id
+           LEFT JOIN gradebook.grades g ON g.assignment_id = a.item_id AND g.student_id = $1
+           WHERE i.course_id = ANY($2)"#,
+        student_id,
+        course_ids,
+        now
+    )
+    .fetch_all(conn)
+    .await?;
+    Ok(rows
+        .into_iter()
+        .map(|row| WorkFacts {
+            assignment_id: row.assignment_id,
+            course_id: row.course_id,
+            status: WorkStatus::of(
+                row.graded,
+                row.assignment_type.takes_submissions(),
+                row.attempts,
+                row.draft_saved_at.is_some(),
+                row.closed,
+            ),
+            score: row.published_score,
+            published_at: row.published_at,
+            draft_saved_at: row.draft_saved_at,
+            attempts_used: row.attempts,
+        })
+        .collect())
+}
+
+/// What staff still have to do on each assignment of a course, over the current students. Reads the
+/// draft grade columns, so only a staff path may call it.
+pub async fn staff_counts(
+    conn: &mut PgConnection,
+    course_id: Uuid,
+) -> Result<Vec<StaffFacts>, sqlx::Error> {
+    let rows = sqlx::query!(
+        r#"SELECT a.item_id AS assignment_id,
+                  (SELECT count(*) FROM teaching.effective_members m
+                   WHERE m.course_id = $1 AND m.role = 'student') AS "graded_total!",
+                  (SELECT count(DISTINCT s.student_id) FROM assessment.submissions s
+                   JOIN teaching.effective_members m
+                     ON m.course_id = $1 AND m.user_id = s.student_id AND m.role = 'student'
+                   WHERE s.assignment_id = a.item_id AND s.status = 'submitted') AS "submitted!",
+                  (SELECT count(DISTINCT s.student_id) FROM assessment.submissions s
+                   JOIN teaching.effective_members m
+                     ON m.course_id = $1 AND m.user_id = s.student_id AND m.role = 'student'
+                   LEFT JOIN gradebook.grades g
+                     ON g.assignment_id = s.assignment_id AND g.student_id = s.student_id
+                   WHERE s.assignment_id = a.item_id AND s.status = 'submitted'
+                     AND g.draft_score IS NULL) AS "to_grade!",
+                  (SELECT count(*) FROM gradebook.grades g
+                   JOIN teaching.effective_members m
+                     ON m.course_id = $1 AND m.user_id = g.student_id AND m.role = 'student'
+                   WHERE g.assignment_id = a.item_id
+                     AND (g.draft_score, g.draft_feedback)
+                         IS DISTINCT FROM (g.published_score, g.published_feedback))
+                      AS "draft_grades!"
+           FROM content.assignments a
+           JOIN content.items i ON i.id = a.item_id
+           WHERE i.course_id = $1"#,
+        course_id
+    )
+    .fetch_all(conn)
+    .await?;
+    Ok(rows
+        .into_iter()
+        .map(|row| StaffFacts {
+            assignment_id: row.assignment_id,
+            submitted: row.submitted,
+            to_grade: row.to_grade,
+            draft_grades: row.draft_grades,
+            graded_total: row.graded_total,
+        })
+        .collect())
 }
 
 /// Takes the transaction-scoped advisory lock that serializes writes to a course's points

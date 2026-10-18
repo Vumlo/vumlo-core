@@ -10,18 +10,21 @@
 //! uses to open and lock an assignment (ADR-0030, ADR-0035).
 
 use chrono::{DateTime, Utc};
-use serde_json::Value;
+use serde_json::{Map, Value};
 use sqlx::PgConnection;
 use uuid::Uuid;
 
-use super::model::{Attempt, Draft, MySubmission, StudentSubmission, Window};
+use super::model::{
+    Attempt, Draft, FormFacts, MySubmission, QuizResult, Responses, StudentSubmission, Window,
+};
 use super::repo;
 use crate::actor::Actor;
 use crate::content::{
-    self, Assignment, AssignmentType, DocumentErrors, EffectiveProfiles, OpenError,
-    OpenedAssignment,
+    self, Assignment, AssignmentType, AutoGrade, BuiltinType, DocumentErrors, EffectiveProfiles,
+    OpenError, OpenedAssignment, Stage,
 };
 use crate::events::{self, Event, EventsError};
+use crate::gradebook::{self, GradebookError};
 use crate::pagination::{Page, PageParams};
 use crate::policy::{self, Action, PolicyError};
 use crate::teaching::TeachingError;
@@ -60,6 +63,15 @@ pub enum AssessmentError {
     /// A purge found submitted attempts: the caller had to refuse the delete instead.
     #[error("there are submitted attempts")]
     HasSubmissions,
+    /// An exclusive option of a form was chosen by another student first (ADR-0051 point 4).
+    #[error("an exclusive option was taken by someone else")]
+    OptionTaken,
+    /// The result of a quiz or the responses of a form asked for another type, or the result
+    /// before the grade is published (ADR-0050 point 8).
+    #[error("nothing to show")]
+    NothingToShow,
+    #[error(transparent)]
+    Gradebook(#[from] GradebookError),
     #[error(transparent)]
     Teaching(TeachingError),
     #[error(transparent)]
@@ -140,7 +152,7 @@ pub async fn save_draft(
     open_window(&assignment, now)?;
     let valid = assignment
         .assignment_type
-        .validate_submission(&assignment.config, content, profiles)
+        .validate_submission(&assignment.config, content, Stage::Draft, profiles)
         .map_err(AssessmentError::Document)?;
     Ok(repo::upsert_draft(conn, assignment_id, actor.user_id(), valid.as_body()).await?)
 }
@@ -218,12 +230,34 @@ pub async fn submit(
     // The draft is judged again against the profile and the features as they are now.
     let valid = assignment
         .assignment_type
-        .validate_submission(&assignment.config, &Value::Object(draft.content), profiles)
+        .validate_submission(
+            &assignment.config,
+            &Value::Object(draft.content),
+            Stage::Submit,
+            profiles,
+        )
         .map_err(AssessmentError::Document)?;
     if valid.is_blank() {
         return Err(AssessmentError::Empty);
     }
-    let attempt = repo::submit_draft(conn, draft.id, last + 1, now, is_late).await?;
+    check_claims(
+        conn,
+        &assignment,
+        assignment_id,
+        opened.course_id,
+        student_id,
+        valid.as_body(),
+    )
+    .await?;
+    let auto = assignment
+        .assignment_type
+        .auto_grade(&assignment.config, valid.as_body());
+    let scores = auto.as_ref().map(AutoGrade::scores_json);
+    let attempt =
+        repo::submit_draft(conn, draft.id, last + 1, now, is_late, scores.as_ref()).await?;
+    if let Some(auto) = auto.filter(|auto| auto.complete) {
+        gradebook::save_auto_grade(conn, assignment_id, student_id, auto.total).await?;
+    }
     events::emit(
         conn,
         Event::SubmissionSubmitted {
@@ -235,6 +269,144 @@ pub async fn submit(
     )
     .await?;
     Ok(attempt)
+}
+
+/// What a submission asks of the rest of the course: the people it names must be current students
+/// other than the submitter, and an exclusive option must not be held by another student. The
+/// submits of one form are serialized by an advisory lock around the check (ADR-0051 point 4).
+async fn check_claims(
+    conn: &mut PgConnection,
+    assignment: &Assignment,
+    assignment_id: Uuid,
+    course_id: Uuid,
+    student_id: Uuid,
+    body: &Map<String, Value>,
+) -> Result<(), AssessmentError> {
+    let claims = assignment.assignment_type.claims(&assignment.config, body);
+    if claims.is_empty() {
+        return Ok(());
+    }
+    if !claims.people.is_empty() {
+        let mut ids = claims.people.clone();
+        ids.sort();
+        ids.dedup();
+        if ids.contains(&student_id) {
+            return Err(AssessmentError::Document(DocumentErrors::one(
+                "answers",
+                "must not name the student who submits",
+            )));
+        }
+        if repo::students_among(conn, course_id, &ids).await?.len() != ids.len() {
+            return Err(AssessmentError::Document(DocumentErrors::one(
+                "answers",
+                "names someone who is not a student of the course",
+            )));
+        }
+    }
+    if !claims.exclusive.is_empty() {
+        repo::lock_form(conn, assignment_id).await?;
+        for other in repo::latest_contents(conn, assignment_id).await? {
+            if other.student.user_id == student_id {
+                continue;
+            }
+            let held = assignment
+                .assignment_type
+                .claims(&assignment.config, &other.content)
+                .exclusive;
+            if claims.exclusive.iter().any(|claim| held.contains(claim)) {
+                return Err(AssessmentError::OptionTaken);
+            }
+        }
+    }
+    Ok(())
+}
+
+/// The facts a form's config shows besides what was configured: which fields have answers and who
+/// holds each exclusive option (ADR-0051 point 5). The caller has authorized the read.
+pub async fn form_facts(
+    conn: &mut PgConnection,
+    assignment_id: Uuid,
+    assignment_type: BuiltinType,
+    config: &Map<String, Value>,
+) -> Result<FormFacts, AssessmentError> {
+    let mut facts = FormFacts::default();
+    for latest in repo::latest_contents(conn, assignment_id).await? {
+        if let Some(answers) = latest.content.get("answers").and_then(Value::as_object) {
+            facts.answered.extend(answers.keys().cloned());
+        }
+        let name = format!("{} {}", latest.student.name, latest.student.surname);
+        for (field, option) in assignment_type.claims(config, &latest.content).exclusive {
+            facts
+                .holders
+                .insert((field, option), (latest.student.user_id, name.clone()));
+        }
+    }
+    Ok(facts)
+}
+
+/// The caller's result of a quiz: their latest attempt, the server's score of each question and the
+/// published grade. Only once a score is published; before that, and for any other type, there is
+/// nothing to show (ADR-0050 point 8).
+pub async fn quiz_result(
+    conn: &mut PgConnection,
+    actor: &Actor,
+    assignment_id: Uuid,
+) -> Result<QuizResult, AssessmentError> {
+    let opened = open(conn, actor, assignment_id).await?;
+    policy::authorize(actor, Action::ViewOwnGrades(opened.access))?;
+    if opened.assignment_type != BuiltinType::Quiz {
+        return Err(AssessmentError::NothingToShow);
+    }
+    let assignment = lock(conn, assignment_id).await?;
+    let published = gradebook::published_grade(conn, assignment_id, actor.user_id())
+        .await?
+        .ok_or(AssessmentError::NothingToShow)?;
+    let score = published.score.ok_or(AssessmentError::NothingToShow)?;
+    let (attempt, scores) = repo::latest_with_scores(conn, assignment_id, actor.user_id())
+        .await?
+        .ok_or(AssessmentError::NothingToShow)?;
+    let questions = content::quiz_result_questions(&assignment.config, &attempt.content, &scores)
+        .ok_or(AssessmentError::NothingToShow)?;
+    Ok(QuizResult {
+        score,
+        max_points: assignment.max_points.value(),
+        published_at: published.published_at,
+        feedback: published.feedback,
+        attempt: attempt.attempt,
+        questions,
+    })
+}
+
+/// The responses to a form: every current student's latest attempt, and who has none. Staff and
+/// admins (ADR-0051 point 7).
+pub async fn responses(
+    conn: &mut PgConnection,
+    actor: &Actor,
+    assignment_id: Uuid,
+) -> Result<Responses, AssessmentError> {
+    let opened = open(conn, actor, assignment_id).await?;
+    policy::authorize(actor, Action::ViewSubmissions(opened.access))?;
+    if opened.assignment_type != BuiltinType::Form {
+        return Err(AssessmentError::NothingToShow);
+    }
+    let students = repo::current_students(conn, opened.course_id).await?;
+    let mut latest = repo::latest_contents(conn, assignment_id).await?;
+    let mut rows = Vec::new();
+    let mut missing = Vec::new();
+    for student in &students {
+        match latest
+            .iter()
+            .position(|row| row.student.user_id == student.user_id)
+        {
+            Some(index) => rows.push(latest.swap_remove(index)),
+            None => missing.push(student.clone()),
+        }
+    }
+    Ok(Responses {
+        total_students: i64::try_from(students.len()).unwrap_or(i64::MAX),
+        missing,
+        rows,
+    })
 }
 
 /// The current students of the course with their latest submitted attempt, in roster order.
@@ -282,7 +454,15 @@ pub async fn student_attempts(
         i64::from(page.limit) + 1,
     )
     .await?;
-    Ok(Page::from_rows(rows, page.limit, |attempt| attempt.id))
+    let mut page = Page::from_rows(rows, page.limit, |attempt| attempt.id);
+    // The scores of a quiz are staff's: the student's own reads never fill them (ADR-0050).
+    let ids: Vec<Uuid> = page.items.iter().map(|attempt| attempt.id).collect();
+    for (id, scores) in repo::auto_scores_of(conn, &ids).await? {
+        if let Some(attempt) = page.items.iter_mut().find(|attempt| attempt.id == id) {
+            attempt.auto_scores = Some(scores);
+        }
+    }
+    Ok(page)
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -468,6 +648,7 @@ mod tests {
                 max_points: MaxPoints::parse("10").unwrap(),
                 is_bonus: false,
                 settings,
+                class_on: None,
             }),
         )
         .await

@@ -5,8 +5,10 @@ use sqlx::PgConnection;
 use uuid::Uuid;
 
 use super::model::{
-    Course, CourseGroupLink, CourseKind, Exclusion, MemberSource, Membership, RosterEntry,
+    Candidate, Course, CourseGroupLink, CourseKind, Exclusion, LinkedGroup, MemberSource,
+    Membership, Person, RosterEntry, TemplateSummary,
 };
+use crate::identity::Role;
 use crate::policy::{CourseRole, CourseStatus};
 
 /// A course together with the asking user's membership in it, if any.
@@ -42,28 +44,6 @@ impl From<RawCourseRow> for CourseRow {
             role: raw.member_role,
         }
     }
-}
-
-pub async fn insert_course(
-    conn: &mut PgConnection,
-    id: Uuid,
-    title: &str,
-    owner_id: Uuid,
-    term_id: Option<Uuid>,
-) -> Result<Course, sqlx::Error> {
-    sqlx::query_as!(
-        Course,
-        r#"INSERT INTO teaching.courses (id, title, owner_id, created_by, term_id)
-           VALUES ($1, $2, $3, $3, $4)
-           RETURNING id, kind AS "kind: CourseKind", title,
-                     status AS "status: CourseStatus", owner_id, term_id, created_at"#,
-        id,
-        title,
-        owner_id,
-        term_id
-    )
-    .fetch_one(conn)
-    .await
 }
 
 pub async fn set_published(
@@ -171,8 +151,8 @@ pub async fn lock_course(
 }
 
 /// Courses `user_id` owns or belongs to, after `after`, in id order, at most `limit`. A student
-/// membership only counts once the course is published, the same rule `policy` applies per
-/// course; it lives here too so a page is not emptied by rows the caller may not see.
+/// membership only counts once the course is published, and stays after it is archived, the same
+/// rule `policy` applies per course (ADR-0048); it lives here too so a page is not emptied by rows the caller may not see.
 ///
 /// It starts from the user's own rows (their places on rosters, the courses they own) and joins
 /// the course tables to those, so the cost follows the number of courses the user has, not the
@@ -193,7 +173,8 @@ pub async fn list_courses_of(
                  SELECT id FROM teaching.courses WHERE owner_id = $1) mine
            JOIN teaching.courses c ON c.id = mine.id
            LEFT JOIN teaching.effective_members m ON m.course_id = c.id AND m.user_id = $1
-           WHERE (c.status = 'published' OR c.owner_id = $1 OR m.role IN ('teacher', 'assistant'))
+           WHERE (c.status IN ('published', 'archived') OR c.owner_id = $1
+                  OR m.role IN ('teacher', 'assistant'))
              AND ($2::uuid IS NULL OR c.id > $2)
            ORDER BY c.id
            LIMIT $3"#,
@@ -308,6 +289,330 @@ pub async fn update_course(
         term_id
     )
     .fetch_one(conn)
+    .await
+}
+
+// ---------------------------------------------------------------------------------------------
+// Course info, lifecycle, templates, people and candidates (ADR-0048). The read models join the
+// tables of other modules; nothing here writes outside `teaching`.
+// ---------------------------------------------------------------------------------------------
+
+/// The part of the course header that `teaching` can read in one statement.
+pub struct InfoRow {
+    pub code: String,
+    pub description: String,
+    pub term_name: Option<String>,
+    pub owner_name: String,
+    pub owner_surname: String,
+    pub owner_email: String,
+    pub updated_at: DateTime<Utc>,
+    pub student_count: i64,
+    pub assistant_count: i64,
+    /// People off the roster who still have a value or an attempt in the course (ADR-0037).
+    pub former_count: i64,
+}
+
+pub async fn info_row(
+    conn: &mut PgConnection,
+    course_id: Uuid,
+) -> Result<Option<InfoRow>, sqlx::Error> {
+    sqlx::query_as!(
+        InfoRow,
+        r#"SELECT c.code, c.description, t.name AS "term_name?",
+                  u.name AS owner_name, u.surname AS owner_surname, u.email AS owner_email,
+                  c.updated_at,
+                  (SELECT count(*) FROM teaching.effective_members m
+                    WHERE m.course_id = c.id AND m.role = 'student') AS "student_count!",
+                  (SELECT count(*) FROM teaching.effective_members m
+                    WHERE m.course_id = c.id AND m.role = 'assistant') AS "assistant_count!",
+                  (SELECT count(*) FROM identity.users f WHERE f.id IN (
+                       SELECT g.student_id FROM gradebook.grades g
+                       JOIN content.items i ON i.id = g.assignment_id
+                       WHERE i.course_id = c.id
+                         AND (g.draft_score IS NOT NULL OR g.draft_feedback IS NOT NULL
+                              OR g.published_score IS NOT NULL OR g.published_feedback IS NOT NULL)
+                       UNION
+                       SELECT s.student_id FROM assessment.submissions s
+                       JOIN content.items i ON i.id = s.assignment_id
+                       WHERE i.course_id = c.id AND s.status = 'submitted')
+                     AND NOT EXISTS (SELECT 1 FROM teaching.effective_members m
+                                     WHERE m.course_id = c.id AND m.user_id = f.id))
+                      AS "former_count!"
+           FROM teaching.courses c
+           JOIN identity.users u ON u.id = c.owner_id
+           LEFT JOIN org.terms t ON t.id = c.term_id
+           WHERE c.id = $1"#,
+        course_id
+    )
+    .fetch_optional(conn)
+    .await
+}
+
+/// Each field is kept when `None`.
+pub async fn update_info(
+    conn: &mut PgConnection,
+    course_id: Uuid,
+    code: Option<&str>,
+    description: Option<&str>,
+) -> Result<(), sqlx::Error> {
+    sqlx::query!(
+        "UPDATE teaching.courses
+         SET code = COALESCE($2, code), description = COALESCE($3, description), updated_at = now()
+         WHERE id = $1",
+        course_id,
+        code,
+        description
+    )
+    .execute(conn)
+    .await?;
+    Ok(())
+}
+
+pub async fn set_status(
+    conn: &mut PgConnection,
+    course_id: Uuid,
+    status: CourseStatus,
+) -> Result<Course, sqlx::Error> {
+    sqlx::query_as!(
+        Course,
+        r#"UPDATE teaching.courses SET status = $2, updated_at = now()
+           WHERE id = $1
+           RETURNING id, kind AS "kind: CourseKind", title,
+                     status AS "status: CourseStatus", owner_id, term_id, created_at"#,
+        course_id,
+        status.as_str()
+    )
+    .fetch_one(conn)
+    .await
+}
+
+/// The memberships, links and exclusions go with the row (`ON DELETE CASCADE`), and so does the
+/// content tree. Returns how many rows were deleted.
+pub async fn delete_course(conn: &mut PgConnection, course_id: Uuid) -> Result<u64, sqlx::Error> {
+    let result = sqlx::query!("DELETE FROM teaching.courses WHERE id = $1", course_id)
+        .execute(conn)
+        .await?;
+    Ok(result.rows_affected())
+}
+
+/// The row of a course that is the copy of another one.
+pub struct CourseCopy<'a> {
+    pub id: Uuid,
+    pub kind: CourseKind,
+    pub title: &'a str,
+    pub owner_id: Uuid,
+    pub term_id: Option<Uuid>,
+    pub code: &'a str,
+    pub description: &'a str,
+}
+
+/// Inserts a course of `copy.kind` with a code and a description.
+pub async fn insert_copy(
+    conn: &mut PgConnection,
+    copy: CourseCopy<'_>,
+) -> Result<Course, sqlx::Error> {
+    sqlx::query_as!(
+        Course,
+        r#"INSERT INTO teaching.courses
+               (id, kind, title, owner_id, created_by, term_id, code, description)
+           VALUES ($1, $2, $3, $4, $4, $5, $6, $7)
+           RETURNING id, kind AS "kind: CourseKind", title,
+                     status AS "status: CourseStatus", owner_id, term_id, created_at"#,
+        copy.id,
+        copy.kind.as_str(),
+        copy.title,
+        copy.owner_id,
+        copy.term_id,
+        copy.code,
+        copy.description
+    )
+    .fetch_one(conn)
+    .await
+}
+
+/// The code and the description of a course, for its copy.
+pub async fn code_and_description(
+    conn: &mut PgConnection,
+    course_id: Uuid,
+) -> Result<(String, String), sqlx::Error> {
+    let row = sqlx::query!(
+        "SELECT code, description FROM teaching.courses WHERE id = $1",
+        course_id
+    )
+    .fetch_one(conn)
+    .await?;
+    Ok((row.code, row.description))
+}
+
+/// The templates the user owns or teaches, after `after`, in id order, at most `limit`.
+pub async fn list_templates(
+    conn: &mut PgConnection,
+    user_id: Uuid,
+    after: Option<Uuid>,
+    limit: i64,
+) -> Result<Vec<TemplateSummary>, sqlx::Error> {
+    let rows = sqlx::query!(
+        r#"SELECT c.id, c.title, c.status AS "status: CourseStatus", c.owner_id, c.term_id,
+                  c.created_at, c.updated_at,
+                  (SELECT count(*) FROM content.modules WHERE course_id = c.id) AS "sections!",
+                  (SELECT count(*) FROM content.items
+                    WHERE course_id = c.id AND kind = 'text') AS "lectures!",
+                  (SELECT count(*) FROM content.items
+                    WHERE course_id = c.id AND kind = 'assignment') AS "assignments!"
+           FROM teaching.courses c
+           WHERE c.kind = 'template'
+             AND (c.owner_id = $1
+                  OR EXISTS (SELECT 1 FROM teaching.memberships m
+                             WHERE m.course_id = c.id AND m.user_id = $1
+                               AND m.role IN ('teacher', 'assistant')))
+             AND ($2::uuid IS NULL OR c.id > $2)
+           ORDER BY c.id
+           LIMIT $3"#,
+        user_id,
+        after,
+        limit
+    )
+    .fetch_all(conn)
+    .await?;
+    Ok(rows
+        .into_iter()
+        .map(|row| TemplateSummary {
+            course: Course {
+                id: row.id,
+                kind: CourseKind::Template,
+                title: row.title,
+                status: row.status,
+                owner_id: row.owner_id,
+                term_id: row.term_id,
+                created_at: row.created_at,
+            },
+            sections: row.sections,
+            lectures: row.lectures,
+            assignments: row.assignments,
+            updated_at: row.updated_at,
+        })
+        .collect())
+}
+
+/// Everyone on the roster, staff first and then by surname, with the group a student comes from.
+/// Emails are selected only `with_emails`: a student's query never reads them (ADR-0048).
+pub async fn list_people(
+    conn: &mut PgConnection,
+    course_id: Uuid,
+    with_emails: bool,
+) -> Result<Vec<Person>, sqlx::Error> {
+    sqlx::query_as!(
+        Person,
+        r#"SELECT u.id AS user_id, u.name, u.surname,
+                  CASE WHEN $2 THEN u.email END AS "email?",
+                  m.role AS "role!: CourseRole", (u.id = c.owner_id) AS "is_owner!",
+                  m.source AS "source!: MemberSource",
+                  CASE WHEN m.source = 'group' THEN
+                      (SELECT string_agg(s.label, ', ' ORDER BY s.label) FROM (
+                           SELECT DISTINCT CASE WHEN sg.id IS NULL THEN g.name
+                                                ELSE g.name || ' / ' || sg.name END AS label
+                           FROM teaching.group_roster_links l
+                           JOIN teaching.course_groups cg ON cg.id = l.link_id
+                           JOIN org.groups g ON g.id = cg.group_id
+                           LEFT JOIN org.subgroups sg ON sg.id = cg.subgroup_id
+                           WHERE l.course_id = m.course_id AND l.user_id = m.user_id) s)
+                  END AS "group?",
+                  false AS "former!"
+           FROM teaching.effective_members m
+           JOIN teaching.courses c ON c.id = m.course_id
+           JOIN identity.users u ON u.id = m.user_id
+           WHERE m.course_id = $1
+           ORDER BY CASE m.role WHEN 'teacher' THEN 0 WHEN 'assistant' THEN 1 ELSE 2 END,
+                    u.surname, u.name, u.id"#,
+        course_id,
+        with_emails
+    )
+    .fetch_all(conn)
+    .await
+}
+
+/// People off the roster who still have a value or an attempt in the course (ADR-0037).
+pub async fn list_former(
+    conn: &mut PgConnection,
+    course_id: Uuid,
+) -> Result<Vec<Person>, sqlx::Error> {
+    sqlx::query_as!(
+        Person,
+        r#"SELECT u.id AS user_id, u.name, u.surname, u.email AS "email?",
+                  'student' AS "role!: CourseRole", false AS "is_owner!",
+                  'direct' AS "source!: MemberSource", NULL::text AS "group?",
+                  true AS "former!"
+           FROM identity.users u
+           WHERE u.id IN (
+                   SELECT g.student_id FROM gradebook.grades g
+                   JOIN content.items i ON i.id = g.assignment_id
+                   WHERE i.course_id = $1
+                     AND (g.draft_score IS NOT NULL OR g.draft_feedback IS NOT NULL
+                          OR g.published_score IS NOT NULL OR g.published_feedback IS NOT NULL)
+                   UNION
+                   SELECT s.student_id FROM assessment.submissions s
+                   JOIN content.items i ON i.id = s.assignment_id
+                   WHERE i.course_id = $1 AND s.status = 'submitted')
+             AND NOT EXISTS (SELECT 1 FROM teaching.effective_members m
+                             WHERE m.course_id = $1 AND m.user_id = u.id)
+           ORDER BY u.surname, u.name, u.id"#,
+        course_id
+    )
+    .fetch_all(conn)
+    .await
+}
+
+/// The links of a course with the students each one brings: people on the roster through a group
+/// (not excluded, not a direct member).
+pub async fn list_link_summaries(
+    conn: &mut PgConnection,
+    course_id: Uuid,
+) -> Result<Vec<LinkedGroup>, sqlx::Error> {
+    sqlx::query_as!(
+        LinkedGroup,
+        r#"SELECT cg.id AS link_id, g.name AS group_name, sg.name AS "subgroup_name?",
+                  (SELECT count(*) FROM teaching.group_roster_links l
+                   JOIN teaching.effective_members m
+                     ON m.course_id = l.course_id AND m.user_id = l.user_id AND m.source = 'group'
+                   WHERE l.link_id = cg.id) AS "student_count!",
+                  cg.created_at AS linked_at
+           FROM teaching.course_groups cg
+           JOIN org.groups g ON g.id = cg.group_id
+           LEFT JOIN org.subgroups sg ON sg.id = cg.subgroup_id
+           WHERE cg.course_id = $1
+           ORDER BY g.name, sg.name NULLS FIRST, cg.id"#,
+        course_id
+    )
+    .fetch_all(conn)
+    .await
+}
+
+/// Active users who are not on the course, whose name, surname, "name surname" or email contains
+/// the already escaped `pattern` (`%…%`). Admins cannot hold a course role, so they are left out.
+pub async fn search_candidates(
+    conn: &mut PgConnection,
+    course_id: Uuid,
+    pattern: &str,
+    limit: i64,
+) -> Result<Vec<Candidate>, sqlx::Error> {
+    sqlx::query_as!(
+        Candidate,
+        r#"SELECT u.id AS user_id, u.name, u.surname, u.email, u.role AS "role: Role"
+           FROM identity.users u
+           WHERE u.status = 'active' AND u.role <> 'admin'
+             AND NOT EXISTS (SELECT 1 FROM teaching.effective_members m
+                             WHERE m.course_id = $1 AND m.user_id = u.id)
+             AND u.id <> (SELECT owner_id FROM teaching.courses WHERE id = $1)
+             AND (u.name ILIKE $2 ESCAPE '\' OR u.surname ILIKE $2 ESCAPE '\'
+                  OR u.email ILIKE $2 ESCAPE '\'
+                  OR (u.name || ' ' || u.surname) ILIKE $2 ESCAPE '\')
+           ORDER BY u.surname, u.name, u.id
+           LIMIT $3"#,
+        course_id,
+        pattern,
+        limit
+    )
+    .fetch_all(conn)
     .await
 }
 

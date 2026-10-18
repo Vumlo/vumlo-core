@@ -5,17 +5,13 @@ Delete the type, the hook branch and the handler when the server closes a gap.
 
 `web/openapi.json` was generated from the server crate (`/api/v1/openapi.json`) at the commit this was built on. `pnpm gen:api` rebuilds `src/lib/api/schema.d.ts` from it.
 
-Spec endpoints the UI uses as they are: auth, `/me`, `/me/sessions`, `/me/password`, `/me/courses`, courses and members, group links and options, the content tree, modules and items (create, patch, publish, reorder, delete), submissions and drafts, grades (save, publish), the gradebook, `my-grades`, admin users, groups, subgroups, terms, `/editor/profiles`.
-
-## Institution
-- **Screens:** navbar and sign-in (name), Course settings (grading scale), Admin, Institution.
-- **Missing:** an endpoint for the institution name, short name, accent, default language, time zone and grading scale. An admin endpoint to read the server-side settings (failed logins, session lifetime, largest document) and to save the editable ones. Today they live in `learnly.toml` only.
-- **Mocked:** `GET /institution` (any signed-in user, also before sign-in), `GET` and `PATCH /admin/institution`.
+Spec endpoints the UI uses as they are: `GET /institution`, `GET /admin/institution` (read-only; the settings live in `learnly.toml`, ADR-0044), auth, `/me`, `/me/sessions`, `/me/password`, `/me/courses`, courses and members, group links and options, the content tree, modules and items (create, patch, publish, reorder, delete), submissions and drafts, grades (save, publish), the gradebook, `my-grades`, admin users, groups, subgroups, terms, `/editor/profiles`.
 
 ## Sign-in extras
 - **Screens:** Sign in, Create an account, Confirm your email, Reset your password, Choose a new password, Google callback.
-- **Missing:** ADR-0017 plans all of it; the server has none yet. Self-registration with a password and a verification link (24 hours, single use), password reset by email, Google sign-in (allowed domain, `email_verified`). Registration and reset answer the same for every address, so a page cannot tell who has an account.
-- **Mocked:**
+- **Server:** done (ADR-0045 to ADR-0047). Registration and reset answer `202` with no body for every address; a password login on an unverified address is `403`; Google needs `[auth.google]` and the cookie `learnly_oauth`, which the browser keeps between start and callback.
+- **Still mocked, on purpose:** `pnpm dev:mock` and the Playwright suite (`e2e/`) run against the in-browser mock, and they cover these screens. Delete the handlers in `src/mocks/handlers/auth.ts`, `MockMailbox` and `useMockOutbox` when the suite runs against the real server. The mock differs from the server in its rules (it wants 10 characters, the server 12 and a strength score) and in the `hint` the mock puts in the callback URL.
+- **What the mock does:**
   - `POST /auth/register` (`name`, `surname`, `email`, `password`; 202; 422 for an address outside `northfield.edu`), `POST /auth/verify-email` (`token`; 410 when spent).
   - `POST /auth/password-reset` (`email`; 202), `POST /auth/password-reset/confirm` (`token`, `new_password`; 410 when spent).
   - `POST /auth/google/start` (`login_hint`) answers `{authorization_url}`; the page opens it. `POST /auth/google/callback` (`code`, `state`) opens the session. The mock skips Google's consent screen and signs in as the account named by `login_hint`.
@@ -29,33 +25,22 @@ Spec endpoints the UI uses as they are: auth, `/me`, `/me/sessions`, `/me/passwo
 
 ## New course
 - **Screens:** New course.
-- **Missing:** `POST /courses` takes only `title` and `term_id`. The page also sets `code` and `description` (see Course info), and a copy from a template takes no term. The page makes these as follow-up calls, and still opens the settings page if one of them fails.
-- **Mocked:** `PATCH /courses/{id}/info`, `POST /templates/{id}/courses`; the term of a copy is set with the real `PATCH /courses/{id}`.
+- **Missing:** `POST /courses` takes only `title` and `term_id`. The page also sets `code` and `description` with `PATCH /courses/{id}/info`, and a copy from a template can take a `term_id` now (`POST /templates/{id}/courses`). The page makes these as follow-up calls, and still opens the settings page if one of them fails.
 
 ## Language
 - **Screens:** every screen, Admin Institution (default language), Settings (this device).
 - **Missing:** nothing on the server. The institution default comes from the mocked `GET /institution`.
 - **Note:** ADR-0043 describes the catalogue. Every screen is translated. Text written by the server is not: the to-do lines on course cards (`GET /me/course-cards`), the notes in `GET /me/teaching`, grade history and audit lines, the facts in `GET /admin/users/{id}/facts`. They should become structured data (a kind and counts), so the client can word them.
 
-## Course info
-- **Screens:** the header of every course screen, Courses, Course settings.
-- **Missing on `Course`:** `code`, `description`, the term's name, the owner's name and email, student, former-student and assistant counts, the course total and number of graded items, `has_grades`, and the time of the last settings save.
-- **Mocked:** `GET /courses/{id}/info`, `PATCH /courses/{id}/info` (`code`, `description`). `PATCH /courses/{id}` is the real one for title and term.
+## Course screens (info, templates, archive and delete, people)
+- **Server:** done (ADR-0048). `GET`/`PATCH /courses/{id}/info`, `POST /courses/{id}/archive` and `/restore`, `DELETE /courses/{id}`, `POST /courses/{id}/template`, `POST /templates/{id}/courses`, `GET /me/templates`, `GET /courses/{id}/people`, `GET /courses/{id}/candidates?q=` are in `openapi.json`. An archived course is read-only (`409`) and still readable by its students.
+- **Differences the screens absorb:** the owner comes as `owner_name` and `owner_surname` (no "Dr."), `settings_saved_at` is `updated_at`, a linked group is `group_name` and `subgroup_name`, and a former student has no `left_on` date.
+- **Still mocked, on purpose:** the same endpoints in `src/mocks/handlers/core.ts`, with the server's shapes, for `pnpm dev:mock` and the Playwright suite. The mock does not make an archived course read-only.
 
 ## Course cards
 - **Screens:** Courses (student and teacher), Home (My courses).
 - **Missing:** one call that returns, per course of the caller: the course, code, term name and whether the term ended, owner name, the caller's role (owner, teacher, assistant, student), student and assistant counts; for a student the progress (submitted, total, graded) and the next deadline; for staff a to-do list (submissions to grade, draft grades not published, unpublished lectures, next deadline).
 - **Mocked:** `GET /me/course-cards`.
-
-## Templates
-- **Screens:** Teacher Courses (Templates), Course settings (Reuse next term).
-- **Missing:** counts of a template's content, creating a course from a template, making a template from a course. `Course.kind = template` exists, but nothing copies content (ADR-0005).
-- **Mocked:** `GET /me/templates`, `POST /templates/{id}/courses`, `POST /courses/{id}/template`.
-
-## Archive and delete
-- **Screens:** Course settings (Archive or delete).
-- **Missing:** `CourseStatus` has `archived`, but `UpdateCourseRequest` cannot set it, and there is no way to restore a course or to delete one.
-- **Mocked:** `POST /courses/{id}/archive`, `POST /courses/{id}/restore`, `DELETE /courses/{id}` (409 when the course has grades, as ADR-0021 and ADR-0030 describe for assignments).
 
 ## My work (assignments with my own progress)
 - **Screens:** Home (Due soon, Continue, New grades, month, Next 7 days), Calendar, Grades.
@@ -63,24 +48,16 @@ Spec endpoints the UI uses as they are: auth, `/me`, `/me/sessions`, `/me/passwo
 - **Mocked:** `GET /me/work`. Only published scores and feedback are in it (root AGENTS.md section 6).
 
 ## Class date of in-class work
-- **Screens:** Course content, Done in class, Calendar, Course content (teacher).
-- **Missing:** the date a `no_submission` assignment takes place. The server keeps `due_at` `null` for that type, so the design's "In class on Thursday 29 October" has no field.
-- **Mocked:** `class_on` in `GET /courses/{id}/item-meta` and in `PATCH /items/{id}`.
+- **Server:** done (ADR-0049). `class_on` is a day (`YYYY-MM-DD`) on `no_submission` assignments, in `PATCH /items/{id}` and `GET /courses/{id}/item-meta`; the hook turns it into noon of that day in the institution's zone.
+- **Still mocked, on purpose:** the same fields in `src/mocks/handlers/core.ts`.
 
 ## Item meta
-- **Screens:** Course content, the outline of every course screen, Course content (teacher).
-- **Missing:** read time of a lecture, the class date, for a student the status, score, draft time, publish time and attempts used per assignment, for staff the "edited" flag and per-assignment counts (submitted, to grade, draft grades).
-- **Mocked:** `GET /courses/{id}/item-meta`.
+- **Server:** done (ADR-0049). `GET /courses/{id}/item-meta` gives read time, class day, a student's status, score, draft and publish times and attempts used, and for staff the "edited" flag and per-assignment counts.
+- **Still mocked, on purpose:** `src/mocks/handlers/core.ts`, in the wire shape.
 
 ## Unpublished changes
-- **Screens:** Lecture editor, Course content (the "Edited" label), Teacher home (Unpublished content).
-- **Missing:** a published version next to the edited one. ADR-0010 says edits to published content are visible at once and there are no draft revisions in v1, so this contradicts it.
-- **Mocked:** `GET /items/{id}/revision`, `POST /items/{id}/revision/publish`. A student keeps seeing the previous body and title until the changes are published.
-
-## People of a course
-- **Screens:** Course, People (student and teacher).
-- **Missing:** names, emails and group labels. `Membership` carries ids only and teachers cannot read other users. Students must not receive other people's emails. A way to find someone to add: teachers cannot list users, only admins can.
-- **Mocked:** `GET /courses/{id}/people`, `GET /courses/{id}/candidates?q=`.
+- **Server:** done (ADR-0049, supersedes the last decision of ADR-0010). `GET /items/{id}/revision` and `POST /items/{id}/revision/publish`; a student keeps seeing the published title and body until the changes are published.
+- **Still mocked, on purpose:** the same endpoints for `pnpm dev:mock`.
 
 ## Teaching overview
 - **Screens:** Teacher home, Grading, Calendar (teacher).
@@ -99,9 +76,8 @@ Spec endpoints the UI uses as they are: auth, `/me`, `/me/sessions`, `/me/passwo
 - **Mocked:** `GET /assignments/{id}/result`, `GET /assignments/{id}/responses`, `config` in `/items/{id}`, auto-scoring on submit.
 
 ## Grade history
-- **Screens:** Gradebook (drawer).
-- **Missing:** the recorded changes of one grade ("Draft set to 22.50, today 14:02").
-- **Mocked:** `GET /assignments/{id}/grades/{student_id}/history`.
+- **Server:** done (ADR-0049). `GET /assignments/{id}/grades/{student_id}/history` returns structured entries (`action`, `score`, `feedback`, `actor`), newest first, cursor-paginated. The drawer words them with the `gb.h*` messages.
+- **Still mocked, on purpose:** the same endpoint in `src/mocks/handlers/work.ts`.
 
 ## Gradebook cells
 - **Screens:** Gradebook.
@@ -128,10 +104,9 @@ Spec endpoints the UI uses as they are: auth, `/me`, `/me/sessions`, `/me/passwo
 - **Missing:** a read endpoint for `events.audit_log` with filters (person, kind of change, period).
 - **Mocked:** `GET /admin/audit?q=&kind=&days=`. Changes made through the mock add entries.
 
-## Admin: accent colour and logo
+## Admin: logo
 - **Screens:** Admin, Institution.
-- **Missing:** storing an accent colour and a logo; the design does not say how a chosen accent gets a dark-theme match.
-- **Mocked:** the choice is saved in the mock institution and shown in the preview only. The site keeps its tested accent. Upload is disabled.
+- **Missing:** storing and serving a logo; it needs the `files` module. The accent is set in `learnly.toml` and shown in the preview only; the site keeps its tested accent because the design does not say how a chosen accent gets a dark-theme match.
 
 ## Not API gaps, kept in the browser
 Theme, language, and the layout of the home widgets are saved in `localStorage`, as the design says.

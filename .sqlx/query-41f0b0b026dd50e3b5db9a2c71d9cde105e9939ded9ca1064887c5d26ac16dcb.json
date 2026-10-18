@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT a.item_id FROM content.assignments a\n         JOIN content.items i ON i.id = a.item_id\n         WHERE i.course_id = $1\n         ORDER BY a.item_id\n         FOR UPDATE OF a",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "item_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "content.assignments",
+            "name": "item_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "41f0b0b026dd50e3b5db9a2c71d9cde105e9939ded9ca1064887c5d26ac16dcb"
+}

@@ -17,12 +17,20 @@ services:
       timeout: 3s
       retries: 30
 
+  # Dev only (ADR-0045): takes the mail the API sends. The inbox is on http://127.0.0.1:8025.
+  mailpit:
+    image: axllent/mailpit
+    ports:
+      - "127.0.0.1:8025:8025"
+
   # The API. The web app runs outside Docker and reaches it on http://127.0.0.1:8080.
   server:
     build: .
     depends_on:
       postgres:
         condition: service_healthy
+      mailpit:
+        condition: service_started
     command: ["sh", "-c", "learnly-server migrate && exec learnly-server serve"]
     environment:
       LEARNLY__SERVER__BIND_ADDR: "0.0.0.0:8080"
@@ -35,6 +43,13 @@ services:
       LEARNLY__INSTITUTION__NAME: ${LEARNLY_INSTITUTION_NAME:-Example University}
       # Recorded in the database on first start and cannot be changed later (ADR-0031).
       LEARNLY__INSTITUTION__MODE: ${LEARNLY_INSTITUTION_MODE:-university}
+      # Self-registration and password reset (ADR-0045, ADR-0046). Anyone at these domains may sign up.
+      LEARNLY__AUTH__ALLOWED_DOMAINS: ${LEARNLY_ALLOWED_DOMAINS:-example.edu}
+      LEARNLY__MAIL__FROM: Learnly <no-reply@example.edu>
+      LEARNLY__MAIL__TRANSPORT__KIND: smtp
+      LEARNLY__MAIL__TRANSPORT__HOST: mailpit
+      LEARNLY__MAIL__TRANSPORT__PORT: "1025"
+      LEARNLY__MAIL__TRANSPORT__TLS: none
     ports:
       - "127.0.0.1:8080:8080"
 

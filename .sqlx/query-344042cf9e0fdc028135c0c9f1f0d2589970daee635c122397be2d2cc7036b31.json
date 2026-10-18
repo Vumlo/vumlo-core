@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE content.items\n             SET status = 'published', published_title = title, published_body = body,\n                 last_published_at = now()\n             WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "344042cf9e0fdc028135c0c9f1f0d2589970daee635c122397be2d2cc7036b31"
+}

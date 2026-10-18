@@ -1,0 +1,30 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO gradebook.grades (assignment_id, student_id, draft_score, draft_updated_by)\n           VALUES ($1, $2, $3, NULL)\n           ON CONFLICT (assignment_id, student_id) DO UPDATE\n           SET draft_score = EXCLUDED.draft_score,\n               draft_updated_by = NULL,\n               draft_updated_at = now()\n           RETURNING draft_feedback",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "draft_feedback",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "gradebook.grades",
+            "name": "draft_feedback"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Numeric"
+      ]
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "57926708f4a514e6bbbba1e1e3883630dd0c5fa77de8f489531861f9b7f065d5"
+}

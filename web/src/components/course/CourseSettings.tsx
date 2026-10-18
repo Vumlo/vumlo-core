@@ -8,7 +8,7 @@ import { Dialog } from "@/components/Dialog";
 import { Icon } from "@/components/Icon";
 import { useInstitution } from "@/lib/api/hooks/institution";
 import { useArchiveCourse, useContentTree, useCourse, useCourseInfo, useCoursePeople, useDeleteCourse, useMakeTemplate, useTerms, useTransferOwner, useUnlinkGroup, useUpdateCourse, useUpdateCourseInfo } from "@/lib/api/hooks/courses";
-import { allItems, isAssignment } from "@/lib/course";
+import { allItems, isAssignment, linkedGroupName, ownerName } from "@/lib/course";
 import { dayLabel, dayLong, initials, plural } from "@/lib/format";
 import { CourseHeader } from "./CourseHeader";
 import { LinkGroup } from "./People";
@@ -113,7 +113,7 @@ export function CourseSettings({ courseId }: { courseId: string }) {
             </div>
             <div className="row" style={{ gap: 14, marginTop: 18, flexWrap: "wrap" }}>
               <button type="button" className="btn btn-primary" disabled={!dirty || updateCourse.pending || updateInfo.pending} onClick={save}>{t("cs.save")}</button>
-              <span role="status" className="muted" style={{ fontSize: 14 }}>{saved ? t("cs.saved") : i.settings_saved_at ? t("cs.lastSaved", { day: dayLabel(i.settings_saved_at) }) : ""}</span>
+              <span role="status" className="muted" style={{ fontSize: 14 }}>{saved ? t("cs.saved") : t("cs.lastSaved", { day: dayLabel(i.updated_at) })}</span>
             </div>
           </section>
 
@@ -121,7 +121,7 @@ export function CourseSettings({ courseId }: { courseId: string }) {
             <h2 id="grading-h">{t("cs.grading")}</h2>
             <p className={s.lead}>{t("cs.gradingLead")}</p>
             <dl className={s.dl}>
-              <dt>{t("cs.scale")}</dt><dd>{institution.data?.grading_scale ?? "…"}</dd>
+              <dt>{t("cs.scale")}</dt><dd>{institution.data ? t(`ai.scale.${institution.data.grading_scale}`) : "…"}</dd>
               <dt>{t("cs.total")}</dt><dd>{t("cs.totalValue", { points: i.total_points, items: plural(i.graded_items, "graded item") })}</dd>
               <dt>{t("cs.seen")}</dt><dd>{t("cs.seenValue")}</dd>
             </dl>
@@ -136,7 +136,7 @@ export function CourseSettings({ courseId }: { courseId: string }) {
             <ul className={s.list}>
               {groups.map((g) => (
                 <li key={g.link_id} className={s.li}>
-                  <span className="grow"><span style={{ display: "block", fontWeight: 500 }}>{g.name}</span><span className="muted" style={{ display: "block", fontSize: 13 }}>{plural(g.student_count, "student")}, {t("people.linkedOn", { day: dayLong(g.linked_on) })}</span></span>
+                  <span className="grow"><span style={{ display: "block", fontWeight: 500 }}>{linkedGroupName(g)}</span><span className="muted" style={{ display: "block", fontSize: 13 }}>{plural(g.student_count, "student")}, {t("people.linkedOn", { day: dayLong(g.linked_at) })}</span></span>
                   <button type="button" className="btn btn-quiet" style={{ color: "var(--danger)" }} onClick={() => void unlink.run(g.link_id)}>{t("people.unlink")}</button>
                 </li>
               ))}
@@ -150,7 +150,7 @@ export function CourseSettings({ courseId }: { courseId: string }) {
             {owner && (
               <div className={s.owner}>
                 <span aria-hidden="true" className={s.avatar}>{initials(owner.name, owner.surname)}</span>
-                <span className="grow"><span style={{ display: "block", fontWeight: 500 }}>{i.owner_name}</span><span className="muted" style={{ display: "block", fontSize: 13 }}>{t("cs.ownerSince", { day: dayLong(c.created_at) })}</span></span>
+                <span className="grow"><span style={{ display: "block", fontWeight: 500 }}>{ownerName(i)}</span><span className="muted" style={{ display: "block", fontSize: 13 }}>{t("cs.ownerSince", { day: dayLong(c.created_at) })}</span></span>
                 <button type="button" className="btn btn-outline" onClick={() => { setNewOwner(""); transfer.reset(); setDialog("owner"); }}>{t("cs.transfer")}</button>
               </div>
             )}

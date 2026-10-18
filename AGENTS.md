@@ -78,6 +78,12 @@ Modules: `identity`, `org`, `teaching`, `content`, `assessment`, `gradebook`, `f
   `my-grades`, served by one repo function that selects `published_*` only.
 - Students never see items unless course, module and item are published and `publish_at <= now()`.
 - Staff never see submissions with `status = 'draft'`.
+- A student never receives the answer key of a `quiz`: not in `config` (`correct`, `answer`, `tolerance`,
+  `accepted`, `explanation`, `partial_credit`, `grading_notes` are removed by `student_config`), and not
+  in their own attempts, where `auto_scores` is staff-only. The key and the explanations reach a
+  student only through `GET /assignments/{id}/result`, after their grade is published and only if
+  `show_correct` is on (ADR-0050).
+- A student sees who holds an exclusive option of a `form` only as `taken`, never by name (ADR-0051).
 
 ## 7. Events
 

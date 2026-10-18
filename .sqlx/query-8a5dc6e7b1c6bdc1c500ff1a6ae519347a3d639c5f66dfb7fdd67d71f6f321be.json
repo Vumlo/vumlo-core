@@ -1,0 +1,99 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT u.id AS user_id, u.name, u.surname, u.email AS \"email?\",\n                  'student' AS \"role!: CourseRole\", false AS \"is_owner!\",\n                  'direct' AS \"source!: MemberSource\", NULL::text AS \"group?\",\n                  true AS \"former!\"\n           FROM identity.users u\n           WHERE u.id IN (\n                   SELECT g.student_id FROM gradebook.grades g\n                   JOIN content.items i ON i.id = g.assignment_id\n                   WHERE i.course_id = $1\n                     AND (g.draft_score IS NOT NULL OR g.draft_feedback IS NOT NULL\n                          OR g.published_score IS NOT NULL OR g.published_feedback IS NOT NULL)\n                   UNION\n                   SELECT s.student_id FROM assessment.submissions s\n                   JOIN content.items i ON i.id = s.assignment_id\n                   WHERE i.course_id = $1 AND s.status = 'submitted')\n             AND NOT EXISTS (SELECT 1 FROM teaching.effective_members m\n                             WHERE m.course_id = $1 AND m.user_id = u.id)\n           ORDER BY u.surname, u.name, u.id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "user_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "identity.users",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "identity.users",
+            "name": "name"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "surname",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "identity.users",
+            "name": "surname"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "email?",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "identity.users",
+            "name": "email"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "role!: CourseRole",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 5,
+        "name": "is_owner!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 6,
+        "name": "source!: MemberSource",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 7,
+        "name": "group?",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 8,
+        "name": "former!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      null,
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "8a5dc6e7b1c6bdc1c500ff1a6ae519347a3d639c5f66dfb7fdd67d71f6f321be"
+}

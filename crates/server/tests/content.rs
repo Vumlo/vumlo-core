@@ -1184,12 +1184,18 @@ async fn an_assistant_runs_the_whole_tree() {
 }
 
 #[tokio::test]
-async fn content_of_an_archived_course_is_editable_by_staff() {
+async fn content_of_an_archived_course_is_read_only_and_still_readable_by_students() {
     db_test(async |pool| {
-        // ManageContent ignores the course status, so archived content stays editable; archiving
-        // gets its own ADR. This pins the behavior so a later change is deliberate.
+        // ADR-0048: an archived course takes no write, from anyone, and its students keep reading.
         let w = world(pool).await;
         let module = module(&w, "M", None).await;
+        post(
+            &w.http,
+            &w.owner.token,
+            &format!("/modules/{module}/publish"),
+            json!({"cascade": true}),
+        )
+        .await;
         sqlx::query!(
             "UPDATE teaching.courses SET status = 'archived' WHERE id = $1",
             w.course
@@ -1197,20 +1203,39 @@ async fn content_of_an_archived_course_is_editable_by_staff() {
         .execute(&w.pool)
         .await
         .unwrap();
-        ok(&patch(
+
+        let refused = patch(
             &w.http,
             &w.owner.token,
             &format!("/modules/{module}"),
             json!({"title": "Edited"}),
         )
-        .await);
-        get(
+        .await;
+        assert_eq!(
+            refused.problem(409).detail.as_deref(),
+            Some("the course is archived")
+        );
+        post(
             &w.http,
-            &w.student.token,
-            &format!("/courses/{}/content", w.course),
+            &w.owner.token,
+            &format!("/courses/{}/modules", w.course),
+            json!({"title": "New"}),
         )
         .await
-        .problem(404);
+        .problem(409);
+        post(
+            &w.http,
+            &w.owner.token,
+            &format!("/modules/{module}/publish"),
+            json!({"cascade": true}),
+        )
+        .await
+        .problem(409);
+        // Staff and students both read it.
+        for token in [&w.owner.token, &w.student.token] {
+            let seen = tree(&w, token).await;
+            assert_eq!(top(&seen, "M")["status"], "published");
+        }
     })
     .await;
 }
@@ -2381,7 +2406,7 @@ async fn unknown_types_and_config_fields_are_422() {
         let with =
             |assignment: Value| json!({"kind": "assignment", "title": "T", "assignment": assignment});
 
-        for bad in ["form", "", "Text", "No_Submission", "quiz-xyz"] {
+        for bad in ["file", "", "Text", "No_Submission", "quiz-xyz"] {
             let response = post(
                 &w.http,
                 &w.owner.token,
@@ -2451,7 +2476,7 @@ async fn a_no_submission_assignment_is_created_like_a_text_one() {
         assert_eq!(oral["status"], "draft");
         assert_eq!(
             oral["assignment"],
-            json!({"type": "no_submission", "config": {}, "max_points": "12.00", "is_bonus": false, "due_at": null, "on_deadline": null, "accept_late": null, "late_until": null, "max_attempts": null})
+            json!({"type": "no_submission", "config": {}, "max_points": "12.00", "is_bonus": false, "due_at": null, "on_deadline": null, "accept_late": null, "late_until": null, "max_attempts": null, "class_on": null})
         );
         let fetched = item_json(&w, id_of(&oral)).await;
         assert_eq!(fetched["assignment"], oral["assignment"]);
@@ -2678,7 +2703,7 @@ async fn an_assignment_carries_its_part_and_a_text_item_none() {
         assert_eq!(essay["kind"], "assignment");
         assert_eq!(essay["status"], "draft");
         assert_eq!(essay["body"], doc(json!([paragraph("i", "Write")])));
-        let expected = json!({"type": "text", "config": {}, "max_points": "20.00", "is_bonus": false, "due_at": null, "on_deadline": null, "accept_late": null, "late_until": null, "max_attempts": null});
+        let expected = json!({"type": "text", "config": {}, "max_points": "20.00", "is_bonus": false, "due_at": null, "on_deadline": null, "accept_late": null, "late_until": null, "max_attempts": null, "class_on": null});
         assert_eq!(essay["assignment"], expected);
 
         let fetched = item_json(&w, id_of(&essay)).await;
@@ -2717,7 +2742,7 @@ async fn patch_changes_assignment_fields_and_refuses_them_for_a_text_item() {
         assert_eq!(patched["title"], "Renamed");
         assert_eq!(
             patched["assignment"],
-            json!({"type": "text", "config": {}, "max_points": "7.50", "is_bonus": true, "due_at": null, "on_deadline": null, "accept_late": null, "late_until": null, "max_attempts": null})
+            json!({"type": "text", "config": {}, "max_points": "7.50", "is_bonus": true, "due_at": null, "on_deadline": null, "accept_late": null, "late_until": null, "max_attempts": null, "class_on": null})
         );
         // A title-only patch leaves the assignment alone.
         let renamed = ok(&patch_item(&w, essay, json!({"title": "Again"})).await);
@@ -2764,7 +2789,7 @@ async fn students_reach_an_assignment_only_once_it_is_released_on_every_level() 
     db_test(async |pool| {
         let w = world(pool).await;
         let cases = build_cases_of(&w, true).await;
-        let part = json!({"type": "text", "config": {}, "max_points": "5.00", "is_bonus": false, "due_at": null, "on_deadline": null, "accept_late": null, "late_until": null, "max_attempts": null});
+        let part = json!({"type": "text", "config": {}, "max_points": "5.00", "is_bonus": false, "due_at": null, "on_deadline": null, "accept_late": null, "late_until": null, "max_attempts": null, "class_on": null});
 
         for (why, item) in &cases.hidden {
             let response = get(&w.http, &w.student.token, &format!("/items/{item}")).await;

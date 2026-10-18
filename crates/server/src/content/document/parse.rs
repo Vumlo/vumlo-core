@@ -523,7 +523,7 @@ fn has_control_character(text: &str) -> bool {
 }
 
 /// http or https, something after the scheme, no whitespace or control characters.
-fn valid_href(href: &str) -> bool {
+pub(crate) fn valid_href(href: &str) -> bool {
     if href.chars().count() > MAX_HREF_CHARS
         || href.chars().any(|c| c.is_whitespace() || c.is_control())
     {

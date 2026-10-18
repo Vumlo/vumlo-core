@@ -53,6 +53,11 @@ impl CourseAccess {
         self.is_owner || matches!(self.role, Some(CourseRole::Teacher | CourseRole::Assistant))
     }
 
+    /// A student of the course: on the roster as a student, whatever their institution role.
+    pub fn is_student(self) -> bool {
+        self.role == Some(CourseRole::Student)
+    }
+
     /// Owner or teacher: the root actions of ADR-0004 that assistants may not do.
     fn is_owner_or_teacher(self) -> bool {
         self.is_owner || self.role == Some(CourseRole::Teacher)
@@ -80,25 +85,42 @@ impl Release {
 pub enum Action {
     /// Read or change one's own profile, password and sessions; log out.
     ManageOwnAccount,
+    /// Archive a course and restore it (ADR-0048). A root action: the owner, a course teacher and
+    /// admins (ADR-0004). Ignores the status: it is how a course leaves `archived`.
+    ArchiveCourse(CourseAccess),
+    /// Write content: create, change, publish, reorder and delete modules and items (ADR-0004).
+    /// Staff and admins. [`Action::ManageContent`] is its reading half.
+    EditContent(CourseAccess),
+    /// Restore an exclusion (ADR-0033). The rule of [`Action::ManageRoster`], which is the reading
+    /// half.
+    ChangeRoster(CourseAccess),
+    /// Link and unlink a group (ADR-0040). The rule of [`Action::LinkGroups`], which is the reading
+    /// half.
+    ChangeGroupLinks(CourseAccess),
     /// Create, list, change, disable and reset users, institution-wide.
     ManageUsers,
+    /// Read the institution settings an admin sees, including the mode and the allowed domains
+    /// (ADR-0044). The public profile needs no action: it needs no session.
+    ViewInstitutionSettings,
     /// Create a course; the creator becomes its owner.
     CreateCourse,
     /// List the courses one belongs to. Which ones is decided per course by `ViewCourse`.
     ViewOwnCourses,
-    /// Read a course and its roster. A student sees it only once it is published.
+    /// Read a course and its roster. A student sees it once it is published, and still when it is
+    /// archived (ADR-0048).
     ViewCourse(CourseAccess),
     /// Move a course from draft to published (ADR-0019).
     PublishCourse(CourseAccess),
-    /// Add, change or remove a member who holds (or will hold) `role`. Ignores the course
-    /// status, so students can be enrolled in a draft.
+    /// Add, change or remove a member who holds (or will hold) `role`. Students can be enrolled in
+    /// a draft; an archived course takes no change (ADR-0048).
     ManageMembership {
         access: CourseAccess,
         role: CourseRole,
     },
     DeleteCourse(CourseAccess),
     TransferOwnership(CourseAccess),
-    /// View drafts, edit and publish content (ADR-0004). Ignores the course status.
+    /// View the drafts of a course's content (ADR-0004). Reading only, in every status; writing is
+    /// [`Action::EditContent`].
     ManageContent(CourseAccess),
     /// Read one module, sub-module or item (ADR-0010, ADR-0020). Staff and admins see drafts; a
     /// student sees it only if the course and every row on the path to it are open at `at`.
@@ -115,14 +137,14 @@ pub enum Action {
     },
     /// Read the profiles the document editor enforces (ADR-0025), to build its toolbar.
     ViewEditorProfiles,
-    /// Save a draft grade (ADR-0028). Staff and admins; ignores the course status.
+    /// Save a draft grade (ADR-0028). Staff and admins; not in an archived course.
     GradeAssignment(CourseAccess),
-    /// Copy draft grades to published (ADR-0028). Staff and admins; ignores the course status.
+    /// Copy draft grades to published (ADR-0028). Staff and admins; not in an archived course.
     PublishGrades(CourseAccess),
     /// Read the staff gradebook of a course, with every draft value (ADR-0028).
     ViewGradebook(CourseAccess),
-    /// Read one's own published grades: only a student of a published course (ADR-0028). Staff
-    /// and admins use the gradebook instead.
+    /// Read one's own published grades: only a student of a published or archived course
+    /// (ADR-0028, ADR-0048). Staff and admins use the gradebook instead.
     ViewOwnGrades(CourseAccess),
     /// Read one's own published grades in a course one is no longer on the roster of (ADR-0037).
     /// The caller found published grades of the actor in that course; without any there is
@@ -130,22 +152,24 @@ pub enum Action {
     ViewFormerGrades {
         has_rows: bool,
     },
-    /// Save, discard and submit one's own work (ADR-0035): only a student of a published course.
-    /// Whether the course lets the student see the assignment is `ViewContent`'s business.
+    /// Save, discard and submit one's own work (ADR-0035): only a student of a published course
+    /// (of an archived one the answer is `Archived`). Whether the course lets the student see the
+    /// assignment is `ViewContent`'s business.
     SubmitWork(CourseAccess),
-    /// Read one's own draft and attempts (ADR-0035): only a student of a published course.
+    /// Read one's own draft and attempts (ADR-0035): only a student of a published or archived course.
     ViewOwnSubmission(CourseAccess),
     /// Read the submitted attempts of a course's students (ADR-0035). Staff and admins, any
     /// course status. Drafts are never read through this: the queries do not select them.
     ViewSubmissions(CourseAccess),
-    /// List the group links, list and restore exclusions (ADR-0033). The rights of the matrix row
-    /// "Enroll/remove students". Linking itself is [`Action::LinkGroups`]. Ignores the status.
+    /// List the group links and the exclusions (ADR-0033). The rights of the matrix row "Enroll/remove
+    /// students". Reading only, in every status; writing is [`Action::ChangeRoster`].
     ManageRoster(CourseAccess),
-    /// Link and unlink groups of the institution to a course and read the groups it can be linked
-    /// to (ADR-0040). The owner, a course teacher and admins, not an assistant: a linked group puts
-    /// its students on the roster, and the roster shows their names. Ignores the status.
+    /// Read the groups a course can be linked to (ADR-0040). The owner, a course teacher and
+    /// admins, not an assistant: a linked group puts its students on the roster, and the roster
+    /// shows their names. Reading only; writing is [`Action::ChangeGroupLinks`].
     LinkGroups(CourseAccess),
-    /// Change a course's title and term (ADR-0033). Not a root action. Ignores the status.
+    /// Change a course's title, term, code and description (ADR-0033, ADR-0048). Not a root action;
+    /// not in an archived course.
     EditCourse(CourseAccess),
     /// Create, change and delete terms (ADR-0032).
     ManageTerms,
@@ -163,6 +187,10 @@ impl Action {
     fn for_actor(self, actor: &Actor) -> Self {
         let mine = |access: CourseAccess| access.for_actor(actor);
         match self {
+            Self::ArchiveCourse(access) => Self::ArchiveCourse(mine(access)),
+            Self::EditContent(access) => Self::EditContent(mine(access)),
+            Self::ChangeRoster(access) => Self::ChangeRoster(mine(access)),
+            Self::ChangeGroupLinks(access) => Self::ChangeGroupLinks(mine(access)),
             Self::ViewCourse(access) => Self::ViewCourse(mine(access)),
             Self::PublishCourse(access) => Self::PublishCourse(mine(access)),
             Self::ManageMembership { access, role } => Self::ManageMembership {
@@ -197,6 +225,7 @@ impl Action {
             Self::EditCourse(access) => Self::EditCourse(mine(access)),
             Self::ManageOwnAccount
             | Self::ManageUsers
+            | Self::ViewInstitutionSettings
             | Self::CreateCourse
             | Self::ViewOwnCourses
             | Self::ViewEditorProfiles
@@ -206,6 +235,53 @@ impl Action {
             | Self::ManageGroups
             | Self::ViewGroups => self,
         }
+    }
+
+    /// The course an action writes to, for the actions that a closed (archived) course refuses
+    /// (ADR-0048). `None` for reading, and for the root actions that still work on an archived
+    /// course: restoring, deleting and handing it over.
+    fn written_course(self) -> Option<CourseAccess> {
+        match self {
+            Self::ManageMembership { access, .. }
+            | Self::EditCourse(access)
+            | Self::EditContent(access)
+            | Self::ChangeRoster(access)
+            | Self::ChangeGroupLinks(access)
+            | Self::GradeAssignment(access)
+            | Self::PublishGrades(access)
+            | Self::SubmitWork(access) => Some(access),
+            Self::ManageOwnAccount
+            | Self::ManageUsers
+            | Self::ViewInstitutionSettings
+            | Self::CreateCourse
+            | Self::ViewOwnCourses
+            | Self::ViewCourse(_)
+            | Self::PublishCourse(_)
+            | Self::ArchiveCourse(_)
+            | Self::DeleteCourse(_)
+            | Self::TransferOwnership(_)
+            | Self::ManageContent(_)
+            | Self::ViewContent { .. }
+            | Self::ViewEditorProfiles
+            | Self::ViewGradebook(_)
+            | Self::ViewOwnGrades(_)
+            | Self::ViewFormerGrades { .. }
+            | Self::ViewOwnSubmission(_)
+            | Self::ViewSubmissions(_)
+            | Self::ManageRoster(_)
+            | Self::LinkGroups(_)
+            | Self::ManageTerms
+            | Self::ViewTerms
+            | Self::ManageGroups
+            | Self::ViewGroups => None,
+        }
+    }
+}
+
+impl CourseStatus {
+    /// Students see a course in these statuses: while it runs and after it ended (ADR-0048).
+    fn is_open_to_students(self) -> bool {
+        matches!(self, Self::Published | Self::Archived)
     }
 }
 
@@ -231,8 +307,14 @@ pub fn implicit_course_owner(actor: &Actor) -> bool {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
-#[error("not allowed")]
-pub struct PolicyError;
+pub enum PolicyError {
+    /// The actor may not do this.
+    #[error("not allowed")]
+    Denied,
+    /// The actor may do this in an open course, but the course is archived (ADR-0048).
+    #[error("the course is archived")]
+    Archived,
+}
 
 /// Allows or denies `action`. The match has no wildcard: a new action does not compile
 /// until someone decides who may do it.
@@ -241,9 +323,11 @@ pub fn authorize(actor: &Actor, action: Action) -> Result<(), PolicyError> {
     let is_admin = actor.role() == Role::Admin;
     let allowed = match action {
         Action::ManageOwnAccount => true,
-        Action::ManageUsers | Action::ManageTerms | Action::ManageGroups | Action::ViewGroups => {
-            is_admin
-        }
+        Action::ManageUsers
+        | Action::ViewInstitutionSettings
+        | Action::ManageTerms
+        | Action::ManageGroups
+        | Action::ViewGroups => is_admin,
         Action::ViewTerms => true,
         Action::CreateCourse => matches!(actor.role(), Role::Admin | Role::Teacher),
         Action::ViewOwnCourses => true,
@@ -251,12 +335,12 @@ pub fn authorize(actor: &Actor, action: Action) -> Result<(), PolicyError> {
         Action::ViewCourse(access) => {
             is_admin
                 || access.is_staff()
-                || (access.role == Some(CourseRole::Student)
-                    && access.status == CourseStatus::Published)
+                || (access.role == Some(CourseRole::Student) && access.status.is_open_to_students())
         }
-        Action::PublishCourse(access) | Action::LinkGroups(access) => {
-            is_admin || access.is_owner_or_teacher()
-        }
+        Action::PublishCourse(access)
+        | Action::ArchiveCourse(access)
+        | Action::LinkGroups(access)
+        | Action::ChangeGroupLinks(access) => is_admin || access.is_owner_or_teacher(),
         Action::ManageMembership { access, role } => {
             is_admin
                 || match role {
@@ -268,17 +352,19 @@ pub fn authorize(actor: &Actor, action: Action) -> Result<(), PolicyError> {
             is_admin || access.is_owner
         }
         Action::ManageContent(access)
+        | Action::EditContent(access)
         | Action::GradeAssignment(access)
         | Action::PublishGrades(access)
         | Action::ViewGradebook(access)
         | Action::ViewSubmissions(access)
         | Action::ManageRoster(access)
+        | Action::ChangeRoster(access)
         | Action::EditCourse(access) => is_admin || access.is_staff(),
         Action::ViewFormerGrades { has_rows } => has_rows,
         Action::ViewOwnGrades(access)
         | Action::SubmitWork(access)
         | Action::ViewOwnSubmission(access) => {
-            access.role == Some(CourseRole::Student) && access.status == CourseStatus::Published
+            access.role == Some(CourseRole::Student) && access.status.is_open_to_students()
         }
         Action::ViewContent {
             access,
@@ -290,14 +376,24 @@ pub fn authorize(actor: &Actor, action: Action) -> Result<(), PolicyError> {
             is_admin
                 || access.is_staff()
                 || (access.role == Some(CourseRole::Student)
-                    && access.status == CourseStatus::Published
+                    && access.status.is_open_to_students()
                     && [Some(module), submodule, item]
                         .into_iter()
                         .flatten()
                         .all(|release| release.is_open_at(at)))
         }
     };
-    if allowed { Ok(()) } else { Err(PolicyError) }
+    if !allowed {
+        return Err(PolicyError::Denied);
+    }
+    // Decided after the permission, so someone who may not do this is not told about the status.
+    if action
+        .written_course()
+        .is_some_and(|access| access.status == CourseStatus::Archived)
+    {
+        return Err(PolicyError::Archived);
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -330,7 +426,7 @@ mod tests {
         for role in [Role::Teacher, Role::Student] {
             assert_eq!(
                 authorize(&actor(role), Action::ManageUsers),
-                Err(PolicyError),
+                Err(PolicyError::Denied),
                 "{role:?}"
             );
         }
@@ -339,6 +435,7 @@ mod tests {
     #[test]
     fn only_admins_manage_terms_and_groups_and_read_groups() {
         for action in [
+            Action::ViewInstitutionSettings,
             Action::ManageTerms,
             Action::ManageGroups,
             Action::ViewGroups,
@@ -347,17 +444,26 @@ mod tests {
             for role in [Role::Teacher, Role::Student] {
                 assert_eq!(
                     authorize(&actor(role), action),
-                    Err(PolicyError),
+                    Err(PolicyError::Denied),
                     "{action:?} {role:?}"
                 );
             }
         }
     }
 
+    /// What a write action that staff may do answers in `status` (ADR-0048).
+    fn written_in(status: CourseStatus) -> Result<(), PolicyError> {
+        if status == Archived {
+            Err(PolicyError::Archived)
+        } else {
+            Ok(())
+        }
+    }
+
     #[test]
-    fn staff_and_admins_manage_the_roster_and_edit_the_course_in_every_status() {
-        let actions: [fn(CourseAccess) -> Action; 2] = [Action::ManageRoster, Action::EditCourse];
-        for make in actions {
+    fn staff_and_admins_read_the_roster_and_content_in_every_status() {
+        let reads: [fn(CourseAccess) -> Action; 2] = [Action::ManageRoster, Action::ManageContent];
+        for make in reads {
             for status in [Draft, Published, Archived] {
                 for (role, is_owner) in [
                     (Some(Teacher), true),
@@ -378,13 +484,121 @@ mod tests {
                     for who in [Role::Student, Role::Teacher] {
                         assert_eq!(
                             authorize(&actor(who), action),
-                            Err(PolicyError),
+                            Err(PolicyError::Denied),
                             "{action:?}"
                         );
                     }
                 }
             }
         }
+    }
+
+    #[test]
+    fn staff_and_admins_change_the_roster_content_and_settings_but_not_in_an_archived_course() {
+        let writes: [fn(CourseAccess) -> Action; 3] = [
+            Action::ChangeRoster,
+            Action::EditCourse,
+            Action::EditContent,
+        ];
+        for make in writes {
+            for status in [Draft, Published, Archived] {
+                for (role, is_owner) in [
+                    (Some(Teacher), true),
+                    (Some(Teacher), false),
+                    (Some(Assistant), false),
+                ] {
+                    let action = make(access(role, is_owner, status));
+                    assert_eq!(
+                        authorize(&actor(Role::Teacher), action),
+                        written_in(status),
+                        "{action:?}"
+                    );
+                }
+                let admin = make(access(None, false, status));
+                assert_eq!(
+                    authorize(&actor(Role::Admin), admin),
+                    written_in(status),
+                    "{admin:?}"
+                );
+                // Someone who may not do it is told so, whatever the status.
+                for role in [Some(Student), None] {
+                    let action = make(access(role, false, status));
+                    for who in [Role::Student, Role::Teacher] {
+                        assert_eq!(
+                            authorize(&actor(who), action),
+                            Err(PolicyError::Denied),
+                            "{action:?}"
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn archiving_is_a_root_action_in_every_status() {
+        for status in [Draft, Published, Archived] {
+            for (role, is_owner, who) in [
+                (Some(Teacher), true, Role::Teacher),
+                (Some(Teacher), false, Role::Teacher),
+                (None, false, Role::Admin),
+            ] {
+                let action = Action::ArchiveCourse(access(role, is_owner, status));
+                assert_eq!(authorize(&actor(who), action), Ok(()), "{action:?}");
+            }
+            for (role, who) in [
+                (Some(Assistant), Role::Student),
+                (Some(Assistant), Role::Teacher),
+                (Some(Student), Role::Student),
+                (None, Role::Teacher),
+            ] {
+                let action = Action::ArchiveCourse(access(role, false, status));
+                assert_eq!(
+                    authorize(&actor(who), action),
+                    Err(PolicyError::Denied),
+                    "{action:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn restoring_deleting_and_handing_over_still_work_on_an_archived_course() {
+        let archived_owner = access(Some(Teacher), true, Archived);
+        for action in [
+            Action::ArchiveCourse(archived_owner),
+            Action::DeleteCourse(archived_owner),
+            Action::TransferOwnership(archived_owner),
+        ] {
+            assert_eq!(
+                authorize(&actor(Role::Teacher), action),
+                Ok(()),
+                "{action:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_student_submitting_in_an_archived_course_is_told_it_is_archived_not_refused() {
+        let student = actor(Role::Student);
+        let archived = access(Some(Student), false, Archived);
+        assert_eq!(
+            authorize(&student, Action::SubmitWork(archived)),
+            Err(PolicyError::Archived)
+        );
+        // Reading their own work and grades there is fine.
+        for read in [
+            Action::ViewOwnSubmission(archived),
+            Action::ViewOwnGrades(archived),
+        ] {
+            assert_eq!(authorize(&student, read), Ok(()), "{read:?}");
+        }
+        // A non-student gets the usual refusal, not the status.
+        let outsider = access(None, false, Archived);
+        assert_eq!(
+            authorize(&actor(Role::Teacher), Action::SubmitWork(outsider)),
+            Err(PolicyError::Denied)
+        );
     }
 
     #[test]
@@ -410,7 +624,7 @@ mod tests {
                 let action = Action::LinkGroups(access(role, false, status));
                 assert_eq!(
                     authorize(&actor(who), action),
-                    Err(PolicyError),
+                    Err(PolicyError::Denied),
                     "{action:?}"
                 );
             }
@@ -467,7 +681,7 @@ mod tests {
         assert_eq!(authorize(&actor(Role::Admin), Action::CreateCourse), Ok(()));
         assert_eq!(
             authorize(&actor(Role::Student), Action::CreateCourse),
-            Err(PolicyError)
+            Err(PolicyError::Denied)
         );
     }
 
@@ -487,7 +701,7 @@ mod tests {
             };
             assert_eq!(
                 authorize(&actor(Role::Student), action),
-                Err(PolicyError),
+                Err(PolicyError::Denied),
                 "{role:?}"
             );
         }
@@ -499,11 +713,11 @@ mod tests {
         let access = member(Assistant);
         assert_eq!(
             authorize(&assistant, Action::DeleteCourse(access)),
-            Err(PolicyError)
+            Err(PolicyError::Denied)
         );
         assert_eq!(
             authorize(&assistant, Action::TransferOwnership(access)),
-            Err(PolicyError)
+            Err(PolicyError::Denied)
         );
     }
 
@@ -520,7 +734,7 @@ mod tests {
             Action::DeleteCourse(member(Teacher)),
             Action::TransferOwnership(member(Teacher)),
         ] {
-            assert_eq!(authorize(&teacher, action), Err(PolicyError));
+            assert_eq!(authorize(&teacher, action), Err(PolicyError::Denied));
         }
         for action in [
             Action::DeleteCourse(non_member()),
@@ -539,7 +753,7 @@ mod tests {
                         &actor(role),
                         Action::ViewCourse(access(None, false, status))
                     ),
-                    Err(PolicyError),
+                    Err(PolicyError::Denied),
                     "{role:?} {status:?}"
                 );
             }
@@ -556,12 +770,12 @@ mod tests {
     }
 
     #[test]
-    fn student_member_sees_only_published_courses() {
+    fn student_member_sees_published_and_archived_courses_but_not_drafts() {
         let student = actor(Role::Student);
         let view = |status| Action::ViewCourse(access(Some(Student), false, status));
         assert_eq!(authorize(&student, view(Published)), Ok(()));
-        assert_eq!(authorize(&student, view(Draft)), Err(PolicyError));
-        assert_eq!(authorize(&student, view(Archived)), Err(PolicyError));
+        assert_eq!(authorize(&student, view(Archived)), Ok(()));
+        assert_eq!(authorize(&student, view(Draft)), Err(PolicyError::Denied));
     }
 
     #[test]
@@ -603,18 +817,18 @@ mod tests {
         for role in [Assistant, Student] {
             assert_eq!(
                 authorize(&actor(Role::Student), publish(draft(Some(role), false))),
-                Err(PolicyError),
+                Err(PolicyError::Denied),
                 "{role:?}"
             );
         }
         assert_eq!(
             authorize(&actor(Role::Teacher), publish(draft(None, false))),
-            Err(PolicyError)
+            Err(PolicyError::Denied)
         );
     }
 
     #[test]
-    fn managing_members_ignores_the_course_status() {
+    fn students_can_be_enrolled_in_a_draft_but_an_archived_course_takes_no_change() {
         for status in [Draft, Published, Archived] {
             let action = Action::ManageMembership {
                 access: access(Some(Teacher), false, status),
@@ -622,9 +836,40 @@ mod tests {
             };
             assert_eq!(
                 authorize(&actor(Role::Teacher), action),
-                Ok(()),
+                written_in(status),
                 "{status:?}"
             );
+        }
+    }
+
+    #[test]
+    fn linking_a_group_follows_the_rule_of_reading_the_options_and_stops_at_an_archived_course() {
+        for status in [Draft, Published, Archived] {
+            for (role, is_owner, who) in [
+                (Some(Teacher), true, Role::Teacher),
+                (Some(Teacher), false, Role::Teacher),
+                (None, false, Role::Admin),
+            ] {
+                let action = Action::ChangeGroupLinks(access(role, is_owner, status));
+                assert_eq!(
+                    authorize(&actor(who), action),
+                    written_in(status),
+                    "{action:?}"
+                );
+            }
+            for (role, who) in [
+                (Some(Assistant), Role::Student),
+                (Some(Assistant), Role::Teacher),
+                (Some(Student), Role::Student),
+                (None, Role::Teacher),
+            ] {
+                let action = Action::ChangeGroupLinks(access(role, false, status));
+                assert_eq!(
+                    authorize(&actor(who), action),
+                    Err(PolicyError::Denied),
+                    "{action:?}"
+                );
+            }
         }
     }
 
@@ -636,8 +881,14 @@ mod tests {
             role,
         };
         assert_eq!(authorize(&assistant, manage(Student)), Ok(()));
-        assert_eq!(authorize(&assistant, manage(Teacher)), Err(PolicyError));
-        assert_eq!(authorize(&assistant, manage(Assistant)), Err(PolicyError));
+        assert_eq!(
+            authorize(&assistant, manage(Teacher)),
+            Err(PolicyError::Denied)
+        );
+        assert_eq!(
+            authorize(&assistant, manage(Assistant)),
+            Err(PolicyError::Denied)
+        );
     }
 
     #[test]
@@ -657,7 +908,10 @@ mod tests {
                 access: non_member(),
                 role,
             };
-            assert_eq!(authorize(&actor(Role::Teacher), action), Err(PolicyError));
+            assert_eq!(
+                authorize(&actor(Role::Teacher), action),
+                Err(PolicyError::Denied)
+            );
             assert_eq!(authorize(&actor(Role::Admin), action), Ok(()));
         }
     }
@@ -730,13 +984,20 @@ mod tests {
         assert!(allowed(view(me, open(), None, None)));
         assert!(allowed(view(me, open(), Some(open()), None)));
 
-        for status in [Draft, Archived] {
-            let closed = access(Some(Student), false, status);
-            assert!(
-                !allowed(view(closed, open(), Some(open()), Some(open()))),
-                "{status:?}"
-            );
-        }
+        let closed = access(Some(Student), false, Draft);
+        assert!(
+            !allowed(view(closed, open(), Some(open()), Some(open()))),
+            "draft course"
+        );
+        // An archived course stays readable (ADR-0048), with the same rules for its rows.
+        let archived = access(Some(Student), false, Archived);
+        assert!(allowed(view(archived, open(), Some(open()), Some(open()))));
+        assert!(!allowed(view(
+            archived,
+            draft(),
+            Some(open()),
+            Some(open())
+        )));
         assert!(
             !allowed(view(me, draft(), Some(open()), Some(open()))),
             "draft module"
@@ -821,7 +1082,7 @@ mod tests {
         for role in [Role::Teacher, Role::Student] {
             assert_eq!(
                 authorize(&actor(role), action),
-                Err(PolicyError),
+                Err(PolicyError::Denied),
                 "{role:?}"
             );
         }
@@ -829,13 +1090,18 @@ mod tests {
     }
 
     #[test]
-    fn staff_and_admins_grade_publish_and_read_the_gradebook_in_every_status() {
-        let actions: [fn(CourseAccess) -> Action; 3] = [
-            Action::GradeAssignment,
-            Action::PublishGrades,
-            Action::ViewGradebook,
+    fn staff_and_admins_read_the_gradebook_in_every_status_and_grade_and_publish_but_not_in_an_archived_one()
+     {
+        type Make = fn(CourseAccess) -> Action;
+        let actions: [(Make, bool); 3] = [
+            (Action::GradeAssignment, true),
+            (Action::PublishGrades, true),
+            (Action::ViewGradebook, false),
         ];
-        for make in actions {
+        for (make, is_write) in actions {
+            let expected = |status| {
+                if is_write { written_in(status) } else { Ok(()) }
+            };
             for status in [Draft, Published, Archived] {
                 for (role, is_owner) in [
                     (Some(Teacher), true),
@@ -845,18 +1111,22 @@ mod tests {
                     let action = make(access(role, is_owner, status));
                     assert_eq!(
                         authorize(&actor(Role::Teacher), action),
-                        Ok(()),
+                        expected(status),
                         "{action:?}"
                     );
                 }
                 let admin = make(access(None, false, status));
-                assert_eq!(authorize(&actor(Role::Admin), admin), Ok(()), "{admin:?}");
+                assert_eq!(
+                    authorize(&actor(Role::Admin), admin),
+                    expected(status),
+                    "{admin:?}"
+                );
                 for role in [Some(Student), None] {
                     let action = make(access(role, false, status));
                     for who in [Role::Student, Role::Teacher] {
                         assert_eq!(
                             authorize(&actor(who), action),
-                            Err(PolicyError),
+                            Err(PolicyError::Denied),
                             "{action:?}"
                         );
                     }
@@ -877,16 +1147,14 @@ mod tests {
                 ),
                 Ok(())
             );
-            for status in [Draft, Archived] {
-                assert_eq!(
-                    authorize(
-                        &actor(Role::Student),
-                        make(access(Some(Student), false, status))
-                    ),
-                    Err(PolicyError),
-                    "{status:?}"
-                );
-            }
+            assert_eq!(
+                authorize(
+                    &actor(Role::Student),
+                    make(access(Some(Student), false, Draft))
+                ),
+                Err(PolicyError::Denied),
+                "draft"
+            );
             // Staff, a non-member and an admin (who has no membership) never submit.
             for (role, is_owner) in [
                 (Some(Teacher), true),
@@ -897,14 +1165,14 @@ mod tests {
                 for who in [Role::Teacher, Role::Student] {
                     assert_eq!(
                         authorize(&actor(who), make(access(role, is_owner, Published))),
-                        Err(PolicyError),
+                        Err(PolicyError::Denied),
                         "{role:?} {who:?}"
                     );
                 }
             }
             assert_eq!(
                 authorize(&actor(Role::Admin), make(access(None, false, Published))),
-                Err(PolicyError)
+                Err(PolicyError::Denied)
             );
         }
     }
@@ -931,7 +1199,7 @@ mod tests {
                 for who in [Role::Student, Role::Teacher] {
                     assert_eq!(
                         authorize(&actor(who), action),
-                        Err(PolicyError),
+                        Err(PolicyError::Denied),
                         "{action:?}"
                     );
                 }
@@ -949,13 +1217,19 @@ mod tests {
             ),
             Ok(())
         );
-        for status in [Draft, Archived] {
-            assert_eq!(
-                authorize(&actor(Role::Student), action(Some(Student), false, status)),
-                Err(PolicyError),
-                "{status:?}"
-            );
-        }
+        assert_eq!(
+            authorize(&actor(Role::Student), action(Some(Student), false, Draft)),
+            Err(PolicyError::Denied),
+            "draft"
+        );
+        // After the course ended the student still reads their grades (ADR-0048).
+        assert_eq!(
+            authorize(
+                &actor(Role::Student),
+                action(Some(Student), false, Archived)
+            ),
+            Ok(())
+        );
         for (role, is_owner) in [
             (Some(Teacher), true),
             (Some(Teacher), false),
@@ -964,19 +1238,19 @@ mod tests {
         ] {
             assert_eq!(
                 authorize(&actor(Role::Teacher), action(role, is_owner, Published)),
-                Err(PolicyError),
+                Err(PolicyError::Denied),
                 "{role:?}"
             );
         }
         // An admin has no membership and is not a student.
         assert_eq!(
             authorize(&actor(Role::Admin), action(None, false, Published)),
-            Err(PolicyError)
+            Err(PolicyError::Denied)
         );
     }
 
     #[test]
-    fn staff_and_admins_manage_content_in_every_course_status_and_students_never_do() {
+    fn staff_and_admins_view_content_drafts_in_every_course_status_and_students_never_do() {
         for status in [Draft, Published, Archived] {
             for (role, is_owner) in [
                 (Some(Teacher), true),
@@ -1001,12 +1275,12 @@ mod tests {
                 let action = Action::ManageContent(access(role, false, status));
                 assert_eq!(
                     authorize(&actor(Role::Student), action),
-                    Err(PolicyError),
+                    Err(PolicyError::Denied),
                     "{role:?} {status:?}"
                 );
                 assert_eq!(
                     authorize(&actor(Role::Teacher), action),
-                    Err(PolicyError),
+                    Err(PolicyError::Denied),
                     "{role:?} {status:?}"
                 );
             }
@@ -1044,7 +1318,11 @@ mod tests {
                     role: Student,
                 },
             ] {
-                assert_eq!(authorize(&student, action), Err(PolicyError), "{action:?}");
+                assert_eq!(
+                    authorize(&student, action),
+                    Err(PolicyError::Denied),
+                    "{action:?}"
+                );
             }
         }
         // The same access held by an institution teacher is what it always was.

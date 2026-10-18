@@ -1,0 +1,21 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT processed_at IS NOT NULL AS \"done!\" FROM events.outbox",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "done!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "b3030cc400d6c1813a7296ac8ebadc3f4e18c73c04339c46ff04085a286f01e5"
+}

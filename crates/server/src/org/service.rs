@@ -148,6 +148,13 @@ pub async fn list_terms(
     Ok(Page::from_rows(rows, page.limit, |term| term.id))
 }
 
+/// Authorizes the admin view of the institution settings (ADR-0044). The settings themselves come
+/// from the configuration the server parsed at startup, so there is nothing to read.
+pub fn view_institution_settings(actor: &Actor) -> Result<(), OrgError> {
+    policy::authorize(actor, Action::ViewInstitutionSettings)?;
+    Ok(())
+}
+
 pub async fn get_term(conn: &mut PgConnection, actor: &Actor, id: Uuid) -> Result<Term, OrgError> {
     policy::authorize(actor, Action::ViewTerms)?;
     repo::find_term(conn, id)

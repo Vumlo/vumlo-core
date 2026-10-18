@@ -1,0 +1,352 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT i.id, i.module_id, i.course_id, i.position, i.kind AS \"kind: ItemKind\", i.title,\n                  i.body AS \"body: Body\", i.status AS \"status: ItemStatus\", i.publish_at,\n                  i.published_title, i.published_body AS \"published_body?: Body\",\n                  i.last_published_at,\n                  i.created_at, i.updated_at,\n                  m.status AS \"module_status: ModuleStatus\", m.publish_at AS module_publish_at,\n                  p.status AS \"parent_status?: ModuleStatus\", p.publish_at AS parent_publish_at,\n                  a.type AS \"assignment_type?: BuiltinType\", a.config AS \"assignment_config?: Body\",\n                  a.max_points AS \"assignment_max_points?: MaxPoints\",\n                  a.is_bonus AS \"assignment_is_bonus?\",\n                  a.class_on AS assignment_class_on,\n                  a.due_at AS assignment_due_at,\n                  a.on_deadline AS \"assignment_on_deadline?: OnDeadline\",\n                  a.accept_late AS assignment_accept_late,\n                  a.late_until AS assignment_late_until,\n                  a.max_attempts AS assignment_max_attempts\n           FROM content.items i\n           JOIN content.modules m ON m.id = i.module_id\n           LEFT JOIN content.modules p ON p.id = m.parent_id\n           LEFT JOIN content.assignments a ON a.item_id = i.id\n           WHERE i.id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "content.items",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "module_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "content.items",
+            "name": "module_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "course_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "content.items",
+            "name": "course_id"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "position",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "content.items",
+            "name": "position"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "kind: ItemKind",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "content.items",
+            "name": "kind"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "title",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "content.items",
+            "name": "title"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "body: Body",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "content.items",
+            "name": "body"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "status: ItemStatus",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "content.items",
+            "name": "status"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "publish_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "content.items",
+            "name": "publish_at"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "published_title",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "content.items",
+            "name": "published_title"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "published_body?: Body",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "content.items",
+            "name": "published_body"
+          }
+        }
+      },
+      {
+        "ordinal": 11,
+        "name": "last_published_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "content.items",
+            "name": "last_published_at"
+          }
+        }
+      },
+      {
+        "ordinal": 12,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "content.items",
+            "name": "created_at"
+          }
+        }
+      },
+      {
+        "ordinal": 13,
+        "name": "updated_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "content.items",
+            "name": "updated_at"
+          }
+        }
+      },
+      {
+        "ordinal": 14,
+        "name": "module_status: ModuleStatus",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "content.modules",
+            "name": "status"
+          }
+        }
+      },
+      {
+        "ordinal": 15,
+        "name": "module_publish_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "content.modules",
+            "name": "publish_at"
+          }
+        }
+      },
+      {
+        "ordinal": 16,
+        "name": "parent_status?: ModuleStatus",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "content.modules",
+            "name": "status"
+          }
+        }
+      },
+      {
+        "ordinal": 17,
+        "name": "parent_publish_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "content.modules",
+            "name": "publish_at"
+          }
+        }
+      },
+      {
+        "ordinal": 18,
+        "name": "assignment_type?: BuiltinType",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "content.assignments",
+            "name": "type"
+          }
+        }
+      },
+      {
+        "ordinal": 19,
+        "name": "assignment_config?: Body",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "content.assignments",
+            "name": "config"
+          }
+        }
+      },
+      {
+        "ordinal": 20,
+        "name": "assignment_max_points?: MaxPoints",
+        "type_info": "Numeric",
+        "origin": {
+          "Table": {
+            "table": "content.assignments",
+            "name": "max_points"
+          }
+        }
+      },
+      {
+        "ordinal": 21,
+        "name": "assignment_is_bonus?",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "content.assignments",
+            "name": "is_bonus"
+          }
+        }
+      },
+      {
+        "ordinal": 22,
+        "name": "assignment_class_on",
+        "type_info": "Date",
+        "origin": {
+          "Table": {
+            "table": "content.assignments",
+            "name": "class_on"
+          }
+        }
+      },
+      {
+        "ordinal": 23,
+        "name": "assignment_due_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "content.assignments",
+            "name": "due_at"
+          }
+        }
+      },
+      {
+        "ordinal": 24,
+        "name": "assignment_on_deadline?: OnDeadline",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "content.assignments",
+            "name": "on_deadline"
+          }
+        }
+      },
+      {
+        "ordinal": 25,
+        "name": "assignment_accept_late",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "content.assignments",
+            "name": "accept_late"
+          }
+        }
+      },
+      {
+        "ordinal": 26,
+        "name": "assignment_late_until",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "content.assignments",
+            "name": "late_until"
+          }
+        }
+      },
+      {
+        "ordinal": 27,
+        "name": "assignment_max_attempts",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "content.assignments",
+            "name": "max_attempts"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "94b0db6c4d5fd3250a57b83babb0b804bdd6d8579aa3a69d123eb719ed596aec"
+}

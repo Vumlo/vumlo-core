@@ -5,12 +5,138 @@ use crate::policy::{CourseRole, CourseStatus};
 use crate::text_enum::text_enum;
 
 const TITLE_MAX_LEN: usize = 200;
+const CODE_MAX_LEN: usize = 32;
+const DESCRIPTION_MAX_LEN: usize = 300;
 
 /// A value that failed validation. Each variant maps to one field of the API.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum ModelError {
     #[error("must be 1 to {TITLE_MAX_LEN} characters")]
     Title,
+    #[error("must be at most {CODE_MAX_LEN} characters")]
+    Code,
+    #[error("must be at most {DESCRIPTION_MAX_LEN} characters")]
+    Description,
+}
+
+/// A course's short code ("CS 305"): trimmed, at most 32 characters, empty for none (ADR-0048).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CourseCode(String);
+
+impl CourseCode {
+    pub fn parse(raw: &str) -> Result<Self, ModelError> {
+        let code = raw.trim();
+        if code.chars().count() <= CODE_MAX_LEN && !code.chars().any(char::is_control) {
+            Ok(Self(code.to_owned()))
+        } else {
+            Err(ModelError::Code)
+        }
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+/// A course's description: trimmed, at most 300 characters, line breaks allowed, empty for none.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CourseDescription(String);
+
+impl CourseDescription {
+    pub fn parse(raw: &str) -> Result<Self, ModelError> {
+        let text = raw.trim();
+        if text.chars().count() <= DESCRIPTION_MAX_LEN
+            && !text.chars().any(|c| c.is_control() && c != '\n')
+        {
+            Ok(Self(text.to_owned()))
+        } else {
+            Err(ModelError::Description)
+        }
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+/// The fields of a course-info update that were sent.
+#[derive(Debug, Clone, Default)]
+pub struct CourseInfoUpdate {
+    pub code: Option<String>,
+    pub description: Option<String>,
+}
+
+/// The header of a course (ADR-0048).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CourseInfo {
+    pub course_id: Uuid,
+    pub code: String,
+    pub description: String,
+    pub term_name: Option<String>,
+    pub owner_name: String,
+    pub owner_surname: String,
+    pub owner_email: String,
+    pub student_count: i64,
+    pub former_count: i64,
+    pub assistant_count: i64,
+    pub updated_at: DateTime<Utc>,
+    pub content_updated_at: Option<DateTime<Utc>>,
+    pub total_points: sqlx::types::Decimal,
+    pub graded_items: i64,
+    pub has_grades: bool,
+}
+
+/// A template and what it holds.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TemplateSummary {
+    pub course: Course,
+    pub sections: i64,
+    pub lectures: i64,
+    pub assignments: i64,
+    pub updated_at: DateTime<Utc>,
+}
+
+/// One person on a course, as the people page shows them.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Person {
+    pub user_id: Uuid,
+    pub name: String,
+    pub surname: String,
+    /// Only selected for staff (ADR-0048).
+    pub email: Option<String>,
+    pub role: CourseRole,
+    pub is_owner: bool,
+    pub source: MemberSource,
+    pub group: Option<String>,
+    pub former: bool,
+}
+
+/// A linked group with the students it brings.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LinkedGroup {
+    pub link_id: Uuid,
+    pub group_name: String,
+    pub subgroup_name: Option<String>,
+    pub student_count: i64,
+    pub linked_at: DateTime<Utc>,
+}
+
+/// Who is on a course. A student gets the people without the emails, the former students and the
+/// groups (ADR-0048).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CoursePeople {
+    pub people: Vec<Person>,
+    pub groups: Vec<LinkedGroup>,
+}
+
+/// Someone who could be added to a course.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Candidate {
+    pub user_id: Uuid,
+    pub name: String,
+    pub surname: String,
+    pub email: String,
+    pub role: crate::identity::Role,
 }
 
 /// ADR-0005: templates share the table. Only regular courses can be created through the API yet.

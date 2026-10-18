@@ -3,6 +3,7 @@ use std::process::ExitCode;
 use anyhow::Context;
 use clap::{Parser, Subcommand};
 use server::app::{self, AppState};
+use server::events;
 use server::identity::{self, Email, NewUser, PersonName, Role, TemporaryPassword};
 use server::org;
 use server::settings::{LogFormat, Settings};
@@ -67,6 +68,7 @@ async fn run(cli: Cli) -> anyhow::Result<()> {
         Command::Serve => {
             let state = AppState::new(pool, settings).context("invalid configuration")?;
             prepare_database(&state.db, &state.config).await?;
+            tokio::spawn(events::run_worker(state.db.clone(), state.event_handlers()));
             let bind_addr = state.config.server.bind_addr;
             let listener = tokio::net::TcpListener::bind(bind_addr)
                 .await

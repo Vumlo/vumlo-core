@@ -4,5 +4,5 @@ mod model;
 mod repo;
 mod service;
 
-pub use model::{AuditEntry, Event};
-pub use service::{EventsError, audit, audit_admin, audit_cli, emit};
+pub use model::{AuditEntry, Event, HandlerError, HandlerFuture, Handlers, OutboxEvent};
+pub use service::{EventsError, audit, audit_admin, audit_cli, emit, process_once, run_worker};

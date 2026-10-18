@@ -45,6 +45,46 @@ fn operations(c: &Ctx, other_user: Uuid) -> Vec<Call> {
             Some(json!({"title": "hacked"})),
         ),
         call("POST", format!("/courses/{}/publish", c.course), None),
+        call("DELETE", format!("/courses/{}", c.course), None),
+        call("GET", format!("/courses/{}/info", c.course), None),
+        call(
+            "PATCH",
+            format!("/courses/{}/info", c.course),
+            Some(json!({"code": "X"})),
+        ),
+        call("POST", format!("/courses/{}/archive", c.course), None),
+        call("POST", format!("/courses/{}/restore", c.course), None),
+        call(
+            "POST",
+            format!("/courses/{}/template", c.course),
+            Some(json!({})),
+        ),
+        // The course is not a template, so even a member that may edit it gets 404.
+        call(
+            "POST",
+            format!("/templates/{}/courses", c.course),
+            Some(json!({})),
+        ),
+        call("GET", format!("/courses/{}/people", c.course), None),
+        call("GET", format!("/courses/{}/item-meta", c.course), None),
+        call("GET", format!("/items/{}/revision", c.text), None),
+        call("POST", format!("/items/{}/revision/publish", c.text), None),
+        call(
+            "GET",
+            format!("/assignments/{}/grades/{}/history", c.assignment, c.student),
+            None,
+        ),
+        call("GET", format!("/assignments/{}/result", c.assignment), None),
+        call(
+            "GET",
+            format!("/assignments/{}/responses", c.assignment),
+            None,
+        ),
+        call(
+            "GET",
+            format!("/courses/{}/candidates?q=zz", c.course),
+            None,
+        ),
         call(
             "PUT",
             format!("/courses/{}/owner", c.course),
@@ -168,6 +208,7 @@ fn operations(c: &Ctx, other_user: Uuid) -> Vec<Call> {
             None,
         ),
         // The institution's own: admins only.
+        call("GET", "/admin/institution".into(), None),
         call("GET", "/admin/users".into(), None),
         call(
             "POST",
@@ -437,6 +478,9 @@ async fn no_operation_answers_a_caller_who_may_not_use_it() {
                 format!("/items/{}", a.text),
                 format!("/items/{}", a.assignment),
                 format!("/courses/{}/my-grades", a.course),
+                format!("/courses/{}/info", a.course),
+                format!("/courses/{}/people", a.course),
+                format!("/courses/{}/item-meta", a.course),
                 format!("/assignments/{}/submission", a.assignment),
             ];
             (method == "GET" && reads.iter().any(|read| read == path))
@@ -648,13 +692,21 @@ async fn the_list_of_operations_is_the_api() {
         // Operations that need no sign-in or only a session of one's own are not in the list above.
         let own: BTreeSet<String> = [
             "GET /health",
+            "GET /institution",
             "POST /auth/login",
+            "POST /auth/register",
+            "POST /auth/verify-email",
+            "POST /auth/password-reset",
+            "POST /auth/password-reset/confirm",
+            "POST /auth/google/start",
+            "POST /auth/google/callback",
             "POST /auth/logout",
             "GET /me",
             "POST /me/password",
             "GET /me/sessions",
             "DELETE /me/sessions/{id}",
             "GET /me/courses",
+            "GET /me/templates",
             "POST /courses",
             "GET /editor/profiles",
             "GET /terms",
@@ -711,6 +763,8 @@ async fn the_list_of_operations_is_the_api() {
 
 /// Does `path` (with nil ids) fit `template` (`/courses/{id}/members/{user_id}`)?
 fn matches_template(template: &str, path: &str) -> bool {
+    // A query string is part of the call, not of the path.
+    let path = path.split('?').next().unwrap_or(path);
     let nil = Uuid::nil().to_string();
     let (mut a, mut b) = (template.split('/'), path.split('/'));
     loop {

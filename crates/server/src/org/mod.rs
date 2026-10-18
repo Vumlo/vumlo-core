@@ -12,4 +12,4 @@ pub use model::{
 pub use routes::router;
 #[cfg(test)]
 pub use service::seed_group;
-pub use service::{OrgError, group_options, record_mode};
+pub use service::{OrgError, group_options, record_mode, view_institution_settings};

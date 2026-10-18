@@ -295,7 +295,7 @@ async fn students_cannot_see_a_draft_course_until_it_is_published() {
 }
 
 #[tokio::test]
-async fn students_cannot_see_an_archived_course_but_staff_can() {
+async fn students_still_see_an_archived_course_and_nobody_can_publish_it() {
     db_test(async |pool| {
         let w = world(pool).await;
         publish(&w.http, &w.owner.token, w.course).await;
@@ -307,10 +307,14 @@ async fn students_cannot_see_an_archived_course_but_staff_can() {
         .await
         .unwrap();
 
+        // A finished course stays readable for its students (ADR-0048).
         let path = format!("/courses/{}", w.course);
-        get(&w.http, &w.student.token, &path).await.problem(404);
+        assert_eq!(
+            get(&w.http, &w.student.token, &path).await.json()["status"],
+            "archived"
+        );
         let listed = get(&w.http, &w.student.token, "/me/courses").await.json();
-        assert_eq!(ids(&listed), Vec::<Uuid>::new());
+        assert_eq!(ids(&listed), [w.course]);
         assert_eq!(
             get(&w.http, &w.owner.token, &path).await.json()["status"],
             "archived"

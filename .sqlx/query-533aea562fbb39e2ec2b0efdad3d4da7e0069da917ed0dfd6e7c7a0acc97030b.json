@@ -1,0 +1,159 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT i.id AS assignment_id, i.published_title AS \"title!\", a.max_points, a.is_bonus,\n                  g.published_score, g.published_feedback, g.published_at AS \"published_at!\",\n                  i.status = 'published' AS \"item_published!\", i.publish_at AS item_publish_at,\n                  m.status = 'published' AS \"module_published!\", m.publish_at AS module_publish_at,\n                  p.status = 'published' AS \"parent_published?\", p.publish_at AS parent_publish_at\n           FROM gradebook.grades g\n           JOIN content.assignments a ON a.item_id = g.assignment_id\n           JOIN content.items i ON i.id = a.item_id\n           JOIN content.modules m ON m.id = i.module_id\n           LEFT JOIN content.modules p ON p.id = m.parent_id\n           WHERE g.student_id = $2 AND i.course_id = $1\n             AND (g.published_score IS NOT NULL OR g.published_feedback IS NOT NULL)\n             AND i.status = 'published' AND (i.publish_at IS NULL OR i.publish_at <= $3)\n             AND m.status = 'published' AND (m.publish_at IS NULL OR m.publish_at <= $3)\n             AND (p.id IS NULL\n                  OR (p.status = 'published' AND (p.publish_at IS NULL OR p.publish_at <= $3)))\n           ORDER BY COALESCE(p.position, m.position), m.parent_id NULLS FIRST, m.position,\n                    i.position",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "assignment_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "content.items",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "title!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "content.items",
+            "name": "published_title"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "max_points",
+        "type_info": "Numeric",
+        "origin": {
+          "Table": {
+            "table": "content.assignments",
+            "name": "max_points"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "is_bonus",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "content.assignments",
+            "name": "is_bonus"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "published_score",
+        "type_info": "Numeric",
+        "origin": {
+          "Table": {
+            "table": "gradebook.grades",
+            "name": "published_score"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "published_feedback",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "gradebook.grades",
+            "name": "published_feedback"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "published_at!",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "gradebook.grades",
+            "name": "published_at"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "item_published!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 8,
+        "name": "item_publish_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "content.items",
+            "name": "publish_at"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "module_published!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 10,
+        "name": "module_publish_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "content.modules",
+            "name": "publish_at"
+          }
+        }
+      },
+      {
+        "ordinal": 11,
+        "name": "parent_published?",
+        "type_info": "Bool",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 12,
+        "name": "parent_publish_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "content.modules",
+            "name": "publish_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Timestamptz"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      false,
+      false,
+      true,
+      true,
+      true,
+      null,
+      true,
+      null,
+      true,
+      null,
+      true
+    ]
+  },
+  "hash": "533aea562fbb39e2ec2b0efdad3d4da7e0069da917ed0dfd6e7c7a0acc97030b"
+}

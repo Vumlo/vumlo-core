@@ -9,7 +9,7 @@ import { Icon } from "@/components/Icon";
 import { ItemTile } from "@/components/ItemTile";
 import { useContentTree, useItemMeta } from "@/lib/api/hooks/courses";
 import { useCreateItem, useCreateModule, useDeleteItem, useDeleteModule, usePublishItem, usePublishModule, useReorderItems, useReorderModules, useUpdateModule } from "@/lib/api/hooks/content";
-import type { ItemMeta } from "@/lib/api/gaps";
+import type { ItemMeta } from "@/lib/api/types";
 import type { ContentModule, ContentSubModule, ItemSummary } from "@/lib/api/types";
 import { now } from "@/lib/clock";
 import { allItems, dueShort, isAssignment, typeLabel } from "@/lib/course";

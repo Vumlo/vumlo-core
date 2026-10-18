@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE identity.email_tokens SET used_at = now()\n         WHERE user_id = $1 AND purpose = $2 AND used_at IS NULL",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "46a49fb759a0df94138edf7762cedc9328f45c2dbc6865a7b0354ec267e03143"
+}

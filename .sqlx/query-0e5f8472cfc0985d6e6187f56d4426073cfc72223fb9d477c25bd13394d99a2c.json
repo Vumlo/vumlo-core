@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT email_verified_at IS NOT NULL AS \"verified!\",\n                      (SELECT count(*) FROM identity.email_tokens WHERE used_at IS NULL) AS \"open_tokens!\"\n               FROM identity.users WHERE email = 'maya@lms.test'",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "verified!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "open_tokens!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      null,
+      null
+    ]
+  },
+  "hash": "0e5f8472cfc0985d6e6187f56d4426073cfc72223fb9d477c25bd13394d99a2c"
+}

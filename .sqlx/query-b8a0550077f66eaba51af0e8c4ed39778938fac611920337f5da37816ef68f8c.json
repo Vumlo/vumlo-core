@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO identity.identities (id, user_id, provider, subject)\n         VALUES ($1, $2, 'google', $3)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "b8a0550077f66eaba51af0e8c4ed39778938fac611920337f5da37816ef68f8c"
+}

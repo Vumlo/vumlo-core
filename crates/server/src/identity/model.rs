@@ -308,6 +308,89 @@ pub struct NewSession {
     pub expires_at: DateTime<Utc>,
 }
 
+/// What an emailed token proves (ADR-0046).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TokenPurpose {
+    /// The person controls the mailbox of the address.
+    Verify,
+    /// The person may choose a new password.
+    Reset,
+}
+text_enum!(TokenPurpose { Verify => "verify", Reset => "reset" });
+
+impl TokenPurpose {
+    /// How long a token of this purpose can be used (ADR-0046).
+    pub fn lifetime(self) -> Duration {
+        match self {
+            Self::Verify => Duration::hours(24),
+            Self::Reset => Duration::hours(1),
+        }
+    }
+}
+
+/// The secret in a verification or reset link. Only its SHA-256 is stored, and the value exists
+/// only in the mail.
+#[derive(Clone, PartialEq, Eq)]
+pub struct EmailToken(String);
+
+impl EmailToken {
+    pub fn generate() -> Self {
+        Self(random_base64url::<32>())
+    }
+
+    /// Accepts only well-formed tokens, so junk never reaches the database.
+    pub fn from_presented(raw: &str) -> Option<Self> {
+        let well_formed = raw.len() == TOKEN_LEN
+            && raw
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_');
+        well_formed.then(|| Self(raw.to_owned()))
+    }
+
+    pub fn expose(&self) -> &str {
+        &self.0
+    }
+
+    pub fn hash(&self) -> [u8; 32] {
+        Sha256::digest(self.0.as_bytes()).into()
+    }
+}
+
+impl fmt::Debug for EmailToken {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("EmailToken(***)")
+    }
+}
+
+/// The random value that ties a started Google sign-in to the browser that started it: it is set as
+/// a cookie by `start` and must come back with the callback (ADR-0047). Only its SHA-256 is stored.
+#[derive(Clone, PartialEq, Eq)]
+pub struct BrowserBinding(String);
+
+impl BrowserBinding {
+    pub fn generate() -> Self {
+        Self(random_base64url::<32>())
+    }
+
+    pub fn from_presented(raw: &str) -> Option<Self> {
+        EmailToken::from_presented(raw).map(|token| Self(token.0))
+    }
+
+    pub fn expose(&self) -> &str {
+        &self.0
+    }
+
+    pub fn hash(&self) -> [u8; 32] {
+        Sha256::digest(self.0.as_bytes()).into()
+    }
+}
+
+impl fmt::Debug for BrowserBinding {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("BrowserBinding(***)")
+    }
+}
+
 /// An opaque session credential. Only its SHA-256 is stored.
 #[derive(Clone, PartialEq, Eq)]
 pub struct SessionToken(String);

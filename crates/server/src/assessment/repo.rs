@@ -10,7 +10,7 @@ use sqlx::PgConnection;
 use sqlx::types::Json;
 use uuid::Uuid;
 
-use super::model::{Attempt, Draft, LatestAttempt, StudentSubmission};
+use super::model::{Attempt, Draft, LatestAttempt, LatestContent, StudentName, StudentSubmission};
 
 type Body = Json<Map<String, Value>>;
 
@@ -136,18 +136,20 @@ pub async fn submit_draft(
     attempt: i32,
     submitted_at: DateTime<Utc>,
     is_late: bool,
+    auto_scores: Option<&Value>,
 ) -> Result<Attempt, sqlx::Error> {
     let row = sqlx::query!(
         r#"UPDATE assessment.submissions
            SET status = 'submitted', attempt = $2, submitted_at = $3, is_late = $4,
-               updated_at = now()
+               auto_scores = $5, updated_at = now()
            WHERE id = $1
            RETURNING id, attempt AS "attempt!", content AS "content: Body",
                      submitted_at AS "submitted_at!", is_late"#,
         id,
         attempt,
         submitted_at,
-        is_late
+        is_late,
+        auto_scores.map(Json) as Option<Json<&Value>>
     )
     .fetch_one(conn)
     .await?;
@@ -157,7 +159,149 @@ pub async fn submit_draft(
         content: row.content.0,
         submitted_at: row.submitted_at,
         is_late: row.is_late,
+        auto_scores: None,
     })
+}
+
+/// The stored per-question scores of attempts, by attempt id: for the staff path only
+/// (ADR-0050 point 9). An attempt without scores is left out.
+pub async fn auto_scores_of(
+    conn: &mut PgConnection,
+    attempt_ids: &[Uuid],
+) -> Result<Vec<(Uuid, Map<String, Value>)>, sqlx::Error> {
+    let rows = sqlx::query!(
+        r#"SELECT id, auto_scores AS "auto_scores!: Body" FROM assessment.submissions
+           WHERE id = ANY($1) AND auto_scores IS NOT NULL"#,
+        attempt_ids
+    )
+    .fetch_all(conn)
+    .await?;
+    Ok(rows
+        .into_iter()
+        .map(|row| (row.id, row.auto_scores.0))
+        .collect())
+}
+
+/// The latest attempt of a student with its stored scores, for the result a student reads after
+/// their grade is published (ADR-0050 point 8).
+pub async fn latest_with_scores(
+    conn: &mut PgConnection,
+    assignment_id: Uuid,
+    student_id: Uuid,
+) -> Result<Option<(Attempt, Map<String, Value>)>, sqlx::Error> {
+    let row = sqlx::query!(
+        r#"SELECT id, attempt AS "attempt!", content AS "content: Body",
+                  submitted_at AS "submitted_at!", is_late,
+                  auto_scores AS "auto_scores: Body"
+           FROM assessment.submissions
+           WHERE assignment_id = $1 AND student_id = $2 AND status = 'submitted'
+           ORDER BY attempt DESC LIMIT 1"#,
+        assignment_id,
+        student_id
+    )
+    .fetch_optional(conn)
+    .await?;
+    Ok(row.map(|row| {
+        (
+            Attempt {
+                id: row.id,
+                attempt: row.attempt,
+                content: row.content.0,
+                submitted_at: row.submitted_at,
+                is_late: row.is_late,
+                auto_scores: None,
+            },
+            row.auto_scores.map(|scores| scores.0).unwrap_or_default(),
+        )
+    }))
+}
+
+/// The latest submitted attempt of each student who has one, with the student's name: current
+/// and former students alike (ADR-0051).
+pub async fn latest_contents(
+    conn: &mut PgConnection,
+    assignment_id: Uuid,
+) -> Result<Vec<LatestContent>, sqlx::Error> {
+    let rows = sqlx::query!(
+        r#"SELECT DISTINCT ON (s.student_id)
+                  s.student_id, u.name, u.surname, s.attempt AS "attempt!",
+                  s.submitted_at AS "submitted_at!", s.is_late, s.content AS "content: Body"
+           FROM assessment.submissions s
+           JOIN identity.users u ON u.id = s.student_id
+           WHERE s.assignment_id = $1 AND s.status = 'submitted'
+           ORDER BY s.student_id, s.attempt DESC"#,
+        assignment_id
+    )
+    .fetch_all(conn)
+    .await?;
+    Ok(rows
+        .into_iter()
+        .map(|row| LatestContent {
+            student: StudentName {
+                user_id: row.student_id,
+                name: row.name,
+                surname: row.surname,
+            },
+            attempt: row.attempt,
+            submitted_at: row.submitted_at,
+            is_late: row.is_late,
+            content: row.content.0,
+        })
+        .collect())
+}
+
+/// The current students of the course in roster order (surname, name, id).
+pub async fn current_students(
+    conn: &mut PgConnection,
+    course_id: Uuid,
+) -> Result<Vec<StudentName>, sqlx::Error> {
+    let rows = sqlx::query!(
+        r#"SELECT u.id, u.name, u.surname
+           FROM teaching.effective_members m
+           JOIN identity.users u ON u.id = m.user_id
+           WHERE m.course_id = $1 AND m.role = 'student'
+           ORDER BY u.surname, u.name, u.id"#,
+        course_id
+    )
+    .fetch_all(conn)
+    .await?;
+    Ok(rows
+        .into_iter()
+        .map(|row| StudentName {
+            user_id: row.id,
+            name: row.name,
+            surname: row.surname,
+        })
+        .collect())
+}
+
+/// Which of `ids` are current students of the course.
+pub async fn students_among(
+    conn: &mut PgConnection,
+    course_id: Uuid,
+    ids: &[Uuid],
+) -> Result<Vec<Uuid>, sqlx::Error> {
+    sqlx::query_scalar!(
+        // A view's columns are inferred as nullable; `user_id` is not null in its definition.
+        r#"SELECT user_id AS "user_id!" FROM teaching.effective_members
+           WHERE course_id = $1 AND role = 'student' AND user_id = ANY($2)"#,
+        course_id,
+        ids
+    )
+    .fetch_all(conn)
+    .await
+}
+
+/// Takes the lock that serializes the submits of one form until the transaction ends
+/// (ADR-0051 point 4).
+pub async fn lock_form(conn: &mut PgConnection, assignment_id: Uuid) -> Result<(), sqlx::Error> {
+    sqlx::query!(
+        "SELECT pg_advisory_xact_lock(hashtextextended('form:' || $1::text, 0))",
+        assignment_id.to_string()
+    )
+    .execute(conn)
+    .await?;
+    Ok(())
 }
 
 /// The submitted attempts of one student, newest first, after the attempt `after` (a row id). The
@@ -196,6 +340,7 @@ pub async fn list_attempts(
             content: row.content.0,
             submitted_at: row.submitted_at,
             is_late: row.is_late,
+            auto_scores: None,
         })
         .collect())
 }

@@ -35,7 +35,7 @@ export function AssignmentSettings({ item, courseId, pointsLocked }: { item: Ite
       else Object.assign(patch, { due_at: null, on_deadline: null, accept_late: null, late_until: null });
       Object.assign(patch, { max_attempts: attempts.trim() === "" ? null : Number(attempts) });
     }
-    if (noSubmission && classDay !== null) patch.class_on = classDay ? localToIso(`${classDay}T12:00`) : null;
+    if (noSubmission && classDay !== null) patch.class_on = classDay || null;
     if (await update.run(item.id, patch)) setSaved(true);
   }
 
