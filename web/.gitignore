@@ -4,3 +4,6 @@ next-env.d.ts
 playwright-report
 test-results
 *.tsbuildinfo
+public/brand
+src/generated
+src/modules/enabled.ts

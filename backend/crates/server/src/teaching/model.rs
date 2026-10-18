@@ -2,7 +2,7 @@ use chrono::{DateTime, Utc};
 use uuid::Uuid;
 
 use crate::policy::{CourseRole, CourseStatus};
-use crate::text_enum::text_enum;
+use db::text_enum;
 
 const TITLE_MAX_LEN: usize = 200;
 const CODE_MAX_LEN: usize = 32;

@@ -592,8 +592,8 @@ mod tests {
     use crate::identity::{self, Email, NewUser, PersonName, Role};
     use crate::pagination::PageParams;
     use crate::policy::CourseRole;
-    use crate::settings::GradingScale;
     use crate::teaching::{self, CourseTitle};
+    use vumlo_config::GradingScale;
 
     static PROFILES: LazyLock<EffectiveProfiles> = LazyLock::new(EffectiveProfiles::unrestricted);
 

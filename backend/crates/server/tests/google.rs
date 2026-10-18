@@ -5,8 +5,8 @@ mod common;
 use common::google::{CLIENT_ID, CLIENT_SECRET, FakeIssuer, Person, REDIRECT_URI};
 use common::{Http, ORIGIN, PASSWORD, Resp, db_test, seed_user, spawn_app, test_settings};
 use server::identity::Role;
-use server::settings::{GoogleSettings, Secret, Settings};
 use sqlx::PgPool;
+use vumlo_config::{GoogleSettings, Secret, Settings};
 
 fn settings(issuer_url: &str) -> Settings {
     let mut settings = test_settings();

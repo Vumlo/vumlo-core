@@ -1,3 +1,5 @@
 /backend/target
 .env
 vumlo.toml
+.vumlo/
+backups/

@@ -1,0 +1,20 @@
+[package]
+name = "module-api"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+axum.workspace = true
+clap.workspace = true
+reqwest.workspace = true
+serde.workspace = true
+sqlx.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+utoipa.workspace = true
+vumlo-config.workspace = true
+
+[lints]
+workspace = true

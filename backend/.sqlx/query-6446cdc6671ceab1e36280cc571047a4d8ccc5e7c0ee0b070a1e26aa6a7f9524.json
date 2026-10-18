@@ -1,0 +1,26 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT mode AS \"mode!\" FROM org.installation",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "mode!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "org.installation",
+            "name": "mode"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "6446cdc6671ceab1e36280cc571047a4d8ccc5e7c0ee0b070a1e26aa6a7f9524"
+}

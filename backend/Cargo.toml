@@ -1,8 +1,18 @@
 [workspace]
 resolver = "3"
-members = ["crates/*"]
+# `crates/modules/` only holds the optional modules; each of them is a member.
+members = [
+    "crates/api-types",
+    "crates/config",
+    "crates/db",
+    "crates/module-api",
+    "crates/server",
+    "crates/vumlo-cli",
+    "crates/modules/*",
+]
 
 [workspace.package]
+version = "0.1.0"
 edition = "2024"
 publish = false
 
@@ -19,8 +29,12 @@ config = { version = "0.15", default-features = false, features = ["toml"] }
 garde = { version = "0.23", features = ["derive"] }
 openidconnect = { version = "4", default-features = false, features = ["reqwest", "rustls-tls"] }
 lettre = { version = "0.11", default-features = false, features = ["builder", "smtp-transport", "tokio1", "tokio1-rustls-tls", "file-transport"] }
+image = { version = "0.25", default-features = false, features = ["png", "ico", "jpeg", "webp"] }
 rand = "0.10"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
+resvg = { version = "0.48", default-features = false }
+rpassword = "7"
+schemars = "1.2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.11"
@@ -38,7 +52,12 @@ uuid = { version = "1", features = ["v7", "serde"] }
 zxcvbn = "3"
 
 api-types = { path = "crates/api-types" }
+db = { path = "crates/db" }
+module-api = { path = "crates/module-api" }
 server = { path = "crates/server" }
+vumlo-config = { path = "crates/config" }
+# The test-only module (feature `dummy` of server and vumlo-cli); never in a default build.
+vumlo-module-dummy = { path = "crates/modules/dummy" }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

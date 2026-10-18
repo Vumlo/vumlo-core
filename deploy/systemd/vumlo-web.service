@@ -1,0 +1,48 @@
+# The web app (Next.js), built on the server or elsewhere into /opt/vumlo/web with
+# `vumlo-cli build web`. Install as /etc/systemd/system/vumlo-web.service. It listens on
+# 127.0.0.1:3000; Caddy (deploy/Caddyfile) is the only thing that talks to it.
+
+[Unit]
+Description=Vumlo web
+After=network-online.target vumlo-core.service
+Wants=network-online.target
+
+[Service]
+User=vumlo
+Group=vumlo
+WorkingDirectory=/opt/vumlo/web
+Environment=NODE_ENV=production
+Environment=HOSTNAME=127.0.0.1
+Environment=PORT=3000
+ExecStart=/usr/bin/node node_modules/next/dist/bin/next start -p 3000 -H 127.0.0.1
+Restart=on-failure
+RestartSec=3
+# Next.js writes its image and fetch cache here.
+ReadWritePaths=/opt/vumlo/web/.next/cache
+
+NoNewPrivileges=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+# No MemoryDenyWriteExecute: Node's JIT needs writable and executable memory.
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

@@ -1,6 +1,6 @@
 [package]
 name = "server"
-version = "0.1.0"
+version.workspace = true
 edition.workspace = true
 publish.workspace = true
 
@@ -12,19 +12,24 @@ path = "src/lib.rs"
 name = "vumlo-server"
 path = "src/main.rs"
 
+[features]
+default = []
+# Optional modules (ADR-0054): the feature of a module is named after it, on server and vumlo-cli
+# alike. `dummy` is the test-only module; only the test jobs of CI build with it.
+dummy = ["dep:vumlo-module-dummy", "vumlo-config/test-registry"]
+
 [dependencies]
 anyhow.workspace = true
 api-types.workspace = true
 argon2.workspace = true
 axum.workspace = true
 axum-extra.workspace = true
-base64.workspace = true
 chrono.workspace = true
-chrono-tz.workspace = true
 clap.workspace = true
-config.workspace = true
+db.workspace = true
 garde.workspace = true
 lettre.workspace = true
+module-api.workspace = true
 openidconnect.workspace = true
 rand.workspace = true
 serde.workspace = true
@@ -41,9 +46,12 @@ utoipa.workspace = true
 utoipa-axum.workspace = true
 utoipa-scalar.workspace = true
 uuid.workspace = true
-zxcvbn.workspace = true
+vumlo-config.workspace = true
+vumlo-module-dummy = { workspace = true, optional = true }
 
 [dev-dependencies]
+base64.workspace = true
+chrono-tz.workspace = true
 reqwest.workspace = true
 
 [lints]

@@ -5,12 +5,13 @@ pub mod google;
 
 use server::app::{self, AppState};
 use server::identity::{self, Email, Role, TemporaryPassword};
-use server::settings::{
-    Accent, AuthSettings, DatabaseSettings, EditorSettings, GradingScale, InstitutionMode,
-    InstitutionSettings, Language, LogFormat, LogSettings, ServerSettings, Settings,
-};
 use sqlx::PgPool;
 use tokio::net::TcpListener;
+use vumlo_config::{
+    AuthSettings, CliSettings, DatabaseSettings, EditorSettings, GradingScale, InstitutionMode,
+    InstitutionSettings, Language, LogFormat, LogSettings, Modules, Secret, ServerSettings,
+    Settings, WebSettings,
+};
 
 // One copy of the per-test database harness, shared with the library's own unit tests.
 #[path = "../../src/test_support.rs"]
@@ -21,8 +22,33 @@ pub use test_support::{bare_db_test, db_test, wait_until_blocked};
 
 pub const ORIGIN: &str = "https://lms.test";
 
+/// Applies the migrations of the optional modules compiled in. `db_test` only migrates the core,
+/// and a binary built with a module treats a database with its migrations pending as not ready.
+pub async fn migrate_modules(pool: &PgPool) {
+    for (_, migrator) in server::modules::migrators() {
+        migrator.run(pool).await.expect("the module's migrations");
+    }
+}
+
+/// Polls `check` until it holds, for work that happens on its own task. Fails after ten seconds.
+pub async fn wait_until<F, Fut>(mut check: F)
+where
+    F: FnMut() -> Fut,
+    Fut: std::future::Future<Output = bool>,
+{
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    while !check().await {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "the condition did not hold within ten seconds"
+        );
+        tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+    }
+}
+
 pub fn test_settings() -> Settings {
     Settings {
+        config_version: vumlo_config::SUPPORTED_CONFIG_VERSION,
         server: ServerSettings {
             bind_addr: ([127, 0, 0, 1], 0).into(),
             public_origin: ORIGIN.to_owned(),
@@ -30,9 +56,11 @@ pub fn test_settings() -> Settings {
             allowed_origins: Vec::new(),
         },
         database: DatabaseSettings {
-            url: String::new(),
+            url: Secret::new(""),
             max_connections: 1,
         },
+        web: WebSettings::default(),
+        cli: CliSettings::default(),
         log: LogSettings {
             format: LogFormat::Pretty,
         },
@@ -42,12 +70,15 @@ pub fn test_settings() -> Settings {
             short_name: "Test".to_owned(),
             language: Language::En,
             time_zone: chrono_tz::UTC,
-            accent: Accent::Indigo,
             mode: InstitutionMode::University,
             grading_scale: GradingScale::Hundred,
+            logo: None,
         },
         editor: EditorSettings::default(),
         mail: None,
+        modules: std::collections::BTreeMap::new(),
+        module_state: Modules::default(),
+        base_dir: std::path::PathBuf::new(),
     }
 }
 
@@ -92,10 +123,10 @@ impl Mailbox {
     pub fn settings(&self) -> Settings {
         let mut settings = test_settings();
         settings.auth.allowed_domains = vec!["lms.test".to_owned()];
-        settings.mail = Some(server::settings::MailSettings {
+        settings.mail = Some(vumlo_config::MailSettings {
             from: "Vumlo <no-reply@lms.test>".to_owned(),
             link_base: None,
-            transport: server::settings::MailTransport::File {
+            transport: vumlo_config::MailTransport::File {
                 dir: self.dir.clone(),
             },
         });

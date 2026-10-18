@@ -11,7 +11,7 @@ use crate::app::AppState;
 use crate::error::ApiError;
 use crate::identity::model::SessionToken;
 use crate::identity::service::{self, Authenticated, IdentityError};
-use crate::settings::ServerSettings;
+use vumlo_config::ServerSettings;
 
 pub const COOKIE_NAME: &str = "vumlo_session";
 

@@ -6,7 +6,7 @@ use crate::actor::Actor;
 use crate::app::AppState;
 use crate::error::ApiError;
 use crate::org::service;
-use crate::settings::{self, InstitutionSettings};
+use vumlo_config::{self as settings, InstitutionSettings};
 
 fn api_institution(institution: &InstitutionSettings) -> Institution {
     Institution {
@@ -17,13 +17,6 @@ fn api_institution(institution: &InstitutionSettings) -> Institution {
             settings::Language::Uk => api_types::Language::Uk,
         },
         time_zone: institution.time_zone.name().to_owned(),
-        accent: match institution.accent {
-            settings::Accent::Indigo => api_types::Accent::Indigo,
-            settings::Accent::Teal => api_types::Accent::Teal,
-            settings::Accent::Crimson => api_types::Accent::Crimson,
-            settings::Accent::Forest => api_types::Accent::Forest,
-            settings::Accent::Plum => api_types::Accent::Plum,
-        },
         grading_scale: match institution.grading_scale {
             settings::GradingScale::Twelve => api_types::GradingScale::Twelve,
             settings::GradingScale::Hundred => api_types::GradingScale::Hundred,

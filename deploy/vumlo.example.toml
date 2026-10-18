@@ -1,0 +1,113 @@
+# Copy to vumlo.toml (or run `vumlo-cli init`). Precedence, lowest first: the defaults below,
+# this file, VUMLO__<SECTION>__<KEY> environment variables, then --set section.key=value flags.
+# Check it with `vumlo-cli config check`.
+#
+# Secrets never go in this file. They come from the environment (or the env file named by
+# [cli].env_file): DATABASE_URL, VUMLO__AUTH__GOOGLE__CLIENT_SECRET, VUMLO__MAIL__TRANSPORT__PASSWORD.
+# A secret written here stops the server and `vumlo-cli config check`.
+#
+# Changing the file means: restart the server. Changing [institution] or [modules] also means
+# `vumlo-cli brand apply`, then rebuilding the web app.
+config_version = 1
+
+[server]
+bind_addr = "127.0.0.1:8080"
+# The origin browsers use to reach Vumlo (no path): where the web app is served. Cookie-authenticated
+# POST/PATCH/DELETE requests must send exactly this Origin, and every URL the installation
+# publishes (the API, mail links, the manifest) is derived from it. Production: https://lms.example.edu
+public_origin = "http://localhost:3000"
+# Behind a reverse proxy that overwrites this header, rate limits use it instead of the TCP peer.
+# client_ip_header = "x-real-ip"
+# Trusted browser frontends hosted on another origin (ADR-0041). Each entry is an exact origin:
+# scheme://host[:port], lowercase, no path, no wildcard, no default port. Empty (the default) means
+# no CORS headers at all. A listed origin gets CORS with credentials and may send cookie-authenticated
+# writes, so its JavaScript acts with the user's rights: list only frontends you trust. Cookies are
+# SameSite=Lax, so cookie login works across origins only for a frontend on the same site as the API
+# (app.example.edu -> lms.example.edu); a frontend on another site must use bearer tokens.
+# allowed_origins = ["https://app.example.edu"]
+
+[database]
+# The URL is a secret: DATABASE_URL=postgres://user:password@host:5432/vumlo in the environment.
+max_connections = 10
+
+[log]
+format = "pretty" # "pretty" | "json"
+
+[web]
+dir = "web" # where `vumlo-cli build web` runs the web build, relative to this file
+
+[cli]
+env_file = ".env"   # the secrets file vumlo-cli reads (KEY=VALUE lines); never overrides the environment
+# core_url = "http://127.0.0.1:8080"   # where `vumlo-cli doctor` reaches the core; default server.public_origin
+
+[auth]
+password_min_length = 12 # 8..=128
+cookie_secure = false     # keep true (the default) in production; false only for plain-HTTP dev
+allowed_domains = []      # who may sign up themselves, e.g. ["example.edu"] (ADR-0046); empty: nobody
+# Login limits (ADR-0038). A client is an IPv4 address or the /64 of an IPv6 one. A school or a
+# lecture hall behind one address raises login_ip_burst (and lowers login_ip_replenish_seconds):
+# with 300 students logging in at the start of a lesson, 50 attempts and one more per second are not
+# enough. Behind a reverse proxy set server.client_ip_header, or every client is the proxy.
+login_ip_burst = 50                # attempts one client may make in a burst (1..=1000000)
+login_ip_replenish_seconds = 1     # seconds until one attempt is given back (1..=3600)
+login_account_max_attempts = 10    # attempts per account per window (1..=1000)
+login_account_window_minutes = 15  # the window (1..=1440)
+max_concurrent_hashes = 8          # password hashes and checks at once, ~19 MiB each (1..=256)
+
+# Sign-in with Google (ADR-0047). Without this section the two endpoints answer 404. A Google
+# account needs a verified email in allowed_domains. Create the client in the Google Cloud console
+# (a web application) and list redirect_uri as an authorized redirect URI.
+# [auth.google]
+# client_id = "....apps.googleusercontent.com"
+# The client secret is VUMLO__AUTH__GOOGLE__CLIENT_SECRET in the environment, not a key here.
+# redirect_uri = "https://lms.example.edu/auth/google/callback"   # the callback page of the web app
+
+# Outgoing mail (ADR-0045): the links of self-registration and password reset. Without this section
+# both are off (404). Sent by the outbox worker, never inside a request.
+# [mail]
+# from = "Vumlo <no-reply@example.edu>"
+# link_base = "https://lms.example.edu"  # where the links point; default server.public_origin
+# [mail.transport]
+# kind = "smtp"                          # "smtp" | "file"
+# host = "smtp.example.edu"
+# port = 587                             # default: 587 for starttls, 465 for tls, 25 for none
+# tls = "starttls"                       # "starttls" | "tls" | "none" (none: a local test server)
+# username = "vumlo"
+# The SMTP password is VUMLO__MAIL__TRANSPORT__PASSWORD in the environment, not a key here.
+# For development, write every message to a file instead:
+# kind = "file"
+# dir = "/tmp/vumlo-mail"
+
+[institution]
+name = "Example University"
+# REQUIRED. Choose it before the first start: it is recorded in the database then and cannot be
+# changed later (a different value stops the server).
+#   "school"     - every piece of work is graded 1-12; the default grading scale is "twelve"
+#   "university" - points add up to 100 per course; the default grading scale is "hundred"
+mode = "university"
+# Limits assignment points: "twelve" = at most 12 per assignment, "hundred" = the regular
+# assignments of a course add up to at most 100. Optional; by default it follows the mode.
+# grading_scale = "hundred"
+# What the web app shows before anyone signs in (ADR-0044). All optional. They are read at startup:
+# changing one means editing this file and restarting.
+# short_name = "Example"   # 1-50 characters; default: name
+# language = "en"          # "en" | "uk"; default "en"
+# time_zone = "Europe/Kyiv" # an IANA zone name; default "UTC"
+# The logo `vumlo-cli brand apply` builds the favicon and the app icons from: a path (relative to
+# this file) or an http(s) URL to a PNG, JPEG, WebP or SVG. Optional.
+# logo = "brand/logo.svg"
+
+# Optional add-on modules (ADR-0054). Each is compiled in with a Cargo feature of the same name
+# and switched on here; `vumlo-cli modules list` shows which this build has. Off by default.
+# [modules]
+# some-module = true
+
+[editor]
+# What the document editor may offer. A configuration can only narrow what the code allows;
+# an unknown profile, feature or provider stops the server at startup.
+# Providers a video block may name. An empty list switches video off.
+video_providers = ["youtube", "vimeo"]
+# Narrow a profile (full, question, option, student) to the listed features. Features:
+# headings, text_styles, links, lists, quote, divider, table, code, math, mermaid, video.
+# [editor.profiles.student]
+# features = ["text_styles", "links", "lists", "code", "math"]

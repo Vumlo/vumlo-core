@@ -416,7 +416,7 @@ export function createSeed(): Db {
   ];
 
   const institution = {
-    name: "Northfield University", short_name: "Northfield", accent: "indigo" as const, language: "en" as const, time_zone: "Europe/Kyiv", grading_scale: "hundred" as const,
+    name: "Northfield University", short_name: "Northfield", language: "en" as const, time_zone: "Europe/Kyiv", grading_scale: "hundred" as const,
     mode: "university" as const, allowed_domains: ["northfield.edu"],
   };
 

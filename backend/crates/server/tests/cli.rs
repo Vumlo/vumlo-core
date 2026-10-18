@@ -53,6 +53,7 @@ async fn run(pool: &PgPool, args: &[&str]) -> Output {
 async fn run_in_mode(pool: &PgPool, mode: &str, args: &[&str]) -> Output {
     let mode = mode.to_owned();
     let url = test_database_url(pool);
+    common::migrate_modules(pool).await;
     let args: Vec<String> = args.iter().map(|a| (*a).to_owned()).collect();
     tokio::task::spawn_blocking(move || {
         let output = Command::new(env!("CARGO_BIN_EXE_vumlo-server"))

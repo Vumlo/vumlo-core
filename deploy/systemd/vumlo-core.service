@@ -1,0 +1,46 @@
+# The API. Install as /etc/systemd/system/vumlo-core.service. See docs/install.md.
+# Layout assumed: binaries in /opt/vumlo/bin, vumlo.toml and vumlo.env in /etc/vumlo, a system user
+# and group `vumlo`. The env file holds the secrets: root:root, mode 0600. systemd reads it as root
+# before it drops to `vumlo`, so the service itself cannot read the file.
+
+[Unit]
+Description=Vumlo core (API)
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+User=vumlo
+Group=vumlo
+Environment=VUMLO_CONFIG=/etc/vumlo/vumlo.toml
+EnvironmentFile=/etc/vumlo/vumlo.env
+ExecStart=/opt/vumlo/bin/vumlo-server serve --no-worker
+Restart=on-failure
+RestartSec=3
+
+# Hardening: it needs the network and nothing else.
+NoNewPrivileges=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

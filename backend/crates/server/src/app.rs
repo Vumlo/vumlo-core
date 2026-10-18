@@ -1,5 +1,3 @@
-use std::collections::HashSet;
-use std::fmt;
 use std::future::Future;
 use std::sync::Arc;
 use std::time::Duration;
@@ -11,7 +9,6 @@ use axum::middleware::map_response;
 use axum::routing::get;
 use axum::{Json, Router};
 use sqlx::PgPool;
-use sqlx::migrate::{Migrate, MigrateError, Migrator};
 use sqlx::postgres::PgPoolOptions;
 use tokio::net::TcpListener;
 use tokio::signal::unix::{SignalKind, signal};
@@ -35,10 +32,11 @@ use crate::health;
 use crate::identity::{self, SetupError};
 use crate::mail::{MailError, Mailer};
 use crate::org;
-use crate::settings::Settings;
 use crate::teaching;
+use vumlo_config::Settings;
 
-pub static MIGRATOR: Migrator = sqlx::migrate!("../../migrations");
+// Shared with `vumlo-cli`: the migrations live in the `db` crate.
+pub use db::{MIGRATOR, MigrationCheckError, ensure_migrated};
 
 /// Shorter than the request timeout, so an unreachable database surfaces as 503, not 408.
 const DB_ACQUIRE_TIMEOUT: Duration = Duration::from_secs(5);
@@ -149,72 +147,8 @@ pub async fn connect(settings: &Settings) -> Result<PgPool, sqlx::Error> {
     PgPoolOptions::new()
         .max_connections(settings.database.max_connections)
         .acquire_timeout(DB_ACQUIRE_TIMEOUT)
-        .connect(&settings.database.url)
+        .connect(settings.database.url.expose())
         .await
-}
-
-#[derive(Debug)]
-pub enum MigrationCheckError {
-    Db(sqlx::Error),
-    Migrate(MigrateError),
-    Pending(usize),
-}
-
-impl fmt::Display for MigrationCheckError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Db(e) => write!(f, "cannot read the migration state: {e}"),
-            Self::Migrate(e) => write!(f, "cannot read the migration state: {e}"),
-            Self::Pending(n) => {
-                write!(
-                    f,
-                    "{n} database migration(s) pending; run `vumlo-server migrate` first"
-                )
-            }
-        }
-    }
-}
-
-impl std::error::Error for MigrationCheckError {}
-
-impl From<sqlx::Error> for MigrationCheckError {
-    fn from(e: sqlx::Error) -> Self {
-        Self::Db(e)
-    }
-}
-
-impl From<MigrateError> for MigrationCheckError {
-    fn from(e: MigrateError) -> Self {
-        Self::Migrate(e)
-    }
-}
-
-/// Fails if any embedded migration has not been applied. Never changes the database.
-pub async fn ensure_migrated(pool: &PgPool) -> Result<(), MigrationCheckError> {
-    let mut conn = pool.acquire().await?;
-    let table_exists =
-        sqlx::query!(r#"SELECT to_regclass('_sqlx_migrations') IS NOT NULL AS "exists!""#)
-            .fetch_one(&mut *conn)
-            .await?
-            .exists;
-    let applied: HashSet<i64> = if table_exists {
-        conn.list_applied_migrations(&MIGRATOR.table_name)
-            .await?
-            .into_iter()
-            .map(|m| m.version)
-            .collect()
-    } else {
-        HashSet::new()
-    };
-    let pending = MIGRATOR
-        .iter()
-        .filter(|m| !m.migration_type.is_down_migration() && !applied.contains(&m.version))
-        .count();
-    if pending == 0 {
-        Ok(())
-    } else {
-        Err(MigrationCheckError::Pending(pending))
-    }
 }
 
 pub fn router(state: AppState) -> Result<Router, SetupError> {
@@ -233,6 +167,7 @@ pub fn router(state: AppState) -> Result<Router, SetupError> {
                 .merge(crate::events::router()),
         )
         .split_for_parts();
+    let (router, openapi) = mount_modules(&state, router, openapi);
     let spec = openapi.clone();
     let config = state.config.clone();
     let router = router
@@ -263,6 +198,33 @@ pub fn router(state: AppState) -> Result<Router, SetupError> {
         )
         .layer(map_response(problem_details));
     Ok(cors(router, &config.server.allowed_origins))
+}
+
+/// Mounts every module that is compiled in and enabled under `/api/v1/<name>`, and adds its paths
+/// to the OpenAPI document. A module that is off gets nothing: its paths answer `404` and are not
+/// in the document (ADR-0054).
+fn mount_modules(
+    state: &AppState,
+    mut router: Router<AppState>,
+    mut openapi: utoipa::openapi::OpenApi,
+) -> (Router<AppState>, utoipa::openapi::OpenApi) {
+    for module in crate::modules::compiled() {
+        if !state.config.module_state.is_enabled(module.name) {
+            continue;
+        }
+        let prefix = format!("/api/v1/{}", module.name);
+        router = router.nest_service(
+            &prefix,
+            (module.router)(crate::modules::context(state, module.name)),
+        );
+        let mut doc = (module.openapi)();
+        doc.paths.paths = std::mem::take(&mut doc.paths.paths)
+            .into_iter()
+            .map(|(path, item)| (format!("{prefix}{path}"), item))
+            .collect();
+        openapi.merge(doc);
+    }
+    (router, openapi)
 }
 
 /// How long a browser may reuse a preflight answer.

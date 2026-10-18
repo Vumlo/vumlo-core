@@ -9,9 +9,9 @@ use common::{Http, Resp, db_test, seed_and_login};
 use serde_json::{Value, json};
 use server::identity::Role;
 use server::org::{self, OrgError};
-use server::settings::InstitutionMode::{self, School, University};
 use sqlx::PgPool;
 use uuid::Uuid;
+use vumlo_config::InstitutionMode::{self, School, University};
 
 async fn start(pool: &PgPool, mode: InstitutionMode) -> Result<(), OrgError> {
     let mut tx = pool.begin().await.unwrap();

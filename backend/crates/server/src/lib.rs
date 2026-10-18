@@ -8,12 +8,11 @@ pub mod gradebook;
 mod health;
 pub mod identity;
 pub mod mail;
+pub mod modules;
 pub mod org;
 pub mod pagination;
 mod points;
 pub mod policy;
-pub mod settings;
 pub mod teaching;
 #[cfg(test)]
 mod test_support;
-mod text_enum;

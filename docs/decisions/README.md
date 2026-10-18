@@ -88,3 +88,5 @@ What gets easier, what gets harder, what we must remember.
 | 0051 | [The `form` assignment type](0051-the-form-type.md) |
 | 0052 | [Home read models and search](0052-home-read-models-and-search.md) |
 | 0053 | [Admin read models and reading the audit log](0053-admin-read-models-and-the-audit-log.md) |
+| 0054 | [Deployment model: `vumlo-cli`, one config schema, build-time branding, optional modules](0054-deployment-model.md) |
+| 0055 | [Deferred directions: widgets, plugins, an end-user CLI, native clients](0055-deferred-directions.md) |

@@ -20,7 +20,7 @@ use api_types::{
 };
 
 use super::{DocumentError, MAX_ERRORS, limits};
-use crate::settings::EditorSettings;
+use vumlo_config::EditorSettings;
 
 /// The editor configuration cannot be applied. The message names the key and the value.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]

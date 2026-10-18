@@ -15,17 +15,6 @@ pub enum Language {
     Uk,
 }
 
-/// The accent colour of the web app.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
-#[serde(rename_all = "lowercase")]
-pub enum Accent {
-    Indigo,
-    Teal,
-    Crimson,
-    Forest,
-    Plum,
-}
-
 /// How points relate to the grade (ADR-0022).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "lowercase")]
@@ -53,7 +42,6 @@ pub struct Institution {
     pub language: Language,
     /// An IANA zone name, e.g. `Europe/Kyiv`.
     pub time_zone: String,
-    pub accent: Accent,
     pub grading_scale: GradingScale,
 }
 

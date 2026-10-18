@@ -19,8 +19,8 @@ use crate::events::{self, AuditEntry, EventsError};
 use crate::identity::{self, IdentityError};
 use crate::pagination::{Page, PageParams};
 use crate::policy::{self, Action, PolicyError, group_role_allowed};
-use crate::settings::InstitutionMode;
 use crate::teaching::{self, TeachingError};
+use vumlo_config::InstitutionMode;
 
 #[derive(Debug, thiserror::Error)]
 pub enum OrgError {
@@ -730,16 +730,21 @@ pub async fn record_mode(
     conn: &mut PgConnection,
     configured: InstitutionMode,
 ) -> Result<(), OrgError> {
-    repo::insert_mode_if_absent(conn, configured).await?;
-    let recorded = repo::recorded_mode(conn).await?;
-    if recorded == configured {
-        Ok(())
-    } else {
-        Err(OrgError::ModeChanged {
-            recorded,
-            configured,
+    db::record_mode(conn, configured)
+        .await
+        .map_err(|e| match e {
+            db::ModeError::Db(e) => OrgError::Db(e),
+            db::ModeError::Unknown { recorded } => OrgError::Db(sqlx::Error::Protocol(format!(
+                "org.installation holds the unknown mode \"{recorded}\""
+            ))),
+            db::ModeError::Changed {
+                recorded,
+                configured,
+            } => OrgError::ModeChanged {
+                recorded,
+                configured,
+            },
         })
-    }
 }
 
 #[cfg(test)]

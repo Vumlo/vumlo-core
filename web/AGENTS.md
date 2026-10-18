@@ -8,9 +8,24 @@ Next.js (App Router), React, TypeScript, CSS Modules. pnpm.
     pnpm dev:mock      # the app against the MSW mock API (no backend needed)
     pnpm dev           # the app proxied to the Rust server (VUMLO_API_ORIGIN)
     pnpm lint          # eslint + no colour literals outside styles/tokens.css
-    pnpm typecheck
+    pnpm typecheck     # needs `vumlo-cli brand apply` first (see below)
+    pnpm build         # likewise
     pnpm test:e2e      # Playwright smoke test over every screen, both themes
     pnpm gen:api       # web/openapi.json -> src/lib/api/schema.d.ts
+
+## Branding and optional modules (ADR-0054)
+The web build takes its configuration from one place: `.vumlo/generated/` (next to `vumlo.toml`),
+written by `vumlo-cli brand apply`. `scripts/brand.mjs` copies it into `public/brand/` (icons,
+manifest, logo), `src/generated/` (`client-config.json` and its types) and `src/modules/enabled.ts`
+(the UI of the optional modules that are on). All three are generated and gitignored. `typecheck` and
+`build` stop with a clear message if the directory is missing; `dev` and `dev:mock` use a stand-in.
+
+- Read the institution's public settings from `src/lib/clientConfig.ts`. Never read `vumlo.toml`, and
+  never add a key to the web build that is not in `client-config.json`.
+- The UI of a module lives in `src/modules/<name>/index.tsx` and nowhere else; it is rendered at
+  `/m/<name>/...` and reaches the bundle only while the module is on.
+- Theming is out of scope: universities edit `web/` themselves. This may conflict with upstream
+  updates. A config change means `brand apply`, a web rebuild and a restart.
 
 ## Rules
 - Every page is a client component. The browser calls `/api/v1` only; no route handlers, no server actions.

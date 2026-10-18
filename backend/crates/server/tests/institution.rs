@@ -5,7 +5,7 @@ mod common;
 use chrono_tz::Tz;
 use common::{Http, db_test, seed_and_login, spawn, spawn_with, test_settings};
 use server::identity::Role;
-use server::settings::{Accent, Language};
+use vumlo_config::Language;
 
 #[tokio::test]
 async fn the_public_profile_needs_no_session() {
@@ -22,7 +22,6 @@ async fn the_public_profile_needs_no_session() {
                 "short_name": "Test",
                 "language": "en",
                 "time_zone": "UTC",
-                "accent": "indigo",
                 "grading_scale": "hundred",
             })
         );
@@ -37,7 +36,6 @@ async fn the_profile_follows_the_configuration() {
         settings.institution.short_name = "Northfield".to_owned();
         settings.institution.language = Language::Uk;
         settings.institution.time_zone = "Europe/Kyiv".parse::<Tz>().unwrap();
-        settings.institution.accent = Accent::Plum;
         let http = Http::new(&spawn_with(pool, settings).await);
 
         let body = http.get("/institution").send().await.json();
@@ -45,7 +43,6 @@ async fn the_profile_follows_the_configuration() {
         assert_eq!(body["short_name"], "Northfield");
         assert_eq!(body["language"], "uk");
         assert_eq!(body["time_zone"], "Europe/Kyiv");
-        assert_eq!(body["accent"], "plum");
     })
     .await;
 }
@@ -68,7 +65,6 @@ async fn an_admin_reads_the_mode_and_the_allowed_domains() {
                 "short_name": "Test",
                 "language": "en",
                 "time_zone": "UTC",
-                "accent": "indigo",
                 "grading_scale": "hundred",
                 "mode": "university",
                 "allowed_domains": ["a.edu", "b.edu"],

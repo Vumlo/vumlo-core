@@ -29,8 +29,8 @@ use crate::assessment::{self, AssessmentError};
 use crate::events::{self, AuditEntry, EventsError};
 use crate::gradebook::{self, GradebookError};
 use crate::policy::{self, Action, CourseAccess, CourseStatus, PolicyError, Release};
-use crate::settings::GradingScale;
 use crate::teaching::{self, TeachingError};
+use vumlo_config::GradingScale;
 
 /// The most points one assignment can be worth on the `twelve` scale (ADR-0022).
 const TWELVE_LIMIT: u32 = 12;

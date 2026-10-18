@@ -9,9 +9,9 @@ use common::{
 };
 use serde_json::{Value, json};
 use server::identity::Role;
-use server::settings::{EditorSettings, ProfileSettings, Settings};
 use sqlx::PgPool;
 use uuid::Uuid;
+use vumlo_config::{EditorSettings, ProfileSettings, Settings};
 
 struct User {
     id: Uuid,

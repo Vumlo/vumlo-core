@@ -1,0 +1,20 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO content.items\n                 (id, module_id, course_id, position, kind, title, body, status,\n                  published_title, published_body, last_published_at)\n             VALUES ($1, $2, $3, $4, $5, $6, $7, 'published', $6, $7, now())",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Int4",
+        "Text",
+        "Text",
+        "Jsonb"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "557bfc15e2094b501b5f901f6debb9cf0f885b53fec185c7a76d7ac60b165306"
+}
