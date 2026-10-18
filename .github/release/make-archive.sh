@@ -46,7 +46,7 @@ sed -i -e '/dummy/d' "$stage/backend/crates/server/Cargo.toml" "$stage/backend/c
 sed -i -e '/feature = "dummy"/d' -e '/vumlo_module_dummy/d' \
     "$stage/backend/crates/server/src/modules.rs" "$stage/backend/crates/vumlo-cli/src/runtime.rs"
 # The offline query data of the module's own queries.
-grep -rl 'dummy\.' "$stage/backend/.sqlx" | xargs -r rm -f
+{ grep -rl 'dummy\.' "$stage/backend/.sqlx" || true; } | xargs -r rm -f
 
 # Cargo.lock: let cargo drop the module's entries and nothing else. Any other change is a mistake.
 (cd "$stage/backend" && cargo metadata --format-version 1 >/dev/null)
