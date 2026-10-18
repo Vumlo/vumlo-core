@@ -137,6 +137,9 @@ behind a Cargo feature, and `server` and `vumlo-cli` name it in exactly one plac
 ## 12. Tests
 
 - Every change comes with tests that check behavior, not just "it compiles".
+- Unit tests are never written inside a source file: `foo.rs` declares `#[cfg(test)] mod tests;` and the
+  tests are in `foo/tests.rs` (for `mod.rs` and `lib.rs`: `tests.rs` beside it). The release archive leaves
+  out every `tests.rs` and `test_support.rs` (`RELEASING.md`), and a test written inline would ship.
 - DB tests are `#[tokio::test]` functions that run in `db_test(async |pool| { … })` (ADR-0036); never `#[sqlx::test]`. API tests start the real server and call it with `reqwest`.
   Shared helpers (server spawn, seeding, login) live in `backend/crates/server/tests/common/`.
 - A test never holds a pooled connection across a request to the server, and never waits for a lock with a fixed sleep: it uses `test_support::wait_until_blocked`.

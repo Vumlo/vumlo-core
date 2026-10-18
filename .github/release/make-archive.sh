@@ -36,6 +36,9 @@ rm -rf \
     "$stage"/backend/crates/modules \
     "$stage"/web/e2e "$stage"/web/playwright.config.ts "$stage"/web/src/modules/dummy \
     "$stage"/web/AGENTS.md "$stage"/web/API_GAPS.md "$stage"/web/pnpm-lock.yaml
+# The unit tests of a source file live in a file of their own (`mod tests;` behind #[cfg(test)]).
+find "$stage/backend/crates" -type f \( -name tests.rs -o -name content_tests.rs -o -name test_support.rs \) -delete
+find "$stage/backend/crates" -type d -empty -delete
 
 # --- release manifests ----------------------------------------------------------------------------
 # The test-only module `dummy` is a workspace member, an optional dependency and a feature of
@@ -61,6 +64,10 @@ cp "$stage/deploy/vumlo.example.toml" "$stage/vumlo.toml.example"
 # Nothing of the excluded kind may be left.
 if find "$stage" \( -path '*/tests' -o -path '*/e2e' -o -path '*/decisions' -o -path '*/.github' \) -print -quit | grep -q .; then
     echo "make-archive: a test, ADR or CI directory is in the archive" >&2
+    exit 1
+fi
+if find "$stage" -name '*tests.rs' -o -name test_support.rs | grep -q .; then
+    echo "make-archive: a test file is in the archive" >&2
     exit 1
 fi
 if grep -rIl 'vumlo-module-dummy\|vumlo_module_dummy' "$stage" | grep -q .; then
