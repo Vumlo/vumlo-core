@@ -46,12 +46,14 @@ You need Docker with the Compose plugin (version 2.24 or newer). Nothing else is
 ```sh
 git clone https://github.com/Vumlo/vumlo-core.git vumlo && cd vumlo
 
-./vumlo init            # writes vumlo.toml and .env.example; builds the vumlo-cli image the first time
-cp .env.example .env && chmod 600 .env
+./vumlo init            # writes vumlo.toml; builds the vumlo-cli image the first time
+cp deploy/env.example .env && chmod 600 .env
 ```
 
 `./vumlo` is a small script that runs `vumlo-cli` inside the compose service when there is no local
-binary. Edit the two files:
+binary. (`init` also offers a `.env.example`, but this repository already has a `.env.example` for
+development and `init` never overwrites a file, so the Docker template is `deploy/env.example`.) Edit
+the two files:
 
 - `.env`: set a real `POSTGRES_PASSWORD`, and put the same password in `DATABASE_URL` (its host is
   `postgres`, the name of the compose service).
@@ -142,14 +144,16 @@ sudo ln -sf /opt/vumlo/bin/vumlo-cli /usr/local/bin/vumlo-cli
 sudo install -d -m 0750 -o root -g vumlo /etc/vumlo
 cd /etc/vumlo
 sudo vumlo-cli init                                   # vumlo.toml and .env.example
-sudo mv .env.example vumlo.env && sudo chown root:vumlo vumlo.env && sudo chmod 640 vumlo.env
+sudo mv .env.example vumlo.env && sudo chmod 600 vumlo.env     # root only: systemd reads it as root
 sudoedit /etc/vumlo/vumlo.env                         # DATABASE_URL with the host localhost, and the secrets you use
 sudoedit /etc/vumlo/vumlo.toml
 ```
 
 In `vumlo.toml` set `institution.name`, `institution.mode`, `server.public_origin =
 "https://lms.example.edu"`, `server.client_ip_header = "x-real-ip"` (Caddy sets it), `auth.allowed_domains`,
-and `[cli] env_file = "vumlo.env"` so the CLI finds the secrets. Set `web.dir = "/opt/vumlo/web"`.
+and in `[cli]` set `env_file = "vumlo.env"` (so the CLI finds the secrets) and `core_url =
+"http://127.0.0.1:8080"` (so `doctor` asks the core directly and not through Caddy). Set `web.dir =
+"/opt/vumlo/web"`. Remove the `cookie_secure = false` line, or set it to `true`: the site is HTTPS.
 Then:
 
 ```sh
@@ -208,31 +212,36 @@ The Caddyfile of this repository also serves the Docker install: its two upstrea
 A backup you have never restored is a hope. Take one and prove it reads back:
 
 ```sh
-set -a; . /etc/vumlo/vumlo.env; set +a
-PGDATABASE="$DATABASE_URL" pg_dump --format=custom --file vumlo-$(date -u +%F).dump
-pg_restore --list vumlo-*.dump > /dev/null && echo "the dump is readable"
+sudo vumlo-cli --config /etc/vumlo/vumlo.toml db backup --output /var/backups/vumlo-$(date -u +%F).dump
 ```
 
-Restore it into a scratch database and look at it with the CLI, without touching production:
+`db backup` needs the PostgreSQL client tools (`apt install postgresql-client`). It takes the
+connection from `DATABASE_URL`, so the password never appears in the process list, creates the file
+readable by its owner only, and reads the dump back with `pg_restore --list` before it says it worked.
+It never overwrites a file.
+
+Restore it into a scratch database and look at it with the CLI, without touching production. The dump
+is readable by its owner only, so it is piped in (`postgres` cannot open the file itself):
 
 ```sh
-sudo -u postgres createdb vumlo_restore_test
-sudo -u postgres pg_restore --no-owner --role=vumlo -d vumlo_restore_test vumlo-*.dump
-DATABASE_URL=postgres://vumlo:choose-a-password@localhost/vumlo_restore_test \
+sudo -u postgres createdb --owner vumlo vumlo_restore_test
+sudo cat /var/backups/vumlo-2026-01-15.dump | sudo -u postgres pg_restore --no-owner --role=vumlo -d vumlo_restore_test
+sudo env DATABASE_URL=postgres://vumlo:choose-a-password@localhost/vumlo_restore_test \
   vumlo-cli --config /etc/vumlo/vumlo.toml db status
 sudo -u postgres dropdb vumlo_restore_test
 ```
 
 `db status` should show every migration applied and none pending. Run the dump nightly from cron or a
 systemd timer and keep the last several; copy them off the machine. To restore for real: stop the three
-services, drop and recreate the database, `pg_restore` into it, start the services, run `doctor`.
+services, drop and recreate the database (`dropdb`, then `createdb --owner vumlo`), pipe the dump into
+`pg_restore` as above with `-d vumlo`, start the services, run `doctor`.
 
 ### Upgrades
 
 Get the new release, build it and install the two binaries and the web app as above, then run:
 
 ```sh
-deploy/update.sh --systemd
+sudo deploy/update.sh --systemd      # as root: the secrets file is root's, and so are the services
 ```
 
 It checks the configuration, takes a backup and reads it back, stops the services, runs `db migrate`,
@@ -275,6 +284,7 @@ run `brand apply` and rebuild the web app.
 | `brand apply [--dry-run]` | regenerates `.vumlo/generated/` from the configuration and the logo |
 | `build web [--dry-run]` | `brand apply`, then the web build |
 | `db status` | what is applied and pending; non-zero if the schema is newer than the binary |
+| `db backup [--output FILE]` | a `pg_dump` of the database, read back with `pg_restore`; never overwrites |
 | `db migrate [--dry-run]` | applies pending migrations; refuses a schema newer than the binary |
 | `admin create <email> --name --surname` | creates an administrator; the password is asked for or read from `--password-stdin`, never an argument |
 | `seed --demo [--yes] [--dry-run]` | demo data for an empty installation |

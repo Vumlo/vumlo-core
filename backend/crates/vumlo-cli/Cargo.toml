@@ -17,6 +17,7 @@ dummy = ["dep:vumlo-module-dummy", "vumlo-config/test-registry"]
 [dependencies]
 anyhow.workspace = true
 api-types.workspace = true
+chrono.workspace = true
 clap.workspace = true
 db.workspace = true
 image.workspace = true

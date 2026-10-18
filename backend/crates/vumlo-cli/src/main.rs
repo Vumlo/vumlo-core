@@ -6,6 +6,7 @@
 //! prepares configuration, generated assets and the database; it does not deploy anything.
 
 mod admin;
+mod backup;
 mod brand;
 mod build_web;
 mod config_cmd;
@@ -142,6 +143,13 @@ enum DbCommand {
         #[arg(long)]
         json: bool,
     },
+    /// Write a `pg_dump` of the database to a new file and read it back with `pg_restore --list`.
+    /// Needs the PostgreSQL client tools on this machine. Changes nothing in the database.
+    Backup {
+        /// The file to create (it must not exist). Default: vumlo-<UTC time>.dump here.
+        #[arg(long, value_name = "FILE")]
+        output: Option<PathBuf>,
+    },
     /// Apply the pending migrations (core, then the modules compiled in). Refuses a database that
     /// is newer than this binary. Writes one audit row when it applied something.
     Migrate {
@@ -205,6 +213,7 @@ async fn run(cli: Cli) -> anyhow::Result<bool> {
             seed::demo(&options, seed::SeedDemo { yes, dry_run }).await?;
         }
         Command::Db(DbCommand::Status { json }) => return db_cmd::status(&options, json).await,
+        Command::Db(DbCommand::Backup { output }) => backup::run(&options, output).await?,
         Command::Db(DbCommand::Migrate { dry_run }) => db_cmd::migrate(&options, dry_run).await?,
         Command::Admin(AdminCommand::Create {
             email,

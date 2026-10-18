@@ -51,8 +51,11 @@ pushed the decision:
    assets and the database, and runs `npm run build` as a subprocess. systemd units, the Caddyfile and
    firewall rules are templates in `deploy/`, never output of the CLI.
 3. Commands: `init`, `config check`, `config show [--public]`, `modules list`, `module <name> ...`,
-   `brand apply`, `db status`, `db migrate`, `admin create`, `build web`, `seed --demo`, `doctor`,
-   `version`. Each one that writes has `--dry-run` and is idempotent.
+   `brand apply`, `db status`, `db migrate`, `db backup`, `admin create`, `build web`, `seed --demo`,
+   `doctor`, `version`. Each one that writes has `--dry-run` and is idempotent. `db backup` is a
+   `pg_dump` that takes its connection from `DATABASE_URL` (the password never appears in an
+   argument), creates the file readable by its owner only, never overwrites, and reads the dump back
+   with `pg_restore --list`; it changes nothing in the database and is not audited.
 4. The name `vumlo-cli` is reserved for this tool. A future end-user CLI gets another name
    (ADR-0055). Nothing of it is built.
 

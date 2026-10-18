@@ -1,6 +1,7 @@
 # The API. Install as /etc/systemd/system/vumlo-core.service. See docs/install.md.
-# Layout assumed: binaries in /opt/vumlo/bin, vumlo.toml and vumlo.env in /etc/vumlo (the env file
-# holds the secrets: root:vumlo, mode 0640), a system user and group `vumlo`.
+# Layout assumed: binaries in /opt/vumlo/bin, vumlo.toml and vumlo.env in /etc/vumlo, a system user
+# and group `vumlo`. The env file holds the secrets: root:root, mode 0600. systemd reads it as root
+# before it drops to `vumlo`, so the service itself cannot read the file.
 
 [Unit]
 Description=Vumlo core (API)

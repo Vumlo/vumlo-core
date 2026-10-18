@@ -6,7 +6,7 @@
 
 FROM node:24-slim AS build
 WORKDIR /src
-COPY web/package.json web/package-lock.json ./web/
+COPY web/package.json web/package-lock.json web/.npmrc ./web/
 RUN cd web && npm ci
 COPY web ./web
 # The only configuration the web build reads (ADR-0054).
