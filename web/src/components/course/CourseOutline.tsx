@@ -6,6 +6,7 @@ import { Icon } from "@/components/Icon";
 import type { ItemMeta } from "@/lib/api/gaps";
 import type { ContentTree } from "@/lib/api/types";
 import { isAssignment, kindOf, outlineMark, sections } from "@/lib/course";
+import { useT } from "@/lib/i18n";
 import s from "./CourseOutline.module.css";
 
 type Props = {
@@ -19,20 +20,21 @@ type Props = {
 
 /** The left column of course pages: sections with their progress and every item. Items use the lecture/assignment icon colours. */
 export function CourseOutline({ courseId, tree, meta, code, title, currentItemId }: Props) {
+  const t = useT();
   const secs = sections(tree);
   const hasCurrent = (ids: { id: string }[]) => ids.some((i) => i.id === currentItemId);
   const [open, setOpen] = useState<Record<string, boolean>>({});
   const isOpen = (id: string, items: { id: string }[]) => open[id] ?? (currentItemId ? hasCurrent(items) : true);
 
   return (
-    <nav aria-label="Course outline" className={s.nav}>
+    <nav aria-label={t("outline.label")} className={s.nav}>
       {title ? (
         <Link href={`/courses/${courseId}`} className={s.course}>
           <span className={s.courseTitle}>{title}</span>
           <span className={s.courseCode}>{code}</span>
         </Link>
       ) : (
-        <p className={s.label}>Course outline</p>
+        <p className={s.label}>{t("outline.label")}</p>
       )}
       <div className={s.list}>
         {secs.map((sec) => {

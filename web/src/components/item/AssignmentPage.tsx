@@ -16,6 +16,7 @@ import { bodyOf, type Document, type Feature, type Item } from "@/lib/api/types"
 import { attemptRule, lateRule } from "@/components/course/StudentContent";
 import { DueBar } from "./DueBar";
 import { ItemFrame, PreviewBanner } from "./ItemFrame";
+import { useT } from "@/lib/i18n";
 import s from "./Item.module.css";
 
 const STUDENT_FEATURES: Feature[] = ["text_styles", "links", "lists", "code", "math"];
@@ -23,6 +24,7 @@ const STUDENT_FEATURES: Feature[] = ["text_styles", "links", "lists", "code", "m
 type View = "not-started" | "draft" | "focus" | "submitted" | "graded" | "closed";
 
 export function AssignmentPage({ item, courseId, staff }: { item: Item; courseId: string; staff: boolean }) {
+  const t = useT();
   const a = item.assignment!;
   const info = useCourseInfo(courseId);
   const sub = useMySubmission(staff ? null : item.id);
@@ -75,26 +77,26 @@ export function AssignmentPage({ item, courseId, staff }: { item: Item; courseId
   const initial = useMemo(() => (draft?.content as Document | undefined) ?? emptyDoc(), [draft?.content]);
   const editorKey = `${attempts.length}`;
   const stamp = savedAt ?? draft?.updated_at;
-  const savedText = save.pending ? "Saving…" : stamp ? `Draft saved at ${timeOf(stamp)}` : "Draft not saved yet";
+  const savedText = save.pending ? t("asg.saving") : stamp ? t("asg.savedAt", { time: timeOf(stamp) }) : t("asg.notSaved");
 
   const pill = {
-    "not-started": { label: "Not started", tone: "plain" as const },
-    draft: { label: stamp ? `Draft saved ${timeOf(stamp)}` : "Draft", tone: "accent" as const },
-    focus: { label: stamp ? `Draft saved ${timeOf(stamp)}` : "Draft", tone: "accent" as const },
-    submitted: { label: `Submitted, attempt ${latest?.attempt ?? 1}${a.max_attempts ? ` of ${a.max_attempts}` : ""}`, tone: "ok" as const },
-    graded: { label: "Graded", tone: "ok" as const },
-    closed: { label: "Not submitted", tone: "danger" as const },
+    "not-started": { label: t("status.notStarted"), tone: "plain" as const },
+    draft: { label: stamp ? t("asg.pillSaved", { time: timeOf(stamp) }) : t("common.draft"), tone: "accent" as const },
+    focus: { label: stamp ? t("asg.pillSaved", { time: timeOf(stamp) }) : t("common.draft"), tone: "accent" as const },
+    submitted: { label: a.max_attempts ? t("asg.submittedOf", { n: latest?.attempt ?? 1, max: a.max_attempts }) : t("asg.submittedN", { n: latest?.attempt ?? 1 }), tone: "ok" as const },
+    graded: { label: t("status.graded"), tone: "ok" as const },
+    closed: { label: t("status.notSubmitted"), tone: "danger" as const },
   }[view];
 
   const instructions = (
     <section aria-labelledby="instr-h">
-      <h2 id="instr-h" className={s.h2}>Instructions</h2>
+      <h2 id="instr-h" className={s.h2}>{t("item.instructions")}</h2>
       <BlockRenderer doc={bodyOf(item)} size={16} />
       <ul className={s.facts}>
-        {a.max_attempts != null && <li>You can submit {a.max_attempts} {a.max_attempts === 1 ? "time" : "times"}. Your teacher grades the last one.</li>}
-        {a.max_attempts == null && <li>{attemptRule(null)} Your teacher grades the last one.</li>}
+        {a.max_attempts != null && <li>{t.plural("asg.canSubmit", a.max_attempts)} {t("asg.gradesLast")}</li>}
+        {a.max_attempts == null && <li>{attemptRule(null)} {t("asg.gradesLast")}</li>}
         <li>{lateRule(a)}</li>
-        {a.on_deadline === "auto_submit" && <li>A draft you don&apos;t submit is submitted for you at the deadline.</li>}
+        {a.on_deadline === "auto_submit" && <li>{t("asg.autoSubmit")}</li>}
       </ul>
     </section>
   );
@@ -107,14 +109,14 @@ export function AssignmentPage({ item, courseId, staff }: { item: Item; courseId
           {crumbs}
           <div className={s.kind}>
             <span aria-hidden="true" className={s.kindIcon} data-kind="assignment"><Icon name="assignment" size={15} strokeWidth={2} /></span>
-            <span className={s.kindLabel} data-kind="assignment">Assignment</span>
+            <span className={s.kindLabel} data-kind="assignment">{t("cm.assignment")}</span>
             <span className="muted" style={{ fontSize: 14 }}>{typeLabel(a.type)}</span>
           </div>
           <h1 className={s.title}>{item.title}</h1>
 
           <DueBar due={a.due_at ?? null} open={dl.open && view !== "graded"} points={a.max_points} pill={pill} danger={view === "closed"}>
-            {view === "not-started" && canEdit && <button type="button" className="btn btn-primary" onClick={start} disabled={save.pending}>Start answer</button>}
-            {(view === "draft" || view === "focus") && <button type="button" className="btn btn-primary" onClick={send} disabled={submit.pending || save.pending}>Submit answer</button>}
+            {view === "not-started" && canEdit && <button type="button" className="btn btn-primary" onClick={start} disabled={save.pending}>{t("asg.start")}</button>}
+            {(view === "draft" || view === "focus") && <button type="button" className="btn btn-primary" onClick={send} disabled={submit.pending || save.pending}>{t("asg.submit")}</button>}
             {view === "graded" && grade && (
               <span className={s.score}><span className={s.scoreNum}>{grade.score}</span><span className="muted" style={{ fontSize: 14 }}> / {a.max_points}</span></span>
             )}
@@ -123,11 +125,11 @@ export function AssignmentPage({ item, courseId, staff }: { item: Item; courseId
 
           {view === "closed" && (
             <div role="status" className={s.note}>
-              <strong>This assignment is closed.</strong> You didn&apos;t start an answer before the deadline, and late work isn&apos;t accepted. If you think this is a mistake, write to {info.data?.owner_name ?? "your teacher"}.
+              <strong>{t("asg.closedTitle")}</strong> {t("asg.closedLead", { owner: info.data?.owner_name ?? t("item.yourTeacher") })}
             </div>
           )}
 
-          {loading ? <p className="loading" role="status">Loading…</p> : (
+          {loading ? <p className="loading" role="status">{t("common.loading")}</p> : (
             <div className={s.blocks}>
               {view !== "focus" && instructions}
 
@@ -136,12 +138,12 @@ export function AssignmentPage({ item, courseId, staff }: { item: Item; courseId
                   {view === "focus" && (
                     <button type="button" className="btn" style={{ marginBottom: 12 }} onClick={() => setFocus(false)}>
                       <Icon name="text" size={16} strokeWidth={2} />
-                      Show instructions
+                      {t("asg.showInstructions")}
                     </button>
                   )}
                   <section aria-labelledby="answer-h">
                     <div className="row" style={{ alignItems: "baseline", justifyContent: "space-between", gap: 12, marginBottom: 10 }}>
-                      <h2 id="answer-h" className={s.h2} style={{ margin: 0 }}>Your answer</h2>
+                      <h2 id="answer-h" className={s.h2} style={{ margin: 0 }}>{t("asg.yourAnswer")}</h2>
                       <span role="status" className={s.saved}><Icon name="check" size={14} strokeWidth={2.2} />{savedText}</span>
                     </div>
                     <div className={s.editor}>
@@ -150,20 +152,20 @@ export function AssignmentPage({ item, courseId, staff }: { item: Item; courseId
                         value={initial}
                         onChange={onChange}
                         features={features}
-                        label="Your answer"
+                        label={t("asg.yourAnswer")}
                         mode="bar"
                         minHeight={view === "focus" ? 560 : 360}
-                        placeholder="Write your answer here"
+                        placeholder={t("asg.placeholder")}
                         toolbarRight={
-                          <button type="button" className="btn btn-quiet" style={{ minHeight: 34, color: "var(--muted)", fontSize: 13, padding: "0 10px" }} aria-label={view === "focus" ? "Exit focus mode" : "Focus mode, hide the instructions"} onClick={() => setFocus(view !== "focus")}>
+                          <button type="button" className="btn btn-quiet" style={{ minHeight: 34, color: "var(--muted)", fontSize: 13, padding: "0 10px" }} aria-label={view === "focus" ? t("asg.exitFocusLabel") : t("asg.focusLabel")} onClick={() => setFocus(view !== "focus")}>
                             <Icon name={view === "focus" ? "focusExit" : "focus"} size={16} strokeWidth={2} />
-                            {view === "focus" ? "Exit focus" : "Focus"}
+                            {view === "focus" ? t("asg.exitFocus") : t("asg.focus")}
                           </button>
                         }
                       />
                     </div>
                     <p className="muted" style={{ margin: "12px 2px 0", fontSize: 14 }}>
-                      Saved as you type. Submitting uses attempt {attempts.length + 1}{a.max_attempts ? ` of ${a.max_attempts}` : ""}.
+                      {t("asg.savedAsYouType")} {a.max_attempts ? t("asg.usesOf", { n: attempts.length + 1, max: a.max_attempts }) : t("asg.uses", { n: attempts.length + 1 })}
                     </p>
                   </section>
                 </div>
@@ -173,15 +175,15 @@ export function AssignmentPage({ item, courseId, staff }: { item: Item; courseId
                 <section aria-labelledby="sub-h" className={s.panel}>
                   <div className={s.panelHead}>
                     <div>
-                      <h2 id="sub-h" style={{ fontSize: 16, fontWeight: 600 }}>Attempt {latest.attempt}</h2>
-                      <p className="muted" style={{ fontSize: 13 }}>Submitted {sinceLabel(latest.submitted_at)}. Waiting for a grade.</p>
+                      <h2 id="sub-h" style={{ fontSize: 16, fontWeight: 600 }}>{t("grading.attempt", { n: latest.attempt })}</h2>
+                      <p className="muted" style={{ fontSize: 13 }}>{t("asg.submittedWaiting", { when: sinceLabel(latest.submitted_at) })}</p>
                     </div>
-                    {canEdit && <button type="button" className="btn btn-outline" onClick={resubmit} disabled={save.pending}>Edit and resubmit</button>}
+                    {canEdit && <button type="button" className="btn btn-outline" onClick={resubmit} disabled={save.pending}>{t("asg.resubmit")}</button>}
                   </div>
                   <div className={s.panelBody}><BlockRenderer doc={latest.content as Document} size={16} /></div>
                   {canEdit && (
                     <p className={s.panelFoot}>
-                      {attemptsLeft === Infinity ? "You can submit again." : `${attemptsLeft} attempt${attemptsLeft === 1 ? "" : "s"} left.`} If you resubmit, your teacher grades the new attempt instead.
+                      {attemptsLeft === Infinity ? t("asg.again") : t.plural("asg.left", attemptsLeft)} {t("asg.resubmitNote")}
                     </p>
                   )}
                 </section>
@@ -191,8 +193,8 @@ export function AssignmentPage({ item, courseId, staff }: { item: Item; courseId
                 <section aria-labelledby="grade-h" className={s.panel}>
                   <div className={s.gradeTop}>
                     <div className="row" style={{ flexWrap: "wrap", alignItems: "baseline", justifyContent: "space-between", gap: 8 }}>
-                      <h2 id="grade-h" style={{ fontSize: 16, fontWeight: 600 }}>Grade</h2>
-                      <span className="muted" style={{ fontSize: 13 }}>Published {dayLong(grade.published_at)}</span>
+                      <h2 id="grade-h" style={{ fontSize: 16, fontWeight: 600 }}>{t("item.grade")}</h2>
+                      <span className="muted" style={{ fontSize: 13 }}>{t("item.publishedOn", { day: dayLong(grade.published_at) })}</span>
                     </div>
                     <p style={{ marginTop: 6, whiteSpace: "nowrap" }}><span className={s.gradeNum}>{grade.score}</span><span className="muted" style={{ fontSize: 17 }}> / {a.max_points}</span></p>
                   </div>
@@ -202,7 +204,7 @@ export function AssignmentPage({ item, courseId, staff }: { item: Item; courseId
                         <span aria-hidden="true" className={s.avatar}>{(() => { const [n = "", ...r] = (info.data?.owner_name ?? "").replace(/^Dr\. /, "").split(" "); return initials(n, r.join(" ")); })()}</span>
                         <div>
                           <p style={{ fontSize: 14, fontWeight: 600 }}>{info.data?.owner_name}</p>
-                          <p className="muted" style={{ fontSize: 12 }}>Comment{latest ? ` on attempt ${latest.attempt}` : ""}</p>
+                          <p className="muted" style={{ fontSize: 12 }}>{latest ? t("asg.commentOn", { n: latest.attempt }) : t("asg.comment")}</p>
                         </div>
                       </div>
                       <p style={{ fontSize: 16, lineHeight: 1.65 }}>{grade.feedback}</p>
@@ -212,8 +214,8 @@ export function AssignmentPage({ item, courseId, staff }: { item: Item; courseId
                     <details className={s.details}>
                       <summary>
                         <Icon name="chevronRight" size={16} strokeWidth={2} style={{ color: "var(--muted)" }} />
-                        Your answer
-                        <span className="muted" style={{ fontWeight: 400 }}>Attempt {latest.attempt}, submitted {dateTime(latest.submitted_at)}</span>
+                        {t("asg.yourAnswer")}
+                        <span className="muted" style={{ fontWeight: 400 }}>{t("asg.attemptSubmitted", { n: latest.attempt, when: dateTime(latest.submitted_at) })}</span>
                       </summary>
                       <div><BlockRenderer doc={latest.content as Document} size={15} /></div>
                     </details>

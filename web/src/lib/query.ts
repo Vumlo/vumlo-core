@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { ApiError } from "./api/client";
+import { translate } from "./i18n/core";
 
 type Entry = { data?: unknown; error?: ApiError; loading: boolean; stale: boolean };
 
@@ -66,7 +67,7 @@ export function useQuery<T>(key: string | null, fetcher: () => Promise<T>): Quer
       (error: unknown) =>
         put(key, {
           data: previous?.data,
-          error: error instanceof ApiError ? error : new ApiError(0, "Network error"),
+          error: error instanceof ApiError ? error : new ApiError(0, translate("error.network")),
           loading: false,
           stale: false,
         }),
@@ -100,7 +101,7 @@ export function useMutation<A extends unknown[], R>(fn: (...args: A) => Promise<
     try {
       return await fnRef.current(...args);
     } catch (e) {
-      setError(e instanceof ApiError ? e : new ApiError(0, "Network error"));
+      setError(e instanceof ApiError ? e : new ApiError(0, translate("error.network")));
       return undefined;
     } finally {
       setPending(false);

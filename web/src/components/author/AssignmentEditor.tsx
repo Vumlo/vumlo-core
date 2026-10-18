@@ -9,12 +9,14 @@ import { useAutosave } from "@/lib/autosave";
 import { bodyOf, type Document, type Feature, type Item } from "@/lib/api/types";
 import { AssignmentSettings } from "./AssignmentSettings";
 import { AuthorBar } from "./AuthorBar";
+import { useT } from "@/lib/i18n";
 import s from "./Author.module.css";
 
 const FULL: Feature[] = ["headings", "text_styles", "links", "lists", "quote", "divider", "table", "code", "math", "mermaid", "video"];
 
 /** Title, instructions and settings of a text or in-class assignment. */
 export function AssignmentEditor({ item, courseId }: { item: Item; courseId: string }) {
+  const t = useT();
   const profiles = useEditorProfiles();
   const update = useUpdateItem(courseId);
   const publish = usePublishItem(courseId);
@@ -28,25 +30,25 @@ export function AssignmentEditor({ item, courseId }: { item: Item; courseId: str
 
   return (
     <div className="container" style={{ paddingTop: 20 }}>
-      <AuthorBar courseId={courseId} itemId={item.id} title={title} chip={isDraft ? { text: "Draft, students can't see it", tone: "draft" } : { text: "Published", tone: "ok" }} saved={auto.savedAt} pending={auto.pending} failed={auto.failed}>
-        <Link href={`/courses/${courseId}/items/${item.id}`} className="btn">Preview as student</Link>
-        {isDraft && <button type="button" className="btn btn-primary" disabled={publish.pending} onClick={async () => { await auto.flush(); await publish.run(item.id); }}>Publish</button>}
+      <AuthorBar courseId={courseId} itemId={item.id} title={title} chip={isDraft ? { text: t("le.draftChip"), tone: "draft" } : { text: t("cm.published"), tone: "ok" }} saved={auto.savedAt} pending={auto.pending} failed={auto.failed}>
+        <Link href={`/courses/${courseId}/items/${item.id}`} className="btn">{t("cm.preview")}</Link>
+        {isDraft && <button type="button" className="btn btn-primary" disabled={publish.pending} onClick={async () => { await auto.flush(); await publish.run(item.id); }}>{t("cm.publish")}</button>}
       </AuthorBar>
       <div className={s.shell}>
         <div className={s.canvas}>
           <div className={s.sheet}>
-            <p className="muted" style={{ fontSize: 14, marginBottom: 10 }}><strong style={{ color: "var(--asg-fg)" }}>Assignment</strong> {typeLabel(item.assignment!.type)}</p>
-            <label htmlFor="title" className="sr-only">Title</label>
+            <p className="muted" style={{ fontSize: 14, marginBottom: 10 }}><strong style={{ color: "var(--asg-fg)" }}>{t("cm.assignment")}</strong> {typeLabel(item.assignment!.type)}</p>
+            <label htmlFor="title" className="sr-only">{t("cm.title")}</label>
             <input id="title" className={s.titleInput} value={title} onChange={(e) => setTitle(e.target.value)} />
-            <h2 style={{ fontSize: 16, fontWeight: 600, margin: "20px 0 8px" }}>Instructions</h2>
+            <h2 style={{ fontSize: 16, fontWeight: 600, margin: "20px 0 8px" }}>{t("item.instructions")}</h2>
             <div style={{ paddingLeft: 34 }}>
-              <BlockEditor value={initial} onChange={setDoc} features={features} label="Instructions" mode="float" minHeight={260} />
+              <BlockEditor value={initial} onChange={setDoc} features={features} label={t("item.instructions")} mode="float" minHeight={260} />
             </div>
           </div>
         </div>
-        <aside aria-label="Assignment settings" className={`card ${s.panel}`}>
+        <aside aria-label={t("as.title")} className={`card ${s.panel}`}>
           <div className={s.panelBody}>
-            <h2 style={{ fontSize: 16, fontWeight: 600 }}>Assignment settings</h2>
+            <h2 style={{ fontSize: 16, fontWeight: 600 }}>{t("as.title")}</h2>
             <AssignmentSettings item={item} courseId={courseId} />
           </div>
         </aside>

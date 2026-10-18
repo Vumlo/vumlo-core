@@ -2,11 +2,13 @@
 
 import { useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode, type Ref } from "react";
 import { Icon } from "@/components/Icon";
+import { useT } from "@/lib/i18n";
 import type { Block, CodeLanguage, Document, Feature } from "@/lib/api/types";
 import { Formula } from "./Math";
 import { languageName } from "./BlockRenderer";
-import { BLOCK_MENU, esc, htmlToInline, inlineToHtml, isTextBlock, kindOfBlock, makeBlock, newId, parseVideo, textBlock, textOf, type InsertKind, type TextBlockType } from "./model";
+import { blockMenu, esc, htmlToInline, inlineToHtml, isTextBlock, kindOfBlock, makeBlock, newId, parseVideo, textBlock, textOf, type InsertKind, type TextBlockType } from "./model";
 import s from "./BlockEditor.module.css";
+import { translate } from "@/lib/i18n/core";
 
 export type Format = "bold" | "italic" | "strike" | "code";
 
@@ -85,11 +87,12 @@ const caretText = (el: HTMLElement, where: "before" | "after") => {
 };
 
 function Marker({ type, n, checked, onToggle }: { type: TextBlockType; n: number; checked: boolean; onToggle: () => void }) {
+  const t = useT();
   if (type === "bulleted_list_item") return <span className={s.marker} aria-hidden="true">•</span>;
   if (type === "numbered_list_item") return <span className={s.marker} aria-hidden="true">{n}.</span>;
   return (
     <span className={s.marker}>
-      <input type="checkbox" checked={checked} onChange={onToggle} aria-label={checked ? "Done" : "Not done"} />
+      <input type="checkbox" checked={checked} onChange={onToggle} aria-label={checked ? t("be.done") : t("be.notDone")} />
     </span>
   );
 }
@@ -113,7 +116,7 @@ function TextEditable({ block, rev, placeholder, onInput, onKeyDown, onPaste, on
       suppressContentEditableWarning
       role="textbox"
       aria-multiline="true"
-      aria-label={block.type === "heading" ? `Heading ${block.props.level}` : "Text"}
+      aria-label={block.type === "heading" ? translate("be.heading", { n: block.props.level }) : translate("blk.text")}
       data-kind={block.type === "heading" ? "heading" : block.type === "quote" ? "quote" : "text"}
       data-level={block.type === "heading" ? block.props.level : undefined}
       data-placeholder={placeholder}
@@ -128,7 +131,9 @@ function TextEditable({ block, rev, placeholder, onInput, onKeyDown, onPaste, on
   );
 }
 
-export function BlockEditor({ value, onChange, features, label, mode, minHeight = 240, toolbarRight, handle, onState, placeholder = "Type / to add a block", autoFocus }: Props) {
+export function BlockEditor({ value, onChange, features, label, mode, minHeight = 240, toolbarRight, handle, onState, placeholder, autoFocus }: Props) {
+  const t = useT();
+  const hint = placeholder ?? t("be.placeholder");
   const [blocks, setBlocks] = useState<Block[]>(() => (value.blocks.length ? value.blocks : [textBlock("paragraph")]));
   const [revs, setRevs] = useState<Record<string, number>>({});
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -332,7 +337,7 @@ export function BlockEditor({ value, onChange, features, label, mode, minHeight 
 
   const slashItems = useMemo(() => {
     if (!slash) return [];
-    return BLOCK_MENU.map((g) => ({ ...g, items: g.items.filter((it) => has(it.feature) && it.name.toLowerCase().includes(slash.filter)) })).filter((g) => g.items.length > 0);
+    return blockMenu().map((g) => ({ ...g, items: g.items.filter((it) => has(it.feature) && (it.name.toLowerCase().includes(slash.filter) || it.kind.includes(slash.filter))) })).filter((g) => g.items.length > 0);
   }, [slash, has]);
   const flatSlash = slashItems.flatMap((g) => g.items);
 
@@ -427,44 +432,44 @@ export function BlockEditor({ value, onChange, features, label, mode, minHeight 
     <>
       {textStyles && (
         <>
-          <button type="button" className={s.tool} aria-label="Bold" title="Bold" aria-pressed={formats.bold} onMouseDown={(e) => e.preventDefault()} onClick={() => format("bold")} style={{ fontWeight: 700 }}>B</button>
-          <button type="button" className={s.tool} aria-label="Italic" title="Italic" aria-pressed={formats.italic} onMouseDown={(e) => e.preventDefault()} onClick={() => format("italic")} style={{ fontFamily: "Georgia, serif", fontStyle: "italic", fontWeight: 400 }}>I</button>
-          <button type="button" className={s.tool} aria-label="Strikethrough" title="Strikethrough" aria-pressed={formats.strike} onMouseDown={(e) => e.preventDefault()} onClick={() => format("strike")} style={{ textDecoration: "line-through", fontWeight: 500 }}>S</button>
-          <button type="button" className={s.tool} aria-label="Inline code" title="Inline code" aria-pressed={formats.code} onMouseDown={(e) => e.preventDefault()} onClick={() => format("code")}>
+          <button type="button" className={s.tool} aria-label={t("be.bold")} title={t("be.bold")} aria-pressed={formats.bold} onMouseDown={(e) => e.preventDefault()} onClick={() => format("bold")} style={{ fontWeight: 700 }}>B</button>
+          <button type="button" className={s.tool} aria-label={t("be.italic")} title={t("be.italic")} aria-pressed={formats.italic} onMouseDown={(e) => e.preventDefault()} onClick={() => format("italic")} style={{ fontFamily: "Georgia, serif", fontStyle: "italic", fontWeight: 400 }}>I</button>
+          <button type="button" className={s.tool} aria-label={t("be.strike")} title={t("be.strike")} aria-pressed={formats.strike} onMouseDown={(e) => e.preventDefault()} onClick={() => format("strike")} style={{ textDecoration: "line-through", fontWeight: 500 }}>S</button>
+          <button type="button" className={s.tool} aria-label={t("be.inlineCode")} title={t("be.inlineCode")} aria-pressed={formats.code} onMouseDown={(e) => e.preventDefault()} onClick={() => format("code")}>
             <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M9 8l-4 4 4 4M15 8l4 4-4 4" /></svg>
           </button>
         </>
       )}
-      {has("links") && <button type="button" className={s.tool} aria-label="Link" title="Link" onMouseDown={(e) => e.preventDefault()} onClick={() => openPop("link")}><Icon name="link" size={17} strokeWidth={1.9} /></button>}
-      {has("math") && <button type="button" className={s.tool} aria-label="Inline formula" title="Inline formula" onMouseDown={(e) => e.preventDefault()} onClick={() => openPop("math")} style={{ fontWeight: 500 }}>∑</button>}
+      {has("links") && <button type="button" className={s.tool} aria-label={t("be.link")} title={t("be.link")} onMouseDown={(e) => e.preventDefault()} onClick={() => openPop("link")}><Icon name="link" size={17} strokeWidth={1.9} /></button>}
+      {has("math") && <button type="button" className={s.tool} aria-label={t("be.inlineFormula")} title={t("be.inlineFormula")} onMouseDown={(e) => e.preventDefault()} onClick={() => openPop("math")} style={{ fontWeight: 500 }}>∑</button>}
     </>
   );
 
   const popInput = pop && (
     <form className="row" style={{ gap: 6 }} onSubmit={(e) => { e.preventDefault(); applyPop(); }}>
-      <input className={s.floatInput} autoFocus aria-label={pop === "link" ? "Link address" : "Formula in LaTeX"} placeholder={pop === "link" ? "https://" : "LaTeX, for example n \\log n"} value={popValue} onChange={(e) => setPopValue(e.target.value)} onKeyDown={(e) => { if (e.key === "Escape") setPop(null); }} />
-      <button type="submit" className="btn btn-primary" style={{ minHeight: 34 }}>Apply</button>
-      <button type="button" className="btn" style={{ minHeight: 34 }} onClick={() => setPop(null)}>Cancel</button>
+      <input className={s.floatInput} autoFocus aria-label={pop === "link" ? t("be.linkAddress") : t("be.formulaLatex")} placeholder={pop === "link" ? "https://" : t("be.latexExample")} value={popValue} onChange={(e) => setPopValue(e.target.value)} onKeyDown={(e) => { if (e.key === "Escape") setPop(null); }} />
+      <button type="submit" className="btn btn-primary" style={{ minHeight: 34 }}>{t("be.apply")}</button>
+      <button type="button" className="btn" style={{ minHeight: 34 }} onClick={() => setPop(null)}>{t("common.cancel")}</button>
     </form>
   );
 
   return (
     <div ref={root} role="group" aria-label={label} className={s.wrap} onMouseDown={(e) => { if (!(e.target as HTMLElement).closest("[data-gutter-menu]")) setGutterMenu(null); }}>
       {bar && (
-        <div role="toolbar" aria-label="Formatting" className={s.bar}>
+        <div role="toolbar" aria-label={t("be.formatting")} className={s.bar}>
           {pop ? popInput : (
             <>
               {tools}
               {has("lists") && (
                 <>
                   <span aria-hidden="true" className={s.sep} />
-                  <button type="button" className={s.tool} aria-label="Bulleted list" title="Bulleted list" onMouseDown={(e) => e.preventDefault()} onClick={() => turnInto("bulleted")}><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" aria-hidden="true"><path d="M9 6h11M9 12h11M9 18h11M4.5 6h.01M4.5 12h.01M4.5 18h.01" /></svg></button>
-                  <button type="button" className={s.tool} aria-label="Numbered list" title="Numbered list" onMouseDown={(e) => e.preventDefault()} onClick={() => turnInto("numbered")}><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" aria-hidden="true"><path d="M10 6h10M10 12h10M10 18h10M4 5l1.5-1v5M3.5 14.5c.3-.9 2.5-1 2.5.3 0 1-2.5 1.7-2.5 3.2H6" /></svg></button>
+                  <button type="button" className={s.tool} aria-label={t("be.bulleted")} title={t("be.bulleted")} onMouseDown={(e) => e.preventDefault()} onClick={() => turnInto("bulleted")}><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" aria-hidden="true"><path d="M9 6h11M9 12h11M9 18h11M4.5 6h.01M4.5 12h.01M4.5 18h.01" /></svg></button>
+                  <button type="button" className={s.tool} aria-label={t("be.numbered")} title={t("be.numbered")} onMouseDown={(e) => e.preventDefault()} onClick={() => turnInto("numbered")}><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" aria-hidden="true"><path d="M10 6h10M10 12h10M10 18h10M4 5l1.5-1v5M3.5 14.5c.3-.9 2.5-1 2.5.3 0 1-2.5 1.7-2.5 3.2H6" /></svg></button>
                 </>
               )}
               {(has("code") || has("math")) && <span aria-hidden="true" className={s.sep} />}
-              {has("code") && <button type="button" className={s.tool} aria-label="Code block" title="Code block" onMouseDown={(e) => e.preventDefault()} onClick={() => insert("code")}><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 5h16v14H4zM9 10l-2 2 2 2M15 10l2 2-2 2" /></svg></button>}
-              {has("math") && <button type="button" className={s.tool} aria-label="Formula block" title="Formula block" onMouseDown={(e) => e.preventDefault()} onClick={() => insert("math")}><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M5 5h14M5 19h14M8 5l6 7-6 7" /></svg></button>}
+              {has("code") && <button type="button" className={s.tool} aria-label={t("be.codeBlock")} title={t("be.codeBlock")} onMouseDown={(e) => e.preventDefault()} onClick={() => insert("code")}><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 5h16v14H4zM9 10l-2 2 2 2M15 10l2 2-2 2" /></svg></button>}
+              {has("math") && <button type="button" className={s.tool} aria-label={t("be.formulaBlock")} title={t("be.formulaBlock")} onMouseDown={(e) => e.preventDefault()} onClick={() => insert("math")}><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M5 5h14M5 19h14M8 5l6 7-6 7" /></svg></button>}
               <span className={s.grow} />
               {toolbarRight}
             </>
@@ -473,7 +478,7 @@ export function BlockEditor({ value, onChange, features, label, mode, minHeight 
       )}
 
       {!bar && float && (
-        <div role="toolbar" aria-label="Format selection" className={s.float} style={{ left: float.left, top: float.top }} onMouseDown={(e) => { if (!pop) e.preventDefault(); }}>
+        <div role="toolbar" aria-label={t("be.formatSelection")} className={s.float} style={{ left: float.left, top: float.top }} onMouseDown={(e) => { if (!pop) e.preventDefault(); }}>
           {pop ? popInput : tools}
         </div>
       )}
@@ -484,18 +489,18 @@ export function BlockEditor({ value, onChange, features, label, mode, minHeight 
           const active = activeId === b.id;
           const gutter = !bar && (
             <div className={s.gutter} data-gutter-menu>
-              <button type="button" className={s.gbtn} aria-label="Add a block" onClick={() => { setActiveId(b.id); const made = makeBlock("paragraph"); const copy = blocksRef.current.slice(); copy.splice(i + 1, 0, made); commit(copy, { id: made.id, at: "start" }); setSlash({ id: made.id, filter: "", index: 0 }); }}>
+              <button type="button" className={s.gbtn} aria-label={t("be.addBlock")} onClick={() => { setActiveId(b.id); const made = makeBlock("paragraph"); const copy = blocksRef.current.slice(); copy.splice(i + 1, 0, made); commit(copy, { id: made.id, at: "start" }); setSlash({ id: made.id, filter: "", index: 0 }); }}>
                 <Icon name="plus" size={16} strokeWidth={2} />
               </button>
-              <button type="button" className={s.gbtn} aria-label="Move or change block" aria-haspopup="menu" aria-expanded={gutterMenu === b.id} onClick={() => { setActiveId(b.id); setGutterMenu(gutterMenu === b.id ? null : b.id); }}>
+              <button type="button" className={s.gbtn} aria-label={t("be.moveBlock")} aria-haspopup="menu" aria-expanded={gutterMenu === b.id} onClick={() => { setActiveId(b.id); setGutterMenu(gutterMenu === b.id ? null : b.id); }}>
                 <Icon name="grip" size={16} strokeWidth={3} />
               </button>
               {gutterMenu === b.id && (
                 <div role="menu" className={`popover ${s.menu}`} style={{ top: 30, left: 0 }}>
-                  <button type="button" role="menuitem" className="menu-item" onClick={() => { duplicate(); setGutterMenu(null); }}><Icon name="copy" size={15} /> Duplicate</button>
-                  <button type="button" role="menuitem" className="menu-item" onClick={() => { move(-1); setGutterMenu(null); }}><Icon name="arrowUp" size={15} /> Move up</button>
-                  <button type="button" role="menuitem" className="menu-item" onClick={() => { move(1); setGutterMenu(null); }}><Icon name="arrowDown" size={15} /> Move down</button>
-                  <button type="button" role="menuitem" className="menu-item" onClick={() => { remove(); setGutterMenu(null); }}><Icon name="trash" size={15} /> Delete block</button>
+                  <button type="button" role="menuitem" className="menu-item" onClick={() => { duplicate(); setGutterMenu(null); }}><Icon name="copy" size={15} /> {t("le.duplicate")}</button>
+                  <button type="button" role="menuitem" className="menu-item" onClick={() => { move(-1); setGutterMenu(null); }}><Icon name="arrowUp" size={15} /> {t("cm.moveUp")}</button>
+                  <button type="button" role="menuitem" className="menu-item" onClick={() => { move(1); setGutterMenu(null); }}><Icon name="arrowDown" size={15} /> {t("cm.moveDown")}</button>
+                  <button type="button" role="menuitem" className="menu-item" onClick={() => { remove(); setGutterMenu(null); }}><Icon name="trash" size={15} /> {t("le.deleteBlock")}</button>
                 </div>
               )}
             </div>
@@ -510,7 +515,7 @@ export function BlockEditor({ value, onChange, features, label, mode, minHeight 
                   <TextEditable
                     block={b}
                     rev={rev}
-                    placeholder={i === 0 && blocks.length === 1 && b.type === "paragraph" ? placeholder : b.type === "paragraph" ? "" : ""}
+                    placeholder={i === 0 && blocks.length === 1 && b.type === "paragraph" ? hint : b.type === "paragraph" ? "" : ""}
                     onInput={(el) => onInput(b.id, el)}
                     onKeyDown={(e, el) => onKeyDown(b.id, e, el)}
                     onPaste={onPaste}
@@ -518,7 +523,7 @@ export function BlockEditor({ value, onChange, features, label, mode, minHeight 
                   />
                 </div>
                 {slash?.id === b.id && flatSlash.length > 0 && (
-                  <div role="listbox" aria-label="Insert a block" className={s.slash} style={{ left: 34, top: "100%" }}>
+                  <div role="listbox" aria-label={t("be.insertBlock")} className={s.slash} style={{ left: 34, top: "100%" }}>
                     {slashItems.map((g) => (
                       <div key={g.group} role="group" aria-label={g.group}>
                         <p className={s.slashGroup}>{g.group}</p>
@@ -539,41 +544,41 @@ export function BlockEditor({ value, onChange, features, label, mode, minHeight 
             <div key={b.id} className={s.block} data-block-id={b.id} data-active={active} onFocusCapture={() => setActiveId(b.id)} onClick={() => setActiveId(b.id)}>
               {gutter}
               <div className={s.content} style={{ width: "100%" }}>
-                {b.type === "divider" && <hr className={s.hr} tabIndex={0} aria-label="Divider" />}
+                {b.type === "divider" && <hr className={s.hr} tabIndex={0} aria-label={t("blk.divider")} />}
                 {b.type === "code" && (
                   <div className={s.card} data-active={active}>
                     <div className={s.cardHead}>
-                      <label>Language{" "}
+                      <label>{t("be.language")}{" "}
                         <select value={b.props.language} onChange={(e) => patch(b.id, (x) => (x.type === "code" ? { ...x, props: { ...x.props, language: e.target.value as CodeLanguage } } : x))}>
                           {LANGUAGES.map((l) => <option key={l} value={l}>{languageName(l)}</option>)}
                         </select>
                       </label>
                     </div>
-                    <textarea className={s.code} aria-label="Code" spellCheck={false} value={b.props.source} onChange={(e) => patch(b.id, (x) => (x.type === "code" ? { ...x, props: { ...x.props, source: e.target.value } } : x))} />
+                    <textarea className={s.code} aria-label={t("blk.code")} spellCheck={false} value={b.props.source} onChange={(e) => patch(b.id, (x) => (x.type === "code" ? { ...x, props: { ...x.props, source: e.target.value } } : x))} />
                   </div>
                 )}
                 {b.type === "math" && (
                   <div className={s.card} data-active={active}>
-                    <div className={s.cardHead}><span>Formula, written in LaTeX</span><span>Press Enter to finish</span></div>
+                    <div className={s.cardHead}><span>{t("be.formulaTitle")}</span><span>{t("be.pressEnter")}</span></div>
                     <div className={s.mathBody}>
-                      <label className="sr-only" htmlFor={`m-${b.id}`}>LaTeX source</label>
+                      <label className="sr-only" htmlFor={`m-${b.id}`}>{t("be.latexSource")}</label>
                       <input id={`m-${b.id}`} className={s.mathInput} value={b.props.source} placeholder="T(n) = 2T\left(\frac{n}{2}\right) + n" onChange={(e) => patch(b.id, (x) => (x.type === "math" ? { ...x, props: { source: e.target.value } } : x))} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); const n = blocksRef.current[blocksRef.current.findIndex((x) => x.id === b.id) + 1]; if (n) { focus.current = { id: n.id, at: "start" }; setBlocks((x) => x.slice()); } } }} />
-                      <div className={s.preview}>{b.props.source ? <Formula source={b.props.source} /> : <span className="muted" style={{ fontSize: 14 }}>The preview shows here</span>}</div>
+                      <div className={s.preview}>{b.props.source ? <Formula source={b.props.source} /> : <span className="muted" style={{ fontSize: 14 }}>{t("be.previewHere")}</span>}</div>
                     </div>
                   </div>
                 )}
                 {b.type === "mermaid" && (
                   <div className={s.card} data-active={active}>
-                    <div className={s.cardHead}><span>Diagram, written in Mermaid</span></div>
-                    <textarea className={s.code} aria-label="Diagram source" spellCheck={false} value={b.props.source} onChange={(e) => patch(b.id, (x) => (x.type === "mermaid" ? { ...x, props: { source: e.target.value } } : x))} />
+                    <div className={s.cardHead}><span>{t("be.diagramTitle")}</span></div>
+                    <textarea className={s.code} aria-label={t("be.diagramSource")} spellCheck={false} value={b.props.source} onChange={(e) => patch(b.id, (x) => (x.type === "mermaid" ? { ...x, props: { source: e.target.value } } : x))} />
                   </div>
                 )}
                 {b.type === "video" && (
                   <div className={s.card} data-active={active}>
-                    <div className={s.cardHead}><span>Video, YouTube or Vimeo</span><span>{b.props.video_id ? `${b.props.provider === "youtube" ? "YouTube" : "Vimeo"} video ${b.props.video_id}` : ""}</span></div>
+                    <div className={s.cardHead}><span>{t("be.videoTitle")}</span><span>{b.props.video_id ? t("be.videoId", { provider: b.props.provider === "youtube" ? "YouTube" : "Vimeo", id: b.props.video_id }) : ""}</span></div>
                     <div className={s.mathBody}>
-                      <label className="sr-only" htmlFor={`v-${b.id}`}>Video address</label>
-                      <input id={`v-${b.id}`} className={s.mathInput} style={{ fontFamily: "inherit" }} placeholder="Paste a YouTube or Vimeo link" defaultValue={b.props.video_id ? (b.props.provider === "youtube" ? `https://youtu.be/${b.props.video_id}` : `https://vimeo.com/${b.props.video_id}`) : ""} onBlur={(e) => { const p = parseVideo(e.target.value); if (p) patch(b.id, (x) => (x.type === "video" ? { ...x, props: p } : x)); }} />
+                      <label className="sr-only" htmlFor={`v-${b.id}`}>{t("be.videoAddress")}</label>
+                      <input id={`v-${b.id}`} className={s.mathInput} style={{ fontFamily: "inherit" }} placeholder={t("be.videoPaste")} defaultValue={b.props.video_id ? (b.props.provider === "youtube" ? `https://youtu.be/${b.props.video_id}` : `https://vimeo.com/${b.props.video_id}`) : ""} onBlur={(e) => { const p = parseVideo(e.target.value); if (p) patch(b.id, (x) => (x.type === "video" ? { ...x, props: p } : x)); }} />
                     </div>
                   </div>
                 )}
@@ -587,7 +592,7 @@ export function BlockEditor({ value, onChange, features, label, mode, minHeight 
                               const Cell = b.props.header_row && ri === 0 ? "th" : "td";
                               return (
                                 <Cell key={ci}>
-                                  <input aria-label={`Row ${ri + 1}, column ${ci + 1}`} value={textOf(cell)} onChange={(e) => patch(b.id, (x) => (x.type === "table" ? { ...x, props: { ...x.props, rows: x.props.rows.map((r, a) => r.map((c, z) => (a === ri && z === ci ? (e.target.value ? [{ type: "text" as const, text: e.target.value }] : []) : c))) } } : x))} />
+                                  <input aria-label={t("be.cell", { row: ri + 1, col: ci + 1 })} value={textOf(cell)} onChange={(e) => patch(b.id, (x) => (x.type === "table" ? { ...x, props: { ...x.props, rows: x.props.rows.map((r, a) => r.map((c, z) => (a === ri && z === ci ? (e.target.value ? [{ type: "text" as const, text: e.target.value }] : []) : c))) } } : x))} />
                                 </Cell>
                               );
                             })}
@@ -596,9 +601,9 @@ export function BlockEditor({ value, onChange, features, label, mode, minHeight 
                       </tbody>
                     </table>
                     <div className={s.tableTools}>
-                      <button type="button" className={s.mini} onClick={() => patch(b.id, (x) => (x.type === "table" ? { ...x, props: { ...x.props, rows: [...x.props.rows, x.props.rows[0]!.map(() => [])] } } : x))}>Add row</button>
-                      <button type="button" className={s.mini} onClick={() => patch(b.id, (x) => (x.type === "table" ? { ...x, props: { ...x.props, rows: x.props.rows.map((r) => [...r, []]) } } : x))}>Add column</button>
-                      <button type="button" className={s.mini} disabled={b.props.rows.length <= 1} onClick={() => patch(b.id, (x) => (x.type === "table" ? { ...x, props: { ...x.props, rows: x.props.rows.slice(0, -1) } } : x))}>Remove row</button>
+                      <button type="button" className={s.mini} onClick={() => patch(b.id, (x) => (x.type === "table" ? { ...x, props: { ...x.props, rows: [...x.props.rows, x.props.rows[0]!.map(() => [])] } } : x))}>{t("be.addRow")}</button>
+                      <button type="button" className={s.mini} onClick={() => patch(b.id, (x) => (x.type === "table" ? { ...x, props: { ...x.props, rows: x.props.rows.map((r) => [...r, []]) } } : x))}>{t("be.addColumn")}</button>
+                      <button type="button" className={s.mini} disabled={b.props.rows.length <= 1} onClick={() => patch(b.id, (x) => (x.type === "table" ? { ...x, props: { ...x.props, rows: x.props.rows.slice(0, -1) } } : x))}>{t("be.removeRow")}</button>
                     </div>
                   </div>
                 )}

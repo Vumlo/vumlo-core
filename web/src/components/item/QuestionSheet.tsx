@@ -6,6 +6,7 @@ import { BlockRenderer } from "@/components/doc/BlockRenderer";
 import { Icon } from "@/components/Icon";
 import type { Answer } from "@/lib/api/gaps";
 import type { Document, Feature } from "@/lib/api/types";
+import { useT } from "@/lib/i18n";
 import s from "./QuestionSheet.module.css";
 
 export type QKind = "single" | "multi" | "number" | "short" | "long" | "select" | "url" | "people" | "date";
@@ -63,8 +64,9 @@ function Option({ role, checked, readOnly, result, note, children, onClick }: { 
 
 /** Quiz questions and form fields as one list of cards: the student answers them, or reads them after grading. */
 export function QuestionSheet({ questions, answers, onChange, readOnly, result, errors, classmates = [], me, ownerInitials, ownerName, mode }: Props) {
+  const t = useT();
   const [adding, setAdding] = useState<string | null>(null);
-  const nameOf = (id: string) => (id === me?.id ? `${me.name}, you` : classmates.find((c) => c.id === id)?.name ?? "Classmate");
+  const nameOf = (id: string) => (id === me?.id ? t("sheet.you", { name: me.name }) : classmates.find((c) => c.id === id)?.name ?? t("sheet.classmate"));
 
   return (
     <div className="stack" style={{ gap: 16 }}>
@@ -73,13 +75,13 @@ export function QuestionSheet({ questions, answers, onChange, readOnly, result, 
         const res = result?.[q.id];
         const full = res && res.got === res.points;
         const tone = res ? (full ? "ok" : "partial") : undefined;
-        const header = mode === "form" ? (q.required ? "Required" : "Optional") : `Question ${i + 1}${q.kind === "multi" ? ", pick all that apply" : ""}`;
+        const header = mode === "form" ? (q.required ? t("sheet.required") : t("sheet.optional")) : `${t("sheet.question", { n: i + 1 })}${q.kind === "multi" ? `, ${t("sheet.pickAll")}` : ""}`;
         const labelId = `q${i + 1}-h`;
         return (
           <section key={q.id} id={`q${i + 1}`} aria-labelledby={labelId} className={`card ${s.q}`}>
             <div className={s.qHead}>
               <p className={s.qLabel}>{header}</p>
-              {mode === "quiz" && q.points && <span className={s.qPoints} data-tone={tone}>{res ? `${res.got} / ${res.points}` : `${q.points} points`}</span>}
+              {mode === "quiz" && q.points && <span className={s.qPoints} data-tone={tone}>{res ? `${res.got} / ${res.points}` : t("row.points", { points: q.points })}</span>}
             </div>
             <h2 id={labelId} className={s.qText}>{q.label}</h2>
 
@@ -89,7 +91,7 @@ export function QuestionSheet({ questions, answers, onChange, readOnly, result, 
                   const picked = asList(v).includes(o.id);
                   const correct = res?.correct.includes(o.id) ?? false;
                   const state = res ? (picked && correct ? "right" : picked ? "wrong" : correct ? "missed" : undefined) : undefined;
-                  const note = state === "right" ? { text: "Your answer, correct", tone: "ok" as const } : state === "wrong" ? { text: "Your answer, wrong", tone: "bad" as const } : state === "missed" ? { text: "Correct answer", tone: "ok" as const } : undefined;
+                  const note = state === "right" ? { text: t("sheet.yourCorrect"), tone: "ok" as const } : state === "wrong" ? { text: t("sheet.yourWrong"), tone: "bad" as const } : state === "missed" ? { text: t("sheet.correct"), tone: "ok" as const } : undefined;
                   return (
                     <Option
                       key={o.id}
@@ -109,14 +111,14 @@ export function QuestionSheet({ questions, answers, onChange, readOnly, result, 
 
             {q.kind === "number" && (
               <div className="field">
-                <label htmlFor={`in-${q.id}`}>Your answer, a number</label>
+                <label htmlFor={`in-${q.id}`}>{t("sheet.number")}</label>
                 <input id={`in-${q.id}`} className="input" style={{ maxWidth: 220, borderColor: res ? (full ? "var(--ok-fg)" : "var(--danger)") : undefined }} inputMode="decimal" value={typeof v === "string" ? v : ""} readOnly={readOnly} onChange={(e) => onChange(q.id, e.target.value)} />
               </div>
             )}
             {q.kind === "short" && (
               <div className="field">
                 <label htmlFor={`in-${q.id}`} className="sr-only">{q.label}</label>
-                <input id={`in-${q.id}`} className="input" placeholder="Your answer" value={typeof v === "string" ? v : ""} readOnly={readOnly} aria-invalid={!!errors?.[q.id]} onChange={(e) => onChange(q.id, e.target.value)} />
+                <input id={`in-${q.id}`} className="input" placeholder={t("asg.yourAnswer")} value={typeof v === "string" ? v : ""} readOnly={readOnly} aria-invalid={!!errors?.[q.id]} onChange={(e) => onChange(q.id, e.target.value)} />
               </div>
             )}
             {q.kind === "date" && (
@@ -124,7 +126,7 @@ export function QuestionSheet({ questions, answers, onChange, readOnly, result, 
             )}
             {q.kind === "select" && (
               <select aria-labelledby={labelId} className="select" value={typeof v === "string" ? v : ""} disabled={readOnly} aria-invalid={!!errors?.[q.id]} onChange={(e) => onChange(q.id, e.target.value)}>
-                <option value="">Choose a variant</option>
+                <option value="">{t("sheet.chooseVariant")}</option>
                 {q.options.map((o) => <option key={o.id} value={o.id}>{o.text}</option>)}
               </select>
             )}
@@ -137,21 +139,21 @@ export function QuestionSheet({ questions, answers, onChange, readOnly, result, 
                   <span key={id} className={s.chip}>
                     {nameOf(id)}
                     {!readOnly && id !== me?.id && (
-                      <button type="button" aria-label={`Remove ${nameOf(id)}`} onClick={() => onChange(q.id, asList(v).filter((x) => x !== id))}><Icon name="close" size={13} strokeWidth={2.4} /></button>
+                      <button type="button" aria-label={t("sheet.remove", { name: nameOf(id) })} onClick={() => onChange(q.id, asList(v).filter((x) => x !== id))}><Icon name="close" size={13} strokeWidth={2.4} /></button>
                     )}
                   </span>
                 ))}
                 {!readOnly && asList(v).length < (q.maxPeople ?? 3) && (
                   <span className={s.add}>
                     <button type="button" className="btn" style={{ minHeight: 36, borderStyle: "dashed" }} aria-haspopup="menu" aria-expanded={adding === q.id} onClick={() => setAdding(adding === q.id ? null : q.id)}>
-                      <Icon name="plus" size={14} strokeWidth={2.2} />Add a classmate
+                      <Icon name="plus" size={14} strokeWidth={2.2} />{t("sheet.addClassmate")}
                     </button>
                     {adding === q.id && (
                       <div role="menu" className="popover" style={{ top: 40, left: 0, minWidth: 220 }}>
                         {classmates.filter((c) => !asList(v).includes(c.id)).map((c) => (
                           <button key={c.id} type="button" role="menuitem" className="menu-item" onClick={() => { onChange(q.id, [...asList(v), c.id]); setAdding(null); }}>{c.name}</button>
                         ))}
-                        {classmates.filter((c) => !asList(v).includes(c.id)).length === 0 && <p className="muted" style={{ padding: 8, fontSize: 14 }}>Nobody else to add.</p>}
+                        {classmates.filter((c) => !asList(v).includes(c.id)).length === 0 && <p className="muted" style={{ padding: 8, fontSize: 14 }}>{t("sheet.nobodyElse")}</p>}
                       </div>
                     )}
                   </span>
@@ -161,11 +163,11 @@ export function QuestionSheet({ questions, answers, onChange, readOnly, result, 
             {q.kind === "long" && (
               readOnly ? (
                 <div className={s.editor} style={{ padding: "12px 16px" }}>
-                  {isDoc(v) && v.blocks.length ? <BlockRenderer doc={v} size={15} /> : <span className="muted">No answer</span>}
+                  {isDoc(v) && v.blocks.length ? <BlockRenderer doc={v} size={15} /> : <span className="muted">{t("sheet.noAnswer")}</span>}
                 </div>
               ) : (
                 <div className={s.editor}>
-                  <BlockEditor value={isDoc(v) ? v : { v: 1, blocks: [] }} onChange={(d) => onChange(q.id, d)} features={LONG_FEATURES} label={q.label} mode="bar" minHeight={120} placeholder="Write your answer here" />
+                  <BlockEditor value={isDoc(v) ? v : { v: 1, blocks: [] }} onChange={(d) => onChange(q.id, d)} features={LONG_FEATURES} label={q.label} mode="bar" minHeight={120} placeholder={t("asg.placeholder")} />
                 </div>
               )
             )}

@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useMemo, useRef, useState } from "react";
 import { BlockEditor, type EditorHandle, type EditorState } from "@/components/doc/BlockEditor";
 import { plainText } from "@/components/doc/BlockRenderer";
-import { BLOCK_MENU, type InsertKind } from "@/components/doc/model";
+import { blockMenu, type InsertKind } from "@/components/doc/model";
 import { Icon } from "@/components/Icon";
 import { useEditorProfiles, usePublishItem, usePublishRevision, useItemRevision, useUpdateItem } from "@/lib/api/hooks/content";
 import { useCourseInfo } from "@/lib/api/hooks/courses";
@@ -12,12 +12,16 @@ import { useAutosave } from "@/lib/autosave";
 import { dayLong, timeOf } from "@/lib/format";
 import { bodyOf, type Document, type Feature, type Item } from "@/lib/api/types";
 import { AuthorBar } from "./AuthorBar";
+import { useT } from "@/lib/i18n";
+import { locale } from "@/lib/i18n/core";
+import type { MessageKey } from "@/lib/i18n/core";
 import s from "./Author.module.css";
 
 const FULL: Feature[] = ["headings", "text_styles", "links", "lists", "quote", "divider", "table", "code", "math", "mermaid", "video"];
-const TURN: [InsertKind, string, string][] = [["paragraph", "T", "Text"], ["h1", "H1", "Heading 1"], ["h2", "H2", "Heading 2"], ["h3", "H3", "Heading 3"], ["quote", "“", "Quote"], ["bulleted", "•", "Bulleted"], ["numbered", "1.", "Numbered"], ["check", "✓", "Checklist"]];
+const TURN: [InsertKind, string, MessageKey][] = [["paragraph", "T", "le.turn.text"], ["h1", "H1", "le.turn.h1"], ["h2", "H2", "le.turn.h2"], ["h3", "H3", "le.turn.h3"], ["quote", "“", "le.turn.quote"], ["bulleted", "•", "le.turn.bulleted"], ["numbered", "1.", "le.turn.numbered"], ["check", "✓", "le.turn.check"]];
 
 export function LectureEditor({ item, courseId }: { item: Item; courseId: string }) {
+  const t = useT();
   const profiles = useEditorProfiles();
   const info = useCourseInfo(courseId);
   const revision = useItemRevision(item.id);
@@ -42,7 +46,7 @@ export function LectureEditor({ item, courseId }: { item: Item; courseId: string
   const rev = revision.data;
   const isDraft = item.status === "draft";
   const changed = !isDraft && !!rev?.has_unpublished_changes;
-  const chip = isDraft ? { text: "Draft, students can't see it", tone: "draft" as const } : changed ? { text: "Unpublished changes", tone: "accent" as const } : { text: "Published", tone: "ok" as const };
+  const chip = isDraft ? { text: t("le.draftChip"), tone: "draft" as const } : changed ? { text: t("le.unpublishedChip"), tone: "accent" as const } : { text: t("cm.published"), tone: "ok" as const };
 
   async function publish() {
     await auto.flush();
@@ -55,36 +59,36 @@ export function LectureEditor({ item, courseId }: { item: Item; courseId: string
   return (
     <div className="container" style={{ paddingTop: 20 }}>
       <AuthorBar courseId={courseId} itemId={item.id} title={title} chip={chip} saved={auto.savedAt} pending={auto.pending} failed={auto.failed}>
-        <Link href={`/courses/${courseId}/items/${item.id}`} className="btn">Preview as student</Link>
-        <button type="button" className="btn btn-primary" disabled={!canPublish || publishItem.pending || publishRevision.pending} onClick={publish}>{isDraft ? "Publish" : "Publish changes"}</button>
+        <Link href={`/courses/${courseId}/items/${item.id}`} className="btn">{t("cm.preview")}</Link>
+        <button type="button" className="btn btn-primary" disabled={!canPublish || publishItem.pending || publishRevision.pending} onClick={publish}>{isDraft ? t("cm.publish") : t("le.publishChanges")}</button>
       </AuthorBar>
-      {!isDraft && chip.tone === "accent" && lastPublished && <p className="muted" style={{ margin: "-4px 2px 16px", fontSize: 14 }}>Students see the version published on {dayLong(lastPublished)} until you publish these changes.</p>}
+      {!isDraft && chip.tone === "accent" && lastPublished && <p className="muted" style={{ margin: "-4px 2px 16px", fontSize: 14 }}>{t("le.seeOld", { day: dayLong(lastPublished) })}</p>}
       <div className={s.shell}>
         <div className={s.canvas}>
           <div className={s.sheet}>
             <div className="row" style={{ gap: 8, marginBottom: 10 }}>
               <span aria-hidden="true" style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 26, height: 26, borderRadius: 7, background: "var(--lec-tile)", color: "var(--lec-fg)" }}><Icon name="lecture" size={15} strokeWidth={2} /></span>
-              <span style={{ fontSize: 14, fontWeight: 600, color: "var(--lec-fg)" }}>Lecture</span>
-              <span className="muted" style={{ fontSize: 14 }}>About {minutes} min read</span>
+              <span style={{ fontSize: 14, fontWeight: 600, color: "var(--lec-fg)" }}>{t("row.lecture")}</span>
+              <span className="muted" style={{ fontSize: 14 }}>{t("le.about", { n: minutes })}</span>
             </div>
-            <label htmlFor="title" className="sr-only">Title</label>
+            <label htmlFor="title" className="sr-only">{t("cm.title")}</label>
             <input id="title" className={s.titleInput} value={title} onChange={(e) => setTitle(e.target.value)} aria-invalid={!title.trim()} />
-            {!title.trim() && <p className="hint" style={{ color: "var(--danger)", marginTop: 6 }}>A lecture needs a title.</p>}
+            {!title.trim() && <p className="hint" style={{ color: "var(--danger)", marginTop: 6 }}>{t("le.needsTitle")}</p>}
             <div style={{ marginTop: 16, paddingLeft: 34 }}>
-              <BlockEditor handle={handle} value={initial} onChange={setDoc} features={features} label="Lecture content" mode="float" minHeight={420} onState={setState} />
+              <BlockEditor handle={handle} value={initial} onChange={setDoc} features={features} label={t("le.content")} mode="float" minHeight={420} onState={setState} />
             </div>
           </div>
-          <p className="muted" style={{ margin: "12px 2px 0", fontSize: 13 }}>Images and file attachments come later, with file uploads.</p>
+          <p className="muted" style={{ margin: "12px 2px 0", fontSize: 13 }}>{t("le.images")}</p>
         </div>
 
-        <aside aria-label="Editor panel" className={`card ${s.panel}`}>
-          <div role="tablist" aria-label="Panel sections" className={s.panelTabs}>
-            {(["insert", "style", "page"] as const).map((t) => <button key={t} type="button" role="tab" aria-selected={tab === t} onClick={() => setTab(t)}>{t[0]!.toUpperCase() + t.slice(1)}</button>)}
+        <aside aria-label={t("le.panel")} className={`card ${s.panel}`}>
+          <div role="tablist" aria-label={t("le.panelSections")} className={s.panelTabs}>
+            {(["insert", "style", "page"] as const).map((x) => <button key={x} type="button" role="tab" aria-selected={tab === x} onClick={() => setTab(x)}>{t(`le.tab.${x}`)}</button>)}
           </div>
           {tab === "insert" && (
-            <div role="tabpanel" aria-label="Insert" className={s.panelBody}>
-              <label className="search"><Icon name="search" size={16} /><input type="search" aria-label="Find a block" placeholder="Find a block" value={find} onChange={(e) => setFind(e.target.value)} /></label>
-              {BLOCK_MENU.map((g) => {
+            <div role="tabpanel" aria-label={t("le.tab.insert")} className={s.panelBody}>
+              <label className="search"><Icon name="search" size={16} /><input type="search" aria-label={t("le.findBlock")} placeholder={t("le.findBlock")} value={find} onChange={(e) => setFind(e.target.value)} /></label>
+              {blockMenu().map((g) => {
                 const list = g.items.filter((i) => (!i.feature || features.includes(i.feature as Feature)) && i.name.toLowerCase().includes(find.toLowerCase()));
                 return list.length === 0 ? null : (
                   <div key={g.group}>
@@ -99,46 +103,46 @@ export function LectureEditor({ item, courseId }: { item: Item; courseId: string
                   </div>
                 );
               })}
-              <p className="muted" style={{ fontSize: 13 }}>Type / in the text to insert without leaving the keyboard. The list follows your institution&apos;s lecture profile.</p>
+              <p className="muted" style={{ fontSize: 13 }}>{t("le.slashHint")}</p>
             </div>
           )}
           {tab === "style" && (
-            <div role="tabpanel" aria-label="Style" className={s.panelBody}>
-              <p className={s.group}>Turn this block into</p>
-              <div role="radiogroup" aria-label="Block type" className={s.blocks}>
-                {TURN.map(([k, g, n]) => (
+            <div role="tabpanel" aria-label={t("le.tab.style")} className={s.panelBody}>
+              <p className={s.group}>{t("le.turnInto")}</p>
+              <div role="radiogroup" aria-label={t("le.blockType")} className={s.blocks}>
+                {TURN.map(([k, g, nameKey]) => (
                   <button key={k} type="button" role="radio" aria-checked={state.activeKind === k} className={`${s.blockBtn} ${s.radioBtn}`} disabled={!state.activeId} onClick={() => handle.current?.turnInto(k)}>
-                    <span aria-hidden="true" className={s.glyph}>{g}</span>{n}
+                    <span aria-hidden="true" className={s.glyph}>{g}</span>{t(nameKey)}
                   </button>
                 ))}
               </div>
-              <p className={s.group}>Selected text</p>
-              <div role="toolbar" aria-label="Text style" className={s.row2}>
-                {([["bold", "B", "Bold"], ["italic", "I", "Italic"], ["strike", "S", "Strikethrough"], ["code", "</>", "Inline code"]] as const).map(([f, g, n]) => (
-                  <button key={f} type="button" className={s.blockBtn} style={{ minWidth: 44, justifyContent: "center" }} aria-label={n} aria-pressed={state.formats[f]} onMouseDown={(e) => e.preventDefault()} onClick={() => handle.current?.format(f)}>{g}</button>
+              <p className={s.group}>{t("le.selectedText")}</p>
+              <div role="toolbar" aria-label={t("le.textStyle")} className={s.row2}>
+                {([["bold", "B", "le.bold"], ["italic", "I", "le.italic"], ["strike", "S", "le.strike"], ["code", "</>", "le.inlineCode"]] as const).map(([f, g, n]) => (
+                  <button key={f} type="button" className={s.blockBtn} style={{ minWidth: 44, justifyContent: "center" }} aria-label={t(n)} aria-pressed={state.formats[f]} onMouseDown={(e) => e.preventDefault()} onClick={() => handle.current?.format(f)}>{g}</button>
                 ))}
               </div>
-              <p className={s.group}>Block</p>
+              <p className={s.group}>{t("le.block")}</p>
               <div className={s.row2}>
-                <button type="button" className={s.blockBtn} onClick={() => handle.current?.duplicate()} disabled={!state.activeId}><Icon name="copy" size={15} strokeWidth={2} />Duplicate</button>
-                <button type="button" className={s.blockBtn} onClick={() => handle.current?.move(-1)} disabled={!state.activeId}><Icon name="arrowUp" size={15} strokeWidth={2} />Move up</button>
-                <button type="button" className={s.blockBtn} onClick={() => handle.current?.move(1)} disabled={!state.activeId}><Icon name="arrowDown" size={15} strokeWidth={2} />Move down</button>
-                <button type="button" className={s.blockBtn} onClick={() => handle.current?.remove()} disabled={!state.activeId}><Icon name="trash" size={15} strokeWidth={2} />Delete block</button>
+                <button type="button" className={s.blockBtn} onClick={() => handle.current?.duplicate()} disabled={!state.activeId}><Icon name="copy" size={15} strokeWidth={2} />{t("le.duplicate")}</button>
+                <button type="button" className={s.blockBtn} onClick={() => handle.current?.move(-1)} disabled={!state.activeId}><Icon name="arrowUp" size={15} strokeWidth={2} />{t("cm.moveUp")}</button>
+                <button type="button" className={s.blockBtn} onClick={() => handle.current?.move(1)} disabled={!state.activeId}><Icon name="arrowDown" size={15} strokeWidth={2} />{t("cm.moveDown")}</button>
+                <button type="button" className={s.blockBtn} onClick={() => handle.current?.remove()} disabled={!state.activeId}><Icon name="trash" size={15} strokeWidth={2} />{t("le.deleteBlock")}</button>
               </div>
             </div>
           )}
           {tab === "page" && (
-            <div role="tabpanel" aria-label="Page" className={s.panelBody}>
-              <div><p className={s.group}>Publishing</p>
-                <p style={{ fontSize: 14 }}>{isDraft ? "Draft, not visible to students." : chip.tone === "accent" ? `Unpublished changes${auto.savedAt ? `, saved ${timeOf(auto.savedAt)}` : ""}` : "Everything is published."}</p>
-                {lastPublished && <p className="muted" style={{ fontSize: 13 }}>Last published {dayLong(lastPublished)}. Students of {info.data?.code} see that version.</p>}
+            <div role="tabpanel" aria-label={t("le.tab.page")} className={s.panelBody}>
+              <div><p className={s.group}>{t("le.publishing")}</p>
+                <p style={{ fontSize: 14 }}>{isDraft ? t("le.draftNote") : chip.tone === "accent" ? `${t("le.unpublishedChip")}${auto.savedAt ? `, ${t("sheet.saved", { time: timeOf(auto.savedAt) })}` : ""}` : t("home.allPublished")}</p>
+                {lastPublished && <p className="muted" style={{ fontSize: 13 }}>{t("le.lastPublished", { day: dayLong(lastPublished), code: info.data?.code ?? "" })}</p>}
               </div>
-              <div><p className={s.group}>Length</p><p style={{ fontSize: 14 }}>About {minutes} min read, {words.toLocaleString("en-GB")} words</p></div>
+              <div><p className={s.group}>{t("le.length")}</p><p style={{ fontSize: 14 }}>{t("le.lengthValue", { n: minutes, words: words.toLocaleString(locale()) })}</p></div>
               <div>
-                <div className="row" style={{ justifyContent: "space-between", fontSize: 14 }}><span>Size</span><span className="muted">{Math.max(1, Math.round(bytes / 1024))} KB of {Math.round(limit / 1_048_576)} MB</span></div>
+                <div className="row" style={{ justifyContent: "space-between", fontSize: 14 }}><span>{t("le.size")}</span><span className="muted">{t("le.sizeValue", { kb: Math.max(1, Math.round(bytes / 1024)), mb: Math.round(limit / 1_048_576) })}</span></div>
                 <div aria-hidden="true" className={s.meter}><div style={{ width: `${Math.min(100, (bytes / limit) * 100)}%` }} /></div>
               </div>
-              <div><p className={s.group}>Allowed content</p><p className="muted" style={{ fontSize: 13 }}>Lecture profile: text, headings, lists, quotes, tables, code, formulas, diagrams, videos and dividers. Your institution can narrow this list.</p></div>
+              <div><p className={s.group}>{t("le.allowed")}</p><p className="muted" style={{ fontSize: 13 }}>{t("le.allowedLead")}</p></div>
             </div>
           )}
         </aside>

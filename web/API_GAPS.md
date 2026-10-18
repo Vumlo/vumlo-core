@@ -35,7 +35,7 @@ Spec endpoints the UI uses as they are: auth, `/me`, `/me/sessions`, `/me/passwo
 ## Language
 - **Screens:** every screen, Admin Institution (default language), Settings (this device).
 - **Missing:** nothing on the server. The institution default comes from the mocked `GET /institution`.
-- **Note:** ADR-0043 describes the catalogue. Some screens still show English text; see the ADR.
+- **Note:** ADR-0043 describes the catalogue. Every screen is translated. Text written by the server is not: the to-do lines on course cards (`GET /me/course-cards`), the notes in `GET /me/teaching`, grade history and audit lines, the facts in `GET /admin/users/{id}/facts`. They should become structured data (a kind and counts), so the client can word them.
 
 ## Course info
 - **Screens:** the header of every course screen, Courses, Course settings.

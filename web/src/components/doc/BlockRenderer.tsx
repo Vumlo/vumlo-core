@@ -5,13 +5,14 @@ import { Icon } from "@/components/Icon";
 import type { Block, CodeLanguage, Document, Inline } from "@/lib/api/types";
 import { Formula } from "./Math";
 import { highlight } from "./highlight";
+import { translate } from "@/lib/i18n/core";
 import s from "./Doc.module.css";
 
 const LANGUAGE_NAMES: Partial<Record<CodeLanguage, string>> = {
   text: "Plain text", python: "Python", javascript: "JavaScript", typescript: "TypeScript", java: "Java", c: "C", cpp: "C++", csharp: "C#", rust: "Rust",
   go: "Go", sql: "SQL", bash: "Bash", html: "HTML", css: "CSS", json: "JSON", yaml: "YAML", markdown: "Markdown", latex: "LaTeX", kotlin: "Kotlin", swift: "Swift", php: "PHP",
 };
-export const languageName = (l: CodeLanguage) => LANGUAGE_NAMES[l] ?? l;
+export const languageName = (l: CodeLanguage) => (l === "text" ? translate("be.plainText") : LANGUAGE_NAMES[l] ?? l);
 
 export function InlineRuns({ runs }: { runs: Inline[] | undefined }) {
   return (
@@ -52,7 +53,7 @@ export function CodeBlock({ source, language }: { source: string; language: Code
         <span>{languageName(language)}</span>
         <button type="button" className={s.copy} onClick={copy}>
           <Icon name={copied ? "check" : "copy"} size={14} strokeWidth={2} />
-          {copied ? "Copied" : "Copy"}
+          {copied ? translate("be.copied") : translate("be.copy")}
         </button>
       </figcaption>
       <pre><code>{highlight(source, language).map((t, i) => <span key={i} className={t.kind === "plain" ? undefined : s[t.kind]}>{t.text}</span>)}</code></pre>
@@ -68,17 +69,17 @@ function Video({ provider, id }: { provider: "youtube" | "vimeo"; id: string }) 
     <>
       <div className={s.video}>
         {playing ? (
-          <iframe src={src} title={`${name} video`} allow="autoplay; fullscreen; picture-in-picture" allowFullScreen />
+          <iframe src={src} title={translate("be.videoFrom", { name })} allow="autoplay; fullscreen; picture-in-picture" allowFullScreen />
         ) : (
           <>
-            <button type="button" className={s.play} aria-label={`Play video, loads from ${name}`} onClick={() => setPlaying(true)}>
+            <button type="button" className={s.play} aria-label={translate("be.play", { name })} onClick={() => setPlaying(true)}>
               <svg width="26" height="26" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5.5v13l11-6.5z" /></svg>
             </button>
-            <span style={{ fontSize: 15, fontWeight: 500 }}>Video from {name}</span>
+            <span style={{ fontSize: 15, fontWeight: 500 }}>{translate("be.videoFrom", { name })}</span>
           </>
         )}
       </div>
-      <p className={s.videoNote}>{name} video. It loads from {name} only after you press play.</p>
+      <p className={s.videoNote}>{translate("be.videoNote", { name })}</p>
     </>
   );
 }
@@ -90,7 +91,7 @@ function List({ items }: { items: Extract<Block, { type: ListKind }>[] }) {
   const kind = items[0]!.type;
   const body = items.map((b) => (
     <li key={b.id} className={b.type === "check_list_item" ? s.check : undefined}>
-      {b.type === "check_list_item" && <input type="checkbox" checked={b.props.checked} readOnly aria-label={b.props.checked ? "Done" : "Not done"} />}
+      {b.type === "check_list_item" && <input type="checkbox" checked={b.props.checked} readOnly aria-label={b.props.checked ? translate("be.done") : translate("be.notDone")} />}
       <span><InlineRuns runs={b.content} /></span>
       {b.children && b.children.length > 0 && <Blocks blocks={b.children} />}
     </li>
@@ -128,7 +129,7 @@ export function Blocks({ blocks }: { blocks: Block[] }) {
         out.push(<Formula key={b.id} source={b.props.source} block />);
         break;
       case "mermaid":
-        out.push(<div key={b.id} className={s.mermaid}><span className="muted">Diagram source</span><pre>{b.props.source}</pre></div>);
+        out.push(<div key={b.id} className={s.mermaid}><span className="muted">{translate("be.diagramSource")}</span><pre>{b.props.source}</pre></div>);
         break;
       case "video":
         out.push(<Video key={b.id} provider={b.props.provider} id={b.props.video_id} />);

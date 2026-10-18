@@ -78,12 +78,12 @@ export function CalendarScreen() {
           <button type="button" aria-label={t("calendar.next")} onClick={() => shift(1)}><Icon name="chevronRight" size={16} strokeWidth={2} /></button>
         </div>
         <span style={{ flex: "1 1 auto" }} />
-        <div role="radiogroup" aria-label="View" className="segmented">
-          <button type="button" role="radio" aria-checked={view === "month"} onClick={() => setView("month")}>Month</button>
-          <button type="button" role="radio" aria-checked={view === "list"} onClick={() => setView("list")}>List</button>
+        <div role="radiogroup" aria-label={t("calendar.view")} className="segmented">
+          <button type="button" role="radio" aria-checked={view === "month"} onClick={() => setView("month")}>{t("calendar.month")}</button>
+          <button type="button" role="radio" aria-checked={view === "list"} onClick={() => setView("list")}>{t("calendar.list")}</button>
         </div>
       </div>
-      <div role="group" aria-label="Show courses" className={s.filters}>
+      <div role="group" aria-label={t("calendar.showCourses")} className={s.filters}>
         {courses.map((c) => {
           const on = !hidden[c.code];
           return (
@@ -93,10 +93,10 @@ export function CalendarScreen() {
             </button>
           );
         })}
-        <span className="muted" style={{ marginLeft: "auto", fontSize: 13 }}>Times are in your time zone, {offsetLabel()}</span>
+        <span className="muted" style={{ marginLeft: "auto", fontSize: 13 }}>{t("calendar.zone", { offset: offsetLabel() })}</span>
       </div>
 
-      {(student ? !work.data : !teaching.data) ? <p className="loading" role="status">Loading…</p> : (
+      {(student ? !work.data : !teaching.data) ? <p className="loading" role="status">{t("common.loading")}</p> : (
         <div className={s.body}>
           <div className={s.main}>
             {view === "month" ? (
@@ -123,7 +123,7 @@ export function CalendarScreen() {
               </div>
             ) : (
               <div>
-                {agenda.length === 0 && <p className="empty">Nothing is due.</p>}
+                {agenda.length === 0 && <p className="empty">{t("calendar.nothingDue")}</p>}
                 {agenda.map((g) => (
                   <section key={g.key} className={s.agendaDay}>
                     <h2>{dayTitle(g.key)} <span className="muted" style={{ fontWeight: 400, fontSize: 14 }}>{relativeCap(g.items[0]!.at)}</span></h2>
@@ -151,14 +151,14 @@ export function CalendarScreen() {
               const p = e.status ? statusPill(e.status) : null;
               return (
                 <Link key={e.id} href={e.href} className={s.dayItem}>
-                  <span className="row" style={{ gap: 6, fontSize: 13, fontWeight: 600, color: "var(--asg-fg)" }}><Icon name="assignment" size={14} strokeWidth={2} />Due {timeOf(e.at)}</span>
+                  <span className="row" style={{ gap: 6, fontSize: 13, fontWeight: 600, color: "var(--asg-fg)" }}><Icon name="assignment" size={14} strokeWidth={2} />{t("calendar.dueAt", { time: timeOf(e.at) })}</span>
                   <span style={{ display: "block", fontWeight: 500, marginTop: 2 }}>{e.title}</span>
                   <span className="muted" style={{ display: "block", fontSize: 13, marginBottom: 6 }}>{e.courseTitle}</span>
                   {p && <StatusPill tone={p.tone}>{p.label}</StatusPill>}
                 </Link>
               );
-            }) : <p style={{ fontSize: 14 }}>Nothing is due this day.</p>}
-            <p className="muted" style={{ marginTop: 14, fontSize: 13 }}>The calendar shows assignment deadlines from your courses. Class times aren&apos;t part of it yet.</p>
+            }) : <p style={{ fontSize: 14 }}>{t("calendar.nothingDay")}</p>}
+            <p className="muted" style={{ marginTop: 14, fontSize: 13 }}>{t("calendar.note")}</p>
           </aside>
         </div>
       )}

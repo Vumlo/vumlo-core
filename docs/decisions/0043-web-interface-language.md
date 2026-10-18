@@ -19,5 +19,6 @@ The institution has a default language and each person can pick one (Admin, Inst
 - New text goes into the catalogue. Server text (problem details, mock to-do lines) is shown as the server sent it. Text in screens not yet moved to the catalogue stays English; moving a screen is a change that adds its keys to both files.
 
 ## Consequences
-- The sign-in pages, the navbar and account menu, Courses, Home headings, Calendar controls, Settings, search, the new course page and the error pages are translated. The remaining screens (course content, items, editors, gradebook, admin) still show English text.
+- Every screen of the web app takes its fixed text from the catalogue: the sign-in pages, the navbar, Home, Courses, course content, items, quizzes and forms, the editors, the gradebook, grading, Calendar, Settings, search and all of Admin.
+- Text that comes from the server stays as it arrives: course and lecture titles and bodies, people's names, problem-detail messages, and the mock's sample lines (to-do lines on course cards, grade history, audit entries, facts about a person). A real server should send those lines as data (a kind and counts) so the client can word them; until then they are in one language.
 - No dependency is added.

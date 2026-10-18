@@ -4,14 +4,16 @@ import { useState } from "react";
 import { Icon } from "@/components/Icon";
 import { useAuditLog } from "@/lib/api/hooks/admin";
 import type { AuditKind } from "@/lib/api/gaps";
-import { dayKey, dayLabel, relativeCap, timeOf, parts, dateTime } from "@/lib/format";
+import { dayKey, dayLabel, relativeCap, timeOf, parts, dateTime, weekdayShort } from "@/lib/format";
+import { useT } from "@/lib/i18n";
+import type { MessageKey } from "@/lib/i18n/core";
 import s from "./Admin.module.css";
 
-const KINDS: [AuditKind | "all", string][] = [["all", "All changes"], ["accounts", "Accounts and roles"], ["owners", "Course owners and teachers"], ["groups", "Groups"]];
-const KIND_LABEL: Record<AuditKind, string> = { accounts: "Accounts", owners: "Owners", teachers: "Teachers", groups: "Groups" };
-const WD = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+const KINDS: [AuditKind | "all", MessageKey][] = [["all", "au.all"], ["accounts", "au.accounts"], ["owners", "au.owners"], ["groups", "ag.groups"]];
+const KIND_LABEL: Record<AuditKind, MessageKey> = { accounts: "au.kAccounts", owners: "au.kOwners", teachers: "ap.teachers", groups: "ag.groups" };
 
 export function AdminAudit() {
+  const t = useT();
   const [q, setQ] = useState("");
   const [kind, setKind] = useState<AuditKind | "all">("all");
   const [days, setDays] = useState(7);
@@ -20,7 +22,7 @@ export function AdminAudit() {
   const byDay = [...new Set(events.map((e) => dayKey(e.at)))].map((k) => ({ key: k, items: events.filter((e) => dayKey(e.at) === k) }));
 
   function download() {
-    const rows = [["Time", "Who", "What", "Detail", "Kind"], ...events.map((e) => [dateTime(e.at), e.who, e.what, e.detail, KIND_LABEL[e.kind]])];
+    const rows = [[t("au.time"), t("au.who"), t("au.what"), t("au.detail"), t("au.kind")], ...events.map((e) => [dateTime(e.at), e.who, e.what, e.detail, t(KIND_LABEL[e.kind])])];
     const text = rows.map((r) => r.map((c) => `"${c.replace(/"/g, '""')}"`).join(",")).join("\n");
     const url = URL.createObjectURL(new Blob([text], { type: "text/csv" }));
     const a = document.createElement("a");
@@ -31,17 +33,17 @@ export function AdminAudit() {
   return (
     <>
       <div className={s.head}>
-        <div><h1>Audit log</h1><p className="muted" style={{ marginTop: 4 }}>Changes to accounts, roles, course owners, teachers and groups. Nothing here can be edited or deleted.</p></div>
-        <button type="button" className="btn" onClick={download} disabled={events.length === 0}><Icon name="download" size={16} strokeWidth={2} />Download CSV</button>
+        <div><h1>{t("au.title")}</h1><p className="muted" style={{ marginTop: 4 }}>{t("au.lead")}</p></div>
+        <button type="button" className="btn" onClick={download} disabled={events.length === 0}><Icon name="download" size={16} strokeWidth={2} />{t("fb.csv")}</button>
       </div>
       <div className="row" style={{ gap: 12, flexWrap: "wrap", marginBottom: 16 }}>
-        <label className="search" style={{ flex: "0 1 260px", background: "var(--surface)" }}><Icon name="search" size={16} /><input type="search" aria-label="Who did it or who it affected" placeholder="Person" value={q} onChange={(e) => setQ(e.target.value)} /></label>
-        <select aria-label="Kind of change" className="select" style={{ width: "auto", minHeight: 40 }} value={kind} onChange={(e) => setKind(e.target.value as typeof kind)}>{KINDS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select>
-        <select aria-label="Period" className="select" style={{ width: "auto", minHeight: 40 }} value={days} onChange={(e) => setDays(Number(e.target.value))}><option value={7}>Last 7 days</option><option value={30}>Last 30 days</option><option value={120}>This term</option></select>
+        <label className="search" style={{ flex: "0 1 260px", background: "var(--surface)" }}><Icon name="search" size={16} /><input type="search" aria-label={t("au.person")} placeholder={t("au.personShort")} value={q} onChange={(e) => setQ(e.target.value)} /></label>
+        <select aria-label={t("au.kindOf")} className="select" style={{ width: "auto", minHeight: 40 }} value={kind} onChange={(e) => setKind(e.target.value as typeof kind)}>{KINDS.map(([k, l]) => <option key={k} value={k}>{t(l)}</option>)}</select>
+        <select aria-label={t("au.period")} className="select" style={{ width: "auto", minHeight: 40 }} value={days} onChange={(e) => setDays(Number(e.target.value))}><option value={7}>{t("au.last7")}</option><option value={30}>{t("au.last30")}</option><option value={120}>{t("au.thisTerm")}</option></select>
       </div>
-      {!log.data ? <p className="loading" role="status">Loading…</p> : byDay.length === 0 ? <p className="empty">No changes match.</p> : byDay.map((d) => {
+      {!log.data ? <p className="loading" role="status">{t("common.loading")}</p> : byDay.length === 0 ? <p className="empty">{t("au.none")}</p> : byDay.map((d) => {
         const p = parts(d.items[0]!.at);
-        const label = `${relativeCap(d.items[0]!.at) === "Today" ? "Today, " : ""}${WD[p.wd]} ${dayLabel(d.items[0]!.at)}`;
+        const label = `${relativeCap(d.items[0]!.at) === t("date.today.cap") ? `${t("date.today.cap")}, ` : ""}${weekdayShort(p.wd)} ${dayLabel(d.items[0]!.at)}`;
         return (
           <section key={d.key} aria-label={label} style={{ marginBottom: 22 }}>
             <h2 style={{ fontSize: 16, fontWeight: 600, margin: "0 2px 8px" }}>{label}</h2>
@@ -50,7 +52,7 @@ export function AdminAudit() {
                 <li key={e.id} className={s.ev}>
                   <span className={s.time}>{timeOf(e.at)}</span>
                   <span style={{ flex: "1 1 auto", fontSize: 15 }}><strong style={{ fontWeight: 600 }}>{e.who}</strong> {e.what}<span className="muted" style={{ display: "block", fontSize: 13 }}>{e.detail}</span></span>
-                  <span className={s.kind}>{KIND_LABEL[e.kind]}</span>
+                  <span className={s.kind}>{t(KIND_LABEL[e.kind])}</span>
                 </li>
               ))}
             </ol>

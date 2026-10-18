@@ -16,6 +16,8 @@ import { allItems, dueShort, isAssignment, typeLabel } from "@/lib/course";
 import { plural } from "@/lib/format";
 import { wholePoints } from "@/lib/points";
 import { CourseHeader } from "./CourseHeader";
+import { translate } from "@/lib/i18n/core";
+import { useT } from "@/lib/i18n";
 import s from "./ContentManage.module.css";
 
 type Sec = ContentModule | ContentSubModule;
@@ -27,17 +29,18 @@ type Dlg =
   | { kind: "delete-item"; item: ItemSummary }
   | { kind: "new-item"; sec: Sec; type: "lecture" | "assignment" };
 
-const ASSIGNMENT_TYPES = [["text", "Text answer"], ["quiz", "Quiz"], ["form", "Form"], ["no_submission", "Done in class"]] as const;
+const ASSIGNMENT_TYPES = ["text", "quiz", "form", "no_submission"] as const;
 
 function itemMeta(i: ItemSummary, m: ItemMeta | undefined): string {
-  if (!isAssignment(i)) return `Lecture${m?.read_minutes ? `, ${m.read_minutes} min read` : ""}`;
+  if (!isAssignment(i)) return `${translate("row.lecture")}${m?.read_minutes ? `, ${translate("row.readMinutes", { n: m.read_minutes })}` : ""}`;
   const a = i.assignment!;
   const when = dueShort(a.due_at ?? null, m?.class_on, now());
-  const pts = a.max_points === "0.00" ? "not graded" : `${wholePoints(a.max_points)} points`;
-  return `${typeLabel(a.type)}, ${pts}${when === "No deadline" ? "" : `, ${when.charAt(0).toLowerCase()}${when.slice(1)}`}`;
+  const pts = a.max_points === "0.00" ? translate("row.notGraded") : translate("row.points", { points: wholePoints(a.max_points) });
+  return `${typeLabel(a.type)}, ${pts}${when === translate("due.none") ? "" : `, ${when.charAt(0).toLowerCase()}${when.slice(1)}`}`;
 }
 
 export function ContentManage({ courseId }: { courseId: string }) {
+  const t = useT();
   const router = useRouter();
   const tree = useContentTree(courseId);
   const meta = useItemMeta(courseId);
@@ -124,7 +127,7 @@ export function ContentManage({ courseId }: { courseId: string }) {
     if (await publishModule.run(dlg.sec.id, choice === "all")) close();
   }
 
-  const status = (draft: boolean, editedFlag: boolean) => draft ? <span className="pill pill-dashed">Draft</span> : editedFlag ? <span className="pill pill-accent">Edited</span> : <span className="pill pill-ok">Published</span>;
+  const status = (draft: boolean, editedFlag: boolean) => draft ? <span className="pill pill-dashed">{t("common.draft")}</span> : editedFlag ? <span className="pill pill-accent">{t("cm.edited")}</span> : <span className="pill pill-ok">{t("cm.published")}</span>;
 
   return (
     <div className="container">
@@ -132,31 +135,31 @@ export function ContentManage({ courseId }: { courseId: string }) {
       <div className={s.layout}>
         <div className={s.main}>
           <div className={s.toolbar}>
-            <p>Drag items by their handle to change the order. Students see only published items.</p>
+            <p>{t("cm.toolbar")}</p>
             {firstPublished
-              ? <Link href={`/courses/${courseId}/items/${firstPublished.id}`} className="btn btn-outline">Preview as student</Link>
-              : <button type="button" className="btn btn-outline" disabled>Preview as student</button>}
-            <button type="button" className="btn btn-primary" onClick={() => open({ kind: "section" })}><Icon name="plus" size={16} strokeWidth={2.2} />Add section</button>
+              ? <Link href={`/courses/${courseId}/items/${firstPublished.id}`} className="btn btn-outline">{t("cm.preview")}</Link>
+              : <button type="button" className="btn btn-outline" disabled>{t("cm.preview")}</button>}
+            <button type="button" className="btn btn-primary" onClick={() => open({ kind: "section" })}><Icon name="plus" size={16} strokeWidth={2.2} />{t("cm.addSection")}</button>
           </div>
-          {!tree.data ? <p className="loading" role="status">Loading…</p> : mods.length === 0 ? <p className="empty">This course has no content yet. Add a section to start.</p> : (
+          {!tree.data ? <p className="loading" role="status">{t("common.loading")}</p> : mods.length === 0 ? <p className="empty">{t("cm.empty")}</p> : (
             <div className={s.sections}>
               {mods.map((sec, si) => (
                 <section key={sec.id} aria-label={sec.title} className={s.section} data-draft={sec.status === "draft"} data-over={drag?.kind === "sec" && over === sec.id}
                   onDragOver={(e) => { if (drag?.kind === "sec") { e.preventDefault(); setOver(sec.id); } }} onDrop={(e) => { e.preventDefault(); setOver(null); void dropSection(sec.id); }}>
                   <div className={s.sHead}>
-                    <span title="Drag to move" className={s.handle} draggable onDragStart={() => setDrag({ kind: "sec", id: sec.id, parent: "" })} onDragEnd={() => { setDrag(null); setOver(null); }}><Icon name="grip" size={16} strokeWidth={3} /></span>
+                    <span title={t("cm.drag")} className={s.handle} draggable onDragStart={() => setDrag({ kind: "sec", id: sec.id, parent: "" })} onDragEnd={() => { setDrag(null); setOver(null); }}><Icon name="grip" size={16} strokeWidth={3} /></span>
                     <h2>{sec.title}</h2>
                     <span className="muted" style={{ fontSize: 13 }}>{plural(sec.items.length, "item")}</span>
                     {status(sec.status === "draft", false)}
-                    {sec.status === "draft" && <button type="button" className="btn btn-outline" style={{ minHeight: 36 }} onClick={() => open({ kind: "publish", sec })}>Publish section</button>}
+                    {sec.status === "draft" && <button type="button" className="btn btn-outline" style={{ minHeight: 36 }} onClick={() => open({ kind: "publish", sec })}>{t("cm.publishSection")}</button>}
                     <span style={{ position: "relative" }}>
-                      <button type="button" className="icon-btn" aria-label={`More actions for ${sec.title}`} aria-haspopup="menu" aria-expanded={menu === sec.id} onClick={() => setMenu(menu === sec.id ? null : sec.id)}><Icon name="more" size={18} strokeWidth={3.4} /></button>
+                      <button type="button" className="icon-btn" aria-label={t("people.moreFor", { name: sec.title })} aria-haspopup="menu" aria-expanded={menu === sec.id} onClick={() => setMenu(menu === sec.id ? null : sec.id)}><Icon name="more" size={18} strokeWidth={3.4} /></button>
                       {menu === sec.id && (
                         <div role="menu" className="popover" style={{ top: 42, right: 0 }}>
-                          <button type="button" role="menuitem" className="menu-item" onClick={() => open({ kind: "rename", sec })}>Rename</button>
-                          <button type="button" role="menuitem" className="menu-item" disabled={si === 0} onClick={() => void moveSection(sec.id, -1)}>Move up</button>
-                          <button type="button" role="menuitem" className="menu-item" disabled={si === mods.length - 1} onClick={() => void moveSection(sec.id, 1)}>Move down</button>
-                          <button type="button" role="menuitem" className="menu-item" style={{ color: "var(--danger)" }} onClick={() => open({ kind: "delete-section", sec })}>Delete section</button>
+                          <button type="button" role="menuitem" className="menu-item" onClick={() => open({ kind: "rename", sec })}>{t("cm.rename")}</button>
+                          <button type="button" role="menuitem" className="menu-item" disabled={si === 0} onClick={() => void moveSection(sec.id, -1)}>{t("cm.moveUp")}</button>
+                          <button type="button" role="menuitem" className="menu-item" disabled={si === mods.length - 1} onClick={() => void moveSection(sec.id, 1)}>{t("cm.moveDown")}</button>
+                          <button type="button" role="menuitem" className="menu-item" style={{ color: "var(--danger)" }} onClick={() => open({ kind: "delete-section", sec })}>{t("cm.deleteSection")}</button>
                         </div>
                       )}
                     </span>
@@ -168,31 +171,31 @@ export function ContentManage({ courseId }: { courseId: string }) {
                         <div key={i.id} className={s.item} data-kind={k} data-over={drag?.kind === "item" && over === i.id}
                           onDragOver={(e) => { if (drag?.kind === "item" && drag.parent === sec.id) { e.preventDefault(); e.stopPropagation(); setOver(i.id); } }}
                           onDrop={(e) => { e.preventDefault(); e.stopPropagation(); setOver(null); void dropItem(sec, i.id); }}>
-                          <span title="Drag to move" className={s.handle} draggable onDragStart={(e) => { e.stopPropagation(); setDrag({ kind: "item", id: i.id, parent: sec.id }); }} onDragEnd={() => { setDrag(null); setOver(null); }}><Icon name="grip" size={16} strokeWidth={3} /></span>
+                          <span title={t("cm.drag")} className={s.handle} draggable onDragStart={(e) => { e.stopPropagation(); setDrag({ kind: "item", id: i.id, parent: sec.id }); }} onDragEnd={() => { setDrag(null); setOver(null); }}><Icon name="grip" size={16} strokeWidth={3} /></span>
                           <ItemTile kind={k} />
                           <Link href={`/courses/${courseId}/items/${i.id}`} className={s.itemMain}>
                             <span className={s.itemTitle} data-draft={i.status === "draft"}>{i.title}</span>
                             <span className={s.itemMeta}>{itemMeta(i, m[i.id])}</span>
                           </Link>
                           {status(i.status === "draft", !!m[i.id]?.edited)}
-                          <Link href={`/courses/${courseId}/items/${i.id}/edit`} className="btn btn-quiet" style={{ minHeight: 36 }}>Edit</Link>
+                          <Link href={`/courses/${courseId}/items/${i.id}/edit`} className="btn btn-quiet" style={{ minHeight: 36 }}>{t("common.edit")}</Link>
                           <span style={{ position: "relative" }}>
-                            <button type="button" className="icon-btn" aria-label={`More actions for ${i.title}`} aria-haspopup="menu" aria-expanded={menu === i.id} onClick={() => setMenu(menu === i.id ? null : i.id)}><Icon name="more" size={18} strokeWidth={3.4} /></button>
+                            <button type="button" className="icon-btn" aria-label={t("people.moreFor", { name: i.title })} aria-haspopup="menu" aria-expanded={menu === i.id} onClick={() => setMenu(menu === i.id ? null : i.id)}><Icon name="more" size={18} strokeWidth={3.4} /></button>
                             {menu === i.id && (
                               <div role="menu" className="popover" style={{ top: 42, right: 0 }}>
-                                {i.status === "draft" && <button type="button" role="menuitem" className="menu-item" onClick={() => { setMenu(null); void publishItem.run(i.id); }}>Publish</button>}
-                                <button type="button" role="menuitem" className="menu-item" style={{ color: "var(--danger)" }} onClick={() => open({ kind: "delete-item", item: i })}>Delete</button>
+                                {i.status === "draft" && <button type="button" role="menuitem" className="menu-item" onClick={() => { setMenu(null); void publishItem.run(i.id); }}>{t("cm.publish")}</button>}
+                                <button type="button" role="menuitem" className="menu-item" style={{ color: "var(--danger)" }} onClick={() => open({ kind: "delete-item", item: i })}>{t("cm.delete")}</button>
                               </div>
                             )}
                           </span>
                         </div>
                       );
                     })}
-                    {sec.items.length === 0 && <p className="muted" style={{ padding: "14px 18px", fontSize: 14 }}>No items yet.</p>}
+                    {sec.items.length === 0 && <p className="muted" style={{ padding: "14px 18px", fontSize: 14 }}>{t("cm.noItems")}</p>}
                   </div>
                   <div className={s.add}>
-                    <button type="button" className="btn" style={{ minHeight: 36 }} onClick={() => open({ kind: "new-item", sec, type: "lecture" })}><Icon name="plus" size={15} strokeWidth={2.2} />Lecture</button>
-                    <button type="button" className="btn" style={{ minHeight: 36 }} onClick={() => open({ kind: "new-item", sec, type: "assignment" })}><Icon name="plus" size={15} strokeWidth={2.2} />Assignment</button>
+                    <button type="button" className="btn" style={{ minHeight: 36 }} onClick={() => open({ kind: "new-item", sec, type: "lecture" })}><Icon name="plus" size={15} strokeWidth={2.2} />{t("row.lecture")}</button>
+                    <button type="button" className="btn" style={{ minHeight: 36 }} onClick={() => open({ kind: "new-item", sec, type: "assignment" })}><Icon name="plus" size={15} strokeWidth={2.2} />{t("cm.assignment")}</button>
                   </div>
                 </section>
               ))}
@@ -201,55 +204,55 @@ export function ContentManage({ courseId }: { courseId: string }) {
         </div>
         <aside aria-labelledby="glance-h" className={s.aside}>
           <div className="card card-pad">
-            <h2 id="glance-h" className="card-title">What students see</h2>
+            <h2 id="glance-h" className="card-title">{t("cm.glance")}</h2>
             <ul className={s.glance}>
-              <li>{plural(pubSections, "section")} and {plural(items.filter((i) => i.status === "published").length, "item")} are published</li>
-              {(mods.length - pubSections > 0 || drafts > 0) && <li>{plural(mods.length - pubSections, "section")} and {plural(drafts, "item")} are drafts</li>}
-              {edited > 0 && <li>{plural(edited, "lecture")} {edited === 1 ? "has" : "have"} changes you haven&apos;t published</li>}
+              <li>{t("cm.arePublished", { a: plural(pubSections, "section"), b: plural(items.filter((i) => i.status === "published").length, "item") })}</li>
+              {(mods.length - pubSections > 0 || drafts > 0) && <li>{t("cm.areDrafts", { a: plural(mods.length - pubSections, "section"), b: plural(drafts, "item") })}</li>}
+              {edited > 0 && <li>{t.plural("cm.edits", edited)}</li>}
             </ul>
           </div>
           <div className="card card-pad">
-            <h2 className="card-title">Labels</h2>
+            <h2 className="card-title">{t("cm.labels")}</h2>
             <div className={s.legend}>
-              <span className="line"><span className="pill pill-ok">Published</span> students see it</span>
-              <span className="line"><span className="pill pill-dashed">Draft</span> only staff see it</span>
-              <span className="line"><span className="pill pill-accent">Edited</span> students see the old version</span>
+              <span className="line"><span className="pill pill-ok">{t("cm.published")}</span> {t("cm.legendPublished")}</span>
+              <span className="line"><span className="pill pill-dashed">{t("common.draft")}</span> {t("cm.legendDraft")}</span>
+              <span className="line"><span className="pill pill-accent">{t("cm.edited")}</span> {t("cm.legendEdited")}</span>
             </div>
           </div>
         </aside>
       </div>
 
       {(dlg?.kind === "section" || dlg?.kind === "rename") && (
-        <Dialog title={dlg.kind === "section" ? "Add a section" : "Rename the section"} onClose={close}
-          actions={<><button type="button" className="btn" onClick={close}>Cancel</button><button type="button" className="btn btn-primary" onClick={saveSection} disabled={createModule.pending || updateModule.pending}>{dlg.kind === "section" ? "Add section" : "Save"}</button></>}>
+        <Dialog title={dlg.kind === "section" ? t("cm.addSectionTitle") : t("cm.renameTitle")} onClose={close}
+          actions={<><button type="button" className="btn" onClick={close}>{t("common.cancel")}</button><button type="button" className="btn btn-primary" onClick={saveSection} disabled={createModule.pending || updateModule.pending}>{dlg.kind === "section" ? t("cm.addSection") : t("cm.save")}</button></>}>
           <div className="field">
-            <label htmlFor="sec-title">Section title</label>
+            <label htmlFor="sec-title">{t("cm.sectionTitle")}</label>
             <input id="sec-title" className="input" value={text} onChange={(e) => setText(e.target.value)} aria-invalid={!!titleError(createModule.error ?? updateModule.error)} onKeyDown={(e) => { if (e.key === "Enter") void saveSection(); }} />
             {titleError(createModule.error ?? updateModule.error) && <p className="hint" style={{ color: "var(--danger)" }}>{titleError(createModule.error ?? updateModule.error)}</p>}
           </div>
         </Dialog>
       )}
       {dlg?.kind === "new-item" && (
-        <Dialog title={dlg.type === "lecture" ? "Add a lecture" : "Add an assignment"} description={`It starts as a draft in “${dlg.sec.title}”. Students don't see it until you publish it.`} onClose={close}
-          actions={<><button type="button" className="btn" onClick={close}>Cancel</button><button type="button" className="btn btn-primary" onClick={saveItem} disabled={createItem.pending}>Create and edit</button></>}>
+        <Dialog title={dlg.type === "lecture" ? t("cm.addLecture") : t("cm.addAssignment")} description={t("cm.startsDraft", { title: dlg.sec.title })} onClose={close}
+          actions={<><button type="button" className="btn" onClick={close}>{t("common.cancel")}</button><button type="button" className="btn btn-primary" onClick={saveItem} disabled={createItem.pending}>{t("cm.createEdit")}</button></>}>
           <div className="stack" style={{ gap: 14 }}>
             <div className="field">
-              <label htmlFor="item-title">Title</label>
+              <label htmlFor="item-title">{t("cm.title")}</label>
               <input id="item-title" className="input" value={text} onChange={(e) => setText(e.target.value)} aria-invalid={!!titleError(createItem.error)} />
               {titleError(createItem.error) && <p className="hint" style={{ color: "var(--danger)" }}>{titleError(createItem.error)}</p>}
             </div>
             {dlg.type === "assignment" && (
               <>
                 <div className="field">
-                  <label htmlFor="item-type">Type</label>
+                  <label htmlFor="item-type">{t("cm.type")}</label>
                   <select id="item-type" className="select" value={type} onChange={(e) => setType(e.target.value)}>
-                    {ASSIGNMENT_TYPES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                    {ASSIGNMENT_TYPES.map((v) => <option key={v} value={v}>{typeLabel(v)}</option>)}
                   </select>
-                  <p className="hint">The type can&apos;t change later.</p>
+                  <p className="hint">{t("cm.typeFixed")}</p>
                 </div>
                 {type !== "form" && (
                   <div className="field">
-                    <label htmlFor="item-points">Points</label>
+                    <label htmlFor="item-points">{t("cm.points")}</label>
                     <input id="item-points" className="input" inputMode="decimal" style={{ maxWidth: 160 }} value={points} onChange={(e) => setPoints(e.target.value)} aria-invalid={!!createItem.error?.errors.find((x) => x.field === "max_points")} />
                     {createItem.error?.errors.find((x) => x.field === "max_points") && <p className="hint" style={{ color: "var(--danger)" }}>{createItem.error.errors.find((x) => x.field === "max_points")!.message}</p>}
                   </div>
@@ -260,12 +263,12 @@ export function ContentManage({ courseId }: { courseId: string }) {
         </Dialog>
       )}
       {dlg?.kind === "publish" && (
-        <Dialog title={`Publish "${dlg.sec.title}"?`} description={`This section has ${plural(dlg.sec.items.filter((i) => i.status === "draft").length, "draft item")}. Choose what students will see.`} onClose={close}
-          actions={<><button type="button" className="btn" onClick={close}>Cancel</button><button type="button" className="btn btn-primary" disabled={!choice || publishModule.pending} onClick={publish}>Publish</button></>}>
-          <div role="radiogroup" aria-label="What to publish" className="stack" style={{ gap: 10 }}>
+        <Dialog title={t("cm.publishQ", { title: dlg.sec.title })} description={t("cm.publishLead", { n: plural(dlg.sec.items.filter((i) => i.status === "draft").length, "draft item") })} onClose={close}
+          actions={<><button type="button" className="btn" onClick={close}>{t("common.cancel")}</button><button type="button" className="btn btn-primary" disabled={!choice || publishModule.pending} onClick={publish}>{t("cm.publish")}</button></>}>
+          <div role="radiogroup" aria-label={t("cm.whatPublish")} className="stack" style={{ gap: 10 }}>
             {([
-              ["only", "Only the section", `Students see the section title. Its ${plural(dlg.sec.items.length, "item")} stay drafts.`],
-              ["all", "The section and everything in it", `Students see the section and ${dlg.sec.items.length === 2 ? "both" : "all"} ${plural(dlg.sec.items.length, "item", "items").replace(/^\d+ /, "")}.`],
+              ["only", t("cm.onlySection"), t("cm.onlyDesc", { n: plural(dlg.sec.items.length, "item") })],
+              ["all", t("cm.allSection"), t("cm.allDesc", { n: plural(dlg.sec.items.length, "item") })],
             ] as const).map(([id, title, desc]) => (
               <button key={id} type="button" role="radio" aria-checked={choice === id} className={s.choice} onClick={() => setChoice(id)}>
                 <span className={s.radio} aria-hidden="true"><span className={s.dot} /></span>
@@ -273,18 +276,18 @@ export function ContentManage({ courseId }: { courseId: string }) {
               </button>
             ))}
           </div>
-          <p className="muted" style={{ marginTop: 12, fontSize: 13, minHeight: 20 }}>{choice ? "" : "Pick one of the options to continue."}</p>
+          <p className="muted" style={{ marginTop: 12, fontSize: 13, minHeight: 20 }}>{choice ? "" : t("cm.pickOne")}</p>
           {publishModule.error && <p role="alert" className="alert alert-danger">{publishModule.error.detail ?? publishModule.error.title}</p>}
         </Dialog>
       )}
       {dlg?.kind === "delete-section" && (
-        <ConfirmDialog title={`Delete "${dlg.sec.title}"?`} confirm="Delete section" danger pending={deleteModule.pending} error={deleteModule.error?.detail} onClose={close} onConfirm={async () => { if (await deleteModule.run(dlg.sec.id)) close(); }}>
-          This deletes the section and the {plural(dlg.sec.items.length, "item")} in it. Sections with graded work can&apos;t be deleted.
+        <ConfirmDialog title={t("cm.deleteQ", { title: dlg.sec.title })} confirm={t("cm.deleteSection")} danger pending={deleteModule.pending} error={deleteModule.error?.detail} onClose={close} onConfirm={async () => { if (await deleteModule.run(dlg.sec.id)) close(); }}>
+          {t("cm.deleteSectionLead", { n: plural(dlg.sec.items.length, "item") })}
         </ConfirmDialog>
       )}
       {dlg?.kind === "delete-item" && (
-        <ConfirmDialog title={`Delete "${dlg.item.title}"?`} confirm="Delete" danger pending={deleteItem.pending} error={deleteItem.error?.detail} onClose={close} onConfirm={async () => { if (await deleteItem.run(dlg.item.id)) close(); }}>
-          Students&apos; drafts for it are deleted too. An assignment with grades can&apos;t be deleted.
+        <ConfirmDialog title={t("cm.deleteQ", { title: dlg.item.title })} confirm={t("cm.delete")} danger pending={deleteItem.pending} error={deleteItem.error?.detail} onClose={close} onConfirm={async () => { if (await deleteItem.run(dlg.item.id)) close(); }}>
+          {t("cm.deleteItemLead")}
         </ConfirmDialog>
       )}
     </div>

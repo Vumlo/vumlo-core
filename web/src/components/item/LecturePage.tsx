@@ -9,9 +9,11 @@ import { allItems } from "@/lib/course";
 import { dayLong, shortDay } from "@/lib/format";
 import { bodyOf, type Item } from "@/lib/api/types";
 import { ItemFrame, PreviewBanner } from "./ItemFrame";
+import { useT } from "@/lib/i18n";
 import s from "./Item.module.css";
 
 export function LecturePage({ item, courseId, staff }: { item: Item; courseId: string; staff: boolean }) {
+  const t = useT();
   const tree = useContentTree(courseId);
   const meta = useItemMeta(courseId);
   const info = useCourseInfo(courseId);
@@ -46,23 +48,23 @@ export function LecturePage({ item, courseId, staff }: { item: Item; courseId: s
             {crumbs}
             <div className={s.kind}>
               <span aria-hidden="true" className={s.kindIcon} data-kind="lecture"><Icon name="lecture" size={15} strokeWidth={2} /></span>
-              <span className={s.kindLabel} data-kind="lecture">Lecture</span>
-              <span className="muted" style={{ fontSize: 14 }}>{minutes} min read</span>
+              <span className={s.kindLabel} data-kind="lecture">{t("row.lecture")}</span>
+              <span className="muted" style={{ fontSize: 14 }}>{t("row.readMinutes", { n: minutes })}</span>
             </div>
             <h1 className={s.lectureTitle}>{item.title}</h1>
-            <p className={s.byline}>{info.data?.owner_name}, updated {dayLong(item.updated_at)}</p>
+            <p className={s.byline}>{info.data?.owner_name}, {t("lecture.updated", { day: dayLong(item.updated_at) })}</p>
             <BlockRenderer doc={doc} />
-            <nav aria-label="Next and previous" className={s.pager}>
+            <nav aria-label={t("lecture.pager")} className={s.pager}>
               {prevLecture ? (
                 <Link href={`/courses/${courseId}/items/${prevLecture.id}`} className={s.pagerLink}>
-                  <span className={s.pagerSmall}>Previous lecture</span>
+                  <span className={s.pagerSmall}>{t("lecture.prev")}</span>
                   <span style={{ fontSize: 15, fontWeight: 600 }}>{prevLecture.title}</span>
                 </Link>
               ) : null}
               {next && (
                 <Link href={`/courses/${courseId}/items/${next.id}`} className={s.pagerLink} data-kind={next.kind === "assignment" ? "assignment" : "lecture"} style={{ textAlign: "right" }}>
                   <span className={s.pagerSmall}>
-                    {next.kind === "assignment" ? `Next, assignment${next.assignment?.due_at ? ` due ${shortDay(next.assignment.due_at)}` : ""}` : "Next lecture"}
+                    {next.kind === "assignment" ? (next.assignment?.due_at ? t("lecture.nextAssignmentDue", { day: shortDay(next.assignment.due_at) }) : t("lecture.nextAssignment")) : t("lecture.next")}
                   </span>
                   <span style={{ fontSize: 15, fontWeight: 600 }}>{next.title}</span>
                 </Link>
@@ -71,7 +73,7 @@ export function LecturePage({ item, courseId, staff }: { item: Item; courseId: s
           </article>
           {headings.length > 0 && (
             <aside aria-labelledby="toc-h" className={s.toc}>
-              <h2 id="toc-h" style={{ margin: "0 0 8px", fontSize: 13, fontWeight: 600, color: "var(--muted)" }}>On this page</h2>
+              <h2 id="toc-h" style={{ margin: "0 0 8px", fontSize: 13, fontWeight: 600, color: "var(--muted)" }}>{t("lecture.onThisPage")}</h2>
               <nav className={s.tocNav}>
                 {headings.map((h) => (
                   <a key={h.id} href={`#${h.id}`} className={s.tocLink} aria-current={(current ?? headings[0]!.id) === h.id ? "location" : undefined}>{h.label}</a>

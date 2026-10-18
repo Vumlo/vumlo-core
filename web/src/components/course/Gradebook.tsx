@@ -12,12 +12,14 @@ import { allItems } from "@/lib/course";
 import { dayLabel, dueLabel, initials, plural, sinceLabel, weekdayDate, timeOf } from "@/lib/format";
 import { validScore } from "@/lib/points";
 import { CourseHeader } from "./CourseHeader";
+import { useT } from "@/lib/i18n";
 import s from "./Gradebook.module.css";
 
 type Sel = { studentId: string; assignmentId: string };
 type CellState = "pub" | "draft" | "grade" | "none";
 
 function Drawer({ sel, row, col, cell, toGrade, onClose }: { sel: Sel; row: GradebookRow; col: GradebookColumn; cell: GradebookCell | undefined; toGrade: boolean; onClose: () => void }) {
+  const t = useT();
   const save = useSaveGrade(sel.assignmentId);
   const publish = usePublishGrades(sel.assignmentId);
   const attempts = useStudentAttempts(sel.assignmentId, sel.studentId);
@@ -49,53 +51,54 @@ function Drawer({ sel, row, col, cell, toGrade, onClose }: { sel: Sel; row: Grad
           <p className="muted" style={{ fontSize: 13 }}>{col.title}</p>
           <h2 id="drawer-h" style={{ fontSize: 19, fontWeight: 600 }}>{row.name} {row.surname}</h2>
         </div>
-        <button type="button" className="icon-btn" aria-label="Close" onClick={onClose}><Icon name="close" size={18} strokeWidth={2} /></button>
+        <button type="button" className="icon-btn" aria-label={t("common.close")} onClick={onClose}><Icon name="close" size={18} strokeWidth={2} /></button>
       </div>
       {latest ? (
         <div>
-          <p style={{ fontSize: 14 }}>Submitted {weekdayDate(latest.submitted_at)} at {timeOf(latest.submitted_at)}</p>
-          <p className="muted" style={{ fontSize: 13 }}>Attempt {latest.attempt}{latest.is_late ? ", late" : ", on time"}</p>
-          <button type="button" className="btn btn-quiet" style={{ padding: 0, minHeight: 36 }} aria-expanded={open} onClick={() => setOpen((o) => !o)}>{open ? "Hide submission" : "Open submission"}</button>
+          <p style={{ fontSize: 14 }}>{t("gb.submittedAt", { day: weekdayDate(latest.submitted_at), time: timeOf(latest.submitted_at) })}</p>
+          <p className="muted" style={{ fontSize: 13 }}>{t("grading.attempt", { n: latest.attempt })}{latest.is_late ? `, ${t("gb.late")}` : `, ${t("gb.onTime")}`}</p>
+          <button type="button" className="btn btn-quiet" style={{ padding: 0, minHeight: 36 }} aria-expanded={open} onClick={() => setOpen((o) => !o)}>{open ? t("gb.hide") : t("gb.open")}</button>
           {open && (
             <div className={s.submission}>
-              {content && "blocks" in content ? <BlockRenderer doc={content} size={14} /> : <p>Answers to {Object.keys((content as { answers?: object } | undefined)?.answers ?? {}).length} questions.</p>}
+              {content && "blocks" in content ? <BlockRenderer doc={content} size={14} /> : <p>{t.plural("gb.answers", Object.keys((content as { answers?: object } | undefined)?.answers ?? {}).length)}</p>}
             </div>
           )}
         </div>
-      ) : <p className="muted" style={{ fontSize: 14 }}>{toGrade ? "" : "Nothing was submitted."}</p>}
+      ) : <p className="muted" style={{ fontSize: 14 }}>{toGrade ? "" : t("gb.nothing")}</p>}
       <div className="stack" style={{ gap: 10 }}>
-        <label htmlFor="points" style={{ fontSize: 14, fontWeight: 500 }}>Points</label>
+        <label htmlFor="points" style={{ fontSize: 14, fontWeight: 500 }}>{t("cm.points")}</label>
         <div className="row" style={{ gap: 10 }}>
           <input id="points" className="input" style={{ maxWidth: 120 }} inputMode="decimal" value={points} disabled={former} aria-invalid={touched && invalid} onChange={(e) => { setPoints(e.target.value); setTouched(false); }} />
-          <span className="muted" style={{ fontSize: 14 }}>out of {col.max_points}</span>
+          <span className="muted" style={{ fontSize: 14 }}>{t("gb.outOf", { max: col.max_points })}</span>
         </div>
-        {touched && invalid && <p role="alert" className="hint" style={{ color: "var(--danger)" }}>Use a number from 0 to {col.max_points} with at most two decimals.</p>}
-        <label htmlFor="comment" style={{ fontSize: 14, fontWeight: 500 }}>Comment for {row.name}</label>
+        {touched && invalid && <p role="alert" className="hint" style={{ color: "var(--danger)" }}>{t("gb.invalid", { max: col.max_points })}</p>}
+        <label htmlFor="comment" style={{ fontSize: 14, fontWeight: 500 }}>{t("gb.commentFor", { name: row.name })}</label>
         <textarea id="comment" className="textarea" style={{ minHeight: 80 }} value={comment} disabled={former} onChange={(e) => setComment(e.target.value)} />
         {err && <p role="alert" className="alert alert-danger">{err.errors[0]?.message ?? err.detail ?? err.title}</p>}
-        {former ? <p className="muted" style={{ fontSize: 13 }}>{row.name} left the course, so their grades are locked.</p> : (
+        {former ? <p className="muted" style={{ fontSize: 13 }}>{t("gb.left", { name: row.name })}</p> : (
           <>
             <div className="row" style={{ gap: 10, flexWrap: "wrap" }}>
-              <button type="button" className="btn" onClick={() => void saveDraft()} disabled={save.pending}>Save draft</button>
-              <button type="button" className="btn btn-primary" onClick={() => void saveAndPublish()} disabled={save.pending || publish.pending}>Publish</button>
+              <button type="button" className="btn" onClick={() => void saveDraft()} disabled={save.pending}>{t("gb.saveDraft")}</button>
+              <button type="button" className="btn btn-primary" onClick={() => void saveAndPublish()} disabled={save.pending || publish.pending}>{t("cm.publish")}</button>
             </div>
-            <p className="muted" style={{ fontSize: 13 }}>{row.name} sees this grade once you publish it.</p>
+            <p className="muted" style={{ fontSize: 13 }}>{t("gb.sees", { name: row.name })}</p>
           </>
         )}
       </div>
       <div>
-        <h3 style={{ fontSize: 14, fontWeight: 600, marginBottom: 6 }}>History</h3>
+        <h3 style={{ fontSize: 14, fontWeight: 600, marginBottom: 6 }}>{t("gb.history")}</h3>
         <ol className={s.hist}>
           {(history.data?.entries ?? []).map((h, i) => <li key={i}><span>{h.what}</span><span className="muted">{sinceLabel(h.at)}</span></li>)}
-          {history.data?.entries.length === 0 && <li className="muted">No changes yet.</li>}
+          {history.data?.entries.length === 0 && <li className="muted">{t("gb.noChanges")}</li>}
         </ol>
-        <p className="muted" style={{ marginTop: 8, fontSize: 12 }}>Each change is recorded and can&apos;t be edited later.</p>
+        <p className="muted" style={{ marginTop: 8, fontSize: 12 }}>{t("gb.recorded")}</p>
       </div>
     </aside>
   );
 }
 
 export function Gradebook({ courseId }: { courseId: string }) {
+  const t = useT();
   const book = useGradebook(courseId);
   const tree = useContentTree(courseId);
   const people = useCoursePeople(courseId);
@@ -108,8 +111,8 @@ export function Gradebook({ courseId }: { courseId: string }) {
   const [sel, setSel] = useState<Sel | null>(null);
 
   const items = tree.data ? allItems(tree.data) : [];
-  const groupOf = useMemo(() => new Map((people.data?.people ?? []).map((p) => [p.user_id, p.group ?? "Added directly"])), [people.data]);
-  const groups = [...new Set((people.data?.people ?? []).filter((p) => p.role === "student" && !p.former).map((p) => p.group ?? "Added directly"))];
+  const groupOf = useMemo(() => new Map((people.data?.people ?? []).map((p) => [p.user_id, p.group ?? t("people.direct")])), [people.data, t]);
+  const groups = [...new Set((people.data?.people ?? []).filter((p) => p.role === "student" && !p.former).map((p) => p.group ?? t("people.direct")))];
 
   const state = (row: GradebookRow, col: GradebookColumn): { st: CellState; cell?: GradebookCell } => {
     const cell = row.cells.find((c) => c.assignment_id === col.assignment_id);
@@ -132,11 +135,11 @@ export function Gradebook({ courseId }: { courseId: string }) {
     const rowsFor = (book.data?.items ?? []).filter((r) => !r.former);
     const toGrade = rowsFor.filter((r) => state(r, col).st === "grade").length;
     const drafts = rowsFor.filter((r) => state(r, col).st === "draft").length;
-    if (item?.assignment?.type === "no_submission") return { text: "Graded by hand", tone: "muted" };
-    if (toGrade || drafts) return { text: [toGrade ? `${toGrade} to grade` : "", drafts ? plural(drafts, "draft") : ""].filter(Boolean).join(", "), tone: "accent" };
-    if (due && new Date(due) >= now() && submitted === 0) return { text: `Due ${dayLabel(due)}, no submissions yet`, tone: "muted" };
-    if (due && new Date(due) < now()) return { text: `Closed ${dayLabel(due)}, all published`, tone: "muted" };
-    return { text: due ? `Due ${dueLabel(due)}` : "No deadline", tone: "muted" };
+    if (item?.assignment?.type === "no_submission") return { text: t("gb.byHand"), tone: "muted" };
+    if (toGrade || drafts) return { text: [toGrade ? t("gb.toGradeN", { n: toGrade }) : "", drafts ? plural(drafts, "draft") : ""].filter(Boolean).join(", "), tone: "accent" };
+    if (due && new Date(due) >= now() && submitted === 0) return { text: t("gb.dueNone", { day: dayLabel(due) }), tone: "muted" };
+    if (due && new Date(due) < now()) return { text: t("gb.closedAll", { day: dayLabel(due) }), tone: "muted" };
+    return { text: due ? t("bar.due", { when: dueLabel(due) }) : t("due.none"), tone: "muted" };
   };
 
   const selRow = sel && book.data?.items.find((r) => r.user_id === sel.studentId);
@@ -148,35 +151,35 @@ export function Gradebook({ courseId }: { courseId: string }) {
       <div className={s.bar}>
         <label className="search" style={{ flex: "0 1 260px", background: "var(--surface)" }}>
           <Icon name="search" size={16} />
-          <input type="search" aria-label="Find a student" placeholder="Find a student" value={q} onChange={(e) => setQ(e.target.value)} />
+          <input type="search" aria-label={t("gb.find")} placeholder={t("gb.find")} value={q} onChange={(e) => setQ(e.target.value)} />
         </label>
-        <select aria-label="Group" className="select" style={{ width: "auto", minHeight: 40 }} value={group} onChange={(e) => setGroup(e.target.value)}>
-          <option value="all">All students</option>
-          {groups.map((g) => <option key={g} value={g}>{g.startsWith("CS-") ? `Group ${g}` : g}</option>)}
+        <select aria-label={t("people.group")} className="select" style={{ width: "auto", minHeight: 40 }} value={group} onChange={(e) => setGroup(e.target.value)}>
+          <option value="all">{t("gb.allStudents")}</option>
+          {groups.map((g) => <option key={g} value={g}>{g.startsWith("CS-") ? t("people.group2", { name: g }) : g}</option>)}
         </select>
         <span style={{ flex: "1 1 auto" }} />
         <button type="button" className="btn btn-primary" disabled={draftCount === 0 || publishAll.pending} onClick={() => void publishAll.run(draftCols.map((c) => c.assignment_id))}>
-          Publish {plural(draftCount, "draft")}
+          {t("gb.publishDrafts", { n: plural(draftCount, "draft") })}
         </button>
       </div>
       {publishAll.error && <p role="alert" className="alert alert-danger" style={{ marginBottom: 12 }}>{publishAll.error.detail ?? publishAll.error.title}</p>}
       <div className={s.legend}>
-        <span><strong style={{ color: "var(--text)" }}>18.50</strong> Published, the student can see it</span>
-        <span><span className={s.draft}>22.50</span> Draft, only you can see it</span>
-        <span><span className={s.dot} /> Submitted, waiting for a grade</span>
+        <span><strong style={{ color: "var(--text)" }}>18.50</strong> {t("gb.legendPub")}</span>
+        <span><span className={s.draft}>22.50</span> {t("gb.legendDraft")}</span>
+        <span><span className={s.dot} /> {t("gb.legendSub")}</span>
       </div>
-      {!book.data ? <p className="loading" role="status">Loading…</p> : (
+      {!book.data ? <p className="loading" role="status">{t("common.loading")}</p> : (
         <div className={s.body}>
           <div className={`card ${s.gridWrap}`}>
-            <div role="grid" aria-label="Grades" className={s.grid}>
+            <div role="grid" aria-label={t("nav.grades")} className={s.grid}>
               <div role="row" className={`${s.row} ${s.head}`}>
-                <div role="columnheader" className={s.name} style={{ fontSize: 13, fontWeight: 500, color: "var(--muted)" }}>Student</div>
+                <div role="columnheader" className={s.name} style={{ fontSize: 13, fontWeight: 500, color: "var(--muted)" }}>{t("grading.student")}</div>
                 {cols.map((c) => {
                   const n = note(c);
                   return (
                     <div key={c.assignment_id} role="columnheader" className={s.col}>
                       <Link href={`/courses/${courseId}/items/${c.assignment_id}`}>{c.title}</Link>
-                      <span className={s.colMeta}>Out of {c.max_points}</span>
+                      <span className={s.colMeta}>{t("gb.colOut", { max: c.max_points })}</span>
                       <span className={s.colNote} style={{ color: n.tone === "accent" ? "var(--accent-fg)" : undefined }}>{n.text}</span>
                     </div>
                   );
@@ -188,19 +191,19 @@ export function Gradebook({ courseId }: { courseId: string }) {
                     <span aria-hidden="true" className={s.avatar}>{initials(r.name, r.surname)}</span>
                     <span>
                       <span style={{ display: "block", fontWeight: 500, color: r.former ? "var(--muted)" : undefined }}>{r.name} {r.surname}</span>
-                      {r.former && <span className="muted" style={{ display: "block", fontSize: 12 }}>Left the course, grades locked</span>}
+                      {r.former && <span className="muted" style={{ display: "block", fontSize: 12 }}>{t("gb.leftLocked")}</span>}
                     </span>
                   </div>
                   {cols.map((c) => {
                     const { st, cell } = state(r, c);
-                    const label = `${r.name} ${r.surname}, ${c.title}, ${st === "pub" ? `published ${cell?.published_score}` : st === "draft" ? `draft ${cell?.draft_score}` : st === "grade" ? "submitted, to grade" : "no grade"}${r.former ? ", locked" : ""}`;
+                    const label = `${r.name} ${r.surname}, ${c.title}, ${st === "pub" ? t("gb.aPub", { score: cell?.published_score ?? "" }) : st === "draft" ? t("gb.aDraft", { score: cell?.draft_score ?? "" }) : st === "grade" ? t("gb.aGrade") : t("gb.aNone")}${r.former ? `, ${t("gb.aLocked")}` : ""}`;
                     const selected = sel?.studentId === r.user_id && sel.assignmentId === c.assignment_id;
                     return (
                       <div key={c.assignment_id} role="gridcell" className={s.cell}>
                         <button type="button" className={s.cellBtn} aria-label={label} aria-pressed={selected} onClick={() => setSel({ studentId: r.user_id, assignmentId: c.assignment_id })}>
                           {st === "pub" && <span className={s.pub}>{cell?.published_score}</span>}
                           {st === "draft" && <span className={s.draft}>{cell?.draft_score}</span>}
-                          {st === "grade" && <><span className={s.dot} /><span style={{ fontSize: 13 }}>To grade</span></>}
+                          {st === "grade" && <><span className={s.dot} /><span style={{ fontSize: 13 }}>{t("gb.toGrade")}</span></>}
                           {st === "none" && <span aria-hidden="true" className="muted">—</span>}
                         </button>
                       </div>
@@ -208,7 +211,7 @@ export function Gradebook({ courseId }: { courseId: string }) {
                   })}
                 </div>
               ))}
-              {rows.length === 0 && <p className="empty">No students match.</p>}
+              {rows.length === 0 && <p className="empty">{t("people.noStudents")}</p>}
             </div>
           </div>
           {sel && selRow && selCol && (

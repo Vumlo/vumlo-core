@@ -9,19 +9,21 @@ import type { MyWorkItem } from "@/lib/api/gaps";
 import { now } from "@/lib/clock";
 import { dueShort, statusPill } from "@/lib/course";
 import { sumPoints } from "@/lib/points";
+import { useT } from "@/lib/i18n";
 import s from "./Grades.module.css";
 
 /** Grades across all courses. Only published grades carry a score; everything else shows its state. */
 export function StudentGrades() {
+  const t = useT();
   const work = useMyWork();
   const [filter, setFilter] = useState<"all" | "graded">("all");
-  const terms = useMemo(() => [...new Set((work.data?.courses ?? []).map((c) => c.term_name ?? "No term"))].sort().reverse(), [work.data]);
+  const terms = useMemo(() => [...new Set((work.data?.courses ?? []).map((c) => c.term_name ?? t("courses.noTerm")))].sort().reverse(), [work.data, t]);
   const [term, setTerm] = useState<string>("");
   const activeTerm = term || terms[0] || "";
   const today = now();
 
   const courses = (work.data?.courses ?? [])
-    .filter((c) => (c.term_name ?? "No term") === activeTerm)
+    .filter((c) => (c.term_name ?? t("courses.noTerm")) === activeTerm)
     .map((c) => {
       const rows = (work.data?.items ?? []).filter((i) => i.course_id === c.id && i.type !== "form");
       const graded = rows.filter((r) => r.status === "graded");
@@ -32,18 +34,18 @@ export function StudentGrades() {
     <div className="container">
       <div className="page-head" style={{ alignItems: "center" }}>
         <div style={{ flex: "1 1 auto" }}>
-          <h1 className="page-title">Grades</h1>
-          <p className="page-sub">{activeTerm}. You see a grade once your teacher publishes it.</p>
+          <h1 className="page-title">{t("nav.grades")}</h1>
+          <p className="page-sub">{activeTerm}. {t("grades.lead")}</p>
         </div>
-        <select aria-label="Term" className="select" style={{ width: "auto", minHeight: 40 }} value={activeTerm} onChange={(e) => setTerm(e.target.value)}>
-          {terms.map((t) => <option key={t}>{t}</option>)}
+        <select aria-label={t("newCourse.term")} className="select" style={{ width: "auto", minHeight: 40 }} value={activeTerm} onChange={(e) => setTerm(e.target.value)}>
+          {terms.map((name) => <option key={name}>{name}</option>)}
         </select>
-        <div role="radiogroup" aria-label="Show" className="segmented">
-          <button type="button" role="radio" aria-checked={filter === "all"} onClick={() => setFilter("all")}>All work</button>
-          <button type="button" role="radio" aria-checked={filter === "graded"} onClick={() => setFilter("graded")}>Graded only</button>
+        <div role="radiogroup" aria-label={t("grades.show")} className="segmented">
+          <button type="button" role="radio" aria-checked={filter === "all"} onClick={() => setFilter("all")}>{t("grades.allWork")}</button>
+          <button type="button" role="radio" aria-checked={filter === "graded"} onClick={() => setFilter("graded")}>{t("grades.gradedOnly")}</button>
         </div>
       </div>
-      {!work.data ? <p className="loading" role="status">Loading…</p> : courses.length === 0 ? <p className="empty">You have no courses in this term.</p> : (
+      {!work.data ? <p className="loading" role="status">{t("common.loading")}</p> : courses.length === 0 ? <p className="empty">{t("grades.noCourses")}</p> : (
         <div className={s.stack}>
           {courses.map(({ c, rows, total, graded }) => {
             const sum = graded.length ? sumPoints(graded.map((g) => g.score ?? "0")) : null;
@@ -53,10 +55,10 @@ export function StudentGrades() {
                 <div className={s.head}>
                   <span className="tag">{c.code}</span>
                   <Link href={`/courses/${c.id}`} className={s.course}>{c.title}</Link>
-                  <span className="muted" style={{ fontSize: 14 }}>{graded.length} of {total} graded</span>
+                  <span className="muted" style={{ fontSize: 14 }}>{t("grades.gradedCount", { n: graded.length, total })}</span>
                   {sum && <span style={{ whiteSpace: "nowrap" }}><span style={{ fontSize: 18, fontWeight: 600 }}>{sum}</span><span className="muted" style={{ fontSize: 13 }}> / {max}</span></span>}
                 </div>
-                <div role="table" aria-label={`${c.title} grades`}>
+                <div role="table" aria-label={t("grades.tableLabel", { title: c.title })}>
                   {rows.map((r: MyWorkItem) => {
                     const p = statusPill(r.status);
                     return (
@@ -70,14 +72,14 @@ export function StudentGrades() {
                       </Link>
                     );
                   })}
-                  {rows.length === 0 && <p className="muted" style={{ padding: "16px 18px", fontSize: 14 }}>No published grades in this course yet.</p>}
+                  {rows.length === 0 && <p className="muted" style={{ padding: "16px 18px", fontSize: 14 }}>{t("grades.noneHere")}</p>}
                 </div>
               </section>
             );
           })}
         </div>
       )}
-      <p className="muted" style={{ margin: "16px 2px 0", fontSize: 13 }}>The total next to each course adds up only the grades you have received so far. Your final course grade follows your institution&apos;s grading scale.</p>
+      <p className="muted" style={{ margin: "16px 2px 0", fontSize: 13 }}>{t("grades.note")}</p>
     </div>
   );
 }

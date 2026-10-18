@@ -15,6 +15,7 @@ import { useMe } from "@/lib/session";
 import { DueBar } from "./DueBar";
 import { ItemFrame, PreviewBanner } from "./ItemFrame";
 import { isAnswered, QuestionSheet, sheetStyles as qs, type Q, type QResult } from "./QuestionSheet";
+import { useT } from "@/lib/i18n";
 import s from "./Item.module.css";
 
 const short = (t: string) => (t.length > 26 ? `${t.slice(0, 24).trimEnd()}…` : t);
@@ -36,6 +37,7 @@ function formQuestions(cfg: FormConfig, answers: AnswerMap): Q[] {
 }
 
 export function SheetPage({ item, courseId, staff, mode }: { item: Item; courseId: string; staff: boolean; mode: "quiz" | "form" }) {
+  const t = useT();
   const a = item.assignment!;
   const me = useMe();
   const info = useCourseInfo(courseId);
@@ -102,21 +104,20 @@ export function SheetPage({ item, courseId, staff, mode }: { item: Item; courseI
 
   const answered = questions.filter((q) => isAnswered(q, answers[q.id])).length;
   const stamp = savedAt ?? draft?.updated_at;
-  const noun = mode === "quiz" ? "quiz" : "form";
   const pill = {
-    result: { label: "Graded", tone: "ok" as const },
-    submitted: { label: "Submitted", tone: "ok" as const },
-    closed: { label: "Not submitted", tone: "danger" as const },
+    result: { label: t("status.graded"), tone: "ok" as const },
+    submitted: { label: t("status.submitted"), tone: "ok" as const },
+    closed: { label: t("status.notSubmitted"), tone: "danger" as const },
     answering: mode === "quiz"
-      ? { label: `${answered} of ${questions.length} answered${stamp ? `, saved ${timeOf(stamp)}` : ""}`, tone: "accent" as const }
-      : stamp ? { label: `Draft saved ${timeOf(stamp)}`, tone: "accent" as const } : { label: "Not started", tone: "plain" as const },
+      ? { label: `${t("sheet.answered", { n: answered, total: questions.length })}${stamp ? `, ${t("sheet.saved", { time: timeOf(stamp) })}` : ""}`, tone: "accent" as const }
+      : stamp ? { label: t("asg.pillSaved", { time: timeOf(stamp) }), tone: "accent" as const } : { label: t("status.notStarted"), tone: "plain" as const },
   }[view];
 
-  const owner = info.data?.owner_name ?? "your teacher";
+  const owner = info.data?.owner_name ?? t("item.yourTeacher");
   const [n = "", ...r] = owner.replace(/^Dr\. /, "").split(" ");
   const classmates = (people.data?.people ?? []).filter((p) => p.role === "student" && !p.former && p.user_id !== user?.id).map((p) => ({ id: p.user_id, name: `${p.name} ${p.surname}` }));
   const intro = mode === "form" ? config.note : plainText(bodyOf(item));
-  const kindLabel = mode === "quiz" ? "Quiz" : "Form";
+  const kindLabel = mode === "quiz" ? t("type.quiz") : t("type.form");
   const rows = questions.map((q, i) => {
     const res = result?.[q.id];
     const full = res && res.got === res.points;
@@ -124,7 +125,7 @@ export function SheetPage({ item, courseId, staff, mode }: { item: Item; courseI
     return {
       q, i,
       state: res ? (full ? "full" : toCents(res.got) > 0 ? "partial" : "none") : has ? "answered" : "empty",
-      mark: res ? res.got : view === "answering" && !has && !q.required && mode === "form" ? "" : view === "answering" && !has ? "Empty" : "",
+      mark: res ? res.got : view === "answering" && !has && !q.required && mode === "form" ? "" : view === "answering" && !has ? t("sheet.empty") : "",
       tone: res ? (full ? "ok" : "partial") : undefined,
     };
   });
@@ -133,8 +134,8 @@ export function SheetPage({ item, courseId, staff, mode }: { item: Item; courseI
     <ItemFrame courseId={courseId} itemId={item.id} focus>
       {({ crumbs }) => (
         <div className={qs.layout}>
-          <nav aria-label={mode === "form" ? "Fields" : "Questions"} className={qs.nav}>
-            <p className={qs.navTitle}>{view === "result" ? "Your points" : mode === "form" ? "Fields" : "Questions"}</p>
+          <nav aria-label={mode === "form" ? t("sheet.fields") : t("sheet.questions")} className={qs.nav}>
+            <p className={qs.navTitle}>{view === "result" ? t("sheet.yourPoints") : mode === "form" ? t("sheet.fields") : t("sheet.questions")}</p>
             <ol className={qs.navList}>
               {rows.map(({ q, i, state, mark, tone }) => (
                 <li key={q.id}>
@@ -152,25 +153,25 @@ export function SheetPage({ item, courseId, staff, mode }: { item: Item; courseI
             {crumbs}
             <div className={s.kind}>
               <span aria-hidden="true" className={s.kindIcon} data-kind="assignment"><Icon name="assignment" size={15} strokeWidth={2} /></span>
-              <span className={s.kindLabel} data-kind="assignment">Assignment</span>
+              <span className={s.kindLabel} data-kind="assignment">{t("cm.assignment")}</span>
               <span className="muted" style={{ fontSize: 14 }}>{kindLabel}</span>
             </div>
             <h1 className={s.title}>{item.title}</h1>
             <DueBar due={a.due_at ?? null} open={dl.open && view !== "result"} points={a.max_points} pill={pill} danger={view === "closed"} ungraded={mode === "form" && toCents(a.max_points) === 0}>
               {view === "result" && grade && <span className={s.score}><span className={s.scoreNum}>{grade.score}</span><span className="muted" style={{ fontSize: 14 }}> / {a.max_points}</span></span>}
-              {editable && <button type="button" className="btn btn-primary" onClick={send} disabled={submit.pending}>Submit {noun}</button>}
-              {view === "submitted" && mode === "form" && !staff && dl.open && attemptsLeft > 0 && <button type="button" className="btn btn-outline" onClick={edit} disabled={save.pending}>Edit and resubmit</button>}
+              {editable && <button type="button" className="btn btn-primary" onClick={send} disabled={submit.pending}>{t(mode === "quiz" ? "sheet.submitQuiz" : "sheet.submitForm")}</button>}
+              {view === "submitted" && mode === "form" && !staff && dl.open && attemptsLeft > 0 && <button type="button" className="btn btn-outline" onClick={edit} disabled={save.pending}>{t("asg.resubmit")}</button>}
             </DueBar>
             {submit.error && !submit.error.errors.length && <p role="alert" className="alert alert-danger" style={{ marginTop: 12 }}>{submit.error.detail ?? submit.error.title}</p>}
             {view === "closed" && (
               <div role="status" className={s.note}>
-                <strong>This {noun} is closed.</strong> You didn&apos;t submit before the deadline. If you think this is a mistake, write to {owner}.
+                <strong>{t(mode === "quiz" ? "sheet.closedQuiz" : "sheet.closedForm")}</strong> {t("sheet.closedLead", { owner })}
               </div>
             )}
             {intro && <p style={{ margin: "20px 2px 20px", fontSize: 15 }}>
-              {view === "result" ? (config.show_correct === false ? "Your teacher has published the grades." : "Your teacher has published the grades. Correct answers are shown because the quiz allows it.") : view === "submitted" ? `You submitted this ${noun}. ${mode === "quiz" ? "Your teacher will publish the grades." : ""}` : intro}
+              {view === "result" ? (config.show_correct === false ? t("sheet.published") : t("sheet.publishedShown")) : view === "submitted" ? `${t(mode === "quiz" ? "sheet.youSubmittedQuiz" : "sheet.youSubmittedForm")} ${mode === "quiz" ? t("sheet.willPublish") : ""}` : intro}
             </p>}
-            {loading ? <p className="loading" role="status">Loading…</p> : (
+            {loading ? <p className="loading" role="status">{t("common.loading")}</p> : (
               <>
                 <QuestionSheet
                   questions={questions}
@@ -188,9 +189,9 @@ export function SheetPage({ item, courseId, staff, mode }: { item: Item; courseI
                 {editable && (
                   <div className={`card ${qs.foot}`}>
                     <p className="muted" style={{ fontSize: 14, flex: "1 1 260px" }}>
-                      {mode === "form" ? "You can edit and submit again until the deadline." : "Check your answers before you submit. After submitting you can’t change them."}
+                      {mode === "form" ? t("sheet.footForm") : t("sheet.footQuiz")}
                     </p>
-                    <button type="button" className="btn btn-primary btn-lg" onClick={send} disabled={submit.pending}>Submit {noun}</button>
+                    <button type="button" className="btn btn-primary btn-lg" onClick={send} disabled={submit.pending}>{t(mode === "quiz" ? "sheet.submitQuiz" : "sheet.submitForm")}</button>
                   </div>
                 )}
               </>

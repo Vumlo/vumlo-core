@@ -1,3 +1,5 @@
+import { translate } from "@/lib/i18n/core";
+import type { MessageKey } from "@/lib/i18n/core";
 import type { Block, CodeLanguage, Document, Inline, Styles } from "@/lib/api/types";
 
 export type TextBlockType = "paragraph" | "heading" | "quote" | "bulleted_list_item" | "numbered_list_item" | "check_list_item";
@@ -127,25 +129,33 @@ export function parseVideo(input: string): { provider: "youtube" | "vimeo"; vide
   return vm ? { provider: "vimeo", video_id: vm[1]! } : null;
 }
 
-export const BLOCK_MENU: { group: string; items: { kind: InsertKind; glyph: string; name: string; hint: string; feature?: string }[] }[] = [
-  { group: "Text", items: [
-    { kind: "paragraph", glyph: "T", name: "Text", hint: "Plain paragraph" },
-    { kind: "h1", glyph: "H1", name: "Heading 1", hint: "Large section heading", feature: "headings" },
-    { kind: "h2", glyph: "H2", name: "Heading 2", hint: "Medium heading", feature: "headings" },
-    { kind: "h3", glyph: "H3", name: "Heading 3", hint: "Small heading", feature: "headings" },
-    { kind: "quote", glyph: "“", name: "Quote", hint: "Set a passage apart", feature: "quote" },
-  ] },
-  { group: "Lists", items: [
-    { kind: "bulleted", glyph: "•", name: "Bulleted list", hint: "Items without order", feature: "lists" },
-    { kind: "numbered", glyph: "1.", name: "Numbered list", hint: "Steps in order", feature: "lists" },
-    { kind: "check", glyph: "✓", name: "Checklist", hint: "Items to tick off", feature: "lists" },
-  ] },
-  { group: "Insert", items: [
-    { kind: "table", glyph: "≡", name: "Table", hint: "Rows and columns", feature: "table" },
-    { kind: "code", glyph: "{ }", name: "Code", hint: "Code with a language", feature: "code" },
-    { kind: "math", glyph: "∑", name: "Formula", hint: "Math written in LaTeX", feature: "math" },
-    { kind: "mermaid", glyph: "→", name: "Diagram", hint: "Flowchart from Mermaid text", feature: "mermaid" },
-    { kind: "video", glyph: "▶", name: "Video", hint: "YouTube or Vimeo link", feature: "video" },
-    { kind: "divider", glyph: "—", name: "Divider", hint: "A line between parts", feature: "divider" },
-  ] },
-];
+type MenuItem = { kind: InsertKind; glyph: string; name: string; hint: string; feature?: string };
+
+/** The insert menu in the current language. A function, so a language change shows at once. */
+export function blockMenu(): { group: string; items: MenuItem[] }[] {
+  const item = (kind: InsertKind, glyph: string, key: string, feature?: string): MenuItem => ({
+    kind, glyph, name: translate(`blk.${key}` as MessageKey), hint: translate(`blk.${key}.hint` as MessageKey), ...(feature ? { feature } : {}),
+  });
+  return [
+    { group: translate("blk.group.text"), items: [
+      item("paragraph", "T", "text"),
+      item("h1", "H1", "h1", "headings"),
+      item("h2", "H2", "h2", "headings"),
+      item("h3", "H3", "h3", "headings"),
+      item("quote", "“", "quote", "quote"),
+    ] },
+    { group: translate("blk.group.lists"), items: [
+      item("bulleted", "•", "bulleted", "lists"),
+      item("numbered", "1.", "numbered", "lists"),
+      item("check", "✓", "check", "lists"),
+    ] },
+    { group: translate("blk.group.insert"), items: [
+      item("table", "≡", "table", "table"),
+      item("code", "{ }", "code", "code"),
+      item("math", "∑", "math", "math"),
+      item("mermaid", "→", "mermaid", "mermaid"),
+      item("video", "▶", "video", "video"),
+      item("divider", "—", "divider", "divider"),
+    ] },
+  ];
+}

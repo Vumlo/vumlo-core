@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Icon } from "@/components/Icon";
+import type { MessageKey } from "@/lib/i18n/core";
 import { useT } from "@/lib/i18n";
 import s from "./WidgetGrid.module.css";
 
@@ -21,7 +22,7 @@ export type WidgetDef = {
 
 type Layout = { order: string[]; sizes: Record<string, string> };
 
-const SIZE_NAMES: Record<string, string> = { "1x1": "Small", "2x1": "Wide", "1x2": "Tall", "2x2": "Large", "4x1": "Full width" };
+const SIZE_NAMES: Record<string, MessageKey> = { "1x1": "wg.small", "2x1": "wg.wide", "1x2": "wg.tall", "2x2": "wg.large", "4x1": "wg.full" };
 const label = (z: string) => z.replace("x", "×");
 
 function readLayout(key: string): Partial<Layout> | null {
@@ -142,7 +143,7 @@ export function WidgetGrid({ storageKey, defs, defaultOrder, customizeSlot }: { 
               >
                 <div className={s.head}>
                   {customizing && (
-                    <span title="Drag to move" className={s.handle}>
+                    <span title={t("cm.drag")} className={s.handle}>
                       <Icon name="grip" size={16} strokeWidth={3} />
                     </span>
                   )}
@@ -155,27 +156,27 @@ export function WidgetGrid({ storageKey, defs, defaultOrder, customizeSlot }: { 
                   {customizing && (
                     <div className={s.tools}>
                       {d.sizes.length > 1 ? (
-                        <button type="button" className={s.sizeBtn} aria-haspopup="menu" aria-expanded={menuOpen} aria-label={`Size, ${label(size)}`} onClick={() => setMenuFor(menuOpen ? null : d.id)}>
+                        <button type="button" className={s.sizeBtn} aria-haspopup="menu" aria-expanded={menuOpen} aria-label={t("wg.size", { size: label(size) })} onClick={() => setMenuFor(menuOpen ? null : d.id)}>
                           {label(size)}
                           <Icon name="chevronDown" size={14} strokeWidth={2} />
                         </button>
                       ) : (
-                        <span className={s.fixed} title="This widget has one size">{label(size)}</span>
+                        <span className={s.fixed} title={t("wg.oneSize")}>{label(size)}</span>
                       )}
-                      <button type="button" className={s.tool} aria-label={`Move ${d.title} earlier`} disabled={i === 0} onClick={() => move(d.id, -1)}>
+                      <button type="button" className={s.tool} aria-label={t("wg.earlier", { title: d.title })} disabled={i === 0} onClick={() => move(d.id, -1)}>
                         <Icon name="chevronLeft" size={16} strokeWidth={2} />
                       </button>
-                      <button type="button" className={s.tool} aria-label={`Move ${d.title} later`} disabled={i === shown.length - 1} onClick={() => move(d.id, 1)}>
+                      <button type="button" className={s.tool} aria-label={t("wg.later", { title: d.title })} disabled={i === shown.length - 1} onClick={() => move(d.id, 1)}>
                         <Icon name="chevronRight" size={16} strokeWidth={2} />
                       </button>
-                      <button type="button" className={s.tool} aria-label={`Remove ${d.title}`} style={{ color: "var(--muted)" }} onClick={() => update({ ...layout, order: layout.order.filter((x) => x !== d.id) })}>
+                      <button type="button" className={s.tool} aria-label={t("wg.remove", { title: d.title })} style={{ color: "var(--muted)" }} onClick={() => update({ ...layout, order: layout.order.filter((x) => x !== d.id) })}>
                         <Icon name="close" size={16} strokeWidth={2} />
                       </button>
                     </div>
                   )}
                 </div>
                 {menuOpen && (
-                  <div role="menu" aria-label="Widget size" className={`popover ${s.menu}`}>
+                  <div role="menu" aria-label={t("wg.widgetSize")} className={`popover ${s.menu}`}>
                     {d.sizes.map((z) => (
                       <button
                         key={z}
@@ -186,7 +187,7 @@ export function WidgetGrid({ storageKey, defs, defaultOrder, customizeSlot }: { 
                         onClick={() => update({ ...layout, sizes: { ...layout.sizes, [d.id]: z } })}
                       >
                         <Icon name="check" size={16} strokeWidth={2.2} style={{ color: "var(--accent-fg)", opacity: z === size ? 1 : 0 }} />
-                        <span style={{ flex: "1 1 auto" }}>{SIZE_NAMES[z] ?? z}</span>
+                        <span style={{ flex: "1 1 auto" }}>{SIZE_NAMES[z] ? t(SIZE_NAMES[z]!) : z}</span>
                         <span className="muted">{label(z)}</span>
                       </button>
                     ))}
@@ -216,7 +217,7 @@ export function WidgetGrid({ storageKey, defs, defaultOrder, customizeSlot }: { 
               ))}
             </div>
           ) : (
-            <p style={{ margin: "0 2px", fontSize: 14 }}>All widgets are already on your home.</p>
+            <p style={{ margin: "0 2px", fontSize: 14 }}>{t("wg.allOn")}</p>
           )}
         </section>
       )}

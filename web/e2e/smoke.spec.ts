@@ -67,7 +67,8 @@ for (const role of roles) {
     await page.getByLabel("Пароль", { exact: true }).fill(PASSWORD);
     await page.getByRole("button", { name: "Увійти", exact: true }).click();
     await page.waitForURL((u) => !u.pathname.startsWith("/login"));
-    for (const path of staticRoutes[role]) await open(page, path, "light", problems);
+    const routes = [...staticRoutes[role], ...(await courseRoutes(page, role))];
+    for (const path of routes) await open(page, path, "light", problems);
     await expect(page.locator("html")).toHaveAttribute("lang", "uk");
   });
 }

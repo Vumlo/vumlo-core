@@ -1,4 +1,6 @@
 import { dueLabel, relative, shortDay } from "./format";
+import { translate } from "./i18n/core";
+import type { MessageKey } from "./i18n/core";
 import type { ItemMeta, WorkStatus } from "./api/gaps";
 import type { ContentModule, ContentSubModule, ContentTree, ItemSummary } from "./api/types";
 
@@ -31,31 +33,31 @@ export function findItem(tree: ContentTree, id: string): { item: ItemSummary; mo
   return undefined;
 }
 
-const TYPE_LABELS: Record<string, string> = {
-  text: "Text answer",
-  file: "File upload",
-  quiz: "Quiz",
-  form: "Form",
-  no_submission: "Done in class",
+const TYPE_LABELS: Record<string, MessageKey> = {
+  text: "type.text",
+  file: "type.file",
+  quiz: "type.quiz",
+  form: "type.form",
+  no_submission: "type.inClass",
 };
 
-export const typeLabel = (type: string) => TYPE_LABELS[type] ?? type;
+export const typeLabel = (type: string) => (TYPE_LABELS[type] ? translate(TYPE_LABELS[type]!) : type);
 
 /** What the outline shows at the right of an assignment. */
 export function outlineMark(meta: ItemMeta | undefined): { text: string; tone: "ok" | "accent" | "muted" | "danger" } {
   switch (meta?.status) {
     case "graded":
-      return { text: meta.score ?? "Graded", tone: "ok" };
+      return { text: meta.score ?? translate("status.graded"), tone: "ok" };
     case "draft":
-      return { text: "Draft", tone: "accent" };
+      return { text: translate("common.draft"), tone: "accent" };
     case "submitted":
-      return { text: "Submitted", tone: "ok" };
+      return { text: translate("status.submitted"), tone: "ok" };
     case "missed":
-      return { text: "Missed", tone: "danger" };
+      return { text: translate("status.missed"), tone: "danger" };
     case "in_class":
-      return { text: "In class", tone: "muted" };
+      return { text: translate("status.inClass"), tone: "muted" };
     default:
-      return { text: "To do", tone: "muted" };
+      return { text: translate("status.todo"), tone: "muted" };
   }
 }
 
@@ -64,25 +66,25 @@ export type PillTone = "plain" | "strong" | "accent" | "ok" | "danger";
 export function statusPill(status: WorkStatus): { label: string; tone: PillTone } {
   switch (status) {
     case "graded":
-      return { label: "Graded", tone: "ok" };
+      return { label: translate("status.graded"), tone: "ok" };
     case "submitted":
-      return { label: "Waiting for grade", tone: "strong" };
+      return { label: translate("status.waiting"), tone: "strong" };
     case "draft":
-      return { label: "Draft saved", tone: "accent" };
+      return { label: translate("status.draftSaved"), tone: "accent" };
     case "missed":
-      return { label: "Not submitted", tone: "danger" };
+      return { label: translate("status.notSubmitted"), tone: "danger" };
     case "in_class":
-      return { label: "Nothing to submit", tone: "strong" };
+      return { label: translate("status.nothingToSubmit"), tone: "strong" };
     default:
-      return { label: "Not started", tone: "plain" };
+      return { label: translate("status.notStarted"), tone: "plain" };
   }
 }
 
 /** "Closed 9 Oct" / "Due 23 Oct" for the course lists. */
 export function dueShort(due: string | null, classOn: string | null | undefined, now: Date): string {
-  if (classOn) return `${new Date(classOn) < now ? "Took place" : "In class"} ${shortDay(classOn)}`;
-  if (!due) return "No deadline";
-  return `${new Date(due) < now ? "Closed" : "Due"} ${shortDay(due)}`;
+  if (classOn) return translate(new Date(classOn) < now ? "due.tookPlace" : "due.inClass", { day: shortDay(classOn) });
+  if (!due) return translate("due.none");
+  return translate(new Date(due) < now ? "due.closed" : "due.due", { day: shortDay(due) });
 }
 
 export function dueWithRelative(due: string): string {

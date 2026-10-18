@@ -12,11 +12,14 @@ import { dueLabel } from "@/lib/format";
 import { normalizePoints, sumPoints, toCents } from "@/lib/points";
 import { AssignmentSettings } from "./AssignmentSettings";
 import { AuthorBar, Switch } from "./AuthorBar";
+import { translate } from "@/lib/i18n/core";
+import type { MessageKey } from "@/lib/i18n/core";
+import { useT } from "@/lib/i18n";
 import s from "./Author.module.css";
 
-const TYPES: [QuizQuestionType, string][] = [["single", "Single choice"], ["multi", "Multiple choice"], ["number", "Number"], ["short", "Short text"], ["long", "Long answer"]];
-const label = (t: QuizQuestionType) => TYPES.find(([k]) => k === t)![1];
-const short = (t: string) => (t.length > 28 ? `${t.slice(0, 26).trimEnd()}…` : t || "New question");
+const TYPES: [QuizQuestionType, MessageKey][] = [["single", "qb.single"], ["multi", "qb.multi"], ["number", "qb.number"], ["short", "qb.short"], ["long", "qb.long"]];
+const label = (type: QuizQuestionType) => translate(TYPES.find(([k]) => k === type)![1]);
+const short = (t: string) => (t.length > 28 ? `${t.slice(0, 26).trimEnd()}…` : t || translate("qb.newQuestion"));
 
 function blank(type: QuizQuestionType): QuizQuestion {
   const opts = type === "single" || type === "multi" ? [{ id: newId(), text: "" }, { id: newId(), text: "" }] : [];
@@ -25,14 +28,15 @@ function blank(type: QuizQuestionType): QuizQuestion {
 
 function summary(q: QuizQuestion): string {
   if (q.type === "single" || q.type === "multi") {
-    const names = q.options.filter((o) => q.correct?.includes(o.id)).map((o) => o.text || "empty");
-    return `Correct: ${names.join(", ") || "none chosen"}${q.type === "multi" && q.partial_credit ? ". Partial credit." : ""}`;
+    const names = q.options.filter((o) => q.correct?.includes(o.id)).map((o) => o.text || translate("qb.empty"));
+    return `${translate("qb.correctList", { list: names.join(", ") || translate("qb.noneChosen") })}${q.type === "multi" && q.partial_credit ? ` ${translate("qb.partialCredit")}.` : ""}`;
   }
-  if (q.type === "number") return `Correct: ${q.answer || "not set"}`;
-  return "You grade this one yourself.";
+  if (q.type === "number") return translate("qb.correctList", { list: q.answer || translate("qb.notSet") });
+  return translate("qb.selfGrade");
 }
 
 export function QuizBuilder({ item, courseId }: { item: Item; courseId: string }) {
+  const t = useT();
   const update = useUpdateItem(courseId);
   const publish = usePublishItem(courseId);
   const [title, setTitle] = useState(item.title);
@@ -61,13 +65,13 @@ export function QuizBuilder({ item, courseId }: { item: Item; courseId: string }
 
   return (
     <div className="container" style={{ paddingTop: 20 }}>
-      <AuthorBar courseId={courseId} itemId={item.id} title={title} chip={isDraft ? { text: "Draft, students can't see it", tone: "draft" } : { text: "Published", tone: "ok" }} saved={auto.savedAt} pending={auto.pending} failed={auto.failed}>
-        <Link href={`/courses/${courseId}/items/${item.id}`} className="btn">Preview as student</Link>
-        {isDraft && <button type="button" className="btn btn-primary" disabled={publish.pending} onClick={async () => { await auto.flush(); await publish.run(item.id); }}>Publish quiz</button>}
+      <AuthorBar courseId={courseId} itemId={item.id} title={title} chip={isDraft ? { text: t("le.draftChip"), tone: "draft" } : { text: t("cm.published"), tone: "ok" }} saved={auto.savedAt} pending={auto.pending} failed={auto.failed}>
+        <Link href={`/courses/${courseId}/items/${item.id}`} className="btn">{t("cm.preview")}</Link>
+        {isDraft && <button type="button" className="btn btn-primary" disabled={publish.pending} onClick={async () => { await auto.flush(); await publish.run(item.id); }}>{t("qb.publish")}</button>}
       </AuthorBar>
       <div className={s.shell}>
-        <nav aria-label="Questions" className={`card ${s.qnav}`}>
-          <div className="row" style={{ justifyContent: "space-between" }}><h2 style={{ fontSize: 15, fontWeight: 600 }}>Questions</h2><span className="muted" style={{ fontSize: 13 }}>{total} pts</span></div>
+        <nav aria-label={t("sheet.questions")} className={`card ${s.qnav}`}>
+          <div className="row" style={{ justifyContent: "space-between" }}><h2 style={{ fontSize: 15, fontWeight: 600 }}>{t("sheet.questions")}</h2><span className="muted" style={{ fontSize: 13 }}>{t("qb.pts", { n: total })}</span></div>
           <ol>
             {cfg.questions.map((x, i) => (
               <li key={x.id}>
@@ -77,64 +81,64 @@ export function QuizBuilder({ item, courseId }: { item: Item; courseId: string }
               </li>
             ))}
           </ol>
-          <button type="button" className="btn btn-block" onClick={() => add("single")}><Icon name="plus" size={15} strokeWidth={2.2} />Add question</button>
-          <p className="muted" style={{ marginTop: 10, fontSize: 13 }}>Questions add up to {total} points, which is what the quiz is worth.</p>
+          <button type="button" className="btn btn-block" onClick={() => add("single")}><Icon name="plus" size={15} strokeWidth={2.2} />{t("qb.addQuestion")}</button>
+          <p className="muted" style={{ marginTop: 10, fontSize: 13 }}>{t("qb.addsUp", { n: total })}</p>
         </nav>
 
         <div className={s.canvas}>
-          <p className="muted" style={{ fontSize: 14, marginBottom: 8 }}><strong style={{ color: "var(--asg-fg)" }}>Assignment</strong> Quiz{a.due_at ? `, due ${dueLabel(a.due_at)}` : ""}, {total} points</p>
-          <label htmlFor="qtitle" className="sr-only">Quiz title</label>
+          <p className="muted" style={{ fontSize: 14, marginBottom: 8 }}><strong style={{ color: "var(--asg-fg)" }}>{t("cm.assignment")}</strong> {t("type.quiz")}{a.due_at ? `, ${t("search.due", { when: dueLabel(a.due_at) })}` : ""}, {t("row.points", { points: total })}</p>
+          <label htmlFor="qtitle" className="sr-only">{t("qb.quizTitle")}</label>
           <input id="qtitle" className={s.titleInput} value={title} onChange={(e) => setTitle(e.target.value)} />
           <div className="stack" style={{ gap: 14, marginTop: 16 }}>
             {cfg.questions.map((x, i) => {
               const selected = i === qi;
               const choice = x.type === "single" || x.type === "multi";
               return (
-                <article key={x.id} aria-label={`Question ${i + 1}`} className={s.card} data-selected={selected} onClick={() => { if (!selected) setSel(i); }}>
-                  <div className={s.cardHead}><span className={s.qnum}>{i + 1}</span><strong>{label(x.type)}</strong><span style={{ marginLeft: "auto" }}>{x.points} pts</span></div>
+                <article key={x.id} aria-label={t("sheet.question", { n: i + 1 })} className={s.card} data-selected={selected} onClick={() => { if (!selected) setSel(i); }}>
+                  <div className={s.cardHead}><span className={s.qnum}>{i + 1}</span><strong>{label(x.type)}</strong><span style={{ marginLeft: "auto" }}>{t("qb.pts", { n: x.points })}</span></div>
                   {!selected ? (
                     <>
-                      <p style={{ fontSize: 15, fontWeight: 500 }}>{x.prompt || <span className="muted">New question</span>}</p>
+                      <p style={{ fontSize: 15, fontWeight: 500 }}>{x.prompt || <span className="muted">{t("qb.newQuestion")}</span>}</p>
                       <p className="muted" style={{ fontSize: 13 }}>{summary(x)}</p>
                     </>
                   ) : (
                     <div className="stack" style={{ gap: 12 }}>
                       <div className="field">
-                        <label htmlFor={`prompt-${x.id}`}>Question</label>
+                        <label htmlFor={`prompt-${x.id}`}>{t("qb.question")}</label>
                         <textarea id={`prompt-${x.id}`} className="textarea" style={{ minHeight: 70 }} value={x.prompt} onChange={(e) => setQ(i, (y) => ({ ...y, prompt: e.target.value }))} />
                       </div>
                       {choice && (
                         <div>
-                          <p style={{ fontSize: 14, fontWeight: 500, marginBottom: 8 }}>{x.type === "multi" ? "Options, tick every correct one" : "Options, pick the correct one"}</p>
-                          <div role="group" aria-label="Options" className="stack" style={{ gap: 8 }}>
+                          <p style={{ fontSize: 14, fontWeight: 500, marginBottom: 8 }}>{x.type === "multi" ? t("qb.optionsMulti") : t("qb.optionsSingle")}</p>
+                          <div role="group" aria-label={t("qb.options")} className="stack" style={{ gap: 8 }}>
                             {x.options.map((o, oi) => {
                               const correct = (x.correct ?? []).includes(o.id);
                               return (
                                 <div key={o.id} className={s.optRow} data-correct={correct}>
-                                  <button type="button" role={x.type === "multi" ? "checkbox" : "radio"} aria-checked={correct} aria-label={`Mark option ${oi + 1} as correct`} className={s.mark} data-shape={x.type === "multi" ? "check" : "radio"} onClick={() => setQ(i, (y) => ({ ...y, correct: toggleCorrect(y, o.id) }))}>
+                                  <button type="button" role={x.type === "multi" ? "checkbox" : "radio"} aria-checked={correct} aria-label={t("qb.markCorrect", { n: oi + 1 })} className={s.mark} data-shape={x.type === "multi" ? "check" : "radio"} onClick={() => setQ(i, (y) => ({ ...y, correct: toggleCorrect(y, o.id) }))}>
                                     {correct && <Icon name="check" size={13} strokeWidth={3} />}
                                   </button>
-                                  <input type="text" aria-label={`Option ${oi + 1}`} value={o.text} placeholder={`Option ${oi + 1}`} onChange={(e) => setQ(i, (y) => ({ ...y, options: y.options.map((z) => (z.id === o.id ? { ...z, text: e.target.value } : z)) }))} />
-                                  {correct && <span style={{ fontSize: 12, fontWeight: 600, color: "var(--ok-fg)" }}>Correct</span>}
-                                  <button type="button" className="icon-btn" style={{ width: 32, height: 32 }} aria-label={`Remove option ${oi + 1}`} disabled={x.options.length <= 2} onClick={() => setQ(i, (y) => ({ ...y, options: y.options.filter((z) => z.id !== o.id), correct: (y.correct ?? []).filter((c) => c !== o.id) }))}><Icon name="close" size={15} strokeWidth={2} /></button>
+                                  <input type="text" aria-label={t("qb.option", { n: oi + 1 })} value={o.text} placeholder={t("qb.option", { n: oi + 1 })} onChange={(e) => setQ(i, (y) => ({ ...y, options: y.options.map((z) => (z.id === o.id ? { ...z, text: e.target.value } : z)) }))} />
+                                  {correct && <span style={{ fontSize: 12, fontWeight: 600, color: "var(--ok-fg)" }}>{t("qb.correct")}</span>}
+                                  <button type="button" className="icon-btn" style={{ width: 32, height: 32 }} aria-label={t("qb.removeOption", { n: oi + 1 })} disabled={x.options.length <= 2} onClick={() => setQ(i, (y) => ({ ...y, options: y.options.filter((z) => z.id !== o.id), correct: (y.correct ?? []).filter((c) => c !== o.id) }))}><Icon name="close" size={15} strokeWidth={2} /></button>
                                 </div>
                               );
                             })}
                           </div>
-                          <button type="button" className="btn" style={{ marginTop: 8, minHeight: 36 }} disabled={x.options.length >= 10} onClick={() => setQ(i, (y) => ({ ...y, options: [...y.options, { id: newId(), text: "" }] }))}><Icon name="plus" size={15} strokeWidth={2.2} />Add option</button>
+                          <button type="button" className="btn" style={{ marginTop: 8, minHeight: 36 }} disabled={x.options.length >= 10} onClick={() => setQ(i, (y) => ({ ...y, options: [...y.options, { id: newId(), text: "" }] }))}><Icon name="plus" size={15} strokeWidth={2.2} />{t("qb.addOption")}</button>
                         </div>
                       )}
                       {x.type === "number" && (
                         <div className="row" style={{ gap: 14, flexWrap: "wrap" }}>
-                          <div className="field"><label htmlFor={`ans-${x.id}`}>Correct answer</label><input id={`ans-${x.id}`} className="input" style={{ maxWidth: 160 }} inputMode="decimal" value={x.answer ?? ""} onChange={(e) => setQ(i, (y) => ({ ...y, answer: e.target.value }))} /></div>
-                          <div className="field"><label htmlFor={`tol-${x.id}`}>Accept within</label><input id={`tol-${x.id}`} className="input" style={{ maxWidth: 120 }} inputMode="decimal" value={x.tolerance ?? "0"} onChange={(e) => setQ(i, (y) => ({ ...y, tolerance: e.target.value }))} /></div>
+                          <div className="field"><label htmlFor={`ans-${x.id}`}>{t("sheet.correct")}</label><input id={`ans-${x.id}`} className="input" style={{ maxWidth: 160 }} inputMode="decimal" value={x.answer ?? ""} onChange={(e) => setQ(i, (y) => ({ ...y, answer: e.target.value }))} /></div>
+                          <div className="field"><label htmlFor={`tol-${x.id}`}>{t("qb.within")}</label><input id={`tol-${x.id}`} className="input" style={{ maxWidth: 120 }} inputMode="decimal" value={x.tolerance ?? "0"} onChange={(e) => setQ(i, (y) => ({ ...y, tolerance: e.target.value }))} /></div>
                         </div>
                       )}
                       {(x.type === "long" || x.type === "short") && (
                         <div className="field">
-                          <label htmlFor={`notes-${x.id}`}>Notes for grading, only staff see them</label>
+                          <label htmlFor={`notes-${x.id}`}>{t("qb.notes")}</label>
                           <textarea id={`notes-${x.id}`} className="textarea" style={{ minHeight: 70 }} value={x.grading_notes ?? ""} onChange={(e) => setQ(i, (y) => ({ ...y, grading_notes: e.target.value }))} />
-                          <p className="hint">You grade this answer yourself in the gradebook.</p>
+                          <p className="hint">{t("qb.notesHint")}</p>
                         </div>
                       )}
                     </div>
@@ -142,51 +146,51 @@ export function QuizBuilder({ item, courseId }: { item: Item; courseId: string }
                 </article>
               );
             })}
-            {cfg.questions.length === 0 && <p className="empty">This quiz has no questions yet. Add one below.</p>}
+            {cfg.questions.length === 0 && <p className="empty">{t("qb.none")}</p>}
           </div>
           <div className="row" style={{ gap: 8, flexWrap: "wrap", marginTop: 16 }}>
-            <span style={{ fontSize: 14, fontWeight: 500 }}>Add a question</span>
-            {TYPES.map(([t, l]) => <button key={t} type="button" className="btn" style={{ minHeight: 36 }} onClick={() => add(t)}>{l}</button>)}
+            <span style={{ fontSize: 14, fontWeight: 500 }}>{t("qb.addA")}</span>
+            {TYPES.map(([k]) => <button key={k} type="button" className="btn" style={{ minHeight: 36 }} onClick={() => add(k)}>{label(k)}</button>)}
           </div>
         </div>
 
-        <aside aria-label="Settings" className={`card ${s.panel}`}>
-          <div role="tablist" aria-label="Settings sections" className={s.panelTabs}>
-            <button type="button" role="tab" aria-selected={tab === "question"} onClick={() => setTab("question")}>Question {qi + 1 || ""}</button>
-            <button type="button" role="tab" aria-selected={tab === "quiz"} onClick={() => setTab("quiz")}>Quiz</button>
+        <aside aria-label={t("course.settings")} className={`card ${s.panel}`}>
+          <div role="tablist" aria-label={t("qb.settingsSections")} className={s.panelTabs}>
+            <button type="button" role="tab" aria-selected={tab === "question"} onClick={() => setTab("question")}>{t("sheet.question", { n: qi + 1 || "" })}</button>
+            <button type="button" role="tab" aria-selected={tab === "quiz"} onClick={() => setTab("quiz")}>{t("type.quiz")}</button>
           </div>
           {tab === "question" && q && (
-            <div role="tabpanel" aria-label="Question settings" className={s.panelBody}>
+            <div role="tabpanel" aria-label={t("qb.questionSettings")} className={s.panelBody}>
               <div className="field">
-                <label htmlFor="qtype">Question type</label>
-                <select id="qtype" className="select" value={q.type} onChange={(e) => changeType(e.target.value as QuizQuestionType)}>{TYPES.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select>
+                <label htmlFor="qtype">{t("qb.questionType")}</label>
+                <select id="qtype" className="select" value={q.type} onChange={(e) => changeType(e.target.value as QuizQuestionType)}>{TYPES.map(([k]) => <option key={k} value={k}>{label(k)}</option>)}</select>
               </div>
               <div className="field">
-                <label htmlFor="qpoints">Points</label>
+                <label htmlFor="qpoints">{t("cm.points")}</label>
                 <input id="qpoints" className="input" style={{ maxWidth: 140 }} inputMode="decimal" value={q.points} aria-invalid={!!pointsError} onChange={(e) => setQ(qi, (y) => ({ ...y, points: e.target.value }))} onBlur={() => setQ(qi, (y) => ({ ...y, points: normalizePoints(y.points || "0") }))} />
-                {pointsError && <p role="alert" className="hint" style={{ color: "var(--danger)" }}>Use a number with at most two decimals.</p>}
+                {pointsError && <p role="alert" className="hint" style={{ color: "var(--danger)" }}>{t("qb.pointsError")}</p>}
               </div>
               {q.type === "multi" && (
                 <fieldset style={{ border: 0, padding: 0, margin: 0 }}>
-                  <legend style={{ fontSize: 14, fontWeight: 500, marginBottom: 6 }}>Scoring</legend>
-                  <label className="check" style={{ alignItems: "flex-start" }}><input type="radio" name="scoring" checked={!q.partial_credit} onChange={() => setQ(qi, (y) => ({ ...y, partial_credit: false }))} /><span><span style={{ display: "block" }}>All or nothing</span><span className="muted" style={{ fontSize: 13 }}>Full points only for exactly the right options.</span></span></label>
-                  <label className="check" style={{ alignItems: "flex-start" }}><input type="radio" name="scoring" checked={!!q.partial_credit} onChange={() => setQ(qi, (y) => ({ ...y, partial_credit: true }))} /><span><span style={{ display: "block" }}>Partial credit</span><span className="muted" style={{ fontSize: 13 }}>Each right choice adds a share, each wrong one takes a share away, never below zero.</span></span></label>
+                  <legend style={{ fontSize: 14, fontWeight: 500, marginBottom: 6 }}>{t("qb.scoring")}</legend>
+                  <label className="check" style={{ alignItems: "flex-start" }}><input type="radio" name="scoring" checked={!q.partial_credit} onChange={() => setQ(qi, (y) => ({ ...y, partial_credit: false }))} /><span><span style={{ display: "block" }}>{t("qb.allOrNothing")}</span><span className="muted" style={{ fontSize: 13 }}>{t("qb.allOrNothingHint")}</span></span></label>
+                  <label className="check" style={{ alignItems: "flex-start" }}><input type="radio" name="scoring" checked={!!q.partial_credit} onChange={() => setQ(qi, (y) => ({ ...y, partial_credit: true }))} /><span><span style={{ display: "block" }}>{t("qb.partialTitle")}</span><span className="muted" style={{ fontSize: 13 }}>{t("qb.partialHint")}</span></span></label>
                 </fieldset>
               )}
-              {(q.type === "single" || q.type === "multi") && <div className={s.switchRow}><span style={{ fontSize: 14 }}>Shuffle options</span><Switch checked={!!q.shuffle} onChange={(v) => setQ(qi, (y) => ({ ...y, shuffle: v }))} label="Shuffle options" /></div>}
+              {(q.type === "single" || q.type === "multi") && <div className={s.switchRow}><span style={{ fontSize: 14 }}>{t("qb.shuffleOptions")}</span><Switch checked={!!q.shuffle} onChange={(v) => setQ(qi, (y) => ({ ...y, shuffle: v }))} label={t("qb.shuffleOptions")} /></div>}
               <div className={s.row2}>
-                <button type="button" className={s.blockBtn} onClick={() => setCfg((c) => { const copy = { ...JSON.parse(JSON.stringify(q)), id: newId() } as QuizQuestion; const list = c.questions.slice(); list.splice(qi + 1, 0, copy); return { ...c, questions: list }; })}><Icon name="copy" size={15} strokeWidth={2} />Duplicate question</button>
-                <button type="button" className={s.blockBtn} onClick={() => { setCfg((c) => ({ ...c, questions: c.questions.filter((x) => x.id !== q.id) })); setSel(Math.max(0, qi - 1)); }}><Icon name="trash" size={15} strokeWidth={2} />Delete question</button>
+                <button type="button" className={s.blockBtn} onClick={() => setCfg((c) => { const copy = { ...JSON.parse(JSON.stringify(q)), id: newId() } as QuizQuestion; const list = c.questions.slice(); list.splice(qi + 1, 0, copy); return { ...c, questions: list }; })}><Icon name="copy" size={15} strokeWidth={2} />{t("qb.duplicate")}</button>
+                <button type="button" className={s.blockBtn} onClick={() => { setCfg((c) => ({ ...c, questions: c.questions.filter((x) => x.id !== q.id) })); setSel(Math.max(0, qi - 1)); }}><Icon name="trash" size={15} strokeWidth={2} />{t("qb.delete")}</button>
               </div>
             </div>
           )}
-          {tab === "question" && !q && <div className={s.panelBody}><p className="muted" style={{ fontSize: 14 }}>Add a question to set its type and points.</p></div>}
+          {tab === "question" && !q && <div className={s.panelBody}><p className="muted" style={{ fontSize: 14 }}>{t("qb.addToSet")}</p></div>}
           {tab === "quiz" && (
-            <div role="tabpanel" aria-label="Quiz settings" className={s.panelBody}>
-              <div className={s.switchRow}><span style={{ fontSize: 14 }}>Shuffle question order</span><Switch checked={cfg.shuffle_questions} onChange={(v) => setCfg((c) => ({ ...c, shuffle_questions: v }))} label="Shuffle question order" /></div>
-              <div className={s.switchRow}><span><span style={{ display: "block", fontSize: 14 }}>Show correct answers</span><span className="muted" style={{ fontSize: 13 }}>After you publish the grades</span></span><Switch checked={cfg.show_correct} onChange={(v) => setCfg((c) => ({ ...c, show_correct: v }))} label="Show correct answers after grades are published" /></div>
-              <p className="muted" style={{ fontSize: 13 }}>Choice and number questions are scored automatically as drafts. Long answers wait for you. Nothing reaches students until you publish grades.</p>
-              <button type="button" className="btn btn-quiet" style={{ justifyContent: "flex-start", padding: 0 }} aria-expanded={showSettings} onClick={() => setShowSettings((v) => !v)}>Deadline and attempts are in the assignment settings</button>
+            <div role="tabpanel" aria-label={t("qb.quizSettings")} className={s.panelBody}>
+              <div className={s.switchRow}><span style={{ fontSize: 14 }}>{t("qb.shuffleQuestions")}</span><Switch checked={cfg.shuffle_questions} onChange={(v) => setCfg((c) => ({ ...c, shuffle_questions: v }))} label={t("qb.shuffleQuestions")} /></div>
+              <div className={s.switchRow}><span><span style={{ display: "block", fontSize: 14 }}>{t("qb.showCorrect")}</span><span className="muted" style={{ fontSize: 13 }}>{t("qb.afterPublish")}</span></span><Switch checked={cfg.show_correct} onChange={(v) => setCfg((c) => ({ ...c, show_correct: v }))} label={t("qb.showCorrectLabel")} /></div>
+              <p className="muted" style={{ fontSize: 13 }}>{t("qb.autoNote")}</p>
+              <button type="button" className="btn btn-quiet" style={{ justifyContent: "flex-start", padding: 0 }} aria-expanded={showSettings} onClick={() => setShowSettings((v) => !v)}>{t("qb.deadlineIn")}</button>
               {showSettings && <AssignmentSettings item={item} courseId={courseId} pointsLocked />}
             </div>
           )}

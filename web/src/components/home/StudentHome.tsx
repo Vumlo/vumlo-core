@@ -11,13 +11,14 @@ import { statusPill } from "@/lib/course";
 import { dayKey, dayLabel, dueLabel, fullDate, greeting, monthName, monthOf, parts, weekdayShort, shortDay, sinceLabel, timeOf } from "@/lib/format";
 import type { User } from "@/lib/session";
 import { useT } from "@/lib/i18n";
+import { translate } from "@/lib/i18n/core";
 import { WidgetGrid, type WidgetDef } from "./WidgetGrid";
 import h from "./Home.module.css";
 
 const itemHref = (w: Pick<MyWorkItem, "course_id" | "item_id">) => `/courses/${w.course_id}/items/${w.item_id}`;
 
 function Loading() {
-  return <p className={h.empty} role="status">Loading…</p>;
+  return <p className={h.empty} role="status">{translate("common.loading")}</p>;
 }
 
 export function StudentHome({ user }: { user: User }) {
@@ -41,8 +42,8 @@ export function StudentHome({ user }: { user: User }) {
     return [
       {
         id: "due", title: t("home.s.due"), desc: t("home.s.dueDesc"), sizes: ["2x2", "2x1"],
-        link: <Link href="/calendar" style={linkStyle}>Open calendar</Link>,
-        render: (_w, hh) => !data ? <Loading /> : upcoming.length === 0 ? <p className={h.empty}>Nothing is due soon.</p> : (
+        link: <Link href="/calendar" style={linkStyle}>{t("home.openCalendar")}</Link>,
+        render: (_w, hh) => !data ? <Loading /> : upcoming.length === 0 ? <p className={h.empty}>{t("home.nothingSoon")}</p> : (
           <div>
             {upcoming.slice(0, hh === 2 ? 4 : 2).map((i) => {
               const pill = statusPill(i.status);
@@ -65,23 +66,23 @@ export function StudentHome({ user }: { user: User }) {
       },
       {
         id: "continue", title: t("home.s.continue"), desc: t("home.s.continueDesc"), sizes: ["1x1"],
-        render: () => !data ? <Loading /> : !draft ? <p className={h.empty}>No drafts in progress.</p> : (
+        render: () => !data ? <Loading /> : !draft ? <p className={h.empty}>{t("home.noDrafts")}</p> : (
           <div className={h.pad}>
             <div className="row" style={{ gap: 10, alignItems: "flex-start" }}>
               <ItemTile kind="assignment" small />
               <div style={{ minWidth: 0 }}>
                 <p className={h.rowTitle} style={{ fontWeight: 600 }}>{draft.title}</p>
-                <p className="muted" style={{ fontSize: 13 }}>Draft saved {sinceLabel(draft.draft_saved_at!)}</p>
+                <p className="muted" style={{ fontSize: 13 }}>{t("home.draftSaved", { when: sinceLabel(draft.draft_saved_at!) })}</p>
               </div>
             </div>
-            <Link href={itemHref(draft)} className="btn btn-primary" style={{ marginTop: "auto" }}>Continue draft</Link>
+            <Link href={itemHref(draft)} className="btn btn-primary" style={{ marginTop: "auto" }}>{t("content.continueDraft")}</Link>
           </div>
         ),
       },
       {
         id: "grades", title: t("home.s.grades"), desc: t("home.s.gradesDesc"), sizes: ["1x2", "2x1"],
-        link: <Link href="/grades" style={linkStyle}>All grades</Link>,
-        render: (_w, hh) => !data ? <Loading /> : graded.length === 0 ? <p className={h.empty}>No grades have been published yet.</p> : (
+        link: <Link href="/grades" style={linkStyle}>{t("home.allGrades")}</Link>,
+        render: (_w, hh) => !data ? <Loading /> : graded.length === 0 ? <p className={h.empty}>{t("content.noGrades")}</p> : (
           <div>
             {graded.slice(0, hh === 2 ? 3 : 2).map((g) => (
               <Link key={g.assignment_id} href={itemHref(g)} className={h.grade}>
@@ -112,7 +113,7 @@ export function StudentHome({ user }: { user: User }) {
               <div aria-hidden="true" className={h.weekdays}>{[0, 1, 2, 3, 4, 5, 6].map((k) => <span key={k}>{weekdayShort(k).charAt(0)}</span>)}</div>
               <div className={h.cells}>
                 {cells.map((d, k) => (
-                  <span key={k} className={h.cell} aria-label={d ? `${d} ${monthOf(tp.m)}${d === tp.d ? ", today" : ""}${due.has(d) ? `, due: ${due.get(d)}` : ""}` : undefined}>
+                  <span key={k} className={h.cell} aria-label={d ? `${d} ${monthOf(tp.m)}${d === tp.d ? `, ${t("date.today")}` : ""}${due.has(d) ? `, ${t("home.dueTitle", { title: due.get(d)! })}` : ""}` : undefined}>
                     {d ? <span className={h.day} data-kind={d === tp.d ? "today" : due.has(d) ? "due" : undefined} data-past={d < tp.d}>{d}</span> : null}
                   </span>
                 ))}
@@ -123,7 +124,7 @@ export function StudentHome({ user }: { user: User }) {
       },
       {
         id: "courses", title: t("home.myCourses"), desc: t("home.s.coursesDesc"), sizes: ["4x1", "2x2"], phone: false,
-        link: <Link href="/courses" style={linkStyle}>All courses</Link>,
+        link: <Link href="/courses" style={linkStyle}>{t("home.allCourses")}</Link>,
         render: (w) => !cards.data ? <Loading /> : (
           <div className={h.courses} style={{ gridTemplateColumns: `repeat(${w === 4 ? 4 : 2}, minmax(0, 1fr))` }}>
             {current.slice(0, 4).map((c) => (
@@ -132,7 +133,7 @@ export function StudentHome({ user }: { user: User }) {
                 <span className={h.rowTitle} style={{ marginTop: 4, fontSize: 14, fontWeight: 600 }}>{c.course.title}</span>
                 <span className={h.rowSub} style={{ fontSize: 12 }}>{c.owner_name}</span>
                 <span className={h.rowTitle} style={{ marginTop: "auto", fontSize: 12, fontWeight: 400 }}>
-                  {c.next ? `Next: ${c.next.title}, ${shortDay(c.next.due_at)}` : "Nothing due this week"}
+                  {c.next ? t("courses.next", { title: c.next.title, when: shortDay(c.next.due_at) }) : t("home.nothingWeek")}
                 </span>
               </Link>
             ))}
@@ -150,14 +151,14 @@ export function StudentHome({ user }: { user: User }) {
                 const list = (data?.items ?? []).filter((i) => i.due_at && dayKey(i.due_at) === key);
                 return (
                   <div key={key} className={h.weekDay} data-today={k === 0}>
-                    <span style={{ fontSize: 12, fontWeight: k === 0 ? 600 : 500, color: k === 0 ? "var(--accent-fg)" : "var(--muted)" }}>{k === 0 ? "Today" : shortDay(d.toISOString()).replace(/ \w{3}$/, "")}</span>
+                    <span style={{ fontSize: 12, fontWeight: k === 0 ? 600 : 500, color: k === 0 ? "var(--accent-fg)" : "var(--muted)" }}>{k === 0 ? t("date.today.cap") : `${weekdayShort(parts(d).wd)} ${parts(d).d}`}</span>
                     {list.map((i) => (
                       <Link key={i.assignment_id} href={itemHref(i)} className={h.weekEvent}>
                         <span className={h.rowTitle} style={{ fontSize: 12 }}>{i.title}</span>
                         <span style={{ display: "block", color: "var(--asg-fg)" }}>{timeOf(i.due_at!)}</span>
                       </Link>
                     ))}
-                    {list.length === 0 && <span className="muted" style={{ fontSize: 12 }}>Nothing due</span>}
+                    {list.length === 0 && <span className="muted" style={{ fontSize: 12 }}>{t("courses.nothingDue")}</span>}
                   </div>
                 );
               })}

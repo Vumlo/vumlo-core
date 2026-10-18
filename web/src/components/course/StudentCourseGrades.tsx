@@ -11,10 +11,12 @@ import { dayLabel, dueSentence, initials, plural } from "@/lib/format";
 import { sumPoints } from "@/lib/points";
 import { CourseHeader } from "./CourseHeader";
 import { CourseOutline } from "./CourseOutline";
+import { useT } from "@/lib/i18n";
 import c from "./Course.module.css";
 import s from "@/components/Grades.module.css";
 
 export function StudentCourseGrades({ courseId }: { courseId: string }) {
+  const t = useT();
   const tree = useContentTree(courseId);
   const meta = useItemMeta(courseId);
   const grades = useMyGrades(courseId);
@@ -33,25 +35,25 @@ export function StudentCourseGrades({ courseId }: { courseId: string }) {
         {tree.data && <CourseOutline courseId={courseId} tree={tree.data} meta={m} />}
         <div className={c.main}>
           <CourseHeader courseId={courseId} />
-          {!tree.data || !grades.data ? <p className="loading" role="status">Loading…</p> : (
+          {!tree.data || !grades.data ? <p className="loading" role="status">{t("common.loading")}</p> : (
             <>
               <div className={`card ${s.summary}`}>
                 <div>
-                  <p className="muted" style={{ fontSize: 13 }}>From graded work</p>
+                  <p className="muted" style={{ fontSize: 13 }}>{t("cg.fromGraded")}</p>
                   <p style={{ marginTop: 2, whiteSpace: "nowrap" }}>
                     <span style={{ fontSize: 30, lineHeight: 1.1, fontWeight: 600 }}>{g.length ? sumPoints(g.map((x) => x.score ?? "0")) : "—"}</span>
                     <span className="muted" style={{ fontSize: 15 }}> / {g.length ? sumPoints(g.map((x) => x.max_points)) : "—"}</span>
                   </p>
                 </div>
                 <div>
-                  <p className="muted" style={{ fontSize: 13 }}>Graded</p>
-                  <p style={{ marginTop: 2, fontSize: 17, fontWeight: 600 }}>{g.length} of {plural(g.length + open.length, "assignment")}</p>
+                  <p className="muted" style={{ fontSize: 13 }}>{t("status.graded")}</p>
+                  <p style={{ marginTop: 2, fontSize: 17, fontWeight: 600 }}>{t("cg.gradedOf", { n: g.length, total: plural(g.length + open.length, "assignment") })}</p>
                 </div>
                 <div>
-                  <p className="muted" style={{ fontSize: 13 }}>Still open</p>
-                  <p style={{ marginTop: 2, fontSize: 17, fontWeight: 600 }}>{sumPoints(open.map((i) => i.assignment!.max_points))} points</p>
+                  <p className="muted" style={{ fontSize: 13 }}>{t("cg.stillOpen")}</p>
+                  <p style={{ marginTop: 2, fontSize: 17, fontWeight: 600 }}>{t("cg.openPoints", { points: sumPoints(open.map((i) => i.assignment!.max_points)) })}</p>
                 </div>
-                <p className="muted" style={{ flex: "1 1 220px", fontSize: 13 }}>Only published grades count here. Your final grade follows the institution&apos;s grading scale.</p>
+                <p className="muted" style={{ flex: "1 1 220px", fontSize: 13 }}>{t("cg.note")}</p>
               </div>
               {sections(tree.data).filter((sec) => sec.items.some(isAssignment)).map((sec) => (
                 <section key={sec.id} style={{ marginTop: 28 }}>
@@ -70,11 +72,11 @@ export function StudentCourseGrades({ courseId }: { courseId: string }) {
                               <span style={{ minWidth: 0 }}>
                                 <span style={{ display: "block", fontWeight: 500 }}>{i.title}</span>
                                 <span className="muted" style={{ display: "block", fontSize: 13 }}>
-                                  {a.due_at ? `${new Date(a.due_at) < today ? "Closed" : "Due"} ${dueSentence(a.due_at)}` : m[i.id]?.class_on ? `In class ${dayLabel(m[i.id]!.class_on!)}` : "No deadline"}
+                                  {a.due_at ? t(new Date(a.due_at) < today ? "bar.closed" : "bar.due", { when: dueSentence(a.due_at) }) : m[i.id]?.class_on ? t("due.inClass", { day: dayLabel(m[i.id]!.class_on!) }) : t("due.none")}
                                 </span>
                               </span>
                             </span>
-                            <span className={s.cellStatus}><StatusPill tone={p.tone}>{grade ? `Graded ${dayLabel(grade.published_at)}` : p.label}</StatusPill></span>
+                            <span className={s.cellStatus}><StatusPill tone={p.tone}>{grade ? t("row.gradedOn", { day: dayLabel(grade.published_at) }) : p.label}</StatusPill></span>
                             <span className={s.cellScore}>
                               <span style={{ fontSize: 17, fontWeight: grade ? 600 : 400, color: grade ? undefined : "var(--muted)" }}>{grade?.score ?? "—"}</span><span className="muted" style={{ fontSize: 13 }}> / {a.max_points}</span>
                             </span>
