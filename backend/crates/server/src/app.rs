@@ -167,6 +167,7 @@ pub fn router(state: AppState) -> Result<Router, SetupError> {
                 .merge(crate::events::router()),
         )
         .split_for_parts();
+    let (router, openapi) = mount_modules(&state, router, openapi);
     let spec = openapi.clone();
     let config = state.config.clone();
     let router = router
@@ -197,6 +198,33 @@ pub fn router(state: AppState) -> Result<Router, SetupError> {
         )
         .layer(map_response(problem_details));
     Ok(cors(router, &config.server.allowed_origins))
+}
+
+/// Mounts every module that is compiled in and enabled under `/api/v1/<name>`, and adds its paths
+/// to the OpenAPI document. A module that is off gets nothing: its paths answer `404` and are not
+/// in the document (ADR-0054).
+fn mount_modules(
+    state: &AppState,
+    mut router: Router<AppState>,
+    mut openapi: utoipa::openapi::OpenApi,
+) -> (Router<AppState>, utoipa::openapi::OpenApi) {
+    for module in crate::modules::compiled() {
+        if !state.config.module_state.is_enabled(module.name) {
+            continue;
+        }
+        let prefix = format!("/api/v1/{}", module.name);
+        router = router.nest_service(
+            &prefix,
+            (module.router)(crate::modules::context(state, module.name)),
+        );
+        let mut doc = (module.openapi)();
+        doc.paths.paths = std::mem::take(&mut doc.paths.paths)
+            .into_iter()
+            .map(|(path, item)| (format!("{prefix}{path}"), item))
+            .collect();
+        openapi.merge(doc);
+    }
+    (router, openapi)
 }
 
 /// How long a browser may reuse a preflight answer.

@@ -1,20 +1,20 @@
 [package]
-name = "cli"
-version = "0.1.0"
+name = "module-api"
+version.workspace = true
 edition.workspace = true
 publish.workspace = true
 
-[[bin]]
-name = "vumlo"
-path = "src/main.rs"
-
 [dependencies]
 anyhow.workspace = true
-api-types.workspace = true
+axum.workspace = true
 clap.workspace = true
 reqwest.workspace = true
-serde_json.workspace = true
+serde.workspace = true
+sqlx.workspace = true
+thiserror.workspace = true
 tokio.workspace = true
+utoipa.workspace = true
+vumlo-config.workspace = true
 
 [lints]
 workspace = true

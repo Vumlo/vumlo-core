@@ -22,6 +22,30 @@ pub use test_support::{bare_db_test, db_test, wait_until_blocked};
 
 pub const ORIGIN: &str = "https://lms.test";
 
+/// Applies the migrations of the optional modules compiled in. `db_test` only migrates the core,
+/// and a binary built with a module treats a database with its migrations pending as not ready.
+pub async fn migrate_modules(pool: &PgPool) {
+    for (_, migrator) in server::modules::migrators() {
+        migrator.run(pool).await.expect("the module's migrations");
+    }
+}
+
+/// Polls `check` until it holds, for work that happens on its own task. Fails after ten seconds.
+pub async fn wait_until<F, Fut>(mut check: F)
+where
+    F: FnMut() -> Fut,
+    Fut: std::future::Future<Output = bool>,
+{
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    while !check().await {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "the condition did not hold within ten seconds"
+        );
+        tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+    }
+}
+
 pub fn test_settings() -> Settings {
     Settings {
         config_version: vumlo_config::SUPPORTED_CONFIG_VERSION,

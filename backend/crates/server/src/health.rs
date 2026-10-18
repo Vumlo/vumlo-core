@@ -25,5 +25,10 @@ pub async fn health(State(state): State<AppState>) -> Result<Json<HealthResponse
     Ok(Json(HealthResponse {
         status: "ok".to_owned(),
         database: "ok".to_owned(),
+        version: env!("CARGO_PKG_VERSION").to_owned(),
+        modules: crate::modules::compiled_names()
+            .into_iter()
+            .map(str::to_owned)
+            .collect(),
     }))
 }

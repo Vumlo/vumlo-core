@@ -461,18 +461,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1c133bc6a41be0d194c306b5506d15e6feeea7b1d6604bd3f8310dfb2ca96486"
 
 [[package]]
-name = "cli"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "api-types",
- "clap",
- "reqwest",
- "serde_json",
- "tokio",
-]
-
-[[package]]
 name = "cmov"
 version = "0.5.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1851,6 +1839,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "module-api"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "axum",
+ "clap",
+ "reqwest",
+ "serde",
+ "sqlx",
+ "thiserror 2.0.21",
+ "tokio",
+ "utoipa",
+ "vumlo-config",
+]
+
+[[package]]
 name = "nom"
 version = "8.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2554,6 +2558,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "rpassword"
+version = "7.5.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2da316a15f47e3d053de9cb2c439650bd8fa4aaeb9365f2e5f27f492ff73c196"
+dependencies = [
+ "libc",
+ "rtoolbox",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
 name = "rsa"
 version = "0.9.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2571,6 +2586,16 @@ dependencies = [
  "spki",
  "subtle",
  "zeroize",
+]
+
+[[package]]
+name = "rtoolbox"
+version = "0.0.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9a1efe12a1469752d0e6ff5ebec0b6ef4924cc5c4c71046b0ec730040535819d"
+dependencies = [
+ "libc",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -2870,6 +2895,7 @@ dependencies = [
  "db",
  "garde",
  "lettre",
+ "module-api",
  "openidconnect",
  "rand 0.10.3",
  "reqwest",
@@ -2888,6 +2914,7 @@ dependencies = [
  "utoipa-scalar",
  "uuid",
  "vumlo-config",
+ "vumlo-module-dummy",
 ]
 
 [[package]]
@@ -3774,6 +3801,28 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 
 [[package]]
+name = "vumlo-cli"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "api-types",
+ "axum",
+ "clap",
+ "db",
+ "module-api",
+ "reqwest",
+ "rpassword",
+ "serde",
+ "serde_json",
+ "server",
+ "sqlx",
+ "tokio",
+ "uuid",
+ "vumlo-config",
+ "vumlo-module-dummy",
+]
+
+[[package]]
 name = "vumlo-config"
 version = "0.1.0"
 dependencies = [
@@ -3783,6 +3832,22 @@ dependencies = [
  "schemars 1.2.3",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "vumlo-module-dummy"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "axum",
+ "clap",
+ "module-api",
+ "serde",
+ "sqlx",
+ "tokio",
+ "utoipa",
+ "uuid",
+ "vumlo-config",
 ]
 
 [[package]]

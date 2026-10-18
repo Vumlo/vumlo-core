@@ -128,6 +128,23 @@ fn into_sqlx(e: MigrateError) -> sqlx::Error {
     sqlx::Error::Protocol(e.to_string())
 }
 
+/// The optional modules whose migrations table exists in the database, by module name: the
+/// modules that were ever migrated here, compiled in now or not. Their data is never deleted.
+pub async fn migrated_modules(conn: &mut PgConnection) -> Result<Vec<String>, sqlx::Error> {
+    let tables: Vec<String> = sqlx::query_scalar(
+        r"SELECT tablename::text FROM pg_catalog.pg_tables
+          WHERE schemaname = current_schema() AND tablename LIKE '\_sqlx\_migrations\_%'
+          ORDER BY tablename",
+    )
+    .fetch_all(conn)
+    .await?;
+    Ok(tables
+        .iter()
+        .filter_map(|table| table.strip_prefix("_sqlx_migrations_"))
+        .map(str::to_owned)
+        .collect())
+}
+
 /// Fails if a migration of the core has not been applied, or the core schema is newer than the
 /// binary. Never changes the database.
 pub async fn ensure_migrated(pool: &PgPool) -> Result<(), MigrationCheckError> {

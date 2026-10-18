@@ -32,22 +32,27 @@ Nothing else is required. File storage defaults to local disk, with S3-compatibl
 ```
 web (SPA)      ──cookie──┐
 mobile app     ──bearer──┼──>  HTTP /api/v1  ──>  modules  ──>  PostgreSQL
-vumlo (CLI)  ──bearer──┘
 vumlo-server admin subcommands (on the server)  ──────────>  PostgreSQL
+vumlo-cli (administrator, same host as the config and the DB)  ──>  PostgreSQL
 ```
 
 - **One API for every client.** No client-specific endpoints ([ADR-0012](docs/decisions/0012-api-for-multiple-clients.md)).
-- **`vumlo-server`** = the server binary. Subcommands: `serve`, `migrate`, `create-admin`, `create-user` (`import-users` is planned). Admin subcommands talk to the database directly. Every one that uses the database records or checks the institution mode first (see Configuration).
-- **`vumlo`** = the user CLI for students and teachers. A normal API client with a token; it never touches the database. (Naming follows the `dockerd` / `docker` pattern: the short name goes to the command people type most.)
+- **`vumlo-server`** = the server binary. Subcommands: `serve` (`--no-worker` serves requests only), `worker` (the outbox, mail and the workers of the modules that are on), `migrate`, `create-admin`, `create-user` (`import-users` is planned). Admin subcommands talk to the database directly. Every one that uses the database records or checks the institution mode first (see Configuration).
+- **`vumlo-cli`** = the administrator CLI ([ADR-0054](docs/decisions/0054-deployment-model.md)): a separate binary and process, shipped with the server in the same release. It prepares configuration, generated assets and the database (`init`, `config check`, `db migrate`, `admin create`, `brand apply`, `build web`, `seed --demo`, `doctor`); it deploys nothing. Every command that changes the database writes `events.audit_log` with no actor and the source `cli`. The name is reserved for this tool; an end-user CLI for students and teachers, if it is ever built, gets another name.
+- **Optional modules** (ai-agent, vpl, ...) are crates behind Cargo features of the same name on `server` and `vumlo-cli`, and are switched on in `[modules]`. A module reports as `enabled`, `disabled` (compiled in, off) or `unavailable` (not compiled in); a module that is off mounts no routes, starts no work and loses no data. The contract is `crates/module-api`.
 
 ## Repository layout
 
 ```
 backend/       # Cargo workspace; run every cargo command here
   crates/
-    server/    # library + binary `vumlo-server`: HTTP API, modules, worker, admin subcommands; build.rs
-    api-types/ # request/response types shared with the Rust CLI; OpenAPI source
-    cli/       # binary `vumlo`: user CLI (API client)
+    server/      # library + binary `vumlo-server`: HTTP API, modules, worker, admin subcommands
+    api-types/   # request/response types; OpenAPI source
+    config/      # `vumlo-config`: the one schema of vumlo.toml, public/private/secret keys, loader
+    db/          # migrations and their state, the installation record, account value types; build.rs
+    module-api/  # the contract between the core and an optional module
+    modules/     # optional modules, one crate each (today only the test-only `dummy`)
+    vumlo-cli/   # binary `vumlo-cli`: the administrator CLI
   migrations/
   .sqlx/
   Dockerfile
@@ -240,7 +245,7 @@ Key points:
 
 ## Configuration
 
-The schema of `vumlo.toml` lives in one crate, `backend/crates/config` (package `vumlo-config`), which the server and `vumlo-cli` both use (ADR-0054). Precedence, lowest first: the defaults in the schema, `vumlo.toml`, `VUMLO__SECTION__KEY` environment variables, `--set section.key=value` flags. Every key is marked `public` (may reach `client-config.json`), `private` or `secret` in the generated JSON Schema (`x-visibility`); a test fails on an unmarked key. Secret keys (`database.url` = `DATABASE_URL`, `auth.google.client_secret`, `mail.transport.password`) come from the environment only, and a secret or a key the schema does not know stops the load. `config_version` (1) is the layout of the file; a newer value is refused. See `vumlo.example.toml`:
+The schema of `vumlo.toml` lives in one crate, `backend/crates/config` (package `vumlo-config`), which the server and `vumlo-cli` both use (ADR-0054). Precedence, lowest first: the defaults in the schema, `vumlo.toml`, `VUMLO__SECTION__KEY` environment variables, `--set section.key=value` flags. Every key is marked `public` (may reach `client-config.json`), `private` or `secret` in the generated JSON Schema (`x-visibility`); a test fails on an unmarked key. Secret keys (`database.url` = `DATABASE_URL`, `auth.google.client_secret`, `mail.transport.password`) come from the environment only, and a secret or a key the schema does not know stops the load. `config_version` (1) is the layout of the file; a newer value is refused. See `deploy/vumlo.example.toml`:
 `server.bind_addr`, `server.public_origin`, `server.client_ip_header?`, `server.allowed_origins` (default empty; every origin key must look like `https://host[:port]`, lowercase, no path and no default port, or the server does not start), `database.url` (a secret), `database.max_connections`, `log.format`, `institution.name`, `institution.mode`, an optional `[auth.google]` section (`client_id`, `client_secret`, `redirect_uri`, `issuer`; [ADR-0047](docs/decisions/0047-google-sign-in.md)), an optional `[mail]` section (`from`, `link_base`, and `transport.kind` = `smtp` | `file`; [ADR-0045](docs/decisions/0045-outbox-worker-and-mail.md)), the optional profile keys `institution.short_name`, `language`, `time_zone` and `logo` (the accent colour of ADR-0044 is gone; [ADR-0044](docs/decisions/0044-institution-profile-in-the-config.md): validated at startup, served by `GET /institution` and the admin-only `GET /admin/institution`, never writable through the API), and an optional `[auth]` section (`password_min_length` = 12, `cookie_secure` = true, `allowed_domains` = [], the domains that may sign up (ADR-0046), and the login limits of ADR-0038 listed under Identity and sessions). `institution.mode` (`school` | `university`) is **required, has no default and is fixed for the life of the installation** ([ADR-0031](docs/decisions/0031-institution-mode-required-and-fixed.md)): a missing or unknown value stops the server at startup, naming the key and the allowed values. The first start records the mode in `org.installation` (one row); a later start whose config says another mode refuses to start and names both values. The check, `org::record_mode(&mut conn, mode)`, runs in `main.rs` before the server binds (`serve`), after the migrations (`migrate`) and before `create-admin` / `create-user`; it is insert-if-absent, then read, so concurrent first starts cannot store two modes. `institution.grading_scale` (`twelve` | `hundred`) limits assignment points, see [ADR-0022](docs/decisions/0022-grading-scale-setting.md); optional, and when absent it follows the mode (school gives `twelve`, university gives `hundred`). The scale is resolved once, when the `[institution]` section loads (`TryFrom<InstitutionSection> for InstitutionSettings`, which also checks the mode); `institution.grading_scale` in the loaded settings is the scale that applies, and nothing else reads the raw key. `editor.profiles.<name>.features` and `editor.video_providers` (default `["youtube", "vimeo"]`; an empty list switches video off) narrow what a place of the editor allows, see [ADR-0025](docs/decisions/0025-block-documents.md) and [ADR-0027](docs/decisions/0027-document-types-and-video-blocks.md). The configuration is plain data. A configuration can only narrow: `AppState::new` resolves it once, when the server starts, and one that widens a profile or names an unknown profile, feature or provider stops the server there with a message that names the key and the value. Handlers and services receive the resolved profiles from `AppState`. Planned: `editor.html` (default `false`).
 
 ## Authorization

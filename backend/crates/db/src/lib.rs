@@ -11,5 +11,6 @@ mod text_enum;
 pub use audit::insert_cli_audit;
 pub use installation::{ModeError, record_mode};
 pub use migrate::{
-    MIGRATOR, MigrationCheckError, Status, ensure_migrated, ensure_migrated_with, migrate, status,
+    MIGRATOR, MigrationCheckError, Status, ensure_migrated, ensure_migrated_with, migrate,
+    migrated_modules, status,
 };

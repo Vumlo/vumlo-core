@@ -10542,14 +10542,27 @@
         "type": "object",
         "required": [
           "status",
-          "database"
+          "database",
+          "version",
+          "modules"
         ],
         "properties": {
           "database": {
             "type": "string"
           },
+          "modules": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "The optional modules compiled into the server, enabled or not."
+          },
           "status": {
             "type": "string"
+          },
+          "version": {
+            "type": "string",
+            "description": "The release of the server binary. `vumlo-cli doctor` compares it with its own."
           }
         }
       },

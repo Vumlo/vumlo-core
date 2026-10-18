@@ -1,0 +1,38 @@
+[package]
+name = "vumlo-cli"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+description = "The administrator CLI of Vumlo: configuration, migrations, branding, accounts, diagnostics."
+
+[[bin]]
+name = "vumlo-cli"
+path = "src/main.rs"
+
+[features]
+default = []
+# Optional modules (ADR-0054): the same feature names as on `server`. Build both with one set.
+dummy = ["dep:vumlo-module-dummy", "vumlo-config/test-registry"]
+
+[dependencies]
+anyhow.workspace = true
+api-types.workspace = true
+clap.workspace = true
+db.workspace = true
+module-api.workspace = true
+reqwest.workspace = true
+rpassword.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sqlx.workspace = true
+tokio.workspace = true
+uuid.workspace = true
+vumlo-config.workspace = true
+vumlo-module-dummy = { workspace = true, optional = true }
+
+[dev-dependencies]
+axum.workspace = true
+server.workspace = true
+
+[lints]
+workspace = true

@@ -830,7 +830,7 @@ fn settings_hold_the_editor_section_as_data_and_what_it_means_is_checked_later()
 
 #[test]
 fn the_example_file_loads_as_it_is() {
-    let text = include_str!("../../../../vumlo.example.toml");
+    let text = include_str!("../../../../deploy/vumlo.example.toml");
     let s = build(text, &[]).unwrap();
     assert_eq!(s.config_version, SUPPORTED_CONFIG_VERSION);
     assert_eq!(s.institution.mode, InstitutionMode::University);

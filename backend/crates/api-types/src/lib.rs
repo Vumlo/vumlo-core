@@ -31,6 +31,10 @@ pub use org::*;
 pub struct HealthResponse {
     pub status: String,
     pub database: String,
+    /// The release of the server binary. `vumlo-cli doctor` compares it with its own.
+    pub version: String,
+    /// The optional modules compiled into the server, enabled or not.
+    pub modules: Vec<String>,
 }
 
 /// One rejected field of a `422` response.

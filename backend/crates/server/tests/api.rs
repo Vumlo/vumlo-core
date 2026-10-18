@@ -28,7 +28,12 @@ async fn health_returns_ok() {
             body,
             HealthResponse {
                 status: "ok".into(),
-                database: "ok".into()
+                database: "ok".into(),
+                version: env!("CARGO_PKG_VERSION").into(),
+                modules: server::modules::compiled_names()
+                    .into_iter()
+                    .map(str::to_owned)
+                    .collect(),
             }
         );
     })

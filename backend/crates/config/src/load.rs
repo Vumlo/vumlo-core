@@ -165,6 +165,14 @@ pub fn load(sources: Sources, compiled: &[&str]) -> Result<Settings, Error> {
         ));
     }
     if !errors.is_empty() {
+        // The modules are checked on their own, so their problems show in the same report.
+        let entries: Result<BTreeMap<String, modules::ModuleEntry>, _> =
+            serde_json::from_value(merged_value.get("modules").cloned().unwrap_or(Value::Null));
+        if let Ok(entries) = entries
+            && let Err(found) = modules::resolve(&entries, &sources.env, compiled)
+        {
+            errors.extend(found);
+        }
         return Err(Error(errors));
     }
 

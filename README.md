@@ -30,7 +30,7 @@ Without Docker for the API:
 
 ```
 cp .env.example .env
-cp vumlo.example.toml vumlo.toml   # set server.public_origin, institution.name and institution.mode
+cp deploy/vumlo.example.toml vumlo.toml   # set server.public_origin, institution.name and institution.mode
 docker compose up -d --wait postgres   # PostgreSQL 18 on :5432
 cd backend                             # all cargo commands run here
 cargo run -p server -- migrate         # apply migrations
@@ -49,7 +49,7 @@ curl -s localhost:8080/api/v1/auth/login -H 'content-type: application/json' \
 
 Other users: `vumlo-server create-user <email> --name <name> --surname <surname> --role admin|teacher|student`, or
 `POST /api/v1/admin/users` as an admin. API docs: `/api/v1/docs`.
-Health check: `curl localhost:8080/api/v1/health` or `cargo run -p cli -- health --url http://localhost:8080`.
+Health check: `curl localhost:8080/api/v1/health`. The administrator CLI is `vumlo-cli` (`cargo run -p vumlo-cli -- --help`): `config check`, `db migrate`, `admin create`, `doctor` and more; see `docs/install.md`.
 
 Choose `institution.mode` (`school` or `university`) before the first start: it is required, the first command that uses the database records it, and it cannot be changed later (a different value stops the server). The grading scale follows it unless `institution.grading_scale` is set.
 
@@ -60,7 +60,7 @@ flags. Secrets are never in `vumlo.toml`: the database URL is `DATABASE_URL`, th
 the environment or in `.env` (read when the variable is not already set). A secret in the file, or a key
 the schema does not know (a typo, or the removed `institution.accent`), stops the server.
 For plain-HTTP local development set `auth.cookie_secure = false`; keep it `true` in production.
-Behind a reverse proxy set `server.client_ip_header` (e.g. `x-real-ip`) so login rate limits see the client address. The login limits (`auth.login_ip_burst` and the others, see `vumlo.example.toml`) can be raised for a school behind one NAT. A frontend hosted on another origin is allowed with `server.allowed_origins` (ADR-0041; read the SameSite note in `vumlo.example.toml` first).
+Behind a reverse proxy set `server.client_ip_header` (e.g. `x-real-ip`) so login rate limits see the client address. The login limits (`auth.login_ip_burst` and the others, see `deploy/vumlo.example.toml`) can be raised for a school behind one NAT. A frontend hosted on another origin is allowed with `server.allowed_origins` (ADR-0041; read the SameSite note in `deploy/vumlo.example.toml` first).
 
 ## Renamed from Learnly
 

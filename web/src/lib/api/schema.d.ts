@@ -2532,7 +2532,11 @@ export interface components {
         };
         HealthResponse: {
             database: string;
+            /** @description The optional modules compiled into the server, enabled or not. */
+            modules: string[];
             status: string;
+            /** @description The release of the server binary. `vumlo-cli doctor` compares it with its own. */
+            version: string;
         };
         /**
          * @description What a search hit is.

@@ -5,6 +5,7 @@ use clap::{Parser, Subcommand};
 use server::app::{self, AppState};
 use server::events;
 use server::identity::{self, Email, NewUser, PersonName, Role, TemporaryPassword};
+use server::modules;
 use server::org;
 use sqlx::PgPool;
 use vumlo_config::{LogFormat, Options, Settings};
@@ -24,8 +25,15 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
-    /// Start the HTTP server. Refuses to start while migrations are pending.
-    Serve,
+    /// Start the HTTP server and the background work. Refuses to start while migrations are pending.
+    Serve {
+        /// Serve requests only. Run `vumlo-server worker` as a separate process for the background
+        /// work (the outbox, the mail and the workers of the modules that are on).
+        #[arg(long)]
+        no_worker: bool,
+    },
+    /// Run the background work without serving requests, until SIGINT or SIGTERM.
+    Worker,
     /// Apply embedded database migrations and exit.
     Migrate,
     /// Create an admin with a temporary password, printed once.
@@ -69,7 +77,7 @@ async fn run(cli: Cli) -> anyhow::Result<()> {
         config: cli.config,
         set: cli.set,
     };
-    let settings = vumlo_config::load_process(&options, &[])
+    let settings = vumlo_config::load_process(&options, &modules::compiled_names())
         .context("invalid configuration")?
         .settings;
     init_tracing(settings.log.format);
@@ -77,10 +85,26 @@ async fn run(cli: Cli) -> anyhow::Result<()> {
         .await
         .context("cannot connect to the database")?;
     match cli.command {
-        Command::Serve => {
+        Command::Worker => {
             let state = AppState::new(pool, settings).context("invalid configuration")?;
             prepare_database(&state.db, &state.config).await?;
-            tokio::spawn(events::run_worker(state.db.clone(), state.event_handlers()));
+            let started = modules::spawn_workers(&state);
+            let shutdown = app::shutdown_signal().context("cannot install signal handlers")?;
+            tracing::info!(modules = ?started, "worker running");
+            tokio::select! {
+                () = events::run_worker(state.db.clone(), state.event_handlers()) => {}
+                () = shutdown => {}
+            }
+            tracing::info!("shut down");
+        }
+        Command::Serve { no_worker } => {
+            let state = AppState::new(pool, settings).context("invalid configuration")?;
+            prepare_database(&state.db, &state.config).await?;
+            if !no_worker {
+                tokio::spawn(events::run_worker(state.db.clone(), state.event_handlers()));
+                let started = modules::spawn_workers(&state);
+                tracing::info!(modules = ?started, "background work started");
+            }
             let bind_addr = state.config.server.bind_addr;
             let listener = tokio::net::TcpListener::bind(bind_addr)
                 .await
@@ -97,11 +121,18 @@ async fn run(cli: Cli) -> anyhow::Result<()> {
             tracing::info!("shut down");
         }
         Command::Migrate => {
-            let applied = db::migrate(&pool, "core", &db::MIGRATOR)
+            let mut applied = db::migrate(&pool, "core", &db::MIGRATOR)
                 .await
-                .context("migration failed")?;
+                .context("migration failed")?
+                .len();
+            for (name, migrator) in modules::migrators() {
+                applied += db::migrate(&pool, name, migrator)
+                    .await
+                    .with_context(|| format!("migration of the module {name} failed"))?
+                    .len();
+            }
             record_mode(&pool, &settings).await?;
-            tracing::info!(applied = applied.len(), "migrations applied");
+            tracing::info!(applied, "migrations applied");
         }
         Command::CreateAdmin {
             email,
@@ -125,7 +156,7 @@ async fn run(cli: Cli) -> anyhow::Result<()> {
 /// Refuses a database with pending migrations, then records or checks the institution mode
 /// (ADR-0031). Every command that uses the database goes through this before it does anything.
 async fn prepare_database(pool: &PgPool, settings: &Settings) -> anyhow::Result<()> {
-    app::ensure_migrated(pool).await?;
+    db::ensure_migrated_with(pool, &modules::migrators()).await?;
     record_mode(pool, settings).await
 }
 
