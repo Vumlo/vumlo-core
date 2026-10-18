@@ -115,7 +115,7 @@ export function TeacherHome({ user }: { user: User }) {
   return (
     <div className="container">
       <WidgetGrid
-        storageKey="learnly.home.teacher"
+        storageKey="vumlo.home.teacher"
         defs={defs}
         defaultOrder={["grade", "pub", "next", "content", "courses"]}
         customizeSlot={(button) => (

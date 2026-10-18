@@ -5,7 +5,7 @@ import { createContext, useCallback, useContext, useEffect, useState, type React
 export type Theme = "light" | "dark";
 export type ThemePreference = Theme | "system";
 
-const KEY = "learnly.theme";
+const KEY = "vumlo.theme";
 
 /** Runs before first paint, so the page never flashes the wrong theme. */
 export const themeInitScript = `(function(){try{var t=localStorage.getItem("${KEY}");if(t!=="light"&&t!=="dark"){t=matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light"}document.documentElement.dataset.theme=t}catch(e){document.documentElement.dataset.theme="light"}})()`;

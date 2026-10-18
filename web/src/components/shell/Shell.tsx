@@ -89,7 +89,7 @@ export function Shell({ children }: { children: ReactNode }) {
   const me = useMe();
   const t = useT();
   const institution = useInstitution();
-  const institutionName = institution.data?.name ?? "Learnly";
+  const institutionName = institution.data?.name ?? "Vumlo";
   const mustChange = me.data?.must_change_password === true;
 
   useEffect(() => {

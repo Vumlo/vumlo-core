@@ -13,7 +13,7 @@ export default function AuthLayout({ children }: { children: ReactNode }) {
   const institution = useInstitution();
   const { theme, toggle } = useTheme();
   const { language, setLanguage } = useLanguage();
-  const name = institution.data?.name ?? "Learnly";
+  const name = institution.data?.name ?? "Vumlo";
   return (
     <div className={s.page}>
       <div className={s.center}>

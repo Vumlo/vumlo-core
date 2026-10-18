@@ -12,7 +12,7 @@ export const LANGUAGES: { id: Language; name: string }[] = [
 ];
 
 const catalogues: Record<Language, Record<string, string>> = { en, uk };
-const LANG_KEY = "learnly.language";
+const LANG_KEY = "vumlo.language";
 
 let current: Language = "en";
 

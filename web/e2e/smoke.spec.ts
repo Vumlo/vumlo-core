@@ -34,7 +34,7 @@ async function open(page: Page, path: string, theme: string, problems: string[])
 for (const role of roles) {
   for (const theme of themes) {
     test(`${role} screens open in ${theme} theme`, async ({ page }) => {
-      await page.addInitScript((t) => localStorage.setItem("learnly.theme", t), theme);
+      await page.addInitScript((t) => localStorage.setItem("vumlo.theme", t), theme);
       const problems = watch(page);
       await signIn(page, role);
       const routes = [...staticRoutes[role], ...(await courseRoutes(page, role))];
@@ -60,7 +60,7 @@ for (const role of roles) {
 
 for (const role of roles) {
   test(`${role} screens open in Ukrainian`, async ({ page }) => {
-    await page.addInitScript(() => localStorage.setItem("learnly.language", "uk"));
+    await page.addInitScript(() => localStorage.setItem("vumlo.language", "uk"));
     const problems = watch(page);
     await page.goto("/login");
     await page.getByLabel("Електронна пошта").fill(accounts[role]);
@@ -75,7 +75,7 @@ for (const role of roles) {
 
 for (const theme of themes) {
   test(`pages before sign-in open in ${theme} theme`, async ({ page }) => {
-    await page.addInitScript((t) => localStorage.setItem("learnly.theme", t), theme);
+    await page.addInitScript((t) => localStorage.setItem("vumlo.theme", t), theme);
     const problems = watch(page);
     for (const path of publicRoutes) await open(page, path, theme, problems);
   });

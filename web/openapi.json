@@ -1,7 +1,7 @@
 {
   "openapi": "3.1.0",
   "info": {
-    "title": "Learnly API",
+    "title": "Vumlo API",
     "description": "",
     "license": {
       "name": ""
@@ -2045,7 +2045,7 @@
           "auth"
         ],
         "summary": "Logs in with email and password.",
-        "description": "`client = web` sets the `learnly_session` cookie and returns the user. `client = app`\nreturns the token, to be sent as `Authorization: Bearer`. Failures never say whether the\nemail or the password was wrong.",
+        "description": "`client = web` sets the `vumlo_session` cookie and returns the user. `client = app`\nreturns the token, to be sent as `Authorization: Bearer`. Failures never say whether the\nemail or the password was wrong.",
         "operationId": "login",
         "requestBody": {
           "content": {
@@ -13863,7 +13863,7 @@
       "cookie": {
         "type": "apiKey",
         "in": "cookie",
-        "name": "learnly_session"
+        "name": "vumlo_session"
       }
     }
   }

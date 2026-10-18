@@ -6,7 +6,7 @@ import type { MyWorkItem, WorkStatus } from "@/lib/api/types";
 import type { ContentModule, ContentTree, ItemSummary, Module } from "@/lib/api/types";
 import { getDb, type DbCourse, type DbGrade, type DbItem, type DbMember, type DbSubmission, type DbUser } from "./db";
 
-export const SESSION_KEY = "learnly.mock.session";
+export const SESSION_KEY = "vumlo.mock.session";
 
 export function problem(status: number, title: string, detail?: string, errors?: { field: string; message: string }[]): Response {
   return HttpResponse.json(

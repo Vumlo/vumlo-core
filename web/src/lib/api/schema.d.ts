@@ -482,7 +482,7 @@ export interface paths {
         put?: never;
         /**
          * Logs in with email and password.
-         * @description `client = web` sets the `learnly_session` cookie and returns the user. `client = app`
+         * @description `client = web` sets the `vumlo_session` cookie and returns the user. `client = app`
          *     returns the token, to be sent as `Authorization: Bearer`. Failures never say whether the
          *     email or the password was wrong.
          */

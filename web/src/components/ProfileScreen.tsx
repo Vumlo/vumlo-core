@@ -161,7 +161,7 @@ export function ProfileScreen() {
             </div>
             <div className={s.pref}>
               <div><p style={{ fontWeight: 500 }}>{t("profile.homeLayout")}</p><p className="muted" style={{ fontSize: 13 }}>{resetDone ? t("profile.homeReset") : t("profile.homeResetHint")}</p></div>
-              <button type="button" className="btn btn-outline" onClick={() => { try { Object.keys(localStorage).filter((k) => k.startsWith("learnly.home.")).forEach((k) => localStorage.removeItem(k)); } catch { /* storage blocked */ } setResetDone(true); }}>{t("profile.resetHome")}</button>
+              <button type="button" className="btn btn-outline" onClick={() => { try { Object.keys(localStorage).filter((k) => k.startsWith("vumlo.home.")).forEach((k) => localStorage.removeItem(k)); } catch { /* storage blocked */ } setResetDone(true); }}>{t("profile.resetHome")}</button>
             </div>
           </section>
 
