@@ -451,7 +451,7 @@ export const en = {
   "people.noStudents": "No students match.",
   "people.former": "Former students",
   "people.formerLead": "They keep their published grades and can't be graded again.",
-  "people.leftOn": "Left on {day}",
+  "people.left": "Left the course",
 
   // course settings
   "cs.general": "General",

@@ -25,33 +25,22 @@ Spec endpoints the UI uses as they are: `GET /institution`, `GET /admin/institut
 
 ## New course
 - **Screens:** New course.
-- **Missing:** `POST /courses` takes only `title` and `term_id`. The page also sets `code` and `description` (see Course info), and a copy from a template takes no term. The page makes these as follow-up calls, and still opens the settings page if one of them fails.
-- **Mocked:** `PATCH /courses/{id}/info`, `POST /templates/{id}/courses`; the term of a copy is set with the real `PATCH /courses/{id}`.
+- **Missing:** `POST /courses` takes only `title` and `term_id`. The page also sets `code` and `description` with `PATCH /courses/{id}/info`, and a copy from a template can take a `term_id` now (`POST /templates/{id}/courses`). The page makes these as follow-up calls, and still opens the settings page if one of them fails.
 
 ## Language
 - **Screens:** every screen, Admin Institution (default language), Settings (this device).
 - **Missing:** nothing on the server. The institution default comes from the mocked `GET /institution`.
 - **Note:** ADR-0043 describes the catalogue. Every screen is translated. Text written by the server is not: the to-do lines on course cards (`GET /me/course-cards`), the notes in `GET /me/teaching`, grade history and audit lines, the facts in `GET /admin/users/{id}/facts`. They should become structured data (a kind and counts), so the client can word them.
 
-## Course info
-- **Screens:** the header of every course screen, Courses, Course settings.
-- **Missing on `Course`:** `code`, `description`, the term's name, the owner's name and email, student, former-student and assistant counts, the course total and number of graded items, `has_grades`, and the time of the last settings save.
-- **Mocked:** `GET /courses/{id}/info`, `PATCH /courses/{id}/info` (`code`, `description`). `PATCH /courses/{id}` is the real one for title and term.
+## Course screens (info, templates, archive and delete, people)
+- **Server:** done (ADR-0048). `GET`/`PATCH /courses/{id}/info`, `POST /courses/{id}/archive` and `/restore`, `DELETE /courses/{id}`, `POST /courses/{id}/template`, `POST /templates/{id}/courses`, `GET /me/templates`, `GET /courses/{id}/people`, `GET /courses/{id}/candidates?q=` are in `openapi.json`. An archived course is read-only (`409`) and still readable by its students.
+- **Differences the screens absorb:** the owner comes as `owner_name` and `owner_surname` (no "Dr."), `settings_saved_at` is `updated_at`, a linked group is `group_name` and `subgroup_name`, and a former student has no `left_on` date.
+- **Still mocked, on purpose:** the same endpoints in `src/mocks/handlers/core.ts`, with the server's shapes, for `pnpm dev:mock` and the Playwright suite. The mock does not make an archived course read-only.
 
 ## Course cards
 - **Screens:** Courses (student and teacher), Home (My courses).
 - **Missing:** one call that returns, per course of the caller: the course, code, term name and whether the term ended, owner name, the caller's role (owner, teacher, assistant, student), student and assistant counts; for a student the progress (submitted, total, graded) and the next deadline; for staff a to-do list (submissions to grade, draft grades not published, unpublished lectures, next deadline).
 - **Mocked:** `GET /me/course-cards`.
-
-## Templates
-- **Screens:** Teacher Courses (Templates), Course settings (Reuse next term).
-- **Missing:** counts of a template's content, creating a course from a template, making a template from a course. `Course.kind = template` exists, but nothing copies content (ADR-0005).
-- **Mocked:** `GET /me/templates`, `POST /templates/{id}/courses`, `POST /courses/{id}/template`.
-
-## Archive and delete
-- **Screens:** Course settings (Archive or delete).
-- **Missing:** `CourseStatus` has `archived`, but `UpdateCourseRequest` cannot set it, and there is no way to restore a course or to delete one.
-- **Mocked:** `POST /courses/{id}/archive`, `POST /courses/{id}/restore`, `DELETE /courses/{id}` (409 when the course has grades, as ADR-0021 and ADR-0030 describe for assignments).
 
 ## My work (assignments with my own progress)
 - **Screens:** Home (Due soon, Continue, New grades, month, Next 7 days), Calendar, Grades.
@@ -72,11 +61,6 @@ Spec endpoints the UI uses as they are: `GET /institution`, `GET /admin/institut
 - **Screens:** Lecture editor, Course content (the "Edited" label), Teacher home (Unpublished content).
 - **Missing:** a published version next to the edited one. ADR-0010 says edits to published content are visible at once and there are no draft revisions in v1, so this contradicts it.
 - **Mocked:** `GET /items/{id}/revision`, `POST /items/{id}/revision/publish`. A student keeps seeing the previous body and title until the changes are published.
-
-## People of a course
-- **Screens:** Course, People (student and teacher).
-- **Missing:** names, emails and group labels. `Membership` carries ids only and teachers cannot read other users. Students must not receive other people's emails. A way to find someone to add: teachers cannot list users, only admins can.
-- **Mocked:** `GET /courses/{id}/people`, `GET /courses/{id}/candidates?q=`.
 
 ## Teaching overview
 - **Screens:** Teacher home, Grading, Calendar (teacher).

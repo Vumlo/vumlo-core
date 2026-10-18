@@ -7,25 +7,6 @@ import type { Points } from "../points";
 
 export type MyRole = "owner" | CourseRole;
 
-/** `GET /courses/{id}/info`: the header of every course screen. */
-export type CourseInfo = {
-  course_id: string;
-  code: string;
-  description: string;
-  term_name: string | null;
-  owner_name: string;
-  owner_email: string;
-  student_count: number;
-  former_count: number;
-  assistant_count: number;
-  updated_at: string;
-  settings_saved_at: string | null;
-  total_points: Points;
-  graded_items: number;
-  /** Grades exist, so the course cannot be deleted (ADR-0021). */
-  has_grades: boolean;
-};
-
 /** `GET /me/course-cards`: one card per course on Courses and on the home page. */
 export type CourseCard = {
   course: Course;
@@ -41,14 +22,6 @@ export type CourseCard = {
   next: { assignment_id: string; title: string; due_at: string } | null;
   /** Staff only. */
   todo: { kind: "grade" | "draft" | "info"; text: string; due_at?: string }[];
-};
-
-export type Template = {
-  course: Course;
-  sections: number;
-  lectures: number;
-  assignments: number;
-  updated_at: string;
 };
 
 export type WorkStatus = "not_started" | "draft" | "submitted" | "graded" | "missed" | "in_class";
@@ -94,29 +67,6 @@ export type ItemMeta = {
 };
 
 export type ItemMetaMap = { items: Record<string, ItemMeta> };
-
-export type PersonRow = {
-  user_id: string;
-  name: string;
-  surname: string;
-  /** Staff only; students do not get other people's emails. */
-  email: string | null;
-  role: CourseRole;
-  is_owner: boolean;
-  source: "direct" | "group";
-  /** Group or subgroup name for students from a group. */
-  group: string | null;
-  former: boolean;
-  left_on: string | null;
-};
-
-/** A person a teacher may add to a course (API_GAPS.md, "People"). */
-export type Candidate = { user_id: string; name: string; surname: string; email: string; role: "teacher" | "student" | "admin" };
-
-export type LinkedGroupRow = { link_id: string; name: string; student_count: number; linked_on: string };
-
-/** `GET /courses/{id}/people`: the roster with names (the members endpoint has ids only). */
-export type CoursePeople = { people: PersonRow[]; groups: LinkedGroupRow[] };
 
 export type TeachingOverview = {
   to_grade: {

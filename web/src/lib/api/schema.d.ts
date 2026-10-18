@@ -440,15 +440,60 @@ export interface paths {
         get: operations["get_course"];
         put?: never;
         post?: never;
-        delete?: never;
+        /**
+         * Deletes a course with its content, members and links. The owner or an admin, in every status.
+         * @description A course in which any grade has a value or any work was submitted cannot be deleted: archive
+         *     it instead.
+         */
+        delete: operations["delete_course"];
         options?: never;
         head?: never;
         /**
          * Changes the title and/or the term of a course. Assistants, teachers, owners and admins.
          * @description Only the fields present change; `term_id: null` clears the term. A template has no term.
-         *     Works in every course status (ADR-0033).
+         *     Works on a draft and a published course; an archived one takes no change (ADR-0048).
          */
         patch: operations["update_course"];
+        trace?: never;
+    };
+    "/api/v1/courses/{id}/archive": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Archives a course: it stays readable, for students too, and takes no more changes. Owner,
+         *     course teacher or admin. Idempotent.
+         */
+        post: operations["archive_course"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/courses/{id}/candidates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Active people who are not on the course and match `q` in their name, surname or email: at
+         *     most 20, ordered by surname. Whoever manages the roster (assistants included).
+         */
+        get: operations["get_candidates"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/v1/courses/{id}/content": {
@@ -601,6 +646,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/courses/{id}/info": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The header of a course: code, description, term, owner, counts and the points it adds up to.
+         *     Anyone who may view the course.
+         */
+        get: operations["get_course_info"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Changes the code and/or the description of a course. Assistants, teachers, owners and admins;
+         *     not in an archived course. Only the fields present change; an empty one clears the field.
+         */
+        patch: operations["update_course_info"];
+        trace?: never;
+    };
     "/api/v1/courses/{id}/members": {
         parameters: {
             query?: never;
@@ -737,6 +806,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/courses/{id}/people": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The people on a course with their names. Anyone who may view the course.
+         * @description Staff also get the emails, the former students (ADR-0037) and the linked groups; a student gets
+         *     names and groups of classmates and no address.
+         */
+        get: operations["get_people"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/courses/{id}/publish": {
         parameters: {
             query?: never;
@@ -751,6 +841,47 @@ export interface paths {
          * @description Idempotent: a published course is returned unchanged. Assistants cannot publish (ADR-0019).
          */
         post: operations["publish_course"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/courses/{id}/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Takes a course out of the archive. It is published again, also when it was a draft before.
+         *     Owner, course teacher or admin. Idempotent.
+         */
+        post: operations["restore_course"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/courses/{id}/template": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Makes a template from a course: a copy of its whole tree, as drafts, owned by the caller.
+         * @description Anyone who can edit the course's content and may create courses. Members, groups, deadlines,
+         *     submissions and grades are not copied. Works on an archived course.
+         */
+        post: operations["make_template"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1077,6 +1208,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/me/templates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The templates the caller owns or teaches, with how many sections, lectures and assignments
+         *     each holds.
+         */
+        get: operations["list_templates"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/modules/{id}": {
         parameters: {
             query?: never;
@@ -1217,6 +1368,23 @@ export interface paths {
         post?: never;
         /** Removes a user from a subgroup; they stay in the group. Admin only. */
         delete: operations["remove_subgroup_member"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/templates/{id}/courses": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Makes a draft course from a template: a copy of its whole tree, as drafts, owned by the caller. */
+        post: operations["create_from_template"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -1434,6 +1602,20 @@ export interface components {
             /** @enum {string} */
             type: "video";
         };
+        /** @description Someone who could be added to the course. */
+        Candidate: {
+            email: string;
+            name: string;
+            /** @description The institution role. */
+            role: components["schemas"]["Role"];
+            surname: string;
+            /** Format: uuid */
+            user_id: string;
+        };
+        /** @description At most 20, best order first. Not paged. */
+        Candidates: {
+            items: components["schemas"]["Candidate"][];
+        };
         ChangePasswordRequest: {
             current_password: string;
             new_password: string;
@@ -1499,8 +1681,58 @@ export interface components {
              */
             subgroup_id?: string | null;
         };
+        /** @description The header of every course screen. A read model: nothing here is stored as it is shown. */
+        CourseInfo: {
+            /** Format: int32 */
+            assistant_count: number;
+            /** @description The short code, e.g. `CS 305`; empty when none is set. */
+            code: string;
+            /**
+             * Format: date-time
+             * @description When a module or item last changed; `null` for a course with no content.
+             */
+            content_updated_at?: string | null;
+            /** Format: uuid */
+            course_id: string;
+            description: string;
+            /**
+             * Format: int32
+             * @description People who left the roster but have results in the course (ADR-0037).
+             */
+            former_count: number;
+            /**
+             * Format: int32
+             * @description How many assignments that sum counts.
+             */
+            graded_items: number;
+            /** @description A grade has a value in the course, so it cannot be deleted, only archived. */
+            has_grades: boolean;
+            /** @description The owner is the person to ask, so everyone who can view the course gets this address. */
+            owner_email: string;
+            owner_name: string;
+            owner_surname: string;
+            /**
+             * Format: int32
+             * @description Current students: on the roster and active.
+             */
+            student_count: number;
+            /** @description The name of the course's term; `null` without a term. */
+            term_name?: string | null;
+            /** @description The sum of `max_points` of the regular assignments the caller may see. */
+            total_points: string;
+            /**
+             * Format: date-time
+             * @description When the course row (title, term, code, description, status, owner) last changed.
+             */
+            updated_at: string;
+        };
         /** @enum {string} */
         CourseKind: "regular" | "template";
+        CoursePeople: {
+            /** @description Empty for a student. */
+            groups: components["schemas"]["LinkedGroup"][];
+            people: components["schemas"]["PersonRow"][];
+        };
         /**
          * @description A user's role inside one course. The owner is a `teacher` flagged `is_owner`.
          * @enum {string}
@@ -1515,6 +1747,16 @@ export interface components {
              */
             term_id?: string | null;
             title: string;
+        };
+        /** @description Makes a draft course from a template. */
+        CreateFromTemplateRequest: {
+            /**
+             * Format: uuid
+             * @description An existing term; an unknown one is a `422` on this field.
+             */
+            term_id?: string | null;
+            /** @description The new course's title; the template's own when absent. */
+            title?: string | null;
         };
         CreateItemRequest: {
             assignment?: components["schemas"]["NewAssignment"] | null;
@@ -1826,6 +2068,21 @@ export interface components {
             /** @enum {string} */
             type: "text";
         };
+        /** @description A group or subgroup linked to the course. Staff only. */
+        LinkedGroup: {
+            group_name: string;
+            /** Format: uuid */
+            link_id: string;
+            /** Format: date-time */
+            linked_at: string;
+            /**
+             * Format: int32
+             * @description Current students the link brings (active, not excluded).
+             */
+            student_count: number;
+            /** @description Set when the link is to one subgroup. */
+            subgroup_name?: string | null;
+        };
         /** @enum {string} */
         LoginClient: "web" | "app";
         LoginRequest: {
@@ -1835,6 +2092,11 @@ export interface components {
         };
         /** @description `client = web` returns the user (the token is in the cookie); `client = app` returns the token too. */
         LoginResponse: components["schemas"]["AppLoginResponse"] | components["schemas"]["User"];
+        /** @description Makes a template from a course. */
+        MakeTemplateRequest: {
+            /** @description The template's title; the course's own when absent. */
+            title?: string | null;
+        };
         /**
          * @description Where a roster entry comes from: a membership written on the course, or a linked group.
          * @enum {string}
@@ -2089,6 +2351,24 @@ export interface components {
             /** @description Pass as `cursor` to get the next page; `null` on the last page. */
             next_cursor?: string | null;
         };
+        Page_TemplateSummary: {
+            items: {
+                /** Format: int32 */
+                assignments: number;
+                course: components["schemas"]["Course"];
+                /** Format: int32 */
+                lectures: number;
+                /**
+                 * Format: int32
+                 * @description Modules and sub-modules.
+                 */
+                sections: number;
+                /** Format: date-time */
+                updated_at: string;
+            }[];
+            /** @description Pass as `cursor` to get the next page; `null` on the last page. */
+            next_cursor?: string | null;
+        };
         Page_Term: {
             items: {
                 /** Format: date */
@@ -2125,6 +2405,25 @@ export interface components {
         };
         PasswordResetRequest: {
             email: string;
+        };
+        /** @description One person on a course. */
+        PersonRow: {
+            /** @description Staff only: students never get another person's address. */
+            email?: string | null;
+            /** @description Off the roster but with results in the course. Staff only (ADR-0037). */
+            former: boolean;
+            /**
+             * @description For a student who comes from a linked group: the group's name, and the subgroup's after a
+             *     slash when the link is to a subgroup.
+             */
+            group?: string | null;
+            is_owner: boolean;
+            name: string;
+            role: components["schemas"]["CourseRole"];
+            source: components["schemas"]["MemberSource"];
+            surname: string;
+            /** Format: uuid */
+            user_id: string;
         };
         /** @description RFC 9457 Problem Details (`application/problem+json`). */
         ProblemDetails: {
@@ -2310,6 +2609,21 @@ export interface components {
             /** @description Rows of cells; a cell is a line of inline runs. All rows have the same number of cells. */
             rows: components["schemas"]["Inline"][][][];
         };
+        /** @description A template with what it holds. */
+        TemplateSummary: {
+            /** Format: int32 */
+            assignments: number;
+            course: components["schemas"]["Course"];
+            /** Format: int32 */
+            lectures: number;
+            /**
+             * Format: int32
+             * @description Modules and sub-modules.
+             */
+            sections: number;
+            /** Format: date-time */
+            updated_at: string;
+        };
         TemporaryPasswordResponse: {
             /** @description Shown once. The user must change it at next login. */
             temporary_password: string;
@@ -2331,6 +2645,13 @@ export interface components {
         TransferOwnershipRequest: {
             /** Format: uuid */
             user_id: string;
+        };
+        /** @description Only the fields present change. */
+        UpdateCourseInfoRequest: {
+            /** @description At most 32 characters after trimming; empty clears the code. */
+            code?: string | null;
+            /** @description At most 300 characters after trimming; empty clears the description. */
+            description?: string | null;
         };
         /** @description Only the fields present change. */
         UpdateCourseRequest: {
@@ -3741,6 +4062,63 @@ export interface operations {
             };
         };
     };
+    delete_course: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Course id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not logged in */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Only the owner or an admin may delete a course */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description No such course, or not visible to the caller */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The course has grades or submitted work */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
     update_course: {
         parameters: {
             query?: never;
@@ -3793,7 +4171,128 @@ export interface operations {
                     "application/problem+json": components["schemas"]["ProblemDetails"];
                 };
             };
+            /** @description The course is archived */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
             /** @description Invalid title, an unknown term, or a term on a template */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    archive_course: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Course id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The archived course */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Course"];
+                };
+            };
+            /** @description Not logged in */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The caller may not archive this course */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description No such course, or not visible to the caller */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    get_candidates: {
+        parameters: {
+            query: {
+                /** @description Part of a name, surname or email: at least 2 characters. */
+                q: string;
+            };
+            header?: never;
+            path: {
+                /** @description Course id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Up to 20 people */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Candidates"];
+                };
+            };
+            /** @description Not logged in */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The caller may not manage this roster */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description No such course, or not visible to the caller */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description A search text shorter than two characters */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -4269,6 +4768,119 @@ export interface operations {
             };
         };
     };
+    get_course_info: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Course id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The course header */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CourseInfo"];
+                };
+            };
+            /** @description Not logged in */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description No such course, or not visible to the caller */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    update_course_info: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Course id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateCourseInfoRequest"];
+            };
+        };
+        responses: {
+            /** @description The course header after the change */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CourseInfo"];
+                };
+            };
+            /** @description Not logged in */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The caller may not edit this course */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description No such course, or not visible to the caller */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The course is archived */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description A code or a description that is too long */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
     list_members: {
         parameters: {
             query?: {
@@ -4711,6 +5323,47 @@ export interface operations {
             };
         };
     };
+    get_people: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Course id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The people */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CoursePeople"];
+                };
+            };
+            /** @description Not logged in */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description No such course, or not visible to the caller */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
     publish_course: {
         parameters: {
             query?: never;
@@ -4761,6 +5414,119 @@ export interface operations {
             };
             /** @description The course is archived */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    restore_course: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Course id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The restored course */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Course"];
+                };
+            };
+            /** @description Not logged in */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The caller may not restore this course */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description No such course, or not visible to the caller */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    make_template: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Course id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MakeTemplateRequest"];
+            };
+        };
+        responses: {
+            /** @description The new template */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Course"];
+                };
+            };
+            /** @description Not logged in */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The caller may not do this */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description No such course, or not visible to the caller */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Invalid title */
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -5987,6 +6753,48 @@ export interface operations {
             };
         };
     };
+    list_templates: {
+        parameters: {
+            query?: {
+                cursor?: string;
+                /** @description Page size, 1 to 100 (default 50). */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A page of templates */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Page_TemplateSummary"];
+                };
+            };
+            /** @description Not logged in */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Invalid cursor */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
     delete_module: {
         parameters: {
             query?: never;
@@ -6608,6 +7416,69 @@ export interface operations {
             };
             /** @description No such subgroup or member */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    create_from_template: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Template id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateFromTemplateRequest"];
+            };
+        };
+        responses: {
+            /** @description The new course */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Course"];
+                };
+            };
+            /** @description Not logged in */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The caller may not do this */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description No such template, or not visible to the caller */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Invalid title or an unknown term */
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };

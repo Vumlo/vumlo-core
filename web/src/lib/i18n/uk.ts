@@ -472,7 +472,7 @@ export const uk: Record<Keys, string> & Extra = {
   "people.noStudents": "Студентів не знайдено.",
   "people.former": "Колишні студенти",
   "people.formerLead": "Вони зберігають опубліковані оцінки, їх більше не можна оцінювати.",
-  "people.leftOn": "Вибули {day}",
+  "people.left": "Вибули з курсу",
 
   // course settings
   "cs.general": "Загальне",

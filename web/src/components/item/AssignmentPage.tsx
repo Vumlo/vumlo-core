@@ -10,7 +10,7 @@ import { useCourseInfo } from "@/lib/api/hooks/courses";
 import { useMySubmission, useSaveDraft, useSubmitDraft } from "@/lib/api/hooks/assignments";
 import { useMyGrades } from "@/lib/api/hooks/work";
 import { deadline } from "@/lib/assignment";
-import { typeLabel } from "@/lib/course";
+import { ownerName, typeLabel } from "@/lib/course";
 import { dateTime, dayLong, initials, sinceLabel, timeOf } from "@/lib/format";
 import { bodyOf, type Document, type Feature, type Item } from "@/lib/api/types";
 import { attemptRule, lateRule } from "@/components/course/StudentContent";
@@ -125,7 +125,7 @@ export function AssignmentPage({ item, courseId, staff }: { item: Item; courseId
 
           {view === "closed" && (
             <div role="status" className={s.note}>
-              <strong>{t("asg.closedTitle")}</strong> {t("asg.closedLead", { owner: info.data?.owner_name ?? t("item.yourTeacher") })}
+              <strong>{t("asg.closedTitle")}</strong> {t("asg.closedLead", { owner: ownerName(info.data) ?? t("item.yourTeacher") })}
             </div>
           )}
 
@@ -201,9 +201,9 @@ export function AssignmentPage({ item, courseId, staff }: { item: Item; courseId
                   {grade.feedback && (
                     <div className={s.comment}>
                       <div className="row" style={{ gap: 10, marginBottom: 10 }}>
-                        <span aria-hidden="true" className={s.avatar}>{(() => { const [n = "", ...r] = (info.data?.owner_name ?? "").replace(/^Dr\. /, "").split(" "); return initials(n, r.join(" ")); })()}</span>
+                        <span aria-hidden="true" className={s.avatar}>{initials(info.data?.owner_name ?? "", info.data?.owner_surname ?? "")}</span>
                         <div>
-                          <p style={{ fontSize: 14, fontWeight: 600 }}>{info.data?.owner_name}</p>
+                          <p style={{ fontSize: 14, fontWeight: 600 }}>{ownerName(info.data)}</p>
                           <p className="muted" style={{ fontSize: 12 }}>{latest ? t("asg.commentOn", { n: latest.attempt }) : t("asg.comment")}</p>
                         </div>
                       </div>

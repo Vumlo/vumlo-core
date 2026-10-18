@@ -1801,12 +1801,85 @@
           }
         ]
       },
+      "delete": {
+        "tags": [
+          "courses"
+        ],
+        "summary": "Deletes a course with its content, members and links. The owner or an admin, in every status.",
+        "description": "A course in which any grade has a value or any work was submitted cannot be deleted: archive\nit instead.",
+        "operationId": "delete_course",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Course id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Deleted"
+          },
+          "401": {
+            "description": "Not logged in",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Only the owner or an admin may delete a course",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such course, or not visible to the caller",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The course has grades or submitted work",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          },
+          {
+            "bearer": []
+          }
+        ]
+      },
       "patch": {
         "tags": [
           "courses"
         ],
         "summary": "Changes the title and/or the term of a course. Assistants, teachers, owners and admins.",
-        "description": "Only the fields present change; `term_id: null` clears the term. A template has no term.\nWorks in every course status (ADR-0033).",
+        "description": "Only the fields present change; `term_id: null` clears the term. A template has no term.\nWorks on a draft and a published course; an archived one takes no change (ADR-0048).",
         "operationId": "update_course",
         "parameters": [
           {
@@ -1871,8 +1944,179 @@
               }
             }
           },
+          "409": {
+            "description": "The course is archived",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
           "422": {
             "description": "Invalid title, an unknown term, or a term on a template",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          },
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/courses/{id}/archive": {
+      "post": {
+        "tags": [
+          "courses"
+        ],
+        "summary": "Archives a course: it stays readable, for students too, and takes no more changes. Owner,\ncourse teacher or admin. Idempotent.",
+        "operationId": "archive_course",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Course id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The archived course",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Course"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not logged in",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller may not archive this course",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such course, or not visible to the caller",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          },
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/courses/{id}/candidates": {
+      "get": {
+        "tags": [
+          "courses"
+        ],
+        "summary": "Active people who are not on the course and match `q` in their name, surname or email: at\nmost 20, ordered by surname. Whoever manages the roster (assistants included).",
+        "operationId": "get_candidates",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Course id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "description": "Part of a name, surname or email: at least 2 characters.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Up to 20 people",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Candidates"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not logged in",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller may not manage this roster",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such course, or not visible to the caller",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "A search text shorter than two characters",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -2603,6 +2847,166 @@
         ]
       }
     },
+    "/api/v1/courses/{id}/info": {
+      "get": {
+        "tags": [
+          "courses"
+        ],
+        "summary": "The header of a course: code, description, term, owner, counts and the points it adds up to.\nAnyone who may view the course.",
+        "operationId": "get_course_info",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Course id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The course header",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CourseInfo"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not logged in",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such course, or not visible to the caller",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          },
+          {
+            "bearer": []
+          }
+        ]
+      },
+      "patch": {
+        "tags": [
+          "courses"
+        ],
+        "summary": "Changes the code and/or the description of a course. Assistants, teachers, owners and admins;\nnot in an archived course. Only the fields present change; an empty one clears the field.",
+        "operationId": "update_course_info",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Course id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateCourseInfoRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "The course header after the change",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CourseInfo"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not logged in",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller may not edit this course",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such course, or not visible to the caller",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The course is archived",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "A code or a description that is too long",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          },
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/courses/{id}/members": {
       "get": {
         "tags": [
@@ -3250,6 +3654,68 @@
         ]
       }
     },
+    "/api/v1/courses/{id}/people": {
+      "get": {
+        "tags": [
+          "courses"
+        ],
+        "summary": "The people on a course with their names. Anyone who may view the course.",
+        "description": "Staff also get the emails, the former students (ADR-0037) and the linked groups; a student gets\nnames and groups of classmates and no address.",
+        "operationId": "get_people",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Course id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The people",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CoursePeople"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not logged in",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such course, or not visible to the caller",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          },
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/courses/{id}/publish": {
       "post": {
         "tags": [
@@ -3313,6 +3779,169 @@
           },
           "409": {
             "description": "The course is archived",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          },
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/courses/{id}/restore": {
+      "post": {
+        "tags": [
+          "courses"
+        ],
+        "summary": "Takes a course out of the archive. It is published again, also when it was a draft before.\nOwner, course teacher or admin. Idempotent.",
+        "operationId": "restore_course",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Course id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The restored course",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Course"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not logged in",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller may not restore this course",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such course, or not visible to the caller",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          },
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/courses/{id}/template": {
+      "post": {
+        "tags": [
+          "courses"
+        ],
+        "summary": "Makes a template from a course: a copy of its whole tree, as drafts, owned by the caller.",
+        "description": "Anyone who can edit the course's content and may create courses. Members, groups, deadlines,\nsubmissions and grades are not copied. Works on an archived course.",
+        "operationId": "make_template",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Course id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MakeTemplateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "The new template",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Course"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not logged in",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller may not do this",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such course, or not visible to the caller",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid title",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -5055,6 +5684,76 @@
         ]
       }
     },
+    "/api/v1/me/templates": {
+      "get": {
+        "tags": [
+          "courses"
+        ],
+        "summary": "The templates the caller owns or teaches, with how many sections, lectures and assignments\neach holds.",
+        "operationId": "list_templates",
+        "parameters": [
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Page size, 1 to 100 (default 50).",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A page of templates",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_TemplateSummary"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not logged in",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid cursor",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          },
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/modules/{id}": {
       "delete": {
         "tags": [
@@ -5924,6 +6623,97 @@
           },
           "404": {
             "description": "No such subgroup or member",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          },
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/templates/{id}/courses": {
+      "post": {
+        "tags": [
+          "courses"
+        ],
+        "summary": "Makes a draft course from a template: a copy of its whole tree, as drafts, owned by the caller.",
+        "operationId": "create_from_template",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Template id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateFromTemplateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "The new course",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Course"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not logged in",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller may not do this",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such template, or not visible to the caller",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid title or an unknown term",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -6910,6 +7700,51 @@
         ],
         "description": "One block. `id` is 1 to 64 characters from `[A-Za-z0-9_-]`, unique in the document and\ngenerated by the client. `props`, `content` and `children` are left out when empty."
       },
+      "Candidate": {
+        "type": "object",
+        "description": "Someone who could be added to the course.",
+        "required": [
+          "user_id",
+          "name",
+          "surname",
+          "email",
+          "role"
+        ],
+        "properties": {
+          "email": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "role": {
+            "$ref": "#/components/schemas/Role",
+            "description": "The institution role."
+          },
+          "surname": {
+            "type": "string"
+          },
+          "user_id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      },
+      "Candidates": {
+        "type": "object",
+        "description": "At most 20, best order first. Not paged.",
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Candidate"
+            }
+          }
+        }
+      },
       "ChangePasswordRequest": {
         "type": "object",
         "required": [
@@ -7130,12 +7965,127 @@
           }
         }
       },
+      "CourseInfo": {
+        "type": "object",
+        "description": "The header of every course screen. A read model: nothing here is stored as it is shown.",
+        "required": [
+          "course_id",
+          "code",
+          "description",
+          "owner_name",
+          "owner_surname",
+          "owner_email",
+          "student_count",
+          "former_count",
+          "assistant_count",
+          "updated_at",
+          "total_points",
+          "graded_items",
+          "has_grades"
+        ],
+        "properties": {
+          "assistant_count": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "code": {
+            "type": "string",
+            "description": "The short code, e.g. `CS 305`; empty when none is set."
+          },
+          "content_updated_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "When a module or item last changed; `null` for a course with no content."
+          },
+          "course_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "description": {
+            "type": "string"
+          },
+          "former_count": {
+            "type": "integer",
+            "format": "int32",
+            "description": "People who left the roster but have results in the course (ADR-0037).",
+            "minimum": 0
+          },
+          "graded_items": {
+            "type": "integer",
+            "format": "int32",
+            "description": "How many assignments that sum counts.",
+            "minimum": 0
+          },
+          "has_grades": {
+            "type": "boolean",
+            "description": "A grade has a value in the course, so it cannot be deleted, only archived."
+          },
+          "owner_email": {
+            "type": "string",
+            "description": "The owner is the person to ask, so everyone who can view the course gets this address."
+          },
+          "owner_name": {
+            "type": "string"
+          },
+          "owner_surname": {
+            "type": "string"
+          },
+          "student_count": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Current students: on the roster and active.",
+            "minimum": 0
+          },
+          "term_name": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The name of the course's term; `null` without a term."
+          },
+          "total_points": {
+            "type": "string",
+            "description": "The sum of `max_points` of the regular assignments the caller may see."
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When the course row (title, term, code, description, status, owner) last changed."
+          }
+        }
+      },
       "CourseKind": {
         "type": "string",
         "enum": [
           "regular",
           "template"
         ]
+      },
+      "CoursePeople": {
+        "type": "object",
+        "required": [
+          "people",
+          "groups"
+        ],
+        "properties": {
+          "groups": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LinkedGroup"
+            },
+            "description": "Empty for a student."
+          },
+          "people": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PersonRow"
+            }
+          }
+        }
       },
       "CourseRole": {
         "type": "string",
@@ -7170,6 +8120,27 @@
           },
           "title": {
             "type": "string"
+          }
+        }
+      },
+      "CreateFromTemplateRequest": {
+        "type": "object",
+        "description": "Makes a draft course from a template.",
+        "properties": {
+          "term_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid",
+            "description": "An existing term; an unknown one is a `422` on this field."
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The new course's title; the template's own when absent."
           }
         }
       },
@@ -8097,6 +9068,42 @@
         ],
         "description": "What a link may contain: text only."
       },
+      "LinkedGroup": {
+        "type": "object",
+        "description": "A group or subgroup linked to the course. Staff only.",
+        "required": [
+          "link_id",
+          "group_name",
+          "student_count",
+          "linked_at"
+        ],
+        "properties": {
+          "group_name": {
+            "type": "string"
+          },
+          "link_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "linked_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "student_count": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Current students the link brings (active, not excluded).",
+            "minimum": 0
+          },
+          "subgroup_name": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Set when the link is to one subgroup."
+          }
+        }
+      },
       "LoginClient": {
         "type": "string",
         "enum": [
@@ -8133,6 +9140,19 @@
           }
         ],
         "description": "`client = web` returns the user (the token is in the cookie); `client = app` returns the token too."
+      },
+      "MakeTemplateRequest": {
+        "type": "object",
+        "description": "Makes a template from a course.",
+        "properties": {
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The template's title; the course's own when absent."
+          }
+        }
       },
       "MemberSource": {
         "type": "string",
@@ -8830,6 +9850,60 @@
           }
         }
       },
+      "Page_TemplateSummary": {
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "description": "A template with what it holds.",
+              "required": [
+                "course",
+                "sections",
+                "lectures",
+                "assignments",
+                "updated_at"
+              ],
+              "properties": {
+                "assignments": {
+                  "type": "integer",
+                  "format": "int32",
+                  "minimum": 0
+                },
+                "course": {
+                  "$ref": "#/components/schemas/Course"
+                },
+                "lectures": {
+                  "type": "integer",
+                  "format": "int32",
+                  "minimum": 0
+                },
+                "sections": {
+                  "type": "integer",
+                  "format": "int32",
+                  "description": "Modules and sub-modules.",
+                  "minimum": 0
+                },
+                "updated_at": {
+                  "type": "string",
+                  "format": "date-time"
+                }
+              }
+            }
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Pass as `cursor` to get the next page; `null` on the last page."
+          }
+        }
+      },
       "Page_Term": {
         "type": "object",
         "required": [
@@ -8957,6 +10031,58 @@
         "properties": {
           "email": {
             "type": "string"
+          }
+        }
+      },
+      "PersonRow": {
+        "type": "object",
+        "description": "One person on a course.",
+        "required": [
+          "user_id",
+          "name",
+          "surname",
+          "role",
+          "is_owner",
+          "source",
+          "former"
+        ],
+        "properties": {
+          "email": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Staff only: students never get another person's address."
+          },
+          "former": {
+            "type": "boolean",
+            "description": "Off the roster but with results in the course. Staff only (ADR-0037)."
+          },
+          "group": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "For a student who comes from a linked group: the group's name, and the subgroup's after a\nslash when the link is to a subgroup."
+          },
+          "is_owner": {
+            "type": "boolean"
+          },
+          "name": {
+            "type": "string"
+          },
+          "role": {
+            "$ref": "#/components/schemas/CourseRole"
+          },
+          "source": {
+            "$ref": "#/components/schemas/MemberSource"
+          },
+          "surname": {
+            "type": "string"
+          },
+          "user_id": {
+            "type": "string",
+            "format": "uuid"
           }
         }
       },
@@ -9479,6 +10605,42 @@
           }
         }
       },
+      "TemplateSummary": {
+        "type": "object",
+        "description": "A template with what it holds.",
+        "required": [
+          "course",
+          "sections",
+          "lectures",
+          "assignments",
+          "updated_at"
+        ],
+        "properties": {
+          "assignments": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "course": {
+            "$ref": "#/components/schemas/Course"
+          },
+          "lectures": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "sections": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Modules and sub-modules.",
+            "minimum": 0
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
       "TemporaryPasswordResponse": {
         "type": "object",
         "required": [
@@ -9541,6 +10703,26 @@
           "user_id": {
             "type": "string",
             "format": "uuid"
+          }
+        }
+      },
+      "UpdateCourseInfoRequest": {
+        "type": "object",
+        "description": "Only the fields present change.",
+        "properties": {
+          "code": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "At most 32 characters after trimming; empty clears the code."
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "At most 300 characters after trimming; empty clears the description."
           }
         }
       },

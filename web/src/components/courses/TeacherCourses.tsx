@@ -9,7 +9,7 @@ import { useCourseCards, useCreateFromTemplate, useTemplates } from "@/lib/api/h
 import { dayLong, dueLabel, plural } from "@/lib/format";
 import { useT } from "@/lib/i18n";
 import type { MessageKey } from "@/lib/i18n/core";
-import type { Template } from "@/lib/api/gaps";
+import type { TemplateSummary } from "@/lib/api/types";
 import s from "@/components/Courses.module.css";
 
 const ROLE: Record<string, MessageKey> = { owner: "role.owner", teacher: "role.teacher", assistant: "role.assistant", student: "role.student" };
@@ -21,7 +21,7 @@ export function TeacherCourses() {
   const templates = useTemplates();
   const fromTemplate = useCreateFromTemplate();
   const [tab, setTab] = useState<"teaching" | "archived">("teaching");
-  const [dialog, setDialog] = useState<Template | null>(null);
+  const [dialog, setDialog] = useState<TemplateSummary | null>(null);
   const [title, setTitle] = useState("");
 
   const { teaching, archived } = useMemo(() => {
@@ -32,7 +32,7 @@ export function TeacherCourses() {
   const list = tab === "teaching" ? teaching : archived;
   const byTerm = [...new Set(list.map((c) => c.term_name ?? t("courses.noTerm")))];
 
-  function open(template: Template) {
+  function open(template: TemplateSummary) {
     setTitle(template.course.title);
     fromTemplate.reset();
     setDialog(template);

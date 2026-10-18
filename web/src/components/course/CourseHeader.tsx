@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
 import { useCourse, useCourseInfo } from "@/lib/api/hooks/courses";
+import { ownerName } from "@/lib/course";
 import { plural } from "@/lib/format";
 import { useT } from "@/lib/i18n";
 import { useCourseAccess } from "./useCourseAccess";
@@ -36,7 +37,7 @@ export function CourseHeader({ courseId, subtitle }: { courseId: string; subtitl
     ? ""
     : staff
       ? `${i.term_name ?? t("courses.noTerm")}, ${plural(i.student_count, "student")}${i.former_count ? ` ${t("course.and")} ${plural(i.former_count, "former student")}` : ""}`
-      : `${i.term_name ?? ""}${i.term_name ? ", " : ""}${t("course.taughtBy", { name: i.owner_name })}`;
+      : `${i.term_name ?? ""}${i.term_name ? ", " : ""}${t("course.taughtBy", { name: ownerName(i) ?? "" })}`;
 
   return (
     <>
