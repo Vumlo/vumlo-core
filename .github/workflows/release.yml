@@ -1,0 +1,115 @@
+name: Release
+
+# A tag vX.Y.Z publishes the release X.Y.Z: the CI checks, the two images and the GitHub Release.
+# See RELEASING.md.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+      - id: v
+        name: The tag is the workspace version
+        run: |
+          version=$(sed -n '/^\[workspace.package\]/,/^\[/{s/^version *= *"\(.*\)"/\1/p}' backend/Cargo.toml)
+          web=$(sed -n 's/^  "version": "\(.*\)",/\1/p' web/package.json)
+          compose=$(sed -n 's/.*VUMLO_VERSION:-\([^}]*\)}.*/\1/p' deploy/compose.yaml | head -n 1)
+          if [ "${GITHUB_REF_NAME}" != "v${version}" ]; then
+            echo "::error::the tag is ${GITHUB_REF_NAME}, but the workspace version is ${version}"
+            exit 1
+          fi
+          if [ "${web}" != "${version}" ] || [ "${compose}" != "${version}" ]; then
+            echo "::error::web/package.json (${web}) and deploy/compose.yaml (${compose}) must say ${version}"
+            exit 1
+          fi
+          if ! grep -q "^## \[${version}\] - " CHANGELOG.md; then
+            echo "::error::CHANGELOG.md has no entry for ${version}"
+            exit 1
+          fi
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+
+  gate:
+    needs: version
+    uses: ./.github/workflows/ci.yml
+
+  images:
+    needs: [version, gate]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: backend
+        uses: docker/metadata-action@v6
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/vumlo-backend
+          tags: type=raw,value=${{ env.VERSION }}
+      - uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: deploy/Dockerfile.backend
+          push: true
+          tags: ${{ steps.backend.outputs.tags }}
+          labels: ${{ steps.backend.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      # The web image needs .vumlo/generated. A release has no institution, so it is generated with
+      # the example configuration by the CLI of the image that was just pushed: it is a trial
+      # image (public_origin http://localhost:3000), and it proves that deploy/Dockerfile.web builds.
+      - name: Generate the example branding
+        run: |
+          docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/srv/vumlo" -w /srv/vumlo \
+            --entrypoint vumlo-cli "ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/vumlo-backend:${VERSION}" init
+          docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/srv/vumlo" -w /srv/vumlo \
+            --entrypoint vumlo-cli "ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/vumlo-backend:${VERSION}" brand apply
+      - id: web
+        uses: docker/metadata-action@v6
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/vumlo-web
+          tags: type=raw,value=${{ env.VERSION }}
+      - uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: deploy/Dockerfile.web
+          push: true
+          tags: ${{ steps.web.outputs.tags }}
+          labels: ${{ steps.web.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  release:
+    needs: [version, images]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: The changelog entry is the release notes
+        run: |
+          awk -v v="${VERSION}" '/^## \[/ { on = index($0, "[" v "]") == 4; next } /^\[[^]]+\]: / { on = 0 } on' CHANGELOG.md > notes.md
+          if ! grep -q '[^[:space:]]' notes.md; then
+            echo "::error::the CHANGELOG.md entry for ${VERSION} is empty"
+            exit 1
+          fi
+          cat notes.md
+      - run: gh release create "${GITHUB_REF_NAME}" --verify-tag --title "Vumlo ${VERSION}" --notes-file notes.md

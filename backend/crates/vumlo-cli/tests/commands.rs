@@ -224,6 +224,13 @@ fn the_web_app_has_the_version_of_the_release() {
     assert_eq!(package["version"], env!("CARGO_PKG_VERSION"));
 }
 
+#[test]
+fn the_compose_example_names_its_images_after_the_release() {
+    let compose = include_str!("../../../../deploy/compose.yaml");
+    let tag = format!("VUMLO_VERSION:-{}}}", env!("CARGO_PKG_VERSION"));
+    assert_eq!(compose.matches(&tag).count(), 2, "backend and web: {tag}");
+}
+
 // --- db ---------------------------------------------------------------------------------------
 
 #[tokio::test]

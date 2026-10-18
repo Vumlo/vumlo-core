@@ -97,7 +97,8 @@ docker compose up -d
 running Vumlo. If `docker compose build` is killed or the server freezes, either add swap for the build
 (`fallocate -l 4G /swapfile && mkswap /swapfile && swapon /swapfile`), or build on a bigger machine of
 the same CPU type with the same archive and `docker compose build`, then copy the images over:
-`docker save vumlo-backend vumlo-web | gzip | ssh server docker load`. Run `./vumlo brand apply` on the
+`docker save vumlo-backend:0.1.0 vumlo-web:0.1.0 | gzip | ssh server docker load` (the images are named
+after the release). Run `./vumlo brand apply` on the
 build machine too.
 
 Open `public_origin` and sign in with the administrator. The web app is on `127.0.0.1:3000` and the API
