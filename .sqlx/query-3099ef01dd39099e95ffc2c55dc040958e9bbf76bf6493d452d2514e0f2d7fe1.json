@@ -1,0 +1,125 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT s.student_id, u.name AS student_name, u.surname AS student_surname,\n                  s.assignment_id, i.title AS assignment_title, i.course_id,\n                  s.submitted_at AS \"submitted_at!\", s.attempt AS \"attempt!\", a.max_attempts\n           FROM assessment.submissions s\n           JOIN content.items i ON i.id = s.assignment_id\n           JOIN content.assignments a ON a.item_id = i.id\n           JOIN teaching.effective_members m\n             ON m.course_id = i.course_id AND m.user_id = s.student_id AND m.role = 'student'\n           JOIN identity.users u ON u.id = s.student_id\n           LEFT JOIN gradebook.grades g\n             ON g.assignment_id = s.assignment_id AND g.student_id = s.student_id\n           WHERE i.course_id = ANY($1) AND s.status = 'submitted' AND g.draft_score IS NULL\n             AND s.attempt = (SELECT max(x.attempt) FROM assessment.submissions x\n                              WHERE x.assignment_id = s.assignment_id\n                                AND x.student_id = s.student_id AND x.status = 'submitted')\n           ORDER BY s.submitted_at, s.id\n           LIMIT $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "student_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "assessment.submissions",
+            "name": "student_id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "student_name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "identity.users",
+            "name": "name"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "student_surname",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "identity.users",
+            "name": "surname"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "assignment_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "assessment.submissions",
+            "name": "assignment_id"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "assignment_title",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "content.items",
+            "name": "title"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "course_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "content.items",
+            "name": "course_id"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "submitted_at!",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "assessment.submissions",
+            "name": "submitted_at"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "attempt!",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "assessment.submissions",
+            "name": "attempt"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "max_attempts",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "content.assignments",
+            "name": "max_attempts"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "UuidArray",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "3099ef01dd39099e95ffc2c55dc040958e9bbf76bf6493d452d2514e0f2d7fe1"
+}

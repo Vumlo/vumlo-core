@@ -1,6 +1,7 @@
 //! HTTP edge of `teaching`: extractors, DTO mapping, OpenAPI annotations. Writes open the
 //! transaction, call exactly one service function and commit; reads use a pooled connection.
 
+mod cards;
 mod info;
 mod roster;
 
@@ -38,6 +39,7 @@ pub fn router() -> OpenApiRouter<AppState> {
         .routes(routes!(info::get_candidates))
         .routes(routes!(transfer_ownership))
         .routes(routes!(list_my_courses))
+        .routes(routes!(cards::get_course_cards))
         .routes(routes!(list_members))
         .routes(routes!(put_member, remove_member))
         .routes(routes!(roster::list_links, roster::link_group))

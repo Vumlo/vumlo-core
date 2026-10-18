@@ -14,17 +14,17 @@ pub use document::{
 };
 pub use model::{
     Assignment, AssignmentSummary, AssignmentType, BuiltinType, ContentModule, ContentSubModule,
-    ContentTitle, Item, ItemKind, ItemPatch, ItemStatus, ItemSummary, MaxPoints, ModelError,
-    Module, ModulePatch, ModuleStatus, OnDeadline, OpenedAssignment, SettingProblem, SettingsPatch,
-    SubmissionSettings, editor_features,
+    ContentTitle, Hit, HitKind, Item, ItemKind, ItemPatch, ItemStatus, ItemSummary, MaxPoints,
+    ModelError, Module, ModulePatch, ModuleStatus, MyWork, OnDeadline, OpenedAssignment,
+    SettingProblem, SettingsPatch, SubmissionSettings, editor_features,
 };
 pub use routes::router;
 pub use service::{
     ContentError, CourseSummary, ItemRules, OpenError, copy_course_content, course_summary,
     create_item, create_module, delete_item, delete_module, editor_profiles, get_item,
-    get_revision, get_tree, item_meta, lock_assignment_shared, lock_course_assignments,
+    get_revision, get_tree, item_meta, lock_assignment_shared, lock_course_assignments, my_work,
     open_assignment, publish_item, publish_module, publish_revision, reorder_items,
-    reorder_modules, update_item, update_module,
+    reorder_modules, search, update_item, update_module,
 };
 pub use types::form::Holders;
 pub use types::quiz::ResultQuestion;

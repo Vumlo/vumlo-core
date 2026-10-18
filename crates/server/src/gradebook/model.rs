@@ -19,6 +19,61 @@ pub struct HistoryEntry {
     pub at: DateTime<Utc>,
 }
 
+/// A student's latest attempt that has no draft score (ADR-0052).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ToGradeRow {
+    pub student_id: Uuid,
+    pub student_name: String,
+    pub student_surname: String,
+    pub assignment_id: Uuid,
+    pub assignment_title: String,
+    pub course_id: Uuid,
+    pub submitted_at: DateTime<Utc>,
+    pub attempt: i32,
+    pub max_attempts: Option<i32>,
+}
+
+/// An assignment with draft grades that are not published.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UnpublishedRow {
+    pub assignment_id: Uuid,
+    pub assignment_title: String,
+    pub course_id: Uuid,
+    pub draft_count: i64,
+    pub auto_scored: bool,
+}
+
+/// An assignment due from now on.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DeadlineRow {
+    pub assignment_id: Uuid,
+    pub title: String,
+    pub course_id: Uuid,
+    pub due_at: DateTime<Utc>,
+    pub submitted: i64,
+    pub total: i64,
+    pub not_open: bool,
+}
+
+/// An item whose content students cannot read yet; `edits` is false for a draft.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UnpublishedContentRow {
+    pub item_id: Uuid,
+    pub title: String,
+    pub course_id: Uuid,
+    pub edits: bool,
+}
+
+/// What a teacher has to do across their courses (ADR-0052).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TeachingOverview {
+    pub courses: Vec<crate::teaching::CardCourse>,
+    pub to_grade: Vec<ToGradeRow>,
+    pub unpublished: Vec<UnpublishedRow>,
+    pub deadlines: Vec<DeadlineRow>,
+    pub unpublished_content: Vec<UnpublishedContentRow>,
+}
+
 /// The published slot of one cell: what the student may read (ADR-0028).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PublishedGrade {

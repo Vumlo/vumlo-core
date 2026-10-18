@@ -2,10 +2,11 @@
 //! transaction, call exactly one service function and commit; reads use a pooled connection.
 
 use api_types::{
-    ContentModule, ContentStatus, ContentSubModule, ContentTree, CreateItemRequest,
-    CreateModuleRequest, EditorProfiles, FieldError, Item, ItemMeta, ItemMetaMap, ItemRevision,
-    ItemSummary, Module, NewAssignment, ProblemDetails, PublishModuleRequest, ReorderItemsRequest,
-    ReorderModulesRequest, UpdateItemRequest, UpdateModuleRequest,
+    ContentModule, ContentStatus, ContentSubModule, ContentTree, CourseRef, CreateItemRequest,
+    CreateModuleRequest, EditorProfiles, FieldError, HitKind, HitStatus, Item, ItemMeta,
+    ItemMetaMap, ItemRevision, ItemSummary, Module, MyWork, NewAssignment, ProblemDetails,
+    PublishModuleRequest, ReorderItemsRequest, ReorderModulesRequest, SearchHit as ApiHit,
+    SearchQuery, SearchResults, UpdateItemRequest, UpdateModuleRequest, WorkCourse, WorkItem,
 };
 use axum::Json;
 use axum::extract::{Path, State};
@@ -21,7 +22,7 @@ use super::model::{
 use super::service::{self, ContentError, ItemRules};
 use crate::actor::Actor;
 use crate::app::AppState;
-use crate::error::{ApiError, ValidJson};
+use crate::error::{ApiError, ValidJson, ValidQuery};
 
 pub fn router() -> OpenApiRouter<AppState> {
     OpenApiRouter::new()
@@ -36,6 +37,8 @@ pub fn router() -> OpenApiRouter<AppState> {
         .routes(routes!(get_revision))
         .routes(routes!(publish_revision))
         .routes(routes!(get_item_meta))
+        .routes(routes!(get_my_work))
+        .routes(routes!(search))
         .routes(routes!(get_editor_profiles))
 }
 
@@ -84,6 +87,7 @@ impl From<ContentError> for ApiError {
             ContentError::HasSubmissions => {
                 Self::Conflict("it has submitted work: it cannot be deleted")
             }
+            ContentError::BadQuery => Self::invalid_field("q", "must be 2 to 100 characters"),
             ContentError::StructureFrozen => {
                 Self::Conflict("work was submitted: the questions or fields can no longer change")
             }
@@ -927,6 +931,111 @@ async fn get_item_meta(
             .into_iter()
             .map(|(id, facts)| (id.to_string(), api_meta(facts)))
             .collect(),
+    }))
+}
+
+/// Every assignment of the courses the caller studies in, with the caller's own standing on it
+/// (ADR-0052). Only what students can open, with published titles, scores and times.
+#[utoipa::path(
+    get,
+    path = "/me/work",
+    tag = "content",
+    security(("cookie" = []), ("bearer" = [])),
+    responses(
+        (status = 200, description = "The caller's courses and work", body = MyWork),
+        (status = 401, description = "Not logged in", body = ProblemDetails,
+            content_type = "application/problem+json"),
+    )
+)]
+async fn get_my_work(
+    State(state): State<AppState>,
+    actor: Actor,
+) -> Result<Json<MyWork>, ApiError> {
+    let mut conn = state.db.acquire().await.map_err(ContentError::from)?;
+    let work = service::my_work(&mut conn, &actor, chrono::Utc::now()).await?;
+    Ok(Json(MyWork {
+        courses: work
+            .courses
+            .into_iter()
+            .map(|card| WorkCourse {
+                id: card.course.id,
+                code: card.code,
+                title: card.course.title,
+                term_name: card.term_name,
+                owner_name: card.owner_name,
+                owner_surname: card.owner_surname,
+            })
+            .collect(),
+        items: work
+            .items
+            .into_iter()
+            .map(|entry| WorkItem {
+                assignment_id: entry.assignment_id,
+                course_id: entry.course_id,
+                title: entry.title,
+                assignment_type: entry.assignment_type.as_str().to_owned(),
+                due_at: entry.due_at,
+                class_on: entry.class_on.map(|day| day.to_string()),
+                max_points: entry.max_points.to_string(),
+                status: api_work_status(entry.status),
+                score: entry.score.map(|score| format!("{score:.2}")),
+                published_at: entry.published_at,
+                draft_saved_at: entry.draft_saved_at,
+            })
+            .collect(),
+    }))
+}
+
+/// Courses, lectures and assignments of the caller's courses that contain `q` (2 to 100
+/// characters), title matches first, at most 50 (ADR-0052). A student searches the published copy
+/// of what students can open; staff also search drafts and unpublished edits.
+#[utoipa::path(
+    get,
+    path = "/search",
+    tag = "content",
+    security(("cookie" = []), ("bearer" = [])),
+    params(SearchQuery),
+    responses(
+        (status = 200, description = "The hits", body = SearchResults),
+        (status = 401, description = "Not logged in", body = ProblemDetails,
+            content_type = "application/problem+json"),
+        (status = 422, description = "A search text that is not 2 to 100 characters",
+            body = ProblemDetails, content_type = "application/problem+json"),
+    )
+)]
+async fn search(
+    State(state): State<AppState>,
+    actor: Actor,
+    ValidQuery(query): ValidQuery<SearchQuery>,
+) -> Result<Json<SearchResults>, ApiError> {
+    let mut conn = state.db.acquire().await.map_err(ContentError::from)?;
+    let hits = service::search(&mut conn, &actor, &query.q, chrono::Utc::now()).await?;
+    Ok(Json(SearchResults {
+        items: hits
+            .into_iter()
+            .map(|hit| ApiHit {
+                kind: match hit.kind {
+                    model::HitKind::Course => HitKind::Course,
+                    model::HitKind::Lecture => HitKind::Lecture,
+                    model::HitKind::Assignment => HitKind::Assignment,
+                },
+                id: hit.id,
+                title: hit.title,
+                course: CourseRef {
+                    course_id: hit.course_id,
+                    course_code: hit.course_code,
+                    course_title: hit.course_title,
+                },
+                snippet: hit.snippet,
+                due_at: hit.due_at,
+                status: if hit.draft {
+                    HitStatus::Draft
+                } else {
+                    HitStatus::Published
+                },
+            })
+            .collect(),
+        next_cursor: None,
     }))
 }
 

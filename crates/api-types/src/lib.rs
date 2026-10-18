@@ -12,6 +12,7 @@ mod courses;
 mod document;
 mod gradebook;
 mod groups;
+mod home;
 mod items;
 mod org;
 
@@ -20,6 +21,7 @@ pub use courses::*;
 pub use document::*;
 pub use gradebook::*;
 pub use groups::*;
+pub use home::*;
 pub use items::*;
 pub use org::*;
 

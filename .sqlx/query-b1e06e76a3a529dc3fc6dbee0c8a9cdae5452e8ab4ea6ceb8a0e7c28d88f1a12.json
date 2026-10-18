@@ -1,0 +1,198 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT c.id, c.kind AS \"kind: CourseKind\", c.title, c.status AS \"status: CourseStatus\",\n                  c.owner_id, c.term_id, c.created_at, c.code, c.description,\n                  t.name AS \"term_name?\", t.ends_on AS \"term_ends?\",\n                  o.name AS owner_name, o.surname AS owner_surname,\n                  m.role AS \"member_role?: CourseRole\",\n                  (SELECT count(*) FROM teaching.effective_members x\n                   WHERE x.course_id = c.id AND x.role = 'student') AS \"student_count!\",\n                  (SELECT count(*) FROM teaching.effective_members x\n                   WHERE x.course_id = c.id AND x.role = 'assistant') AS \"assistant_count!\"\n           FROM (SELECT course_id AS id FROM teaching.effective_members WHERE user_id = $1\n                 UNION\n                 SELECT id FROM teaching.courses WHERE owner_id = $1) mine\n           JOIN teaching.courses c ON c.id = mine.id\n           LEFT JOIN teaching.effective_members m ON m.course_id = c.id AND m.user_id = $1\n           LEFT JOIN org.terms t ON t.id = c.term_id\n           JOIN identity.users o ON o.id = c.owner_id\n           WHERE c.kind = 'regular'\n             AND (c.status IN ('published', 'archived') OR c.owner_id = $1\n                  OR m.role IN ('teacher', 'assistant'))\n           ORDER BY c.title, c.id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "teaching.courses",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "kind: CourseKind",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "teaching.courses",
+            "name": "kind"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "title",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "teaching.courses",
+            "name": "title"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "status: CourseStatus",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "teaching.courses",
+            "name": "status"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "owner_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "teaching.courses",
+            "name": "owner_id"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "term_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "teaching.courses",
+            "name": "term_id"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "teaching.courses",
+            "name": "created_at"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "code",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "teaching.courses",
+            "name": "code"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "description",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "teaching.courses",
+            "name": "description"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "term_name?",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "org.terms",
+            "name": "name"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "term_ends?",
+        "type_info": "Date",
+        "origin": {
+          "Table": {
+            "table": "org.terms",
+            "name": "ends_on"
+          }
+        }
+      },
+      {
+        "ordinal": 11,
+        "name": "owner_name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "identity.users",
+            "name": "name"
+          }
+        }
+      },
+      {
+        "ordinal": 12,
+        "name": "owner_surname",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "identity.users",
+            "name": "surname"
+          }
+        }
+      },
+      {
+        "ordinal": 13,
+        "name": "member_role?: CourseRole",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "teaching.effective_members",
+            "name": "role"
+          }
+        }
+      },
+      {
+        "ordinal": 14,
+        "name": "student_count!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 15,
+        "name": "assistant_count!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      null,
+      null
+    ]
+  },
+  "hash": "b1e06e76a3a529dc3fc6dbee0c8a9cdae5452e8ab4ea6ceb8a0e7c28d88f1a12"
+}

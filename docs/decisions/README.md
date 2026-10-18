@@ -84,3 +84,4 @@ What gets easier, what gets harder, what we must remember.
 | 0049 | [Unpublished revisions, class dates, per-item facts and grade history](0049-unpublished-revisions-class-dates-and-item-meta.md) |
 | 0050 | [The `quiz` assignment type](0050-the-quiz-type.md) |
 | 0051 | [The `form` assignment type](0051-the-form-type.md) |
+| 0052 | [Home read models and search](0052-home-read-models-and-search.md) |

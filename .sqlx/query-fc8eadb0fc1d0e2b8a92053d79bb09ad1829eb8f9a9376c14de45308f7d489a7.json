@@ -1,0 +1,51 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "WITH open AS (\n               SELECT i.course_id, a.item_id,\n                      (g.published_score IS NOT NULL OR g.published_feedback IS NOT NULL) AS graded,\n                      EXISTS (SELECT 1 FROM assessment.submissions s\n                              WHERE s.assignment_id = a.item_id AND s.student_id = $1\n                                AND s.status = 'submitted') AS attempted\n               FROM content.assignments a\n               JOIN content.items i ON i.id = a.item_id\n               JOIN content.modules m ON m.id = i.module_id\n               LEFT JOIN content.modules p ON p.id = m.parent_id\n               LEFT JOIN gradebook.grades g ON g.assignment_id = a.item_id AND g.student_id = $1\n               WHERE i.course_id = ANY($2) AND a.type <> 'no_submission'\n                 AND i.status = 'published' AND (i.publish_at IS NULL OR i.publish_at <= $3)\n                 AND m.status = 'published' AND (m.publish_at IS NULL OR m.publish_at <= $3)\n                 AND (p.id IS NULL\n                      OR (p.status = 'published' AND (p.publish_at IS NULL OR p.publish_at <= $3))))\n           SELECT course_id, count(*) AS \"total!\",\n                  count(*) FILTER (WHERE attempted OR COALESCE(graded, false)) AS \"submitted!\",\n                  count(*) FILTER (WHERE COALESCE(graded, false)) AS \"graded!\"\n           FROM open GROUP BY course_id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "course_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "content.items",
+            "name": "course_id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "total!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 2,
+        "name": "submitted!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 3,
+        "name": "graded!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "UuidArray",
+        "Timestamptz"
+      ]
+    },
+    "nullable": [
+      false,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "fc8eadb0fc1d0e2b8a92053d79bb09ad1829eb8f9a9376c14de45308f7d489a7"
+}

@@ -5,12 +5,14 @@
 //! as far as they can tell (404), whatever they were trying to do. Only after that does the
 //! specific action decide between going ahead and 403.
 
+mod cards;
 mod info;
 
 use serde_json::json;
 use sqlx::PgConnection;
 use uuid::Uuid;
 
+pub use cards::{course_cards, course_scope, student_courses};
 pub use info::{
     archive_course, course_candidates, course_info, course_people, create_from_template,
     delete_course, list_templates, make_template, restore_course, update_course_info,

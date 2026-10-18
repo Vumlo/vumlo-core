@@ -228,6 +228,83 @@ pub struct Exclusion {
     pub created_at: DateTime<Utc>,
 }
 
+/// A course of the caller with what its card shows of the course itself (ADR-0052).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CardCourse {
+    pub course: Course,
+    pub code: String,
+    pub description: String,
+    pub term_name: Option<String>,
+    pub term_ends: Option<chrono::NaiveDate>,
+    pub owner_name: String,
+    pub owner_surname: String,
+    /// The caller's roster role; `None` for an owner who is not on the roster.
+    pub role: Option<CourseRole>,
+    pub student_count: i64,
+    pub assistant_count: i64,
+}
+
+/// A course the caller takes part in, and whether they work in it as staff (ADR-0052).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ScopedCourse {
+    pub course: CardCourse,
+    pub staff: bool,
+}
+
+/// A student's numbers over the assignments of one course.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Progress {
+    pub course_id: Uuid,
+    pub submitted: i64,
+    pub total: i64,
+    pub graded: i64,
+}
+
+/// The earliest deadline of a course.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NextDeadline {
+    pub course_id: Uuid,
+    pub assignment_id: Uuid,
+    pub title: String,
+    pub due_at: DateTime<Utc>,
+}
+
+/// What staff still have to do in one course.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TodoCounts {
+    pub course_id: Uuid,
+    pub to_grade: i64,
+    pub draft_grades: i64,
+    /// Some of the draft grades are those of a quiz.
+    pub from_quizzes: bool,
+}
+
+/// A draft item inside a published module.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DraftItem {
+    pub course_id: Uuid,
+    pub title: String,
+}
+
+/// One entry of a staff card's to-do list.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Todo {
+    ToGrade { count: i64 },
+    DraftGrades { count: i64, auto_scored: bool },
+    UnpublishedItems { count: i64, titles: Vec<String> },
+    NextDeadline(NextDeadline),
+}
+
+/// The card of one course, whichever side of it the caller is on.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CourseCardData {
+    pub course: CardCourse,
+    pub owner: bool,
+    pub progress: Option<Progress>,
+    pub next: Option<NextDeadline>,
+    pub todo: Vec<Todo>,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
