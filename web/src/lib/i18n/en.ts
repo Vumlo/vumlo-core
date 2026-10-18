@@ -80,6 +80,7 @@ export const en = {
   "login.title": "Sign in",
   "login.lead": "Use your university email and password.",
   "login.failed": "That email and password don't match. Check both and try again.",
+  "login.notVerified": "Confirm your email first. We sent a link when you created the account.",
   "login.googleFailed": "Google sign-in is not available right now. Use your email and password.",
   "login.forgot": "Forgot password?",
   "login.submit": "Sign in",

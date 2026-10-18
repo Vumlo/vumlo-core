@@ -9,8 +9,9 @@ Spec endpoints the UI uses as they are: `GET /institution`, `GET /admin/institut
 
 ## Sign-in extras
 - **Screens:** Sign in, Create an account, Confirm your email, Reset your password, Choose a new password, Google callback.
-- **Missing:** ADR-0017 plans all of it; the server has none yet. Self-registration with a password and a verification link (24 hours, single use), password reset by email, Google sign-in (allowed domain, `email_verified`). Registration and reset answer the same for every address, so a page cannot tell who has an account.
-- **Mocked:**
+- **Server:** done (ADR-0045 to ADR-0047). Registration and reset answer `202` with no body for every address; a password login on an unverified address is `403`; Google needs `[auth.google]` and the cookie `learnly_oauth`, which the browser keeps between start and callback.
+- **Still mocked, on purpose:** `pnpm dev:mock` and the Playwright suite (`e2e/`) run against the in-browser mock, and they cover these screens. Delete the handlers in `src/mocks/handlers/auth.ts`, `MockMailbox` and `useMockOutbox` when the suite runs against the real server. The mock differs from the server in its rules (it wants 10 characters, the server 12 and a strength score) and in the `hint` the mock puts in the callback URL.
+- **What the mock does:**
   - `POST /auth/register` (`name`, `surname`, `email`, `password`; 202; 422 for an address outside `northfield.edu`), `POST /auth/verify-email` (`token`; 410 when spent).
   - `POST /auth/password-reset` (`email`; 202), `POST /auth/password-reset/confirm` (`token`, `new_password`; 410 when spent).
   - `POST /auth/google/start` (`login_hint`) answers `{authorization_url}`; the page opens it. `POST /auth/google/callback` (`code`, `state`) opens the session. The mock skips Google's consent screen and signs in as the account named by `login_hint`.

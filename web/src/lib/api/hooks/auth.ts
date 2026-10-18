@@ -5,7 +5,7 @@ import { clearQueries, invalidate, useMutation, useQuery } from "../../query";
 import type { User } from "../../session";
 import type { GoogleStart, MockMail } from "../gaps";
 
-/** GAP: no registration endpoint yet (API_GAPS.md, "Sign-in extras"). */
+/** The server answers `202` with no body for every address (ADR-0046); `pnpm dev:mock` answers the same. */
 export function useRegister() {
   return useMutation(async (input: { name: string; surname: string; email: string; password: string }) => {
     await api.post("/auth/register", input);
