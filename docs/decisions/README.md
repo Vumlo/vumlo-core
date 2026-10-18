@@ -82,3 +82,5 @@ What gets easier, what gets harder, what we must remember.
 | 0047 | [Google sign-in (the web redirect flow)](0047-google-sign-in.md) |
 | 0048 | [Course info, archiving, deletion, templates and the people of a course](0048-course-archive-deletion-templates-and-people.md) |
 | 0049 | [Unpublished revisions, class dates, per-item facts and grade history](0049-unpublished-revisions-class-dates-and-item-meta.md) |
+| 0050 | [The `quiz` assignment type](0050-the-quiz-type.md) |
+| 0051 | [The `form` assignment type](0051-the-form-type.md) |
