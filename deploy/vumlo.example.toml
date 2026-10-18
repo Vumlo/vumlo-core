@@ -12,9 +12,10 @@ config_version = 1
 
 [server]
 bind_addr = "127.0.0.1:8080"
-# The origin browsers use to reach the API (no path). Cookie-authenticated POST/PATCH/DELETE
-# requests must send exactly this Origin.
-public_origin = "http://localhost:5173"
+# The origin browsers use to reach Vumlo (no path): where the web app is served. Cookie-authenticated
+# POST/PATCH/DELETE requests must send exactly this Origin, and every URL the installation
+# publishes (the API, mail links, the manifest) is derived from it. Production: https://lms.example.edu
+public_origin = "http://localhost:3000"
 # Behind a reverse proxy that overwrites this header, rate limits use it instead of the TCP peer.
 # client_ip_header = "x-real-ip"
 # Trusted browser frontends hosted on another origin (ADR-0041). Each entry is an exact origin:

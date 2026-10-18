@@ -28,11 +28,17 @@ If a rule blocks the task, stop and say so. Do not work around it.
 Modules: `identity`, `org`, `teaching`, `content`, `assessment`, `gradebook`, `files`, `events`, `policy`.
 
     backend/crates/server/src/
-      main.rs      CLI entry: serve | migrate | create-admin | create-user (import-users: planned)
+      main.rs      CLI entry: serve | worker | migrate | create-admin | create-user (import-users: planned)
       app.rs       AppState, router assembly (nests each module's router())
       error.rs     shared API error → Problem Details, ValidJson/ValidQuery extractors
-      settings.rs  configuration (vumlo.toml + VUMLO__ environment)
+      modules.rs   the optional modules compiled in (one line per Cargo feature)
       actor.rs     Actor: who performs the action
+
+The configuration schema is `backend/crates/config` (`vumlo-config`), shared with `vumlo-cli`: a new
+key must be marked `public`, `private` or `secret` (ADR-0054), and a secret is never read from the
+file. The administrator CLI is `backend/crates/vumlo-cli`; a CLI command that changes the database
+writes an audit row (source `cli`). An optional module is its own crate under `backend/crates/modules/`
+behind a Cargo feature, and `server` and `vumlo-cli` name it in exactly one place each.
       <module>/
         mod.rs     the ONLY public surface: pub fn router(), pub service functions, pub types
         model.rs   domain types and newtypes (public)
@@ -154,6 +160,10 @@ All of these pass, run from `backend/`:
     cargo test --workspace -- --test-threads=16
     cargo sqlx prepare --workspace --check -- --all-targets
     SQLX_OFFLINE=true cargo check --workspace --all-targets
+
+and the same with `--features dummy` (cargo test, clippy and the offline check); `cargo sqlx prepare`
+runs once with `--all-features`. From `web/`, after `vumlo-cli brand apply`: `npm run typecheck` and
+`npm run build`.
 
 ## 15. Git
 

@@ -24,8 +24,11 @@ services:
       - "127.0.0.1:8025:8025"
 
   # The API. The web app runs outside Docker and reaches it on http://127.0.0.1:8080.
+  # For development only. The installation example is deploy/compose.yaml.
   server:
-    build: ./backend
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.backend
     depends_on:
       postgres:
         condition: service_healthy

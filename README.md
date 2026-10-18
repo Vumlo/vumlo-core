@@ -4,11 +4,20 @@ A self-hosted, headless LMS core for one school or university. Design: [ARCHITEC
 
 Implemented so far: the foundation (config, migrations, health, OpenAPI), identity (users, password login for web and app clients, sessions, admin user management), courses with terms, groups and the live roster, the content tree with `text` and `no_submission` assignments, the gradebook, and text submissions (drafts, attempts, deadlines and late work, attempt limits). See `ARCHITECTURE.md` for what is still design.
 
-## Prerequisites
+## Installing it for an institution
+
+Use `vumlo-cli`, the administrator tool, and follow [docs/install.md](docs/install.md): Docker only, or a
+Linux server with systemd and Caddy. The templates are in `deploy/`; `./vumlo <command>` runs the CLI
+(the local binary, or the Docker service when there is none). Why it is built this way:
+[ADR-0054](docs/decisions/0054-deployment-model.md).
+
+## Developing
+
+### Prerequisites
 
 Rust (stable, via rustup) and Docker with the Compose plugin.
 
-## Run
+### Run
 
 The database and the API run in Docker; the web app runs on the host (Node 22+, pnpm).
 

@@ -1,0 +1,31 @@
+#!/bin/sh
+# Runs vumlo-cli: the binary on this machine if there is one, otherwise the vumlo-cli service of
+# deploy/compose.yaml. From the repository root:  ./vumlo doctor
+set -eu
+cd "$(dirname "$0")"
+
+for candidate in "$(command -v vumlo-cli 2>/dev/null || true)" backend/target/release/vumlo-cli; do
+    if [ -n "$candidate" ] && [ -x "$candidate" ]; then
+        exec "$candidate" "$@"
+    fi
+done
+
+if ! command -v docker >/dev/null 2>&1; then
+    echo "vumlo: there is no vumlo-cli binary (build it: cd backend && cargo build --release -p vumlo-cli) and no docker." >&2
+    exit 127
+fi
+
+# `init` writes the first files: there is no .env for compose to read yet.
+[ -f .env ] || : >.env
+export COMPOSE_FILE=deploy/compose.yaml COMPOSE_ENV_FILES=.env
+VUMLO_UID="$(id -u)"
+VUMLO_GID="$(id -g)"
+export VUMLO_UID VUMLO_GID
+
+# Commands that never touch the database must not start PostgreSQL (it needs a .env first).
+case "${1:-}" in
+    init | config | brand | version | modules)
+        exec docker compose run --rm --no-deps vumlo-cli "$@"
+        ;;
+esac
+exec docker compose run --rm vumlo-cli "$@"

@@ -1,0 +1,107 @@
+# Vumlo with Docker: PostgreSQL, the core, the worker, the web app, and vumlo-cli as a service that
+# runs once (it applies the migrations before the core starts, and `./vumlo ...` runs it for
+# everything else).
+#
+# Run from the repository root, with the files `./vumlo init` wrote there: vumlo.toml and .env.
+# See docs/install.md. The wrapper sets these two variables itself; for plain `docker compose`:
+#   export COMPOSE_FILE=deploy/compose.yaml COMPOSE_ENV_FILES=.env     (Compose 2.24 or newer)
+
+name: vumlo
+
+x-backend: &backend
+  build:
+    context: ..
+    dockerfile: deploy/Dockerfile.backend
+    args:
+      # The optional modules compiled into the server and vumlo-cli, comma separated.
+      VUMLO_FEATURES: ${VUMLO_FEATURES:-}
+  image: vumlo-backend
+
+services:
+  postgres:
+    image: postgres:18
+    env_file: ../.env # POSTGRES_PASSWORD, which must match the password in DATABASE_URL
+    environment:
+      POSTGRES_USER: vumlo
+      POSTGRES_DB: vumlo
+    volumes:
+      - postgres-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U vumlo -d vumlo"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
+
+  # Runs once and exits: applies the migrations, records the institution mode. Everything else
+  # (`config check`, `brand apply`, `admin create`, `doctor`, ...) is `./vumlo <command>`.
+  vumlo-cli:
+    <<: *backend
+    entrypoint: ["vumlo-cli"]
+    command: ["db", "migrate"]
+    # The files it writes in the repository (.vumlo/generated) belong to you, not to a stranger.
+    user: "${VUMLO_UID:-1000}:${VUMLO_GID:-1000}"
+    working_dir: /srv/vumlo
+    volumes:
+      - ..:/srv/vumlo
+    env_file: ../.env
+    environment:
+      VUMLO_CONFIG: /srv/vumlo/vumlo.toml
+      # `doctor` reaches the core by its service name.
+      VUMLO__CLI__CORE_URL: http://core:8080
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  core:
+    <<: *backend
+    command: ["vumlo-server", "serve", "--no-worker"]
+    env_file: ../.env
+    environment:
+      VUMLO_CONFIG: /etc/vumlo/vumlo.toml
+      VUMLO__SERVER__BIND_ADDR: 0.0.0.0:8080
+    # On the host's loopback only, for a reverse proxy (deploy/Caddyfile routes /api/* here).
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - ../vumlo.toml:/etc/vumlo/vumlo.toml:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      vumlo-cli:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  worker:
+    <<: *backend
+    command: ["vumlo-server", "worker"]
+    env_file: ../.env
+    environment:
+      VUMLO_CONFIG: /etc/vumlo/vumlo.toml
+    volumes:
+      - ../vumlo.toml:/etc/vumlo/vumlo.toml:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      vumlo-cli:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  # The browser-facing origin (server.public_origin in vumlo.toml) points here, or at a reverse
+  # proxy in front of it (deploy/Caddyfile). The web app forwards /api/v1 to the core.
+  web:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.web
+      args:
+        VUMLO_API_ORIGIN: http://core:8080
+    image: vumlo-web
+    ports:
+      - "127.0.0.1:3000:3000"
+    depends_on:
+      - core
+    restart: unless-stopped
+
+volumes:
+  postgres-data:

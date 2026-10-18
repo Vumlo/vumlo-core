@@ -1,6 +1,6 @@
 # 0044. The institution profile lives in the config; `chrono-tz`
 
-Status: Accepted
+Status: Accepted. The accent colour (the key `accent` and its five values) is superseded by ADR-0054: there is no accent.
 Supplements: ADR-0002, ADR-0022, ADR-0031
 Amends: ADR-0014 (adds `chrono-tz`)
 

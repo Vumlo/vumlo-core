@@ -1,0 +1,30 @@
+# The server and vumlo-cli, built together from one feature set and shipped as one image:
+# the same release, always side by side (ADR-0054).
+#
+# Build from the repository root:
+#   docker build -f deploy/Dockerfile.backend -t vumlo-backend .
+#   docker build -f deploy/Dockerfile.backend --build-arg VUMLO_FEATURES=some-module -t vumlo-backend .
+#
+# VUMLO_FEATURES lists the optional modules to compile in, comma separated (empty: none). Adding or
+# removing a module means rebuilding with its feature; editing [modules] alone is not enough.
+
+FROM rust:1 AS build
+WORKDIR /src
+# `vumlo-cli init` embeds deploy/vumlo.example.toml and deploy/env.example.
+COPY deploy ./deploy
+COPY backend ./backend
+WORKDIR /src/backend
+ARG VUMLO_FEATURES=""
+# The query! macros are checked against backend/.sqlx/, so the build needs no database.
+ENV SQLX_OFFLINE=true
+RUN cargo build --release -p server -p vumlo-cli --features "${VUMLO_FEATURES}"
+
+FROM debian:stable-slim
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates \
+    && rm -rf /var/lib/apt/lists/* \
+    && useradd --system --uid 10001 --no-create-home vumlo
+COPY --from=build /src/backend/target/release/vumlo-server /usr/local/bin/vumlo-server
+COPY --from=build /src/backend/target/release/vumlo-cli /usr/local/bin/vumlo-cli
+USER vumlo
+CMD ["vumlo-server", "serve"]
