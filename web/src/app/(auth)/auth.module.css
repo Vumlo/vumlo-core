@@ -1,0 +1,37 @@
+.page { min-height: 100vh; display: flex; flex-direction: column; }
+.center { flex: 1 1 auto; display: flex; align-items: center; justify-content: center; padding: 56px 16px 32px; }
+.col { width: 100%; max-width: 400px; }
+.brand { display: flex; align-items: center; gap: 12px; margin-bottom: 24px; }
+.logo { flex: none; width: 40px; height: 40px; border-radius: 10px; background: var(--accent); color: var(--accent-text); display: flex; align-items: center; justify-content: center; font-size: 19px; font-weight: 700; }
+.brandName { font-size: 17px; font-weight: 600; line-height: 1.25; }
+.brandSub { font-size: 13px; color: var(--muted); }
+.card { padding: 32px; background: var(--surface); border: 1px solid var(--border); border-radius: 14px; box-shadow: var(--shadow); }
+.title { margin: 0 0 4px; font-size: 26px; line-height: 1.2; font-weight: 600; letter-spacing: -0.01em; }
+.lead { margin: 0 0 24px; color: var(--muted); }
+.form { display: flex; flex-direction: column; gap: 18px; margin: 0; }
+.row { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+.link { font-size: 14px; color: var(--accent-fg); }
+.link:hover { text-decoration: underline; }
+.passwrap { display: flex; align-items: center; min-height: 46px; border: 1px solid var(--border-strong); border-radius: 10px; background: var(--input-bg); }
+.passwrap[data-invalid="true"] { border-color: var(--danger); }
+.passwrap:focus-within { border-color: var(--ring); box-shadow: 0 0 0 3px var(--accent-soft); }
+.passwrap input { flex: 1; min-width: 0; min-height: 44px; padding: 0 14px; border: 0; border-radius: 10px; background: transparent; outline: 0; font-size: 15px; }
+.show { flex: none; min-width: 64px; min-height: 44px; padding: 0 14px; border: 0; background: transparent; color: var(--muted); font-size: 14px; font-weight: 500; }
+.or { display: flex; align-items: center; gap: 12px; margin: 20px 0; color: var(--muted); font-size: 13px; }
+.or::before, .or::after { content: ""; flex: 1; height: 1px; background: var(--border); }
+.foot { margin: 20px 0 0; text-align: center; font-size: 14px; color: var(--muted); }
+.strength { display: flex; gap: 4px; margin-top: 4px; }
+.strength span { flex: 1; height: 4px; border-radius: 2px; background: var(--border); }
+.strength span[data-on="true"] { background: var(--ok-fg); }
+.strengthLabel { font-size: 13px; color: var(--ok-fg); }
+.footer { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding: 16px 24px; font-size: 14px; color: var(--muted); }
+.langLabel { display: flex; align-items: center; gap: 8px; }
+.langLabel select { min-height: 40px; padding: 0 8px; border: 0; border-radius: 8px; background: transparent; color: var(--text); font-size: 14px; }
+.themeBtn { display: flex; align-items: center; gap: 8px; min-height: 40px; padding: 0 12px; border: 0; border-radius: 8px; background: transparent; color: var(--text); font-size: 14px; }
+.signout { margin: 16px 0 0; text-align: center; font-size: 14px; }
+button.link { padding: 0; border: 0; background: none; cursor: pointer; font-family: inherit; }
+.stack { display: flex; flex-direction: column; gap: 16px; }
+.sent { display: flex; flex-direction: column; align-items: flex-start; gap: 14px; }
+.mailbox { margin-top: 20px; padding: 14px 16px; border: 1px dashed var(--border-strong); border-radius: 10px; font-size: 14px; color: var(--muted); }
+.mailbox strong { color: var(--text); }
+.mailbox ul { margin: 8px 0 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 6px; }

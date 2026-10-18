@@ -1,0 +1,8 @@
+.row { display: grid; grid-template-columns: minmax(180px, 1.2fr) minmax(200px, 2fr) minmax(130px, 1fr) 90px; gap: 12px 16px; align-items: center; padding: 10px 18px; border-top: 1px solid var(--border); min-height: 60px; }
+.head { background: var(--sunken); border-top: 0; min-height: 40px; font-size: 13px; font-weight: 500; color: var(--muted); }
+.who { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.avatar { flex: none; display: flex; align-items: center; justify-content: center; width: 30px; height: 30px; border-radius: 50%; background: var(--hover); color: var(--muted); font-size: 12px; font-weight: 600; }
+.drafts { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; min-height: 64px; padding: 10px 18px; border-top: 1px solid var(--border); }
+.drafts:first-child { border-top: 0; }
+.count { margin-left: 8px; padding: 1px 9px; border-radius: 999px; background: var(--accent-soft); color: var(--accent-fg); font-size: 13px; font-weight: 600; }
+@media (max-width: 720px) { .row { grid-template-columns: 1fr auto; } .head { display: none; } }

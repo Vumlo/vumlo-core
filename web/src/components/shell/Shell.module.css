@@ -1,0 +1,49 @@
+.header {
+  position: sticky; top: 0; z-index: 20;
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px 20px; min-height: 60px;
+  padding: 8px max(24px, calc((100% - 1160px) / 2));
+  background: var(--surface); border-bottom: 1px solid var(--border);
+}
+.brand { display: flex; align-items: center; gap: 10px; }
+.logo {
+  display: flex; align-items: center; justify-content: center; flex: none; width: 32px; height: 32px;
+  border-radius: 8px; background: var(--accent); color: var(--accent-text); font-size: 16px; font-weight: 700;
+}
+.brandName { font-size: 15px; font-weight: 600; }
+.nav { display: flex; gap: 4px; }
+.navLink { display: flex; align-items: center; min-height: 40px; padding: 0 14px; border-radius: 8px; }
+.navLink:hover { background: var(--hover); }
+.navLink[aria-current="page"] { background: var(--accent-soft); color: var(--accent-fg); font-weight: 600; }
+.spacer { flex: 1 1 0; }
+.search { flex: 0 1 280px; }
+.actions { display: flex; align-items: center; gap: 4px; position: relative; }
+.avatarBtn {
+  display: flex; align-items: center; justify-content: center; width: 44px; height: 44px; padding: 0;
+  border: 0; border-radius: 50%; background: transparent;
+}
+.menu { top: 50px; right: 0; width: 260px; }
+.menuHead { padding: 10px 10px 8px; border-bottom: 1px solid var(--border); margin-bottom: 6px; }
+.menuName { font-weight: 600; }
+.menuMeta { font-size: 13px; color: var(--muted); }
+.main { min-height: calc(100vh - 61px); }
+.tabs { display: none; }
+.phoneOnly { display: none; }
+
+@media (max-width: 720px) {
+  .header { flex-wrap: nowrap; gap: 8px; min-height: 56px; padding: 0 8px 0 16px; }
+  .nav, .search, .desktopOnly { display: none; }
+  .logo { width: 28px; height: 28px; border-radius: 7px; font-size: 14px; }
+  .phoneOnly { display: flex; }
+  .main { min-height: calc(100vh - 57px); padding-bottom: 0; }
+  .tabs {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 20; display: flex; padding: 6px 4px 18px;
+    background: var(--surface); border-top: 1px solid var(--border);
+  }
+  .tab {
+    flex: 1 1 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+    min-height: 52px; color: var(--muted); font-size: 12px; font-weight: 500;
+  }
+  .tabIcon { display: flex; align-items: center; justify-content: center; width: 56px; height: 28px; border-radius: 14px; }
+  .tab[aria-current="page"] { color: var(--accent-fg); font-weight: 600; }
+  .tab[aria-current="page"] .tabIcon { background: var(--accent-soft); }
+}

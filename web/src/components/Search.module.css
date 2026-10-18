@@ -1,0 +1,14 @@
+.bar { display: flex; gap: 12px; margin-bottom: 24px; }
+.field { flex: 1 1 auto; min-width: 0; min-height: 48px; background: var(--surface); }
+.field input { min-width: 0; font-size: 16px; }
+.filters { display: flex; max-width: 100%; margin-bottom: 14px; overflow-x: auto; }
+.filters button { flex: none; white-space: nowrap; }
+.list { margin: 0; padding: 0; list-style: none; }
+.hit { display: flex; gap: 14px; align-items: flex-start; padding: 14px 16px; color: inherit; }
+.hit:hover { background: var(--hover); }
+.courseTile { flex: none; background: var(--hover); color: var(--muted); }
+.body { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.title { font-weight: 600; overflow-wrap: anywhere; }
+.meta { font-size: 13px; color: var(--muted); }
+.snippet { margin-top: 4px; font-size: 14px; color: var(--muted); overflow-wrap: anywhere; }
+.body mark { background: var(--accent-soft); color: inherit; border-radius: 3px; padding: 0 1px; }

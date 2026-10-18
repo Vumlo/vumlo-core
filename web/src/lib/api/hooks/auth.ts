@@ -1,0 +1,54 @@
+"use client";
+
+import { api } from "../client";
+import { clearQueries, invalidate, useMutation, useQuery } from "../../query";
+import type { User } from "../../session";
+import type { GoogleStart, MockMail } from "../gaps";
+
+/** GAP: no registration endpoint yet (API_GAPS.md, "Sign-in extras"). */
+export function useRegister() {
+  return useMutation(async (input: { name: string; surname: string; email: string; password: string }) => {
+    await api.post("/auth/register", input);
+    invalidate("/mock/outbox");
+    return true as const;
+  });
+}
+
+export function useVerifyEmail() {
+  return useMutation(async (token: string) => {
+    await api.post("/auth/verify-email", { token });
+    return true as const;
+  });
+}
+
+export function useRequestPasswordReset() {
+  return useMutation(async (email: string) => {
+    await api.post("/auth/password-reset", { email });
+    invalidate("/mock/outbox");
+    return true as const;
+  });
+}
+
+export function useConfirmPasswordReset() {
+  return useMutation(async (token: string, new_password: string) => {
+    await api.post("/auth/password-reset/confirm", { token, new_password });
+    return true as const;
+  });
+}
+
+export function useGoogleStart() {
+  return useMutation((loginHint: string) => api.post<GoogleStart>("/auth/google/start", { login_hint: loginHint || undefined }));
+}
+
+export function useGoogleCallback() {
+  return useMutation(async (code: string, state: string, hint: string | null) => {
+    const user = await api.post<User>("/auth/google/callback", { code, state, hint: hint ?? undefined });
+    clearQueries();
+    return user;
+  });
+}
+
+/** Mock only: the mail the fake server "sent". There is no such endpoint on a real server. */
+export function useMockOutbox(enabled: boolean) {
+  return useQuery<{ items: MockMail[] }>(enabled ? "/mock/outbox" : null, () => api.get<{ items: MockMail[] }>("/mock/outbox"));
+}

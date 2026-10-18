@@ -1,0 +1,21 @@
+.bar { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin: 20px 0; }
+.row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; min-height: 64px; padding: 10px 18px; }
+.avatarLg { flex: none; display: flex; align-items: center; justify-content: center; width: 38px; height: 38px; border-radius: 50%; background: var(--accent-soft); color: var(--accent-fg); font-size: 13px; font-weight: 600; }
+.avatarSm { flex: none; display: flex; align-items: center; justify-content: center; width: 34px; height: 34px; border-radius: 50%; background: var(--hover); color: var(--muted); font-size: 12px; font-weight: 600; }
+.who { flex: 1 1 220px; min-width: 0; }
+.mail { display: block; font-size: 13px; color: var(--accent-fg); }
+.role { flex: 0 0 160px; font-size: 14px; color: var(--muted); }
+.groups { display: flex; flex-wrap: wrap; gap: 12px; }
+.group { display: flex; align-items: center; gap: 12px; min-width: 240px; padding: 12px 8px 12px 16px; }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 10px; }
+.person { display: flex; align-items: center; gap: 12px; min-height: 56px; padding: 8px 14px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; }
+.you { flex: none; padding: 1px 8px; border-radius: 999px; background: var(--accent-soft); color: var(--accent-fg); font-size: 12px; font-weight: 500; }
+.table { min-width: 760px; }
+.trow { display: flex; align-items: center; min-height: 56px; padding: 0 18px; border-top: 1px solid var(--border); }
+.thead { display: flex; align-items: center; min-height: 40px; padding: 0 18px; border-bottom: 1px solid var(--border); background: var(--sunken); font-size: 13px; font-weight: 500; color: var(--muted); }
+.c1 { flex: 1 1 240px; min-width: 0; display: flex; align-items: center; gap: 10px; }
+.c2 { flex: 1 1 240px; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 14px; color: var(--muted); }
+.c3 { flex: 0 0 170px; font-size: 14px; }
+.c4 { flex: 0 0 100px; display: flex; justify-content: flex-end; }
+.found { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 8px; }
+.found:hover { background: var(--hover); }
