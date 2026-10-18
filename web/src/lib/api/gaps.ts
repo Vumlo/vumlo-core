@@ -7,32 +7,6 @@ import type { Points } from "../points";
 
 export type MyRole = "owner" | CourseRole;
 
-/** What the institution shows everywhere: name for the navbar, language, time zone. */
-export type Institution = {
-  name: string;
-  short_name: string;
-  accent: string;
-  language: "en" | "uk";
-  time_zone: string;
-  /** Shown to teachers in course settings; the scale itself is set in the config file (ADR-0022). */
-  grading_scale: string;
-};
-
-/** The server-side settings an admin can read but not change (config file). */
-export type ServerSettingsView = {
-  grading_scale: string;
-  failed_logins: string;
-  session_lifetime: string;
-  largest_document: string;
-};
-
-export type InstitutionAdmin = Institution & {
-  accents: { name: string; value: string }[];
-  server: ServerSettingsView;
-  changed_at: string | null;
-  changed_by: string | null;
-};
-
 /** `GET /courses/{id}/info`: the header of every course screen. */
 export type CourseInfo = {
   course_id: string;

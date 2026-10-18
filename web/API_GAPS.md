@@ -5,12 +5,7 @@ Delete the type, the hook branch and the handler when the server closes a gap.
 
 `web/openapi.json` was generated from the server crate (`/api/v1/openapi.json`) at the commit this was built on. `pnpm gen:api` rebuilds `src/lib/api/schema.d.ts` from it.
 
-Spec endpoints the UI uses as they are: auth, `/me`, `/me/sessions`, `/me/password`, `/me/courses`, courses and members, group links and options, the content tree, modules and items (create, patch, publish, reorder, delete), submissions and drafts, grades (save, publish), the gradebook, `my-grades`, admin users, groups, subgroups, terms, `/editor/profiles`.
-
-## Institution
-- **Screens:** navbar and sign-in (name), Course settings (grading scale), Admin, Institution.
-- **Missing:** an endpoint for the institution name, short name, accent, default language, time zone and grading scale. An admin endpoint to read the server-side settings (failed logins, session lifetime, largest document) and to save the editable ones. Today they live in `learnly.toml` only.
-- **Mocked:** `GET /institution` (any signed-in user, also before sign-in), `GET` and `PATCH /admin/institution`.
+Spec endpoints the UI uses as they are: `GET /institution`, `GET /admin/institution` (read-only; the settings live in `learnly.toml`, ADR-0044), auth, `/me`, `/me/sessions`, `/me/password`, `/me/courses`, courses and members, group links and options, the content tree, modules and items (create, patch, publish, reorder, delete), submissions and drafts, grades (save, publish), the gradebook, `my-grades`, admin users, groups, subgroups, terms, `/editor/profiles`.
 
 ## Sign-in extras
 - **Screens:** Sign in, Create an account, Confirm your email, Reset your password, Choose a new password, Google callback.
@@ -128,10 +123,9 @@ Spec endpoints the UI uses as they are: auth, `/me`, `/me/sessions`, `/me/passwo
 - **Missing:** a read endpoint for `events.audit_log` with filters (person, kind of change, period).
 - **Mocked:** `GET /admin/audit?q=&kind=&days=`. Changes made through the mock add entries.
 
-## Admin: accent colour and logo
+## Admin: logo
 - **Screens:** Admin, Institution.
-- **Missing:** storing an accent colour and a logo; the design does not say how a chosen accent gets a dark-theme match.
-- **Mocked:** the choice is saved in the mock institution and shown in the preview only. The site keeps its tested accent. Upload is disabled.
+- **Missing:** storing and serving a logo; it needs the `files` module. The accent is set in `learnly.toml` and shown in the preview only; the site keeps its tested accent because the design does not say how a chosen accent gets a dark-theme match.
 
 ## Not API gaps, kept in the browser
 Theme, language, and the layout of the home widgets are saved in `localStorage`, as the design says.

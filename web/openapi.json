@@ -9,6 +9,55 @@
     "version": "0.1.0"
   },
   "paths": {
+    "/api/v1/admin/institution": {
+      "get": {
+        "tags": [
+          "institution"
+        ],
+        "summary": "The institution profile with the settings that are not public. Admin only, read-only: they\nchange in the configuration file (ADR-0044).",
+        "operationId": "get_admin_institution",
+        "responses": {
+          "200": {
+            "description": "The institution settings",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminInstitution"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not logged in",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not an admin",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          },
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/admin/users": {
       "get": {
         "tags": [
@@ -4041,6 +4090,27 @@
         }
       }
     },
+    "/api/v1/institution": {
+      "get": {
+        "tags": [
+          "institution"
+        ],
+        "summary": "The public profile of the institution. No session needed: the sign-in page shows it.",
+        "operationId": "get_institution",
+        "responses": {
+          "200": {
+            "description": "The institution profile",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Institution"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/items/{id}": {
       "get": {
         "tags": [
@@ -5914,6 +5984,17 @@
   },
   "components": {
     "schemas": {
+      "Accent": {
+        "type": "string",
+        "description": "The accent colour of the web app.",
+        "enum": [
+          "indigo",
+          "teal",
+          "crimson",
+          "forest",
+          "plum"
+        ]
+      },
       "AddMembersRequest": {
         "type": "object",
         "required": [
@@ -5945,6 +6026,33 @@
             "description": "The users who were not members before. Empty when all of them already were."
           }
         }
+      },
+      "AdminInstitution": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Institution"
+          },
+          {
+            "type": "object",
+            "required": [
+              "mode",
+              "allowed_domains"
+            ],
+            "properties": {
+              "allowed_domains": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "The email domains self-registration accepts (ADR-0017)."
+              },
+              "mode": {
+                "$ref": "#/components/schemas/InstitutionMode"
+              }
+            }
+          }
+        ],
+        "description": "What an admin sees: the public profile and the settings that are not public. Read-only; they\nchange in the config file (ADR-0044)."
       },
       "AllStudents": {
         "type": "string",
@@ -7180,6 +7288,14 @@
           }
         }
       },
+      "GradingScale": {
+        "type": "string",
+        "description": "How points relate to the grade (ADR-0022).",
+        "enum": [
+          "twelve",
+          "hundred"
+        ]
+      },
       "Group": {
         "type": "object",
         "description": "A cohort: school class 7-A, university group PZ-31.",
@@ -7347,6 +7463,48 @@
         ],
         "description": "A run of inline content."
       },
+      "Institution": {
+        "type": "object",
+        "description": "The public profile of the institution: what a page needs before anyone signs in (ADR-0044).",
+        "required": [
+          "name",
+          "short_name",
+          "language",
+          "time_zone",
+          "accent",
+          "grading_scale"
+        ],
+        "properties": {
+          "accent": {
+            "$ref": "#/components/schemas/Accent"
+          },
+          "grading_scale": {
+            "$ref": "#/components/schemas/GradingScale"
+          },
+          "language": {
+            "$ref": "#/components/schemas/Language"
+          },
+          "name": {
+            "type": "string"
+          },
+          "short_name": {
+            "type": "string",
+            "description": "For narrow places such as the navbar."
+          },
+          "time_zone": {
+            "type": "string",
+            "description": "An IANA zone name, e.g. `Europe/Kyiv`."
+          }
+        }
+      },
+      "InstitutionMode": {
+        "type": "string",
+        "description": "What kind of institution the installation serves (ADR-0031).",
+        "enum": [
+          "school",
+          "university"
+        ]
+      },
       "Item": {
         "type": "object",
         "description": "A `text` item or an assignment. `body` is a JSON object the server stores without interpreting it;\nfor an assignment it holds the instructions.",
@@ -7474,6 +7632,14 @@
             "type": "string"
           }
         }
+      },
+      "Language": {
+        "type": "string",
+        "description": "The interface language an institution starts in (ADR-0043).",
+        "enum": [
+          "en",
+          "uk"
+        ]
       },
       "LatestAttempt": {
         "type": "object",

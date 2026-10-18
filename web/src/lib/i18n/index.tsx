@@ -2,6 +2,7 @@
 
 import { createContext, Fragment, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
 import { useInstitution } from "@/lib/api/hooks/institution";
+import { setTimeZone } from "@/lib/format";
 import {
   language,
   setCurrentLanguage,
@@ -44,6 +45,8 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
 
   const active: Language = picked ?? institution.data?.language ?? "en";
   setCurrentLanguage(active);
+  const zone = institution.data?.time_zone;
+  if (zone) setTimeZone(zone);
 
   useEffect(() => {
     document.documentElement.lang = active;
@@ -60,7 +63,7 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
   if (!read || (picked === null && institution.isLoading)) return null;
   return (
     <LanguageContext.Provider value={{ language: active, setLanguage, t }}>
-      <Fragment key={active}>{children}</Fragment>
+      <Fragment key={`${active}|${zone ?? ""}`}>{children}</Fragment>
     </LanguageContext.Provider>
   );
 }

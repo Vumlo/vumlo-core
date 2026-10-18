@@ -4,6 +4,26 @@
  */
 
 export interface paths {
+    "/api/v1/admin/institution": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The institution profile with the settings that are not public. Admin only, read-only: they
+         *     change in the configuration file (ADR-0044).
+         */
+        get: operations["get_admin_institution"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/users": {
         parameters: {
             query?: never;
@@ -774,6 +794,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/institution": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The public profile of the institution. No session needed: the sign-in page shows it. */
+        get: operations["get_institution"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/items/{id}": {
         parameters: {
             query?: never;
@@ -1108,6 +1145,11 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /**
+         * @description The accent colour of the web app.
+         * @enum {string}
+         */
+        Accent: "indigo" | "teal" | "crimson" | "forest" | "plum";
         AddMembersRequest: {
             /**
              * @description 1 to 1000 user ids. All or nothing: one bad entry rejects the request, and the `422`
@@ -1118,6 +1160,15 @@ export interface components {
         AddMembersResponse: {
             /** @description The users who were not members before. Empty when all of them already were. */
             added: string[];
+        };
+        /**
+         * @description What an admin sees: the public profile and the settings that are not public. Read-only; they
+         *     change in the config file (ADR-0044).
+         */
+        AdminInstitution: components["schemas"]["Institution"] & {
+            /** @description The email domains self-registration accepts (ADR-0017). */
+            allowed_domains: string[];
+            mode: components["schemas"]["InstitutionMode"];
         };
         /**
          * @description The only value of the `students` selector that is not a list.
@@ -1501,6 +1552,11 @@ export interface components {
             /** Format: uuid */
             user_id: string;
         };
+        /**
+         * @description How points relate to the grade (ADR-0022).
+         * @enum {string}
+         */
+        GradingScale: "twelve" | "hundred";
         /** @description A cohort: school class 7-A, university group PZ-31. */
         Group: {
             /** Format: date-time */
@@ -1549,6 +1605,22 @@ export interface components {
             /** @enum {string} */
             type: "math";
         };
+        /** @description The public profile of the institution: what a page needs before anyone signs in (ADR-0044). */
+        Institution: {
+            accent: components["schemas"]["Accent"];
+            grading_scale: components["schemas"]["GradingScale"];
+            language: components["schemas"]["Language"];
+            name: string;
+            /** @description For narrow places such as the navbar. */
+            short_name: string;
+            /** @description An IANA zone name, e.g. `Europe/Kyiv`. */
+            time_zone: string;
+        };
+        /**
+         * @description What kind of institution the installation serves (ADR-0031).
+         * @enum {string}
+         */
+        InstitutionMode: "school" | "university";
         /**
          * @description A `text` item or an assignment. `body` is a JSON object the server stores without interpreting it;
          *     for an assignment it holds the instructions.
@@ -1590,6 +1662,11 @@ export interface components {
             status: components["schemas"]["ContentStatus"];
             title: string;
         };
+        /**
+         * @description The interface language an institution starts in (ADR-0043).
+         * @enum {string}
+         */
+        Language: "en" | "uk";
         /** @description The latest submitted attempt of a student, without its content. */
         LatestAttempt: {
             /** Format: int32 */
@@ -2202,6 +2279,44 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    get_admin_institution: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The institution settings */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminInstitution"];
+                };
+            };
+            /** @description Not logged in */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Not an admin */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
     list_users: {
         parameters: {
             query?: {
@@ -4971,6 +5086,26 @@ export interface operations {
                 };
                 content: {
                     "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    get_institution: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The institution profile */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Institution"];
                 };
             };
         };

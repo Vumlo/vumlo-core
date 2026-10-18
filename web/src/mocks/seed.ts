@@ -414,10 +414,8 @@ export function createSeed(): Db {
   ];
 
   const institution = {
-    name: "Northfield University", short_name: "Northfield", accent: "Indigo", language: "en" as const, time_zone: "Europe/Kyiv", grading_scale: "Points, two decimal places",
-    accents: [{ name: "Indigo", value: "indigo" }, { name: "Teal", value: "teal" }, { name: "Crimson", value: "crimson" }, { name: "Forest", value: "forest" }, { name: "Plum", value: "plum" }],
-    server: { grading_scale: "Points, two decimal places", failed_logins: "10 tries, then a 15 minute wait", session_lifetime: "End after 30 days without activity", largest_document: "1 MB" },
-    changed_at: at("2026-09-02 10:00"), changed_by: "you",
+    name: "Northfield University", short_name: "Northfield", accent: "indigo" as const, language: "en" as const, time_zone: "Europe/Kyiv", grading_scale: "hundred" as const,
+    mode: "university" as const, allowed_domains: ["northfield.edu"],
   };
 
   return {

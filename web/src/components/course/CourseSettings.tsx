@@ -121,7 +121,7 @@ export function CourseSettings({ courseId }: { courseId: string }) {
             <h2 id="grading-h">{t("cs.grading")}</h2>
             <p className={s.lead}>{t("cs.gradingLead")}</p>
             <dl className={s.dl}>
-              <dt>{t("cs.scale")}</dt><dd>{institution.data?.grading_scale ?? "…"}</dd>
+              <dt>{t("cs.scale")}</dt><dd>{institution.data ? t(`ai.scale.${institution.data.grading_scale}`) : "…"}</dd>
               <dt>{t("cs.total")}</dt><dd>{t("cs.totalValue", { points: i.total_points, items: plural(i.graded_items, "graded item") })}</dd>
               <dt>{t("cs.seen")}</dt><dd>{t("cs.seenValue")}</dd>
             </dl>
