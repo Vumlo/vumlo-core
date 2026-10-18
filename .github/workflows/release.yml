@@ -1,7 +1,7 @@
 name: Release
 
-# A tag vX.Y.Z publishes the release X.Y.Z: the CI checks, the two images and the GitHub Release.
-# See RELEASING.md.
+# A tag vX.Y.Z publishes the release X.Y.Z: the CI checks, the source archive with its checksum, a
+# proof that the archive builds and runs, and the GitHub Release. See RELEASING.md.
 on:
   push:
     tags: ["v*"]
@@ -16,18 +16,24 @@ jobs:
       version: ${{ steps.v.outputs.version }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
       - id: v
-        name: The tag is the workspace version
+        name: The tag is the workspace version, is on main, and has a changelog entry
         run: |
           version=$(sed -n '/^\[workspace.package\]/,/^\[/{s/^version *= *"\(.*\)"/\1/p}' backend/Cargo.toml)
           web=$(sed -n 's/^  "version": "\(.*\)",/\1/p' web/package.json)
-          compose=$(sed -n 's/.*VUMLO_VERSION:-\([^}]*\)}.*/\1/p' deploy/compose.yaml | head -n 1)
+          compose=$(sed -n 's/.*VUMLO_VERSION:-\([^}]*\)}.*/\1/p' deploy/compose.yaml | sort -u)
           if [ "${GITHUB_REF_NAME}" != "v${version}" ]; then
             echo "::error::the tag is ${GITHUB_REF_NAME}, but the workspace version is ${version}"
             exit 1
           fi
           if [ "${web}" != "${version}" ] || [ "${compose}" != "${version}" ]; then
             echo "::error::web/package.json (${web}) and deploy/compose.yaml (${compose}) must say ${version}"
+            exit 1
+          fi
+          if ! git merge-base --is-ancestor "${GITHUB_SHA}" origin/main; then
+            echo "::error::${GITHUB_REF_NAME} is not on main: release only from main"
             exit 1
           fi
           if ! grep -q "^## \[${version}\] - " CHANGELOG.md; then
@@ -40,62 +46,32 @@ jobs:
     needs: version
     uses: ./.github/workflows/ci.yml
 
-  images:
+  archive:
     needs: [version, gate]
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
-    env:
-      VERSION: ${{ needs.version.outputs.version }}
     steps:
       - uses: actions/checkout@v7
-      - uses: docker/setup-buildx-action@v4
-      - uses: docker/login-action@v4
+      - run: .github/release/make-archive.sh "${{ needs.version.outputs.version }}" dist
+      - uses: actions/upload-artifact@v7
         with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-      - id: backend
-        uses: docker/metadata-action@v6
+          name: release
+          path: dist/
+          if-no-files-found: error
+
+  # The archive, as a stranger gets it, built from scratch and run: docs/install.md, followed.
+  verify:
+    needs: [version, archive]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
         with:
-          images: ghcr.io/${{ github.repository_owner }}/vumlo-backend
-          tags: type=raw,value=${{ env.VERSION }}
-      - uses: docker/build-push-action@v7
-        with:
-          context: .
-          file: deploy/Dockerfile.backend
-          push: true
-          tags: ${{ steps.backend.outputs.tags }}
-          labels: ${{ steps.backend.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-      # The web image needs .vumlo/generated. A release has no institution, so it is generated with
-      # the example configuration by the CLI of the image that was just pushed: it is a trial
-      # image (public_origin http://localhost:3000), and it proves that deploy/Dockerfile.web builds.
-      - name: Generate the example branding
-        run: |
-          docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/srv/vumlo" -w /srv/vumlo \
-            --entrypoint vumlo-cli "ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/vumlo-backend:${VERSION}" init
-          docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/srv/vumlo" -w /srv/vumlo \
-            --entrypoint vumlo-cli "ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/vumlo-backend:${VERSION}" brand apply
-      - id: web
-        uses: docker/metadata-action@v6
-        with:
-          images: ghcr.io/${{ github.repository_owner }}/vumlo-web
-          tags: type=raw,value=${{ env.VERSION }}
-      - uses: docker/build-push-action@v7
-        with:
-          context: .
-          file: deploy/Dockerfile.web
-          push: true
-          tags: ${{ steps.web.outputs.tags }}
-          labels: ${{ steps.web.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          name: release
+          path: dist/
+      - run: .github/release/verify-archive.sh dist "${{ needs.version.outputs.version }}"
 
   release:
-    needs: [version, images]
+    needs: [version, verify]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -104,6 +80,10 @@ jobs:
       GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          name: release
+          path: dist/
       - name: The changelog entry is the release notes
         run: |
           awk -v v="${VERSION}" '/^## \[/ { on = index($0, "[" v "]") == 4; next } /^\[[^]]+\]: / { on = 0 } on' CHANGELOG.md > notes.md
@@ -112,4 +92,6 @@ jobs:
             exit 1
           fi
           cat notes.md
-      - run: gh release create "${GITHUB_REF_NAME}" --verify-tag --title "Vumlo ${VERSION}" --notes-file notes.md
+      - run: >
+          gh release create "${GITHUB_REF_NAME}" --verify-tag --title "Vumlo ${VERSION}"
+          --notes-file notes.md "dist/vumlo-${VERSION}-source.tar.gz" dist/SHA256SUMS

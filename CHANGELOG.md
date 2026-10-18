@@ -35,7 +35,11 @@ There is nothing to upgrade from; follow [docs/install.md](docs/install.md).
 - **Deployment templates** in `deploy/`: a Docker Compose file (PostgreSQL, core, worker, web), the
   Dockerfiles, `vumlo.example.toml`, `env.example`, hardened systemd units, a Caddyfile and `update.sh`
   (backup, stop, migrate, start, check). The `./vumlo` script runs the CLI from a local binary or from
-  the compose service. Container images are published to `ghcr.io/vumlo/` with each release.
+  the compose service. Each release is a source archive with a checksum file, attached to its GitHub
+  Release; its builds are tested from scratch in CI.
+- **Placeholder brand**: the name "Vumlo" and a marked placeholder logo, `brand/logo.svg`, so that
+  `init`, `brand apply` and the build work with no assets of your own. Replace the logo; `brand apply`
+  generates everything from it again.
 - **Branding at build time**: the institution's name, short name, language, time zone, grading scale and
   logo from `vumlo.toml` become the web app's configuration, favicon, icons and manifest
   (`brand apply`). There is no runtime branding endpoint and no theme settings.
@@ -68,7 +72,7 @@ There is nothing to upgrade from; follow [docs/install.md](docs/install.md).
 - File uploads: the `file` assignment type and file and link items are designed (ADR-0023, ADR-0024)
   but not built.
 - Any optional module, and an end-user CLI (ADR-0055).
-- Container images are for `linux/amd64` only.
+- Published container images: the images are built on your server from the archive.
 
 [Unreleased]: https://github.com/Vumlo/vumlo-core/compare/v0.1.0...HEAD
 [0.1.0]: https://github.com/Vumlo/vumlo-core/releases/tag/v0.1.0
