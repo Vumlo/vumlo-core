@@ -1,0 +1,26 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT action FROM events.audit_log",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "action",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "events.audit_log",
+            "name": "action"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "9cb827bc8f8e4952cb07aece31b386da060d6375afa1364f7c60b86978a79b1a"
+}

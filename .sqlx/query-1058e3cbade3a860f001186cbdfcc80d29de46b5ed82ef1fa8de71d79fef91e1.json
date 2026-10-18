@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "UPDATE content.assignments\n           SET config = COALESCE($2::jsonb, config),\n               max_points = COALESCE($3::numeric, max_points),\n               is_bonus = COALESCE($4::boolean, is_bonus),\n               due_at = CASE WHEN $5 THEN $6::timestamptz ELSE due_at END,\n               on_deadline = CASE WHEN $5 THEN $7::text ELSE on_deadline END,\n               accept_late = CASE WHEN $5 THEN $8::boolean ELSE accept_late END,\n               late_until = CASE WHEN $5 THEN $9::timestamptz ELSE late_until END,\n               max_attempts = CASE WHEN $5 THEN $10::integer ELSE max_attempts END,\n               updated_at = now()\n           WHERE item_id = $1\n           RETURNING type AS \"assignment_type: BuiltinType\", config AS \"config: Body\",\n                     max_points AS \"max_points: MaxPoints\", is_bonus,\n                     due_at, on_deadline AS \"on_deadline: OnDeadline\", accept_late, late_until,\n                     max_attempts",
+  "query": "SELECT type AS \"assignment_type: BuiltinType\", config AS \"config: Body\",\n                  max_points AS \"max_points: MaxPoints\", is_bonus,\n                  due_at, on_deadline AS \"on_deadline: OnDeadline\", accept_late, late_until,\n                  max_attempts, class_on\n           FROM content.assignments WHERE item_id = $1",
   "describe": {
     "columns": [
       {
@@ -101,20 +101,22 @@
             "name": "max_attempts"
           }
         }
+      },
+      {
+        "ordinal": 9,
+        "name": "class_on",
+        "type_info": "Date",
+        "origin": {
+          "Table": {
+            "table": "content.assignments",
+            "name": "class_on"
+          }
+        }
       }
     ],
     "parameters": {
       "Left": [
-        "Uuid",
-        "Jsonb",
-        "Numeric",
-        "Bool",
-        "Bool",
-        "Timestamptz",
-        "Text",
-        "Bool",
-        "Timestamptz",
-        "Int4"
+        "Uuid"
       ]
     },
     "nullable": [
@@ -126,8 +128,9 @@
       true,
       true,
       true,
+      true,
       true
     ]
   },
-  "hash": "8fa3b41560b9b5b22cd67fd3b8920c7912e56331dc02e3eb0da5c2ed2b5d8aff"
+  "hash": "1058e3cbade3a860f001186cbdfcc80d29de46b5ed82ef1fa8de71d79fef91e1"
 }

@@ -3,9 +3,9 @@
 //! except the gradebook, which reads three statements from one snapshot.
 
 use api_types::{
-    GradeCell, GradebookCell, GradebookColumn, GradebookPage, GradebookRow, MyGrade, MyGrades,
-    PageQuery, ProblemDetails, PublishGradesRequest, PublishGradesResponse, PublishStudents,
-    SaveGradeRequest,
+    GradeAction, GradeActor, GradeCell, GradeHistoryEntry, GradebookCell, GradebookColumn,
+    GradebookPage, GradebookRow, MyGrade, MyGrades, Page, PageQuery, ProblemDetails,
+    PublishGradesRequest, PublishGradesResponse, PublishStudents, SaveGradeRequest,
 };
 use axum::Json;
 use axum::extract::{Path, State};
@@ -28,6 +28,7 @@ pub fn router() -> OpenApiRouter<AppState> {
         .routes(routes!(publish_grades))
         .routes(routes!(get_gradebook))
         .routes(routes!(get_my_grades))
+        .routes(routes!(get_grade_history))
 }
 
 impl From<GradebookError> for ApiError {
@@ -295,5 +296,66 @@ async fn get_my_grades(
                 published_at: grade.published_at,
             })
             .collect(),
+    }))
+}
+
+/// The recorded changes of one student's grade on an assignment, newest first. Staff only.
+///
+/// Every draft save and every publish is a row with the values after it and the person who made it.
+/// A student with no grade has an empty history.
+#[utoipa::path(
+    get,
+    path = "/assignments/{id}/grades/{student_id}/history",
+    tag = "gradebook",
+    security(("cookie" = []), ("bearer" = [])),
+    params(
+        ("id" = Uuid, Path, description = "Assignment id"),
+        ("student_id" = Uuid, Path, description = "The student"),
+        PageQuery,
+    ),
+    responses(
+        (status = 200, description = "A page of history entries", body = Page<GradeHistoryEntry>),
+        (status = 401, description = "Not logged in", body = ProblemDetails,
+            content_type = "application/problem+json"),
+        (status = 403, description = "The caller may not read the gradebook",
+            body = ProblemDetails, content_type = "application/problem+json"),
+        (status = 404, description = "No such assignment, or not visible to the caller",
+            body = ProblemDetails, content_type = "application/problem+json"),
+        (status = 422, description = "Invalid cursor", body = ProblemDetails,
+            content_type = "application/problem+json"),
+    )
+)]
+async fn get_grade_history(
+    State(state): State<AppState>,
+    actor: Actor,
+    Path((assignment_id, student_id)): Path<(Uuid, Uuid)>,
+    ValidQuery(query): ValidQuery<PageQuery>,
+) -> Result<Json<Page<GradeHistoryEntry>>, ApiError> {
+    let page = page_params(&query)?;
+    let mut conn = state.db.acquire().await.map_err(GradebookError::from)?;
+    let history =
+        service::grade_history(&mut conn, &actor, assignment_id, student_id, page).await?;
+    Ok(Json(Page {
+        items: history
+            .items
+            .into_iter()
+            .map(|entry| GradeHistoryEntry {
+                id: entry.id,
+                action: if entry.action == "publish" {
+                    GradeAction::Publish
+                } else {
+                    GradeAction::SaveDraft
+                },
+                score: entry.score.map(points),
+                feedback: entry.feedback,
+                actor: entry.actor.map(|actor| GradeActor {
+                    user_id: actor.user_id,
+                    name: actor.name,
+                    surname: actor.surname,
+                }),
+                at: entry.at,
+            })
+            .collect(),
+        next_cursor: history.next.map(|id| id.to_string()),
     }))
 }

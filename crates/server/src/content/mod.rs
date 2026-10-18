@@ -20,7 +20,8 @@ pub use model::{
 pub use routes::router;
 pub use service::{
     ContentError, CourseSummary, ItemRules, OpenError, copy_course_content, course_summary,
-    create_item, create_module, delete_item, delete_module, editor_profiles, get_item, get_tree,
-    lock_assignment_shared, lock_course_assignments, open_assignment, publish_item, publish_module,
-    reorder_items, reorder_modules, update_item, update_module,
+    create_item, create_module, delete_item, delete_module, editor_profiles, get_item,
+    get_revision, get_tree, item_meta, lock_assignment_shared, lock_course_assignments,
+    open_assignment, publish_item, publish_module, publish_revision, reorder_items,
+    reorder_modules, update_item, update_module,
 };

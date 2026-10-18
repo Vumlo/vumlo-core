@@ -1900,3 +1900,108 @@ async fn group_roster_links_has_a_row_per_link_where_the_roster_has_one_per_stud
     })
     .await;
 }
+
+// ADR-0049.
+
+#[tokio::test]
+async fn migration_26_gives_published_items_a_published_copy_and_leaves_drafts_without_one() {
+    bare_db_test(async |pool| {
+        app::MIGRATOR.run_to(25, &pool).await.unwrap();
+        let teacher = owner(&pool, "t@x.edu").await;
+        let course = insert_course(&pool, teacher).await;
+        let module = insert_module_row(&pool, course, None, 1).await.unwrap();
+        let live = insert_item_of_kind(&pool, module, course, 1, "text")
+            .await
+            .unwrap();
+        let draft = insert_item_of_kind(&pool, module, course, 2, "text")
+            .await
+            .unwrap();
+        sqlx::query!(
+            "UPDATE content.items SET status = 'published', title = 'Live', body = $2 WHERE id = $1",
+            live,
+            serde_json::json!({"v": 1})
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        app::MIGRATOR.run(&pool).await.unwrap();
+
+        let row = |id: uuid::Uuid| {
+            let pool = pool.clone();
+            async move {
+                sqlx::query!(
+                    r#"SELECT published_title, published_body, last_published_at IS NOT NULL AS "stamped!"
+                       FROM content.items WHERE id = $1"#,
+                    id
+                )
+                .fetch_one(&pool)
+                .await
+                .unwrap()
+            }
+        };
+        let published = row(live).await;
+        assert_eq!(published.published_title.as_deref(), Some("Live"));
+        assert_eq!(published.published_body, Some(serde_json::json!({"v": 1})));
+        assert!(published.stamped);
+        let waiting = row(draft).await;
+        assert!(waiting.published_title.is_none() && waiting.published_body.is_none());
+        assert!(!waiting.stamped);
+        app::ensure_migrated(&pool).await.unwrap();
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn a_published_item_needs_its_published_copy_and_only_in_class_work_has_a_class_day() {
+    db_test(async |pool| {
+        let teacher = owner(&pool, "t@x.edu").await;
+        let course = insert_course(&pool, teacher).await;
+        let module = insert_module_row(&pool, course, None, 1).await.unwrap();
+        let item = insert_item_of_kind(&pool, module, course, 1, "assignment")
+            .await
+            .unwrap();
+
+        let publish = sqlx::query!(
+            "UPDATE content.items SET status = 'published' WHERE id = $1",
+            item
+        )
+        .execute(&pool)
+        .await;
+        assert_eq!(sqlstate(publish), "23514", "published needs a copy");
+        sqlx::query!(
+            "UPDATE content.items
+             SET status = 'published', published_title = title, published_body = body,
+                 last_published_at = now()
+             WHERE id = $1",
+            item
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        insert_assignment_row(&pool, item, "10", serde_json::json!({}))
+            .await
+            .unwrap();
+        let on_text = sqlx::query!(
+            "UPDATE content.assignments SET class_on = '2026-10-29' WHERE item_id = $1",
+            item
+        )
+        .execute(&pool)
+        .await;
+        assert_eq!(
+            sqlstate(on_text),
+            "23514",
+            "a text assignment has no class day"
+        );
+        sqlx::query!(
+            "UPDATE content.assignments SET type = 'no_submission', class_on = '2026-10-29'
+             WHERE item_id = $1",
+            item
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+    })
+    .await;
+}

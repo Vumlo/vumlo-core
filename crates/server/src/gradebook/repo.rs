@@ -8,7 +8,7 @@ use sqlx::PgConnection;
 use sqlx::types::Decimal;
 use uuid::Uuid;
 
-use super::model::{Cell, Column, ColumnStatus, MyGrade};
+use super::model::{Cell, Column, ColumnStatus, HistoryActor, HistoryEntry, MyGrade};
 use crate::policy::Release;
 
 pub async fn is_student_member(
@@ -101,6 +101,49 @@ pub async fn insert_history(
     .execute(conn)
     .await?;
     Ok(())
+}
+
+/// The recorded changes of one cell, newest first: ids below `before`, at most `limit`. Staff
+/// read it, so the people who made the changes are named.
+pub async fn list_history(
+    conn: &mut PgConnection,
+    assignment_id: Uuid,
+    student_id: Uuid,
+    before: Option<Uuid>,
+    limit: i64,
+) -> Result<Vec<HistoryEntry>, sqlx::Error> {
+    let rows = sqlx::query!(
+        r#"SELECT h.id, h.action, h.score, h.feedback, h.at,
+                  h.actor_id AS "actor_id?", u.name AS "actor_name?", u.surname AS "actor_surname?"
+           FROM gradebook.grade_history h
+           LEFT JOIN identity.users u ON u.id = h.actor_id
+           WHERE h.assignment_id = $1 AND h.student_id = $2 AND ($3::uuid IS NULL OR h.id < $3)
+           ORDER BY h.id DESC
+           LIMIT $4"#,
+        assignment_id,
+        student_id,
+        before,
+        limit
+    )
+    .fetch_all(conn)
+    .await?;
+    Ok(rows
+        .into_iter()
+        .map(|row| HistoryEntry {
+            id: row.id,
+            action: row.action,
+            score: row.score,
+            feedback: row.feedback,
+            actor: row.actor_id.zip(row.actor_name).zip(row.actor_surname).map(
+                |((user_id, name), surname)| HistoryActor {
+                    user_id,
+                    name,
+                    surname,
+                },
+            ),
+            at: row.at,
+        })
+        .collect())
 }
 
 /// Locks, in student-id order, the rows of current student members whose draft differs from the
@@ -340,7 +383,7 @@ pub async fn my_published_grades(
     open_at: DateTime<Utc>,
 ) -> Result<Vec<MyGradeRow>, sqlx::Error> {
     let rows = sqlx::query!(
-        r#"SELECT i.id AS assignment_id, i.title, a.max_points, a.is_bonus,
+        r#"SELECT i.id AS assignment_id, i.published_title AS "title!", a.max_points, a.is_bonus,
                   g.published_score, g.published_feedback, g.published_at AS "published_at!",
                   i.status = 'published' AS "item_published!", i.publish_at AS item_publish_at,
                   m.status = 'published' AS "module_published!", m.publish_at AS module_publish_at,

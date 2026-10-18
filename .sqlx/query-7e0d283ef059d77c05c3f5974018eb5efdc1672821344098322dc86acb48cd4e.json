@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT m.id, m.course_id, m.parent_id, m.position, m.title,\n                  m.status AS \"status: ModuleStatus\", m.publish_at, m.created_at, m.updated_at,\n                  p.status AS \"parent_status?: ModuleStatus\", p.publish_at AS parent_publish_at,\n                  i.id AS \"item_id?\", i.kind AS \"item_kind?: ItemKind\", i.title AS \"item_title?\",\n                  i.status AS \"item_status?: ItemStatus\", i.publish_at AS item_publish_at,\n                  i.position AS \"item_position?\",\n                  a.type AS \"assignment_type?: BuiltinType\",\n                  a.max_points AS \"assignment_max_points?: MaxPoints\",\n                  a.is_bonus AS \"assignment_is_bonus?\",\n                  a.due_at AS assignment_due_at,\n                  a.on_deadline AS \"assignment_on_deadline?: OnDeadline\",\n                  a.accept_late AS assignment_accept_late,\n                  a.late_until AS assignment_late_until,\n                  a.max_attempts AS assignment_max_attempts\n           FROM content.modules m\n           LEFT JOIN content.modules p ON p.id = m.parent_id\n           LEFT JOIN content.items i\n                  ON i.module_id = m.id\n                 AND ($2::timestamptz IS NULL\n                      OR (i.status = 'published' AND (i.publish_at IS NULL OR i.publish_at <= $2)))\n           LEFT JOIN content.assignments a ON a.item_id = i.id\n           WHERE m.course_id = $1\n             AND ($2::timestamptz IS NULL\n                  OR (m.status = 'published' AND (m.publish_at IS NULL OR m.publish_at <= $2)\n                      AND (p.id IS NULL\n                           OR (p.status = 'published' AND (p.publish_at IS NULL OR p.publish_at <= $2)))))\n           ORDER BY COALESCE(p.position, m.position), m.parent_id NULLS FIRST, m.position, i.position",
+  "query": "SELECT m.id, m.course_id, m.parent_id, m.position, m.title,\n                  m.status AS \"status: ModuleStatus\", m.publish_at, m.created_at, m.updated_at,\n                  p.status AS \"parent_status?: ModuleStatus\", p.publish_at AS parent_publish_at,\n                  i.id AS \"item_id?\", i.kind AS \"item_kind?: ItemKind\",\n                  CASE WHEN $2::timestamptz IS NULL THEN i.title ELSE i.published_title END\n                      AS \"item_title?\",\n                  i.status AS \"item_status?: ItemStatus\", i.publish_at AS item_publish_at,\n                  i.position AS \"item_position?\",\n                  a.type AS \"assignment_type?: BuiltinType\",\n                  a.max_points AS \"assignment_max_points?: MaxPoints\",\n                  a.is_bonus AS \"assignment_is_bonus?\",\n                  a.due_at AS assignment_due_at,\n                  a.on_deadline AS \"assignment_on_deadline?: OnDeadline\",\n                  a.accept_late AS assignment_accept_late,\n                  a.late_until AS assignment_late_until,\n                  a.max_attempts AS assignment_max_attempts\n           FROM content.modules m\n           LEFT JOIN content.modules p ON p.id = m.parent_id\n           LEFT JOIN content.items i\n                  ON i.module_id = m.id\n                 AND ($2::timestamptz IS NULL\n                      OR (i.status = 'published' AND (i.publish_at IS NULL OR i.publish_at <= $2)))\n           LEFT JOIN content.assignments a ON a.item_id = i.id\n           WHERE m.course_id = $1\n             AND ($2::timestamptz IS NULL\n                  OR (m.status = 'published' AND (m.publish_at IS NULL OR m.publish_at <= $2)\n                      AND (p.id IS NULL\n                           OR (p.status = 'published' AND (p.publish_at IS NULL OR p.publish_at <= $2)))))\n           ORDER BY COALESCE(p.position, m.position), m.parent_id NULLS FIRST, m.position, i.position",
   "describe": {
     "columns": [
       {
@@ -150,12 +150,7 @@
         "ordinal": 13,
         "name": "item_title?",
         "type_info": "Text",
-        "origin": {
-          "Table": {
-            "table": "content.items",
-            "name": "title"
-          }
-        }
+        "origin": "Expression"
       },
       {
         "ordinal": 14,
@@ -299,7 +294,7 @@
       true,
       false,
       false,
-      false,
+      null,
       false,
       true,
       false,
@@ -313,5 +308,5 @@
       true
     ]
   },
-  "hash": "8035860bf7280b164dce493a367cb558aff8a56f1fec54a732015fb402a24821"
+  "hash": "7e0d283ef059d77c05c3f5974018eb5efdc1672821344098322dc86acb48cd4e"
 }

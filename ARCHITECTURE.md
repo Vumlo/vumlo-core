@@ -149,13 +149,16 @@ content
   modules          id, course_id, parent_id?, position, title, status: draft | published, publish_at?
                    -- one level of sub-modules: parent_id is null or a top-level module of the same course
   items            id, module_id, course_id, position, kind: text | assignment, title,
-                   body (jsonb object), status: draft | published, publish_at?
+                   body (jsonb object), status: draft | published, publish_at?,
+                   published_title?, published_body?, last_published_at?
+                   -- built (ADR-0049): staff edit title and body, students read the published pair; a published item has it (CHECK)
                    -- built: both kinds, text and assignment (ADR-0020, ADR-0021, ADR-0024)
                    -- the body of a text item and of an assignment (its description) is a block document (ADR-0025, ADR-0027); the default is the empty document
                    -- planned (ADR-0024): link, file and a lesson made of steps (ADR-0026) are added
   assignments      item_id (PK), type: text | no_submission, config (jsonb), max_points numeric(6,2), is_bonus,
                    due_at?, on_deadline?: keep_draft | auto_submit, accept_late? (bool), late_until?,
-                   max_attempts?                       -- null = unlimited
+                   max_attempts?,                      -- null = unlimited
+                   class_on? (date)                    -- built (ADR-0049): only for no_submission (CHECK)
                    -- built (ADR-0035): the five settings are nullable. due_at, on_deadline and accept_late are all set or all
                    -- null (a deadline comes with what happens at it and whether late work is taken); late_until needs
                    -- accept_late and is after due_at; max_attempts >= 1; a no_submission assignment has none (CHECKs)
@@ -296,7 +299,9 @@ The gradebook endpoints (tag `gradebook`):
 A cell exists only where a grade row exists; every cell carries its `assignment_id`, and a missing cell means "no grade". The roster is the active students in the view `teaching.effective_members`, direct and through linked groups. After them the gradebook lists the **former students** with a grade value: people who left the roster (left the group, were disabled, were promoted, were excluded). They carry `former: true` and their cells; a grade write for one is `409`, "publish all" skips them, a listed publish names them in `students[i]`, and their published grades stay readable to them through `GET /courses/{id}/my-grades` while the rest of the course is `404` for them.
 
 **Publishing a module** ([ADR-0010](docs/decisions/0010-content-publishing.md))
-`POST /modules/{id}/publish { "cascade": true | false }`. The parameter is required and has no default. The web UI asks in a dialog; the CLI and mobile app must choose explicitly. `cascade: true` also publishes the module's sub-modules and every draft item below them, in one transaction. Publishing is idempotent and never changes `publish_at`.
+`POST /modules/{id}/publish { "cascade": true | false }`. The parameter is required and has no default. The web UI asks in a dialog; the CLI and mobile app must choose explicitly. `cascade: true` also publishes the module's sub-modules and every draft item below them, in one transaction. Publishing is idempotent and never changes `publish_at`, and it does not publish the pending edits of items that were published already.
+
+**Unpublished revisions** ([ADR-0049](docs/decisions/0049-unpublished-revisions-class-dates-and-item-meta.md), superseding the last decision of ADR-0010). Staff read and edit the working `title` and `body` of an item; a student reads the published pair, in the tree, in `GET /items/{id}` and on `my-grades`. Publishing a draft item copies the working pair; `POST /items/{id}/revision/publish` does it for a published item (`409` for a draft), `GET /items/{id}/revision` says whether they differ (`has_unpublished_changes`, `last_published_at`, `size_bytes`). An assignment's `config`, points and deadline settings are not revisioned. **Item facts** (`GET /courses/{id}/item-meta`): reading time of a lecture, the `class_on` day of in-class work, for staff `edited` and the counts to grade, for a student their own `status`, published `score` and attempts; the status of work follows one rule (published value, in class, submitted, draft, missed, not started). **Grade history** (`GET /assignments/{id}/grades/{student_id}/history`, staff): the rows of `gradebook.grade_history`, newest first, paged.
 
 The content endpoints (tag `content`, all under `/api/v1`):
 

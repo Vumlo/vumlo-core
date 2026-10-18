@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id FROM content.items\n         WHERE course_id = $1 AND status = 'published'\n           AND (title IS DISTINCT FROM published_title OR body IS DISTINCT FROM published_body)",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "content.items",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "b81d9a7a1c3f944c7dd5749c945f197d07d3f710fff1204221021e1342783e04"
+}

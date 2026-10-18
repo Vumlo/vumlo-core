@@ -3,9 +3,9 @@
 
 use api_types::{
     ContentModule, ContentStatus, ContentSubModule, ContentTree, CreateItemRequest,
-    CreateModuleRequest, EditorProfiles, FieldError, Item, ItemSummary, Module, NewAssignment,
-    ProblemDetails, PublishModuleRequest, ReorderItemsRequest, ReorderModulesRequest,
-    UpdateItemRequest, UpdateModuleRequest,
+    CreateModuleRequest, EditorProfiles, FieldError, Item, ItemMeta, ItemMetaMap, ItemRevision,
+    ItemSummary, Module, NewAssignment, ProblemDetails, PublishModuleRequest, ReorderItemsRequest,
+    ReorderModulesRequest, UpdateItemRequest, UpdateModuleRequest,
 };
 use axum::Json;
 use axum::extract::{Path, State};
@@ -33,6 +33,9 @@ pub fn router() -> OpenApiRouter<AppState> {
         .routes(routes!(create_item, reorder_items))
         .routes(routes!(get_item, update_item, delete_item))
         .routes(routes!(publish_item))
+        .routes(routes!(get_revision))
+        .routes(routes!(publish_revision))
+        .routes(routes!(get_item_meta))
         .routes(routes!(get_editor_profiles))
 }
 
@@ -73,6 +76,9 @@ impl From<ContentError> for ApiError {
             ContentError::Conflict => Self::Conflict("a concurrent change conflicts, retry"),
             ContentError::BelowGivenScores => {
                 Self::Conflict("max_points cannot be lowered below a score that was already given")
+            }
+            ContentError::ItemNotPublished => {
+                Self::Conflict("the item is a draft: publish it first")
             }
             ContentError::HasGrades => Self::Conflict("it has grades: clear them before deleting"),
             ContentError::HasSubmissions => {
@@ -140,6 +146,7 @@ fn api_assignment(assignment: model::Assignment) -> api_types::Assignment {
         accept_late: assignment.settings.accept_late,
         late_until: assignment.settings.late_until,
         max_attempts: assignment.settings.max_attempts,
+        class_on: assignment.class_on,
     }
 }
 
@@ -235,6 +242,19 @@ fn domain_assignment(new: NewAssignment) -> Result<model::Assignment, ApiError> 
         ),
         Err(_) => Ok(SubmissionSettings::default()),
     };
+    // A class day belongs to in-class work only (ADR-0049).
+    let class_on_misplaced =
+        matches!((&assignment_type, new.class_on), (Ok(kind), Some(_)) if kind.takes_submissions());
+    let settings = if class_on_misplaced {
+        let mut problems = settings.err().unwrap_or_default();
+        problems.push(model::SettingProblem {
+            field: "class_on",
+            message: "only an in-class assignment has a class day".to_owned(),
+        });
+        Err(problems)
+    } else {
+        settings
+    };
     match (assignment_type, max_points, settings) {
         (Ok(assignment_type), Ok(max_points), Ok(settings)) => Ok(model::Assignment {
             assignment_type,
@@ -242,6 +262,7 @@ fn domain_assignment(new: NewAssignment) -> Result<model::Assignment, ApiError> 
             max_points,
             is_bonus: new.is_bonus,
             settings,
+            class_on: new.class_on,
         }),
         (assignment_type, max_points, settings) => {
             let mut errors: Vec<FieldError> = [
@@ -645,11 +666,13 @@ async fn get_item(
 }
 
 /// Changes an item's title, body and/or `publish_at` (`null` clears it). A `body` replaces the
-/// whole body. Edits to a published item are visible at once (ADR-0010).
+/// whole body. The title and body of a published item are a working copy: students keep reading the
+/// published one until `POST /items/{id}/revision/publish` (ADR-0049). An assignment's `config`,
+/// points and deadline settings apply at once.
 ///
 /// For an assignment `config`, `max_points` and `is_bonus` may change too; the grading scale
-/// limits apply when `max_points` is raised or a bonus assignment becomes regular. They are
-/// rejected for a `text` item. `type` and `kind` cannot change: sending them has no effect.
+/// limits apply when `max_points` is raised or a bonus assignment becomes regular. `class_on` is
+/// for `no_submission` assignments. They are rejected for a `text` item. `type` and `kind` cannot change: sending them has no effect.
 #[utoipa::path(
     patch,
     path = "/items/{id}",
@@ -694,6 +717,7 @@ async fn update_item(
             late_until: request.late_until,
             max_attempts: request.max_attempts,
         },
+        class_on: request.class_on,
     };
     let mut tx = state.db.begin().await.map_err(ContentError::from)?;
     let item = service::update_item(&mut tx, &actor, rules(&state), id, patch).await?;
@@ -758,6 +782,147 @@ async fn publish_item(
     let item = service::publish_item(&mut tx, &actor, id).await?;
     tx.commit().await.map_err(ContentError::from)?;
     Ok(Json(api_item(item)))
+}
+
+fn api_revision(revision: model::Revision) -> ItemRevision {
+    ItemRevision {
+        has_unpublished_changes: revision.has_unpublished_changes,
+        last_published_at: revision.last_published_at,
+        size_bytes: revision.size_bytes,
+    }
+}
+
+/// Whether a published item has changes that students do not see yet. Staff only.
+#[utoipa::path(
+    get,
+    path = "/items/{id}/revision",
+    tag = "content",
+    security(("cookie" = []), ("bearer" = [])),
+    params(("id" = Uuid, Path, description = "Item id")),
+    responses(
+        (status = 200, description = "The revision", body = ItemRevision),
+        (status = 401, description = "Not logged in", body = ProblemDetails,
+            content_type = "application/problem+json"),
+        (status = 403, description = "Only staff see revisions", body = ProblemDetails,
+            content_type = "application/problem+json"),
+        (status = 404, description = "No such item, or not visible to the caller",
+            body = ProblemDetails, content_type = "application/problem+json"),
+    )
+)]
+async fn get_revision(
+    State(state): State<AppState>,
+    actor: Actor,
+    Path(id): Path<Uuid>,
+) -> Result<Json<ItemRevision>, ApiError> {
+    let mut conn = state.db.acquire().await.map_err(ContentError::from)?;
+    let revision = service::get_revision(&mut conn, &actor, id).await?;
+    Ok(Json(api_revision(revision)))
+}
+
+/// Gives students the working title and body of a published item (ADR-0049).
+///
+/// A draft has nothing to publish a revision of: publish the item (`409`). Not in an archived
+/// course.
+#[utoipa::path(
+    post,
+    path = "/items/{id}/revision/publish",
+    tag = "content",
+    security(("cookie" = []), ("bearer" = [])),
+    params(("id" = Uuid, Path, description = "Item id")),
+    responses(
+        (status = 200, description = "The revision after publishing", body = ItemRevision),
+        (status = 401, description = "Not logged in", body = ProblemDetails,
+            content_type = "application/problem+json"),
+        (status = 403, description = "The caller may not change this course's content",
+            body = ProblemDetails, content_type = "application/problem+json"),
+        (status = 404, description = "No such item, or not visible to the caller",
+            body = ProblemDetails, content_type = "application/problem+json"),
+        (status = 409, description = "The item is a draft, or the course is archived",
+            body = ProblemDetails, content_type = "application/problem+json"),
+    )
+)]
+async fn publish_revision(
+    State(state): State<AppState>,
+    actor: Actor,
+    Path(id): Path<Uuid>,
+) -> Result<Json<ItemRevision>, ApiError> {
+    let mut tx = state.db.begin().await.map_err(ContentError::from)?;
+    let revision = service::publish_revision(&mut tx, &actor, id).await?;
+    tx.commit().await.map_err(ContentError::from)?;
+    Ok(Json(api_revision(revision)))
+}
+
+/// Counts are far below `u32::MAX`; a database that disagreed would still not overflow the field.
+fn count(n: i64) -> u32 {
+    u32::try_from(n).unwrap_or(u32::MAX)
+}
+
+fn api_work_status(status: model::WorkStatus) -> api_types::WorkStatus {
+    match status {
+        model::WorkStatus::NotStarted => api_types::WorkStatus::NotStarted,
+        model::WorkStatus::Draft => api_types::WorkStatus::Draft,
+        model::WorkStatus::Submitted => api_types::WorkStatus::Submitted,
+        model::WorkStatus::Graded => api_types::WorkStatus::Graded,
+        model::WorkStatus::Missed => api_types::WorkStatus::Missed,
+        model::WorkStatus::InClass => api_types::WorkStatus::InClass,
+    }
+}
+
+fn api_meta(facts: model::ItemFacts) -> ItemMeta {
+    let mut meta = ItemMeta {
+        read_minutes: facts.read_minutes.map(count),
+        class_on: facts.class_on,
+        edited: facts.edited,
+        ..ItemMeta::default()
+    };
+    if let Some(work) = facts.work {
+        meta.status = Some(api_work_status(work.status));
+        meta.score = work.score.map(|score| format!("{score:.2}"));
+        meta.draft_saved_at = work.draft_saved_at;
+        meta.published_at = work.published_at;
+        meta.attempts_used = Some(count(work.attempts_used));
+    }
+    if let Some(staff) = facts.staff {
+        meta.submitted = Some(count(staff.submitted));
+        meta.to_grade = Some(count(staff.to_grade));
+        meta.draft_grades = Some(count(staff.draft_grades));
+        meta.graded_total = Some(count(staff.graded_total));
+    }
+    meta
+}
+
+/// The facts of every item of the course that the tree does not carry, by item id.
+///
+/// Everyone gets the reading time of a lecture and the class day of in-class work. Staff also get
+/// `edited` and the counts of what to grade; a student gets their own standing, with published
+/// values only.
+#[utoipa::path(
+    get,
+    path = "/courses/{id}/item-meta",
+    tag = "content",
+    security(("cookie" = []), ("bearer" = [])),
+    params(("id" = Uuid, Path, description = "Course id")),
+    responses(
+        (status = 200, description = "The facts by item id", body = ItemMetaMap),
+        (status = 401, description = "Not logged in", body = ProblemDetails,
+            content_type = "application/problem+json"),
+        (status = 404, description = "No such course, or not visible to the caller",
+            body = ProblemDetails, content_type = "application/problem+json"),
+    )
+)]
+async fn get_item_meta(
+    State(state): State<AppState>,
+    actor: Actor,
+    Path(id): Path<Uuid>,
+) -> Result<Json<ItemMetaMap>, ApiError> {
+    let mut conn = state.db.acquire().await.map_err(ContentError::from)?;
+    let facts = service::item_meta(&mut conn, &actor, id).await?;
+    Ok(Json(ItemMetaMap {
+        items: facts
+            .into_iter()
+            .map(|(id, facts)| (id.to_string(), api_meta(facts)))
+            .collect(),
+    }))
 }
 
 /// The document editor's profiles as the server enforces them: for each profile the features it

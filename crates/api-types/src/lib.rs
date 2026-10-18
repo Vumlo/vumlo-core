@@ -12,6 +12,7 @@ mod courses;
 mod document;
 mod gradebook;
 mod groups;
+mod items;
 mod org;
 
 pub use assessment::*;
@@ -19,6 +20,7 @@ pub use courses::*;
 pub use document::*;
 pub use gradebook::*;
 pub use groups::*;
+pub use items::*;
 pub use org::*;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
@@ -464,6 +466,9 @@ pub struct Assignment {
     pub late_until: Option<DateTime<Utc>>,
     /// The most attempts a student may submit; `null` means no limit.
     pub max_attempts: Option<i32>,
+    /// The day an in-class (`no_submission`) assignment takes place, `YYYY-MM-DD` (ADR-0049);
+    /// `null` for any other type.
+    pub class_on: Option<chrono::NaiveDate>,
 }
 
 /// What the course tree shows of an assignment: everything but `config`.
@@ -650,6 +655,10 @@ pub struct NewAssignment {
     /// At least 1; omit for unlimited attempts.
     #[serde(default)]
     pub max_attempts: Option<i64>,
+    /// The day an in-class assignment takes place, `YYYY-MM-DD` (ADR-0049). Only for
+    /// `no_submission`.
+    #[serde(default)]
+    pub class_on: Option<chrono::NaiveDate>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Validate, ToSchema)]
@@ -721,6 +730,12 @@ pub struct UpdateItemRequest {
     #[schema(value_type = Option<i64>)]
     #[garde(skip)]
     pub max_attempts: Option<Option<i64>>,
+    /// `no_submission` assignments only (ADR-0049). Omit to keep, `null` to clear, a day
+    /// (`YYYY-MM-DD`) to set.
+    #[serde(default, deserialize_with = "set_or_clear")]
+    #[schema(value_type = Option<chrono::NaiveDate>)]
+    #[garde(skip)]
+    pub class_on: Option<Option<chrono::NaiveDate>>,
 }
 
 #[cfg(test)]
@@ -890,6 +905,7 @@ mod content_tests {
             accept_late: None,
             late_until: None,
             max_attempts: None,
+            class_on: None,
         })))
         .unwrap();
         assert_eq!(
@@ -897,7 +913,7 @@ mod content_tests {
             json!({
                 "type": "text", "config": {}, "max_points": "20.00", "is_bonus": false,
                 "due_at": null, "on_deadline": null, "accept_late": null, "late_until": null,
-                "max_attempts": null
+                "max_attempts": null, "class_on": null
             })
         );
     }

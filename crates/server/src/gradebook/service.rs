@@ -20,7 +20,7 @@ use uuid::Uuid;
 
 use super::model::{
     Cell, Feedback, FeedbackInput, FieldProblem, GradeInput, GradebookPage, GradebookRow,
-    ModelError, MyGrade, Score, Students,
+    HistoryEntry, ModelError, MyGrade, Score, Students,
 };
 use super::repo;
 use crate::actor::Actor;
@@ -220,6 +220,28 @@ pub async fn save_grade(
     )
     .await?;
     Ok(cell)
+}
+
+/// The recorded changes of one student's grade, newest first (ADR-0049). Staff only; a student
+/// with no grade has an empty history.
+pub async fn grade_history(
+    conn: &mut PgConnection,
+    actor: &Actor,
+    assignment_id: Uuid,
+    student_id: Uuid,
+    page: PageParams,
+) -> Result<Page<HistoryEntry>, GradebookError> {
+    let context = open_assignment(conn, actor, assignment_id).await?;
+    policy::authorize(actor, Action::ViewGradebook(context.access))?;
+    let rows = repo::list_history(
+        conn,
+        assignment_id,
+        student_id,
+        page.after,
+        i64::from(page.limit) + 1,
+    )
+    .await?;
+    Ok(Page::from_rows(rows, page.limit, |entry| entry.id))
 }
 
 /// Copies draft to published for the students of the course, in this transaction, only where the
@@ -589,6 +611,7 @@ mod tests {
                 max_points: MaxPoints::parse(points).unwrap(),
                 is_bonus: false,
                 settings: SubmissionSettings::default(),
+                class_on: None,
             }),
         )
         .await

@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "UPDATE content.items SET status = 'published', updated_at = now()\n           WHERE id = $1 AND status = 'draft'\n           RETURNING id, module_id, course_id, position, kind AS \"kind: ItemKind\", title,\n                     body AS \"body: Body\", status AS \"status: ItemStatus\", publish_at,\n                     created_at, updated_at",
+  "query": "UPDATE content.items\n           SET status = 'published', published_title = title, published_body = body,\n               last_published_at = now(), updated_at = now()\n           WHERE id = $1 AND status = 'draft'\n           RETURNING id, module_id, course_id, position, kind AS \"kind: ItemKind\", title,\n                     body AS \"body: Body\", status AS \"status: ItemStatus\", publish_at,\n                     published_title, published_body AS \"published_body?: Body\",\n                     last_published_at, created_at, updated_at",
   "describe": {
     "columns": [
       {
@@ -104,6 +104,39 @@
       },
       {
         "ordinal": 9,
+        "name": "published_title",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "content.items",
+            "name": "published_title"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "published_body?: Body",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "content.items",
+            "name": "published_body"
+          }
+        }
+      },
+      {
+        "ordinal": 11,
+        "name": "last_published_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "content.items",
+            "name": "last_published_at"
+          }
+        }
+      },
+      {
+        "ordinal": 12,
         "name": "created_at",
         "type_info": "Timestamptz",
         "origin": {
@@ -114,7 +147,7 @@
         }
       },
       {
-        "ordinal": 10,
+        "ordinal": 13,
         "name": "updated_at",
         "type_info": "Timestamptz",
         "origin": {
@@ -140,9 +173,12 @@
       false,
       false,
       true,
+      true,
+      true,
+      true,
       false,
       false
     ]
   },
-  "hash": "bb582bc64c9d371ade622684acdeadf5f341adb6bd99067a771de94207d81949"
+  "hash": "567e5ae5831f617b3fdc2f73cd49b47a95b70b05c08ccf35ef0d3cf53e6f7914"
 }

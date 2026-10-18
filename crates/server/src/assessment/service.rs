@@ -468,6 +468,7 @@ mod tests {
                 max_points: MaxPoints::parse("10").unwrap(),
                 is_bonus: false,
                 settings,
+                class_on: None,
             }),
         )
         .await

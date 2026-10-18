@@ -53,6 +53,11 @@ impl CourseAccess {
         self.is_owner || matches!(self.role, Some(CourseRole::Teacher | CourseRole::Assistant))
     }
 
+    /// A student of the course: on the roster as a student, whatever their institution role.
+    pub fn is_student(self) -> bool {
+        self.role == Some(CourseRole::Student)
+    }
+
     /// Owner or teacher: the root actions of ADR-0004 that assistants may not do.
     fn is_owner_or_teacher(self) -> bool {
         self.is_owner || self.role == Some(CourseRole::Teacher)

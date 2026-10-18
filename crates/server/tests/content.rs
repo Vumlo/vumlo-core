@@ -2476,7 +2476,7 @@ async fn a_no_submission_assignment_is_created_like_a_text_one() {
         assert_eq!(oral["status"], "draft");
         assert_eq!(
             oral["assignment"],
-            json!({"type": "no_submission", "config": {}, "max_points": "12.00", "is_bonus": false, "due_at": null, "on_deadline": null, "accept_late": null, "late_until": null, "max_attempts": null})
+            json!({"type": "no_submission", "config": {}, "max_points": "12.00", "is_bonus": false, "due_at": null, "on_deadline": null, "accept_late": null, "late_until": null, "max_attempts": null, "class_on": null})
         );
         let fetched = item_json(&w, id_of(&oral)).await;
         assert_eq!(fetched["assignment"], oral["assignment"]);
@@ -2703,7 +2703,7 @@ async fn an_assignment_carries_its_part_and_a_text_item_none() {
         assert_eq!(essay["kind"], "assignment");
         assert_eq!(essay["status"], "draft");
         assert_eq!(essay["body"], doc(json!([paragraph("i", "Write")])));
-        let expected = json!({"type": "text", "config": {}, "max_points": "20.00", "is_bonus": false, "due_at": null, "on_deadline": null, "accept_late": null, "late_until": null, "max_attempts": null});
+        let expected = json!({"type": "text", "config": {}, "max_points": "20.00", "is_bonus": false, "due_at": null, "on_deadline": null, "accept_late": null, "late_until": null, "max_attempts": null, "class_on": null});
         assert_eq!(essay["assignment"], expected);
 
         let fetched = item_json(&w, id_of(&essay)).await;
@@ -2742,7 +2742,7 @@ async fn patch_changes_assignment_fields_and_refuses_them_for_a_text_item() {
         assert_eq!(patched["title"], "Renamed");
         assert_eq!(
             patched["assignment"],
-            json!({"type": "text", "config": {}, "max_points": "7.50", "is_bonus": true, "due_at": null, "on_deadline": null, "accept_late": null, "late_until": null, "max_attempts": null})
+            json!({"type": "text", "config": {}, "max_points": "7.50", "is_bonus": true, "due_at": null, "on_deadline": null, "accept_late": null, "late_until": null, "max_attempts": null, "class_on": null})
         );
         // A title-only patch leaves the assignment alone.
         let renamed = ok(&patch_item(&w, essay, json!({"title": "Again"})).await);
@@ -2789,7 +2789,7 @@ async fn students_reach_an_assignment_only_once_it_is_released_on_every_level() 
     db_test(async |pool| {
         let w = world(pool).await;
         let cases = build_cases_of(&w, true).await;
-        let part = json!({"type": "text", "config": {}, "max_points": "5.00", "is_bonus": false, "due_at": null, "on_deadline": null, "accept_late": null, "late_until": null, "max_attempts": null});
+        let part = json!({"type": "text", "config": {}, "max_points": "5.00", "is_bonus": false, "due_at": null, "on_deadline": null, "accept_late": null, "late_until": null, "max_attempts": null, "class_on": null});
 
         for (why, item) in &cases.hidden {
             let response = get(&w.http, &w.student.token, &format!("/items/{item}")).await;

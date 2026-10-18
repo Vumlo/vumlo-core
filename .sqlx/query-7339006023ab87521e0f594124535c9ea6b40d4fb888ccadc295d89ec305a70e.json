@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "INSERT INTO content.items (id, module_id, course_id, position, kind, title, body)\n           VALUES ($1, $2, $3,\n                   COALESCE((SELECT max(position) FROM content.items WHERE module_id = $2), 0) + 1,\n                   $4, $5, $6)\n           RETURNING id, module_id, course_id, position, kind AS \"kind: ItemKind\", title,\n                     body AS \"body: Body\", status AS \"status: ItemStatus\", publish_at,\n                     created_at, updated_at",
+  "query": "UPDATE content.items\n           SET published_title = title, published_body = body, last_published_at = now(),\n               updated_at = now()\n           WHERE id = $1 AND status = 'published'\n           RETURNING id, module_id, course_id, position, kind AS \"kind: ItemKind\", title,\n                     body AS \"body: Body\", status AS \"status: ItemStatus\", publish_at,\n                     published_title, published_body AS \"published_body?: Body\",\n                     last_published_at, created_at, updated_at",
   "describe": {
     "columns": [
       {
@@ -104,6 +104,39 @@
       },
       {
         "ordinal": 9,
+        "name": "published_title",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "content.items",
+            "name": "published_title"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "published_body?: Body",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "content.items",
+            "name": "published_body"
+          }
+        }
+      },
+      {
+        "ordinal": 11,
+        "name": "last_published_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "content.items",
+            "name": "last_published_at"
+          }
+        }
+      },
+      {
+        "ordinal": 12,
         "name": "created_at",
         "type_info": "Timestamptz",
         "origin": {
@@ -114,7 +147,7 @@
         }
       },
       {
-        "ordinal": 10,
+        "ordinal": 13,
         "name": "updated_at",
         "type_info": "Timestamptz",
         "origin": {
@@ -127,12 +160,7 @@
     ],
     "parameters": {
       "Left": [
-        "Uuid",
-        "Uuid",
-        "Uuid",
-        "Text",
-        "Text",
-        "Jsonb"
+        "Uuid"
       ]
     },
     "nullable": [
@@ -145,9 +173,12 @@
       false,
       false,
       true,
+      true,
+      true,
+      true,
       false,
       false
     ]
   },
-  "hash": "e873e640e2f99340a06f01b20f50114325f8c475f8d10830e19f21cd42fbf880"
+  "hash": "7339006023ab87521e0f594124535c9ea6b40d4fb888ccadc295d89ec305a70e"
 }

@@ -66,6 +66,14 @@ fn operations(c: &Ctx, other_user: Uuid) -> Vec<Call> {
             Some(json!({})),
         ),
         call("GET", format!("/courses/{}/people", c.course), None),
+        call("GET", format!("/courses/{}/item-meta", c.course), None),
+        call("GET", format!("/items/{}/revision", c.text), None),
+        call("POST", format!("/items/{}/revision/publish", c.text), None),
+        call(
+            "GET",
+            format!("/assignments/{}/grades/{}/history", c.assignment, c.student),
+            None,
+        ),
         call(
             "GET",
             format!("/courses/{}/candidates?q=zz", c.course),
@@ -466,6 +474,7 @@ async fn no_operation_answers_a_caller_who_may_not_use_it() {
                 format!("/courses/{}/my-grades", a.course),
                 format!("/courses/{}/info", a.course),
                 format!("/courses/{}/people", a.course),
+                format!("/courses/{}/item-meta", a.course),
                 format!("/assignments/{}/submission", a.assignment),
             ];
             (method == "GET" && reads.iter().any(|read| read == path))

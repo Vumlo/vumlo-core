@@ -1,0 +1,106 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT a.item_id AS assignment_id, i.course_id,\n                  a.type AS \"assignment_type: BuiltinType\",\n                  COALESCE(a.due_at IS NOT NULL\n                           AND CASE WHEN a.accept_late THEN a.late_until ELSE a.due_at END < $3,\n                           false) AS \"closed!\",\n                  (SELECT s.updated_at FROM assessment.submissions s\n                   WHERE s.assignment_id = a.item_id AND s.student_id = $1\n                     AND s.status = 'draft') AS draft_saved_at,\n                  (SELECT count(*) FROM assessment.submissions s\n                   WHERE s.assignment_id = a.item_id AND s.student_id = $1\n                     AND s.status = 'submitted') AS \"attempts!\",\n                  g.published_score,\n                  (g.published_score IS NOT NULL OR g.published_feedback IS NOT NULL)\n                      AS \"graded!\",\n                  g.published_at\n           FROM content.assignments a\n           JOIN content.items i ON i.id = a.item_id\n           LEFT JOIN gradebook.grades g ON g.assignment_id = a.item_id AND g.student_id = $1\n           WHERE i.course_id = ANY($2)",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "assignment_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "content.assignments",
+            "name": "item_id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "course_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "content.items",
+            "name": "course_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "assignment_type: BuiltinType",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "content.assignments",
+            "name": "type"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "closed!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 4,
+        "name": "draft_saved_at",
+        "type_info": "Timestamptz",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 5,
+        "name": "attempts!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 6,
+        "name": "published_score",
+        "type_info": "Numeric",
+        "origin": {
+          "Table": {
+            "table": "gradebook.grades",
+            "name": "published_score"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "graded!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 8,
+        "name": "published_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "gradebook.grades",
+            "name": "published_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "UuidArray",
+        "Timestamptz"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      null,
+      null,
+      null,
+      true,
+      null,
+      true
+    ]
+  },
+  "hash": "ed6991ec0134e8de0cc203e208ad690d07ed34ad88611810a870a04301bb49ba"
+}
