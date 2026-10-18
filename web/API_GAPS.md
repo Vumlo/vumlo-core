@@ -77,24 +77,21 @@ Spec endpoints the UI uses as they are: `GET /institution`, `GET /admin/institut
 - **Mocked:** nothing; the spec endpoints are used.
 
 ## Admin: people
-- **Screens:** Admin, People.
-- **Missing:** counts per role for the filter chips, a person's last sign-in, groups and courses, an import of people from CSV (the CLI has `import-users` planned).
-- **Mocked:** `GET /admin/users/summary`, `GET /admin/users/{id}/facts`. The import creates the people one by one with `POST /admin/users`.
+- **Server:** done (ADR-0053). `GET /admin/users/summary` and `GET /admin/users/{id}/facts` (groups, owned and taught courses, courses studied, last sign-in); the details list and the role note are worded by the screen.
+- **Still missing:** an import of people from CSV (the import creates the people one by one with `POST /admin/users`).
+- **Still mocked, on purpose:** the same endpoints in `src/mocks/handlers/admin.ts`.
 
 ## Admin: groups
-- **Screens:** Admin, Groups.
-- **Missing:** group members with email and join date, student and course counts, the courses a group is linked to with their owners.
-- **Mocked:** `GET /admin/groups/{id}/overview`.
+- **Server:** done (ADR-0053). `GET /admin/groups/{id}/overview`: members with email and the day they joined (`added_at` is `null` for those who were in before it was recorded), counts, and the courses that use the group.
+- **Still mocked, on purpose:** the same endpoint in `src/mocks/handlers/admin.ts`.
 
 ## Admin: terms and courses
-- **Screens:** Admin, Terms and courses.
-- **Missing:** the number of courses per term and whether a term is current or read only; a list of every course with owner, student count and status.
-- **Mocked:** `GET /admin/term-stats`, `GET /admin/courses`. Changing an owner is the real `PUT /courses/{id}/owner`.
+- **Server:** done (ADR-0053). `GET /admin/term-stats` (courses, `current`, `read_only` for each term) and `GET /admin/courses` (paged). Changing an owner is the real `PUT /courses/{id}/owner`.
+- **Still mocked, on purpose:** the same endpoints in `src/mocks/handlers/admin.ts`.
 
 ## Admin: audit log
-- **Screens:** Admin, Audit log.
-- **Missing:** a read endpoint for `events.audit_log` with filters (person, kind of change, period).
-- **Mocked:** `GET /admin/audit?q=&kind=&days=`. Changes made through the mock add entries.
+- **Server:** done (ADR-0053). `GET /admin/audit?q=&kind=&days=`: entries with the action, the actor, what the target is called and the metadata; `src/lib/audit.ts` words each action. The kinds are `accounts`, `owners`, `teachers`, `groups`, `courses`, `content`, `grades`, `terms`, `other`. Names are those of today, and details such as the previous owner are not worded.
+- **Still mocked, on purpose:** the same endpoint in `src/mocks/handlers/admin.ts`; changes made through the mock add entries.
 
 ## Admin: logo
 - **Screens:** Admin, Institution.

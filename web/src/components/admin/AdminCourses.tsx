@@ -5,7 +5,7 @@ import { Dialog } from "@/components/Dialog";
 import { Icon } from "@/components/Icon";
 import { useAdminCourses, useAdminTermStats, useAdminUsers, useChangeOwner, useCreateTerm } from "@/lib/api/hooks/admin";
 import { useTerms } from "@/lib/api/hooks/courses";
-import type { AdminCourseRow } from "@/lib/api/gaps";
+import type { AdminCourse } from "@/lib/api/types";
 import { monthShort, plural } from "@/lib/format";
 import { translate } from "@/lib/i18n/core";
 import { useT } from "@/lib/i18n";
@@ -27,7 +27,7 @@ export function AdminCourses() {
   const change = useChangeOwner();
   const [term, setTerm] = useState<string>("");
   const [status, setStatus] = useState<"all" | "active" | "archived">("all");
-  const [dialog, setDialog] = useState<null | "term" | AdminCourseRow>(null);
+  const [dialog, setDialog] = useState<null | "term" | AdminCourse>(null);
   const [form, setForm] = useState({ name: "", starts_on: "", ends_on: "" });
   const [owner, setOwner] = useState("");
 
@@ -70,7 +70,7 @@ export function AdminCourses() {
             {rows.map((c) => (
               <tr key={c.course_id}>
                 <th scope="row"><span className="tag" style={{ marginRight: 8 }}>{c.code}</span><span style={{ fontWeight: 500 }}>{c.title}</span></th>
-                <td>{c.owner_name}</td>
+                <td>{c.owner_name} {c.owner_surname}</td>
                 <td className="num">{c.student_count}</td>
                 <td>{c.status === "archived" ? <span className="pill pill-dashed">{t("courses.archived")}</span> : c.status === "draft" ? <span className="pill">{t("common.draft")}</span> : <span className="pill pill-ok">{t("ap.active")}</span>}</td>
                 <td><button type="button" className="btn" style={{ minHeight: 34 }} onClick={() => { setOwner(""); change.reset(); setDialog(c); }}>{t("ac.changeOwner")}</button></td>
@@ -93,7 +93,7 @@ export function AdminCourses() {
         </Dialog>
       )}
       {dialog && dialog !== "term" && (
-        <Dialog title={t("ac.changeTitle", { code: dialog.code })} description={t("ac.changeLead", { title: dialog.title, owner: dialog.owner_name })} onClose={() => setDialog(null)}
+        <Dialog title={t("ac.changeTitle", { code: dialog.code })} description={t("ac.changeLead", { title: dialog.title, owner: `${dialog.owner_name} ${dialog.owner_surname}` })} onClose={() => setDialog(null)}
           actions={<><button type="button" className="btn" onClick={() => setDialog(null)}>{t("common.cancel")}</button><button type="button" className="btn btn-primary" disabled={!owner || change.pending} onClick={async () => { if (await change.run(dialog.course_id, owner)) setDialog(null); }}>{t("ac.changeOwner")}</button></>}>
           <div className="field"><label htmlFor="own">{t("cs.newOwner")}</label><select id="own" className="select" value={owner} onChange={(e) => setOwner(e.target.value)}><option value="">{t("cs.chooseTeacher")}</option>{candidates.filter((u) => u.id !== dialog.owner_id && u.status === "active").map((u) => <option key={u.id} value={u.id}>{u.name} {u.surname}</option>)}</select></div>
           {change.error && <p role="alert" className="alert alert-danger" style={{ marginTop: 10 }}>{change.error.errors[0]?.message ?? change.error.detail ?? change.error.title}</p>}

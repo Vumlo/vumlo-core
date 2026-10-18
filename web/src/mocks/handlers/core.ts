@@ -6,7 +6,7 @@ import type { CourseCard } from "@/lib/api/types";
 import { configFromWire, configToWire } from "@/lib/api/sheetWire";
 import { isoToLocal, localToIso } from "@/lib/format";
 import type { CourseInfo, CoursePeople, Item, ServerItemMeta, TemplateSummary } from "@/lib/api/types";
-import { at, getDb, institutionPublic, uid, type DbCourse, type DbItem } from "../db";
+import { at, auditRow, getDb, institutionPublic, uid, type DbCourse, type DbItem } from "../db";
 import {
   activeStudents, canView, contentTree, courseById, decimal, dueIn, flatItems, forbidden, formOf, fullName, gradeOf, hasUnpublishedChanges, isPublished,
   isStaff, itemById, itemVisibleToStudent, memberOf, moduleOf, notFound, ownerOf, paged, problem, publicUser, quizOf, requireStaff, requireUser, requireView,
@@ -311,7 +311,7 @@ export const coreHandlers = [
     if (!memberOf(course.id, target.id)) db.members.push({ course_id: course.id, user_id: target.id, role: "teacher", is_owner: true, source: "direct", group_label: null, left_on: null });
     const previous = userById(course.owner_id);
     course.owner_id = target.id;
-    db.audit.unshift({ id: uid(`audit:${db.audit.length}`), at: MOCK_NOW.toISOString(), who: user.role === "admin" ? fullName(user) : teacherName(user), what: `gave ${course.code} to ${teacherName(target)}`, detail: `Previous owner ${teacherName(previous)}.`, kind: "owners" });
+    db.audit.unshift(auditRow(`${db.audit.length}:transfer`, MOCK_NOW.toISOString(), user, "course.owner.transfer", { type: "course", id: course.id, label: `${course.code} ${course.title}` }, { from: previous.id, to: target.id }));
     return HttpResponse.json(publicCourse(course));
   }),
   http.get(`${A}/courses/:id/content`, ({ params }) => {

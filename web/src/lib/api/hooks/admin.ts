@@ -3,15 +3,21 @@
 import { api } from "../client";
 import { invalidate, useMutation, useQuery } from "../../query";
 import type {
-  AdminCourseRow,
-  AdminGroupOverview,
-  AdminTermStat,
-  AdminUserFacts,
-  AdminUserSummary,
-  AuditEvent,
+  AdminCourse,
+  AdminInstitution,
   AuditKind,
-} from "../gaps";
-import type { AdminInstitution, CreateUserResponse, Group, Role, Subgroup, Term, User } from "../types";
+  AuditRecord,
+  CreateUserResponse,
+  Group,
+  GroupOverview,
+  Role,
+  Subgroup,
+  Term,
+  TermStat,
+  User,
+  UserFacts,
+  UserSummary,
+} from "../types";
 import { fetchAll } from "./util";
 
 export type UserFilter = { role?: Role; status?: "disabled"; email?: string };
@@ -26,14 +32,14 @@ export function useAdminUsers(filter: UserFilter) {
   return useQuery<User[]>(key, () => fetchAll<User>(key));
 }
 
-/** GAP: counts per role for the filter chips (API_GAPS.md, "Admin people"). */
+/** People by role and the disabled, for the filter chips (ADR-0053). */
 export function useAdminUserSummary() {
-  return useQuery<AdminUserSummary>("/admin/users/summary", () => api.get<AdminUserSummary>("/admin/users/summary"));
+  return useQuery<UserSummary>("/admin/users/summary", () => api.get<UserSummary>("/admin/users/summary"));
 }
 
-/** GAP: last sign-in, groups and courses of a person (API_GAPS.md, "Admin people"). */
+/** Last sign-in, groups and courses of a person (ADR-0053). */
 export function useAdminUserFacts(id: string | null) {
-  return useQuery<AdminUserFacts>(id ? `/admin/users/${id}/facts` : null, () => api.get<AdminUserFacts>(`/admin/users/${id}/facts`));
+  return useQuery<UserFacts>(id ? `/admin/users/${id}/facts` : null, () => api.get<UserFacts>(`/admin/users/${id}/facts`));
 }
 
 export function useCreateUser() {
@@ -68,9 +74,9 @@ export function useSubgroups(groupId: string | null) {
   return useQuery<Subgroup[]>(groupId ? `/groups/${groupId}/subgroups` : null, () => fetchAll<Subgroup>(`/groups/${groupId}/subgroups`));
 }
 
-/** GAP: members with emails and join dates, linked courses (API_GAPS.md, "Admin groups"). */
+/** Members with emails and join dates, and the linked courses (ADR-0053). */
 export function useGroupOverview(groupId: string | null) {
-  return useQuery<AdminGroupOverview>(groupId ? `/admin/groups/${groupId}/overview` : null, () => api.get<AdminGroupOverview>(`/admin/groups/${groupId}/overview`));
+  return useQuery<GroupOverview>(groupId ? `/admin/groups/${groupId}/overview` : null, () => api.get<GroupOverview>(`/admin/groups/${groupId}/overview`));
 }
 
 export function useCreateGroup() {
@@ -109,14 +115,14 @@ export function useReplaceGroupMembers(groupId: string) {
   });
 }
 
-/** GAP: course counts per term (API_GAPS.md, "Admin terms and courses"). */
+/** Course counts per term (ADR-0053). */
 export function useAdminTermStats() {
-  return useQuery<AdminTermStat[]>("/admin/term-stats", async () => (await api.get<{ items: AdminTermStat[] }>("/admin/term-stats")).items);
+  return useQuery<TermStat[]>("/admin/term-stats", async () => (await api.get<{ items: TermStat[] }>("/admin/term-stats")).items);
 }
 
-/** GAP: every course of the institution (API_GAPS.md, "Admin terms and courses"). */
+/** Every course of the institution (ADR-0053). */
 export function useAdminCourses() {
-  return useQuery<AdminCourseRow[]>("/admin/courses", async () => (await api.get<{ items: AdminCourseRow[] }>("/admin/courses")).items);
+  return useQuery<AdminCourse[]>("/admin/courses", () => fetchAll<AdminCourse>("/admin/courses"));
 }
 
 export function useCreateTerm() {
@@ -132,16 +138,16 @@ export function useAdminInstitution() {
   return useQuery<AdminInstitution>("/admin/institution", () => api.get<AdminInstitution>("/admin/institution"));
 }
 
-/** GAP: the audit log has no read endpoint (API_GAPS.md, "Audit log"). */
+/** The audit log, newest first (ADR-0053). */
 export function useAuditLog(filter: { q: string; kind: AuditKind | "all"; days: number }) {
   const key = `/admin/audit?q=${encodeURIComponent(filter.q)}&kind=${filter.kind}&days=${filter.days}`;
-  return useQuery<AuditEvent[]>(key, async () => (await api.get<{ items: AuditEvent[] }>(key)).items);
+  return useQuery<AuditRecord[]>(key, () => fetchAll<AuditRecord>(key));
 }
 
 /** Student and course counts of several groups at once, for the group list (API_GAPS.md, "Admin groups"). */
 export function useGroupOverviews(ids: string[]) {
-  return useQuery<Record<string, AdminGroupOverview>>(ids.length ? `/admin/groups/overviews?ids=${ids.join(",")}` : null, async () => {
-    const entries = await Promise.all(ids.map(async (id) => [id, await api.get<AdminGroupOverview>(`/admin/groups/${id}/overview`)] as const));
+  return useQuery<Record<string, GroupOverview>>(ids.length ? `/admin/groups/overviews?ids=${ids.join(",")}` : null, async () => {
+    const entries = await Promise.all(ids.map(async (id) => [id, await api.get<GroupOverview>(`/admin/groups/${id}/overview`)] as const));
     return Object.fromEntries(entries);
   });
 }

@@ -65,37 +65,6 @@ export type FormResponses = {
   rows: { team: string; variant: string; members: string; repo: string; submitted_at: string; late: boolean }[];
 };
 
-// ---- admin ----
-
-export type AdminUserSummary = { all: number; student: number; teacher: number; admin: number; disabled: number };
-
-export type AdminUserFacts = { facts: { k: string; v: string }[]; role_note: string | null };
-
-export type AdminGroupOverview = {
-  group_id: string;
-  student_count: number;
-  course_count: number;
-  members: { user_id: string; name: string; surname: string; email: string; since: string }[];
-  linked_courses: { course_id: string; code: string; title: string; owner_name: string; linked_on: string }[];
-};
-
-export type AdminTermStat = { term_id: string; courses: number; read_only: boolean; current: boolean };
-
-export type AdminCourseRow = {
-  course_id: string;
-  code: string;
-  title: string;
-  owner_id: string;
-  owner_name: string;
-  term_id: string | null;
-  student_count: number;
-  status: "draft" | "published" | "archived";
-};
-
-export type AuditKind = "accounts" | "owners" | "groups" | "teachers";
-
-export type AuditEvent = { id: string; at: string; who: string; what: string; detail: string; kind: AuditKind };
-
 export type AuthRole = Role;
 
 export type { Document };

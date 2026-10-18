@@ -4,11 +4,11 @@ import { useMemo, useState } from "react";
 import { Dialog } from "@/components/Dialog";
 import { Icon } from "@/components/Icon";
 import { useAdminUserFacts, useAdminUserSummary, useAdminUsers, useCreateUser, useResetPassword, useUpdateUser } from "@/lib/api/hooks/admin";
-import type { Role, User } from "@/lib/api/types";
-import { initials } from "@/lib/format";
+import type { Role, User, UserFacts } from "@/lib/api/types";
+import { dayLabel, dayLong, initials } from "@/lib/format";
 import { api } from "@/lib/api/client";
 import { invalidate } from "@/lib/query";
-import { translate } from "@/lib/i18n/core";
+import { translate, translatePlural } from "@/lib/i18n/core";
 import type { MessageKey } from "@/lib/i18n/core";
 import { useT } from "@/lib/i18n";
 import s from "./Admin.module.css";
@@ -17,6 +17,31 @@ const FILTERS = [["all", "ap.all"], ["student", "ap.students"], ["teacher", "ap.
 type Filter = (typeof FILTERS)[number][0];
 const ROLE: Record<Role, MessageKey> = { student: "role.student", teacher: "role.teacher", admin: "ap.admin" };
 const PAGE = 8;
+
+/** The facts of a person as rows of the details list (ADR-0053: the server sends data, the screen words it). */
+function factRows(f: UserFacts): { k: string; v: string }[] {
+  const t = translate;
+  const none = t("fact.none");
+  const codes = (list: UserFacts["owns"]) => list.map((c) => c.code || c.title).join(", ");
+  const rows = [{ k: t("fact.lastSignIn"), v: f.last_login_at ? dayLabel(f.last_login_at) : t("fact.never") }];
+  if (f.role === "student") {
+    rows.push({ k: t("fact.groups"), v: f.groups.length ? f.groups.map((g) => g.name).join(", ") : none });
+    rows.push(f.status === "disabled" ? { k: t("fact.grades"), v: t("fact.gradesKept") } : { k: t("fact.courses"), v: t("fact.studies", { n: f.studies }) });
+  } else {
+    if (f.owns.length) rows.push({ k: t("fact.owns"), v: codes(f.owns) });
+    if (f.teaches.length) rows.push({ k: t("fact.teaches"), v: codes(f.teaches) });
+    if (!f.owns.length && !f.teaches.length) rows.push({ k: t("fact.courses"), v: none });
+  }
+  rows.push({ k: t("fact.added"), v: dayLong(f.created_at) });
+  return rows;
+}
+
+/** What stops a role change, or what a disabled account means. */
+function factNote(f: UserFacts, name: string): string | null {
+  if (f.status === "disabled") return translate("note.disabled", { name });
+  if (f.role === "teacher" && f.owns.length) return translatePlural("note.owns", f.owns.length, { name, n: f.owns.length, codes: f.owns.map((c) => c.code || c.title).join(", ") });
+  return null;
+}
 
 function status(u: User) {
   if (u.status === "disabled") return <span className="pill pill-dashed">{translate("ap.disabled")}</span>;
@@ -173,9 +198,9 @@ export function AdminPeople() {
                 </select>
               </div>
               {update.error && <p role="alert" className="alert alert-danger">{update.error.detail ?? update.error.title}</p>}
-              {facts.data?.role_note && <p className="muted" style={{ fontSize: 13 }}>{facts.data.role_note}</p>}
+              {facts.data && factNote(facts.data, chosen.name) && <p className="muted" style={{ fontSize: 13 }}>{factNote(facts.data, chosen.name)}</p>}
               <dl className={s.dl}>
-                {(facts.data?.facts ?? []).map((x) => <div key={x.k} style={{ display: "contents" }}><dt>{x.k}</dt><dd>{x.v}</dd></div>)}
+                {(facts.data ? factRows(facts.data) : []).map((x) => <div key={x.k} style={{ display: "contents" }}><dt>{x.k}</dt><dd>{x.v}</dd></div>)}
               </dl>
               <div className="stack" style={{ gap: 8 }}>
                 <button type="button" className="btn btn-block" disabled={reset.pending} onClick={async () => { const r = await reset.run(chosen.id); if (r) setPw({ title: t("ap.tempSet"), name: chosen.name, password: r.temporary_password }); }}>{t("ap.setTemp")}</button>

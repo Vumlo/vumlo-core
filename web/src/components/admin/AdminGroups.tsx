@@ -109,7 +109,7 @@ export function AdminGroups() {
                         <tr key={m.user_id} style={{ background: picked.includes(m.user_id) ? "var(--accent-soft)" : undefined }}>
                           <td style={{ width: 48 }}><input type="checkbox" style={{ width: 18, height: 18, accentColor: "var(--accent)" }} checked={picked.includes(m.user_id)} aria-label={t("ag.selectOne", { name: `${m.name} ${m.surname}` })} onChange={() => setPicked((p) => (p.includes(m.user_id) ? p.filter((x) => x !== m.user_id) : [...p, m.user_id]))} /></td>
                           <th scope="row">{m.name} {m.surname}<span className="muted" style={{ display: "block", fontSize: 13, fontWeight: 400 }}>{m.email}</span></th>
-                          <td>{dayLong(m.since)}</td>
+                          <td>{m.added_at ? dayLong(m.added_at) : "—"}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -124,7 +124,7 @@ export function AdminGroups() {
                 <h2 id="gl-h" style={{ fontSize: 17, fontWeight: 600 }}>{t("ag.linkedCourses")}</h2>
                 <p className="muted" style={{ margin: "4px 0 10px", fontSize: 14 }}>{t("ag.linkedLead")}</p>
                 <ul>
-                  {o.linked_courses.map((c) => <li key={c.course_id} style={{ padding: "10px 0", borderTop: "1px solid var(--border)" }}><span style={{ display: "block", fontWeight: 500 }}>{c.code} {c.title}</span><span className="muted" style={{ fontSize: 13 }}>{c.owner_name}, {t("people.linkedOn", { day: dayLong(c.linked_on) })}</span></li>)}
+                  {o.linked_courses.map((c) => <li key={c.course_id} style={{ padding: "10px 0", borderTop: "1px solid var(--border)" }}><span style={{ display: "block", fontWeight: 500 }}>{c.code} {c.title}</span><span className="muted" style={{ fontSize: 13 }}>{c.owner_name} {c.owner_surname}, {t("people.linkedOn", { day: dayLong(c.linked_on) })}</span></li>)}
                   {o.linked_courses.length === 0 && <li className="muted" style={{ fontSize: 14 }}>{t("ag.noCourse")}</li>}
                 </ul>
               </section>

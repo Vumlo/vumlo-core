@@ -17,6 +17,13 @@ export type ServerItemMeta = S["ItemMeta"];
  */
 export type ItemMeta = Omit<S["ItemMeta"], "class_on"> & { class_on?: string | null };
 export type ItemMetaMap = { items: Record<string, ItemMeta> };
+export type UserSummary = S["UserSummary"];
+export type UserFacts = S["UserFacts"];
+export type GroupOverview = S["GroupOverview"];
+export type TermStat = S["TermStat"];
+export type AdminCourse = S["AdminCourse"];
+export type AuditRecord = S["AuditRecord"];
+export type AuditKind = S["AuditKind"];
 export type CourseCard = S["CourseCard"];
 export type CardTodo = S["CardTodo"];
 export type CardRole = S["CardRole"];

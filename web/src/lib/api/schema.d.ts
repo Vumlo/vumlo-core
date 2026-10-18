@@ -4,6 +4,67 @@
  */
 
 export interface paths {
+    "/api/v1/admin/audit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The audit log, newest first and paged: who did what to what, when. `kind` is derived from the
+         *     action; `q` matches the actor, the action or the target; `days` is how far back (1 to 365,
+         *     default 7). Admin only. The names are those of today.
+         */
+        get: operations["list_audit"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/courses": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Every regular course of the institution with its owner, term and student count, paged by id.
+         *     Admin only.
+         */
+        get: operations["list_admin_courses"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/groups/{id}/overview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * A group with its people (name, email, when they were added) and the courses that use it or one
+         *     of its subgroups. Admin only.
+         */
+        get: operations["get_group_overview"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/institution": {
         parameters: {
             query?: never;
@@ -16,6 +77,26 @@ export interface paths {
          *     change in the configuration file (ADR-0044).
          */
         get: operations["get_admin_institution"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/term-stats": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * How many regular courses each term has, whether today (in the institution's time zone) falls in
+         *     it and whether it is over. Admin only.
+         */
+        get: operations["get_term_stats"];
         put?: never;
         post?: never;
         delete?: never;
@@ -46,6 +127,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/users/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** People by institution role (every status), and how many are disabled. Admin only. */
+        get: operations["user_summary"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/users/{id}": {
         parameters: {
             query?: never;
@@ -65,6 +163,26 @@ export interface paths {
          *     nor disabled.
          */
         patch: operations["update_user"];
+        trace?: never;
+    };
+    "/api/v1/admin/users/{id}/facts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * What one person does in the institution: the groups they are in, the courses they own, teach
+         *     and study in, and when they last signed in. No email appears here. Admin only.
+         */
+        get: operations["user_facts"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/v1/admin/users/{id}/reset-password": {
@@ -1659,6 +1777,19 @@ export interface components {
             /** @description The users who were not members before. Empty when all of them already were. */
             added: string[];
         };
+        /** @description A course of the institution as the administrator lists it. */
+        AdminCourse: components["schemas"]["CourseLine"] & {
+            /** Format: uuid */
+            owner_id: string;
+            owner_name: string;
+            owner_surname: string;
+            status: components["schemas"]["CourseStatus"];
+            /** Format: int64 */
+            student_count: number;
+            /** Format: uuid */
+            term_id?: string | null;
+            term_name?: string | null;
+        };
         /**
          * @description What an admin sees: the public profile and the settings that are not public. Read-only; they
          *     change in the config file (ADR-0044).
@@ -1758,6 +1889,42 @@ export interface components {
             items: components["schemas"]["Attempt"][];
             next_cursor?: string | null;
         };
+        /** @description The person who did it. */
+        AuditActor: {
+            name: string;
+            surname: string;
+            /** Format: uuid */
+            user_id: string;
+        };
+        /**
+         * @description What an audit entry is about, derived from its action.
+         * @enum {string}
+         */
+        AuditKind: "accounts" | "owners" | "teachers" | "groups" | "courses" | "content" | "grades" | "terms" | "other";
+        /** @description One row of the audit log. */
+        AuditRecord: {
+            /** @description A dotted verb such as `course.owner.transfer`. */
+            action: string;
+            actor?: components["schemas"]["AuditActor"] | null;
+            /** Format: date-time */
+            at: string;
+            /** Format: uuid */
+            id: string;
+            kind: components["schemas"]["AuditKind"];
+            /** @description Ids, roles and field names only. */
+            meta: Record<string, never>;
+            /** Format: uuid */
+            resource_id: string;
+            /** @description What the target is called now; `null` when it is gone. */
+            resource_label?: string | null;
+            resource_type: string;
+            source: components["schemas"]["AuditSource"];
+        };
+        /**
+         * @description Where an audit row was written.
+         * @enum {string}
+         */
+        AuditSource: "api" | "cli";
         /**
          * @description One block. `id` is 1 to 64 characters from `[A-Za-z0-9_-]`, unique in the document and
          *     generated by the client. `props`, `content` and `children` are left out when empty.
@@ -2025,6 +2192,13 @@ export interface components {
         };
         /** @enum {string} */
         CourseKind: "regular" | "template";
+        /** @description A course as a line of a list. */
+        CourseLine: {
+            code: string;
+            /** Format: uuid */
+            course_id: string;
+            title: string;
+        };
         CoursePeople: {
             /** @description Empty for a student. */
             groups: components["schemas"]["LinkedGroup"][];
@@ -2317,12 +2491,42 @@ export interface components {
             /** Format: uuid */
             user_id: string;
         };
+        /** @description A person in a group. */
+        GroupMemberLine: {
+            /**
+             * Format: date-time
+             * @description `null` for those who were in the group before the time was recorded.
+             */
+            added_at?: string | null;
+            email: string;
+            name: string;
+            surname: string;
+            /** Format: uuid */
+            user_id: string;
+        };
+        /** @description A group, by name. */
+        GroupName: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+        };
         /** @description A group a course can be linked to, with its subgroups. Ids and names only: no members. */
         GroupOption: {
             /** Format: uuid */
             id: string;
             name: string;
             subgroups: components["schemas"]["SubgroupOption"][];
+        };
+        /** @description A group, its people and the courses that use it. */
+        GroupOverview: {
+            /** Format: int64 */
+            course_count: number;
+            /** Format: uuid */
+            group_id: string;
+            linked_courses: components["schemas"]["LinkedCourse"][];
+            members: components["schemas"]["GroupMemberLine"][];
+            /** Format: int64 */
+            student_count: number;
         };
         HeadingProps: {
             /**
@@ -2514,6 +2718,13 @@ export interface components {
             /** @enum {string} */
             type: "text";
         };
+        /** @description A course that uses a group, or one of its subgroups. */
+        LinkedCourse: components["schemas"]["CourseLine"] & {
+            /** Format: date-time */
+            linked_on: string;
+            owner_name: string;
+            owner_surname: string;
+        };
         /** @description A group or subgroup linked to the course. Staff only. */
         LinkedGroup: {
             group_name: string;
@@ -2683,6 +2894,44 @@ export interface components {
          * @enum {string}
          */
         OnDeadline: "keep_draft" | "auto_submit";
+        Page_AdminCourse: {
+            items: (components["schemas"]["CourseLine"] & {
+                /** Format: uuid */
+                owner_id: string;
+                owner_name: string;
+                owner_surname: string;
+                status: components["schemas"]["CourseStatus"];
+                /** Format: int64 */
+                student_count: number;
+                /** Format: uuid */
+                term_id?: string | null;
+                term_name?: string | null;
+            })[];
+            /** @description Pass as `cursor` to get the next page; `null` on the last page. */
+            next_cursor?: string | null;
+        };
+        Page_AuditRecord: {
+            items: {
+                /** @description A dotted verb such as `course.owner.transfer`. */
+                action: string;
+                actor?: components["schemas"]["AuditActor"] | null;
+                /** Format: date-time */
+                at: string;
+                /** Format: uuid */
+                id: string;
+                kind: components["schemas"]["AuditKind"];
+                /** @description Ids, roles and field names only. */
+                meta: Record<string, never>;
+                /** Format: uuid */
+                resource_id: string;
+                /** @description What the target is called now; `null` when it is gone. */
+                resource_label?: string | null;
+                resource_type: string;
+                source: components["schemas"]["AuditSource"];
+            }[];
+            /** @description Pass as `cursor` to get the next page; `null` on the last page. */
+            next_cursor?: string | null;
+        };
         Page_Course: {
             items: {
                 /** Format: date-time */
@@ -3183,6 +3432,23 @@ export interface components {
             /** Format: date */
             starts_on: string;
         };
+        /** @description What one term holds. */
+        TermStat: {
+            /**
+             * Format: int64
+             * @description Regular courses that use the term.
+             */
+            courses: number;
+            /** @description Today, in the institution's time zone, falls in the term. */
+            current: boolean;
+            /** @description The term has ended. */
+            read_only: boolean;
+            /** Format: uuid */
+            term_id: string;
+        };
+        TermStats: {
+            items: components["schemas"]["TermStat"][];
+        };
         TextRun: {
             styles?: components["schemas"]["Styles"];
             text: string;
@@ -3323,8 +3589,43 @@ export interface components {
             status: components["schemas"]["UserStatus"];
             surname: string;
         };
+        /** @description What one person does in the institution. */
+        UserFacts: {
+            /** Format: date-time */
+            created_at: string;
+            groups: components["schemas"]["GroupName"][];
+            /**
+             * Format: date-time
+             * @description `null` until the person signs in after the server learned to record it.
+             */
+            last_login_at?: string | null;
+            /** @description Regular courses the person owns. */
+            owns: components["schemas"]["CourseLine"][];
+            role: components["schemas"]["Role"];
+            status: components["schemas"]["UserStatus"];
+            /**
+             * Format: int64
+             * @description Published courses where they are a current student.
+             */
+            studies: number;
+            /** @description Regular courses where they are a teacher or an assistant but not the owner. */
+            teaches: components["schemas"]["CourseLine"][];
+        };
         /** @enum {string} */
         UserStatus: "active" | "disabled";
+        /** @description People by institution role, and how many are disabled. */
+        UserSummary: {
+            /** Format: int64 */
+            admin: number;
+            /** Format: int64 */
+            all: number;
+            /** Format: int64 */
+            disabled: number;
+            /** Format: int64 */
+            student: number;
+            /** Format: int64 */
+            teacher: number;
+        };
         /** @description The token from the verification mail. */
         VerifyEmailRequest: {
             token: string;
@@ -3384,6 +3685,163 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    list_audit: {
+        parameters: {
+            query?: {
+                /** @description Matches the actor's name, the action or the label of the target; at most 100 characters. */
+                q?: string;
+                kind?: components["schemas"]["AuditKind"];
+                /** @description How many days back, 1 to 365 (default 7). */
+                days?: number;
+                cursor?: string;
+                /** @description Page size, 1 to 100 (default 50). */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A page of entries */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Page_AuditRecord"];
+                };
+            };
+            /** @description Not logged in */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Not an admin */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Invalid filter or cursor */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    list_admin_courses: {
+        parameters: {
+            query?: {
+                cursor?: string;
+                /** @description Page size, 1 to 100 (default 50). */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A page of courses */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Page_AdminCourse"];
+                };
+            };
+            /** @description Not logged in */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Not an admin */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Invalid cursor */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    get_group_overview: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Group id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The overview */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GroupOverview"];
+                };
+            };
+            /** @description Not logged in */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Not an admin */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description No such group */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
     get_admin_institution: {
         parameters: {
             query?: never;
@@ -3400,6 +3858,44 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AdminInstitution"];
+                };
+            };
+            /** @description Not logged in */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Not an admin */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    get_term_stats: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description One entry per term, newest first */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TermStats"];
                 };
             };
             /** @description Not logged in */
@@ -3537,6 +4033,44 @@ export interface operations {
             };
         };
     };
+    user_summary: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The counts */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserSummary"];
+                };
+            };
+            /** @description Not logged in */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Not an admin */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
     update_user: {
         parameters: {
             query?: never;
@@ -3600,6 +4134,56 @@ export interface operations {
             };
             /** @description Invalid name */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    user_facts: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description User id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The facts */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserFacts"];
+                };
+            };
+            /** @description Not logged in */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Not an admin */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description No such user */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };
