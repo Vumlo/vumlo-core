@@ -15,7 +15,9 @@ x-backend: &backend
     args:
       # The optional modules compiled into the server and vumlo-cli, comma separated.
       VUMLO_FEATURES: ${VUMLO_FEATURES:-}
-  image: vumlo-backend
+  # Named after the release: an image built from another release, still on this machine, is never
+  # taken for this one (it would run the old CLI against the new configuration).
+  image: vumlo-backend:${VUMLO_VERSION:-0.1.0}
 
 services:
   postgres:
@@ -96,7 +98,7 @@ services:
       dockerfile: deploy/Dockerfile.web
       args:
         VUMLO_API_ORIGIN: http://core:8080
-    image: vumlo-web
+    image: vumlo-web:${VUMLO_VERSION:-0.1.0}
     ports:
       - "127.0.0.1:3000:3000"
     depends_on:

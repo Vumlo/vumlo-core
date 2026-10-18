@@ -8,7 +8,7 @@ Caddyfile and the firewall rules are templates in `deploy/`, and you install the
 There are two ways to run it. Pick one:
 
 - **[Docker only](#path-1-docker-only)**: PostgreSQL, the core, the worker and the web app in
-  containers; the only things on the host are Docker and a clone of this repository.
+  containers; the only things on the host are Docker and the unpacked release archive.
 - **[A Linux server](#path-2-a-linux-server)**: PostgreSQL from your distribution, binaries you build
   (or copy), systemd for the services and Caddy for TLS.
 
@@ -43,40 +43,63 @@ and `brand apply` writes only the public ones into the web build.
 
 You need Docker with the Compose plugin (version 2.24 or newer). Nothing else is installed on the host.
 
-```sh
-git clone https://github.com/Vumlo/vumlo-core.git vumlo && cd vumlo
+### 1. Download and verify the release
 
-./vumlo init            # writes vumlo.toml; builds the vumlo-cli image the first time
+Take the newest release from the [releases page](https://github.com/Vumlo/vumlo-core/releases) and read
+its entry in `CHANGELOG.md` (the **Upgrade notes**). Download `vumlo-<version>-source.tar.gz` and
+`SHA256SUMS` (`0.1.0` below), check the archive and unpack it:
+
+```sh
+sha256sum --check --ignore-missing SHA256SUMS         # must say: vumlo-0.1.0-source.tar.gz: OK
+tar xzf vumlo-0.1.0-source.tar.gz && cd vumlo-0.1.0
+```
+
+Do not continue if the check fails. Everything below is run from this directory.
+
+### 2. Configure
+
+```sh
+./vumlo init            # writes vumlo.toml; builds the vumlo-cli image the first time (a few minutes)
 cp deploy/env.example .env && chmod 600 .env
 ```
 
 `./vumlo` is a small script that runs `vumlo-cli` inside the compose service when there is no local
-binary. (`init` also offers a `.env.example`, but this repository already has a `.env.example` for
-development and `init` never overwrites a file, so the Docker template is `deploy/env.example`.) Edit
-the two files:
+binary. Edit the two files:
 
 - `.env`: set a real `POSTGRES_PASSWORD`, and put the same password in `DATABASE_URL` (its host is
   `postgres`, the name of the compose service).
 - `vumlo.toml`: set at least `institution.name`, `institution.mode` (`"school"` or `"university"`;
   this cannot be changed later), `server.public_origin` (the address people will type; for a trial
-  `http://localhost:3000`) and `auth.allowed_domains` (who may sign up, e.g. `["example.edu"]`). For a
-  trial over plain HTTP also set `[auth] cookie_secure = false`; keep it `true` for anything real.
-  Put the logo in the repository and set `institution.logo = "brand/logo.svg"` (PNG, JPEG, WebP or
-  SVG; an SVG must have its text converted to paths).
+  `http://localhost:3000`) and `auth.allowed_domains` (who may sign up, e.g. `["example.edu"]`). The
+  file starts with `[auth] cookie_secure = false`, which is only for a trial over plain HTTP: delete
+  that line for anything real.
 
-Then, in this order:
+The release ships a **placeholder** brand: the name "Vumlo" and the logo `brand/logo.svg`. Replace
+`brand/logo.svg` with your institution's logo (PNG, JPEG, WebP or SVG; an SVG must have its text
+converted to paths), or keep your file elsewhere and set `institution.logo` to its path.
+
+### 3. Build and start
 
 ```sh
 ./vumlo config check                                  # every problem, or "configuration OK"
 ./vumlo brand apply                                   # writes .vumlo/generated/: the web build reads only this
 
 export COMPOSE_FILE=deploy/compose.yaml COMPOSE_ENV_FILES=.env
+docker compose build                                  # core, worker and the web app, from this directory
 docker compose up -d --wait postgres
 ./vumlo db migrate                                    # applies the migrations, records the mode
 ./vumlo admin create you@example.edu --name Your --surname Name   # asks for the password twice
-docker compose up -d --build                          # core, worker, web (builds the web app from .vumlo/generated)
+docker compose up -d
 ./vumlo doctor
 ```
+
+**A small server.** Compiling the Rust core is a one-time job that needs a good deal more memory than
+running Vumlo. If `docker compose build` is killed or the server freezes, either add swap for the build
+(`fallocate -l 4G /swapfile && mkswap /swapfile && swapon /swapfile`), or build on a bigger machine of
+the same CPU type with the same archive and `docker compose build`, then copy the images over:
+`docker save vumlo-backend:0.1.0 vumlo-web:0.1.0 | gzip | ssh server docker load` (the images are named
+after the release). Run `./vumlo brand apply` on the
+build machine too.
 
 Open `public_origin` and sign in with the administrator. The web app is on `127.0.0.1:3000` and the API
 on `127.0.0.1:8080`; for a real domain with TLS put Caddy in front of both (`deploy/Caddyfile`, see
@@ -84,8 +107,26 @@ on `127.0.0.1:8080`; for a real domain with TLS put Caddy in front of both (`dep
 app is built into its own image; that is expected for this path, and it warns about `node` for the same
 reason.
 
-To change the configuration later: edit `vumlo.toml`, `./vumlo config check`, `./vumlo brand apply`,
-then `docker compose up -d --build` (the web image is rebuilt from the new `.vumlo/generated`).
+To change the configuration or the logo later: edit `vumlo.toml` or the file, `./vumlo config check`,
+`./vumlo brand apply`, then `docker compose up -d --build` (the web image is rebuilt from the new
+`.vumlo/generated`).
+
+### Upgrading
+
+Read the **Upgrade notes** of every release between yours and the new one in `CHANGELOG.md`. Then:
+
+```sh
+sha256sum --check --ignore-missing SHA256SUMS && tar xzf vumlo-0.2.0-source.tar.gz
+cp -a vumlo-0.1.0/vumlo.toml vumlo-0.1.0/.env vumlo-0.1.0/brand vumlo-0.2.0/   # your files, and the logo
+cp -a vumlo-0.1.0/backups vumlo-0.2.0/ 2>/dev/null || true
+cd vumlo-0.2.0
+./vumlo config check            # a new config_version or key is listed here
+deploy/update.sh --docker       # brand apply, build, back up, stop, migrate, start, doctor
+```
+
+`update.sh` stops at the first failure and never migrates before the backup exists (see
+[Upgrades](#upgrades) for what it does). The database lives in a Docker volume that does not depend on
+the directory, so the new directory finds the old data. Keep the old directory until `doctor` is green.
 
 ### Demo data
 
@@ -110,12 +151,12 @@ sudo -u postgres psql -c "CREATE DATABASE vumlo OWNER vumlo"
 
 ### 2. The binaries
 
-You need the two binaries, `vumlo-server` and `vumlo-cli`, built from the same checkout.
+You need the two binaries, `vumlo-server` and `vumlo-cli`, built from the same archive.
 
 **Build them on the server.** Install Rust (`rustup`) and Node 24, then:
 
 ```sh
-git clone https://github.com/Vumlo/vumlo-core.git && cd vumlo-core/backend
+cd vumlo-0.1.0/backend        # the unpacked, verified archive of step 1 of the Docker path
 SQLX_OFFLINE=true cargo build --release -p server -p vumlo-cli --features "$VUMLO_FEATURES"
 ```
 
@@ -169,7 +210,7 @@ sudo vumlo-cli --config /etc/vumlo/vumlo.toml admin create you@example.edu --nam
 
 ### 5. The web app
 
-Copy the `web/` directory of the checkout to `/opt/vumlo/web`, and let the CLI generate the branding and
+Copy the `web/` directory of the archive to `/opt/vumlo/web`, and let the CLI generate the branding and
 run the build there:
 
 ```sh
@@ -205,7 +246,7 @@ sudo systemctl restart caddy
 
 Open ports 80 and 443 only. Vumlo itself listens on `127.0.0.1:8080` (the API) and `127.0.0.1:3000` (the
 web app); nothing else should reach them. The firewall is yours to configure; `vumlo-cli` does not touch it.
-The Caddyfile of this repository also serves the Docker install: its two upstreams are the same ports.
+The Caddyfile of the release also serves the Docker install: its two upstreams are the same ports.
 
 ### Backups, and a restore test
 
@@ -238,7 +279,8 @@ services, drop and recreate the database (`dropdb`, then `createdb --owner vumlo
 
 ### Upgrades
 
-Get the new release, build it and install the two binaries and the web app as above, then run:
+Download, verify and unpack the new archive, read its upgrade notes in `CHANGELOG.md`, build it and
+install the two binaries and the web app as above, then run (from the new directory):
 
 ```sh
 sudo deploy/update.sh --systemd      # as root: the secrets file is root's, and so are the services
