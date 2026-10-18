@@ -1,5 +1,7 @@
 # Architecture Decision Records
 
+Project renamed from Learnly to Vumlo; earlier ADRs use the old name.
+
 One file per decision. Write a new ADR when:
 
 - adding a dependency (crate, service, container);
