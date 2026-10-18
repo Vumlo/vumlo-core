@@ -91,6 +91,15 @@ fn is_unavailable(error: &sqlx::Error) -> bool {
     }
 }
 
+impl From<crate::policy::PolicyError> for ApiError {
+    fn from(error: crate::policy::PolicyError) -> Self {
+        match error {
+            crate::policy::PolicyError::Denied => Self::Forbidden("not allowed"),
+            crate::policy::PolicyError::Archived => Self::Conflict("the course is archived"),
+        }
+    }
+}
+
 impl From<crate::events::EventsError> for ApiError {
     fn from(error: crate::events::EventsError) -> Self {
         match error {

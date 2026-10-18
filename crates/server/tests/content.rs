@@ -1184,12 +1184,18 @@ async fn an_assistant_runs_the_whole_tree() {
 }
 
 #[tokio::test]
-async fn content_of_an_archived_course_is_editable_by_staff() {
+async fn content_of_an_archived_course_is_read_only_and_still_readable_by_students() {
     db_test(async |pool| {
-        // ManageContent ignores the course status, so archived content stays editable; archiving
-        // gets its own ADR. This pins the behavior so a later change is deliberate.
+        // ADR-0048: an archived course takes no write, from anyone, and its students keep reading.
         let w = world(pool).await;
         let module = module(&w, "M", None).await;
+        post(
+            &w.http,
+            &w.owner.token,
+            &format!("/modules/{module}/publish"),
+            json!({"cascade": true}),
+        )
+        .await;
         sqlx::query!(
             "UPDATE teaching.courses SET status = 'archived' WHERE id = $1",
             w.course
@@ -1197,20 +1203,39 @@ async fn content_of_an_archived_course_is_editable_by_staff() {
         .execute(&w.pool)
         .await
         .unwrap();
-        ok(&patch(
+
+        let refused = patch(
             &w.http,
             &w.owner.token,
             &format!("/modules/{module}"),
             json!({"title": "Edited"}),
         )
-        .await);
-        get(
+        .await;
+        assert_eq!(
+            refused.problem(409).detail.as_deref(),
+            Some("the course is archived")
+        );
+        post(
             &w.http,
-            &w.student.token,
-            &format!("/courses/{}/content", w.course),
+            &w.owner.token,
+            &format!("/courses/{}/modules", w.course),
+            json!({"title": "New"}),
         )
         .await
-        .problem(404);
+        .problem(409);
+        post(
+            &w.http,
+            &w.owner.token,
+            &format!("/modules/{module}/publish"),
+            json!({"cascade": true}),
+        )
+        .await
+        .problem(409);
+        // Staff and students both read it.
+        for token in [&w.owner.token, &w.student.token] {
+            let seen = tree(&w, token).await;
+            assert_eq!(top(&seen, "M")["status"], "published");
+        }
     })
     .await;
 }

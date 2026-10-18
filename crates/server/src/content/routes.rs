@@ -39,7 +39,7 @@ pub fn router() -> OpenApiRouter<AppState> {
 impl From<ContentError> for ApiError {
     fn from(error: ContentError) -> Self {
         match error {
-            ContentError::Forbidden(_) => Self::Forbidden("not allowed"),
+            ContentError::Forbidden(policy) => policy.into(),
             ContentError::Invalid(ref model) => {
                 let field = match model {
                     ModelError::Title => "title",

@@ -8,12 +8,14 @@ use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
 mod assessment;
+mod courses;
 mod document;
 mod gradebook;
 mod groups;
 mod org;
 
 pub use assessment::*;
+pub use courses::*;
 pub use document::*;
 pub use gradebook::*;
 pub use groups::*;

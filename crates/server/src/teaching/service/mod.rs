@@ -5,9 +5,16 @@
 //! as far as they can tell (404), whatever they were trying to do. Only after that does the
 //! specific action decide between going ahead and 403.
 
+mod info;
+
 use serde_json::json;
 use sqlx::PgConnection;
 use uuid::Uuid;
+
+pub use info::{
+    archive_course, course_candidates, course_info, course_people, create_from_template,
+    delete_course, list_templates, make_template, restore_course, update_course_info,
+};
 
 use super::model::{
     Course, CourseGroupLink, CourseKind, CourseTitle, CourseUpdate, Exclusion, MemberSource,
@@ -15,7 +22,10 @@ use super::model::{
 };
 use super::repo;
 use crate::actor::Actor;
+use crate::assessment::AssessmentError;
+use crate::content::ContentError;
 use crate::events::{self, AuditEntry, EventsError};
+use crate::gradebook::GradebookError;
 use crate::identity::{self, IdentityError, UserStatus};
 use crate::org::{self, GroupOption, OrgError};
 use crate::pagination::{Page, PageParams};
@@ -65,6 +75,21 @@ pub enum TeachingError {
     OwnerCannotBeRemoved,
     #[error("an archived course cannot be published")]
     NotPublishable,
+    /// The search text of the candidates has fewer than two characters.
+    #[error("the search needs at least two characters")]
+    QueryTooShort,
+    /// A grade has a value in the course, so it cannot be deleted (ADR-0048).
+    #[error("the course has grades")]
+    HasGrades,
+    /// An attempt was submitted in the course, so it cannot be deleted (ADR-0048).
+    #[error("the course has submitted work")]
+    HasSubmissions,
+    #[error(transparent)]
+    Content(Box<ContentError>),
+    #[error(transparent)]
+    Gradebook(Box<GradebookError>),
+    #[error(transparent)]
+    Assessment(Box<AssessmentError>),
     #[error(transparent)]
     Identity(#[from] IdentityError),
     #[error(transparent)]
@@ -130,13 +155,23 @@ fn term_fk(error: sqlx::Error) -> TeachingError {
     }
 }
 
-/// Creates a draft course owned by the actor. Teachers also join it as its `teacher`; an admin
+/// What a new course is made of: a fresh one, or the copy of another (ADR-0048).
+struct NewCourse<'a> {
+    kind: CourseKind,
+    title: &'a CourseTitle,
+    term_id: Option<Uuid>,
+    code: &'a str,
+    description: &'a str,
+    /// The course or template it is copied from.
+    from: Option<Uuid>,
+}
+
+/// Inserts a draft course owned by the actor. Teachers also join it as its `teacher`; an admin
 /// owns it without a membership.
-pub async fn create_course(
+async fn insert_owned_course(
     conn: &mut PgConnection,
     actor: &Actor,
-    title: CourseTitle,
-    term_id: Option<Uuid>,
+    new: NewCourse<'_>,
 ) -> Result<Course, TeachingError> {
     policy::authorize(actor, Action::CreateCourse)?;
     // The role in the session may be a moment old. Read it again with the user's row locked, so a
@@ -145,14 +180,19 @@ pub async fn create_course(
         .await?
         .ok_or(TeachingError::UserNotFound)?;
     if creator.status == UserStatus::Disabled || creator.role == identity::Role::Student {
-        return Err(TeachingError::Forbidden(PolicyError));
+        return Err(TeachingError::Forbidden(PolicyError::Denied));
     }
-    let course = repo::insert_course(
+    let course = repo::insert_copy(
         conn,
-        Uuid::now_v7(),
-        title.as_str(),
-        actor.user_id(),
-        term_id,
+        repo::CourseCopy {
+            id: Uuid::now_v7(),
+            kind: new.kind,
+            title: new.title.as_str(),
+            owner_id: actor.user_id(),
+            term_id: new.term_id,
+            code: new.code,
+            description: new.description,
+        },
     )
     .await
     .map_err(term_fk)?;
@@ -166,11 +206,36 @@ pub async fn create_course(
             action: "course.create",
             resource_type: "course",
             resource_id: course.id,
-            meta: json!({}),
+            meta: match new.from {
+                Some(from) => json!({"from": from}),
+                None => json!({}),
+            },
         },
     )
     .await?;
     Ok(course)
+}
+
+/// Creates a draft course owned by the actor.
+pub async fn create_course(
+    conn: &mut PgConnection,
+    actor: &Actor,
+    title: CourseTitle,
+    term_id: Option<Uuid>,
+) -> Result<Course, TeachingError> {
+    insert_owned_course(
+        conn,
+        actor,
+        NewCourse {
+            kind: CourseKind::Regular,
+            title: &title,
+            term_id,
+            code: "",
+            description: "",
+            from: None,
+        },
+    )
+    .await
 }
 
 pub async fn get_course(
@@ -514,7 +579,7 @@ pub async fn link_group(
     subgroup_id: Option<Uuid>,
 ) -> Result<(CourseGroupLink, bool), TeachingError> {
     let (_, access) = load(conn, actor, course_id, true).await?;
-    policy::authorize(actor, Action::LinkGroups(access))?;
+    policy::authorize(actor, Action::ChangeGroupLinks(access))?;
     let inserted = repo::insert_link(
         conn,
         Uuid::now_v7(),
@@ -559,7 +624,7 @@ pub async fn unlink_group(
     link_id: Uuid,
 ) -> Result<(), TeachingError> {
     let (_, access) = load(conn, actor, course_id, true).await?;
-    policy::authorize(actor, Action::LinkGroups(access))?;
+    policy::authorize(actor, Action::ChangeGroupLinks(access))?;
     let link = repo::delete_link(conn, course_id, link_id)
         .await?
         .ok_or(TeachingError::LinkNotFound)?;
@@ -613,7 +678,7 @@ pub async fn restore_exclusion(
     user_id: Uuid,
 ) -> Result<(), TeachingError> {
     let (_, access) = load(conn, actor, course_id, true).await?;
-    policy::authorize(actor, Action::ManageRoster(access))?;
+    policy::authorize(actor, Action::ChangeRoster(access))?;
     if repo::delete_exclusion(conn, course_id, user_id).await? == 0 {
         return Err(TeachingError::ExclusionNotFound);
     }

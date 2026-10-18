@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "WITH module_map AS (\n             SELECT id AS old_id, uuidv7() AS new_id FROM content.modules WHERE course_id = $1),\n         item_map AS (\n             SELECT id AS old_id, uuidv7() AS new_id FROM content.items WHERE course_id = $1),\n         new_modules AS (\n             INSERT INTO content.modules (id, course_id, parent_id, position, title, status)\n             SELECT mm.new_id, $2, pm.new_id, m.position, m.title, 'draft'\n             FROM content.modules m\n             JOIN module_map mm ON mm.old_id = m.id\n             LEFT JOIN module_map pm ON pm.old_id = m.parent_id\n             RETURNING id),\n         new_items AS (\n             INSERT INTO content.items (id, module_id, course_id, position, kind, title, body, status)\n             SELECT im.new_id, mm.new_id, $2, i.position, i.kind, i.title, i.body, 'draft'\n             FROM content.items i\n             JOIN item_map im ON im.old_id = i.id\n             JOIN module_map mm ON mm.old_id = i.module_id\n             RETURNING id)\n         INSERT INTO content.assignments (item_id, type, config, max_points, is_bonus, max_attempts)\n         SELECT im.new_id, a.type, a.config, a.max_points, a.is_bonus, a.max_attempts\n         FROM content.assignments a\n         JOIN item_map im ON im.old_id = a.item_id",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "46561d1d7d09f28dc2b8fcde51e301960b1ed4784ff2b9179eb17bbcabbdc11c"
+}

@@ -1,0 +1,121 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT c.code, c.description, t.name AS \"term_name?\",\n                  u.name AS owner_name, u.surname AS owner_surname, u.email AS owner_email,\n                  c.updated_at,\n                  (SELECT count(*) FROM teaching.effective_members m\n                    WHERE m.course_id = c.id AND m.role = 'student') AS \"student_count!\",\n                  (SELECT count(*) FROM teaching.effective_members m\n                    WHERE m.course_id = c.id AND m.role = 'assistant') AS \"assistant_count!\",\n                  (SELECT count(*) FROM identity.users f WHERE f.id IN (\n                       SELECT g.student_id FROM gradebook.grades g\n                       JOIN content.items i ON i.id = g.assignment_id\n                       WHERE i.course_id = c.id\n                         AND (g.draft_score IS NOT NULL OR g.draft_feedback IS NOT NULL\n                              OR g.published_score IS NOT NULL OR g.published_feedback IS NOT NULL)\n                       UNION\n                       SELECT s.student_id FROM assessment.submissions s\n                       JOIN content.items i ON i.id = s.assignment_id\n                       WHERE i.course_id = c.id AND s.status = 'submitted')\n                     AND NOT EXISTS (SELECT 1 FROM teaching.effective_members m\n                                     WHERE m.course_id = c.id AND m.user_id = f.id))\n                      AS \"former_count!\"\n           FROM teaching.courses c\n           JOIN identity.users u ON u.id = c.owner_id\n           LEFT JOIN org.terms t ON t.id = c.term_id\n           WHERE c.id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "code",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "teaching.courses",
+            "name": "code"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "description",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "teaching.courses",
+            "name": "description"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "term_name?",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "org.terms",
+            "name": "name"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "owner_name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "identity.users",
+            "name": "name"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "owner_surname",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "identity.users",
+            "name": "surname"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "owner_email",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "identity.users",
+            "name": "email"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "updated_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "teaching.courses",
+            "name": "updated_at"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "student_count!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 8,
+        "name": "assistant_count!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 9,
+        "name": "former_count!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      false,
+      false,
+      false,
+      false,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "9eb2863ae99acaa9893dce4cc6a5197ab80784afc55637079671f3d2a31523bf"
+}

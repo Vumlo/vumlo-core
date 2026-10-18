@@ -1212,13 +1212,14 @@ async fn staff_and_admins_edit_the_title_and_the_term_and_students_cannot() {
 }
 
 #[tokio::test]
-async fn a_course_is_edited_in_every_status_and_the_edit_is_checked() {
+async fn a_course_is_edited_when_it_is_a_draft_or_published_but_not_when_archived_and_the_edit_is_checked()
+ {
     db_test(async |pool| {
         let w = world(pool).await;
         let fall = term(&w, "Fall").await;
         let draft = common::create_course(&w.http, &w.owner.token, "Draft").await;
-        w.set_status(w.course, "archived").await;
-        for course in [draft, w.course] {
+        for (course, status) in [(draft, "draft"), (w.course, "published")] {
+            w.set_status(course, status).await;
             let path = format!("/courses/{course}");
             ok(
                 &w.as_owner("PATCH", &path, Some(json!({"title": "Renamed"})))
@@ -1226,6 +1227,25 @@ async fn a_course_is_edited_in_every_status_and_the_edit_is_checked() {
                 200,
             );
         }
+        // An archived course takes no edit (ADR-0048), and the refusal says why.
+        w.set_status(w.course, "archived").await;
+        let refused = w
+            .as_owner(
+                "PATCH",
+                &format!("/courses/{}", w.course),
+                Some(json!({"title": "Again"})),
+            )
+            .await;
+        assert_eq!(
+            refused.problem(409).detail.as_deref(),
+            Some("the course is archived")
+        );
+        let unchanged = ok(
+            &w.as_owner("GET", &format!("/courses/{}", w.course), None)
+                .await,
+            200,
+        );
+        assert_eq!(unchanged["title"], "Renamed");
 
         let path = format!("/courses/{draft}");
         for bad in [

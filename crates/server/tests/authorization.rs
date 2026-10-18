@@ -45,6 +45,32 @@ fn operations(c: &Ctx, other_user: Uuid) -> Vec<Call> {
             Some(json!({"title": "hacked"})),
         ),
         call("POST", format!("/courses/{}/publish", c.course), None),
+        call("DELETE", format!("/courses/{}", c.course), None),
+        call("GET", format!("/courses/{}/info", c.course), None),
+        call(
+            "PATCH",
+            format!("/courses/{}/info", c.course),
+            Some(json!({"code": "X"})),
+        ),
+        call("POST", format!("/courses/{}/archive", c.course), None),
+        call("POST", format!("/courses/{}/restore", c.course), None),
+        call(
+            "POST",
+            format!("/courses/{}/template", c.course),
+            Some(json!({})),
+        ),
+        // The course is not a template, so even a member that may edit it gets 404.
+        call(
+            "POST",
+            format!("/templates/{}/courses", c.course),
+            Some(json!({})),
+        ),
+        call("GET", format!("/courses/{}/people", c.course), None),
+        call(
+            "GET",
+            format!("/courses/{}/candidates?q=zz", c.course),
+            None,
+        ),
         call(
             "PUT",
             format!("/courses/{}/owner", c.course),
@@ -438,6 +464,8 @@ async fn no_operation_answers_a_caller_who_may_not_use_it() {
                 format!("/items/{}", a.text),
                 format!("/items/{}", a.assignment),
                 format!("/courses/{}/my-grades", a.course),
+                format!("/courses/{}/info", a.course),
+                format!("/courses/{}/people", a.course),
                 format!("/assignments/{}/submission", a.assignment),
             ];
             (method == "GET" && reads.iter().any(|read| read == path))
@@ -663,6 +691,7 @@ async fn the_list_of_operations_is_the_api() {
             "GET /me/sessions",
             "DELETE /me/sessions/{id}",
             "GET /me/courses",
+            "GET /me/templates",
             "POST /courses",
             "GET /editor/profiles",
             "GET /terms",
@@ -719,6 +748,8 @@ async fn the_list_of_operations_is_the_api() {
 
 /// Does `path` (with nil ids) fit `template` (`/courses/{id}/members/{user_id}`)?
 fn matches_template(template: &str, path: &str) -> bool {
+    // A query string is part of the call, not of the path.
+    let path = path.split('?').next().unwrap_or(path);
     let nil = Uuid::nil().to_string();
     let (mut a, mut b) = (template.split('/'), path.split('/'));
     loop {

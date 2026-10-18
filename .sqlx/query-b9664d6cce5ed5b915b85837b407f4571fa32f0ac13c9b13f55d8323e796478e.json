@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE teaching.courses\n         SET code = COALESCE($2, code), description = COALESCE($3, description), updated_at = now()\n         WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "b9664d6cce5ed5b915b85837b407f4571fa32f0ac13c9b13f55d8323e796478e"
+}

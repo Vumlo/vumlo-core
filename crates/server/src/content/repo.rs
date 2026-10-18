@@ -791,6 +791,95 @@ pub async fn lock_assignments_below(
     .await
 }
 
+/// Locks every assignment of a course `FOR UPDATE`, in id order (see [`lock_assignments_below`]).
+/// Returns their ids.
+pub async fn lock_assignments_of_course(
+    conn: &mut PgConnection,
+    course_id: Uuid,
+) -> Result<Vec<Uuid>, sqlx::Error> {
+    sqlx::query_scalar!(
+        "SELECT a.item_id FROM content.assignments a
+         JOIN content.items i ON i.id = a.item_id
+         WHERE i.course_id = $1
+         ORDER BY a.item_id
+         FOR UPDATE OF a",
+        course_id
+    )
+    .fetch_all(conn)
+    .await
+}
+
+/// What the course header shows about the content: the sum of the regular assignments' points
+/// (bonus ones are extra and left out), how many there are, and when anything last changed. With
+/// `open_at`, only what a student may see at that moment counts (the rule of [`tree`]).
+pub async fn course_summary(
+    conn: &mut PgConnection,
+    course_id: Uuid,
+    open_at: Option<DateTime<Utc>>,
+) -> Result<(Decimal, i64, Option<DateTime<Utc>>), sqlx::Error> {
+    let row = sqlx::query!(
+        r#"SELECT COALESCE(sum(a.max_points) FILTER (WHERE NOT a.is_bonus), 0) AS "total!",
+                  count(a.item_id) FILTER (WHERE NOT a.is_bonus) AS "graded!",
+                  (SELECT max(updated_at) FROM (
+                       SELECT updated_at FROM content.modules WHERE course_id = $1
+                       UNION ALL
+                       SELECT updated_at FROM content.items WHERE course_id = $1) changes)
+                      AS changed
+           FROM content.items i
+           JOIN content.assignments a ON a.item_id = i.id
+           JOIN content.modules m ON m.id = i.module_id
+           LEFT JOIN content.modules p ON p.id = m.parent_id
+           WHERE i.course_id = $1
+             AND ($2::timestamptz IS NULL
+                  OR (i.status = 'published' AND (i.publish_at IS NULL OR i.publish_at <= $2)
+                      AND m.status = 'published' AND (m.publish_at IS NULL OR m.publish_at <= $2)
+                      AND (p.id IS NULL
+                           OR (p.status = 'published'
+                               AND (p.publish_at IS NULL OR p.publish_at <= $2)))))"#,
+        course_id,
+        open_at
+    )
+    .fetch_one(conn)
+    .await?;
+    Ok((row.total, row.graded, row.changed))
+}
+
+/// Copies the whole tree of `from` into `to` (ADR-0048): modules, sub-modules, items and
+/// assignments, all as drafts. One statement gives every module and item a new id, so a failure
+/// leaves nothing half copied. What is not copied: publication (`publish_at`), deadlines, the late
+/// rule and anything a student or a grader produced.
+pub async fn copy_course(conn: &mut PgConnection, from: Uuid, to: Uuid) -> Result<(), sqlx::Error> {
+    sqlx::query!(
+        "WITH module_map AS (
+             SELECT id AS old_id, uuidv7() AS new_id FROM content.modules WHERE course_id = $1),
+         item_map AS (
+             SELECT id AS old_id, uuidv7() AS new_id FROM content.items WHERE course_id = $1),
+         new_modules AS (
+             INSERT INTO content.modules (id, course_id, parent_id, position, title, status)
+             SELECT mm.new_id, $2, pm.new_id, m.position, m.title, 'draft'
+             FROM content.modules m
+             JOIN module_map mm ON mm.old_id = m.id
+             LEFT JOIN module_map pm ON pm.old_id = m.parent_id
+             RETURNING id),
+         new_items AS (
+             INSERT INTO content.items (id, module_id, course_id, position, kind, title, body, status)
+             SELECT im.new_id, mm.new_id, $2, i.position, i.kind, i.title, i.body, 'draft'
+             FROM content.items i
+             JOIN item_map im ON im.old_id = i.id
+             JOIN module_map mm ON mm.old_id = i.module_id
+             RETURNING id)
+         INSERT INTO content.assignments (item_id, type, config, max_points, is_bonus, max_attempts)
+         SELECT im.new_id, a.type, a.config, a.max_points, a.is_bonus, a.max_attempts
+         FROM content.assignments a
+         JOIN item_map im ON im.old_id = a.item_id",
+        from,
+        to
+    )
+    .execute(conn)
+    .await?;
+    Ok(())
+}
+
 /// Each field is kept when `None`. `settings` replaces all five settings together: the caller has
 /// resolved them against the locked row.
 pub async fn update_assignment(

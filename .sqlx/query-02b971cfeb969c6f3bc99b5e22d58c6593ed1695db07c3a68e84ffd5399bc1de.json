@@ -1,0 +1,38 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT COALESCE(sum(a.max_points) FILTER (WHERE NOT a.is_bonus), 0) AS \"total!\",\n                  count(a.item_id) FILTER (WHERE NOT a.is_bonus) AS \"graded!\",\n                  (SELECT max(updated_at) FROM (\n                       SELECT updated_at FROM content.modules WHERE course_id = $1\n                       UNION ALL\n                       SELECT updated_at FROM content.items WHERE course_id = $1) changes)\n                      AS changed\n           FROM content.items i\n           JOIN content.assignments a ON a.item_id = i.id\n           JOIN content.modules m ON m.id = i.module_id\n           LEFT JOIN content.modules p ON p.id = m.parent_id\n           WHERE i.course_id = $1\n             AND ($2::timestamptz IS NULL\n                  OR (i.status = 'published' AND (i.publish_at IS NULL OR i.publish_at <= $2)\n                      AND m.status = 'published' AND (m.publish_at IS NULL OR m.publish_at <= $2)\n                      AND (p.id IS NULL\n                           OR (p.status = 'published'\n                               AND (p.publish_at IS NULL OR p.publish_at <= $2)))))",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "total!",
+        "type_info": "Numeric",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "graded!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 2,
+        "name": "changed",
+        "type_info": "Timestamptz",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Timestamptz"
+      ]
+    },
+    "nullable": [
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "02b971cfeb969c6f3bc99b5e22d58c6593ed1695db07c3a68e84ffd5399bc1de"
+}

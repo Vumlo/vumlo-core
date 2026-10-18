@@ -57,7 +57,7 @@ pub fn router() -> OpenApiRouter<AppState> {
 impl From<OrgError> for ApiError {
     fn from(error: OrgError) -> Self {
         match error {
-            OrgError::Forbidden(_) => Self::Forbidden("not allowed"),
+            OrgError::Forbidden(policy) => policy.into(),
             OrgError::Invalid(ModelError::Name) => Self::invalid_field("name", error.to_string()),
             OrgError::Invalid(ModelError::Dates | ModelError::EndsOnRange) => {
                 Self::invalid_field("ends_on", error.to_string())

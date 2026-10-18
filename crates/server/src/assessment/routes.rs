@@ -33,7 +33,7 @@ pub fn router() -> OpenApiRouter<AppState> {
 impl From<AssessmentError> for ApiError {
     fn from(error: AssessmentError) -> Self {
         match error {
-            AssessmentError::Forbidden(_) => Self::Forbidden("not allowed"),
+            AssessmentError::Forbidden(policy) => policy.into(),
             AssessmentError::AssignmentNotFound | AssessmentError::StudentNotFound => {
                 Self::NotFound
             }

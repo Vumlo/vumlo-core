@@ -176,7 +176,7 @@ impl From<IdentityError> for ApiError {
                 Self::Forbidden("the password must be changed first")
             }
             IdentityError::OriginMismatch => Self::Forbidden("origin not allowed"),
-            IdentityError::Forbidden(_) => Self::Forbidden("not allowed"),
+            IdentityError::Forbidden(policy) => policy.into(),
             IdentityError::Invalid(model) => model.into(),
             IdentityError::WrongCurrentPassword => {
                 Self::invalid_field("current_password", "is incorrect")

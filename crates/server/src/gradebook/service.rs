@@ -374,7 +374,7 @@ pub async fn my_grades(
     let has_rows = repo::has_published_grades(conn, course_id, actor.user_id()).await?;
     if !has_rows {
         return Err(match access {
-            Some(_) => GradebookError::Forbidden(PolicyError),
+            Some(_) => GradebookError::Forbidden(PolicyError::Denied),
             None => GradebookError::CourseNotFound,
         });
     }

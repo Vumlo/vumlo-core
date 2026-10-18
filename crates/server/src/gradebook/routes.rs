@@ -33,7 +33,7 @@ pub fn router() -> OpenApiRouter<AppState> {
 impl From<GradebookError> for ApiError {
     fn from(error: GradebookError) -> Self {
         match error {
-            GradebookError::Forbidden(_) => Self::Forbidden("not allowed"),
+            GradebookError::Forbidden(policy) => policy.into(),
             GradebookError::Invalid(problems) => Self::Unprocessable {
                 detail: "the request has invalid fields".to_owned(),
                 errors: problems

@@ -1,0 +1,78 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT u.id AS user_id, u.name, u.surname, u.email, u.role AS \"role: Role\"\n           FROM identity.users u\n           WHERE u.status = 'active' AND u.role <> 'admin'\n             AND NOT EXISTS (SELECT 1 FROM teaching.effective_members m\n                             WHERE m.course_id = $1 AND m.user_id = u.id)\n             AND u.id <> (SELECT owner_id FROM teaching.courses WHERE id = $1)\n             AND (u.name ILIKE $2 ESCAPE '\\' OR u.surname ILIKE $2 ESCAPE '\\'\n                  OR u.email ILIKE $2 ESCAPE '\\'\n                  OR (u.name || ' ' || u.surname) ILIKE $2 ESCAPE '\\')\n           ORDER BY u.surname, u.name, u.id\n           LIMIT $3",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "user_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "identity.users",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "identity.users",
+            "name": "name"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "surname",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "identity.users",
+            "name": "surname"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "email",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "identity.users",
+            "name": "email"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "role: Role",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "identity.users",
+            "name": "role"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "f427e7b3abcd863050184512c1d57c809168a839bdc70036742b4ceb08b40989"
+}

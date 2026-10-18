@@ -1,0 +1,56 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT (SELECT count(*) FROM content.modules) AS \"modules!\",\n                      (SELECT count(*) FROM content.items) AS \"items!\",\n                      (SELECT count(*) FROM teaching.memberships) AS \"members!\",\n                      (SELECT count(*) FROM gradebook.grades) AS \"grades!\",\n                      (SELECT count(*) FROM gradebook.grade_history) AS \"history!\",\n                      (SELECT count(*) FROM assessment.submissions) AS \"submissions!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "modules!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "items!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 2,
+        "name": "members!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 3,
+        "name": "grades!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 4,
+        "name": "history!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 5,
+        "name": "submissions!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "ff1a81b7a336d20a293ffb5a1d095d6feaf8615ed0993d25e79a5b198c166743"
+}

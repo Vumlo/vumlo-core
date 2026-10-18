@@ -3,7 +3,7 @@
 //!
 //! A module or item the actor may not view does not exist as far as they can tell (404): an
 //! unknown id, an id in a course they cannot see and a draft they may not open all give the same
-//! error. Only after that does `ManageContent` decide between going ahead and 403.
+//! error. Only after that does `EditContent` decide between going ahead and 403.
 
 use std::collections::{HashMap, HashSet};
 
@@ -214,7 +214,7 @@ async fn manage_module(
     id: Uuid,
 ) -> Result<ModuleRow, ContentError> {
     let (row, access) = open_module(conn, actor, id).await?;
-    policy::authorize(actor, Action::ManageContent(access))?;
+    policy::authorize(actor, Action::EditContent(access))?;
     Ok(row)
 }
 
@@ -240,7 +240,7 @@ async fn manage_item(
     id: Uuid,
 ) -> Result<ItemRow, ContentError> {
     let (row, access) = open_item(conn, actor, id).await?;
-    policy::authorize(actor, Action::ManageContent(access))?;
+    policy::authorize(actor, Action::EditContent(access))?;
     Ok(row)
 }
 
@@ -251,7 +251,7 @@ async fn manage_course(
     course_id: Uuid,
 ) -> Result<CourseAccess, ContentError> {
     let access = teaching::course_access(conn, actor, course_id).await?;
-    policy::authorize(actor, Action::ManageContent(access))?;
+    policy::authorize(actor, Action::EditContent(access))?;
     Ok(access)
 }
 
@@ -394,6 +394,55 @@ pub async fn create_module(
     )
     .await?;
     Ok(module)
+}
+
+/// What a course header shows about the content, as the actor may see it (ADR-0048).
+pub struct CourseSummary {
+    /// The sum of `max_points` of the regular assignments (the bonus ones are extra).
+    pub total_points: sqlx::types::Decimal,
+    pub graded_items: i64,
+    /// When a module or an item last changed; `None` for a course with no content.
+    pub changed_at: Option<chrono::DateTime<Utc>>,
+}
+
+/// The numbers of the course header. Staff count every assignment, others only those open to
+/// students now (the rule of [`get_tree`]).
+pub async fn course_summary(
+    conn: &mut PgConnection,
+    actor: &Actor,
+    course_id: Uuid,
+) -> Result<CourseSummary, ContentError> {
+    let access = teaching::course_access(conn, actor, course_id).await?;
+    let sees_drafts = policy::authorize(actor, Action::ManageContent(access)).is_ok();
+    let (total_points, graded_items, changed_at) =
+        repo::course_summary(conn, course_id, (!sees_drafts).then(Utc::now)).await?;
+    Ok(CourseSummary {
+        total_points,
+        graded_items,
+        changed_at,
+    })
+}
+
+/// Locks every assignment row of the course `FOR UPDATE`, for the delete of the course (ADR-0035
+/// point 12): a grade write or a submit in flight holds one of them, so the checks that follow, in
+/// later statements, see what it committed. The caller has authorized the delete.
+pub async fn lock_course_assignments(
+    conn: &mut PgConnection,
+    course_id: Uuid,
+) -> Result<(), ContentError> {
+    repo::lock_assignments_of_course(conn, course_id).await?;
+    Ok(())
+}
+
+/// Copies the whole tree of `from` into the empty course `to`, all as drafts (ADR-0048). The caller
+/// has authorized both courses.
+pub async fn copy_course_content(
+    conn: &mut PgConnection,
+    from: Uuid,
+    to: Uuid,
+) -> Result<(), ContentError> {
+    repo::copy_course(conn, from, to).await?;
+    Ok(())
 }
 
 /// The course's content as the actor may see it. Staff see everything; others only what is open

@@ -1812,3 +1812,91 @@ async fn a_google_sign_in_attempt_is_found_by_two_hashes_and_expires_after_it_st
     })
     .await;
 }
+
+// ADR-0048.
+
+#[tokio::test]
+async fn a_course_has_an_empty_code_and_description_until_they_are_set_and_both_are_bounded() {
+    db_test(async |pool| {
+        let teacher = owner(&pool, "t@x.edu").await;
+        let course = insert_course(&pool, teacher).await;
+        let row = sqlx::query!(
+            "SELECT code, description FROM teaching.courses WHERE id = $1",
+            course
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!((row.code.as_str(), row.description.as_str()), ("", ""));
+
+        let set = |code: String, description: String| {
+            let pool = pool.clone();
+            async move {
+                sqlx::query!(
+                    "UPDATE teaching.courses SET code = $2, description = $3 WHERE id = $1",
+                    course,
+                    code,
+                    description
+                )
+                .execute(&pool)
+                .await
+            }
+        };
+        set("CS 305".into(), "x".repeat(300)).await.unwrap();
+        assert_eq!(
+            sqlstate(set("c".repeat(33), String::new()).await),
+            "23514",
+            "code length"
+        );
+        assert_eq!(
+            sqlstate(set(" CS".into(), String::new()).await),
+            "23514",
+            "code is trimmed"
+        );
+        assert_eq!(
+            sqlstate(set(String::new(), "y".repeat(301)).await),
+            "23514",
+            "description length"
+        );
+        assert_eq!(
+            sqlstate(set(String::new(), " d".into()).await),
+            "23514",
+            "description is trimmed"
+        );
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn group_roster_links_has_a_row_per_link_where_the_roster_has_one_per_student() {
+    db_test(async |pool| {
+        let teacher = owner(&pool, "t@x.edu").await;
+        let a = student(&pool, "a@x.edu").await;
+        let group = insert_group(&pool, "7-A").await.unwrap();
+        let sub = insert_subgroup(&pool, group, "English 1").await.unwrap();
+        join_group(&pool, group, a).await;
+        join_subgroup(&pool, sub, group, a).await;
+        let course = insert_course(&pool, teacher).await;
+        link(&pool, course, group, None, teacher).await.unwrap();
+        link(&pool, course, group, Some(sub), teacher)
+            .await
+            .unwrap();
+
+        let rows = sqlx::query_scalar!(
+            r#"SELECT count(DISTINCT link_id) AS "n!" FROM teaching.group_roster_links
+               WHERE course_id = $1 AND user_id = $2"#,
+            course,
+            a
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(rows, 2, "one row per link");
+        assert_eq!(
+            roster(&pool, course).await.len(),
+            1,
+            "still one student on the roster"
+        );
+    })
+    .await;
+}

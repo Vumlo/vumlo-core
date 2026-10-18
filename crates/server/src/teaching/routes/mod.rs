@@ -1,6 +1,7 @@
 //! HTTP edge of `teaching`: extractors, DTO mapping, OpenAPI annotations. Writes open the
 //! transaction, call exactly one service function and commit; reads use a pooled connection.
 
+mod info;
 mod roster;
 
 use api_types::{
@@ -25,8 +26,16 @@ use crate::policy::{CourseRole, CourseStatus};
 pub fn router() -> OpenApiRouter<AppState> {
     OpenApiRouter::new()
         .routes(routes!(create_course))
-        .routes(routes!(get_course, update_course))
+        .routes(routes!(get_course, update_course, info::delete_course))
+        .routes(routes!(info::get_course_info, info::update_course_info))
         .routes(routes!(publish_course))
+        .routes(routes!(info::archive_course))
+        .routes(routes!(info::restore_course))
+        .routes(routes!(info::make_template))
+        .routes(routes!(info::create_from_template))
+        .routes(routes!(info::list_templates))
+        .routes(routes!(info::get_people))
+        .routes(routes!(info::get_candidates))
         .routes(routes!(transfer_ownership))
         .routes(routes!(list_my_courses))
         .routes(routes!(list_members))
@@ -41,10 +50,28 @@ pub fn router() -> OpenApiRouter<AppState> {
 impl From<TeachingError> for ApiError {
     fn from(error: TeachingError) -> Self {
         match error {
-            TeachingError::Forbidden(_) => Self::Forbidden("not allowed"),
+            TeachingError::Forbidden(policy) => policy.into(),
             TeachingError::Invalid(ModelError::Title) => {
                 Self::invalid_field("title", error.to_string())
             }
+            TeachingError::Invalid(ModelError::Code) => {
+                Self::invalid_field("code", error.to_string())
+            }
+            TeachingError::Invalid(ModelError::Description) => {
+                Self::invalid_field("description", error.to_string())
+            }
+            TeachingError::QueryTooShort => {
+                Self::invalid_field("q", "needs at least two characters")
+            }
+            TeachingError::HasGrades => Self::Conflict(
+                "grades were given in this course, so it cannot be deleted: archive it instead",
+            ),
+            TeachingError::HasSubmissions => Self::Conflict(
+                "work was submitted in this course, so it cannot be deleted: archive it instead",
+            ),
+            TeachingError::Content(e) => (*e).into(),
+            TeachingError::Gradebook(e) => (*e).into(),
+            TeachingError::Assessment(e) => (*e).into(),
             TeachingError::CourseNotFound
             | TeachingError::MemberNotFound
             | TeachingError::LinkNotFound
@@ -207,7 +234,7 @@ async fn get_course(
 /// Changes the title and/or the term of a course. Assistants, teachers, owners and admins.
 ///
 /// Only the fields present change; `term_id: null` clears the term. A template has no term.
-/// Works in every course status (ADR-0033).
+/// Works on a draft and a published course; an archived one takes no change (ADR-0048).
 #[utoipa::path(
     patch,
     path = "/courses/{id}",
@@ -223,6 +250,8 @@ async fn get_course(
             body = ProblemDetails, content_type = "application/problem+json"),
         (status = 404, description = "No such course, or not visible to the caller",
             body = ProblemDetails, content_type = "application/problem+json"),
+        (status = 409, description = "The course is archived", body = ProblemDetails,
+            content_type = "application/problem+json"),
         (status = 422, description = "Invalid title, an unknown term, or a term on a template",
             body = ProblemDetails, content_type = "application/problem+json"),
     )
