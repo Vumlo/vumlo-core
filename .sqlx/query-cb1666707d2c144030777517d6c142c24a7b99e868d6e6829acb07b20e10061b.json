@@ -1,0 +1,49 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT count(*) AS \"all!\",\n                  count(*) FILTER (WHERE role = 'student') AS \"student!\",\n                  count(*) FILTER (WHERE role = 'teacher') AS \"teacher!\",\n                  count(*) FILTER (WHERE role = 'admin') AS \"admin!\",\n                  count(*) FILTER (WHERE status = 'disabled') AS \"disabled!\"\n           FROM identity.users",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "all!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "student!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 2,
+        "name": "teacher!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 3,
+        "name": "admin!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 4,
+        "name": "disabled!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      null,
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "cb1666707d2c144030777517d6c142c24a7b99e868d6e6829acb07b20e10061b"
+}

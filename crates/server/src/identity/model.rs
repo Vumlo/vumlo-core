@@ -87,6 +87,25 @@ pub struct User {
     pub created_at: DateTime<Utc>,
 }
 
+/// People by institution role, and how many are disabled (ADR-0053).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RoleCounts {
+    pub all: i64,
+    pub student: i64,
+    pub teacher: i64,
+    pub admin: i64,
+    pub disabled: i64,
+}
+
+/// What one person does in the institution (ADR-0053).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UserFacts {
+    pub user: User,
+    pub last_login_at: Option<DateTime<Utc>>,
+    pub groups: Vec<(Uuid, String)>,
+    pub courses: crate::teaching::UserCourseFacts,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SessionInfo {
     pub id: Uuid,

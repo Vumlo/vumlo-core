@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE teaching.courses SET code = 'CS 1' WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "a7557004c217eb9ee90682899d8ce06d01f8e0beb91f91f51fcca02cd639bc25"
+}

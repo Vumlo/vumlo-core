@@ -8,7 +8,11 @@ use super::model::{
     Candidate, Course, CourseGroupLink, CourseKind, Exclusion, LinkedGroup, MemberSource,
     Membership, Person, RosterEntry, TemplateSummary,
 };
+mod admin;
 mod cards;
+pub use admin::{
+    admin_courses, linked_courses_of_group, owned_courses, studied_courses, taught_courses,
+};
 pub use cards::{
     card_courses, staff_next_deadline, staff_todo_counts, student_next, student_progress,
     unpublished_items,

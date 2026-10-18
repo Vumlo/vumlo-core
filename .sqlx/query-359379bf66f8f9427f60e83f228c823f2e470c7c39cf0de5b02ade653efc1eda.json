@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE events.audit_log SET at = now() - interval '10 days'",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "359379bf66f8f9427f60e83f228c823f2e470c7c39cf0de5b02ade653efc1eda"
+}

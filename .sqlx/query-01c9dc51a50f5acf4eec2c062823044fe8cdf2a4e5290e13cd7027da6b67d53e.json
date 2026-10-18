@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT count(*) AS \"n!\" FROM teaching.effective_members m\n           JOIN teaching.courses c ON c.id = m.course_id\n           WHERE m.user_id = $1 AND m.role = 'student' AND c.kind = 'regular'\n             AND c.status = 'published'",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "n!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "01c9dc51a50f5acf4eec2c062823044fe8cdf2a4e5290e13cd7027da6b67d53e"
+}

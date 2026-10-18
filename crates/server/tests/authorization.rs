@@ -210,6 +210,12 @@ fn operations(c: &Ctx, other_user: Uuid) -> Vec<Call> {
         // The institution's own: admins only.
         call("GET", "/admin/institution".into(), None),
         call("GET", "/admin/users".into(), None),
+        call("GET", "/admin/users/summary".into(), None),
+        call("GET", format!("/admin/users/{}/facts", c.owner), None),
+        call("GET", format!("/admin/groups/{}/overview", c.group), None),
+        call("GET", "/admin/term-stats".into(), None),
+        call("GET", "/admin/courses".into(), None),
+        call("GET", "/admin/audit".into(), None),
         call(
             "POST",
             "/admin/users".into(),

@@ -5,7 +5,7 @@ use sqlx::PgConnection;
 use uuid::Uuid;
 
 use super::model::{
-    NewUser, Role, SessionInfo, SessionKind, TokenPurpose, User, UserFilter, UserStatus,
+    NewUser, Role, RoleCounts, SessionInfo, SessionKind, TokenPurpose, User, UserFilter, UserStatus,
 };
 
 pub struct LoginRecord {
@@ -142,7 +142,7 @@ pub async fn insert_session(
     kind: SessionKind,
     lifetime_secs: i64,
 ) -> Result<DateTime<Utc>, sqlx::Error> {
-    sqlx::query_scalar!(
+    let expires_at = sqlx::query_scalar!(
         "INSERT INTO identity.sessions (id, user_id, token_hash, kind, expires_at)
          VALUES ($1, $2, $3, $4, now() + $5::bigint * interval '1 second')
          RETURNING expires_at",
@@ -152,7 +152,44 @@ pub async fn insert_session(
         kind.as_str(),
         lifetime_secs
     )
+    .fetch_one(&mut *conn)
+    .await?;
+    // Every new session is a sign-in (ADR-0053); a refreshed one is not.
+    sqlx::query!(
+        "INSERT INTO identity.last_logins (user_id, at) VALUES ($1, now())
+         ON CONFLICT (user_id) DO UPDATE SET at = EXCLUDED.at",
+        user_id
+    )
+    .execute(conn)
+    .await?;
+    Ok(expires_at)
+}
+
+/// People by institution role (all statuses), and how many are disabled (ADR-0053).
+pub async fn role_counts(conn: &mut PgConnection) -> Result<RoleCounts, sqlx::Error> {
+    sqlx::query_as!(
+        RoleCounts,
+        r#"SELECT count(*) AS "all!",
+                  count(*) FILTER (WHERE role = 'student') AS "student!",
+                  count(*) FILTER (WHERE role = 'teacher') AS "teacher!",
+                  count(*) FILTER (WHERE role = 'admin') AS "admin!",
+                  count(*) FILTER (WHERE status = 'disabled') AS "disabled!"
+           FROM identity.users"#
+    )
     .fetch_one(conn)
+    .await
+}
+
+/// When the person last signed in; `None` if never since the time was recorded.
+pub async fn last_login_at(
+    conn: &mut PgConnection,
+    user_id: Uuid,
+) -> Result<Option<DateTime<Utc>>, sqlx::Error> {
+    sqlx::query_scalar!(
+        "SELECT at FROM identity.last_logins WHERE user_id = $1",
+        user_id
+    )
+    .fetch_optional(conn)
     .await
 }
 

@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO identity.last_logins (user_id, at) VALUES ($1, now())\n         ON CONFLICT (user_id) DO UPDATE SET at = EXCLUDED.at",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "a7b62169dfbdf0667eb9b7fa7149efa1f2b2ef2fd60e9027af60250cba24d656"
+}

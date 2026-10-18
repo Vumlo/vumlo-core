@@ -7,6 +7,7 @@ use serde_json::{Map, Value};
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
+mod admin;
 mod assessment;
 mod courses;
 mod document;
@@ -16,6 +17,7 @@ mod home;
 mod items;
 mod org;
 
+pub use admin::*;
 pub use assessment::*;
 pub use courses::*;
 pub use document::*;

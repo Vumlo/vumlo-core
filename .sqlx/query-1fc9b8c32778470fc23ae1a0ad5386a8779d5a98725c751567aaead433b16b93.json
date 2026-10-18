@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO identity.last_logins (user_id, at) VALUES ($1, $2::text::timestamptz)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "1fc9b8c32778470fc23ae1a0ad5386a8779d5a98725c751567aaead433b16b93"
+}

@@ -103,6 +103,7 @@ impl From<crate::policy::PolicyError> for ApiError {
 impl From<crate::events::EventsError> for ApiError {
     fn from(error: crate::events::EventsError) -> Self {
         match error {
+            crate::events::EventsError::Forbidden(policy) => policy.into(),
             crate::events::EventsError::Db(e) => Self::from_db("events", &e),
         }
     }

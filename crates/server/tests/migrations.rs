@@ -2086,3 +2086,70 @@ async fn only_a_submitted_attempt_has_scores_and_only_an_auto_score_has_no_perso
     })
     .await;
 }
+
+// --- migration 28: sign-in times and when a person joined a group --------------------------------
+
+#[tokio::test]
+async fn a_sign_in_time_is_one_row_per_person_and_goes_with_the_person() {
+    db_test(async |pool| {
+        let user = owner(&pool, "s@x.edu").await;
+        let record = |at: &'static str| {
+            let pool = pool.clone();
+            async move {
+                sqlx::query!(
+                    "INSERT INTO identity.last_logins (user_id, at) VALUES ($1, $2::text::timestamptz)",
+                    user,
+                    at
+                )
+                .execute(&pool)
+                .await
+            }
+        };
+        record("2026-10-01T10:00:00Z").await.unwrap();
+        assert_eq!(sqlstate(record("2026-10-02T10:00:00Z").await), "23505");
+        let unknown = sqlx::query!(
+            "INSERT INTO identity.last_logins (user_id, at) VALUES ($1, now())",
+            uuid::Uuid::now_v7()
+        )
+        .execute(&pool)
+        .await;
+        assert_eq!(sqlstate(unknown), "23503", "only a real person signs in");
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn a_group_member_is_stamped_when_added_and_older_rows_have_no_time() {
+    db_test(async |pool| {
+        let user = owner(&pool, "s@x.edu").await;
+        let group = uuid::Uuid::now_v7();
+        sqlx::query!(
+            "INSERT INTO org.groups (id, name) VALUES ($1, 'Group A')",
+            group
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        sqlx::query!(
+            "INSERT INTO org.group_members (group_id, user_id) VALUES ($1, $2)",
+            group,
+            user
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        let stamped = sqlx::query_scalar!(
+            r#"SELECT added_at IS NOT NULL AS "stamped!" FROM org.group_members WHERE group_id = $1"#,
+            group
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert!(stamped, "the default is now()");
+        sqlx::query!("UPDATE org.group_members SET added_at = NULL WHERE group_id = $1", group)
+            .execute(&pool)
+            .await
+            .unwrap();
+    })
+    .await;
+}

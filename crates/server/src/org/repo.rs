@@ -4,7 +4,7 @@ use chrono::NaiveDate;
 use sqlx::PgConnection;
 use uuid::Uuid;
 
-use super::model::{Group, GroupMember, Subgroup, Term};
+use super::model::{Group, GroupMember, MemberLine, Subgroup, Term, TermUsage};
 use crate::settings::InstitutionMode;
 
 /// Writes the mode if the installation has none yet; leaves an existing record alone. Under READ
@@ -206,6 +206,60 @@ pub async fn delete_group(conn: &mut PgConnection, id: Uuid) -> Result<u64, sqlx
 // ---------------------------------------------------------------------------------------------
 // Group members
 // ---------------------------------------------------------------------------------------------
+
+/// The groups a person is in, by name.
+pub async fn groups_of_user(
+    conn: &mut PgConnection,
+    user_id: Uuid,
+) -> Result<Vec<(Uuid, String)>, sqlx::Error> {
+    let rows = sqlx::query!(
+        "SELECT g.id, g.name FROM org.group_members m
+         JOIN org.groups g ON g.id = m.group_id
+         WHERE m.user_id = $1 ORDER BY g.name, g.id",
+        user_id
+    )
+    .fetch_all(conn)
+    .await?;
+    Ok(rows.into_iter().map(|row| (row.id, row.name)).collect())
+}
+
+/// The members of a group with their names and emails, by surname.
+pub async fn group_member_lines(
+    conn: &mut PgConnection,
+    group_id: Uuid,
+) -> Result<Vec<MemberLine>, sqlx::Error> {
+    sqlx::query_as!(
+        MemberLine,
+        "SELECT u.id AS user_id, u.name, u.surname, u.email, m.added_at
+         FROM org.group_members m
+         JOIN identity.users u ON u.id = m.user_id
+         WHERE m.group_id = $1
+         ORDER BY u.surname, u.name, u.id",
+        group_id
+    )
+    .fetch_all(conn)
+    .await
+}
+
+/// Every term with the number of regular courses that use it, and where `today` stands.
+pub async fn term_usage(
+    conn: &mut PgConnection,
+    today: NaiveDate,
+) -> Result<Vec<TermUsage>, sqlx::Error> {
+    sqlx::query_as!(
+        TermUsage,
+        r#"SELECT t.id AS term_id,
+                  (SELECT count(*) FROM teaching.courses c
+                   WHERE c.term_id = t.id AND c.kind = 'regular') AS "courses!",
+                  ($1 BETWEEN t.starts_on AND t.ends_on) AS "current!",
+                  (t.ends_on < $1) AS "ended!"
+           FROM org.terms t
+           ORDER BY t.starts_on DESC, t.id"#,
+        today
+    )
+    .fetch_all(conn)
+    .await
+}
 
 /// Which of `user_ids` are members of the group.
 pub async fn group_members_among(

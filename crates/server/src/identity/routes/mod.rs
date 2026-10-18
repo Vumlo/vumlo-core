@@ -158,6 +158,8 @@ pub fn router(settings: &Settings) -> Result<OpenApiRouter<AppState>, SetupError
         .routes(routes!(me::list_sessions))
         .routes(routes!(me::revoke_session))
         .routes(routes!(admin::list_users, admin::create_user))
+        .routes(routes!(admin::user_summary))
+        .routes(routes!(admin::user_facts))
         .routes(routes!(admin::update_user))
         .routes(routes!(admin::reset_password))
         .layer(Extension(Arc::new(throttle)))
@@ -215,6 +217,7 @@ impl From<IdentityError> for ApiError {
                 Self::Conflict("the user owns courses: transfer them to someone else first")
             }
             IdentityError::Teaching(e) => (*e).into(),
+            IdentityError::Org(e) => (*e).into(),
             IdentityError::UserNotFound | IdentityError::SessionNotFound => Self::NotFound,
             IdentityError::Hashing => Self::Internal,
             IdentityError::Events(e) => e.into(),
