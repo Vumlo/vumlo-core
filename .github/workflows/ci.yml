@@ -11,6 +11,9 @@ env:
 jobs:
   check:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
     services:
       postgres:
         image: postgres:18
@@ -29,6 +32,7 @@ jobs:
       - uses: actions/checkout@v5
       - uses: Swatinem/rust-cache@v2
         with:
+          workspaces: backend
           cache-bin: true
       - name: Install sqlx-cli
         run: cargo install sqlx-cli --no-default-features --features postgres,rustls --locked

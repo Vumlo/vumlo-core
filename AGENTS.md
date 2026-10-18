@@ -27,7 +27,7 @@ If a rule blocks the task, stop and say so. Do not work around it.
 
 Modules: `identity`, `org`, `teaching`, `content`, `assessment`, `gradebook`, `files`, `events`, `policy`.
 
-    crates/server/src/
+    backend/crates/server/src/
       main.rs      CLI entry: serve | migrate | create-admin | create-user (import-users: planned)
       app.rs       AppState, router assembly (nests each module's router())
       error.rs     shared API error → Problem Details, ValidJson/ValidQuery extractors
@@ -99,7 +99,7 @@ Modules: `identity`, `org`, `teaching`, `content`, `assessment`, `gradebook`, `f
 - Every table is schema-qualified (`teaching.courses`).
 - Enums are `text` + `CHECK` constraint, not Postgres `ENUM`.
 - Scores are `NUMERIC`, ids are UUID v7, timestamps are `timestamptz`.
-- After changing any query, run `cargo sqlx prepare --workspace -- --all-targets` and commit `.sqlx/`.
+- After changing any query, run `cargo sqlx prepare --workspace -- --all-targets` and commit `backend/.sqlx/`.
   `--all-targets` makes `.sqlx/` cover the tests too, so `query!` is allowed in tests and in
   `#[cfg(test)]` code like anywhere else. A runtime query is for SQL that is not ours to check
   (a system view) or whose text is a parameter.
@@ -107,7 +107,7 @@ Modules: `identity`, `org`, `teaching`, `content`, `assessment`, `gradebook`, `f
 ## 9. API
 
 - Everything under `/api/v1`. Changes are additive only.
-- Request/response DTOs live in `crates/api-types`, are validated with `garde`, and are annotated for `utoipa`.
+- Request/response DTOs live in `backend/crates/api-types`, are validated with `garde`, and are annotated for `utoipa`.
 - Errors are RFC 9457 Problem Details, produced by one `IntoResponse` impl.
 - All error responses, including framework-generated ones (405/408/413, extractor rejections), are Problem Details.
 - Validation failures are `422` with `errors: [{field, message}]` (ADR-0018).
@@ -132,7 +132,7 @@ Modules: `identity`, `org`, `teaching`, `content`, `assessment`, `gradebook`, `f
 
 - Every change comes with tests that check behavior, not just "it compiles".
 - DB tests are `#[tokio::test]` functions that run in `db_test(async |pool| { … })` (ADR-0036); never `#[sqlx::test]`. API tests start the real server and call it with `reqwest`.
-  Shared helpers (server spawn, seeding, login) live in `crates/server/tests/common/`.
+  Shared helpers (server spawn, seeding, login) live in `backend/crates/server/tests/common/`.
 - A test never holds a pooled connection across a request to the server, and never waits for a lock with a fixed sleep: it uses `test_support::wait_until_blocked`.
 - **Never delete, skip or weaken a test to make it pass.** If a test looks wrong, say so and stop.
 
@@ -146,7 +146,7 @@ Modules: `identity`, `org`, `teaching`, `content`, `assessment`, `gradebook`, `f
 
 ## 14. Definition of done
 
-All of these pass:
+All of these pass, run from `backend/`:
 
     cargo fmt --all --check
     cargo clippy --workspace --all-targets -- -D warnings

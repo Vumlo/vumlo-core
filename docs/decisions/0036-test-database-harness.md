@@ -27,7 +27,7 @@ machines with more, in a way that looked like a server bug.
 ## Decision
 1. Database tests are `#[tokio::test]` functions that run their body in `db_test(async |pool| { … })`
    (`bare_db_test` for the few that must see an empty database). `#[sqlx::test]` is not used.
-2. The harness is one file, `crates/server/src/test_support.rs`. The library compiles it for its
+2. The harness is one file, `backend/crates/server/src/test_support.rs`. The library compiles it for its
    unit tests (`#[cfg(test)]`), and `tests/common` includes the same file by path for the
    integration tests. It adds no crate.
 3. `DATABASE_URL` supplies the server and the credentials only. The harness connects to the

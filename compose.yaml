@@ -25,7 +25,7 @@ services:
 
   # The API. The web app runs outside Docker and reaches it on http://127.0.0.1:8080.
   server:
-    build: .
+    build: ./backend
     depends_on:
       postgres:
         condition: service_healthy
