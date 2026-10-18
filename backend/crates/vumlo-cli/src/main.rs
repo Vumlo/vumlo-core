@@ -7,12 +7,14 @@
 
 mod admin;
 mod brand;
+mod build_web;
 mod config_cmd;
 mod db_cmd;
 mod doctor;
 mod init;
 mod modules_cmd;
 mod runtime;
+mod seed;
 mod version;
 
 use std::path::PathBuf;
@@ -61,6 +63,21 @@ enum Command {
     /// What the web build takes from the institution's configuration.
     #[command(subcommand)]
     Brand(BrandCommand),
+    /// Build something that ships separately from the binaries.
+    #[command(subcommand)]
+    Build(BuildCommand),
+    /// Fill an empty installation with data to look at.
+    Seed {
+        /// Demo data: a course, a teacher, three students, a quiz and grades.
+        #[arg(long)]
+        demo: bool,
+        /// Add it although the installation already has courses or people.
+        #[arg(long)]
+        yes: bool,
+        /// Say what would be created, create nothing.
+        #[arg(long)]
+        dry_run: bool,
+    },
     /// The database schema.
     #[command(subcommand)]
     Db(DbCommand),
@@ -103,6 +120,16 @@ enum BrandCommand {
     /// every time. Then rebuild the web app and restart.
     Apply {
         /// Say what would be written, write nothing.
+        #[arg(long)]
+        dry_run: bool,
+    },
+}
+
+#[derive(Subcommand)]
+enum BuildCommand {
+    /// `brand apply`, then the web build (`npm run build` in `web.dir`).
+    Web {
+        /// Say what would be done, do nothing.
         #[arg(long)]
         dry_run: bool,
     },
@@ -170,6 +197,13 @@ async fn run(cli: Cli) -> anyhow::Result<bool> {
         Command::Modules(ModulesCommand::List { json }) => modules_cmd::list(&options, json)?,
         Command::Module { name, args } => modules_cmd::run_module(&options, &name, &args).await?,
         Command::Brand(BrandCommand::Apply { dry_run }) => brand::apply(&options, dry_run).await?,
+        Command::Build(BuildCommand::Web { dry_run }) => build_web::run(&options, dry_run).await?,
+        Command::Seed { demo, yes, dry_run } => {
+            if !demo {
+                anyhow::bail!("say what to seed: --demo");
+            }
+            seed::demo(&options, seed::SeedDemo { yes, dry_run }).await?;
+        }
         Command::Db(DbCommand::Status { json }) => return db_cmd::status(&options, json).await,
         Command::Db(DbCommand::Migrate { dry_run }) => db_cmd::migrate(&options, dry_run).await?,
         Command::Admin(AdminCommand::Create {

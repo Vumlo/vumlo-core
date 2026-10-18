@@ -170,7 +170,7 @@ run the build there:
 
 ```sh
 sudo rsync -a --delete ../web/ /opt/vumlo/web/
-sudo vumlo-cli --config /etc/vumlo/vumlo.toml build web      # runs brand apply, then npm ci/build in web.dir
+sudo vumlo-cli --config /etc/vumlo/vumlo.toml build web      # brand apply, then npm ci (once) and npm run build in web.dir
 sudo chown -R vumlo: /opt/vumlo/web/.next/cache
 ```
 
