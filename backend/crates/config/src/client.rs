@@ -20,6 +20,8 @@ pub struct ClientConfig {
     pub public: PublicConfig,
     /// Every optional module of this build line and whether it is on.
     pub modules: BTreeMap<String, ModuleStatus>,
+    /// The enabled modules that have UI in the web app: only these are built into the web bundle.
+    pub web_modules: Vec<String>,
     /// The generated logo, relative to the generated directory. Absent without `institution.logo`.
     pub logo: Option<String>,
 }
@@ -64,6 +66,11 @@ impl ClientConfig {
                 },
             },
             modules: settings.module_state.statuses(),
+            web_modules: crate::modules::known_modules()
+                .iter()
+                .filter(|m| m.web && settings.module_state.is_enabled(m.name))
+                .map(|m| m.name.to_owned())
+                .collect(),
             logo,
         }
     }
@@ -143,6 +150,20 @@ mod tests {
         assert!(!text.contains("sentinel"), "{text}");
         assert!(text.contains("\"dummy\":\"enabled\""), "{text}");
         assert!(text.contains("https://lms.example.edu/api/v1"), "{text}");
+        assert_eq!(client.web_modules, ["dummy"]);
+    }
+
+    #[test]
+    fn only_enabled_modules_with_a_web_part_are_built_into_the_web_app() {
+        let off = build(VALID, &[]).unwrap();
+        assert!(ClientConfig::new(&off, "1", None).web_modules.is_empty());
+        let on = crate::tests::build_with(
+            &format!("{VALID}\n[modules]\ndummy = true\n"),
+            &[],
+            &["dummy"],
+        )
+        .unwrap();
+        assert_eq!(ClientConfig::new(&on, "1", None).web_modules, ["dummy"]);
     }
 
     #[test]

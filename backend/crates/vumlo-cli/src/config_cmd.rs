@@ -10,6 +10,11 @@ pub fn check(options: &Options) -> anyhow::Result<bool> {
     match vumlo_config::load_process(options, &runtime::compiled_names()) {
         Ok(loaded) => {
             let s = &loaded.settings;
+            if let Some(problem) = crate::brand::logo_problem(s) {
+                eprintln!("configuration has 1 problem(s):");
+                eprintln!("  - {problem}");
+                return Ok(false);
+            }
             println!("configuration OK");
             match &loaded.config_file {
                 Some(file) => println!("  file         {}", file.display()),

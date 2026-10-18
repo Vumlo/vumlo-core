@@ -113,6 +113,7 @@ mod tests {
             "language: \"en\" | \"uk\";",
             "grading_scale: \"twelve\" | \"hundred\";",
             "modules: { [name: string]: \"enabled\" | \"disabled\" | \"unavailable\" };",
+            "web_modules: (string)[];",
             "logo?: string | null;",
         ] {
             assert!(ts.contains(needle), "{needle}\n{ts}");

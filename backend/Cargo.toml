@@ -29,7 +29,7 @@ config = { version = "0.15", default-features = false, features = ["toml"] }
 garde = { version = "0.23", features = ["derive"] }
 openidconnect = { version = "4", default-features = false, features = ["reqwest", "rustls-tls"] }
 lettre = { version = "0.11", default-features = false, features = ["builder", "smtp-transport", "tokio1", "tokio1-rustls-tls", "file-transport"] }
-image = { version = "0.25", default-features = false, features = ["png", "ico"] }
+image = { version = "0.25", default-features = false, features = ["png", "ico", "jpeg", "webp"] }
 rand = "0.10"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
 resvg = { version = "0.48", default-features = false }

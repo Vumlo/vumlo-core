@@ -67,6 +67,18 @@ jobs:
           node-version: 24
           cache: npm
           cache-dependency-path: web/package-lock.json
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: backend
+      # The web build reads only what `vumlo-cli brand apply` generated (ADR-0054).
+      - name: Generate the branding
+        working-directory: backend
+        env:
+          SQLX_OFFLINE: "true"
+          DATABASE_URL: postgres://ci:ci@localhost:5432/ci
+        run: |
+          cargo run -q -p vumlo-cli -- init --dir ..
+          cargo run -q -p vumlo-cli -- --config ../vumlo.toml brand apply
       - run: npm ci
       - run: npm run typecheck
       - run: npm run build

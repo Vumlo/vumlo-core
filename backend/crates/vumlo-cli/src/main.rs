@@ -6,6 +6,7 @@
 //! prepares configuration, generated assets and the database; it does not deploy anything.
 
 mod admin;
+mod brand;
 mod config_cmd;
 mod db_cmd;
 mod doctor;
@@ -57,6 +58,9 @@ enum Command {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
+    /// What the web build takes from the institution's configuration.
+    #[command(subcommand)]
+    Brand(BrandCommand),
     /// The database schema.
     #[command(subcommand)]
     Db(DbCommand),
@@ -89,6 +93,18 @@ enum ModulesCommand {
     List {
         #[arg(long)]
         json: bool,
+    },
+}
+
+#[derive(Subcommand)]
+enum BrandCommand {
+    /// Regenerate `.vumlo/generated/` from the configuration: client-config.json and its types,
+    /// the manifest, the favicon and the app icons from `institution.logo`. Starts from scratch
+    /// every time. Then rebuild the web app and restart.
+    Apply {
+        /// Say what would be written, write nothing.
+        #[arg(long)]
+        dry_run: bool,
     },
 }
 
@@ -153,6 +169,7 @@ async fn run(cli: Cli) -> anyhow::Result<bool> {
         Command::Config(ConfigCommand::Show { public }) => config_cmd::show(&options, public)?,
         Command::Modules(ModulesCommand::List { json }) => modules_cmd::list(&options, json)?,
         Command::Module { name, args } => modules_cmd::run_module(&options, &name, &args).await?,
+        Command::Brand(BrandCommand::Apply { dry_run }) => brand::apply(&options, dry_run).await?,
         Command::Db(DbCommand::Status { json }) => return db_cmd::status(&options, json).await,
         Command::Db(DbCommand::Migrate { dry_run }) => db_cmd::migrate(&options, dry_run).await?,
         Command::Admin(AdminCommand::Create {
