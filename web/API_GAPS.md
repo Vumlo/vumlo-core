@@ -5,11 +5,11 @@ Delete the type, the hook branch and the handler when the server closes a gap.
 
 `web/openapi.json` was generated from the server crate (`/api/v1/openapi.json`) at the commit this was built on. `pnpm gen:api` rebuilds `src/lib/api/schema.d.ts` from it.
 
-Spec endpoints the UI uses as they are: `GET /institution`, `GET /admin/institution` (read-only; the settings live in `learnly.toml`, ADR-0044), auth, `/me`, `/me/sessions`, `/me/password`, `/me/courses`, courses and members, group links and options, the content tree, modules and items (create, patch, publish, reorder, delete), submissions and drafts, grades (save, publish), the gradebook, `my-grades`, admin users, groups, subgroups, terms, `/editor/profiles`.
+Spec endpoints the UI uses as they are: `GET /institution`, `GET /admin/institution` (read-only; the settings live in `vumlo.toml`, ADR-0044), auth, `/me`, `/me/sessions`, `/me/password`, `/me/courses`, courses and members, group links and options, the content tree, modules and items (create, patch, publish, reorder, delete), submissions and drafts, grades (save, publish), the gradebook, `my-grades`, admin users, groups, subgroups, terms, `/editor/profiles`.
 
 ## Sign-in extras
 - **Screens:** Sign in, Create an account, Confirm your email, Reset your password, Choose a new password, Google callback.
-- **Server:** done (ADR-0045 to ADR-0047). Registration and reset answer `202` with no body for every address; a password login on an unverified address is `403`; Google needs `[auth.google]` and the cookie `learnly_oauth`, which the browser keeps between start and callback.
+- **Server:** done (ADR-0045 to ADR-0047). Registration and reset answer `202` with no body for every address; a password login on an unverified address is `403`; Google needs `[auth.google]` and the cookie `vumlo_oauth`, which the browser keeps between start and callback.
 - **Still mocked, on purpose:** `pnpm dev:mock` and the Playwright suite (`e2e/`) run against the in-browser mock, and they cover these screens. Delete the handlers in `src/mocks/handlers/auth.ts`, `MockMailbox` and `useMockOutbox` when the suite runs against the real server. The mock differs from the server in its rules (it wants 10 characters, the server 12 and a strength score) and in the `hint` the mock puts in the callback URL.
 - **What the mock does:**
   - `POST /auth/register` (`name`, `surname`, `email`, `password`; 202; 422 for an address outside `northfield.edu`), `POST /auth/verify-email` (`token`; 410 when spent).
@@ -95,7 +95,7 @@ Spec endpoints the UI uses as they are: `GET /institution`, `GET /admin/institut
 
 ## Admin: logo
 - **Screens:** Admin, Institution.
-- **Missing:** storing and serving a logo; it needs the `files` module. The accent is set in `learnly.toml` and shown in the preview only; the site keeps its tested accent because the design does not say how a chosen accent gets a dark-theme match.
+- **Missing:** storing and serving a logo; it needs the `files` module. The accent is set in `vumlo.toml` and shown in the preview only; the site keeps its tested accent because the design does not say how a chosen accent gets a dark-theme match.
 
 ## Not API gaps, kept in the browser
 Theme, language, and the layout of the home widgets are saved in `localStorage`, as the design says.

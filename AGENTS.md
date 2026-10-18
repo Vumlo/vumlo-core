@@ -31,7 +31,7 @@ Modules: `identity`, `org`, `teaching`, `content`, `assessment`, `gradebook`, `f
       main.rs      CLI entry: serve | migrate | create-admin | create-user (import-users: planned)
       app.rs       AppState, router assembly (nests each module's router())
       error.rs     shared API error → Problem Details, ValidJson/ValidQuery extractors
-      settings.rs  configuration (learnly.toml + LEARNLY__ environment)
+      settings.rs  configuration (vumlo.toml + VUMLO__ environment)
       actor.rs     Actor: who performs the action
       <module>/
         mod.rs     the ONLY public surface: pub fn router(), pub service functions, pub types

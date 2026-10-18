@@ -1,4 +1,4 @@
-# Learnly — Architecture
+# Vumlo — Architecture
 
 Status: **in progress.** Implemented: the foundation (config, migrations, health, OpenAPI, Problem Details), `identity` + `policy` (users, password login, sessions, admin user management), the first slice of `teaching` (courses, members, publishing) with a minimal `events.audit_log`, the `content` tree (modules, sub-modules, `text` items and assignments of type `text` or `no_submission`, whose bodies are block documents), the `gradebook` (draft and published grades, publishing, the staff gradebook, a student's published grades), `assessment` (drafts, attempts and deadlines of `text` assignments, ADR-0035), the first events in `events.outbox`, and `org` with the installation record (the institution mode, ADR-0031) terms, groups and subgroups (ADR-0032), and in `teaching` the group links, the live roster, course exclusions and course editing (ADR-0033). The audit of task 014 added the rules of ADR-0036 to ADR-0040: a test database per test, who is on a course (active students, former students, role changes, owner transfer, the class rollover), login hardening, input and error statuses, and who may link a group. Everything else below is still design.
 This file is the current picture of the system. Every decision behind it has a record in [`docs/decisions/`](docs/decisions/). If this file and an ADR disagree, the ADR wins and this file gets fixed.
@@ -22,7 +22,7 @@ Each of these must stay possible to add later without a schema rewrite.
 ## Deployment shape
 
 ```
-learnly-server (single binary)  +  PostgreSQL
+vumlo-server (single binary)  +  PostgreSQL
 ```
 
 Nothing else is required. File storage defaults to local disk, with S3-compatible storage optional. No Redis, no message broker: queues and scheduled jobs live in PostgreSQL ([ADR-0001](docs/decisions/0001-modular-monolith.md)).
@@ -32,31 +32,31 @@ Nothing else is required. File storage defaults to local disk, with S3-compatibl
 ```
 web (SPA)      ──cookie──┐
 mobile app     ──bearer──┼──>  HTTP /api/v1  ──>  modules  ──>  PostgreSQL
-learnly (CLI)  ──bearer──┘
-learnly-server admin subcommands (on the server)  ──────────>  PostgreSQL
+vumlo (CLI)  ──bearer──┘
+vumlo-server admin subcommands (on the server)  ──────────>  PostgreSQL
 ```
 
 - **One API for every client.** No client-specific endpoints ([ADR-0012](docs/decisions/0012-api-for-multiple-clients.md)).
-- **`learnly-server`** = the server binary. Subcommands: `serve`, `migrate`, `create-admin`, `create-user` (`import-users` is planned). Admin subcommands talk to the database directly. Every one that uses the database records or checks the institution mode first (see Configuration).
-- **`learnly`** = the user CLI for students and teachers. A normal API client with a token; it never touches the database. (Naming follows the `dockerd` / `docker` pattern: the short name goes to the command people type most.)
+- **`vumlo-server`** = the server binary. Subcommands: `serve`, `migrate`, `create-admin`, `create-user` (`import-users` is planned). Admin subcommands talk to the database directly. Every one that uses the database records or checks the institution mode first (see Configuration).
+- **`vumlo`** = the user CLI for students and teachers. A normal API client with a token; it never touches the database. (Naming follows the `dockerd` / `docker` pattern: the short name goes to the command people type most.)
 
 ## Repository layout
 
 ```
 backend/       # Cargo workspace; run every cargo command here
   crates/
-    server/    # library + binary `learnly-server`: HTTP API, modules, worker, admin subcommands; build.rs
+    server/    # library + binary `vumlo-server`: HTTP API, modules, worker, admin subcommands; build.rs
     api-types/ # request/response types shared with the Rust CLI; OpenAPI source
-    cli/       # binary `learnly`: user CLI (API client)
+    cli/       # binary `vumlo`: user CLI (API client)
   migrations/
   .sqlx/
   Dockerfile
 web/           # Next.js frontend (ADR-0042)
 docs/decisions/
-.env, learnly.toml, compose.yaml   # shared by backend and web; stay in the root
+.env, vumlo.toml, compose.yaml   # shared by backend and web; stay in the root
 ```
 
-**Migrations** are plain `.sql` files in `backend/migrations/`, append-only, embedded into `learnly-server` at compile time with `sqlx::migrate!` and applied by `learnly-server migrate`. `serve` refuses to start while any are pending, and then checks the institution mode against `org.installation` (ADR-0031). `backend/crates/server/build.rs` tells Cargo to rebuild when anything in `migrations/` changes, so a new file is always picked up. The `backend/.sqlx/` folder holds the offline query data for `query!` in the code and in the tests (`cargo sqlx prepare --workspace -- --all-targets`) and is committed; CI also builds every target offline (`SQLX_OFFLINE=true cargo check --workspace --all-targets`).
+**Migrations** are plain `.sql` files in `backend/migrations/`, append-only, embedded into `vumlo-server` at compile time with `sqlx::migrate!` and applied by `vumlo-server migrate`. `serve` refuses to start while any are pending, and then checks the institution mode against `org.installation` (ADR-0031). `backend/crates/server/build.rs` tells Cargo to rebuild when anything in `migrations/` changes, so a new file is always picked up. The `backend/.sqlx/` folder holds the offline query data for `query!` in the code and in the tests (`cargo sqlx prepare --workspace -- --all-targets`) and is committed; CI also builds every target offline (`SQLX_OFFLINE=true cargo check --workspace --all-targets`).
 
 ## Modules (inside `server`)
 
@@ -92,7 +92,7 @@ backend/crates/server/src/
     repo.rs     # private
 ```
 
-`server` is a library plus a thin binary `learnly-server`. `lib.rs` only declares modules, `main.rs` is the CLI entry, and integration tests use the library.
+`server` is a library plus a thin binary `vumlo-server`. `lib.rs` only declares modules, `main.rs` is the CLI entry, and integration tests use the library.
 
 Private files cannot be reached from other modules, so the compiler enforces module boundaries.
 
@@ -215,10 +215,10 @@ Key points:
 
 ([ADR-0003](docs/decisions/0003-identity-and-sessions.md), [ADR-0017](docs/decisions/0017-accounts-passwords-sessions.md))
 
-- **Accounts** are created by an admin (`POST /admin/users`, `learnly-server create-user` / `create-admin`: a generated temporary password, shown once, with `must_change_password`; the address counts as verified), or by the person themselves (`POST /auth/register`, [ADR-0046](docs/decisions/0046-self-registration-verification-and-password-reset.md)). A Google account with a verified address in `auth.allowed_domains` can sign in too ([ADR-0047](docs/decisions/0047-google-sign-in.md)).
-- **Sign-in with Google** (ADR-0047, off without `[auth.google]`): `POST /auth/google/start {login_hint?}` answers `{authorization_url}` and sets the cookie `learnly_oauth` that ties the attempt to the browser; `POST /auth/google/callback {code, state}` needs that cookie and the state of the attempt (one row of `identity.oauth_states`, single use, 10 minutes, with a PKCE verifier and a nonce), verifies the ID token with `openidconnect`, requires `email_verified` and an allowed domain (`403` otherwise), and opens a `web` session like a password login. The account is the one with the Google identity, else the one with that address (linked; an address nobody verified loses its password, so a pre-registration cannot be kept), else a new verified `student` without a password. Discovery happens on first use.
+- **Accounts** are created by an admin (`POST /admin/users`, `vumlo-server create-user` / `create-admin`: a generated temporary password, shown once, with `must_change_password`; the address counts as verified), or by the person themselves (`POST /auth/register`, [ADR-0046](docs/decisions/0046-self-registration-verification-and-password-reset.md)). A Google account with a verified address in `auth.allowed_domains` can sign in too ([ADR-0047](docs/decisions/0047-google-sign-in.md)).
+- **Sign-in with Google** (ADR-0047, off without `[auth.google]`): `POST /auth/google/start {login_hint?}` answers `{authorization_url}` and sets the cookie `vumlo_oauth` that ties the attempt to the browser; `POST /auth/google/callback {code, state}` needs that cookie and the state of the attempt (one row of `identity.oauth_states`, single use, 10 minutes, with a PKCE verifier and a nonce), verifies the ID token with `openidconnect`, requires `email_verified` and an allowed domain (`403` otherwise), and opens a `web` session like a password login. The account is the one with the Google identity, else the one with that address (linked; an address nobody verified loses its password, so a pre-registration cannot be kept), else a new verified `student` without a password. Discovery happens on first use.
 - **Self-registration, verification and reset** (ADR-0046): `POST /auth/register {name, surname, email, password}` answers `202` with no body for every address; the address's domain must be in `auth.allowed_domains`. An unverified account cannot log in (`403` after a correct password). `POST /auth/verify-email {token}` is `204`, or `410` for an unknown, used or expired link. `POST /auth/password-reset {email}` is `202` for every address; `POST /auth/password-reset/confirm {token, new_password}` is `204`, `410` (decided before the password is looked at) or `422`, and ends every session of the user. The links are minted by the outbox handler: `identity.email_tokens` holds only the SHA-256 of a token, valid 24 hours (verify) or 1 hour (reset), single use. Registering an unverified address again replaces its name and password and voids the earlier link. Without `[mail]` register and reset are `404`. These routes have a per-client limiter of their own, and the two that send mail also count per address.
-- **Login** `POST /auth/login { email, password, client: web | app }`. `web` sets the `learnly_session` cookie (HttpOnly, SameSite=Lax, `Secure` from `auth.cookie_secure`); `app` returns the token for `Authorization: Bearer`. A wrong email, a wrong password and a disabled account all give the same 401 and take the same time (a dummy hash is verified for unknown emails).
+- **Login** `POST /auth/login { email, password, client: web | app }`. `web` sets the `vumlo_session` cookie (HttpOnly, SameSite=Lax, `Secure` from `auth.cookie_secure`); `app` returns the token for `Authorization: Bearer`. A wrong email, a wrong password and a disabled account all give the same 401 and take the same time (a dummy hash is verified for unknown emails).
 - **Tokens** are 32 random bytes in base64url; only their SHA-256 is stored. Passwords use Argon2id (19 MiB, 2 iterations, 1 lane) on a blocking thread, always before a transaction opens.
 - **Lifetimes:** `web` 30 days and `app` 90 days, both sliding; `cli` 90 days and `pat` up to 365 days, absolute. `last_seen_at` and the expiry are written at most once an hour per session.
 - **Extractors:** `Actor` (valid session, active user, no password change pending) rejects with 401 or 403. `PendingActor` also accepts `must_change_password = true` and is used only by logout, `GET /me` and change password. The role is read from the database on every request, so a role change or a disabled account applies at once.
@@ -240,7 +240,7 @@ Key points:
 
 ## Configuration
 
-`learnly.toml` (repository root), any key overridable with `LEARNLY__SECTION__KEY` (see `learnly.example.toml`):
+`vumlo.toml` (repository root), any key overridable with `VUMLO__SECTION__KEY` (see `vumlo.example.toml`):
 `server.bind_addr`, `server.public_origin`, `server.client_ip_header?`, `server.allowed_origins` (default empty; every origin key must look like `https://host[:port]`, lowercase, no path and no default port, or the server does not start), `database.url`, `database.max_connections`, `log.format`, `institution.name`, `institution.mode`, an optional `[auth.google]` section (`client_id`, `client_secret`, `redirect_uri`, `issuer`; [ADR-0047](docs/decisions/0047-google-sign-in.md)), an optional `[mail]` section (`from`, `link_base`, and `transport.kind` = `smtp` | `file`; [ADR-0045](docs/decisions/0045-outbox-worker-and-mail.md)), the optional profile keys `institution.short_name`, `language`, `time_zone` and `accent` ([ADR-0044](docs/decisions/0044-institution-profile-in-the-config.md): validated at startup, served by `GET /institution` and the admin-only `GET /admin/institution`, never writable through the API), and an optional `[auth]` section (`password_min_length` = 12, `cookie_secure` = true, `allowed_domains` = [], the domains that may sign up (ADR-0046), and the login limits of ADR-0038 listed under Identity and sessions). `institution.mode` (`school` | `university`) is **required, has no default and is fixed for the life of the installation** ([ADR-0031](docs/decisions/0031-institution-mode-required-and-fixed.md)): a missing or unknown value stops the server at startup, naming the key and the allowed values. The first start records the mode in `org.installation` (one row); a later start whose config says another mode refuses to start and names both values. The check, `org::record_mode(&mut conn, mode)`, runs in `main.rs` before the server binds (`serve`), after the migrations (`migrate`) and before `create-admin` / `create-user`; it is insert-if-absent, then read, so concurrent first starts cannot store two modes. `institution.grading_scale` (`twelve` | `hundred`) limits assignment points, see [ADR-0022](docs/decisions/0022-grading-scale-setting.md); optional, and when absent it follows the mode (school gives `twelve`, university gives `hundred`). The scale is resolved once, when the `[institution]` section loads (`TryFrom<InstitutionSection> for InstitutionSettings`, which also checks the mode); `institution.grading_scale` in the loaded settings is the scale that applies, and nothing else reads the raw key. `editor.profiles.<name>.features` and `editor.video_providers` (default `["youtube", "vimeo"]`; an empty list switches video off) narrow what a place of the editor allows, see [ADR-0025](docs/decisions/0025-block-documents.md) and [ADR-0027](docs/decisions/0027-document-types-and-video-blocks.md). The configuration is plain data. A configuration can only narrow: `AppState::new` resolves it once, when the server starts, and one that widens a profile or names an unknown profile, feature or provider stops the server there with a message that names the key and the value. Handlers and services receive the resolved profiles from `AppState`. Planned: `editor.html` (default `false`).
 
 ## Authorization

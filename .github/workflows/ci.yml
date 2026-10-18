@@ -6,7 +6,7 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
-  DATABASE_URL: postgres://learnly:learnly@localhost:5432/learnly
+  DATABASE_URL: postgres://vumlo:vumlo@localhost:5432/vumlo
 
 jobs:
   check:
@@ -18,13 +18,13 @@ jobs:
       postgres:
         image: postgres:18
         env:
-          POSTGRES_USER: learnly
-          POSTGRES_PASSWORD: learnly
-          POSTGRES_DB: learnly
+          POSTGRES_USER: vumlo
+          POSTGRES_PASSWORD: vumlo
+          POSTGRES_DB: vumlo
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U learnly -d learnly"
+          --health-cmd "pg_isready -U vumlo -d vumlo"
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10

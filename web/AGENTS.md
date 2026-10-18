@@ -6,7 +6,7 @@ Rules for any coding agent working in `web/`. The root `AGENTS.md` and the ADRs 
 Next.js (App Router), React, TypeScript, CSS Modules. pnpm.
 
     pnpm dev:mock      # the app against the MSW mock API (no backend needed)
-    pnpm dev           # the app proxied to the Rust server (LEARNLY_API_ORIGIN)
+    pnpm dev           # the app proxied to the Rust server (VUMLO_API_ORIGIN)
     pnpm lint          # eslint + no colour literals outside styles/tokens.css
     pnpm typecheck
     pnpm test:e2e      # Playwright smoke test over every screen, both themes

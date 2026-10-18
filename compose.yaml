@@ -4,15 +4,15 @@ services:
     # One test database per running test, five connections each (ADR-0036).
     command: ["postgres", "-c", "max_connections=300"]
     environment:
-      POSTGRES_USER: learnly
-      POSTGRES_PASSWORD: learnly
-      POSTGRES_DB: learnly
+      POSTGRES_USER: vumlo
+      POSTGRES_PASSWORD: vumlo
+      POSTGRES_DB: vumlo
     ports:
       - "5432:5432"
     volumes:
       - postgres-data:/var/lib/postgresql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U learnly -d learnly"]
+      test: ["CMD-SHELL", "pg_isready -U vumlo -d vumlo"]
       interval: 2s
       timeout: 3s
       retries: 30
@@ -31,25 +31,25 @@ services:
         condition: service_healthy
       mailpit:
         condition: service_started
-    command: ["sh", "-c", "learnly-server migrate && exec learnly-server serve"]
+    command: ["sh", "-c", "vumlo-server migrate && exec vumlo-server serve"]
     environment:
-      LEARNLY__SERVER__BIND_ADDR: "0.0.0.0:8080"
+      VUMLO__SERVER__BIND_ADDR: "0.0.0.0:8080"
       # The origin the browser uses: the web app on :3000, which proxies /api/v1 here.
-      LEARNLY__SERVER__PUBLIC_ORIGIN: ${LEARNLY_PUBLIC_ORIGIN:-http://localhost:3000}
-      LEARNLY__DATABASE__URL: postgres://learnly:learnly@postgres:5432/learnly
-      LEARNLY__DATABASE__MAX_CONNECTIONS: "10"
-      LEARNLY__LOG__FORMAT: pretty
-      LEARNLY__AUTH__COOKIE_SECURE: "false" # plain HTTP, local use only
-      LEARNLY__INSTITUTION__NAME: ${LEARNLY_INSTITUTION_NAME:-Example University}
+      VUMLO__SERVER__PUBLIC_ORIGIN: ${VUMLO_PUBLIC_ORIGIN:-http://localhost:3000}
+      VUMLO__DATABASE__URL: postgres://vumlo:vumlo@postgres:5432/vumlo
+      VUMLO__DATABASE__MAX_CONNECTIONS: "10"
+      VUMLO__LOG__FORMAT: pretty
+      VUMLO__AUTH__COOKIE_SECURE: "false" # plain HTTP, local use only
+      VUMLO__INSTITUTION__NAME: ${VUMLO_INSTITUTION_NAME:-Example University}
       # Recorded in the database on first start and cannot be changed later (ADR-0031).
-      LEARNLY__INSTITUTION__MODE: ${LEARNLY_INSTITUTION_MODE:-university}
+      VUMLO__INSTITUTION__MODE: ${VUMLO_INSTITUTION_MODE:-university}
       # Self-registration and password reset (ADR-0045, ADR-0046). Anyone at these domains may sign up.
-      LEARNLY__AUTH__ALLOWED_DOMAINS: ${LEARNLY_ALLOWED_DOMAINS:-example.edu}
-      LEARNLY__MAIL__FROM: Learnly <no-reply@example.edu>
-      LEARNLY__MAIL__TRANSPORT__KIND: smtp
-      LEARNLY__MAIL__TRANSPORT__HOST: mailpit
-      LEARNLY__MAIL__TRANSPORT__PORT: "1025"
-      LEARNLY__MAIL__TRANSPORT__TLS: none
+      VUMLO__AUTH__ALLOWED_DOMAINS: ${VUMLO_ALLOWED_DOMAINS:-example.edu}
+      VUMLO__MAIL__FROM: Vumlo <no-reply@example.edu>
+      VUMLO__MAIL__TRANSPORT__KIND: smtp
+      VUMLO__MAIL__TRANSPORT__HOST: mailpit
+      VUMLO__MAIL__TRANSPORT__PORT: "1025"
+      VUMLO__MAIL__TRANSPORT__TLS: none
     ports:
       - "127.0.0.1:8080:8080"
 
