@@ -2406,7 +2406,7 @@ async fn unknown_types_and_config_fields_are_422() {
         let with =
             |assignment: Value| json!({"kind": "assignment", "title": "T", "assignment": assignment});
 
-        for bad in ["form", "", "Text", "No_Submission", "quiz-xyz"] {
+        for bad in ["file", "", "Text", "No_Submission", "quiz-xyz"] {
             let response = post(
                 &w.http,
                 &w.owner.token,

@@ -9,7 +9,8 @@ use sqlx::postgres::{PgTypeInfo, PgValueRef};
 use sqlx::types::Decimal;
 use uuid::Uuid;
 
-use super::document::{DocumentErrors, EffectiveProfiles, ValidDocument, validate_document_within};
+use super::document::{DocumentErrors, EffectiveProfiles, validate_document_within};
+use super::types::{AutoGrade, Claims, Stage, ValidContent, form, quiz};
 use crate::points;
 use crate::policy::{CourseAccess, Release};
 use crate::text_enum::text_enum;
@@ -23,7 +24,7 @@ pub enum ModelError {
     Title,
     #[error("must be a number above 0 and at most 9999.99, with at most two decimals")]
     MaxPoints,
-    #[error("unknown assignment type; available: text, no_submission")]
+    #[error("unknown assignment type; available: text, no_submission, quiz, form")]
     AssignmentType,
     #[error("{0}")]
     Config(String),
@@ -123,22 +124,51 @@ impl<'r> sqlx::Decode<'r, Postgres> for MaxPoints {
 /// What an assignment type must provide (ADR-0008). It is the future plugin boundary, so it stays
 /// small: auto-grading joins it with its own task.
 pub trait AssignmentType {
-    /// `Ok` when `config` is a valid configuration for this type.
-    fn validate_config(&self, config: &Map<String, Value>) -> Result<(), ModelError>;
+    /// `Ok` when `config` is a valid configuration for this type, as the institution's editor
+    /// profiles narrow what it may contain.
+    fn validate_config(
+        &self,
+        config: &Map<String, Value>,
+        profiles: &EffectiveProfiles,
+    ) -> Result<(), ModelError>;
+
+    /// What `max_points` must equal, for a type whose questions carry the points (ADR-0050).
+    fn points_total(&self, config: &Map<String, Value>) -> Option<Decimal>;
+
+    /// Removes from a config the facts the server adds when it reads one (ADR-0051 point 5).
+    fn strip_computed(&self, config: &mut Map<String, Value>);
 
     /// Whether a student submits something for this type. Only such a type has the deadline
     /// settings of [`SubmissionSettings`] (ADR-0035).
     fn takes_submissions(&self) -> bool;
 
-    /// Checks the `content` of a draft against the type, as narrowed by the institution's
-    /// configuration (`profiles`) and by the assignment's own `config` (ADR-0025, ADR-0023). It
-    /// is called only for a type that takes submissions.
+    /// Checks the `content` of a draft or an attempt against the type, as narrowed by the
+    /// institution's configuration (`profiles`) and by the assignment's own `config` (ADR-0025,
+    /// ADR-0023). It is called only for a type that takes submissions.
     fn validate_submission(
         &self,
         config: &Map<String, Value>,
         content: &Value,
+        stage: Stage,
         profiles: &EffectiveProfiles,
-    ) -> Result<ValidDocument, DocumentErrors>;
+    ) -> Result<ValidContent, DocumentErrors>;
+
+    /// The `config` as a student may read it: without the answer key (ADR-0023, ADR-0050).
+    fn student_config(&self, config: &Map<String, Value>) -> Map<String, Value>;
+
+    /// The part of `config` that is frozen once work has been submitted, or `None` when none is
+    /// (ADR-0023).
+    fn structure(&self, config: &Map<String, Value>) -> Option<Value>;
+
+    /// Scores a submitted attempt by itself; `None` for a type graded by hand (ADR-0050).
+    fn auto_grade(
+        &self,
+        config: &Map<String, Value>,
+        content: &Map<String, Value>,
+    ) -> Option<AutoGrade>;
+
+    /// What the content of an attempt claims from the rest of the course (ADR-0051).
+    fn claims(&self, config: &Map<String, Value>, content: &Map<String, Value>) -> Claims;
 }
 
 /// The types built into the server. The database column is plain text (ADR-0008).
@@ -147,8 +177,17 @@ pub enum BuiltinType {
     Text,
     /// Nothing is submitted: oral answers, class work, paper tests (ADR-0023). Graded by hand.
     NoSubmission,
+    /// Questions with an answer key, scored at submit (ADR-0050).
+    Quiz,
+    /// Fields the student fills in, graded by hand (ADR-0051).
+    Form,
 }
-text_enum!(BuiltinType { Text => "text", NoSubmission => "no_submission" });
+text_enum!(BuiltinType {
+    Text => "text",
+    NoSubmission => "no_submission",
+    Quiz => "quiz",
+    Form => "form",
+});
 
 impl BuiltinType {
     /// An unknown or not-yet-built type is an error that does not repeat the input.
@@ -204,11 +243,32 @@ pub fn editor_features(config: &Map<String, Value>) -> Result<Option<Vec<Feature
     Ok(Some(chosen))
 }
 
+/// `config.editor.features` can only narrow the student profile (ADR-0025): a feature it lists
+/// that the effective profile, after the institution's configuration, does not have is refused.
+fn check_editor_features(
+    config: &Map<String, Value>,
+    profiles: &EffectiveProfiles,
+) -> Result<(), ModelError> {
+    let allowed = &profiles.profile(ProfileName::Student).features;
+    for (index, feature) in editor_features(config)?.into_iter().flatten().enumerate() {
+        if !allowed.contains(&feature) {
+            return Err(ModelError::Config(format!(
+                "`editor.features[{index}]` is not a feature of the student profile"
+            )));
+        }
+    }
+    Ok(())
+}
+
 impl AssignmentType for BuiltinType {
-    fn validate_config(&self, config: &Map<String, Value>) -> Result<(), ModelError> {
+    fn validate_config(
+        &self,
+        config: &Map<String, Value>,
+        profiles: &EffectiveProfiles,
+    ) -> Result<(), ModelError> {
         match self {
             // `text` can only narrow what the student's editor offers (ADR-0025).
-            Self::Text => editor_features(config).map(|_| ()),
+            Self::Text => check_editor_features(config, profiles),
             // This type needs no settings; any field is a mistake.
             Self::NoSubmission => match config.keys().next() {
                 None => Ok(()),
@@ -217,12 +277,27 @@ impl AssignmentType for BuiltinType {
                     self.as_str()
                 ))),
             },
+            Self::Quiz => quiz::validate_config(config, profiles),
+            Self::Form => form::validate_config(config),
+        }
+    }
+
+    fn points_total(&self, config: &Map<String, Value>) -> Option<Decimal> {
+        match self {
+            Self::Quiz => quiz::points_total(config),
+            Self::Text | Self::NoSubmission | Self::Form => None,
+        }
+    }
+
+    fn strip_computed(&self, config: &mut Map<String, Value>) {
+        if *self == Self::Form {
+            form::strip_computed(config);
         }
     }
 
     fn takes_submissions(&self) -> bool {
         match self {
-            Self::Text => true,
+            Self::Text | Self::Quiz | Self::Form => true,
             Self::NoSubmission => false,
         }
     }
@@ -231,8 +306,9 @@ impl AssignmentType for BuiltinType {
         &self,
         config: &Map<String, Value>,
         content: &Value,
+        stage: Stage,
         profiles: &EffectiveProfiles,
-    ) -> Result<ValidDocument, DocumentErrors> {
+    ) -> Result<ValidContent, DocumentErrors> {
         match self {
             Self::Text => {
                 // A config that cannot be read narrows nothing further here: `validate_config`
@@ -242,8 +318,44 @@ impl AssignmentType for BuiltinType {
                     .flatten()
                     .map(|features| features.into_iter().collect());
                 validate_document_within(content, ProfileName::Student, profiles, within.as_ref())
+                    .map(ValidContent::from)
             }
             Self::NoSubmission => Err(DocumentErrors::one("", "this type takes no submissions")),
+            Self::Quiz => quiz::validate_submission(config, content, stage, profiles),
+            Self::Form => form::validate_submission(config, content, stage),
+        }
+    }
+
+    fn student_config(&self, config: &Map<String, Value>) -> Map<String, Value> {
+        match self {
+            Self::Quiz => quiz::student_config(config),
+            Self::Text | Self::NoSubmission | Self::Form => config.clone(),
+        }
+    }
+
+    fn structure(&self, config: &Map<String, Value>) -> Option<Value> {
+        match self {
+            Self::Quiz => quiz::structure(config),
+            Self::Form => form::structure(config),
+            Self::Text | Self::NoSubmission => None,
+        }
+    }
+
+    fn auto_grade(
+        &self,
+        config: &Map<String, Value>,
+        content: &Map<String, Value>,
+    ) -> Option<AutoGrade> {
+        match self {
+            Self::Quiz => quiz::auto_grade(config, content),
+            Self::Text | Self::NoSubmission | Self::Form => None,
+        }
+    }
+
+    fn claims(&self, config: &Map<String, Value>, content: &Map<String, Value>) -> Claims {
+        match self {
+            Self::Form => form::claims(config, content),
+            Self::Text | Self::NoSubmission | Self::Quiz => Claims::default(),
         }
     }
 }
@@ -852,31 +964,40 @@ mod tests {
     }
 
     #[test]
-    fn the_type_enum_parses_text_and_no_submission_and_nothing_else() {
-        assert_eq!(BuiltinType::parse("text"), Ok(BuiltinType::Text));
-        assert_eq!(BuiltinType::Text.as_str(), "text");
-        assert_eq!(
-            BuiltinType::parse("no_submission"),
-            Ok(BuiltinType::NoSubmission)
-        );
-        assert_eq!(BuiltinType::NoSubmission.as_str(), "no_submission");
-        for bad in ["form", "", "Text", "No_Submission", "no-submission"] {
+    fn the_type_enum_parses_the_four_builtin_types_and_nothing_else() {
+        for (text, kind) in [
+            ("text", BuiltinType::Text),
+            ("no_submission", BuiltinType::NoSubmission),
+            ("quiz", BuiltinType::Quiz),
+            ("form", BuiltinType::Form),
+        ] {
+            assert_eq!(BuiltinType::parse(text), Ok(kind));
+            assert_eq!(kind.as_str(), text);
+        }
+        for bad in ["file", "", "Text", "Quiz", "No_Submission", "no-submission"] {
             assert_eq!(
                 BuiltinType::parse(bad),
                 Err(ModelError::AssignmentType),
                 "{bad:?}"
             );
         }
-        assert!(!ModelError::AssignmentType.to_string().contains("form"));
+        let message = ModelError::AssignmentType.to_string();
+        for name in ["text", "no_submission", "quiz", "form"] {
+            assert!(message.contains(name), "{message}");
+        }
+        assert!(!message.contains("file"));
     }
 
     #[test]
     fn the_text_and_no_submission_types_take_an_empty_config_only() {
+        let profiles = EffectiveProfiles::unrestricted();
         for assignment_type in [BuiltinType::Text, BuiltinType::NoSubmission] {
             let mut config = Map::new();
-            assert_eq!(assignment_type.validate_config(&config), Ok(()));
+            assert_eq!(assignment_type.validate_config(&config, &profiles), Ok(()));
             config.insert("limit".to_owned(), Value::from(5));
-            let error = assignment_type.validate_config(&config).unwrap_err();
+            let error = assignment_type
+                .validate_config(&config, &profiles)
+                .unwrap_err();
             let message = error.to_string();
             assert!(message.contains("limit"), "{message}");
             assert!(message.contains(assignment_type.as_str()), "{message}");
@@ -1148,18 +1269,27 @@ mod tests {
         let config = serde_json::json!({"editor": {"features": ["blink"]}});
         assert!(
             BuiltinType::Text
-                .validate_config(config.as_object().unwrap())
+                .validate_config(
+                    config.as_object().unwrap(),
+                    &EffectiveProfiles::unrestricted()
+                )
                 .is_err()
         );
         let config = serde_json::json!({"editor": {"features": ["code"]}});
         assert!(
             BuiltinType::Text
-                .validate_config(config.as_object().unwrap())
+                .validate_config(
+                    config.as_object().unwrap(),
+                    &EffectiveProfiles::unrestricted()
+                )
                 .is_ok()
         );
         assert!(
             BuiltinType::NoSubmission
-                .validate_config(config.as_object().unwrap())
+                .validate_config(
+                    config.as_object().unwrap(),
+                    &EffectiveProfiles::unrestricted()
+                )
                 .is_err()
         );
     }

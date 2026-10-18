@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO assessment.submissions\n                         (id, assignment_id, student_id, status, attempt, content, submitted_at,\n                          auto_scores)\n                     VALUES ($1, $2, $3, $4, CASE WHEN $4 = 'submitted' THEN 1 END, '{}',\n                             CASE WHEN $4 = 'submitted' THEN now() END, $5)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Jsonb"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "c5c97d3d6d0e402a49b533a0758039a9d6afe3828d67eec0707895f77d1b4392"
+}

@@ -18,11 +18,12 @@ use super::document::{
     DocumentErrors, EffectiveProfiles, ValidDocument, plain_text, validate_document,
 };
 use super::model::{
-    Assignment, AssignmentType, ContentModule, ContentSubModule, ContentTitle, Item, ItemFacts,
-    ItemKind, ItemPatch, ItemStatus, ModelError, Module, ModulePatch, OpenedAssignment, Revision,
-    SettingProblem, editor_features,
+    Assignment, AssignmentType, BuiltinType, ContentModule, ContentSubModule, ContentTitle, Item,
+    ItemFacts, ItemKind, ItemPatch, ItemStatus, MaxPoints, ModelError, Module, ModulePatch,
+    OpenedAssignment, Revision, SettingProblem,
 };
 use super::repo::{self, ItemRow, ModuleRow};
+use super::types::form;
 use crate::actor::Actor;
 use crate::assessment::{self, AssessmentError};
 use crate::events::{self, AuditEntry, EventsError};
@@ -82,6 +83,10 @@ pub enum ContentError {
     /// The assignment, or an assignment below the module, has a submitted attempt (ADR-0035).
     #[error("it has submitted work")]
     HasSubmissions,
+    /// The change touches the part of a quiz or form that is frozen once work was submitted
+    /// (ADR-0023, ADR-0050, ADR-0051).
+    #[error("the questions or fields cannot change after work was submitted")]
+    StructureFrozen,
     #[error(transparent)]
     Gradebook(GradebookError),
     #[error(transparent)]
@@ -692,15 +697,15 @@ pub async fn create_item(
     module_id: Uuid,
     title: ContentTitle,
     body: Option<Value>,
-    assignment: Option<Assignment>,
+    mut assignment: Option<Assignment>,
 ) -> Result<Item, ContentError> {
     let row = manage_module(conn, actor, module_id).await?;
     let course_id = row.module.course_id;
-    if let Some(assignment) = &assignment {
-        assignment
-            .assignment_type
-            .validate_config(&assignment.config)?;
-        check_editor_features(&assignment.config, rules.profiles)?;
+    if let Some(assignment) = &mut assignment {
+        let kind = assignment.assignment_type;
+        kind.strip_computed(&mut assignment.config);
+        kind.validate_config(&assignment.config, rules.profiles)?;
+        check_points_total(kind, &assignment.config, assignment.max_points)?;
     }
     let body = document(body.as_ref(), rules.profiles)?;
     if let Some(assignment) = &assignment {
@@ -763,11 +768,29 @@ pub async fn get_item(
 ) -> Result<Item, ContentError> {
     let (row, access) = open_item(conn, actor, id).await?;
     let staff = policy::authorize(actor, Action::ManageContent(access)).is_ok();
-    Ok(if staff {
+    let mut item = if staff {
         row.item
     } else {
         row.item.as_seen_by_students()
-    })
+    };
+    if let Some(assignment) = &mut item.assignment {
+        let kind = assignment.assignment_type;
+        // A student never receives the answer key (ADR-0023, ADR-0050 point 6).
+        if !staff {
+            assignment.config = kind.student_config(&assignment.config);
+        }
+        if kind == BuiltinType::Form {
+            let facts = assessment::form_facts(conn, id, kind, &assignment.config).await?;
+            form::decorate(
+                &mut assignment.config,
+                &facts.answered,
+                &facts.holders,
+                staff,
+                actor.user_id(),
+            );
+        }
+    }
+    Ok(item)
 }
 
 /// Whether a published item has changes students do not see, and since when they read what they
@@ -923,21 +946,19 @@ pub async fn lock_assignment_shared(
     repo::lock_assignment_shared(conn, assignment_id).await
 }
 
-/// `config.editor.features` can only narrow the student profile (ADR-0025): a feature it lists
-/// that the effective profile, after the institution's configuration, does not have is refused.
-fn check_editor_features(
+/// A type whose questions carry the points needs `max_points` to be their sum (ADR-0050 point 1).
+fn check_points_total(
+    kind: BuiltinType,
     config: &serde_json::Map<String, Value>,
-    profiles: &EffectiveProfiles,
-) -> Result<(), ModelError> {
-    let allowed = &profiles.profile(ProfileName::Student).features;
-    for (index, feature) in editor_features(config)?.into_iter().flatten().enumerate() {
-        if !allowed.contains(&feature) {
-            return Err(ModelError::Config(format!(
-                "`editor.features[{index}]` is not a feature of the student profile"
-            )));
-        }
+    max_points: MaxPoints,
+) -> Result<(), ContentError> {
+    match kind.points_total(config) {
+        Some(total) if total != max_points.value() => Err(ContentError::PointsLimit {
+            field: "max_points",
+            message: format!("must equal the sum of the points of the questions ({total:.2})"),
+        }),
+        _ => Ok(()),
     }
-    Ok(())
 }
 
 /// Changes the title, body and/or `publish_at`, and for an assignment its `config`, `max_points`
@@ -951,7 +972,7 @@ pub async fn update_item(
     actor: &Actor,
     rules: ItemRules<'_>,
     id: Uuid,
-    patch: ItemPatch,
+    mut patch: ItemPatch,
 ) -> Result<Item, ContentError> {
     let row = manage_item(conn, actor, id).await?;
     if patch.is_empty() {
@@ -972,9 +993,8 @@ pub async fn update_item(
         };
         return Err(ContentError::NotAnAssignment { field });
     }
-    if let (Some(config), Some(assignment)) = (&patch.config, &row.item.assignment) {
-        assignment.assignment_type.validate_config(config)?;
-        check_editor_features(config, rules.profiles)?;
+    if let (Some(config), Some(assignment)) = (&mut patch.config, &row.item.assignment) {
+        assignment.assignment_type.strip_computed(config);
     }
     let body = document(patch.body.as_ref(), rules.profiles)?;
     let mut settings = None;
@@ -1004,6 +1024,22 @@ pub async fn update_item(
                 field: "class_on",
                 message: "only an in-class assignment has a class day".to_owned(),
             }]));
+        }
+        if patch.config.is_some() || patch.max_points.is_some() {
+            let kind = current.assignment_type;
+            let config = patch.config.as_ref().unwrap_or(&current.config);
+            if patch.config.is_some() {
+                kind.validate_config(config, rules.profiles)?;
+            }
+            check_points_total(kind, config, patch.max_points.unwrap_or(current.max_points))?;
+            // The structure is frozen once work was submitted (ADR-0023); the assignment row is
+            // locked, so no submit slips in between this check and the write.
+            if patch.config.is_some()
+                && kind.structure(&current.config) != kind.structure(config)
+                && assessment::has_submitted_for_assignment(conn, id).await?
+            {
+                return Err(ContentError::StructureFrozen);
+            }
         }
         if points_change {
             let points = patch.max_points.unwrap_or(current.max_points);

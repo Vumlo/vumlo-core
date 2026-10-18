@@ -11,12 +11,20 @@ const FEEDBACK_MAX_LEN: usize = 4000;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HistoryEntry {
     pub id: Uuid,
-    /// `save_draft` or `publish`.
+    /// `save_draft`, `publish` or `auto_score` (a quiz scored by the server, no person).
     pub action: String,
     pub score: Option<Decimal>,
     pub feedback: Option<String>,
     pub actor: Option<HistoryActor>,
     pub at: DateTime<Utc>,
+}
+
+/// The published slot of one cell: what the student may read (ADR-0028).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PublishedGrade {
+    pub score: Option<Decimal>,
+    pub feedback: Option<String>,
+    pub published_at: DateTime<Utc>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -60,8 +60,8 @@ docs/decisions/
 | `identity`   | `identity.*`                    | users, login identities, sessions, tokens |
 | `org`        | `org.*`                         | the installation record (the institution mode, ADR-0031); the read-only institution profile (ADR-0044); terms, groups (cohorts) and subgroups with their members (ADR-0032) |
 | `teaching`   | `teaching.*`                    | courses, memberships, publishing, group links, exclusions and the roster view (ADR-0033); course subgroups are planned |
-| `content`    | `content.*`                     | modules, items (`text` items and assignments of type `text` and `no_submission` built, their bodies are block documents (ADR-0025, ADR-0027), the deadline settings of an assignment (ADR-0035); other assignment types planned). Planned kinds and types: ADR-0023, ADR-0024. |
-| `assessment` | `assessment.*`                  | submissions (drafts and attempts), lateness, the submission window (ADR-0035); auto-grading of quizzes is planned |
+| `content`    | `content.*`                     | modules, items (`text` items and assignments of type `text`, `no_submission`, `quiz` (ADR-0050) and `form` (ADR-0051) built, their bodies are block documents (ADR-0025, ADR-0027), the deadline settings of an assignment (ADR-0035); the `file` type is planned). Planned kinds and types: ADR-0023, ADR-0024. |
+| `assessment` | `assessment.*`                  | submissions (drafts and attempts), lateness, the submission window (ADR-0035); the scoring of quizzes at submit, the result of a quiz and the responses to a form (ADR-0050, ADR-0051) |
 | `gradebook`  | `gradebook.*`                   | grades (draft/published), grade history, publishing, gradebook view, my grades |
 | `files`      | `files.*`                       | uploads, storage backends |
 | `events`     | `events.*`                      | audit log and outbox table with `events::emit`, and the outbox worker with its handler registry (ADR-0045) (built); webhooks and scheduled jobs (planned) |
@@ -155,7 +155,7 @@ content
                    -- built: both kinds, text and assignment (ADR-0020, ADR-0021, ADR-0024)
                    -- the body of a text item and of an assignment (its description) is a block document (ADR-0025, ADR-0027); the default is the empty document
                    -- planned (ADR-0024): link, file and a lesson made of steps (ADR-0026) are added
-  assignments      item_id (PK), type: text | no_submission, config (jsonb), max_points numeric(6,2), is_bonus,
+  assignments      item_id (PK), type: text | no_submission | quiz | form, config (jsonb), max_points numeric(6,2), is_bonus,
                    due_at?, on_deadline?: keep_draft | auto_submit, accept_late? (bool), late_until?,
                    max_attempts?,                      -- null = unlimited
                    class_on? (date)                    -- built (ADR-0049): only for no_submission (CHECK)
@@ -163,14 +163,17 @@ content
                    -- null (a deadline comes with what happens at it and whether late work is taken); late_until needs
                    -- accept_late and is after due_at; max_attempts >= 1; a no_submission assignment has none (CHECKs)
                    -- the config of a text assignment may hold {"editor": {"features": [..]}}, which narrows the student profile
+                   -- the config of a quiz is its questions and answer key, that of a form its fields (ADR-0050, ADR-0051)
 
 assessment                                         -- ADR-0011, ADR-0035
   submissions      id, assignment_id, student_id, status: draft | submitted, attempt?, content (jsonb),
-                   submitted_at?, is_late, created_at, updated_at
+                   submitted_at?, is_late, created_at, updated_at,
+                   auto_scores? (jsonb)                -- built (ADR-0050): question id -> score of a quiz attempt, submitted rows only
                    -- no foreign key to the assignment (ADR-0021): content's guards and purge keep them consistent
                    -- a draft has no attempt and no submitted_at; a submitted row has both, and is never changed (trigger)
                    -- at most one draft per (assignment, student) and one row per attempt number (partial unique indexes)
-                   -- a submit turns the draft row into attempt n+1 in place; content is a block document of the student profile
+                   -- a submit turns the draft row into attempt n+1 in place; content is a block document of the student
+                   -- profile for a text assignment and {"answers": {question or field id: value}} for a quiz or a form
 
 gradebook                                          -- ADR-0028
   grades           assignment_id, student_id                      primary key together; no foreign key to the assignment (ADR-0021)
@@ -178,8 +181,9 @@ gradebook                                          -- ADR-0028
                    published_score?, published_feedback?, published_by?, published_at?
                    -- score >= 0 by CHECK, score <= max_points by the service; feedback trimmed, 1 to 4000 characters
                    -- a cell is "published" for the student when published_score or published_feedback is set
-  grade_history    id, assignment_id, student_id, action: save_draft | publish, actor_id, at,
+  grade_history    id, assignment_id, student_id, action: save_draft | publish | auto_score, actor_id?, at,
                    score?, feedback?                   -- the values after the action; append-only (a trigger refuses UPDATE; only the purge deletes)
+                   -- built (ADR-0050): actor_id is null exactly for auto_score (CHECK); grades.draft_updated_by is null for a draft the server wrote
 
 files
   files            id, owner_id, storage_key, mime, size, created_at
@@ -361,6 +365,8 @@ At the start of a school year an admin makes the new class of a group in two cal
 **Submissions** ([ADR-0011](docs/decisions/0011-submissions.md), [ADR-0035](docs/decisions/0035-submissions-drafts-attempts-and-deadlines.md))
 A student saves a `draft` (autosave, last write wins, an empty document is fine, invisible to staff) and submits it. A submit turns the draft row into attempt n+1 (numbered from 1 per student and assignment) and the row is never changed again, so a second submit without a new draft is `409`. A document with no text cannot be submitted (`422`). Staff grade the latest submitted attempt; earlier attempts stay visible. Only a current student of the course (`effective_members`, role `student`) who may see the published assignment can save or submit; everyone else gets `404` where they may not see it and `403` where they may. The document is validated with the `student` profile as the institution narrowed it and as the assignment's `config.editor.features` narrow it further; it can never widen.
 
+**Quizzes and forms** ([ADR-0050](docs/decisions/0050-the-quiz-type.md), [ADR-0051](docs/decisions/0051-the-form-type.md)). For these two types the content of a draft and of an attempt is `{"answers": {question or field id: value}}`; the `AssignmentType` trait returns the checked content (`ValidContent`) for every type, with the stage (`Draft` or `Submit`) so that a form's required fields are judged only at the submit. A `quiz` config holds questions of five types (single and multiple choice, number, short and long text) whose prompts and options are block documents; `max_points` equals the sum of their points. The submit scores every question the server can (the scores go on the attempt as `auto_scores`, visible to staff only) and, when no question is `long_text`, calls `gradebook::save_auto_grade`, which replaces the draft score with an `auto_score` history entry and no person; nothing is published. A student's `config` has no answer key (`student_config`); the key reaches them only through `/result` after publishing. A `form` config holds fields of seven types; a `choice` field can be `exclusive`, which a submit enforces under a transaction advisory lock (`409`), and `people` fields name current students (checked at the submit). Reading a form's `config` adds `has_answers` (staff) and `taken` / `taken_by` (`taken_by` for staff only); a `PATCH` that sends them back has them dropped. After the first submitted attempt the structure of both (ids, types, keys, points, rules) is frozen (`409`), wording is not.
+
 The submission window closes at `due_at` when `accept_late` is false and at `late_until` (never, when null) when it is true; a moment equal to the bound is still inside. After it closes a draft save and a submit are `409`; discarding a draft is still allowed. A submit after `due_at` inside the window is stored with `is_late`. The handler reads the clock once and passes it down. `max_attempts` limits the submits (`409` when reached); changing the settings revalidates nothing and applies from the student's next action, and lowering `max_attempts` below a student's attempts only blocks further ones. Save, discard and submit take the assignment row `FOR SHARE` and read the settings from it, then (submit) the draft row `FOR UPDATE`; a change of any assignment field and the deletes take the assignment row `FOR UPDATE`. A submit emits one `submission.submitted` event (ids only); saving or discarding a draft emits none.
 
 Deleting an assignment, or a module with its sub-modules, that has a submitted attempt is `409`; drafts without any attempt are purged with the delete. There is no course delete yet: it must lock the assignment rows `FOR UPDATE`, then call `assessment::has_submitted_in_course` (409 if true) and `purge_course`, next to the gradebook calls.
@@ -372,6 +378,8 @@ The assessment endpoints (tag `assessment`):
 | `PUT /assignments/{id}/submission/draft` | students: save the draft (`{content}`, a document); `404` / `403` as above; `409` when the type takes no submissions or the window is closed; `422` on `content.…` paths |
 | `DELETE /assignments/{id}/submission/draft` | students: discard the draft, `204` also when there is none |
 | `GET /assignments/{id}/submission` | students: `{draft, attempts, next_cursor}`, the attempts newest first with their content, so a client prefills a new draft from `attempts[0]` |
+| `GET /assignments/{id}/result` | students of a `quiz` whose grade is published: score, per-question scores and answers, the key if `show_correct`; `404` before that and for another type |
+| `GET /assignments/{id}/responses` | staff and admins, a `form` only: every current student's latest answers and the students who have none |
 | `POST /assignments/{id}/submission/submit` | students: `201` with the attempt; `409` without a draft, after the window or at the attempt limit; `422` for an empty or no longer valid document |
 | `GET /assignments/{id}/submissions` | staff and admins: the current students in roster order (surname, name, id) with `status` (`submitted` / `not_submitted`) and the latest attempt without its content |
 | `GET /assignments/{id}/submissions/{student_id}` | staff and admins: the attempts of one student, newest first, with content; `404` unless the user is a current student or has an attempt |

@@ -730,7 +730,7 @@ async fn every_save_and_publish_is_kept_in_the_history() {
                 ("publish", None, None),
             ]
         );
-        assert!(rows.iter().all(|r| r.actor_id == w.owner.id));
+        assert!(rows.iter().all(|r| r.actor_id == Some(w.owner.id)));
     })
     .await;
 }

@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO gradebook.grade_history\n                         (id, assignment_id, student_id, action, actor_id, score)\n                     VALUES ($1, $2, $3, $4, $5, 3)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "f0b88270c6fd5ea8c17d8890bc4d2b08d8b11570ecd7755121a00b3ee6c15ec3"
+}

@@ -10,6 +10,7 @@ use std::collections::BTreeSet;
 use api_types::{Document, DocumentLimits, Feature, FieldError, ProfileName};
 use serde_json::{Map, Value};
 
+pub(crate) use parse::valid_href;
 pub use profile::{EditorConfigError, EffectiveProfiles};
 pub use text::plain_text;
 
@@ -74,11 +75,11 @@ impl DocumentErrors {
             .collect()
     }
 
-    fn of(errors: Vec<DocumentError>) -> Self {
+    pub(crate) fn of(errors: Vec<DocumentError>) -> Self {
         Self(errors)
     }
 
-    pub(super) fn one(path: &str, message: &'static str) -> Self {
+    pub(crate) fn one(path: &str, message: &'static str) -> Self {
         Self(vec![DocumentError {
             path: path.to_owned(),
             message,

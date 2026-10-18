@@ -445,10 +445,13 @@ pub struct Module {
 /// The assignment part of an item of kind `assignment` (ADR-0021).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct Assignment {
-    /// The assignment type: `text` or `no_submission`. It cannot change.
+    /// The assignment type: `text`, `no_submission`, `quiz` or `form`. It cannot change.
     #[serde(rename = "type")]
     pub assignment_type: String,
-    /// Settings of the type; an empty object for `text` and `no_submission`.
+    /// Settings of the type; an empty object for `no_submission`, the editor narrowing for `text`,
+    /// the questions for a `quiz` (ADR-0050) and the fields for a `form` (ADR-0051). A student
+    /// never receives the answer key of a quiz. A form's fields carry the read-only facts
+    /// `has_answers` and, on the options of an exclusive field, `taken` and `taken_by`.
     #[schema(value_type = Object)]
     pub config: Map<String, Value>,
     /// A decimal string with exactly two decimals, e.g. `"20.00"`.
@@ -625,10 +628,11 @@ fn optional_points_text<'de, D: Deserializer<'de>>(
 /// The assignment part of a new item of kind `assignment` (ADR-0021).
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct NewAssignment {
-    /// The assignment type: `text` or `no_submission`.
+    /// The assignment type: `text`, `no_submission`, `quiz` or `form`.
     #[serde(rename = "type", default)]
     pub assignment_type: String,
-    /// Settings of the type, a JSON object. Defaults to `{}`; `text` and `no_submission` have none.
+    /// Settings of the type, a JSON object. Defaults to `{}`; `no_submission` has none, a `quiz`
+    /// needs its questions (ADR-0050) and a `form` its fields (ADR-0051).
     #[serde(default)]
     #[schema(value_type = Option<Object>)]
     pub config: Option<Map<String, Value>>,

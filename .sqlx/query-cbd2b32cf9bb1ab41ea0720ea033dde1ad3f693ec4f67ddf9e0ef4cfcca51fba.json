@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "UPDATE assessment.submissions\n           SET status = 'submitted', attempt = $2, submitted_at = $3, is_late = $4,\n               updated_at = now()\n           WHERE id = $1\n           RETURNING id, attempt AS \"attempt!\", content AS \"content: Body\",\n                     submitted_at AS \"submitted_at!\", is_late",
+  "query": "SELECT id, attempt AS \"attempt!\", content AS \"content: Body\",\n                  submitted_at AS \"submitted_at!\", is_late,\n                  auto_scores AS \"auto_scores: Body\"\n           FROM assessment.submissions\n           WHERE assignment_id = $1 AND student_id = $2 AND status = 'submitted'\n           ORDER BY attempt DESC LIMIT 1",
   "describe": {
     "columns": [
       {
@@ -57,14 +57,23 @@
             "name": "is_late"
           }
         }
+      },
+      {
+        "ordinal": 5,
+        "name": "auto_scores: Body",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "assessment.submissions",
+            "name": "auto_scores"
+          }
+        }
       }
     ],
     "parameters": {
       "Left": [
         "Uuid",
-        "Int4",
-        "Timestamptz",
-        "Bool"
+        "Uuid"
       ]
     },
     "nullable": [
@@ -72,8 +81,9 @@
       true,
       false,
       true,
-      false
+      false,
+      true
     ]
   },
-  "hash": "fb936d07f627b11f951e71a787f86e06d0b57c7bb755dff9aa3ad5d294e3595d"
+  "hash": "cbd2b32cf9bb1ab41ea0720ea033dde1ad3f693ec4f67ddf9e0ef4cfcca51fba"
 }

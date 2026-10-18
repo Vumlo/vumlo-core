@@ -8,7 +8,9 @@ use sqlx::PgConnection;
 use sqlx::types::Decimal;
 use uuid::Uuid;
 
-use super::model::{Cell, Column, ColumnStatus, HistoryActor, HistoryEntry, MyGrade};
+use super::model::{
+    Cell, Column, ColumnStatus, HistoryActor, HistoryEntry, MyGrade, PublishedGrade,
+};
 use crate::policy::Release;
 
 pub async fn is_student_member(
@@ -76,13 +78,59 @@ pub async fn upsert_draft(
     .await
 }
 
-/// Appends one history row. `score` and `feedback` are the values after the action.
+/// Replaces the draft score of one cell with the score a quiz earned and leaves the draft feedback
+/// alone; no person made the change (ADR-0050 point 5). Returns the draft feedback, which the
+/// history row repeats.
+pub async fn upsert_auto_score(
+    conn: &mut PgConnection,
+    assignment_id: Uuid,
+    student_id: Uuid,
+    score: Decimal,
+) -> Result<Option<String>, sqlx::Error> {
+    sqlx::query_scalar!(
+        r#"INSERT INTO gradebook.grades (assignment_id, student_id, draft_score, draft_updated_by)
+           VALUES ($1, $2, $3, NULL)
+           ON CONFLICT (assignment_id, student_id) DO UPDATE
+           SET draft_score = EXCLUDED.draft_score,
+               draft_updated_by = NULL,
+               draft_updated_at = now()
+           RETURNING draft_feedback"#,
+        assignment_id,
+        student_id,
+        score
+    )
+    .fetch_one(conn)
+    .await
+}
+
+/// The published value of one cell, if a score or feedback was ever published. Selects
+/// `published_*` only (AGENTS section 6).
+pub async fn find_published(
+    conn: &mut PgConnection,
+    assignment_id: Uuid,
+    student_id: Uuid,
+) -> Result<Option<PublishedGrade>, sqlx::Error> {
+    sqlx::query_as!(
+        PublishedGrade,
+        r#"SELECT published_score AS score, published_feedback AS feedback,
+                  published_at AS "published_at!"
+           FROM gradebook.grades
+           WHERE assignment_id = $1 AND student_id = $2 AND published_at IS NOT NULL"#,
+        assignment_id,
+        student_id
+    )
+    .fetch_optional(conn)
+    .await
+}
+
+/// Appends one history row. `score` and `feedback` are the values after the action. `actor_id`
+/// is `None` only for `auto_score`.
 pub async fn insert_history(
     conn: &mut PgConnection,
     assignment_id: Uuid,
     student_id: Uuid,
     action: &str,
-    actor_id: Uuid,
+    actor_id: Option<Uuid>,
     score: Option<Decimal>,
     feedback: Option<&str>,
 ) -> Result<(), sqlx::Error> {

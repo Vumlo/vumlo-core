@@ -3,8 +3,9 @@
 //! handler reads the clock once and hands it to the service (ADR-0035).
 
 use api_types::{
-    Attempt, AttemptsPage, LatestAttempt, MySubmission, PageQuery, ProblemDetails,
-    SaveDraftRequest, SubmissionDraft, SubmissionRow, SubmissionStatus, SubmissionsPage,
+    Attempt, AttemptsPage, FormResponseRow, FormResponses, LatestAttempt, MySubmission, PageQuery,
+    ProblemDetails, QuizResult, QuizResultQuestion, SaveDraftRequest, StudentName, SubmissionDraft,
+    SubmissionRow, SubmissionStatus, SubmissionsPage,
 };
 use axum::Json;
 use axum::extract::{Path, State};
@@ -28,6 +29,8 @@ pub fn router() -> OpenApiRouter<AppState> {
         .routes(routes!(submit))
         .routes(routes!(list_submissions))
         .routes(routes!(list_student_attempts))
+        .routes(routes!(get_result))
+        .routes(routes!(get_responses))
 }
 
 impl From<AssessmentError> for ApiError {
@@ -47,6 +50,11 @@ impl From<AssessmentError> for ApiError {
                 Self::Conflict("a concurrent submit took this attempt, retry")
             }
             AssessmentError::HasSubmissions => Self::Conflict("it has submitted work"),
+            AssessmentError::OptionTaken => {
+                Self::Conflict("an exclusive option was taken by someone else")
+            }
+            AssessmentError::NothingToShow => Self::NotFound,
+            AssessmentError::Gradebook(e) => e.into(),
             AssessmentError::Document(errors) => Self::Unprocessable {
                 detail: "the request has invalid fields".to_owned(),
                 errors: errors.into_field_errors("content"),
@@ -79,6 +87,15 @@ fn api_attempt(attempt: model::Attempt) -> Attempt {
         content: attempt.content,
         submitted_at: attempt.submitted_at,
         is_late: attempt.is_late,
+        auto_scores: attempt.auto_scores,
+    }
+}
+
+fn api_name(student: model::StudentName) -> StudentName {
+    StudentName {
+        user_id: student.user_id,
+        name: student.name,
+        surname: student.surname,
     }
 }
 
@@ -338,5 +355,102 @@ async fn list_student_attempts(
     Ok(Json(AttemptsPage {
         items: attempts.items.into_iter().map(api_attempt).collect(),
         next_cursor: attempts.next.map(|id| id.to_string()),
+    }))
+}
+
+/// The caller's result of a quiz, once their grade is published (ADR-0050 point 8): the published
+/// score and feedback, what the server scored for each question, the caller's answers and, when
+/// the quiz shows its answers, the correct ones. Students of the course only.
+#[utoipa::path(
+    get,
+    path = "/assignments/{id}/result",
+    tag = "assessment",
+    security(("cookie" = []), ("bearer" = [])),
+    params(("id" = Uuid, Path, description = "Assignment id")),
+    responses(
+        (status = 200, description = "The result", body = QuizResult),
+        (status = 401, description = "Not logged in", body = ProblemDetails,
+            content_type = "application/problem+json"),
+        (status = 403, description = "The caller may see the assignment but is not a student of the course",
+            body = ProblemDetails, content_type = "application/problem+json"),
+        (status = 404, description = "No such quiz, not visible to the caller, or no grade published yet",
+            body = ProblemDetails, content_type = "application/problem+json"),
+    )
+)]
+async fn get_result(
+    State(state): State<AppState>,
+    actor: Actor,
+    Path(assignment_id): Path<Uuid>,
+) -> Result<Json<QuizResult>, ApiError> {
+    let mut conn = state.db.acquire().await.map_err(AssessmentError::from)?;
+    let result = service::quiz_result(&mut conn, &actor, assignment_id).await?;
+    let points = |value: sqlx::types::Decimal| format!("{value:.2}");
+    Ok(Json(QuizResult {
+        score: points(result.score),
+        max_points: points(result.max_points),
+        published_at: result.published_at,
+        feedback: result.feedback,
+        attempt: result.attempt,
+        questions: result
+            .questions
+            .into_iter()
+            .map(|question| QuizResultQuestion {
+                id: question.id,
+                points: points(question.points),
+                got: question.got.map(points),
+                answer: question.answer,
+                correct: question.correct,
+                explanation: question.explanation,
+            })
+            .collect(),
+    }))
+}
+
+/// The responses to a form: the latest attempt of every current student who submitted, with their
+/// answers, and the students who did not (ADR-0051 point 7). Staff and admins.
+#[utoipa::path(
+    get,
+    path = "/assignments/{id}/responses",
+    tag = "assessment",
+    security(("cookie" = []), ("bearer" = [])),
+    params(("id" = Uuid, Path, description = "Assignment id")),
+    responses(
+        (status = 200, description = "The responses", body = FormResponses),
+        (status = 401, description = "Not logged in", body = ProblemDetails,
+            content_type = "application/problem+json"),
+        (status = 403, description = "The caller may see the assignment but not its submissions",
+            body = ProblemDetails, content_type = "application/problem+json"),
+        (status = 404, description = "No such form, or not visible to the caller",
+            body = ProblemDetails, content_type = "application/problem+json"),
+    )
+)]
+async fn get_responses(
+    State(state): State<AppState>,
+    actor: Actor,
+    Path(assignment_id): Path<Uuid>,
+) -> Result<Json<FormResponses>, ApiError> {
+    let mut conn = state.db.acquire().await.map_err(AssessmentError::from)?;
+    let responses = service::responses(&mut conn, &actor, assignment_id).await?;
+    Ok(Json(FormResponses {
+        total_students: responses.total_students,
+        missing: responses.missing.into_iter().map(api_name).collect(),
+        rows: responses
+            .rows
+            .into_iter()
+            .map(|row| FormResponseRow {
+                student_id: row.student.user_id,
+                name: row.student.name,
+                surname: row.student.surname,
+                attempt: row.attempt,
+                submitted_at: row.submitted_at,
+                is_late: row.is_late,
+                answers: row
+                    .content
+                    .get("answers")
+                    .and_then(serde_json::Value::as_object)
+                    .cloned()
+                    .unwrap_or_default(),
+            })
+            .collect(),
     }))
 }

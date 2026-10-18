@@ -6,10 +6,11 @@ mod model;
 mod repo;
 mod routes;
 mod service;
+mod types;
 
 pub use document::{
-    DocumentError, DocumentErrors, EditorConfigError, EffectiveProfiles, ValidDocument, limits,
-    plain_text, validate_document, validate_document_within,
+    DocumentError, DocumentErrors, EditorConfigError, EffectiveProfiles, limits, plain_text,
+    validate_document, validate_document_within,
 };
 pub use model::{
     Assignment, AssignmentSummary, AssignmentType, BuiltinType, ContentModule, ContentSubModule,
@@ -25,3 +26,7 @@ pub use service::{
     open_assignment, publish_item, publish_module, publish_revision, reorder_items,
     reorder_modules, update_item, update_module,
 };
+pub use types::form::Holders;
+pub use types::quiz::ResultQuestion;
+pub use types::quiz::result_questions as quiz_result_questions;
+pub use types::{AutoGrade, Claims, Stage, ValidContent};

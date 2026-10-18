@@ -74,6 +74,12 @@ fn operations(c: &Ctx, other_user: Uuid) -> Vec<Call> {
             format!("/assignments/{}/grades/{}/history", c.assignment, c.student),
             None,
         ),
+        call("GET", format!("/assignments/{}/result", c.assignment), None),
+        call(
+            "GET",
+            format!("/assignments/{}/responses", c.assignment),
+            None,
+        ),
         call(
             "GET",
             format!("/courses/{}/candidates?q=zz", c.course),

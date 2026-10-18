@@ -2005,3 +2005,84 @@ async fn a_published_item_needs_its_published_copy_and_only_in_class_work_has_a_
     })
     .await;
 }
+
+// --- migration 27: quiz scores and grades without a person ---------------------------------------
+
+#[tokio::test]
+async fn only_a_submitted_attempt_has_scores_and_only_an_auto_score_has_no_person() {
+    db_test(async |pool| {
+        let student = owner(&pool, "s@x.edu").await;
+        let assignment = uuid::Uuid::now_v7();
+
+        let insert = |status: &'static str, scores: Option<serde_json::Value>| {
+            let pool = pool.clone();
+            async move {
+                sqlx::query!(
+                    "INSERT INTO assessment.submissions
+                         (id, assignment_id, student_id, status, attempt, content, submitted_at,
+                          auto_scores)
+                     VALUES ($1, $2, $3, $4, CASE WHEN $4 = 'submitted' THEN 1 END, '{}',
+                             CASE WHEN $4 = 'submitted' THEN now() END, $5)",
+                    uuid::Uuid::now_v7(),
+                    assignment,
+                    student,
+                    status,
+                    scores
+                )
+                .execute(&pool)
+                .await
+            }
+        };
+        let scores = serde_json::json!({"q1": "2.00"});
+        assert_eq!(
+            sqlstate(insert("draft", Some(scores.clone())).await),
+            "23514",
+            "a draft has no scores"
+        );
+        assert_eq!(
+            sqlstate(insert("submitted", Some(serde_json::json!(["x"]))).await),
+            "23514",
+            "the scores are an object"
+        );
+        insert("submitted", Some(scores)).await.unwrap();
+
+        // A draft grade the server wrote has no person; a history row has none only for `auto_score`.
+        sqlx::query!(
+            "INSERT INTO gradebook.grades (assignment_id, student_id, draft_score, draft_updated_by)
+             VALUES ($1, $2, 3, NULL)",
+            assignment,
+            student
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        let history = |action: &'static str, actor: Option<uuid::Uuid>| {
+            let pool = pool.clone();
+            async move {
+                sqlx::query!(
+                    "INSERT INTO gradebook.grade_history
+                         (id, assignment_id, student_id, action, actor_id, score)
+                     VALUES ($1, $2, $3, $4, $5, 3)",
+                    uuid::Uuid::now_v7(),
+                    assignment,
+                    student,
+                    action,
+                    actor
+                )
+                .execute(&pool)
+                .await
+            }
+        };
+        history("auto_score", None).await.unwrap();
+        history("save_draft", Some(student)).await.unwrap();
+        history("publish", Some(student)).await.unwrap();
+        for (action, actor) in [
+            ("auto_score", Some(student)),
+            ("save_draft", None),
+            ("publish", None),
+        ] {
+            assert_eq!(sqlstate(history(action, actor).await), "23514", "{action}");
+        }
+    })
+    .await;
+}

@@ -94,7 +94,7 @@ known limits). A quiz needs all three to change.
    points, answer, correct}]}` for the latest attempt. `got` is the stored per-question score (`null`
    for a `long_text` question: staff grade that part as a whole, so the question carries no score of
    its own). `answer` is what the student gave. `correct` (the correct option ids, the answer, or the
-   accepted strings) is present only when `show_correct` is on. Only published values and the
+   accepted strings) and `explanation` are present only when `show_correct` is on. Only published values and the
    student's own attempt are read (AGENTS.md section 6). A published score a teacher changed by hand
    shows as the published `score`; `got` stays what the server computed.
 9. Staff see the per-question scores in the attempts they already read: `auto_scores` is an additive

@@ -341,10 +341,10 @@ async fn get_grade_history(
             .into_iter()
             .map(|entry| GradeHistoryEntry {
                 id: entry.id,
-                action: if entry.action == "publish" {
-                    GradeAction::Publish
-                } else {
-                    GradeAction::SaveDraft
+                action: match entry.action.as_str() {
+                    "publish" => GradeAction::Publish,
+                    "auto_score" => GradeAction::AutoScore,
+                    _ => GradeAction::SaveDraft,
                 },
                 score: entry.score.map(points),
                 feedback: entry.feedback,

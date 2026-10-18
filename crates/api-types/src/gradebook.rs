@@ -49,6 +49,8 @@ pub enum GradeAction {
     SaveDraft,
     /// The draft was published (an empty one retracts the published value).
     Publish,
+    /// A quiz was scored by the server when the student submitted it (ADR-0050); no person.
+    AutoScore,
 }
 
 /// Who made a change.

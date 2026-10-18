@@ -1,0 +1,53 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT published_score AS score, published_feedback AS feedback,\n                  published_at AS \"published_at!\"\n           FROM gradebook.grades\n           WHERE assignment_id = $1 AND student_id = $2 AND published_at IS NOT NULL",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "score",
+        "type_info": "Numeric",
+        "origin": {
+          "Table": {
+            "table": "gradebook.grades",
+            "name": "published_score"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "feedback",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "gradebook.grades",
+            "name": "published_feedback"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "published_at!",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "gradebook.grades",
+            "name": "published_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "a71f860a891c01eccfc8bf3436bd654e613d34963dff10a59597d7bc0c865eb0"
+}
