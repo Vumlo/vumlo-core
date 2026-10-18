@@ -76,3 +76,4 @@ What gets easier, what gets harder, what we must remember.
 | 0041 | [Trusted frontends on another origin](0041-trusted-cross-origin-frontends.md) |
 | 0042 | [Web frontend: Next.js, client-rendered, typed hooks over a generated API schema](0042-web-frontend-stack.md) |
 | 0043 | [Web interface language: a typed catalogue in the repository, no library](0043-web-interface-language.md) |
+| 0044 | [The institution profile lives in the config; `chrono-tz`](0044-institution-profile-in-the-config.md) |
