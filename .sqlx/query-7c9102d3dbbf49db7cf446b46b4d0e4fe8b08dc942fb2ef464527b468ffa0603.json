@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE identity.email_tokens\n             SET created_at = now() - interval '25 hours', expires_at = now() - interval '1 hour'",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "7c9102d3dbbf49db7cf446b46b4d0e4fe8b08dc942fb2ef464527b468ffa0603"
+}

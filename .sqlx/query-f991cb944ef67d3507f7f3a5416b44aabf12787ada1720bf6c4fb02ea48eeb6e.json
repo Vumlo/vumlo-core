@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT u.id, u.email, u.name, u.surname,\n                  u.role AS \"role: Role\", u.status AS \"status: UserStatus\",\n                  u.must_change_password, u.created_at,\n                  i.password_hash AS \"password_hash!\"\n           FROM identity.users u\n           JOIN identity.identities i ON i.user_id = u.id AND i.provider = 'password'\n           WHERE u.email = $1",
+  "query": "SELECT u.id, u.email, u.name, u.surname, u.role AS \"role: Role\",\n                  u.status AS \"status: UserStatus\",\n                  u.email_verified_at IS NOT NULL AS \"email_verified!\"\n           FROM identity.email_tokens t\n           JOIN identity.users u ON u.id = t.user_id\n           WHERE t.token_hash = $1 AND t.purpose = $2 AND t.used_at IS NULL AND t.expires_at > now()",
   "describe": {
     "columns": [
       {
@@ -71,40 +71,14 @@
       },
       {
         "ordinal": 6,
-        "name": "must_change_password",
+        "name": "email_verified!",
         "type_info": "Bool",
-        "origin": {
-          "Table": {
-            "table": "identity.users",
-            "name": "must_change_password"
-          }
-        }
-      },
-      {
-        "ordinal": 7,
-        "name": "created_at",
-        "type_info": "Timestamptz",
-        "origin": {
-          "Table": {
-            "table": "identity.users",
-            "name": "created_at"
-          }
-        }
-      },
-      {
-        "ordinal": 8,
-        "name": "password_hash!",
-        "type_info": "Text",
-        "origin": {
-          "Table": {
-            "table": "identity.identities",
-            "name": "password_hash"
-          }
-        }
+        "origin": "Expression"
       }
     ],
     "parameters": {
       "Left": [
+        "Bytea",
         "Text"
       ]
     },
@@ -115,10 +89,8 @@
       false,
       false,
       false,
-      false,
-      false,
-      true
+      null
     ]
   },
-  "hash": "6513ab56e09b166abd41bf554c68009933f8ee85e1b085e96f3c1a977d0caffb"
+  "hash": "f991cb944ef67d3507f7f3a5416b44aabf12787ada1720bf6c4fb02ea48eeb6e"
 }

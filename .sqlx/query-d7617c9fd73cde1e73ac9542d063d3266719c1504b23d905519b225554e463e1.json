@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO events.outbox (id, type, payload) VALUES ($1, 'grade.published', '{}')",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "d7617c9fd73cde1e73ac9542d063d3266719c1504b23d905519b225554e463e1"
+}

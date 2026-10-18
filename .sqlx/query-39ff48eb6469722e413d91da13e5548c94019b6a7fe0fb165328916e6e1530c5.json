@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO identity.email_tokens (id, user_id, purpose, token_hash, expires_at)\n         VALUES ($1, $2, $3, $4, now() + make_interval(secs => $5))",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Bytea",
+        "Float8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "39ff48eb6469722e413d91da13e5548c94019b6a7fe0fb165328916e6e1530c5"
+}

@@ -1,0 +1,59 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT attempts, failed_at IS NULL AS \"not_failed!\", last_error,\n                      run_after <= now() AS \"due!\", processed_at IS NOT NULL AS \"processed!\"\n               FROM events.outbox ORDER BY id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "attempts",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "events.outbox",
+            "name": "attempts"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "not_failed!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 2,
+        "name": "last_error",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "events.outbox",
+            "name": "last_error"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "due!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 4,
+        "name": "processed!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      null,
+      true,
+      null,
+      null
+    ]
+  },
+  "hash": "2f775e35ad8b867da1e38d65f721adbb48c7e41550a866a9b4d2e683d6279afa"
+}

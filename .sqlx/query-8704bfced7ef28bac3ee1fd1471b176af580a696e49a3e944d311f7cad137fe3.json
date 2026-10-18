@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "INSERT INTO identity.users (id, email, name, surname, role, must_change_password)\n           VALUES ($1, $2, $3, $4, $5, $6)\n           RETURNING id, email, name, surname,\n                     role AS \"role: Role\", status AS \"status: UserStatus\",\n                     must_change_password, created_at",
+  "query": "SELECT id, email, name, surname, role AS \"role: Role\", status AS \"status: UserStatus\",\n                  email_verified_at IS NOT NULL AS \"email_verified!\"\n           FROM identity.users WHERE email = $1 FOR UPDATE",
   "describe": {
     "columns": [
       {
@@ -71,35 +71,14 @@
       },
       {
         "ordinal": 6,
-        "name": "must_change_password",
+        "name": "email_verified!",
         "type_info": "Bool",
-        "origin": {
-          "Table": {
-            "table": "identity.users",
-            "name": "must_change_password"
-          }
-        }
-      },
-      {
-        "ordinal": 7,
-        "name": "created_at",
-        "type_info": "Timestamptz",
-        "origin": {
-          "Table": {
-            "table": "identity.users",
-            "name": "created_at"
-          }
-        }
+        "origin": "Expression"
       }
     ],
     "parameters": {
       "Left": [
-        "Uuid",
-        "Text",
-        "Text",
-        "Text",
-        "Text",
-        "Bool"
+        "Text"
       ]
     },
     "nullable": [
@@ -109,9 +88,8 @@
       false,
       false,
       false,
-      false,
-      false
+      null
     ]
   },
-  "hash": "b4f8ec60c4b7fd850d914d4600247b183e3ef03ba001425b5ea1f3b038d5c93a"
+  "hash": "8704bfced7ef28bac3ee1fd1471b176af580a696e49a3e944d311f7cad137fe3"
 }

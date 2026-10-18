@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE events.outbox SET run_after = now()",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "6ce464bbaa03c85b9fdc10550442dde78d508608a66bf078147bbe3d852b1695"
+}
