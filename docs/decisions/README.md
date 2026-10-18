@@ -80,3 +80,4 @@ What gets easier, what gets harder, what we must remember.
 | 0045 | [The outbox worker and mail delivery](0045-outbox-worker-and-mail.md) |
 | 0046 | [Self-registration, email verification and password reset](0046-self-registration-verification-and-password-reset.md) |
 | 0047 | [Google sign-in (the web redirect flow)](0047-google-sign-in.md) |
+| 0048 | [Course info, archiving, deletion, templates and the people of a course](0048-course-archive-deletion-templates-and-people.md) |
