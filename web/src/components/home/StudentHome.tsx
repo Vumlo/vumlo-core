@@ -14,8 +14,9 @@ import { useT } from "@/lib/i18n";
 import { translate } from "@/lib/i18n/core";
 import { WidgetGrid, type WidgetDef } from "./WidgetGrid";
 import h from "./Home.module.css";
+import { courseHref, itemHref } from "@/lib/routes";
 
-const itemHref = (w: Pick<MyWorkItem, "course_id" | "assignment_id">) => `/courses/${w.course_id}/items/${w.assignment_id}`;
+const workHref = (w: Pick<MyWorkItem, "course_id" | "assignment_id">) => itemHref(w.course_id, w.assignment_id);
 
 function Loading() {
   return <p className={h.empty} role="status">{translate("common.loading")}</p>;
@@ -48,7 +49,7 @@ export function StudentHome({ user }: { user: User }) {
             {upcoming.slice(0, hh === 2 ? 4 : 2).map((i) => {
               const pill = statusPill(i.status);
               return (
-                <Link key={i.assignment_id} href={itemHref(i)} className={h.row}>
+                <Link key={i.assignment_id} href={workHref(i)} className={h.row}>
                   <ItemTile kind="assignment" small />
                   <span className={h.rowMain}>
                     <span className={h.rowTitle}>{i.title}</span>
@@ -75,7 +76,7 @@ export function StudentHome({ user }: { user: User }) {
                 <p className="muted" style={{ fontSize: 13 }}>{t("home.draftSaved", { when: sinceLabel(draft.draft_saved_at!) })}</p>
               </div>
             </div>
-            <Link href={itemHref(draft)} className="btn btn-primary" style={{ marginTop: "auto" }}>{t("content.continueDraft")}</Link>
+            <Link href={workHref(draft)} className="btn btn-primary" style={{ marginTop: "auto" }}>{t("content.continueDraft")}</Link>
           </div>
         ),
       },
@@ -85,7 +86,7 @@ export function StudentHome({ user }: { user: User }) {
         render: (_w, hh) => !data ? <Loading /> : graded.length === 0 ? <p className={h.empty}>{t("content.noGrades")}</p> : (
           <div>
             {graded.slice(0, hh === 2 ? 3 : 2).map((g) => (
-              <Link key={g.assignment_id} href={itemHref(g)} className={h.grade}>
+              <Link key={g.assignment_id} href={workHref(g)} className={h.grade}>
                 <span style={{ minWidth: 0 }}>
                   <span className={h.rowTitle} style={{ fontSize: 14 }}>{g.title}</span>
                   <span className={h.rowSub} style={{ fontSize: 12 }}>{courseOf(g.course_id)?.title}, {dayLabel(g.published_at!)}</span>
@@ -128,7 +129,7 @@ export function StudentHome({ user }: { user: User }) {
         render: (w) => !cards.data ? <Loading /> : (
           <div className={h.courses} style={{ gridTemplateColumns: `repeat(${w === 4 ? 4 : 2}, minmax(0, 1fr))` }}>
             {current.slice(0, 4).map((c) => (
-              <Link key={c.course.id} href={`/courses/${c.course.id}`} className={h.course}>
+              <Link key={c.course.id} href={courseHref(c.course.id)} className={h.course}>
                 <span className={h.code}>{c.code}</span>
                 <span className={h.rowTitle} style={{ marginTop: 4, fontSize: 14, fontWeight: 600 }}>{c.course.title}</span>
                 <span className={h.rowSub} style={{ fontSize: 12 }}>{c.owner_name}</span>
@@ -153,7 +154,7 @@ export function StudentHome({ user }: { user: User }) {
                   <div key={key} className={h.weekDay} data-today={k === 0}>
                     <span style={{ fontSize: 12, fontWeight: k === 0 ? 600 : 500, color: k === 0 ? "var(--accent-fg)" : "var(--muted)" }}>{k === 0 ? t("date.today.cap") : `${weekdayShort(parts(d).wd)} ${parts(d).d}`}</span>
                     {list.map((i) => (
-                      <Link key={i.assignment_id} href={itemHref(i)} className={h.weekEvent}>
+                      <Link key={i.assignment_id} href={workHref(i)} className={h.weekEvent}>
                         <span className={h.rowTitle} style={{ fontSize: 12 }}>{i.title}</span>
                         <span style={{ display: "block", color: "var(--asg-fg)" }}>{timeOf(i.due_at!)}</span>
                       </Link>

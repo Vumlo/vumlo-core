@@ -100,7 +100,7 @@ test.describe("missing pages", () => {
   test("an unknown address, course and item are all 'not found'", async ({ page }) => {
     await signIn(page, accounts.student, PASSWORD);
     await expect(page.getByRole("navigation", { name: "Main" }).first()).toBeVisible();
-    for (const path of ["/no-such-page", "/courses/nothing", "/courses/nothing/items/nothing"]) {
+    for (const path of ["/no-such-page", "/course", "/course?id=nothing", "/course/item?id=nothing&item=nothing"]) {
       await page.goto(path);
       await expect(page.getByRole("heading", { name: "We can't find that page" })).toBeVisible();
     }
@@ -144,7 +144,7 @@ test.describe("new course", () => {
     await page.getByLabel("Code", { exact: true }).fill("CS 420");
     await page.getByLabel("Description").fill("Consensus, replication and failure.");
     await page.getByRole("button", { name: "Create course" }).click();
-    await expect(page).toHaveURL(/\/courses\/[^/]+\/settings/);
+    await expect(page).toHaveURL(/\/course\/settings\?id=/);
     await expect(page.getByRole("heading", { name: "Distributed Systems" })).toBeVisible();
     // Follow links rather than reload: the mock keeps its data in the page.
     await page.getByRole("navigation", { name: "Main" }).first().getByRole("link", { name: "Courses" }).click();

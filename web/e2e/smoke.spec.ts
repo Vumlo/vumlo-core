@@ -22,13 +22,20 @@ async function signIn(page: Page, role: RoleName) {
   await page.waitForURL((u) => !u.pathname.startsWith("/login"));
 }
 
+// The one address no screen owns: the server answers it with a real 404 (it is not a catch-all page any more,
+// ADR-0057), and the browser logs that answer as a console error of its own.
+const unknownAddress = "/no-such-page";
+
 async function open(page: Page, path: string, theme: string, problems: string[]) {
-  await page.goto(path);
+  const response = await page.goto(path);
+  expect(response?.status(), `status of ${path}`).toBe(path === unknownAddress ? 404 : 200);
   await expect(page.locator("html")).toHaveAttribute("data-theme", theme);
   await expect(page.locator("h1, h2, main [contenteditable], main input").first()).toBeVisible();
   await page.waitForLoadState("networkidle");
   await expect(page.getByText("Something went wrong")).toHaveCount(0);
-  expect(problems, `console problems on ${path}`).toEqual([]);
+  const own404 = (m: string) => path === unknownAddress && m.includes("status of 404");
+  expect(problems.filter((m) => !own404(m)), `console problems on ${path}`).toEqual([]);
+  if (path === unknownAddress) problems.length = 0;
 }
 
 for (const role of roles) {

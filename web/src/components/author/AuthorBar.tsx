@@ -7,6 +7,7 @@ import { findItem } from "@/lib/course";
 import { timeOf } from "@/lib/format";
 import { useT } from "@/lib/i18n";
 import s from "./Author.module.css";
+import { courseHref } from "@/lib/routes";
 
 export function Switch({ checked, onChange, label }: { checked: boolean; onChange: (v: boolean) => void; label: string }) {
   return <button type="button" role="switch" aria-checked={checked} aria-label={label} className={s.sw} onClick={() => onChange(!checked)} />;
@@ -30,9 +31,9 @@ export function AuthorBar({ courseId, itemId, title, chip, saved, pending, faile
   return (
     <div className={s.top}>
       <nav aria-label={t("common.breadcrumb")} className={`crumbs ${s.crumbs}`}>
-        <Link href={`/courses/${courseId}`}>{info.data?.code ?? t("search.kind.course")}</Link>
+        <Link href={courseHref(courseId)}>{info.data?.code ?? t("search.kind.course")}</Link>
         <span aria-hidden="true" style={{ padding: "0 6px" }}>/</span>
-        <Link href={`/courses/${courseId}`}>{found?.module.title ?? "…"}</Link>
+        <Link href={courseHref(courseId)}>{found?.module.title ?? "…"}</Link>
         <span aria-hidden="true" style={{ padding: "0 6px" }}>/</span>
         <span aria-current="page">{title || t("ab.untitled")}</span>
       </nav>

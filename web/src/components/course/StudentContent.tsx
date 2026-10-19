@@ -17,6 +17,7 @@ import { CourseOutline } from "./CourseOutline";
 import { translate, translatePlural } from "@/lib/i18n/core";
 import { useT } from "@/lib/i18n";
 import s from "./Course.module.css";
+import { courseHref, itemHref } from "@/lib/routes";
 
 /** The late-work sentence of an assignment, shared by the course page and the assignment page. */
 export function lateRule(a: { accept_late?: boolean | null; late_until?: string | null; due_at?: string | null }): string {
@@ -38,7 +39,7 @@ function AssignmentRow({ courseId, item, meta }: { courseId: string; item: ItemS
   const today = now();
   const rel = status === "graded" && meta?.published_at ? t("row.gradedOn", { day: dayLabel(meta.published_at) }) : meta?.class_on ? relative(meta.class_on) : a.due_at ? relative(a.due_at) : "";
   return (
-    <Link href={`/courses/${courseId}/items/${item.id}`} className={s.rowAssignment}>
+    <Link href={itemHref(courseId, item.id)} className={s.rowAssignment}>
       <ItemTile kind="assignment" />
       <span className={s.rowMain}>
         <span className={s.rowTitle}>{item.title}</span>
@@ -100,7 +101,7 @@ export function StudentContent({ courseId }: { courseId: string }) {
                                 isAssignment(i) ? (
                                   <AssignmentRow key={i.id} courseId={courseId} item={i} meta={m[i.id]} />
                                 ) : (
-                                  <Link key={i.id} href={`/courses/${courseId}/items/${i.id}`} className={s.rowLecture}>
+                                  <Link key={i.id} href={itemHref(courseId, i.id)} className={s.rowLecture}>
                                     <ItemTile kind="lecture" />
                                     <span className={s.rowMain}>
                                       <span className={s.rowTitle}>{i.title}</span>
@@ -137,7 +138,7 @@ export function StudentContent({ courseId }: { courseId: string }) {
                           {upcoming.assignment!.on_deadline === "auto_submit" ? ` ${t("content.autoSubmit")}` : ""}
                         </p>
                       )}
-                      <Link href={`/courses/${courseId}/items/${upcoming.id}`} className="btn btn-primary" style={{ marginTop: 16, minHeight: 44, width: "100%", fontSize: 15 }}>
+                      <Link href={itemHref(courseId, upcoming.id)} className="btn btn-primary" style={{ marginTop: 16, minHeight: 44, width: "100%", fontSize: 15 }}>
                         {upMeta?.draft_saved_at ? t("content.continueDraft") : t("content.openAssignment")}
                       </Link>
                       <ul className={s.facts}>
@@ -167,7 +168,7 @@ export function StudentContent({ courseId }: { courseId: string }) {
                   ) : (
                     <p className="muted" style={{ fontSize: 14 }}>{t("content.noGrades")}</p>
                   )}
-                  <Link href={`/courses/${courseId}/grades`} style={{ display: "inline-flex", alignItems: "center", minHeight: 40, marginTop: 4, fontSize: 14, color: "var(--accent-fg)" }}>{t("content.seeGrades")}</Link>
+                  <Link href={courseHref(courseId, "grades")} style={{ display: "inline-flex", alignItems: "center", minHeight: 40, marginTop: 4, fontSize: 14, color: "var(--accent-fg)" }}>{t("content.seeGrades")}</Link>
                 </div>
                 {info.data?.description && <p className="muted" style={{ fontSize: 13 }}>{info.data.description}</p>}
               </aside>

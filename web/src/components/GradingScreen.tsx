@@ -9,6 +9,7 @@ import type { TeachingOverview } from "@/lib/api/types";
 import { dueLabel, initials, plural } from "@/lib/format";
 import { useT } from "@/lib/i18n";
 import s from "./GradingScreen.module.css";
+import { courseHref } from "@/lib/routes";
 
 function PublishButton({ row }: { row: TeachingOverview["unpublished"][number] }) {
   const t = useT();
@@ -59,7 +60,7 @@ export function GradingScreen() {
                     <span role="cell" className={s.who}><span aria-hidden="true" className={s.avatar}>{initials(q.student_name, q.student_surname)}</span><span style={{ fontWeight: 500 }}>{q.student_name} {q.student_surname}</span></span>
                     <span role="cell"><span style={{ display: "block" }}>{q.assignment_title}</span><span className="muted" style={{ display: "block", fontSize: 13 }}>{q.course_code} {q.course_title}</span></span>
                     <span role="cell"><span style={{ display: "block", fontSize: 14 }}>{dueLabel(q.submitted_at)}</span><span className="muted" style={{ display: "block", fontSize: 13 }}>{q.max_attempts ? t("grading.attemptOf", { n: q.attempt, max: q.max_attempts }) : t("grading.attempt", { n: q.attempt })}</span></span>
-                    <span role="cell"><Link href={`/courses/${q.course_id}/grades`} className="btn btn-outline" style={{ minHeight: 36 }}>{t("grading.grade")}</Link></span>
+                    <span role="cell"><Link href={courseHref(q.course_id, "grades")} className="btn btn-outline" style={{ minHeight: 36 }}>{t("grading.grade")}</Link></span>
                   </div>
                 ))}
                 {queue.length === 0 && <p className="empty">{t("grading.nothing")}</p>}
@@ -78,7 +79,7 @@ export function GradingScreen() {
                     <span className="muted" style={{ display: "block", fontSize: 13 }}>{d.course_code} {d.course_title}{d.auto_scored ? `, ${t("grading.auto")}` : ""}</span>
                   </span>
                   <span style={{ fontSize: 14 }}>{plural(d.draft_count, "draft grade")}</span>
-                  <Link href={`/courses/${d.course_id}/grades`} className="btn btn-quiet">{t("grading.review")}</Link>
+                  <Link href={courseHref(d.course_id, "grades")} className="btn btn-quiet">{t("grading.review")}</Link>
                   <PublishButton row={d} />
                 </div>
               ))}

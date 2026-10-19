@@ -12,6 +12,7 @@ import { useT } from "@/lib/i18n";
 import type { MessageKey } from "@/lib/i18n/core";
 import type { TemplateSummary } from "@/lib/api/types";
 import s from "@/components/Courses.module.css";
+import { courseHref } from "@/lib/routes";
 
 const ROLE: Record<string, MessageKey> = { owner: "role.owner", teacher: "role.teacher", assistant: "role.assistant", student: "role.student" };
 
@@ -44,7 +45,7 @@ export function TeacherCourses() {
     const c = await fromTemplate.run(dialog.course.id, title);
     if (c) {
       setDialog(null);
-      router.push(`/courses/${c.id}/settings`);
+      router.push(courseHref(c.id, "settings"));
     }
   }
   const error = fromTemplate.error?.errors.find((e) => e.field === "title")?.message;
@@ -73,7 +74,7 @@ export function TeacherCourses() {
                   <span className={s.code}>{c.code || t("courses.noCode")}</span>
                   <span className="muted" style={{ fontSize: 13 }}>{t(ROLE[c.my_role] ?? "role.teacher")}</span>
                 </div>
-                <Link href={`/courses/${c.course.id}`} className={s.title}>{c.course.title}</Link>
+                <Link href={courseHref(c.course.id)} className={s.title}>{c.course.title}</Link>
                 <p className="muted" style={{ fontSize: 14 }}>
                   {plural(c.student_count, "student")}{c.assistant_count ? `, ${plural(c.assistant_count, "assistant")}` : ""}
                   {c.course.status === "draft" ? `, ${t("common.draft").toLowerCase()}` : ""}
@@ -89,9 +90,9 @@ export function TeacherCourses() {
                   </ul>
                 )}
                 <div className={s.links}>
-                  <Link href={`/courses/${c.course.id}`}>{t("course.content")}</Link>
-                  <Link href={`/courses/${c.course.id}/grades`}>{t("course.gradebook")}</Link>
-                  <Link href={`/courses/${c.course.id}/people`}>{t("course.people")}</Link>
+                  <Link href={courseHref(c.course.id)}>{t("course.content")}</Link>
+                  <Link href={courseHref(c.course.id, "grades")}>{t("course.gradebook")}</Link>
+                  <Link href={courseHref(c.course.id, "people")}>{t("course.people")}</Link>
                 </div>
               </article>
             ))}
@@ -111,7 +112,7 @@ export function TeacherCourses() {
                   {plural(tp.sections, "section")}, {plural(tp.lectures, "lecture")}, {plural(tp.assignments, "assignment")}. {t("courses.updated", { day: dayLong(tp.updated_at) })}
                 </span>
               </span>
-              <Link href={`/courses/${tp.course.id}`} className="btn btn-quiet">{t("courses.editTemplate")}</Link>
+              <Link href={courseHref(tp.course.id)} className="btn btn-quiet">{t("courses.editTemplate")}</Link>
               <button type="button" className="btn btn-outline" onClick={() => open(tp)}>{t("courses.fromIt")}</button>
             </div>
           ))}

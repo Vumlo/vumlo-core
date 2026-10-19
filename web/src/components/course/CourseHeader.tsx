@@ -8,6 +8,7 @@ import { ownerName } from "@/lib/course";
 import { plural } from "@/lib/format";
 import { useT } from "@/lib/i18n";
 import { useCourseAccess } from "./useCourseAccess";
+import { courseHref } from "@/lib/routes";
 
 type Tab = { id: string; label: string; href: string };
 
@@ -18,20 +19,19 @@ export function CourseHeader({ courseId, subtitle }: { courseId: string; subtitl
   const course = useCourse(courseId);
   const info = useCourseInfo(courseId);
   const { staff } = useCourseAccess(courseId);
-  const base = `/courses/${courseId}`;
   const tabs: Tab[] = staff
     ? [
-        { id: "content", label: t("course.content"), href: base },
-        { id: "grades", label: t("course.gradebook"), href: `${base}/grades` },
-        { id: "people", label: t("course.people"), href: `${base}/people` },
-        { id: "settings", label: t("course.settings"), href: `${base}/settings` },
+        { id: "content", label: t("course.content"), href: courseHref(courseId) },
+        { id: "grades", label: t("course.gradebook"), href: courseHref(courseId, "grades") },
+        { id: "people", label: t("course.people"), href: courseHref(courseId, "people") },
+        { id: "settings", label: t("course.settings"), href: courseHref(courseId, "settings") },
       ]
     : [
-        { id: "content", label: t("course.content"), href: base },
-        { id: "grades", label: t("course.myGrades"), href: `${base}/grades` },
-        { id: "people", label: t("course.people"), href: `${base}/people` },
+        { id: "content", label: t("course.content"), href: courseHref(courseId) },
+        { id: "grades", label: t("course.myGrades"), href: courseHref(courseId, "grades") },
+        { id: "people", label: t("course.people"), href: courseHref(courseId, "people") },
       ];
-  const current = pathname.startsWith(`${base}/grades`) ? "grades" : pathname.startsWith(`${base}/people`) ? "people" : pathname.startsWith(`${base}/settings`) ? "settings" : "content";
+  const current = pathname.startsWith("/course/grades") ? "grades" : pathname.startsWith("/course/people") ? "people" : pathname.startsWith("/course/settings") ? "settings" : "content";
   const i = info.data;
   const defaultSub = !i
     ? ""

@@ -11,6 +11,7 @@ import { dueShort, statusPill } from "@/lib/course";
 import { sumPoints } from "@/lib/points";
 import { useT } from "@/lib/i18n";
 import s from "./Grades.module.css";
+import { courseHref, itemHref } from "@/lib/routes";
 
 /** Grades across all courses. Only published grades carry a score; everything else shows its state. */
 export function StudentGrades() {
@@ -54,7 +55,7 @@ export function StudentGrades() {
               <section key={c.id} aria-label={c.title} className="card card-list">
                 <div className={s.head}>
                   <span className="tag">{c.code}</span>
-                  <Link href={`/courses/${c.id}`} className={s.course}>{c.title}</Link>
+                  <Link href={courseHref(c.id)} className={s.course}>{c.title}</Link>
                   <span className="muted" style={{ fontSize: 14 }}>{t("grades.gradedCount", { n: graded.length, total })}</span>
                   {sum && <span style={{ whiteSpace: "nowrap" }}><span style={{ fontSize: 18, fontWeight: 600 }}>{sum}</span><span className="muted" style={{ fontSize: 13 }}> / {max}</span></span>}
                 </div>
@@ -62,7 +63,7 @@ export function StudentGrades() {
                   {rows.map((r: MyWorkItem) => {
                     const p = statusPill(r.status);
                     return (
-                      <Link key={r.assignment_id} href={`/courses/${r.course_id}/items/${r.assignment_id}`} role="row" className={s.row}>
+                      <Link key={r.assignment_id} href={itemHref(r.course_id, r.assignment_id)} role="row" className={s.row}>
                         <span role="cell" className={s.cellMain}><ItemTile kind="assignment" small /><span className="ellipsis" style={{ fontWeight: 500 }}>{r.title}</span></span>
                         <span role="cell" className={s.cellDate}>{dueShort(r.due_at ?? null, r.class_on, today)}</span>
                         <span role="cell" className={s.cellStatus}><StatusPill tone={p.tone}>{p.label}</StatusPill></span>

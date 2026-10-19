@@ -12,6 +12,9 @@ import { useInstitution } from "@/lib/api/hooks/institution";
 import { useT } from "@/lib/i18n";
 import s from "./Shell.module.css";
 
+/** The address with its query string: a course screen is `/course?id=...`, and sign-in must come back to it. */
+const here = () => window.location.pathname + window.location.search;
+
 function AccountMenu({ user }: { user: User }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -93,9 +96,9 @@ export function Shell({ children }: { children: ReactNode }) {
   const mustChange = me.data?.must_change_password === true;
 
   useEffect(() => {
-    if (me.error?.status === 401) router.replace(`/login?next=${encodeURIComponent(pathname)}`);
+    if (me.error?.status === 401) router.replace(`/login?next=${encodeURIComponent(here())}`);
     // A temporary password only opens the page that replaces it (ADR-0017).
-    else if (mustChange) router.replace(`/change-password?next=${encodeURIComponent(pathname)}`);
+    else if (mustChange) router.replace(`/change-password?next=${encodeURIComponent(here())}`);
   }, [me.error, mustChange, pathname, router]);
 
   if (!me.data || mustChange) {

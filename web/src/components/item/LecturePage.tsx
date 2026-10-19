@@ -11,6 +11,7 @@ import { bodyOf, type Item } from "@/lib/api/types";
 import { ItemFrame, PreviewBanner } from "./ItemFrame";
 import { useT } from "@/lib/i18n";
 import s from "./Item.module.css";
+import { itemHref } from "@/lib/routes";
 
 export function LecturePage({ item, courseId, staff }: { item: Item; courseId: string; staff: boolean }) {
   const t = useT();
@@ -56,13 +57,13 @@ export function LecturePage({ item, courseId, staff }: { item: Item; courseId: s
             <BlockRenderer doc={doc} />
             <nav aria-label={t("lecture.pager")} className={s.pager}>
               {prevLecture ? (
-                <Link href={`/courses/${courseId}/items/${prevLecture.id}`} className={s.pagerLink}>
+                <Link href={itemHref(courseId, prevLecture.id)} className={s.pagerLink}>
                   <span className={s.pagerSmall}>{t("lecture.prev")}</span>
                   <span style={{ fontSize: 15, fontWeight: 600 }}>{prevLecture.title}</span>
                 </Link>
               ) : null}
               {next && (
-                <Link href={`/courses/${courseId}/items/${next.id}`} className={s.pagerLink} data-kind={next.kind === "assignment" ? "assignment" : "lecture"} style={{ textAlign: "right" }}>
+                <Link href={itemHref(courseId, next.id)} className={s.pagerLink} data-kind={next.kind === "assignment" ? "assignment" : "lecture"} style={{ textAlign: "right" }}>
                   <span className={s.pagerSmall}>
                     {next.kind === "assignment" ? (next.assignment?.due_at ? t("lecture.nextAssignmentDue", { day: shortDay(next.assignment.due_at) }) : t("lecture.nextAssignment")) : t("lecture.next")}
                   </span>
