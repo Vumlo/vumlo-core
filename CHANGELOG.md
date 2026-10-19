@@ -10,6 +10,10 @@ must do, in order, besides getting the new release. See [RELEASING.md](RELEASING
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-10-20
+
+The Vumlo logo.
+
 ### Changed
 
 - **The Vumlo logo** is the placeholder logo (`brand/logo.png`, in place of `brand/logo.svg`), and the web app shows an
@@ -124,6 +128,7 @@ There is nothing to upgrade from; follow [docs/install.md](docs/install.md).
 - Any optional module, and an end-user CLI (ADR-0055).
 - Published container images: the images are built on your server from the archive.
 
-[Unreleased]: https://github.com/Vumlo/vumlo-core/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/Vumlo/vumlo-core/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/Vumlo/vumlo-core/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/Vumlo/vumlo-core/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/Vumlo/vumlo-core/releases/tag/v0.1.0
