@@ -22,15 +22,13 @@ clone this repository.
    `.github/release/verify-archive.sh /tmp/dist X.Y.Z` (it needs Docker and takes a while). Merge the
    branch once CI is green.
 4. Merge the branch. **That is the release:** the `Release` workflow runs on every push to `main`, finds a
-   workspace version whose tag `vX.Y.Z` does not exist yet, and releases it. (To release a commit by hand
-   instead, push the tag yourself, `git tag -a vX.Y.Z -m vX.Y.Z && git push origin vX.Y.Z`; the commit must be on
-   `main`.)
-5. The `Release` workflow checks that the versions agree and that the changelog has the entry, runs the CI
-   checks again, builds the archive from the allowlist, builds and runs it from scratch in a clean
+   workspace version whose tag `vX.Y.Z` does not exist yet, and releases it. A pull request is checked once, by
+   CI; the release runs the CI checks again on the merged commit (they include the test that the versions agree).
+5. The `Release` workflow builds the archive from the allowlist, builds and runs it from scratch in a clean
    directory (the Docker path of `docs/install.md`), and only then creates the GitHub Release, and with it the tag
-   `vX.Y.Z` on the commit it checked, with the changelog entry as its notes. If any step fails, no tag and no Release
-   exist: fix it on `main` and the next push tries again. A push to `main` whose version is already tagged does
-   nothing. Check that the Release has the archive and `SHA256SUMS`.
+   `vX.Y.Z` on the commit it checked, with the changelog entry as its notes (an empty entry fails it). If any step
+   fails, no tag and no Release exist: fix it on `main` and the next push tries again. A push to `main` whose
+   version is already tagged does nothing. Check that the Release has the archive and `SHA256SUMS`.
 
 A published tag is never moved or deleted. If a release is wrong, fix it on `main` and release the
 next patch version.
