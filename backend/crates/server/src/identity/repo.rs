@@ -644,11 +644,13 @@ pub async fn find_token_account(
     .await
 }
 
-/// Stores one started Google sign-in and forgets the expired ones (ADR-0047).
+/// Stores one started Google sign-in and forgets the expired ones (ADR-0047). It is tied to a browser or
+/// to an app (ADR-0062), never both.
 pub async fn insert_oauth_state(
     conn: &mut PgConnection,
     state_hash: &[u8],
-    browser_hash: &[u8],
+    browser_hash: Option<&[u8]>,
+    app_challenge: Option<&[u8]>,
     nonce: &str,
     pkce_verifier: &str,
     lifetime_secs: i64,
@@ -658,10 +660,11 @@ pub async fn insert_oauth_state(
         .await?;
     sqlx::query!(
         "INSERT INTO identity.oauth_states
-             (state_hash, browser_hash, nonce, pkce_verifier, expires_at)
-         VALUES ($1, $2, $3, $4, now() + make_interval(secs => $5))",
+             (state_hash, browser_hash, app_challenge, nonce, pkce_verifier, expires_at)
+         VALUES ($1, $2, $3, $4, $5, now() + make_interval(secs => $6))",
         state_hash,
         browser_hash,
+        app_challenge,
         nonce,
         pkce_verifier,
         lifetime_secs as f64
@@ -671,23 +674,77 @@ pub async fn insert_oauth_state(
     Ok(())
 }
 
-/// Reads and deletes the state in one statement, so it can be used once. It matches only for the
-/// browser that started it and only before it expires.
+/// What a started sign-in remembered.
+pub struct TakenState {
+    pub nonce: String,
+    pub pkce_verifier: String,
+    /// Set when an app started it.
+    pub app_challenge: Option<Vec<u8>>,
+}
+
+/// Reads and deletes the state in one statement, so it can be used once. A browser's attempt matches
+/// only for the browser that started it; an app's attempt needs no cookie (the app holds the secret).
+/// Both only before they expire.
 pub async fn take_oauth_state(
     conn: &mut PgConnection,
     state_hash: &[u8],
-    browser_hash: &[u8],
-) -> Result<Option<(String, String)>, sqlx::Error> {
+    browser_hash: Option<&[u8]>,
+) -> Result<Option<TakenState>, sqlx::Error> {
     let row = sqlx::query!(
         "DELETE FROM identity.oauth_states
-         WHERE state_hash = $1 AND browser_hash = $2 AND expires_at > now()
-         RETURNING nonce, pkce_verifier",
+         WHERE state_hash = $1 AND expires_at > now()
+           AND (app_challenge IS NOT NULL OR browser_hash = $2)
+         RETURNING nonce, pkce_verifier, app_challenge",
         state_hash,
         browser_hash
     )
     .fetch_optional(conn)
     .await?;
-    Ok(row.map(|row| (row.nonce, row.pkce_verifier)))
+    Ok(row.map(|row| TakenState {
+        nonce: row.nonce,
+        pkce_verifier: row.pkce_verifier,
+        app_challenge: row.app_challenge,
+    }))
+}
+
+/// Keeps the handoff of a finished app sign-in and forgets the expired ones.
+pub async fn insert_app_handoff(
+    conn: &mut PgConnection,
+    code_hash: &[u8],
+    user_id: Uuid,
+    app_challenge: &[u8],
+    lifetime_secs: i64,
+) -> Result<(), sqlx::Error> {
+    sqlx::query!("DELETE FROM identity.app_handoffs WHERE expires_at < now()")
+        .execute(&mut *conn)
+        .await?;
+    sqlx::query!(
+        "INSERT INTO identity.app_handoffs (code_hash, user_id, app_challenge, expires_at)
+         VALUES ($1, $2, $3, now() + make_interval(secs => $4))",
+        code_hash,
+        user_id,
+        app_challenge,
+        lifetime_secs as f64
+    )
+    .execute(conn)
+    .await?;
+    Ok(())
+}
+
+/// Reads and deletes a handoff, whoever asks and whatever they bring with it: a code that is guessed at
+/// is spent, and the one that matches is used once.
+pub async fn take_app_handoff(
+    conn: &mut PgConnection,
+    code_hash: &[u8],
+) -> Result<Option<(Uuid, Vec<u8>)>, sqlx::Error> {
+    let row = sqlx::query!(
+        "DELETE FROM identity.app_handoffs WHERE code_hash = $1 AND expires_at > now()
+         RETURNING user_id, app_challenge",
+        code_hash
+    )
+    .fetch_optional(conn)
+    .await?;
+    Ok(row.map(|row| (row.user_id, row.app_challenge)))
 }
 
 /// The user a Google subject is linked to, locked with the row of the identity.

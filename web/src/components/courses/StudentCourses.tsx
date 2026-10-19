@@ -9,6 +9,7 @@ import { useCourseCards } from "@/lib/api/hooks/courses";
 import { shortDay } from "@/lib/format";
 import { useT } from "@/lib/i18n";
 import s from "@/components/Courses.module.css";
+import { courseHref } from "@/lib/routes";
 
 export function StudentCourses() {
   const t = useT();
@@ -47,7 +48,7 @@ export function StudentCourses() {
           {current.length === 0 ? <p className="empty">{q ? t("courses.noneMatch") : t("courses.noneCurrent")}</p> : (
             <div className={s.grid}>
               {current.map((c) => (
-                <Link key={c.course.id} href={`/courses/${c.course.id}`} className={`card ${s.card}`}>
+                <Link key={c.course.id} href={courseHref(c.course.id)} className={`card ${s.card}`}>
                   <span className={s.code}>{c.code}</span>
                   <span className={s.title}>{c.course.title}</span>
                   <span className="muted" style={{ fontSize: 14 }}>{c.owner_name}</span>
@@ -79,7 +80,7 @@ export function StudentCourses() {
               <h2 className="section-title">{g.term}</h2>
               <div className="card card-list">
                 {g.items.map((c) => (
-                  <Link key={c.course.id} href={`/courses/${c.course.id}`} className={s.pastRow}>
+                  <Link key={c.course.id} href={courseHref(c.course.id)} className={s.pastRow}>
                     <span className={s.pastCode}>{c.code}</span>
                     <span className="grow">
                       <span style={{ display: "block", fontWeight: 500 }}>{c.course.title}</span>

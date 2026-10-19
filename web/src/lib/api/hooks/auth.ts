@@ -3,7 +3,7 @@
 import { api } from "../client";
 import { clearQueries, invalidate, useMutation, useQuery } from "../../query";
 import type { User } from "../../session";
-import type { GoogleStart, MockMail } from "../gaps";
+import type { GoogleHandoff, GoogleStart, MockMail } from "../gaps";
 
 /** The server answers `202` with no body for every address (ADR-0046); `pnpm dev:mock` answers the same. */
 export function useRegister() {
@@ -42,9 +42,11 @@ export function useGoogleStart() {
 
 export function useGoogleCallback() {
   return useMutation(async (code: string, state: string, hint: string | null) => {
-    const user = await api.post<User>("/auth/google/callback", { code, state, hint: hint ?? undefined });
+    const answer = await api.post<User | GoogleHandoff>("/auth/google/callback", { code, state, hint: hint ?? undefined });
+    // A sign-in the desktop app started ends in the app, not in this browser: there is no session here.
+    if ("handoff" in answer) return answer;
     clearQueries();
-    return user;
+    return answer;
   });
 }
 

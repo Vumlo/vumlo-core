@@ -209,6 +209,11 @@ fn operations(c: &Ctx, other_user: Uuid) -> Vec<Call> {
         ),
         // The institution's own: admins only.
         call("GET", "/admin/institution".into(), None),
+        call(
+            "PUT",
+            "/admin/institution/app-downloads".into(),
+            Some(json!({"downloads": []})),
+        ),
         call("GET", "/admin/users".into(), None),
         call("GET", "/admin/users/summary".into(), None),
         call("GET", format!("/admin/users/{}/facts", c.owner), None),
@@ -706,6 +711,7 @@ async fn the_list_of_operations_is_the_api() {
             "POST /auth/password-reset/confirm",
             "POST /auth/google/start",
             "POST /auth/google/callback",
+            "POST /auth/app/exchange",
             "POST /auth/logout",
             "GET /me",
             "POST /me/password",

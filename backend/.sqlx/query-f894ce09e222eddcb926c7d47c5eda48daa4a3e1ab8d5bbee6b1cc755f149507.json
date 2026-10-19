@@ -1,0 +1,62 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT actor_id, source, resource_type, meta FROM events.audit_log WHERE action = 'institution.app_downloads.set'",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "actor_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "events.audit_log",
+            "name": "actor_id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "source",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "events.audit_log",
+            "name": "source"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "resource_type",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "events.audit_log",
+            "name": "resource_type"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "meta",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "events.audit_log",
+            "name": "meta"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      true,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "f894ce09e222eddcb926c7d47c5eda48daa4a3e1ab8d5bbee6b1cc755f149507"
+}

@@ -29,7 +29,8 @@ if (existsSync(join(generated, "client-config.json"))) {
   cpSync(join(generated, "client-config.json"), join(outDir, "client-config.json"));
   cpSync(join(generated, "client-config.d.ts"), join(outDir, "client-config.d.ts"));
   for (const name of readdirSync(generated)) {
-    if (name === "client-config.json" || name === "client-config.d.ts" || name === "vumlo.schema.json") continue;
+    // icon-1024.png is for the installers of the desktop app (desktop/scripts/build.mjs); the web app does not serve it.
+    if (name === "client-config.json" || name === "client-config.d.ts" || name === "vumlo.schema.json" || name === "icon-1024.png") continue;
     cpSync(join(generated, name), join(brand, name));
   }
 } else if (optional) {
@@ -44,6 +45,7 @@ if (existsSync(join(generated, "client-config.json"))) {
     modules: {},
     web_modules: [],
     logo: null,
+    desktop: { url_scheme: "vumlo" },
   };
   writeFileSync(join(outDir, "client-config.json"), JSON.stringify(config, null, 2) + "\n");
   writeFileSync(join(outDir, "client-config.d.ts"), "export type ClientConfig = any;\n");

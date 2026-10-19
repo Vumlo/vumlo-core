@@ -1,0 +1,53 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM identity.oauth_states\n         WHERE state_hash = $1 AND expires_at > now()\n           AND (app_challenge IS NOT NULL OR browser_hash = $2)\n         RETURNING nonce, pkce_verifier, app_challenge",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "nonce",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "identity.oauth_states",
+            "name": "nonce"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "pkce_verifier",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "identity.oauth_states",
+            "name": "pkce_verifier"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "app_challenge",
+        "type_info": "Bytea",
+        "origin": {
+          "Table": {
+            "table": "identity.oauth_states",
+            "name": "app_challenge"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Bytea",
+        "Bytea"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "0f87c212ecf7028f8b85ccba48b1d04d9040da60b8ac2d3f68e1c5890f163259"
+}

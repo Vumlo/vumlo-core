@@ -1,6 +1,6 @@
 import { http, HttpResponse } from "msw";
 import { MOCK_NOW } from "@/lib/clock";
-import type { AdminCourse, GroupOverview, TermStat, UserFacts } from "@/lib/api/types";
+import type { AdminCourse, AppPlatform, GroupOverview, TermStat, UserFacts } from "@/lib/api/types";
 import { auditRow, getDb, uid } from "../db";
 import { activeStudents, fullName, notFound, paged, problem, publicUser, requireAdmin, requireUser, teacherName, userById } from "../logic";
 
@@ -236,6 +236,18 @@ export const adminHandlers = [
   http.get(`${A}/admin/institution`, () => {
     requireAdmin();
     return HttpResponse.json(getDb().institution);
+  }),
+  // The links to the desktop app: the whole list at once, https only, one per platform (ADR-0064).
+  http.put(`${A}/admin/institution/app-downloads`, async ({ request }) => {
+    requireAdmin();
+    const body = (await request.json()) as { downloads: { platform: AppPlatform; url: string }[] };
+    const platforms = ["windows", "macos_arm", "macos_intel", "linux_deb", "linux_appimage"];
+    const bad = body.downloads.some((d) => !platforms.includes(d.platform) || !/^https:\/\/[^\s/@]+(\/\S*)?$/.test(d.url.trim()))
+      || new Set(body.downloads.map((d) => d.platform)).size !== body.downloads.length;
+    if (bad) throw problem(422, "Unprocessable Entity", "the request has invalid fields", [{ field: "downloads", message: "must be an https address" }]);
+    const db = getDb();
+    db.institution.app_downloads = platforms.flatMap((p) => body.downloads.filter((d) => d.platform === p).map((d) => ({ platform: d.platform, url: d.url.trim() })));
+    return HttpResponse.json(db.institution.app_downloads);
   }),
   http.get(`${A}/admin/audit`, ({ request }) => {
     requireAdmin();

@@ -15,6 +15,7 @@ import { LinkGroup } from "./People";
 import { useT } from "@/lib/i18n";
 import type { MessageKey } from "@/lib/i18n/core";
 import s from "./Settings.module.css";
+import { courseHref } from "@/lib/routes";
 
 const NAV = [["general", "cs.general"], ["grading", "cs.grading"], ["groups", "cs.groups"], ["team", "cs.owner"], ["template", "cs.reuse"], ["archive", "cs.archive"]] as const satisfies readonly (readonly [string, MessageKey])[];
 
@@ -146,7 +147,7 @@ export function CourseSettings({ courseId }: { courseId: string }) {
 
           <section id="team" aria-labelledby="team-h" className={`card ${s.section}`}>
             <h2 id="team-h">{t("cs.owner")}</h2>
-            <p className={s.lead}>{t("cs.ownerLead")} <Link href={`/courses/${courseId}/people`} style={{ color: "var(--accent-fg)" }}>{t("cs.peopleTab")}</Link>.</p>
+            <p className={s.lead}>{t("cs.ownerLead")} <Link href={courseHref(courseId, "people")} style={{ color: "var(--accent-fg)" }}>{t("cs.peopleTab")}</Link>.</p>
             {owner && (
               <div className={s.owner}>
                 <span aria-hidden="true" className={s.avatar}>{initials(owner.name, owner.surname)}</span>

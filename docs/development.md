@@ -103,3 +103,26 @@ afterwards (ADR-0036). `DATABASE_URL` only supplies the server and the credentia
 to the `postgres` database, so the development database does not have to exist. A test that fails
 keeps its database; the next run drops the ones older than an hour. Building without a database:
 `SQLX_OFFLINE=true`.
+
+## The desktop app
+
+`desktop/` is a Tauri 2 program (ADR-0056) with its own Cargo workspace; the Linux libraries it links are in
+[docs/desktop.md](desktop.md). Run the web app as above, then a window on it:
+
+```
+cd web && npm run dev                      # the web app on http://localhost:3000 (a real server, or `npm run dev:mock`)
+cd desktop && npm ci && npx tauri dev      # the window; its API address is http://127.0.0.1:8080/api/v1
+```
+
+The window does not use the web server's `/api/v1` proxy: its requests are made by the Rust side
+(`VUMLO_API_URL=... npx tauri dev` points it elsewhere). `npm run dev:mock` does not work in it, since the mock
+answers inside the browser, not on a server. Checks and tests:
+
+```
+cd desktop && cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo test && npm test
+# against a running server with the demo data (`vumlo-cli seed --demo`, after the demo account changed its password):
+VUMLO_E2E_API=http://127.0.0.1:8080/api/v1 VUMLO_E2E_EMAIL=... VUMLO_E2E_PASSWORD=... cargo test -- --ignored
+```
+
+The end-to-end suite of the web app (`web/e2e/desktop.spec.ts`) tests the desktop window's screens with a stand-in for
+what Tauri puts on `window`, so it needs neither the program nor a server.

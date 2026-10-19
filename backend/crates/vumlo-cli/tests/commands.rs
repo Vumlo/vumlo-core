@@ -225,6 +225,19 @@ fn the_web_app_has_the_version_of_the_release() {
 }
 
 #[test]
+fn the_desktop_app_has_the_version_of_the_release() {
+    let package: Value =
+        serde_json::from_str(include_str!("../../../../desktop/package.json")).unwrap();
+    assert_eq!(package["version"], env!("CARGO_PKG_VERSION"));
+    let cargo = include_str!("../../../../desktop/Cargo.toml");
+    let line = format!("version = \"{}\"", env!("CARGO_PKG_VERSION"));
+    assert!(
+        cargo.lines().take(5).any(|l| l == line),
+        "desktop/Cargo.toml says {line} in its [package]"
+    );
+}
+
+#[test]
 fn the_compose_example_names_its_images_after_the_release() {
     let compose = include_str!("../../../../deploy/compose.yaml");
     let tag = format!("VUMLO_VERSION:-{}}}", env!("CARGO_PKG_VERSION"));

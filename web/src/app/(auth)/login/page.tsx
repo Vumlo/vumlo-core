@@ -2,10 +2,13 @@
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useState, type FormEvent } from "react";
+import { Suspense, useEffect, useState, type FormEvent } from "react";
 import { Icon } from "@/components/Icon";
 import { PasswordField } from "@/components/PasswordField";
+import { isDesktop } from "@/lib/api/client";
 import { useGoogleStart } from "@/lib/api/hooks/auth";
+import { onGoogleOutcome, startGoogleInApp } from "@/lib/offline";
+import { clearQueries } from "@/lib/query";
 import { useT } from "@/lib/i18n";
 import { landingPath, rememberTemporaryPassword, useLogin } from "@/lib/session";
 import s from "../auth.module.css";
@@ -21,6 +24,20 @@ function LoginForm() {
   const google = useGoogleStart();
   const [email, setEmail] = useState(mocked ? "maya.okafor@northfield.edu" : "");
   const [password, setPassword] = useState(mocked ? "correct horse" : "");
+  // In the desktop app Google's page opens in the browser and the sign-in ends here, by the app's `google` event.
+  const [waiting, setWaiting] = useState(false);
+  const [appError, setAppError] = useState(false);
+
+  useEffect(
+    () =>
+      onGoogleOutcome((outcome) => {
+        setWaiting(false);
+        if (!outcome.ok) return setAppError(true);
+        clearQueries();
+        router.replace(landingPath(outcome.user, next));
+      }),
+    [router, next],
+  );
 
   async function signIn(e: FormEvent) {
     e.preventDefault();
@@ -31,6 +48,16 @@ function LoginForm() {
   }
 
   async function withGoogle() {
+    if (isDesktop()) {
+      setAppError(false);
+      try {
+        await startGoogleInApp(email.trim());
+        setWaiting(true);
+      } catch {
+        setAppError(true);
+      }
+      return;
+    }
     const r = await google.run(email.trim());
     if (r) window.location.assign(r.authorization_url);
   }
@@ -45,10 +72,11 @@ function LoginForm() {
           <div role="alert" className="alert alert-danger" style={{ marginBottom: 20 }}>
             <Icon name="info" size={18} style={{ flex: "none", marginTop: 1 }} />
             {/* 403 after the form was sent: the password was right but the address is not verified (ADR-0046). */}
-            <span>{login.error?.status === 403 ? t("login.notVerified") : t("login.failed")}</span>
+            <span>{login.error?.status === 403 ? t("login.notVerified") : login.error?.detail && login.error.status === 0 ? login.error.detail : t("login.failed")}</span>
           </div>
         )}
-        {google.error && (
+        {waiting && <p role="status" className="alert alert-info" style={{ marginBottom: 20 }}>{t("login.googleWaiting")}</p>}
+        {(google.error || appError) && (
           <div role="alert" className="alert alert-danger" style={{ marginBottom: 20 }}>
             <span>{t("login.googleFailed")}</span>
           </div>
@@ -72,7 +100,7 @@ function LoginForm() {
           </button>
         </form>
         <div className={s.or}>{t("login.or")}</div>
-        <button type="button" className="btn btn-outline btn-lg btn-block" disabled={google.pending} onClick={withGoogle}>
+        <button type="button" className="btn btn-outline btn-lg btn-block" disabled={google.pending} onClick={() => void withGoogle()}>
           {t("login.google")}
         </button>
       </div>

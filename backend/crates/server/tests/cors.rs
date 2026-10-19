@@ -85,6 +85,10 @@ async fn a_listed_origin_gets_a_preflight_answer_without_a_session() {
             let headers = list(&response, "access-control-allow-headers");
             assert!(headers.contains(&"authorization".to_owned()), "{headers:?}");
             assert!(headers.contains(&"content-type".to_owned()), "{headers:?}");
+            // ADR-0058 and ADR-0059: a cross-origin client may send a key and a tag, and read the tag back.
+            for name in ["idempotency-key", "if-none-match"] {
+                assert!(headers.contains(&name.to_owned()), "{headers:?}");
+            }
         }
     })
     .await;

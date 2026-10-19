@@ -26,7 +26,8 @@ const LOGO_MAX_BYTES: usize = 5 * 1024 * 1024;
 const LOGO_DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(10);
 /// A raster logo may not be larger than this in either direction (a decompression bomb guard).
 const LOGO_MAX_SIDE: u32 = 4096;
-const MASTER: u32 = 512;
+/// Every icon is scaled from this one. 1024 is what the desktop app's installer icons are made from (ADR-0062).
+const MASTER: u32 = 1024;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LogoKind {
@@ -205,7 +206,8 @@ pub fn generate(settings: &Settings, logo: Option<&Logo>) -> anyhow::Result<File
     if let (Some(logo), Some(name)) = (logo, logo_name) {
         let master = render_master(logo)?;
         files.push((name, logo.bytes.clone()));
-        files.push(("icon-512.png".into(), png(&master)?));
+        files.push(("icon-1024.png".into(), png(&master)?));
+        files.push(("icon-512.png".into(), png(&scaled(&master, 512))?));
         files.push(("icon-192.png".into(), png(&scaled(&master, 192))?));
         files.push((
             "apple-touch-icon.png".into(),

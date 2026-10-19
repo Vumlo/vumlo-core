@@ -1,0 +1,26 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT s.kind AS \"kind!\" FROM identity.sessions s JOIN identity.users u ON u.id = s.user_id\n               WHERE u.email = 'maya@lms.test'",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "kind!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "identity.sessions",
+            "name": "kind"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "e12227964c86fe5c8eb040c9771be871636b3b1277bdd3f59fe4dd3a5dbc238e"
+}

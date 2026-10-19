@@ -16,6 +16,7 @@ import { useT } from "@/lib/i18n";
 import { locale } from "@/lib/i18n/core";
 import type { MessageKey } from "@/lib/i18n/core";
 import s from "./Author.module.css";
+import { itemHref } from "@/lib/routes";
 
 const FULL: Feature[] = ["headings", "text_styles", "links", "lists", "quote", "divider", "table", "code", "math", "mermaid", "video"];
 const TURN: [InsertKind, string, MessageKey][] = [["paragraph", "T", "le.turn.text"], ["h1", "H1", "le.turn.h1"], ["h2", "H2", "le.turn.h2"], ["h3", "H3", "le.turn.h3"], ["quote", "“", "le.turn.quote"], ["bulleted", "•", "le.turn.bulleted"], ["numbered", "1.", "le.turn.numbered"], ["check", "✓", "le.turn.check"]];
@@ -59,7 +60,7 @@ export function LectureEditor({ item, courseId }: { item: Item; courseId: string
   return (
     <div className="container" style={{ paddingTop: 20 }}>
       <AuthorBar courseId={courseId} itemId={item.id} title={title} chip={chip} saved={auto.savedAt} pending={auto.pending} failed={auto.failed}>
-        <Link href={`/courses/${courseId}/items/${item.id}`} className="btn">{t("cm.preview")}</Link>
+        <Link href={itemHref(courseId, item.id)} className="btn">{t("cm.preview")}</Link>
         <button type="button" className="btn btn-primary" disabled={!canPublish || publishItem.pending || publishRevision.pending} onClick={publish}>{isDraft ? t("cm.publish") : t("le.publishChanges")}</button>
       </AuthorBar>
       {!isDraft && chip.tone === "accent" && lastPublished && <p className="muted" style={{ margin: "-4px 2px 16px", fontSize: 14 }}>{t("le.seeOld", { day: dayLong(lastPublished) })}</p>}

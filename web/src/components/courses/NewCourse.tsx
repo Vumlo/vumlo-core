@@ -11,6 +11,7 @@ import { useT } from "@/lib/i18n";
 import { useMe } from "@/lib/session";
 import type { Course } from "@/lib/api/types";
 import s from "./NewCourse.module.css";
+import { courseHref } from "@/lib/routes";
 
 type Start = "empty" | "template";
 
@@ -69,7 +70,7 @@ export function NewCourse() {
     if (code.trim() || description.trim()) await api.patch(`/courses/${course.id}/info`, { code: code.trim(), description: description.trim() }).catch(() => undefined);
     invalidate("/me/");
     invalidate(`/courses/${course.id}`);
-    router.push(`/courses/${course.id}/settings`);
+    router.push(courseHref(course.id, "settings"));
   }
 
   return (

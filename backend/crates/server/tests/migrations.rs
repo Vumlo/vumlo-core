@@ -25,6 +25,7 @@ async fn migrations_create_exactly_the_module_schemas() {
                 "events",
                 "files",
                 "gradebook",
+                "idempotency",
                 "identity",
                 "org",
                 "teaching"

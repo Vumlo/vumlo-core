@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE idempotency.keys SET started_at = now() - interval '10 minutes'",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "b4a83cb0bfcaec94ed39b6e79b496ae4a324ddb668235be7edb4d21400162dfc"
+}

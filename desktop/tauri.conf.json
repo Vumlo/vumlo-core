@@ -1,0 +1,13 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Vumlo",
+  "version": "0.1.0",
+  "identifier": "dev.vumlo.desktop",
+  "build": { "frontendDist": "../web/out", "devUrl": "http://localhost:3000" },
+  "app": {
+    "windows": [{ "label": "main", "title": "Vumlo", "width": 1200, "height": 800, "minWidth": 480, "minHeight": 600 }],
+    "security": { "csp": "default-src 'self'; connect-src 'self' ipc: http://ipc.localhost; img-src 'self' data:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; frame-src https://www.youtube-nocookie.com https://player.vimeo.com; object-src 'none'; base-uri 'none'; form-action 'none'", "devCsp": null }
+  },
+  "plugins": { "deep-link": { "desktop": { "schemes": ["vumlo"] } } },
+  "bundle": { "active": true, "targets": "all", "icon": ["icons/icon.png"] }
+}

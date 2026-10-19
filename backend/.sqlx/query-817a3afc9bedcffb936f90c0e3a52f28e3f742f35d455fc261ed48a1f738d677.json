@@ -1,0 +1,40 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM identity.app_handoffs WHERE code_hash = $1 AND expires_at > now()\n         RETURNING user_id, app_challenge",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "user_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "identity.app_handoffs",
+            "name": "user_id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "app_challenge",
+        "type_info": "Bytea",
+        "origin": {
+          "Table": {
+            "table": "identity.app_handoffs",
+            "name": "app_challenge"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Bytea"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "817a3afc9bedcffb936f90c0e3a52f28e3f742f35d455fc261ed48a1f738d677"
+}

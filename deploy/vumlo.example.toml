@@ -103,6 +103,12 @@ logo = "brand/logo.svg"
 # [modules]
 # some-module = true
 
+# The desktop app (docs/desktop.md). Its links look like vumlo-ucu://course?id=...; the scheme is "vumlo-" and
+# the short name in ASCII letters and digits unless you name one. Two institutions' apps on one computer
+# need different schemes, so name one if your short name has no ASCII letters.
+# [desktop]
+# url_scheme = "vumlo-ucu"
+
 [editor]
 # What the document editor may offer. A configuration can only narrow what the code allows;
 # an unknown profile, feature or provider stops the server at startup.

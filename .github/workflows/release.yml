@@ -1,10 +1,18 @@
 name: Release
 
-# A tag vX.Y.Z publishes the release X.Y.Z: the CI checks, the source archive with its checksum, a
-# proof that the archive builds and runs, and the GitHub Release. See RELEASING.md.
+# The release X.Y.Z is published when a commit with that version reaches main (a merged pull request) and the tag
+# vX.Y.Z does not exist yet: the CI checks, the source archive with its checksum, a proof that the archive builds
+# and runs, and the GitHub Release, which creates the tag on that commit. A tag pushed by hand releases that
+# commit the same way. A push to main whose version is already tagged does nothing. See RELEASING.md.
 on:
   push:
+    branches: [main]
     tags: ["v*"]
+
+# Two merges in a row release one after the other, never at the same time.
+concurrency:
+  group: release
+  cancel-in-progress: false
 
 permissions:
   contents: read
@@ -14,40 +22,61 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.v.outputs.version }}
+      tag: ${{ steps.v.outputs.tag }}
+      release: ${{ steps.v.outputs.release }}
     steps:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - id: v
-        name: The tag is the workspace version, is on main, and has a changelog entry
+        name: Is there a release to make? Its version, tag and changelog entry are right
         run: |
           version=$(sed -n '/^\[workspace.package\]/,/^\[/{s/^version *= *"\(.*\)"/\1/p}' backend/Cargo.toml)
           web=$(sed -n 's/^  "version": "\(.*\)",/\1/p' web/package.json)
           compose=$(sed -n 's/.*VUMLO_VERSION:-\([^}]*\)}.*/\1/p' deploy/compose.yaml | sort -u)
-          if [ "${GITHUB_REF_NAME}" != "v${version}" ]; then
-            echo "::error::the tag is ${GITHUB_REF_NAME}, but the workspace version is ${version}"
-            exit 1
+          desktop=$(sed -n 's/^  "version": "\(.*\)",/\1/p' desktop/package.json)
+          desktop_crate=$(sed -n '/^\[package\]/,/^\[/{s/^version *= *"\(.*\)"/\1/p}' desktop/Cargo.toml)
+          tag="v${version}"
+          if [ "${GITHUB_REF_TYPE}" = tag ]; then
+            # A tag pushed by hand: it must be this version's tag, on a commit that is on main.
+            if [ "${GITHUB_REF_NAME}" != "${tag}" ]; then
+              echo "::error::the tag is ${GITHUB_REF_NAME}, but the workspace version is ${version}"
+              exit 1
+            fi
+            if ! git merge-base --is-ancestor "${GITHUB_SHA}" origin/main; then
+              echo "::error::${GITHUB_REF_NAME} is not on main: release only from main"
+              exit 1
+            fi
+          elif git ls-remote --exit-code --tags origin "refs/tags/${tag}" >/dev/null 2>&1; then
+            # A push to main that is not a new version (the tag exists): nothing to release.
+            echo "${tag} exists: nothing to release"
+            { echo "release=false"; echo "version=${version}"; echo "tag=${tag}"; } >> "$GITHUB_OUTPUT"
+            exit 0
           fi
           if [ "${web}" != "${version}" ] || [ "${compose}" != "${version}" ]; then
             echo "::error::web/package.json (${web}) and deploy/compose.yaml (${compose}) must say ${version}"
             exit 1
           fi
-          if ! git merge-base --is-ancestor "${GITHUB_SHA}" origin/main; then
-            echo "::error::${GITHUB_REF_NAME} is not on main: release only from main"
+          if [ "${desktop}" != "${version}" ] || [ "${desktop_crate}" != "${version}" ]; then
+            echo "::error::desktop/package.json (${desktop}) and desktop/Cargo.toml (${desktop_crate}) must say ${version}"
             exit 1
           fi
           if ! grep -q "^## \[${version}\] - " CHANGELOG.md; then
             echo "::error::CHANGELOG.md has no entry for ${version}"
             exit 1
           fi
+          echo "release=true" >> "$GITHUB_OUTPUT"
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
           echo "version=${version}" >> "$GITHUB_OUTPUT"
 
   gate:
     needs: version
+    if: needs.version.outputs.release == 'true'
     uses: ./.github/workflows/ci.yml
 
   archive:
     needs: [version, gate]
+    if: needs.version.outputs.release == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -61,6 +90,7 @@ jobs:
   # The archive, as a stranger gets it, built from scratch and run: docs/install.md, followed.
   verify:
     needs: [version, archive]
+    if: needs.version.outputs.release == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -72,11 +102,13 @@ jobs:
 
   release:
     needs: [version, verify]
+    if: needs.version.outputs.release == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: write
     env:
       VERSION: ${{ needs.version.outputs.version }}
+      TAG: ${{ needs.version.outputs.tag }}
       GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v7
@@ -92,6 +124,8 @@ jobs:
             exit 1
           fi
           cat notes.md
+      # The release creates the tag on the commit that was checked, when a merge brought the version (the target is
+      # ignored when a tag pushed by hand already exists).
       - run: >
-          gh release create "${GITHUB_REF_NAME}" --verify-tag --title "Vumlo ${VERSION}"
+          gh release create "${TAG}" --target "${GITHUB_SHA}" --title "Vumlo ${VERSION}"
           --notes-file notes.md "dist/vumlo-${VERSION}-source.tar.gz" dist/SHA256SUMS

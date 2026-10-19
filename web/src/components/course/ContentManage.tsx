@@ -19,6 +19,7 @@ import { CourseHeader } from "./CourseHeader";
 import { translate } from "@/lib/i18n/core";
 import { useT } from "@/lib/i18n";
 import s from "./ContentManage.module.css";
+import { editItemHref, itemHref } from "@/lib/routes";
 
 type Sec = ContentModule | ContentSubModule;
 type Dlg =
@@ -100,7 +101,7 @@ export function ContentManage({ courseId }: { courseId: string }) {
     const made = await createItem.run(dlg.sec.id, dlg.type === "lecture"
       ? { kind: "text", title: text }
       : { kind: "assignment", title: text, assignment: { type, max_points: points || "10", config: starterConfig(type, points || "10") } });
-    if (made) { close(); router.push(`/courses/${courseId}/items/${made.id}/edit`); }
+    if (made) { close(); router.push(editItemHref(courseId, made.id)); }
   }
 
   function reorder<T extends { id: string }>(list: T[], from: string, to: string): string[] | null {
@@ -146,7 +147,7 @@ export function ContentManage({ courseId }: { courseId: string }) {
           <div className={s.toolbar}>
             <p>{t("cm.toolbar")}</p>
             {firstPublished
-              ? <Link href={`/courses/${courseId}/items/${firstPublished.id}`} className="btn btn-outline">{t("cm.preview")}</Link>
+              ? <Link href={itemHref(courseId, firstPublished.id)} className="btn btn-outline">{t("cm.preview")}</Link>
               : <button type="button" className="btn btn-outline" disabled>{t("cm.preview")}</button>}
             <button type="button" className="btn btn-primary" onClick={() => open({ kind: "section" })}><Icon name="plus" size={16} strokeWidth={2.2} />{t("cm.addSection")}</button>
           </div>
@@ -182,12 +183,12 @@ export function ContentManage({ courseId }: { courseId: string }) {
                           onDrop={(e) => { e.preventDefault(); e.stopPropagation(); setOver(null); void dropItem(sec, i.id); }}>
                           <span title={t("cm.drag")} className={s.handle} draggable onDragStart={(e) => { e.stopPropagation(); setDrag({ kind: "item", id: i.id, parent: sec.id }); }} onDragEnd={() => { setDrag(null); setOver(null); }}><Icon name="grip" size={16} strokeWidth={3} /></span>
                           <ItemTile kind={k} />
-                          <Link href={`/courses/${courseId}/items/${i.id}`} className={s.itemMain}>
+                          <Link href={itemHref(courseId, i.id)} className={s.itemMain}>
                             <span className={s.itemTitle} data-draft={i.status === "draft"}>{i.title}</span>
                             <span className={s.itemMeta}>{itemMeta(i, m[i.id])}</span>
                           </Link>
                           {status(i.status === "draft", !!m[i.id]?.edited)}
-                          <Link href={`/courses/${courseId}/items/${i.id}/edit`} className="btn btn-quiet" style={{ minHeight: 36 }}>{t("common.edit")}</Link>
+                          <Link href={editItemHref(courseId, i.id)} className="btn btn-quiet" style={{ minHeight: 36 }}>{t("common.edit")}</Link>
                           <span style={{ position: "relative" }}>
                             <button type="button" className="icon-btn" aria-label={t("people.moreFor", { name: i.title })} aria-haspopup="menu" aria-expanded={menu === i.id} onClick={() => setMenu(menu === i.id ? null : i.id)}><Icon name="more" size={18} strokeWidth={3.4} /></button>
                             {menu === i.id && (

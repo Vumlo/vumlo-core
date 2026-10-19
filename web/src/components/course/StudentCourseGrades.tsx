@@ -14,6 +14,7 @@ import { CourseOutline } from "./CourseOutline";
 import { useT } from "@/lib/i18n";
 import c from "./Course.module.css";
 import s from "@/components/Grades.module.css";
+import { itemHref } from "@/lib/routes";
 
 export function StudentCourseGrades({ courseId }: { courseId: string }) {
   const t = useT();
@@ -66,7 +67,7 @@ export function StudentCourseGrades({ courseId }: { courseId: string }) {
                       const a = i.assignment!;
                       return (
                         <div key={i.id} className={s.sectionRow}>
-                          <Link href={`/courses/${courseId}/items/${i.id}`} className={s.link}>
+                          <Link href={itemHref(courseId, i.id)} className={s.link}>
                             <span className={s.cellMain}>
                               <ItemTile kind="assignment" />
                               <span style={{ minWidth: 0 }}>

@@ -5,7 +5,7 @@ use std::time::Duration;
 use std::net::SocketAddr;
 
 use axum::http::{HeaderValue, Method, StatusCode, header};
-use axum::middleware::map_response;
+use axum::middleware::{self, map_response};
 use axum::routing::get;
 use axum::{Json, Router};
 use sqlx::PgPool;
@@ -42,7 +42,7 @@ pub use db::{MIGRATOR, MigrationCheckError, ensure_migrated};
 const DB_ACQUIRE_TIMEOUT: Duration = Duration::from_secs(5);
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 /// Room for a 1 MiB document (ADR-0025) and the rest of the request around it.
-const MAX_BODY_BYTES: usize = 2 * 1024 * 1024;
+pub(crate) const MAX_BODY_BYTES: usize = 2 * 1024 * 1024;
 
 #[derive(Clone)]
 pub struct AppState {
@@ -170,6 +170,7 @@ pub fn router(state: AppState) -> Result<Router, SetupError> {
     let (router, openapi) = mount_modules(&state, router, openapi);
     let spec = openapi.clone();
     let config = state.config.clone();
+    let idempotency = state.clone();
     let router = router
         .route(
             "/api/v1/openapi.json",
@@ -178,6 +179,12 @@ pub fn router(state: AppState) -> Result<Router, SetupError> {
         .merge(Scalar::with_url("/api/v1/docs", openapi))
         .fallback(|| async { ApiError::NotFound })
         .with_state(state)
+        // Innermost, so every handler sits behind it and every outer layer still sees its answers (ADR-0058).
+        .layer(middleware::from_fn_with_state(
+            idempotency,
+            crate::idempotency::layer,
+        ))
+        .layer(middleware::from_fn(crate::conditional::layer))
         .layer(RequestBodyLimitLayer::new(MAX_BODY_BYTES))
         .layer(TimeoutLayer::with_status_code(
             StatusCode::REQUEST_TIMEOUT,
@@ -255,8 +262,17 @@ fn cors(router: Router, allowed_origins: &[String]) -> Router {
                 Method::PATCH,
                 Method::DELETE,
             ])
-            .allow_headers([header::AUTHORIZATION, header::CONTENT_TYPE])
-            .expose_headers([header::RETRY_AFTER])
+            .allow_headers([
+                header::AUTHORIZATION,
+                header::CONTENT_TYPE,
+                header::IF_NONE_MATCH,
+                crate::idempotency::KEY_HEADER,
+            ])
+            .expose_headers([
+                header::RETRY_AFTER,
+                header::ETAG,
+                crate::idempotency::REPLAYED_HEADER,
+            ])
             .max_age(PREFLIGHT_MAX_AGE),
     )
 }

@@ -2,6 +2,7 @@
 
 import { useAdminInstitution } from "@/lib/api/hooks/admin";
 import { useT } from "@/lib/i18n";
+import { AdminAppDownloads } from "./AdminAppDownloads";
 import s from "./Admin.module.css";
 
 export function AdminInstitution() {
@@ -24,6 +25,7 @@ export function AdminInstitution() {
           <p style={{ fontSize: 14, fontWeight: 500, margin: "16px 0 8px" }}>{t("ai.preview")}</p>
           <div className={s.preview}><span aria-hidden="true" className={s.logo} style={{ background: "var(--accent)" }}>{i.name.charAt(0)}</span><span style={{ fontWeight: 600 }}>{i.name}</span><span className="muted" style={{ marginLeft: "auto", fontSize: 14 }}>{t("nav.home")}</span></div>
         </section>
+        <AdminAppDownloads current={i.app_downloads} />
         <section aria-labelledby="lg-h" className={`card ${s.section}`}>
           <h2 id="lg-h" style={{ fontSize: 18, fontWeight: 600, marginBottom: 14 }}>{t("ai.langTime")}</h2>
           <dl className={s.dl} style={{ gridTemplateColumns: "180px 1fr", fontSize: 15 }}>

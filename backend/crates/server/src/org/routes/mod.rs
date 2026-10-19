@@ -21,6 +21,7 @@ pub fn router() -> OpenApiRouter<AppState> {
     OpenApiRouter::new()
         .routes(routes!(institution::get_institution))
         .routes(routes!(institution::get_admin_institution))
+        .routes(routes!(institution::set_app_downloads))
         .routes(routes!(reports::get_group_overview))
         .routes(routes!(reports::get_term_stats))
         .routes(routes!(terms::create_term, terms::list_terms))
@@ -67,6 +68,9 @@ impl From<OrgError> for ApiError {
             }
             OrgError::Invalid(ModelError::StartsOnRange) => {
                 Self::invalid_field("starts_on", error.to_string())
+            }
+            OrgError::Invalid(ModelError::DownloadUrl | ModelError::DownloadDuplicate) => {
+                Self::invalid_field("downloads", error.to_string())
             }
             OrgError::TermNotFound
             | OrgError::GroupNotFound

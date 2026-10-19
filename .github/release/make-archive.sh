@@ -21,9 +21,9 @@ stage="$work/$name"
 allow=(
     backend/Cargo.toml backend/Cargo.lock backend/rust-toolchain.toml
     backend/migrations backend/.sqlx backend/crates
-    web deploy brand
+    web deploy brand desktop
     vumlo .dockerignore
-    docs/install.md CHANGELOG.md README.md
+    docs/install.md docs/desktop.md CHANGELOG.md README.md
 )
 # A licence file, once the project has one.
 while IFS= read -r licence; do allow+=("$licence"); done < <(git ls-files 'LICENSE*' 'COPYING*')
@@ -39,6 +39,9 @@ rm -rf \
 # The unit tests of a source file live in a file of their own (`mod tests;` behind #[cfg(test)]).
 find "$stage/backend/crates" -type f \( -name tests.rs -o -name content_tests.rs -o -name test_support.rs \) -delete
 find "$stage/backend/crates" -type d -empty -delete
+# The same for the desktop app, and its Node test.
+find "$stage/desktop" -type f \( -name tests.rs -o -name '*.test.mjs' \) -delete
+find "$stage/desktop" -type d -empty -delete
 
 # --- release manifests ----------------------------------------------------------------------------
 # The test-only module `dummy` is a workspace member, an optional dependency and a feature of
@@ -57,6 +60,9 @@ if diff <(git show HEAD:backend/Cargo.lock) "$stage/backend/Cargo.lock" | grep -
     echo "make-archive: Cargo.lock gained lines; only removals are expected" >&2
     exit 1
 fi
+
+# The desktop app builds from its own lockfile (an institution builds it, ADR-0056): it must be complete.
+(cd "$stage/desktop" && cargo metadata --format-version 1 --locked >/dev/null)
 
 # The configuration to copy: the same text `vumlo-cli init` writes.
 cp "$stage/deploy/vumlo.example.toml" "$stage/vumlo.toml.example"

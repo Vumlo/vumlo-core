@@ -1,7 +1,8 @@
 import type { Page } from "@playwright/test";
+import { courseHref, editItemHref, itemHref } from "../src/lib/routes";
 
 /** Pages anyone can open without signing in. */
-export const publicRoutes = ["/login", "/register", "/forgot-password", "/reset-password", "/verify-email"];
+export const publicRoutes = ["/login", "/register", "/forgot-password", "/reset-password", "/verify-email", "/download"];
 
 export type RoleName = "student" | "teacher" | "admin";
 
@@ -31,14 +32,13 @@ export async function courseRoutes(page: Page, role: RoleName): Promise<string[]
   const courses = await api<{ items: { id: string }[] }>(page, "/me/courses?limit=100");
   const routes: string[] = [];
   for (const { id } of courses.items) {
-    routes.push(`/courses/${id}`, `/courses/${id}/people`);
-    if (role !== "student") routes.push(`/courses/${id}/grades`, `/courses/${id}/settings`);
-    else routes.push(`/courses/${id}/grades`);
+    routes.push(courseHref(id), courseHref(id, "people"), courseHref(id, "grades"));
+    if (role !== "student") routes.push(courseHref(id, "settings"));
     const tree = await api<Tree>(page, `/courses/${id}/content`);
     for (const m of tree.modules) {
       for (const it of [...m.items, ...m.submodules.flatMap((s) => s.items)]) {
-        routes.push(`/courses/${id}/items/${it.id}`);
-        if (role !== "student") routes.push(`/courses/${id}/items/${it.id}/edit`);
+        routes.push(itemHref(id, it.id));
+        if (role !== "student") routes.push(editItemHref(id, it.id));
       }
     }
   }

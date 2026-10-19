@@ -1,0 +1,38 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT platform, url FROM org.app_downloads\n         ORDER BY array_position(\n             ARRAY['windows', 'macos_arm', 'macos_intel', 'linux_deb', 'linux_appimage'], platform)",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "platform",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "org.app_downloads",
+            "name": "platform"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "url",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "org.app_downloads",
+            "name": "url"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "97f9e0c83a2261b791db1a4eb16fde5f46d8a2c20c57af121e5923d4447ddb90"
+}

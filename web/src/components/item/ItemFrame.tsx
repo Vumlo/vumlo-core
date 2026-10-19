@@ -7,6 +7,7 @@ import { useContentTree, useCourse, useCourseInfo, useItemMeta } from "@/lib/api
 import { findItem } from "@/lib/course";
 import { useT } from "@/lib/i18n";
 import s from "./Item.module.css";
+import { courseHref, editItemHref } from "@/lib/routes";
 
 /** Outline on the left, the item on the right. `focus` hides the outline (focus mode of the answer editor). */
 export function ItemFrame({ courseId, itemId, children, focus = false }: { courseId: string; itemId: string; children: (ctx: { crumbs: ReactNode }) => ReactNode; focus?: boolean }) {
@@ -18,9 +19,9 @@ export function ItemFrame({ courseId, itemId, children, focus = false }: { cours
   const found = tree.data ? findItem(tree.data, itemId) : undefined;
   const crumbs = (
     <nav aria-label={t("common.breadcrumb")} className="crumbs">
-      <Link href={`/courses/${courseId}`}>{info.data?.code ?? t("search.kind.course")}</Link>
+      <Link href={courseHref(courseId)}>{info.data?.code ?? t("search.kind.course")}</Link>
       <span aria-hidden="true" style={{ padding: "0 6px" }}>/</span>
-      <Link href={`/courses/${courseId}#sec-${found?.module.id ?? ""}`}>{found?.module.title ?? "…"}</Link>
+      <Link href={`${courseHref(courseId)}#sec-${found?.module.id ?? ""}`}>{found?.module.title ?? "…"}</Link>
     </nav>
   );
   return (
@@ -38,7 +39,7 @@ export function PreviewBanner({ courseId, itemId }: { courseId: string; itemId: 
   return (
     <div role="status" className={`alert alert-info ${s.preview}`}>
       <span style={{ flex: "1 1 auto" }}>{t("preview.banner")}</span>
-      <Link href={`/courses/${courseId}/items/${itemId}/edit`} className="btn">{t("common.edit")}</Link>
+      <Link href={editItemHref(courseId, itemId)} className="btn">{t("common.edit")}</Link>
     </div>
   );
 }

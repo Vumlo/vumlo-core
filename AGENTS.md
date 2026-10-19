@@ -117,7 +117,7 @@ behind a Cargo feature, and `server` and `vumlo-cli` name it in exactly one plac
 - Errors are RFC 9457 Problem Details, produced by one `IntoResponse` impl.
 - All error responses, including framework-generated ones (405/408/413, extractor rejections), are Problem Details.
 - Validation failures are `422` with `errors: [{field, message}]` (ADR-0018).
-- Lists use cursor pagination: `?cursor=&limit=` → `{items, next_cursor}` (ADR-0018). `Idempotency-Key` is deferred (ADR-0012, ADR-0039): no endpoint reads it, and none gets ad-hoc handling; it needs its own task and table design.
+- Lists use cursor pagination: `?cursor=&limit=` → `{items, next_cursor}` (ADR-0018). `Idempotency-Key` on `POST` and `ETag` on `GET` are layers (ADR-0058, ADR-0059): a handler does nothing for them and none gets ad-hoc handling.
 - A body that cannot be read is `422`, a wrong media type `415`, a database that is busy or down `503` with `Retry-After` (ADR-0039). A database error that is not about availability is a logged `500`.
 
 ## 10. Errors and panics
@@ -167,6 +167,9 @@ All of these pass, run from `backend/`:
 and the same with `--features dummy` (cargo test, clippy and the offline check); `cargo sqlx prepare`
 runs once with `--all-features`. From `web/`, after `vumlo-cli brand apply`: `npm run typecheck` and
 `npm run build`.
+From `desktop/`: `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test` and `npm test`
+(its Linux libraries are listed in `docs/desktop.md`). It has its own Cargo workspace; no crate there is part of
+ADR-0014, its dependencies are those of ADR-0056, ADR-0061 and ADR-0062.
 
 ## 15. Git
 

@@ -1,0 +1,200 @@
+name: Desktop app
+
+# Builds the installers of your institution's desktop app for Linux, Windows and macOS (docs/desktop.md).
+#
+# Copy this file to .github/workflows/desktop-release.yml of the repository that holds your vumlo.toml, and set the
+# two paths below. A tag `desktop-v1.2.3` builds the installers and puts them in a draft GitHub Release for you to
+# check and publish; "Run workflow" builds them without a release. Without any secrets the installers are
+# unsigned: that works, and docs/desktop.md says what people will see when they open one.
+on:
+  push:
+    tags: ["desktop-v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  # Where vumlo-core is: "vendor/vumlo-core" in a repository that vendors a release (as vumlo-ucu does), "." in a
+  # fork of vumlo-core itself.
+  CORE_DIR: vendor/vumlo-core
+  # Your configuration, from the root of the repository. Its logo and `.vumlo/generated` are read from beside it.
+  CONFIG: vumlo.toml
+
+jobs:
+  # The branding every installer takes its names, scheme, server address and icon from. If `.vumlo/generated` is
+  # committed beside the configuration (as vumlo-ucu does for its web app) it is used as it is; otherwise it is made
+  # here by `vumlo-cli brand apply`.
+  branding:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ${{ env.CORE_DIR }}/backend
+      - name: The generated directory
+        env:
+          SQLX_OFFLINE: "true"
+          # `brand apply` loads the whole configuration, which wants the database address; it never connects.
+          DATABASE_URL: postgres://ci:ci@localhost:5432/ci
+        run: |
+          generated="$(dirname "$CONFIG")/.vumlo/generated"
+          if [ -f "$generated/client-config.json" ]; then
+            echo "using the committed $generated"
+          else
+            (cd "$CORE_DIR/backend" && cargo run -q -p vumlo-cli -- --config "$GITHUB_WORKSPACE/$CONFIG" brand apply)
+          fi
+          mkdir -p branding && cp -r "$generated/." branding/
+          cat branding/client-config.json
+      - uses: actions/upload-artifact@v7
+        with:
+          name: branding
+          path: branding
+          if-no-files-found: error
+
+  installers:
+    needs: branding
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: linux, os: ubuntu-22.04, bundles: "deb,appimage" }
+          - { name: windows, os: windows-latest, bundles: "nsis" }
+          - { name: macos-arm, os: macos-latest, bundles: "dmg", target: aarch64-apple-darwin }
+          - { name: macos-intel, os: macos-latest, bundles: "dmg", target: x86_64-apple-darwin }
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ${{ env.CORE_DIR }}/desktop
+      - name: The libraries Tauri links on Linux
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libgtk-3-dev patchelf
+      - uses: actions/download-artifact@v8
+        with:
+          name: branding
+          path: branding
+
+      # Signing is for whoever has the certificates. Each block runs only when its secrets exist, and says so.
+      - name: Sign for macOS, if there is a certificate
+        if: runner.os == 'macOS'
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          mkdir -p out
+          if [ -n "$APPLE_CERTIFICATE" ] && [ -n "$APPLE_CERTIFICATE_PASSWORD" ] && [ -n "$APPLE_SIGNING_IDENTITY" ]; then
+            # `tauri build` imports the certificate into a temporary keychain and signs with it; with an Apple ID,
+            # an app-specific password and a team it also notarizes.
+            {
+              echo "APPLE_CERTIFICATE=$APPLE_CERTIFICATE"
+              echo "APPLE_CERTIFICATE_PASSWORD=$APPLE_CERTIFICATE_PASSWORD"
+              echo "APPLE_SIGNING_IDENTITY=$APPLE_SIGNING_IDENTITY"
+              if [ -n "$APPLE_ID" ] && [ -n "$APPLE_PASSWORD" ] && [ -n "$APPLE_TEAM_ID" ]; then
+                echo "APPLE_ID=$APPLE_ID"; echo "APPLE_PASSWORD=$APPLE_PASSWORD"; echo "APPLE_TEAM_ID=$APPLE_TEAM_ID"
+                echo "macos: signed and notarized" > out/signing.txt
+              else
+                echo "macos: signed, not notarized" > out/signing.txt
+              fi
+            } >> "$GITHUB_ENV"
+          else
+            echo "macos: unsigned" > out/signing.txt
+          fi
+          cat out/signing.txt
+      - name: Sign for Windows, if there is a certificate
+        if: runner.os == 'Windows'
+        env:
+          WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
+          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+        run: |
+          mkdir -p out
+          if [ -n "$WINDOWS_CERTIFICATE" ] && [ -n "$WINDOWS_CERTIFICATE_PASSWORD" ]; then
+            # A base64 .pfx; it goes into the user's certificate store and the build signs with its thumbprint.
+            printf '%s' "$WINDOWS_CERTIFICATE" | base64 -d > "$RUNNER_TEMP/certificate.pfx"
+            thumbprint="$(powershell -NoProfile -Command "\$p = ConvertTo-SecureString -String '$WINDOWS_CERTIFICATE_PASSWORD' -AsPlainText -Force; (Import-PfxCertificate -FilePath '$RUNNER_TEMP/certificate.pfx' -CertStoreLocation Cert:\\CurrentUser\\My -Password \$p).Thumbprint" | tr -d '\r')"
+            rm -f "$RUNNER_TEMP/certificate.pfx"
+            echo "WINDOWS_THUMBPRINT=$thumbprint" >> "$GITHUB_ENV"
+            echo "windows: signed" > out/signing.txt
+          else
+            echo "windows: unsigned" > out/signing.txt
+          fi
+          cat out/signing.txt
+
+      - run: npm ci
+        working-directory: ${{ env.CORE_DIR }}/web
+      - run: npm ci
+        working-directory: ${{ env.CORE_DIR }}/desktop
+      - name: Build
+        run: |
+          args=(--bundles "${{ matrix.bundles }}")
+          if [ -n "${{ matrix.target }}" ]; then args+=(--target "${{ matrix.target }}"); fi
+          if [ -n "${WINDOWS_THUMBPRINT:-}" ]; then
+            args+=(--config "{\"bundle\":{\"windows\":{\"certificateThumbprint\":\"$WINDOWS_THUMBPRINT\",\"digestAlgorithm\":\"sha256\",\"timestampUrl\":\"http://timestamp.digicert.com\"}}}")
+          fi
+          node "$CORE_DIR/desktop/scripts/build.mjs" --generated branding -- "${args[@]}"
+      - name: Collect the installers
+        run: |
+          mkdir -p out
+          [ -f out/signing.txt ] || echo "linux: not signed" > out/signing.txt
+          find "$CORE_DIR/desktop/target" -path '*/release/bundle/*' -type f \
+            \( -name '*.deb' -o -name '*.AppImage' -o -name '*-setup.exe' -o -name '*.msi' -o -name '*.dmg' \) \
+            -exec cp {} out/ \;
+          ls -la out
+          [ "$(ls out | grep -vc '^signing.txt$')" -gt 0 ] || { echo "no installer was built" >&2; exit 1; }
+      - uses: actions/upload-artifact@v7
+        with:
+          name: installers-${{ matrix.name }}
+          path: out
+          if-no-files-found: error
+
+  # A draft release with every installer and the checksums. Nothing is published until you publish it.
+  release:
+    if: startsWith(github.ref, 'refs/tags/desktop-v')
+    needs: installers
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: installers-*
+          path: installers
+          merge-multiple: false
+      - name: The draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          mkdir -p assets
+          for dir in installers/*/; do
+            suffix="$(basename "$dir" | sed 's/^installers-//')"
+            cp "$dir"signing.txt "assets/signing-$suffix.txt" 2>/dev/null || true
+            find "$dir" -type f ! -name signing.txt -exec cp {} assets/ \;
+          done
+          (cd assets && sha256sum $(ls | grep -v '^signing-') > SHA256SUMS)
+          {
+            echo "Installers of the desktop app. Check them, then publish."
+            echo
+            echo "Signing of this build:"
+            cat assets/signing-*.txt | sed 's/^/- /'
+            echo
+            echo "An unsigned installer is not damaged: Windows and macOS warn before they open it. See docs/desktop.md."
+          } > notes.md
+          gh release create "$GITHUB_REF_NAME" assets/* --draft --title "$GITHUB_REF_NAME" --notes-file notes.md

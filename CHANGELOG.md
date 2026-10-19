@@ -10,6 +10,48 @@ must do, in order, besides getting the new release. See [RELEASING.md](RELEASING
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-20
+
+The desktop app, and the two API conventions it needs.
+
+### Upgrade notes
+
+- `config_version` is still **1**.
+- The newest core migration is `0031` (`idempotency` schema; Google sign-in for apps; download links of the desktop app). `vumlo-cli db migrate`
+  applies it; take a backup first, as always.
+- **The addresses of the web app changed** (ADR-0057). A course is `/course?id=<id>` and an item
+  `/course/item?id=<id>&item=<id>` (was `/courses/<id>/items/<id>`); `/courses` and `/courses/new` are as they were.
+  Old bookmarks show "not found"; nothing is redirected.
+- Run `vumlo-cli brand apply` again before you build the web app: `client-config.json` has a new `desktop` part
+  (the scheme of the desktop app's links) and the generated directory a 1024-pixel `icon-1024.png`.
+- New optional section `[desktop]` with `url_scheme`. Nothing to do unless you build the desktop app.
+- Cross-origin frontends (ADR-0041) may now send `Idempotency-Key` and `If-None-Match`, and read `ETag`.
+
+### Added
+
+- **A desktop app** (ADR-0056, ADR-0060, ADR-0061, ADR-0062, ADR-0063; `docs/desktop.md`): Tauri 2 for Linux,
+  Windows and macOS, built by each institution from its own `vumlo.toml` (`desktop/`). It reads courses,
+  materials, deadlines and grades without a connection, keeps a student's drafts and submits in a send queue that
+  the server always has the last word on, stays in the tray, announces deadlines, opens `vumlo-<abbr>://` links,
+  keeps the session in the operating system's keychain and signs in with Google through the browser.
+  `desktop/release/desktop-release.yml` builds and (with certificates) signs the installers.
+- `Idempotency-Key` on `POST` (ADR-0058) and `ETag` / `If-None-Match` on `GET` (ADR-0059), for every client.
+- `POST /auth/app/exchange` and an optional `app_challenge` on `POST /auth/google/start` (ADR-0062).
+- **Download links of the desktop app** (ADR-0064): an administrator pastes the installers' addresses on the
+  Institution page (`PUT /admin/institution/app-downloads`); `GET /institution` lists them. With at least one, the
+  home page shows a notice with a button for the visitor's system, there is a public page `/download`, and the account
+  menu has an entry. No links, none of it.
+
+### Changed
+
+- **A teacher can publish a course** from the course page: a draft course shows a notice ("Students cannot see it yet,
+  even those you have added") with a "Publish course" button, and a Draft badge by the title. The endpoint existed
+  since 0.1.0, but no screen used it, so a new course could not be shown to students from the web app.
+- The web app builds in two modes: the server build as before, and a static export for the desktop
+  (`npm run build:desktop`). Ids are in the query string in both.
+- A student's pending draft is sent when they leave the page (it used to be dropped).
+- `vumlo-cli brand apply` makes every icon from a 1024-pixel master.
+
 ## [0.1.0] - 2026-10-19
 
 The first release: a complete core for one school or university, and the tool to install it.
@@ -74,5 +116,6 @@ There is nothing to upgrade from; follow [docs/install.md](docs/install.md).
 - Any optional module, and an end-user CLI (ADR-0055).
 - Published container images: the images are built on your server from the archive.
 
-[Unreleased]: https://github.com/Vumlo/vumlo-core/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/Vumlo/vumlo-core/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/Vumlo/vumlo-core/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/Vumlo/vumlo-core/releases/tag/v0.1.0

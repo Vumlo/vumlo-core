@@ -14,6 +14,7 @@ import { validScore } from "@/lib/points";
 import { CourseHeader } from "./CourseHeader";
 import { useT } from "@/lib/i18n";
 import s from "./Gradebook.module.css";
+import { itemHref } from "@/lib/routes";
 
 /** One recorded change as a line: the server sends the action and the values, the screen words them. */
 function historyLine(h: GradeHistoryEntry, t: ReturnType<typeof useT>): string {
@@ -187,7 +188,7 @@ export function Gradebook({ courseId }: { courseId: string }) {
                   const n = note(c);
                   return (
                     <div key={c.assignment_id} role="columnheader" className={s.col}>
-                      <Link href={`/courses/${courseId}/items/${c.assignment_id}`}>{c.title}</Link>
+                      <Link href={itemHref(courseId, c.assignment_id)}>{c.title}</Link>
                       <span className={s.colMeta}>{t("gb.colOut", { max: c.max_points })}</span>
                       <span className={s.colNote} style={{ color: n.tone === "accent" ? "var(--accent-fg)" : undefined }}>{n.text}</span>
                     </div>

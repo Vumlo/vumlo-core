@@ -1,5 +1,6 @@
 use api_types::{
-    GoogleCallbackRequest, GoogleStartRequest, GoogleStartResponse, LoginResponse, ProblemDetails,
+    AppExchangeRequest, AppLoginResponse, GoogleCallbackRequest, GoogleCallbackResponse,
+    GoogleHandoffResponse, GoogleStartRequest, GoogleStartResponse, ProblemDetails,
 };
 use axum::Json;
 use axum::extract::State;
@@ -29,7 +30,8 @@ fn binding_cookie(value: &str, max_age_secs: u64, secure: bool) -> Result<Header
 }
 
 /// Starts sign-in with Google: answers the URL to send the browser to and sets a cookie that ties
-/// the attempt to this browser. Off (`404`) without `[auth.google]`.
+/// the attempt to this browser. A native app sends an `app_challenge` instead and gets no cookie: its
+/// attempt is tied to the secret the app holds (ADR-0062). Off (`404`) without `[auth.google]`.
 #[utoipa::path(
     post,
     path = "/auth/google/start",
@@ -38,6 +40,8 @@ fn binding_cookie(value: &str, max_age_secs: u64, secure: bool) -> Result<Header
     responses(
         (status = 200, description = "Where to send the browser", body = GoogleStartResponse),
         (status = 404, description = "Sign-in with Google is not configured", body = ProblemDetails,
+            content_type = "application/problem+json"),
+        (status = 422, description = "The app_challenge is not 64 lowercase hex characters", body = ProblemDetails,
             content_type = "application/problem+json"),
         (status = 429, description = "Too many requests", body = ProblemDetails,
             content_type = "application/problem+json"),
@@ -55,8 +59,16 @@ pub async fn start(
         .await
         .map_err(IdentityError::from)?;
     let mut tx = state.db.begin().await.map_err(IdentityError::from)?;
-    let binding = service::start_google_sign_in(&mut tx, &begin).await?;
+    let binding =
+        service::start_google_sign_in(&mut tx, &begin, request.app_challenge.as_deref()).await?;
     tx.commit().await.map_err(IdentityError::from)?;
+    let body = Json(GoogleStartResponse {
+        authorization_url: begin.authorization_url,
+    });
+    let Some(binding) = binding else {
+        // An app's attempt: nothing is set in a browser that never saw the request.
+        return Ok((StatusCode::OK, [no_store()], body).into_response());
+    };
     let cookie = binding_cookie(
         binding.expose(),
         BINDING_MAX_AGE_SECS,
@@ -65,15 +77,15 @@ pub async fn start(
     Ok((
         StatusCode::OK,
         [(header::SET_COOKIE, cookie), no_store()],
-        Json(GoogleStartResponse {
-            authorization_url: begin.authorization_url,
-        }),
+        body,
     )
         .into_response())
 }
 
 /// Finishes sign-in with Google: checks the state against the browser's cookie, exchanges the
 /// code, verifies the ID token and opens a web session, like a password login with `client: web`.
+/// For an attempt a native app started there is no cookie to check and no session is opened: the
+/// answer is a handoff code, which the page gives to the app by a link (ADR-0062).
 ///
 /// The Google account needs a verified email in one of `auth.allowed_domains`. A first sign-in
 /// creates a `student`; an existing account with that address is linked.
@@ -83,7 +95,8 @@ pub async fn start(
     tag = "auth",
     request_body = GoogleCallbackRequest,
     responses(
-        (status = 200, description = "Signed in; the session cookie is set", body = LoginResponse),
+        (status = 200, description = "Signed in; the session cookie is set. For an app's attempt: the \
+            handoff, and no session", body = GoogleCallbackResponse),
         (status = 401, description = "The attempt is unknown, used, expired or from another \
             browser, or Google did not accept it", body = ProblemDetails,
             content_type = "application/problem+json"),
@@ -123,6 +136,18 @@ pub async fn callback(
     let mut tx = state.db.begin().await.map_err(IdentityError::from)?;
     let user =
         service::sign_in_with_google(&mut tx, &profile, &state.config.auth.allowed_domains).await?;
+    if let Some(challenge) = attempt.app_challenge {
+        let handoff = service::create_app_handoff(&mut tx, &user, &challenge).await?;
+        tx.commit().await.map_err(IdentityError::from)?;
+        return Ok((
+            StatusCode::OK,
+            [no_store()],
+            Json(GoogleCallbackResponse::Handoff(GoogleHandoffResponse {
+                handoff,
+            })),
+        )
+            .into_response());
+    }
     let NewSession { token, .. } =
         service::create_session_for(&mut tx, &user, SessionKind::Web).await?;
     tx.commit().await.map_err(IdentityError::from)?;
@@ -134,7 +159,51 @@ pub async fn callback(
         StatusCode::OK,
         AppendHeaders([(header::SET_COOKIE, session), (header::SET_COOKIE, forget)]),
         [no_store()],
-        Json(LoginResponse::Web(api_user(user))),
+        Json(GoogleCallbackResponse::Web(api_user(user))),
+    )
+        .into_response())
+}
+
+/// The end of a native app's sign-in with Google (ADR-0062): trades the handoff code and the secret behind
+/// the `app_challenge` of `start` for an app session, as a login with `client: app` does. A code is good once,
+/// for a minute; one that is wrong, used, expired or paired with the wrong secret is the same `401`.
+#[utoipa::path(
+    post,
+    path = "/auth/app/exchange",
+    tag = "auth",
+    request_body = AppExchangeRequest,
+    responses(
+        (status = 200, description = "Signed in; the token is for Authorization: Bearer", body = AppLoginResponse),
+        (status = 401, description = "The code is unknown, used, expired or not for this secret", body = ProblemDetails,
+            content_type = "application/problem+json"),
+        (status = 403, description = "The account is disabled", body = ProblemDetails,
+            content_type = "application/problem+json"),
+        (status = 429, description = "Too many requests", body = ProblemDetails,
+            content_type = "application/problem+json"),
+    )
+)]
+pub async fn exchange(
+    State(state): State<AppState>,
+    ValidJson(request): ValidJson<AppExchangeRequest>,
+) -> Result<Response, ApiError> {
+    // The code is used up in this transaction, and the answer to a wrong secret is committed with it.
+    let mut tx = state.db.begin().await.map_err(IdentityError::from)?;
+    let result = service::exchange_app_handoff(&mut tx, &request.code, &request.verifier).await;
+    tx.commit().await.map_err(IdentityError::from)?;
+    let (
+        user,
+        NewSession {
+            token, expires_at, ..
+        },
+    ) = result?;
+    Ok((
+        StatusCode::OK,
+        [no_store()],
+        Json(AppLoginResponse {
+            token: token.expose().to_owned(),
+            expires_at,
+            user: api_user(user),
+        }),
     )
         .into_response())
 }

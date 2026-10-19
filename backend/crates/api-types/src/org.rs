@@ -33,6 +33,34 @@ pub enum InstitutionMode {
     University,
 }
 
+/// A kind of installer of the desktop app (ADR-0064): the systems of ADR-0063's installers.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum AppPlatform {
+    Windows,
+    MacosArm,
+    MacosIntel,
+    LinuxDeb,
+    LinuxAppimage,
+}
+
+/// Where one installer of the institution's desktop app can be downloaded.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct AppDownload {
+    pub platform: AppPlatform,
+    /// An `https` address.
+    pub url: String,
+}
+
+/// The whole set of download links: what is not in the list is removed. An empty list switches the
+/// download hint and page off.
+#[derive(Debug, Clone, Serialize, Deserialize, Validate, ToSchema)]
+pub struct SetAppDownloadsRequest {
+    /// At most one link per platform, each at most 2048 characters of an `https` address.
+    #[garde(length(max = 5))]
+    pub downloads: Vec<AppDownload>,
+}
+
 /// The public profile of the institution: what a page needs before anyone signs in (ADR-0044).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct Institution {
@@ -43,6 +71,9 @@ pub struct Institution {
     /// An IANA zone name, e.g. `Europe/Kyiv`.
     pub time_zone: String,
     pub grading_scale: GradingScale,
+    /// The links to the desktop app's installers, in the order platforms are listed above. Empty: the
+    /// institution has no app to offer (ADR-0064).
+    pub app_downloads: Vec<AppDownload>,
 }
 
 /// What an admin sees: the public profile and the settings that are not public. Read-only; they

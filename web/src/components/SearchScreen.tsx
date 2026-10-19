@@ -11,6 +11,7 @@ import { dueLabel } from "@/lib/format";
 import { useT } from "@/lib/i18n";
 import { useMe } from "@/lib/session";
 import s from "./Search.module.css";
+import { courseHref, editItemHref, itemHref } from "@/lib/routes";
 
 type Filter = "all" | SearchHit["kind"];
 const FILTERS: Filter[] = ["all", "course", "lecture", "assignment"];
@@ -29,7 +30,7 @@ function Marked({ text, q }: { text: string; q: string }) {
 }
 
 function href(h: SearchHit, staff: boolean) {
-  return h.kind === "course" ? `/courses/${h.id}` : `/courses/${h.course_id}/items/${h.id}${staff && h.status === "draft" ? "/edit" : ""}`;
+  return h.kind === "course" ? courseHref(h.id) : (staff && h.status === "draft" ? editItemHref : itemHref)(h.course_id, h.id);
 }
 
 export function SearchScreen() {

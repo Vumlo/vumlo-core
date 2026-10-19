@@ -6,7 +6,7 @@
     "license": {
       "name": ""
     },
-    "version": "0.1.0"
+    "version": "0.2.0"
   },
   "paths": {
     "/api/v1/admin/audit": {
@@ -298,6 +298,78 @@
           },
           "403": {
             "description": "Not an admin",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          },
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/admin/institution/app-downloads": {
+      "put": {
+        "tags": [
+          "institution"
+        ],
+        "summary": "Sets the links to the desktop app's installers (ADR-0064): the whole list, so what is missing is removed.\nAdmin only. The web app shows a hint and a download page when the list is not empty.",
+        "operationId": "set_app_downloads",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetAppDownloadsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "The links now set",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AppDownload"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not logged in",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not an admin",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "A link that is not an https address, or a platform twice",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -1896,12 +1968,73 @@
         ]
       }
     },
+    "/api/v1/auth/app/exchange": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "The end of a native app's sign-in with Google (ADR-0062): trades the handoff code and the secret behind\nthe `app_challenge` of `start` for an app session, as a login with `client: app` does. A code is good once,\nfor a minute; one that is wrong, used, expired or paired with the wrong secret is the same `401`.",
+        "operationId": "exchange",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AppExchangeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Signed in; the token is for Authorization: Bearer",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppLoginResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "The code is unknown, used, expired or not for this secret",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The account is disabled",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many requests",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/auth/google/callback": {
       "post": {
         "tags": [
           "auth"
         ],
-        "summary": "Finishes sign-in with Google: checks the state against the browser's cookie, exchanges the\ncode, verifies the ID token and opens a web session, like a password login with `client: web`.",
+        "summary": "Finishes sign-in with Google: checks the state against the browser's cookie, exchanges the\ncode, verifies the ID token and opens a web session, like a password login with `client: web`.\nFor an attempt a native app started there is no cookie to check and no session is opened: the\nanswer is a handoff code, which the page gives to the app by a link (ADR-0062).",
         "description": "The Google account needs a verified email in one of `auth.allowed_domains`. A first sign-in\ncreates a `student`; an existing account with that address is linked.",
         "operationId": "callback",
         "requestBody": {
@@ -1916,11 +2049,11 @@
         },
         "responses": {
           "200": {
-            "description": "Signed in; the session cookie is set",
+            "description": "Signed in; the session cookie is set. For an app's attempt: the handoff, and no session",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/LoginResponse"
+                  "$ref": "#/components/schemas/GoogleCallbackResponse"
                 }
               }
             }
@@ -1983,7 +2116,7 @@
         "tags": [
           "auth"
         ],
-        "summary": "Starts sign-in with Google: answers the URL to send the browser to and sets a cookie that ties\nthe attempt to this browser. Off (`404`) without `[auth.google]`.",
+        "summary": "Starts sign-in with Google: answers the URL to send the browser to and sets a cookie that ties\nthe attempt to this browser. A native app sends an `app_challenge` instead and gets no cookie: its\nattempt is tied to the secret the app holds (ADR-0062). Off (`404`) without `[auth.google]`.",
         "operationId": "start",
         "requestBody": {
           "content": {
@@ -2008,6 +2141,16 @@
           },
           "404": {
             "description": "Sign-in with Google is not configured",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The app_challenge is not 64 lowercase hex characters",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -8305,6 +8448,40 @@
           "all"
         ]
       },
+      "AppDownload": {
+        "type": "object",
+        "description": "Where one installer of the institution's desktop app can be downloaded.",
+        "required": [
+          "platform",
+          "url"
+        ],
+        "properties": {
+          "platform": {
+            "$ref": "#/components/schemas/AppPlatform"
+          },
+          "url": {
+            "type": "string",
+            "description": "An `https` address."
+          }
+        }
+      },
+      "AppExchangeRequest": {
+        "type": "object",
+        "description": "The app trades the handoff and its secret for a session (ADR-0062).",
+        "required": [
+          "code",
+          "verifier"
+        ],
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "verifier": {
+            "type": "string",
+            "description": "The secret whose SHA-256 the app gave to `start`, 32 to 128 characters."
+          }
+        }
+      },
       "AppLoginResponse": {
         "type": "object",
         "description": "Response to a login with `client = app`.",
@@ -8325,6 +8502,17 @@
             "$ref": "#/components/schemas/User"
           }
         }
+      },
+      "AppPlatform": {
+        "type": "string",
+        "description": "A kind of installer of the desktop app (ADR-0064): the systems of ADR-0063's installers.",
+        "enum": [
+          "windows",
+          "macos_arm",
+          "macos_intel",
+          "linux_deb",
+          "linux_appimage"
+        ]
       },
       "Assignment": {
         "type": "object",
@@ -10108,10 +10296,40 @@
           }
         }
       },
+      "GoogleCallbackResponse": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/GoogleHandoffResponse"
+          },
+          {
+            "$ref": "#/components/schemas/User"
+          }
+        ],
+        "description": "A sign-in with Google ends with a web session, or, when a native app started it, with a handoff."
+      },
+      "GoogleHandoffResponse": {
+        "type": "object",
+        "description": "The end of a native app's sign-in with Google (ADR-0062): a code for the app, good once for a minute.",
+        "required": [
+          "handoff"
+        ],
+        "properties": {
+          "handoff": {
+            "type": "string"
+          }
+        }
+      },
       "GoogleStartRequest": {
         "type": "object",
         "description": "Starts sign-in with Google (ADR-0047).",
         "properties": {
+          "app_challenge": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "From a native app (ADR-0062): the SHA-256 of a secret the app keeps, as 64 lowercase hex characters.\nThe attempt is then tied to the app, not to a browser, and ends in a `handoff` for the app."
+          },
           "login_hint": {
             "type": [
               "string",
@@ -10662,9 +10880,17 @@
           "short_name",
           "language",
           "time_zone",
-          "grading_scale"
+          "grading_scale",
+          "app_downloads"
         ],
         "properties": {
+          "app_downloads": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AppDownload"
+            },
+            "description": "The links to the desktop app's installers, in the order platforms are listed above. Empty: the\ninstitution has no app to offer (ADR-0064)."
+          },
           "grading_scale": {
             "$ref": "#/components/schemas/GradingScale"
           },
@@ -12836,6 +13062,22 @@
           "cli",
           "pat"
         ]
+      },
+      "SetAppDownloadsRequest": {
+        "type": "object",
+        "description": "The whole set of download links: what is not in the list is removed. An empty list switches the\ndownload hint and page off.",
+        "required": [
+          "downloads"
+        ],
+        "properties": {
+          "downloads": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AppDownload"
+            },
+            "description": "At most one link per platform, each at most 2048 characters of an `https` address."
+          }
+        }
       },
       "SourceProps": {
         "type": "object",

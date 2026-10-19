@@ -1,6 +1,6 @@
 "use client";
 
-import { api } from "../client";
+import { api, type Queued } from "../client";
 import { invalidate, useMutation, useQuery } from "../../query";
 import type { AnswerMap, FormConfig, FormResponses, QuizConfig, QuizResult } from "../gaps";
 import { formResponsesFromWire, quizResultFromWire } from "../sheetWire";
@@ -14,18 +14,20 @@ export function useMySubmission(assignmentId: string | null) {
 /** Quizzes and forms store their answers in the draft's `content` as `{answers}` (API_GAPS.md, "Quiz and form types"). */
 export type DraftContent = Document | { answers: AnswerMap };
 
-export function useSaveDraft(assignmentId: string) {
+/** `queue`: offline on the desktop the write waits for a connection. A quiz passes false: it needs one (ADR-0060). */
+export function useSaveDraft(assignmentId: string, queue = true) {
   return useMutation(async (content: DraftContent) => {
-    const d = await api.put<{ content: DraftContent; updated_at: string }>(`/assignments/${assignmentId}/submission/draft`, { content });
+    // Offline on the desktop the draft waits in the queue and comes back as it will look once saved (ADR-0060).
+    const d = await api.put<{ content: DraftContent; updated_at: string }>(`/assignments/${assignmentId}/submission/draft`, { content }, { queue });
     invalidate(`/assignments/${assignmentId}/submission`);
     invalidate("/me/work");
     return d;
   });
 }
 
-export function useSubmitDraft(assignmentId: string) {
+export function useSubmitDraft(assignmentId: string, queue = true) {
   return useMutation(async () => {
-    const a = await api.post<Attempt>(`/assignments/${assignmentId}/submission/submit`);
+    const a = await api.post<Attempt | Queued>(`/assignments/${assignmentId}/submission/submit`, undefined, { queue });
     invalidate(`/assignments/${assignmentId}`);
     invalidate("/me/");
     invalidate("/courses/");

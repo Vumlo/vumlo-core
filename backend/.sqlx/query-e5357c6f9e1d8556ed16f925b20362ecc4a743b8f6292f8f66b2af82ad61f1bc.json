@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE idempotency.keys SET status = NULL, content_type = NULL, body = NULL",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "e5357c6f9e1d8556ed16f925b20362ecc4a743b8f6292f8f66b2af82ad61f1bc"
+}

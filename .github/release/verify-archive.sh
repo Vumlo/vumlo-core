@@ -37,9 +37,12 @@ cd "vumlo-$version"
 for unwanted in .github docs/decisions backend/crates/server/tests backend/crates/modules ARCHITECTURE.md AGENTS.md; do
     [ ! -e "$unwanted" ] || { echo "the archive contains $unwanted" >&2; exit 1; }
 done
-for wanted in vumlo vumlo.toml.example docs/install.md CHANGELOG.md brand/logo.svg deploy/compose.yaml backend/.sqlx; do
+for wanted in vumlo vumlo.toml.example docs/install.md docs/desktop.md CHANGELOG.md brand/logo.svg deploy/compose.yaml backend/.sqlx desktop/scripts/build.mjs desktop/release/desktop-release.yml desktop/Cargo.lock; do
     [ -e "$wanted" ] || { echo "the archive lacks $wanted" >&2; exit 1; }
 done
+
+node --check desktop/scripts/build.mjs
+node --check desktop/scripts/config.mjs
 
 step "2. configure (init, .env, vumlo.toml, logo)"
 ./vumlo init

@@ -90,3 +90,12 @@ What gets easier, what gets harder, what we must remember.
 | 0053 | [Admin read models and reading the audit log](0053-admin-read-models-and-the-audit-log.md) |
 | 0054 | [Deployment model: `vumlo-cli`, one config schema, build-time branding, optional modules](0054-deployment-model.md) |
 | 0055 | [Deferred directions: widgets, plugins, an end-user CLI, native clients](0055-deferred-directions.md) |
+| 0056 | [Desktop client: Tauri 2, the web app in a native window, the network in Rust](0056-desktop-client.md) |
+| 0057 | [Query-string routes and the desktop export build](0057-query-string-routes-and-the-desktop-export.md) |
+| 0058 | [`Idempotency-Key` on POST](0058-idempotency-key.md) |
+| 0059 | [Conditional `GET`: `ETag` and `If-None-Match`](0059-conditional-get.md) |
+| 0060 | [Desktop offline store and send queue](0060-desktop-offline-store-and-send-queue.md) |
+| 0061 | [Desktop native extras: keychain, tray, deadline notifications, deep links](0061-desktop-native-extras.md) |
+| 0062 | [Sign-in with Google for the desktop app](0062-google-sign-in-for-the-desktop-app.md) |
+| 0063 | [Desktop installers: built by the institution, signed when it has certificates](0063-desktop-release-and-signing.md) |
+| 0064 | [Download links of the desktop app, set by an admin](0064-desktop-app-download-links.md) |

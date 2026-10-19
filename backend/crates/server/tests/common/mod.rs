@@ -8,9 +8,9 @@ use server::identity::{self, Email, Role, TemporaryPassword};
 use sqlx::PgPool;
 use tokio::net::TcpListener;
 use vumlo_config::{
-    AuthSettings, CliSettings, DatabaseSettings, EditorSettings, GradingScale, InstitutionMode,
-    InstitutionSettings, Language, LogFormat, LogSettings, Modules, Secret, ServerSettings,
-    Settings, WebSettings,
+    AuthSettings, CliSettings, DatabaseSettings, DesktopSettings, EditorSettings, GradingScale,
+    InstitutionMode, InstitutionSettings, Language, LogFormat, LogSettings, Modules, Secret,
+    ServerSettings, Settings, WebSettings,
 };
 
 // One copy of the per-test database harness, shared with the library's own unit tests.
@@ -60,6 +60,7 @@ pub fn test_settings() -> Settings {
             max_connections: 1,
         },
         web: WebSettings::default(),
+        desktop: DesktopSettings::default(),
         cli: CliSettings::default(),
         log: LogSettings {
             format: LogFormat::Pretty,

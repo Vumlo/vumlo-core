@@ -208,12 +208,53 @@ pub struct GoogleStartRequest {
     /// An address to pre-fill on Google's page.
     #[garde(inner(length(max = 254)))]
     pub login_hint: Option<String>,
+    /// From a native app (ADR-0062): the SHA-256 of a secret the app keeps, as 64 lowercase hex characters.
+    /// The attempt is then tied to the app, not to a browser, and ends in a `handoff` for the app.
+    #[garde(inner(length(min = 64, max = 64)))]
+    pub app_challenge: Option<String>,
 }
 
 /// Where to send the browser for Google's consent screen.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct GoogleStartResponse {
     pub authorization_url: String,
+}
+
+/// The end of a native app's sign-in with Google (ADR-0062): a code for the app, good once for a minute.
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct GoogleHandoffResponse {
+    pub handoff: String,
+}
+
+impl fmt::Debug for GoogleHandoffResponse {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("GoogleHandoffResponse")
+            .finish_non_exhaustive()
+    }
+}
+
+/// A sign-in with Google ends with a web session, or, when a native app started it, with a handoff.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(untagged)]
+pub enum GoogleCallbackResponse {
+    Handoff(GoogleHandoffResponse),
+    Web(User),
+}
+
+/// The app trades the handoff and its secret for a session (ADR-0062).
+#[derive(Clone, Serialize, Deserialize, Validate, ToSchema)]
+pub struct AppExchangeRequest {
+    #[garde(length(min = 1, max = 128))]
+    pub code: String,
+    /// The secret whose SHA-256 the app gave to `start`, 32 to 128 characters.
+    #[garde(length(min = 32, max = 128))]
+    pub verifier: String,
+}
+
+impl fmt::Debug for AppExchangeRequest {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("AppExchangeRequest").finish_non_exhaustive()
+    }
 }
 
 /// What Google sent back to the web app's callback page.

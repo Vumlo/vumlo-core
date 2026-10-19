@@ -150,6 +150,7 @@ pub fn router(settings: &Settings) -> Result<OpenApiRouter<AppState>, SetupError
                 .routes(routes!(auth::confirm_password_reset))
                 .routes(routes!(google::start))
                 .routes(routes!(google::callback))
+                .routes(routes!(google::exchange))
                 .layer(GovernorLayer::new(client_limiter()?)),
         )
         .routes(routes!(auth::logout))
@@ -192,6 +193,9 @@ impl From<IdentityError> for ApiError {
             IdentityError::TokenInvalid => Self::Gone("this link has been used or has expired"),
             IdentityError::EmailDomainNotAllowed => {
                 Self::invalid_field("email", "this email domain cannot sign up")
+            }
+            IdentityError::AppChallengeInvalid => {
+                Self::invalid_field("app_challenge", "must be 64 lowercase hex characters")
             }
             IdentityError::GoogleAttemptInvalid => {
                 Self::Unauthorized("the sign-in attempt is not valid")

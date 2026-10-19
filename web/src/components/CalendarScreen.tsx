@@ -12,6 +12,7 @@ import { dayKey, dayKeyLabel, monthName, offsetLabel, parts, relativeCap, timeOf
 import { useT } from "@/lib/i18n";
 import { useMe } from "@/lib/session";
 import s from "./Calendar.module.css";
+import { itemHref } from "@/lib/routes";
 
 type Ev = { id: string; courseId: string; code: string; courseTitle: string; title: string; at: string; status: WorkStatus | null; href: string };
 
@@ -36,12 +37,12 @@ export function CalendarScreen() {
         const at = i.due_at ?? i.class_on;
         if (!at) continue;
         const c = work.data.courses.find((x) => x.id === i.course_id)!;
-        evs.push({ id: i.assignment_id, courseId: c.id, code: c.code, courseTitle: c.title, title: i.title, at, status: i.status, href: `/courses/${i.course_id}/items/${i.assignment_id}` });
+        evs.push({ id: i.assignment_id, courseId: c.id, code: c.code, courseTitle: c.title, title: i.title, at, status: i.status, href: itemHref(i.course_id, i.assignment_id) });
         if (!list.some((x) => x.code === c.code)) list.push({ code: c.code, title: c.title });
       }
     } else if (teaching.data) {
       for (const d of teaching.data.deadlines) {
-        evs.push({ id: d.assignment_id, courseId: d.course_id, code: d.course_code, courseTitle: d.course_code, title: d.title, at: d.due_at, status: null, href: `/courses/${d.course_id}/items/${d.assignment_id}` });
+        evs.push({ id: d.assignment_id, courseId: d.course_id, code: d.course_code, courseTitle: d.course_code, title: d.title, at: d.due_at, status: null, href: itemHref(d.course_id, d.assignment_id) });
         if (!list.some((x) => x.code === d.course_code)) list.push({ code: d.course_code, title: d.course_code });
       }
     }

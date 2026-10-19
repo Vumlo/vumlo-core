@@ -62,6 +62,9 @@ pub enum IdentityError {
     /// The Google sign-in attempt is unknown, used, expired or from another browser (ADR-0047).
     #[error("the sign-in attempt is not valid")]
     GoogleAttemptInvalid,
+    /// The `app_challenge` of a start request is not 64 lowercase hex characters.
+    #[error("the app challenge is not valid")]
+    AppChallengeInvalid,
     #[error(transparent)]
     Google(#[from] super::google::GoogleError),
     /// The Google account has no verified email, or its domain may not sign up.
@@ -755,12 +758,25 @@ const GOOGLE_ATTEMPT_LIFETIME_SECS: i64 = 10 * 60;
 pub async fn start_google_sign_in(
     conn: &mut PgConnection,
     begin: &Begin,
-) -> Result<BrowserBinding, IdentityError> {
-    let binding = BrowserBinding::generate();
+    app_challenge: Option<&str>,
+) -> Result<Option<BrowserBinding>, IdentityError> {
+    // An app holds the secret, so its attempt is tied to that; a browser's is tied to a cookie (ADR-0062).
+    let (binding, challenge) = match app_challenge {
+        Some(hex) => (
+            None,
+            Some(parse_hex_32(hex).ok_or(IdentityError::AppChallengeInvalid)?),
+        ),
+        None => (Some(BrowserBinding::generate()), None),
+    };
     repo::insert_oauth_state(
         conn,
         &Sha256::digest(begin.state.as_bytes()),
-        &binding.hash(),
+        binding
+            .as_ref()
+            .map(|b| b.hash())
+            .as_ref()
+            .map(<[u8; 32]>::as_slice),
+        challenge.as_ref().map(<[u8; 32]>::as_slice),
         &begin.nonce,
         &begin.pkce_verifier,
         GOOGLE_ATTEMPT_LIFETIME_SECS,
@@ -769,27 +785,93 @@ pub async fn start_google_sign_in(
     Ok(binding)
 }
 
-/// What a started sign-in remembered: the nonce the ID token must carry and the PKCE verifier.
+/// 64 lowercase hex characters as 32 bytes.
+fn parse_hex_32(text: &str) -> Option<[u8; 32]> {
+    if text.len() != 64
+        || !text
+            .bytes()
+            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+    {
+        return None;
+    }
+    let mut out = [0_u8; 32];
+    for (i, byte) in out.iter_mut().enumerate() {
+        *byte = u8::from_str_radix(&text[2 * i..2 * i + 2], 16).ok()?;
+    }
+    Some(out)
+}
+
+/// What a started sign-in remembered: the nonce the ID token must carry and the PKCE verifier, and the
+/// challenge of the app that started it, if one did.
 pub struct GoogleAttempt {
     pub nonce: String,
     pub pkce_verifier: String,
+    pub app_challenge: Option<[u8; 32]>,
 }
 
-/// Uses the attempt up. It exists only for the browser that started it, once, for ten minutes.
+/// Uses the attempt up. It exists once, for ten minutes, and for the browser that started it, or for the
+/// app: an app's attempt is not tied to a browser.
 pub async fn take_google_attempt(
     conn: &mut PgConnection,
     state: &str,
     binding: Option<&BrowserBinding>,
 ) -> Result<GoogleAttempt, IdentityError> {
-    let binding = binding.ok_or(IdentityError::GoogleAttemptInvalid)?;
-    let (nonce, pkce_verifier) =
-        repo::take_oauth_state(conn, &Sha256::digest(state.as_bytes()), &binding.hash())
-            .await?
-            .ok_or(IdentityError::GoogleAttemptInvalid)?;
+    let taken = repo::take_oauth_state(
+        conn,
+        &Sha256::digest(state.as_bytes()),
+        binding.map(|b| b.hash()).as_ref().map(<[u8; 32]>::as_slice),
+    )
+    .await?
+    .ok_or(IdentityError::GoogleAttemptInvalid)?;
     Ok(GoogleAttempt {
-        nonce,
-        pkce_verifier,
+        nonce: taken.nonce,
+        pkce_verifier: taken.pkce_verifier,
+        app_challenge: taken.app_challenge.and_then(|c| c.try_into().ok()),
     })
+}
+
+/// How long the app has to pick up the code: it is delivered by a link, a moment after the sign-in.
+const APP_HANDOFF_LIFETIME_SECS: i64 = 60;
+
+/// The code that ends an app's sign-in with Google. Only its SHA-256 is stored.
+pub async fn create_app_handoff(
+    conn: &mut PgConnection,
+    user: &User,
+    app_challenge: &[u8; 32],
+) -> Result<String, IdentityError> {
+    if !repo::lock_active_user(conn, user.id).await? {
+        return Err(IdentityError::AccountDisabled);
+    }
+    let code = db::identity::random_base64url::<32>();
+    repo::insert_app_handoff(
+        conn,
+        &Sha256::digest(code.as_bytes()),
+        user.id,
+        app_challenge,
+        APP_HANDOFF_LIFETIME_SECS,
+    )
+    .await?;
+    Ok(code)
+}
+
+/// Trades a handoff and the secret behind its challenge for an app session. The code is used up by the
+/// attempt, right or wrong.
+pub async fn exchange_app_handoff(
+    conn: &mut PgConnection,
+    code: &str,
+    verifier: &str,
+) -> Result<(User, NewSession), IdentityError> {
+    let (user_id, challenge) = repo::take_app_handoff(conn, &Sha256::digest(code.as_bytes()))
+        .await?
+        .ok_or(IdentityError::GoogleAttemptInvalid)?;
+    if Sha256::digest(verifier.as_bytes()).as_slice() != challenge.as_slice() {
+        return Err(IdentityError::GoogleAttemptInvalid);
+    }
+    let user = repo::find_user(conn, user_id)
+        .await?
+        .ok_or(IdentityError::GoogleAttemptInvalid)?;
+    let session = create_session_for(conn, &user, SessionKind::App).await?;
+    Ok((user, session))
 }
 
 /// A name for the account from what Google sent, cut to the limit; `fallback` when there is none.

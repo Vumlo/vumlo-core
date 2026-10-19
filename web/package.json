@@ -1,6 +1,6 @@
 {
   "name": "vumlo-web",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -8,6 +8,7 @@
     "dev": "node scripts/brand.mjs --optional && next dev",
     "dev:mock": "node scripts/brand.mjs --optional && NEXT_PUBLIC_API_MOCKING=enabled next dev",
     "build": "node scripts/brand.mjs && next build",
+    "build:desktop": "node scripts/build-desktop.mjs",
     "start": "next start",
     "lint": "eslint . --max-warnings 0 && node scripts/check-colors.mjs",
     "typecheck": "node scripts/brand.mjs && tsc --noEmit",
@@ -15,6 +16,7 @@
     "test:e2e": "playwright test"
   },
   "dependencies": {
+    "@tauri-apps/api": "2.12.4",
     "next": "16.4.2",
     "react": "^19.3.1",
     "react-dom": "^19.3.1"

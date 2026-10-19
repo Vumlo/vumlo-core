@@ -11,6 +11,7 @@ import type { User } from "@/lib/session";
 import { translate } from "@/lib/i18n/core";
 import { WidgetGrid, type WidgetDef } from "./WidgetGrid";
 import h from "./Home.module.css";
+import { courseHref, itemHref } from "@/lib/routes";
 
 const linkStyle = { flex: "none", display: "flex", alignItems: "center", minHeight: 36, padding: "0 8px", fontSize: 13, color: "var(--accent-fg)" } as const;
 
@@ -36,7 +37,7 @@ export function TeacherHome({ user }: { user: User }) {
         render: () => !o ? <Loading /> : o.to_grade.length === 0 ? <p className={h.empty}>{t("grading.nothing")}</p> : (
           <div>
             {o.to_grade.slice(0, 4).map((q) => (
-              <Link key={`${q.assignment_id}${q.student_id}`} href={`/courses/${q.course_id}/grades`} className={h.queue}>
+              <Link key={`${q.assignment_id}${q.student_id}`} href={courseHref(q.course_id, "grades")} className={h.queue}>
                 <span aria-hidden="true" className={h.initials}>{initials(q.student_name, q.student_surname)}</span>
                 <span className={h.rowMain}>
                   <span className={h.rowTitle}>{q.student_name} {q.student_surname}</span>
@@ -68,7 +69,7 @@ export function TeacherHome({ user }: { user: User }) {
         render: () => !o ? <Loading /> : o.deadlines.length === 0 ? <p className={h.empty}>{t("home.noDeadlines")}</p> : (
           <div>
             {o.deadlines.slice(0, 4).map((d) => (
-              <Link key={d.assignment_id} href={`/courses/${d.course_id}/items/${d.assignment_id}`} className={h.deadline}>
+              <Link key={d.assignment_id} href={itemHref(d.course_id, d.assignment_id)} className={h.deadline}>
                 <span className={h.deadWhen}>{dueLabel(d.due_at)}</span>
                 <span className={h.rowTitle} style={{ fontSize: 14 }}>{d.title}</span>
                 <span className={h.rowSub} style={{ fontSize: 12 }}>{d.course_code}, {d.not_open ? t("home.notOpen") : t("home.submittedOf", { n: d.submitted, total: d.total })}</span>
@@ -87,7 +88,7 @@ export function TeacherHome({ user }: { user: User }) {
               </p>
             ))}
             {o.unpublished_content.length === 0 && <p className="muted">{t("home.allPublished")}</p>}
-            {firstContent && <Link href={`/courses/${firstContent.course_id}`} style={{ ...linkStyle, marginTop: "auto", padding: 0 }}>{t("home.openContent")}</Link>}
+            {firstContent && <Link href={courseHref(firstContent.course_id)} style={{ ...linkStyle, marginTop: "auto", padding: 0 }}>{t("home.openContent")}</Link>}
           </div>
         ),
       },
@@ -97,7 +98,7 @@ export function TeacherHome({ user }: { user: User }) {
         render: (w) => !cards.data ? <Loading /> : (
           <div className={h.courses} style={{ gridTemplateColumns: `repeat(${w === 4 ? 2 : 1}, minmax(0, 1fr))` }}>
             {cards.data.filter((c) => !c.term_ended && c.course.status !== "archived").map((c) => (
-              <Link key={c.course.id} href={`/courses/${c.course.id}`} className={h.course}>
+              <Link key={c.course.id} href={courseHref(c.course.id)} className={h.course}>
                 <span className="row" style={{ justifyContent: "space-between", gap: 8 }}>
                   <span className={h.code}>{c.code}</span>
                   <span className="muted" style={{ fontSize: 12 }}>{plural(c.student_count, "student")}</span>

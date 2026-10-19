@@ -7,7 +7,7 @@ export type NavItem = { label: MessageKey; href: string; icon: IconName; match: 
 const starts = (prefix: string) => (path: string) => path === prefix || path.startsWith(`${prefix}/`);
 
 const home: NavItem = { label: "nav.home", href: "/", icon: "home", match: (p) => p === "/" };
-const courses: NavItem = { label: "nav.courses", href: "/courses", icon: "courses", match: starts("/courses") };
+const courses: NavItem = { label: "nav.courses", href: "/courses", icon: "courses", match: (p) => starts("/courses")(p) || starts("/course")(p) };
 const calendar: NavItem = { label: "nav.calendar", href: "/calendar", icon: "calendar", match: starts("/calendar") };
 
 /** Navigation only hides links; the server decides what a role may do. */

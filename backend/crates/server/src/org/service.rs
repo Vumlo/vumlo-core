@@ -10,8 +10,8 @@ use sqlx::PgConnection;
 use uuid::Uuid;
 
 use super::model::{
-    Group, GroupMember, GroupOption, GroupOverview, MemberProblem, ModelError, OrgName, Subgroup,
-    Term, TermDates, TermUpdate, TermUsage,
+    DownloadUrl, Group, GroupMember, GroupOption, GroupOverview, MemberProblem, ModelError,
+    OrgName, Subgroup, Term, TermDates, TermUpdate, TermUsage,
 };
 use super::repo;
 use crate::actor::Actor;
@@ -156,6 +156,47 @@ pub async fn list_terms(
 pub fn view_institution_settings(actor: &Actor) -> Result<(), OrgError> {
     policy::authorize(actor, Action::ViewInstitutionSettings)?;
     Ok(())
+}
+
+/// The links to the desktop app's installers, for the public profile: no session, so no authorization.
+pub async fn app_downloads(conn: &mut PgConnection) -> Result<Vec<(String, String)>, OrgError> {
+    Ok(repo::list_app_downloads(conn).await?)
+}
+
+/// Sets the whole list of links: what is not in `links` is removed. Admin only; audited (ADR-0034).
+pub async fn set_app_downloads(
+    conn: &mut PgConnection,
+    actor: &Actor,
+    links: &[(&'static str, String)],
+) -> Result<Vec<(String, String)>, OrgError> {
+    policy::authorize(actor, Action::ManageAppDownloads)?;
+    let mut clean: Vec<(String, String)> = Vec::with_capacity(links.len());
+    for (platform, url) in links {
+        if clean.iter().any(|(seen, _)| seen == platform) {
+            return Err(ModelError::DownloadDuplicate.into());
+        }
+        clean.push((
+            (*platform).to_owned(),
+            DownloadUrl::parse(url)?.as_str().to_owned(),
+        ));
+    }
+    repo::replace_app_downloads(conn, &clean).await?;
+    // Which platforms have a link, never the addresses: they are public, but the log is for who did what.
+    let platforms: Vec<&str> = clean
+        .iter()
+        .map(|(platform, _)| platform.as_str())
+        .collect();
+    // The institution has no row of its own: the audit entry names the installation by the nil id.
+    audit(
+        conn,
+        actor,
+        "institution.app_downloads.set",
+        "institution",
+        Uuid::nil(),
+        json!({"platforms": platforms}),
+    )
+    .await?;
+    Ok(repo::list_app_downloads(conn).await?)
 }
 
 pub async fn get_term(conn: &mut PgConnection, actor: &Actor, id: Uuid) -> Result<Term, OrgError> {

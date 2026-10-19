@@ -53,6 +53,8 @@ pub struct Settings {
     #[serde(default)]
     pub web: WebSettings,
     #[serde(default)]
+    pub desktop: DesktopSettings,
+    #[serde(default)]
     pub cli: CliSettings,
     #[serde(default)]
     pub log: LogSettings,
@@ -139,6 +141,17 @@ impl Default for WebSettings {
     fn default() -> Self {
         Self { dir: "web".into() }
     }
+}
+
+/// The desktop app (ADR-0056, ADR-0062).
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema)]
+#[serde(default, deny_unknown_fields)]
+pub struct DesktopSettings {
+    /// The URL scheme of the app's links, `vumlo-ucu://...`. Absent: `vumlo-` and the short name of the
+    /// institution in ASCII letters and digits. It must be one the operating system can tell from the
+    /// scheme of another institution's app on the same computer. The client config carries the scheme in use.
+    #[schemars(extend("x-visibility" = "private"))]
+    pub url_scheme: Option<String>,
 }
 
 /// What `vumlo-cli` itself needs.

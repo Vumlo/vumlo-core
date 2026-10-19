@@ -8,6 +8,7 @@ import type { ContentTree } from "@/lib/api/types";
 import { isAssignment, kindOf, outlineMark, sections } from "@/lib/course";
 import { useT } from "@/lib/i18n";
 import s from "./CourseOutline.module.css";
+import { courseHref, itemHref } from "@/lib/routes";
 
 type Props = {
   courseId: string;
@@ -29,7 +30,7 @@ export function CourseOutline({ courseId, tree, meta, code, title, currentItemId
   return (
     <nav aria-label={t("outline.label")} className={s.nav}>
       {title ? (
-        <Link href={`/courses/${courseId}`} className={s.course}>
+        <Link href={courseHref(courseId)} className={s.course}>
           <span className={s.courseTitle}>{title}</span>
           <span className={s.courseCode}>{code}</span>
         </Link>
@@ -55,7 +56,7 @@ export function CourseOutline({ courseId, tree, meta, code, title, currentItemId
                   return (
                     <Link
                       key={i.id}
-                      href={`/courses/${courseId}/items/${i.id}`}
+                      href={itemHref(courseId, i.id)}
                       title={i.title}
                       className={s.item}
                       aria-current={i.id === currentItemId ? "page" : undefined}

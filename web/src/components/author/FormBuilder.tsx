@@ -17,6 +17,7 @@ import { translate } from "@/lib/i18n/core";
 import type { MessageKey } from "@/lib/i18n/core";
 import { useT } from "@/lib/i18n";
 import s from "./Author.module.css";
+import { itemHref } from "@/lib/routes";
 
 const TYPES: [FormFieldType, MessageKey, IconName][] = [["short", "fb.short", "text"], ["long", "fb.long", "text"], ["choice", "fb.choice", "form"], ["people", "fb.people", "user"], ["link", "fb.link", "link"], ["number", "qb.number", "quiz"], ["date", "fb.date", "calendar"]];
 const typeName = (type: FormFieldType) => translate(TYPES.find(([k]) => k === type)![1]);
@@ -87,7 +88,7 @@ export function FormBuilder({ item, courseId }: { item: Item; courseId: string }
   return (
     <div className="container" style={{ paddingTop: 20 }}>
       <AuthorBar courseId={courseId} itemId={item.id} title={title} chip={isDraft ? { text: t("le.draftChip"), tone: "draft" } : { text: t("cm.published"), tone: "ok" }} saved={auto.savedAt} pending={auto.pending} failed={auto.failed}>
-        <Link href={`/courses/${courseId}/items/${item.id}`} className="btn">{t("cm.preview")}</Link>
+        <Link href={itemHref(courseId, item.id)} className="btn">{t("cm.preview")}</Link>
         {isDraft && <button type="button" className="btn btn-primary" disabled={publish.pending} onClick={async () => { await auto.flush(); await publish.run(item.id); }}>{t("fb.publish")}</button>}
       </AuthorBar>
       <p className="muted" style={{ fontSize: 14, marginBottom: 8 }}><strong style={{ color: "var(--asg-fg)" }}>{t("cm.assignment")}</strong> {t("type.form")}{a.due_at ? `, ${t("search.due", { when: dueLabel(a.due_at) })}` : ""}{t("bar.notGraded")}</p>

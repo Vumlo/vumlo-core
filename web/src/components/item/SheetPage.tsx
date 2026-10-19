@@ -17,6 +17,7 @@ import { DueBar } from "./DueBar";
 import { ItemFrame, PreviewBanner } from "./ItemFrame";
 import { isAnswered, QuestionSheet, sheetStyles as qs, type Q, type QResult } from "./QuestionSheet";
 import { useT } from "@/lib/i18n";
+import { useOffline, useQueued } from "@/lib/offline";
 import s from "./Item.module.css";
 
 const short = (t: string) => (t.length > 26 ? `${t.slice(0, 24).trimEnd()}…` : t);
@@ -48,12 +49,16 @@ export function SheetPage({ item, courseId, staff, mode }: { item: Item; courseI
   const grade = grades.data?.items.find((g) => g.assignment_id === item.id);
   const config = a.config as unknown as QuizConfig & FormConfig;
   const resultQ = useQuizResult(grade ? item.id : null, config);
-  const save = useSaveDraft(item.id);
-  const submit = useSubmitDraft(item.id);
+  // A form waits for a connection in the send queue; a quiz does not: it is timed and counted by the server (ADR-0060).
+  const save = useSaveDraft(item.id, mode === "form");
+  const submit = useSubmitDraft(item.id, mode === "form");
+  const waiting = useQueued(`/assignments/${item.id}/submission/submit`);
+  const offline = useOffline();
   const [local, setLocal] = useState<AnswerMap | null>(null);
   const [savedAt, setSavedAt] = useState<string | null>(null);
   const [dismissed, setDismissed] = useState<string[]>([]);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const unsaved = useRef<(() => void) | null>(null);
 
   const dl = deadline(a);
   const attempts = sub.data?.attempts ?? [];
@@ -62,7 +67,7 @@ export function SheetPage({ item, courseId, staff, mode }: { item: Item; courseI
   const attemptsLeft = a.max_attempts == null ? Infinity : a.max_attempts - attempts.length;
   const answersOf = (c: unknown): AnswerMap => answersFromWire(mode, a.config, c);
   const view: "result" | "submitted" | "answering" | "closed" = grade && mode === "quiz" ? "result" : latest && !draft ? "submitted" : !latest && !draft && dl.closed ? "closed" : "answering";
-  const editable = view === "answering" && !staff && dl.open;
+  const editable = view === "answering" && !staff && dl.open && !waiting && !(mode === "quiz" && offline);
   const loading = !staff && (!sub.data || (mode === "quiz" && !grades.data));
 
   const user = me.data;
@@ -80,12 +85,15 @@ export function SheetPage({ item, courseId, staff, mode }: { item: Item; courseI
     setLocal(next);
     setDismissed((d) => (d.includes(id) ? d : [...d, id]));
     if (timer.current) clearTimeout(timer.current);
-    timer.current = setTimeout(() => void flush(next), 900);
+    unsaved.current = () => void flush(next);
+    timer.current = setTimeout(() => { unsaved.current = null; void flush(next); }, 900);
   }
-  useEffect(() => () => { if (timer.current) clearTimeout(timer.current); }, []);
+  // Leaving the page does not drop what was typed in the last moment: it is sent as the page goes.
+  useEffect(() => () => { if (timer.current) clearTimeout(timer.current); unsaved.current?.(); }, []);
 
   async function send() {
     if (timer.current) clearTimeout(timer.current);
+    unsaved.current = null;
     await flush(answers);
     const ok = await submit.run();
     setDismissed([]);
@@ -163,6 +171,8 @@ export function SheetPage({ item, courseId, staff, mode }: { item: Item; courseI
               {editable && <button type="button" className="btn btn-primary" onClick={send} disabled={submit.pending}>{t(mode === "quiz" ? "sheet.submitQuiz" : "sheet.submitForm")}</button>}
               {view === "submitted" && mode === "form" && !staff && dl.open && attemptsLeft > 0 && <button type="button" className="btn btn-outline" onClick={edit} disabled={save.pending}>{t("asg.resubmit")}</button>}
             </DueBar>
+            {waiting && <p role="status" className="alert alert-info" style={{ marginTop: 12 }}>{t("offline.queuedNote")}</p>}
+            {mode === "quiz" && offline && view === "answering" && !staff && <p role="status" className="alert alert-info" style={{ marginTop: 12 }}>{t("offline.quizNeeds")}</p>}
             {submit.error && !submit.error.errors.length && <p role="alert" className="alert alert-danger" style={{ marginTop: 12 }}>{submit.error.detail ?? submit.error.title}</p>}
             {view === "closed" && (
               <div role="status" className={s.note}>

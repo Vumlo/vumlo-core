@@ -5,6 +5,7 @@ import { invalidate, useMutation, useQuery } from "../../query";
 import type {
   AdminCourse,
   AdminInstitution,
+  AppDownload,
   AuditKind,
   AuditRecord,
   CreateUserResponse,
@@ -131,6 +132,16 @@ export function useCreateTerm() {
     invalidate("/terms");
     invalidate("/admin/");
     return t;
+  });
+}
+
+/** Sets the whole list of links to the desktop app's installers (ADR-0064); a platform that is missing is removed. */
+export function useSetAppDownloads() {
+  return useMutation(async (downloads: AppDownload[]) => {
+    const saved = await api.put<AppDownload[]>("/admin/institution/app-downloads", { downloads });
+    invalidate("/institution");
+    invalidate("/admin/institution");
+    return saved;
   });
 }
 

@@ -3,7 +3,7 @@
 A self-hosted LMS for one school or university: courses, groups and rosters, lessons, assignments
 (text, quizzes, forms), a gradebook with published grades, and sign-in by password or Google. It is a
 Rust API and worker on PostgreSQL, a Next.js web app, and `vumlo-cli`, the tool that installs and
-checks it. What changed in each release: [CHANGELOG.md](CHANGELOG.md).
+checks it, and an optional desktop app for students and teachers that works offline ([docs/desktop.md](docs/desktop.md)). What changed in each release: [CHANGELOG.md](CHANGELOG.md).
 
 ## Requirements
 

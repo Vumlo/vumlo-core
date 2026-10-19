@@ -100,7 +100,7 @@ test.describe("missing pages", () => {
   test("an unknown address, course and item are all 'not found'", async ({ page }) => {
     await signIn(page, accounts.student, PASSWORD);
     await expect(page.getByRole("navigation", { name: "Main" }).first()).toBeVisible();
-    for (const path of ["/no-such-page", "/courses/nothing", "/courses/nothing/items/nothing"]) {
+    for (const path of ["/no-such-page", "/course", "/course?id=nothing", "/course/item?id=nothing&item=nothing"]) {
       await page.goto(path);
       await expect(page.getByRole("heading", { name: "We can't find that page" })).toBeVisible();
     }
@@ -144,12 +144,49 @@ test.describe("new course", () => {
     await page.getByLabel("Code", { exact: true }).fill("CS 420");
     await page.getByLabel("Description").fill("Consensus, replication and failure.");
     await page.getByRole("button", { name: "Create course" }).click();
-    await expect(page).toHaveURL(/\/courses\/[^/]+\/settings/);
+    await expect(page).toHaveURL(/\/course\/settings\?id=/);
     await expect(page.getByRole("heading", { name: "Distributed Systems" })).toBeVisible();
     // Follow links rather than reload: the mock keeps its data in the page.
     await page.getByRole("navigation", { name: "Main" }).first().getByRole("link", { name: "Courses" }).click();
     await expect(page.getByRole("link", { name: "Distributed Systems" })).toBeVisible();
     await expect(page.getByText("CS 420")).toBeVisible();
+  });
+
+  test("a new course is a draft that students cannot see until a teacher publishes it", async ({ page }) => {
+    await signIn(page, accounts.teacher, PASSWORD);
+    await page.goto("/courses/new");
+    await page.getByLabel("Course title").fill("Operating Systems");
+    await page.getByRole("button", { name: "Create course" }).click();
+    await expect(page.getByRole("heading", { name: /Operating Systems/ })).toBeVisible();
+
+    // The notice is on every screen of the course, with the way out.
+    const notice = page.getByRole("status").filter({ hasText: "This course is a draft." });
+    await expect(notice).toContainText("Students cannot see it yet");
+    await page.getByRole("tab", { name: "People" }).click();
+    await expect(notice).toBeVisible();
+
+    await notice.getByRole("button", { name: "Publish course" }).click();
+    const dialog = page.getByRole("dialog", { name: "Publish this course?" });
+    await expect(dialog).toContainText("stay hidden from students");
+    await dialog.getByRole("button", { name: "Cancel" }).click();
+    await expect(notice).toBeVisible();
+
+    await notice.getByRole("button", { name: "Publish course" }).click();
+    await page.getByRole("dialog", { name: "Publish this course?" }).getByRole("button", { name: "Publish", exact: true }).click();
+    await expect(notice).toHaveCount(0);
+    await expect(page.getByRole("heading", { name: /Operating Systems/ })).not.toContainText("Draft");
+    // The course list no longer calls it a draft.
+    await page.getByRole("navigation", { name: "Main" }).first().getByRole("link", { name: "Courses" }).click();
+    await expect(page.getByRole("link", { name: "Operating Systems" })).toBeVisible();
+    await expect(page.getByText(/, draft/i)).toHaveCount(0);
+  });
+
+  test("a course that is already published shows no draft notice", async ({ page }) => {
+    await signIn(page, accounts.teacher, PASSWORD);
+    await page.goto("/courses");
+    await page.getByRole("link", { name: "Algorithms and Data Structures" }).first().click();
+    await expect(page.getByRole("tablist")).toBeVisible();
+    await expect(page.getByText("This course is a draft.")).toHaveCount(0);
   });
 
   test("an empty title is refused", async ({ page }) => {

@@ -91,6 +91,11 @@ async fn a_png_logo_gives_the_favicon_and_the_icons() {
         let files = tree(&env.path(".vumlo/generated"));
         assert_eq!(dimensions(&files["icon-512.png"]), (512, 512));
         assert_eq!(dimensions(&files["icon-192.png"]), (192, 192));
+        assert_eq!(
+            dimensions(&files["icon-1024.png"]),
+            (1024, 1024),
+            "what the installers of the desktop app are made from"
+        );
         assert_eq!(dimensions(&files["apple-touch-icon.png"]), (180, 180));
         assert_eq!(files["logo.png"], png_logo(), "the logo is copied as it is");
         // An ICO file: reserved 0, type 1, three images.
