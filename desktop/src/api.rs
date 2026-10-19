@@ -58,6 +58,10 @@ pub async fn api(method: String, path: String, body: Option<Value>) -> Result<Re
     } else {
         serde_json::from_str(&text).ok()
     };
+    if path == "/auth/logout" {
+        // Whatever the server says, this device no longer holds a session.
+        *TOKEN.lock().unwrap() = None;
+    }
     if path == "/auth/login" && status == 200 {
         // The token stays in Rust; the webview gets the user (ADR-0056).
         if let Some(Value::Object(map)) = &mut json {

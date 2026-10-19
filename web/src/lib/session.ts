@@ -1,6 +1,6 @@
 "use client";
 
-import { api } from "./api/client";
+import { api, isDesktop } from "./api/client";
 import { clearQueries, invalidate, useMutation, useQuery } from "./query";
 import type { components } from "./api/schema";
 
@@ -14,7 +14,7 @@ export function useMe() {
 
 export function useLogin() {
   return useMutation(async (email: string, password: string) => {
-    const user = await api.post<User>("/auth/login", { email, password, client: "web" });
+    const user = await api.post<User>("/auth/login", { email, password, client: isDesktop() ? "app" : "web" });
     clearQueries();
     return user;
   });
