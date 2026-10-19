@@ -201,3 +201,10 @@ test("the browser page of an app's sign-in hands the code to the app by a link",
   const link = page.getByRole("link", { name: "Open the app" });
   await expect(link).toHaveAttribute("href", /^vumlo[a-z-]*:\/\/auth\/google\?code=mock-handoff$/);
 });
+
+test("the app does not offer itself for download", async ({ page }) => {
+  await signedIn(page);
+  await expect(page.getByRole("region", { name: "Get the Northfield app" })).toHaveCount(0);
+  await page.getByRole("button", { name: /^Account menu/ }).click();
+  await expect(page.getByRole("menuitem", { name: "Get the desktop app" })).toHaveCount(0);
+});

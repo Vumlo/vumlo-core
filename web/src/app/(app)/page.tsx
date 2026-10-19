@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
+import { AppIsland } from "@/components/app/AppIsland";
 import { StudentHome } from "@/components/home/StudentHome";
 import { TeacherHome } from "@/components/home/TeacherHome";
 import { useMe } from "@/lib/session";
@@ -16,5 +17,10 @@ export default function Home() {
   }, [role, router]);
 
   if (!me.data || role === "admin") return null;
-  return role === "teacher" ? <TeacherHome user={me.data} /> : <StudentHome user={me.data} />;
+  return (
+    <>
+      <AppIsland />
+      {role === "teacher" ? <TeacherHome user={me.data} /> : <StudentHome user={me.data} />}
+    </>
+  );
 }

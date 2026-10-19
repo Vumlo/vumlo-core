@@ -418,6 +418,12 @@ export function createSeed(): Db {
   const institution = {
     name: "Northfield University", short_name: "Northfield", language: "en" as const, time_zone: "Europe/Kyiv", grading_scale: "hundred" as const,
     mode: "university" as const, allowed_domains: ["northfield.edu"],
+    // The institution has published its desktop app (ADR-0064): the home page shows the notice and the page exists.
+    app_downloads: [
+      { platform: "windows" as const, url: "https://downloads.northfield.edu/northfield-setup.exe" },
+      { platform: "macos_arm" as const, url: "https://downloads.northfield.edu/northfield-arm64.dmg" },
+      { platform: "linux_deb" as const, url: "https://downloads.northfield.edu/northfield.deb" },
+    ],
   };
 
   return {

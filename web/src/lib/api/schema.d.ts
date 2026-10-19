@@ -85,6 +85,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/institution/app-downloads": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Sets the links to the desktop app's installers (ADR-0064): the whole list, so what is missing is removed.
+         *     Admin only. The web app shows a hint and a download page when the list is not empty.
+         */
+        put: operations["set_app_downloads"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/term-stats": {
         parameters: {
             query?: never;
@@ -1823,6 +1843,12 @@ export interface components {
          * @enum {string}
          */
         AllStudents: "all";
+        /** @description Where one installer of the institution's desktop app can be downloaded. */
+        AppDownload: {
+            platform: components["schemas"]["AppPlatform"];
+            /** @description An `https` address. */
+            url: string;
+        };
         /** @description The app trades the handoff and its secret for a session (ADR-0062). */
         AppExchangeRequest: {
             code: string;
@@ -1836,6 +1862,11 @@ export interface components {
             token: string;
             user: components["schemas"]["User"];
         };
+        /**
+         * @description A kind of installer of the desktop app (ADR-0064): the systems of ADR-0063's installers.
+         * @enum {string}
+         */
+        AppPlatform: "windows" | "macos_arm" | "macos_intel" | "linux_deb" | "linux_appimage";
         /** @description The assignment part of an item of kind `assignment` (ADR-0021). */
         Assignment: {
             /** @description Whether work is taken after `due_at`; set exactly when `due_at` is. */
@@ -2606,6 +2637,11 @@ export interface components {
         };
         /** @description The public profile of the institution: what a page needs before anyone signs in (ADR-0044). */
         Institution: {
+            /**
+             * @description The links to the desktop app's installers, in the order platforms are listed above. Empty: the
+             *     institution has no app to offer (ADR-0064).
+             */
+            app_downloads: components["schemas"]["AppDownload"][];
             grading_scale: components["schemas"]["GradingScale"];
             language: components["schemas"]["Language"];
             name: string;
@@ -3369,6 +3405,14 @@ export interface components {
         };
         /** @enum {string} */
         SessionKind: "web" | "app" | "cli" | "pat";
+        /**
+         * @description The whole set of download links: what is not in the list is removed. An empty list switches the
+         *     download hint and page off.
+         */
+        SetAppDownloadsRequest: {
+            /** @description At most one link per platform, each at most 2048 characters of an `https` address. */
+            downloads: components["schemas"]["AppDownload"][];
+        };
         /** @description The source of a formula or a diagram, as plain text. The server never renders it. */
         SourceProps: {
             source: string;
@@ -3910,6 +3954,57 @@ export interface operations {
             };
             /** @description Not an admin */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    set_app_downloads: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetAppDownloadsRequest"];
+            };
+        };
+        responses: {
+            /** @description The links now set */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AppDownload"][];
+                };
+            };
+            /** @description Not logged in */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Not an admin */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description A link that is not an https address, or a platform twice */
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };

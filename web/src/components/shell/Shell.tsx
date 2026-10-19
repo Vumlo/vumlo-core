@@ -9,6 +9,7 @@ import { fullName, useMe, type User } from "@/lib/session";
 import { useTheme } from "@/lib/theme";
 import { initials } from "@/lib/format";
 import { useInstitution } from "@/lib/api/hooks/institution";
+import { useAppOffer } from "@/lib/downloads";
 import { OfflineBar } from "./OfflineBar";
 import { useSignOut } from "./useSignOut";
 import { useT } from "@/lib/i18n";
@@ -22,6 +23,7 @@ function AccountMenu({ user }: { user: User }) {
   const ref = useRef<HTMLDivElement>(null);
   const { signOut, dialog } = useSignOut();
   const t = useT();
+  const { links: appLinks } = useAppOffer();
 
   useEffect(() => {
     if (!open) return;
@@ -61,6 +63,11 @@ function AccountMenu({ user }: { user: User }) {
           <Link role="menuitem" href="/profile" className="menu-item" onClick={() => setOpen(false)}>
             <Icon name="user" size={16} /> {t("account.profile")}
           </Link>
+          {appLinks.length > 0 && (
+            <Link role="menuitem" href="/download" className="menu-item" onClick={() => setOpen(false)}>
+              <Icon name="download" size={16} /> {t("account.getApp")}
+            </Link>
+          )}
           <button type="button" role="menuitem" className="menu-item" onClick={() => { setOpen(false); signOut(); }}>
             <Icon name="logout" size={16} /> {t("account.signOut")}
           </button>

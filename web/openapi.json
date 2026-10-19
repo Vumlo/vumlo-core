@@ -6,7 +6,7 @@
     "license": {
       "name": ""
     },
-    "version": "0.1.0"
+    "version": "0.2.0"
   },
   "paths": {
     "/api/v1/admin/audit": {
@@ -298,6 +298,78 @@
           },
           "403": {
             "description": "Not an admin",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          },
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/admin/institution/app-downloads": {
+      "put": {
+        "tags": [
+          "institution"
+        ],
+        "summary": "Sets the links to the desktop app's installers (ADR-0064): the whole list, so what is missing is removed.\nAdmin only. The web app shows a hint and a download page when the list is not empty.",
+        "operationId": "set_app_downloads",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetAppDownloadsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "The links now set",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AppDownload"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not logged in",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not an admin",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "A link that is not an https address, or a platform twice",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -8376,6 +8448,23 @@
           "all"
         ]
       },
+      "AppDownload": {
+        "type": "object",
+        "description": "Where one installer of the institution's desktop app can be downloaded.",
+        "required": [
+          "platform",
+          "url"
+        ],
+        "properties": {
+          "platform": {
+            "$ref": "#/components/schemas/AppPlatform"
+          },
+          "url": {
+            "type": "string",
+            "description": "An `https` address."
+          }
+        }
+      },
       "AppExchangeRequest": {
         "type": "object",
         "description": "The app trades the handoff and its secret for a session (ADR-0062).",
@@ -8413,6 +8502,17 @@
             "$ref": "#/components/schemas/User"
           }
         }
+      },
+      "AppPlatform": {
+        "type": "string",
+        "description": "A kind of installer of the desktop app (ADR-0064): the systems of ADR-0063's installers.",
+        "enum": [
+          "windows",
+          "macos_arm",
+          "macos_intel",
+          "linux_deb",
+          "linux_appimage"
+        ]
       },
       "Assignment": {
         "type": "object",
@@ -10780,9 +10880,17 @@
           "short_name",
           "language",
           "time_zone",
-          "grading_scale"
+          "grading_scale",
+          "app_downloads"
         ],
         "properties": {
+          "app_downloads": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AppDownload"
+            },
+            "description": "The links to the desktop app's installers, in the order platforms are listed above. Empty: the\ninstitution has no app to offer (ADR-0064)."
+          },
           "grading_scale": {
             "$ref": "#/components/schemas/GradingScale"
           },
@@ -12954,6 +13062,22 @@
           "cli",
           "pat"
         ]
+      },
+      "SetAppDownloadsRequest": {
+        "type": "object",
+        "description": "The whole set of download links: what is not in the list is removed. An empty list switches the\ndownload hint and page off.",
+        "required": [
+          "downloads"
+        ],
+        "properties": {
+          "downloads": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AppDownload"
+            },
+            "description": "At most one link per platform, each at most 2048 characters of an `https` address."
+          }
+        }
       },
       "SourceProps": {
         "type": "object",

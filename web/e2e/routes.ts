@@ -2,7 +2,7 @@ import type { Page } from "@playwright/test";
 import { courseHref, editItemHref, itemHref } from "../src/lib/routes";
 
 /** Pages anyone can open without signing in. */
-export const publicRoutes = ["/login", "/register", "/forgot-password", "/reset-password", "/verify-email"];
+export const publicRoutes = ["/login", "/register", "/forgot-password", "/reset-password", "/verify-email", "/download"];
 
 export type RoleName = "student" | "teacher" | "admin";
 
