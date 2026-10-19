@@ -14,12 +14,21 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "=2.7.3", features = [] }
 
 [dependencies]
-tauri = { version = "=2.12.4", features = [] }
+tauri = { version = "=2.12.4", features = ["tray-icon"] }
+tauri-plugin-deep-link = "2.6.2"
+tauri-plugin-notification = "2.7.0"
+tauri-plugin-single-instance = { version = "2.5.4", features = ["deep-link"] }
 reqwest = { version = "0.13", default-features = false, features = ["rustls", "json"] }
 serde = { version = "1", features = ["derive"] }
 rusqlite = { version = "0.40", features = ["bundled"] }
 serde_json = "1"
 tokio = { version = "1", features = ["time", "sync", "macros"] }
+keyring = "4.2.0"
+
+# tauri-plugin-deep-link 2.6.2 builds `ini::ParseOption` with two fields; rust-ini 0.21.3 added more and breaks it
+# on Linux. Held at the last version that works until the plugin follows.
+[target.'cfg(target_os = "linux")'.dependencies]
+rust-ini = "=0.21.1"
 
 [dev-dependencies]
 tokio = { version = "1", features = ["rt", "net", "io-util", "time", "sync", "macros"] }

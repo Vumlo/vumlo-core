@@ -56,6 +56,13 @@ const MIGRATIONS: &[&str] = &[
          problem    TEXT
      );
      CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);",
+    // The deadlines a notification was shown for, so each is shown once.
+    "CREATE TABLE notified (
+         assignment_id TEXT NOT NULL,
+         due_at        TEXT NOT NULL,
+         window        TEXT NOT NULL,
+         PRIMARY KEY (assignment_id, due_at, window)
+     );",
 ];
 
 const COLUMNS: &str =
@@ -305,10 +312,26 @@ impl Store {
         Ok(())
     }
 
-    /// Everything of the person who is leaving: what they read and what they had not sent.
+    /// True the first time a notice is recorded, false when it was shown before.
+    pub fn notified_insert(
+        &self,
+        assignment_id: &str,
+        due_at: &str,
+        window: &str,
+    ) -> rusqlite::Result<bool> {
+        let changed = self.conn().execute(
+            "INSERT OR IGNORE INTO notified (assignment_id, due_at, window) VALUES (?1, ?2, ?3)",
+            params![assignment_id, due_at, window],
+        )?;
+        Ok(changed == 1)
+    }
+
+    /// Everything of the person who is leaving: what they read, what they had not sent, what they were told.
+    /// The language is the device's, not theirs, and stays.
     pub fn wipe(&self) -> rusqlite::Result<()> {
-        self.conn()
-            .execute_batch("DELETE FROM cache; DELETE FROM outbox; DELETE FROM meta;")
+        self.conn().execute_batch(
+            "DELETE FROM cache; DELETE FROM outbox; DELETE FROM notified; DELETE FROM meta WHERE key <> 'language';",
+        )
     }
 }
 

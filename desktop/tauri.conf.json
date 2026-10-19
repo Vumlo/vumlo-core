@@ -8,5 +8,6 @@
     "windows": [{ "label": "main", "title": "Vumlo", "width": 1200, "height": 800, "minWidth": 480, "minHeight": 600 }],
     "security": { "csp": "default-src 'self'; connect-src 'self' ipc: http://ipc.localhost; img-src 'self' data:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; frame-src https://www.youtube-nocookie.com https://player.vimeo.com; object-src 'none'; base-uri 'none'; form-action 'none'" }
   },
+  "plugins": { "deep-link": { "desktop": { "schemes": ["vumlo"] } } },
   "bundle": { "active": true, "targets": "all", "icon": ["icons/icon.png"] }
 }

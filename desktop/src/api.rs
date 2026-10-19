@@ -4,10 +4,12 @@
 use std::sync::Arc;
 
 use serde_json::Value;
-use tauri::State;
+use tauri::{AppHandle, Manager, State};
 
+use crate::PendingRoute;
 use crate::core::{ApiRequest, Core, Reply, SyncState};
 use crate::store::OutboxRow;
+use crate::tray::TrayLabels;
 
 #[tauri::command]
 pub async fn api(
@@ -47,4 +49,27 @@ pub fn outbox_list(core: State<'_, Arc<Core>>) -> Result<Vec<OutboxRow>, String>
 #[tauri::command]
 pub fn outbox_discard(core: State<'_, Arc<Core>>, id: i64) -> Result<(), String> {
     core.discard(id)
+}
+
+/// The window tells the app its language, for the notifications and the tray.
+#[tauri::command]
+pub fn set_language(
+    app: AppHandle,
+    core: State<'_, Arc<Core>>,
+    language: String,
+) -> Result<(), String> {
+    if !matches!(language.as_str(), "en" | "uk") {
+        return Err(format!("unknown language {language}"));
+    }
+    core.set_language(&language)?;
+    if let Some(labels) = app.try_state::<TrayLabels>() {
+        labels.speak(&language);
+    }
+    Ok(())
+}
+
+/// The screen a link from outside asked for, once.
+#[tauri::command]
+pub fn take_route(pending: State<'_, PendingRoute>) -> Option<String> {
+    pending.0.lock().ok()?.take()
 }

@@ -669,3 +669,130 @@ async fn what_is_not_a_path_inside_the_api_is_refused() {
     );
     assert!(rig.mock.seen().is_empty());
 }
+
+// --- against a real server (not run by default) ---------------------------------------------------
+
+/// Checks the app against a running `vumlo-server` with the demo data: its `ETag`, its `Idempotency-Key`, the
+/// session, and the store surviving a restart.
+/// `VUMLO_E2E_API=http://127.0.0.1:8080/api/v1 VUMLO_E2E_EMAIL=... VUMLO_E2E_PASSWORD=... cargo test -- --ignored`
+#[tokio::test]
+#[ignore = "needs a running server; see the comment"]
+async fn the_app_works_against_a_real_server_and_its_store_outlives_a_restart() {
+    let var = |name: &str| std::env::var(name).unwrap_or_else(|_| panic!("{name} is not set"));
+    let (api_url, email, password) = (
+        var("VUMLO_E2E_API"),
+        var("VUMLO_E2E_EMAIL"),
+        var("VUMLO_E2E_PASSWORD"),
+    );
+    let dir = std::env::temp_dir().join(format!("vumlo-e2e-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let file = dir.join("offline.sqlite3");
+    let token = Arc::new(MemoryToken::default());
+    let open = |url: &str| {
+        Core::new(
+            Store::open(&file).unwrap(),
+            url.to_owned(),
+            token.clone(),
+            Box::new(|_| {}),
+        )
+    };
+    let call = |method: &str, path: &str, body: Option<Value>, key: Option<&str>| ApiRequest {
+        method: method.into(),
+        path: path.into(),
+        body,
+        queue: key.is_some(),
+        idem_key: key.map(Into::into),
+    };
+
+    // Signed in and reading: the server's tag comes back as a 304 and the copy is confirmed.
+    let core = open(&api_url);
+    let login = core
+        .request(call(
+            "POST",
+            "/auth/login",
+            Some(json!({"email": email, "password": password, "client": "app"})),
+            None,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(login.status, 200, "{:?}", login.body);
+    assert!(token.get().is_some() && login.body.as_ref().unwrap().get("token").is_none());
+    let first = core.request(get("/me/courses?limit=100")).await.unwrap();
+    let course = first.body.as_ref().unwrap()["items"][0]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let tag = core
+        .store
+        .cache_get("/me/courses?limit=100")
+        .unwrap()
+        .unwrap()
+        .etag;
+    assert!(
+        tag.as_deref().is_some_and(|t| t.starts_with("W/\"")),
+        "{tag:?}"
+    );
+    let second = core.request(get("/me/courses?limit=100")).await.unwrap();
+    assert_eq!(
+        (second.status, second.from_cache, second.body),
+        (200, false, first.body.clone())
+    );
+    let content = format!("/courses/{course}/content");
+    core.request(get(&content)).await.unwrap();
+
+    // The same key twice is one module: the server replays the first answer.
+    let modules = format!("/courses/{course}/modules");
+    let title = format!("Offline test {}", std::process::id());
+    let create = |key: &str| call("POST", &modules, Some(json!({"title": title})), Some(key));
+    let one = core.request(create("e2e-key-1")).await.unwrap();
+    let again = core.request(create("e2e-key-1")).await.unwrap();
+    assert_eq!(
+        (one.status, one.queued, again.status),
+        (201, false, 201),
+        "{:?}",
+        one.body
+    );
+    assert_eq!(one.body, again.body, "the same module");
+    drop(core);
+
+    // "Restart" with the server unreachable: what was read is still there, and a write waits in the queue.
+    let offline = open("http://127.0.0.1:9");
+    let kept = offline.request(get(&content)).await.unwrap();
+    assert!(kept.from_cache && kept.cached_at.is_some());
+    let queued = offline.request(create("e2e-key-2")).await.unwrap();
+    assert!(queued.queued);
+    assert_eq!(offline.state().pending, 1);
+    drop(offline);
+
+    // The server is back (a third start): the queue is still there and goes out with its key, once.
+    let online = open(&api_url);
+    assert_eq!(online.state().pending, 1);
+    assert_eq!(online.deliver_due().await, 1);
+    assert_eq!(
+        (
+            online.state().pending,
+            online.state().failed,
+            online.state().sent
+        ),
+        (0, 0, 1)
+    );
+    online.store.cache_delete(&content).unwrap();
+    let tree = online.request(get(&content)).await.unwrap().body.unwrap();
+    let count = tree["modules"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|m| m["title"] == title)
+        .count();
+    assert_eq!(
+        count, 2,
+        "one for key 1 and one for key 2, none for the replays"
+    );
+
+    let out = online
+        .request(call("POST", "/auth/logout", None, None))
+        .await
+        .unwrap();
+    assert_eq!(out.status, 204);
+    std::fs::remove_dir_all(&dir).unwrap();
+}

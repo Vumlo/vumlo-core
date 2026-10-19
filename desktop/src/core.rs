@@ -2,8 +2,8 @@
 //! a queue for the writes a student makes without a connection, and the session. The webview reaches it
 //! through the commands of `api.rs` and nowhere else.
 
+use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU64, Ordering};
-use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use serde::Serialize;
@@ -19,9 +19,12 @@ pub trait TokenStore: Send + Sync {
     fn clear(&self);
 }
 
+/// The token of a test: held in memory only.
+#[cfg(test)]
 #[derive(Default)]
-pub struct MemoryToken(Mutex<Option<String>>);
+pub struct MemoryToken(std::sync::Mutex<Option<String>>);
 
+#[cfg(test)]
 impl TokenStore for MemoryToken {
     fn get(&self) -> Option<String> {
         self.0.lock().ok()?.clone()
@@ -589,6 +592,33 @@ impl Core {
         let _ = self.store.retry_all_now();
         self.wake.notify_one();
         self.publish();
+    }
+
+    /// Someone is signed in on this device.
+    pub fn signed_in(&self) -> bool {
+        self.token.get().is_some()
+    }
+
+    /// The language of the window, which the notifications speak (`en` until the window says otherwise).
+    pub fn language(&self) -> String {
+        self.store
+            .meta_get("language")
+            .ok()
+            .flatten()
+            .unwrap_or_else(|| "en".to_owned())
+    }
+
+    pub fn set_language(&self, language: &str) -> Result<(), String> {
+        self.store
+            .meta_set("language", language)
+            .map_err(|e| e.to_string())
+    }
+
+    /// True the first time this notice is asked about.
+    pub fn notice_new(&self, assignment_id: &str, due_at: &str, window: &str) -> bool {
+        self.store
+            .notified_insert(assignment_id, due_at, window)
+            .unwrap_or(false)
     }
 
     pub fn outbox(&self) -> Result<Vec<OutboxRow>, String> {

@@ -131,8 +131,23 @@ fn leaving_wipes_what_was_read_and_what_was_not_sent() {
     s.cache_put("/me", "{}", None, 1).unwrap();
     s.enqueue("POST", SUBMIT, None, "k", 1).unwrap();
     s.meta_set("user_id", "u1").unwrap();
+    s.meta_set("language", "uk").unwrap();
+    assert!(
+        s.notified_insert("a1", "2026-10-30T20:59:00Z", "hour")
+            .unwrap()
+    );
     assert_eq!(s.meta_get("user_id").unwrap().as_deref(), Some("u1"));
     s.wipe().unwrap();
+    assert_eq!(
+        s.meta_get("language").unwrap().as_deref(),
+        Some("uk"),
+        "the language belongs to the device"
+    );
+    assert!(
+        s.notified_insert("a1", "2026-10-30T20:59:00Z", "hour")
+            .unwrap(),
+        "a new person is told again"
+    );
     assert!(s.cache_get("/me").unwrap().is_none());
     assert!(s.outbox_list().unwrap().is_empty());
     assert!(s.meta_get("user_id").unwrap().is_none());
@@ -152,4 +167,27 @@ fn a_row_that_was_being_sent_when_the_app_stopped_is_sent_again() {
     let reopened = Store::open(&path).unwrap();
     assert_eq!(reopened.outbox_list().unwrap()[0].state, "pending");
     std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn a_notice_is_recorded_once_per_deadline_and_window() {
+    let s = store();
+    assert!(
+        s.notified_insert("a1", "2026-10-30T20:59:00Z", "day")
+            .unwrap()
+    );
+    assert!(
+        !s.notified_insert("a1", "2026-10-30T20:59:00Z", "day")
+            .unwrap()
+    );
+    assert!(
+        s.notified_insert("a1", "2026-10-30T20:59:00Z", "hour")
+            .unwrap(),
+        "the hour is its own notice"
+    );
+    assert!(
+        s.notified_insert("a1", "2026-11-02T20:59:00Z", "day")
+            .unwrap(),
+        "a moved deadline is told again"
+    );
 }
