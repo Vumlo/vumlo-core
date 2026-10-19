@@ -36,6 +36,7 @@ export function AssignmentPage({ item, courseId, staff }: { item: Item; courseId
   const [doc, setDoc] = useState<Document | null>(null);
   const [savedAt, setSavedAt] = useState<string | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const unsaved = useRef<(() => void) | null>(null);
   const features = profiles.data?.profiles.find((p) => p.name === "student")?.features ?? STUDENT_FEATURES;
 
   const dl = deadline(a);
@@ -57,9 +58,11 @@ export function AssignmentPage({ item, courseId, staff }: { item: Item; courseId
   const onChange = useCallback((next: Document) => {
     setDoc(next);
     if (timer.current) clearTimeout(timer.current);
-    timer.current = setTimeout(() => void flush(next), 1200);
+    unsaved.current = () => void flush(next);
+    timer.current = setTimeout(() => { unsaved.current = null; void flush(next); }, 1200);
   }, [flush]);
-  useEffect(() => () => { if (timer.current) clearTimeout(timer.current); }, []);
+  // Leaving the page does not drop what was typed in the last moment: it is sent as the page goes.
+  useEffect(() => () => { if (timer.current) clearTimeout(timer.current); unsaved.current?.(); }, []);
 
   async function start() {
     await save.run(emptyDoc());
@@ -69,6 +72,7 @@ export function AssignmentPage({ item, courseId, staff }: { item: Item; courseId
   }
   async function send() {
     if (timer.current) clearTimeout(timer.current);
+    unsaved.current = null;
     if (doc) await flush(doc);
     const ok = await submit.run();
     if (ok) { setFocus(false); setDoc(null); setSavedAt(null); }

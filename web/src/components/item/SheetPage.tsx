@@ -54,6 +54,7 @@ export function SheetPage({ item, courseId, staff, mode }: { item: Item; courseI
   const [savedAt, setSavedAt] = useState<string | null>(null);
   const [dismissed, setDismissed] = useState<string[]>([]);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const unsaved = useRef<(() => void) | null>(null);
 
   const dl = deadline(a);
   const attempts = sub.data?.attempts ?? [];
@@ -80,12 +81,15 @@ export function SheetPage({ item, courseId, staff, mode }: { item: Item; courseI
     setLocal(next);
     setDismissed((d) => (d.includes(id) ? d : [...d, id]));
     if (timer.current) clearTimeout(timer.current);
-    timer.current = setTimeout(() => void flush(next), 900);
+    unsaved.current = () => void flush(next);
+    timer.current = setTimeout(() => { unsaved.current = null; void flush(next); }, 900);
   }
-  useEffect(() => () => { if (timer.current) clearTimeout(timer.current); }, []);
+  // Leaving the page does not drop what was typed in the last moment: it is sent as the page goes.
+  useEffect(() => () => { if (timer.current) clearTimeout(timer.current); unsaved.current?.(); }, []);
 
   async function send() {
     if (timer.current) clearTimeout(timer.current);
+    unsaved.current = null;
     await flush(answers);
     const ok = await submit.run();
     setDismissed([]);
