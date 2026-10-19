@@ -30,6 +30,7 @@ manifest, logo), `src/generated/` (`client-config.json` and its types) and `src/
 
 ## Rules
 - Ids are in the query string (`/course?id=...`), never in the path, and an address is built only by `src/lib/routes.ts` (ADR-0057). A page below `/course` reads them with `src/lib/useRoute.ts` and sits under the Suspense boundary of its layout.
+- In the desktop app (ADR-0056, ADR-0060) every request goes through `lib/api/client.ts`, which hands it to the app; never call `fetch` for the API anywhere else. A write a student may make offline passes `{ queue: true }`; a screen that needs a connection (a quiz) says so with `useOffline()`.
 - Every page is a client component. The browser calls `/api/v1` only; no route handlers, no server actions.
 - Data comes from typed hooks in `src/lib/api/`. A hook for an endpoint the server has uses the generated types. A hook for a missing endpoint or field uses the hand-written types in `src/lib/api/gaps.ts`, is mocked in `src/mocks/`, and has an entry in `API_GAPS.md` (screen, what is missing, what is mocked). Never change the backend from a UI task.
 - Colours only as `var(--token)` from `styles/tokens.css`. No hex, `rgb()` or `hsl()` anywhere else (`pnpm lint` checks).

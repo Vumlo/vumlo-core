@@ -167,6 +167,9 @@ All of these pass, run from `backend/`:
 and the same with `--features dummy` (cargo test, clippy and the offline check); `cargo sqlx prepare`
 runs once with `--all-features`. From `web/`, after `vumlo-cli brand apply`: `npm run typecheck` and
 `npm run build`.
+From `desktop/`: `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test` and `npm test`
+(its Linux libraries are listed in `docs/desktop.md`). It has its own Cargo workspace; no crate there is part of
+ADR-0014, its dependencies are those of ADR-0056, ADR-0061 and ADR-0062.
 
 ## 15. Git
 
