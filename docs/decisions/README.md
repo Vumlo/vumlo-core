@@ -91,3 +91,4 @@ What gets easier, what gets harder, what we must remember.
 | 0054 | [Deployment model: `vumlo-cli`, one config schema, build-time branding, optional modules](0054-deployment-model.md) |
 | 0055 | [Deferred directions: widgets, plugins, an end-user CLI, native clients](0055-deferred-directions.md) |
 | 0056 | [Desktop client: Tauri 2, the web app in a native window, the network in Rust](0056-desktop-client.md) |
+| 0057 | [Query-string routes and the desktop export build](0057-query-string-routes-and-the-desktop-export.md) |
