@@ -36,6 +36,7 @@ fn only_admins_manage_users() {
 fn only_admins_manage_terms_and_groups_and_read_groups() {
     for action in [
         Action::ViewInstitutionSettings,
+        Action::ManageAppDownloads,
         Action::ViewAdminReports,
         Action::ManageTerms,
         Action::ManageGroups,

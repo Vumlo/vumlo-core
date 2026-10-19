@@ -96,10 +96,23 @@ To sign, add these repository secrets; the workflow uses what is there and says 
 
 ## Give it to people
 
-Publish the draft release, and link to it from your university's pages: "Download for Windows / macOS /
-Linux". Say which file is which: `...-setup.exe` (Windows), `...-aarch64.dmg` (Mac with Apple silicon),
-`...-x64.dmg` (Intel Mac), `.deb` (Ubuntu, Debian) and `.AppImage` (other Linux). Keep `SHA256SUMS`. A new
-version is a new tag, `desktop-v1.0.1`; people install it over the old one and keep their data.
+Publish the draft release. Then, in the web app as an administrator, open **Admin, Institution, Desktop app** and
+paste the address of each installer (`https://...`; any of the five can stay empty). From then on:
+
+- students and teachers on a Windows, Mac or Linux computer see a notice on their home page with a button for
+  their system, and can hide it;
+- there is a download page, `https://<your site>/download`, that needs no sign-in: put that address on your
+  university's own pages;
+- the account menu has "Get the desktop app".
+
+Save all the fields empty and the notice, the page and the menu entry are gone. The links are public, since the
+download page is.
+
+Which file goes in which field: `...-setup.exe` is Windows; `...-aarch64.dmg` is a Mac with Apple silicon and
+`...-x64.dmg` an Intel Mac; `.deb` is Ubuntu and Debian and `.AppImage` other Linux. Use the address of each file
+on the published release (right click it, "copy link address"), or wherever you host them, and keep `SHA256SUMS`.
+A new version is a new tag, `desktop-v1.0.1`, and new files: paste the new addresses, save, and people see them
+at once. They install over the old version and keep their data.
 
 ## Limits to know about
 

@@ -497,3 +497,50 @@ pub async fn list_subgroup_members(
     .fetch_all(conn)
     .await
 }
+
+// ---------------------------------------------------------------------------------------------
+// Download links of the desktop app (ADR-0064)
+// ---------------------------------------------------------------------------------------------
+
+/// The links in the order the platforms are offered.
+pub async fn list_app_downloads(
+    conn: &mut PgConnection,
+) -> Result<Vec<(String, String)>, sqlx::Error> {
+    let rows = sqlx::query!(
+        "SELECT platform, url FROM org.app_downloads
+         ORDER BY array_position(
+             ARRAY['windows', 'macos_arm', 'macos_intel', 'linux_deb', 'linux_appimage'], platform)"
+    )
+    .fetch_all(conn)
+    .await?;
+    Ok(rows
+        .into_iter()
+        .map(|row| (row.platform, row.url))
+        .collect())
+}
+
+/// Makes the table hold exactly `links`: the platforms that are not in it are removed, the others set.
+pub async fn replace_app_downloads(
+    conn: &mut PgConnection,
+    links: &[(String, String)],
+) -> Result<(), sqlx::Error> {
+    let platforms: Vec<String> = links.iter().map(|(platform, _)| platform.clone()).collect();
+    let urls: Vec<String> = links.iter().map(|(_, url)| url.clone()).collect();
+    sqlx::query!(
+        "DELETE FROM org.app_downloads WHERE platform <> ALL($1::text[])",
+        &platforms
+    )
+    .execute(&mut *conn)
+    .await?;
+    sqlx::query!(
+        "INSERT INTO org.app_downloads (platform, url)
+         SELECT * FROM UNNEST($1::text[], $2::text[])
+         ON CONFLICT (platform) DO UPDATE SET url = EXCLUDED.url, updated_at = now()
+         WHERE org.app_downloads.url IS DISTINCT FROM EXCLUDED.url",
+        &platforms,
+        &urls
+    )
+    .execute(conn)
+    .await?;
+    Ok(())
+}

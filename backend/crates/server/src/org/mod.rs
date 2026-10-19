@@ -6,8 +6,8 @@ mod routes;
 mod service;
 
 pub use model::{
-    Group, GroupMember, GroupOption, GroupOverview, MemberLine, MemberProblem, ModelError, OrgName,
-    Subgroup, Term, TermDates, TermUpdate, TermUsage,
+    DownloadUrl, Group, GroupMember, GroupOption, GroupOverview, MemberLine, MemberProblem,
+    ModelError, OrgName, Subgroup, Term, TermDates, TermUpdate, TermUsage,
 };
 pub use routes::router;
 #[cfg(test)]

@@ -17,7 +17,7 @@ The desktop app, and the two API conventions it needs.
 ### Upgrade notes
 
 - `config_version` is still **1**.
-- The newest core migration is `0030` (`idempotency` schema; Google sign-in for apps). `vumlo-cli db migrate`
+- The newest core migration is `0031` (`idempotency` schema; Google sign-in for apps; download links of the desktop app). `vumlo-cli db migrate`
   applies it; take a backup first, as always.
 - **The addresses of the web app changed** (ADR-0057). A course is `/course?id=<id>` and an item
   `/course/item?id=<id>&item=<id>` (was `/courses/<id>/items/<id>`); `/courses` and `/courses/new` are as they were.
@@ -37,6 +37,10 @@ The desktop app, and the two API conventions it needs.
   `desktop/release/desktop-release.yml` builds and (with certificates) signs the installers.
 - `Idempotency-Key` on `POST` (ADR-0058) and `ETag` / `If-None-Match` on `GET` (ADR-0059), for every client.
 - `POST /auth/app/exchange` and an optional `app_challenge` on `POST /auth/google/start` (ADR-0062).
+- **Download links of the desktop app** (ADR-0064): an administrator pastes the installers' addresses on the
+  Institution page (`PUT /admin/institution/app-downloads`); `GET /institution` lists them. With at least one, the
+  home page shows a notice with a button for the visitor's system, there is a public page `/download`, and the account
+  menu has an entry. No links, none of it.
 
 ### Changed
 

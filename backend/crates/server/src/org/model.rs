@@ -14,6 +14,44 @@ pub enum ModelError {
     StartsOnRange,
     #[error("must be a date in the years 1 to 9999")]
     EndsOnRange,
+    #[error(
+        "must be an https address of at most {DOWNLOAD_URL_MAX_LEN} characters, without spaces"
+    )]
+    DownloadUrl,
+    #[error("each platform may appear once")]
+    DownloadDuplicate,
+}
+
+const DOWNLOAD_URL_MAX_LEN: usize = 2048;
+
+/// The address of an installer: `https`, a host, no whitespace or control character (ADR-0064). Anything
+/// that is not that could be a `javascript:` link or a page that is not served over TLS.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DownloadUrl(String);
+
+impl DownloadUrl {
+    pub fn parse(raw: &str) -> Result<Self, ModelError> {
+        let url = raw.trim();
+        let host = url
+            .strip_prefix("https://")
+            .and_then(|rest| rest.split(['/', '?', '#']).next());
+        let host_ok = host.is_some_and(|host| {
+            let name = host.rsplit_once('@').map_or(host, |(_, name)| name);
+            !host.contains('@') && !name.is_empty() && !name.starts_with(['.', ':'])
+        });
+        if host_ok
+            && url.len() <= DOWNLOAD_URL_MAX_LEN
+            && !url.chars().any(|c| c.is_whitespace() || c.is_control())
+        {
+            Ok(Self(url.to_owned()))
+        } else {
+            Err(ModelError::DownloadUrl)
+        }
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
 }
 
 /// The name of a term, a group or a subgroup: trimmed, 1 to 100 characters, no control

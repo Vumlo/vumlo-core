@@ -209,6 +209,11 @@ fn operations(c: &Ctx, other_user: Uuid) -> Vec<Call> {
         ),
         // The institution's own: admins only.
         call("GET", "/admin/institution".into(), None),
+        call(
+            "PUT",
+            "/admin/institution/app-downloads".into(),
+            Some(json!({"downloads": []})),
+        ),
         call("GET", "/admin/users".into(), None),
         call("GET", "/admin/users/summary".into(), None),
         call("GET", format!("/admin/users/{}/facts", c.owner), None),

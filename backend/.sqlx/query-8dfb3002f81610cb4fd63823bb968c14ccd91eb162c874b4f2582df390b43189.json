@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO org.app_downloads (platform, url)\n         SELECT * FROM UNNEST($1::text[], $2::text[])\n         ON CONFLICT (platform) DO UPDATE SET url = EXCLUDED.url, updated_at = now()\n         WHERE org.app_downloads.url IS DISTINCT FROM EXCLUDED.url",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "TextArray",
+        "TextArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "8dfb3002f81610cb4fd63823bb968c14ccd91eb162c874b4f2582df390b43189"
+}

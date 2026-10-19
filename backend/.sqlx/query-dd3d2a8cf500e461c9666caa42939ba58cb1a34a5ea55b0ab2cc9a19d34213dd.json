@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM org.app_downloads WHERE platform <> ALL($1::text[])",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "TextArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "dd3d2a8cf500e461c9666caa42939ba58cb1a34a5ea55b0ab2cc9a19d34213dd"
+}

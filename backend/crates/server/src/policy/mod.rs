@@ -102,6 +102,8 @@ pub enum Action {
     /// Read the institution settings an admin sees, including the mode and the allowed domains
     /// (ADR-0044). The public profile needs no action: it needs no session.
     ViewInstitutionSettings,
+    /// Set the links to the desktop app's installers (ADR-0064). Admins only.
+    ManageAppDownloads,
     /// Read the administrator reports: people summary and facts, courses of the institution, term
     /// statistics and the audit log (ADR-0053).
     ViewAdminReports,
@@ -229,6 +231,7 @@ impl Action {
             Self::ManageOwnAccount
             | Self::ManageUsers
             | Self::ViewInstitutionSettings
+            | Self::ManageAppDownloads
             | Self::ViewAdminReports
             | Self::CreateCourse
             | Self::ViewOwnCourses
@@ -257,6 +260,7 @@ impl Action {
             Self::ManageOwnAccount
             | Self::ManageUsers
             | Self::ViewInstitutionSettings
+            | Self::ManageAppDownloads
             | Self::ViewAdminReports
             | Self::CreateCourse
             | Self::ViewOwnCourses
@@ -330,6 +334,7 @@ pub fn authorize(actor: &Actor, action: Action) -> Result<(), PolicyError> {
         Action::ManageOwnAccount => true,
         Action::ManageUsers
         | Action::ViewInstitutionSettings
+        | Action::ManageAppDownloads
         | Action::ViewAdminReports
         | Action::ManageTerms
         | Action::ManageGroups
