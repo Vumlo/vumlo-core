@@ -74,8 +74,8 @@ binary. Edit the two files:
   file starts with `[auth] cookie_secure = false`, which is only for a trial over plain HTTP: delete
   that line for anything real.
 
-The release ships a **placeholder** brand: the name "Vumlo" and the logo `brand/logo.svg`. Replace
-`brand/logo.svg` with your institution's logo (PNG, JPEG, WebP or SVG; an SVG must have its text
+The release ships a **placeholder** brand: the name "Vumlo" and the logo `brand/logo.png`. Replace
+`brand/logo.png` with your institution's logo (PNG, JPEG, WebP or SVG; an SVG must have its text
 converted to paths), or keep your file elsewhere and set `institution.logo` to its path.
 
 ### 3. Build and start

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { BrandMark } from "@/components/BrandMark";
 import { Icon } from "@/components/Icon";
 import { navFor } from "@/lib/nav";
 import { fullName, useMe, type User } from "@/lib/session";
@@ -121,7 +122,7 @@ export function Shell({ children }: { children: ReactNode }) {
     <>
       <header className={s.header}>
         <Link href="/" className={s.brand}>
-          <span aria-hidden="true" className={s.logo}>{institutionName.charAt(0)}</span>
+          <BrandMark name={institutionName} tile={s.logo} img={s.logoImg} />
           <span className={s.brandName}>{institutionName}</span>
         </Link>
         <nav aria-label={t("shell.main")} className={s.nav}>

@@ -3,6 +3,7 @@
 .col { width: 100%; max-width: 400px; }
 .brand { display: flex; align-items: center; gap: 12px; margin-bottom: 24px; }
 .logo { flex: none; width: 40px; height: 40px; border-radius: 10px; background: var(--accent); color: var(--accent-text); display: flex; align-items: center; justify-content: center; font-size: 19px; font-weight: 700; }
+.logoImg { flex: none; width: 44px; height: 44px; object-fit: contain; }
 .brandName { font-size: 17px; font-weight: 600; line-height: 1.25; }
 .brandSub { font-size: 13px; color: var(--muted); }
 .card { padding: 32px; background: var(--surface); border: 1px solid var(--border); border-radius: 14px; box-shadow: var(--shadow); }

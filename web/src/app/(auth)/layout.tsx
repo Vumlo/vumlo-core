@@ -1,6 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
+import { BrandMark } from "@/components/BrandMark";
 import { Icon } from "@/components/Icon";
 import { useInstitution } from "@/lib/api/hooks/institution";
 import { LANGUAGES, useLanguage, useT, type Language } from "@/lib/i18n";
@@ -19,7 +20,7 @@ export default function AuthLayout({ children }: { children: ReactNode }) {
       <div className={s.center}>
         <div className={s.col}>
           <div className={s.brand}>
-            <div aria-hidden="true" className={s.logo}>{name.charAt(0)}</div>
+            <BrandMark name={name} tile={s.logo} img={s.logoImg} />
             <div>
               <div className={s.brandName}>{name}</div>
               <div className={s.brandSub}>{t("auth.tagline")}</div>
