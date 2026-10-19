@@ -47,3 +47,7 @@
   .tab[aria-current="page"] { color: var(--accent-fg); font-weight: 600; }
   .tab[aria-current="page"] .tabIcon { background: var(--accent-soft); }
 }
+
+/* The desktop app's connection and queue, above the screen (ADR-0060). */
+.offline { display: grid; gap: 8px; padding: 0 16px; max-width: 1200px; margin: 0 auto; }
+.offline:not(:empty) { padding-top: 12px; }

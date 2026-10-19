@@ -17,6 +17,7 @@ import { attemptRule, lateRule } from "@/components/course/StudentContent";
 import { DueBar } from "./DueBar";
 import { ItemFrame, PreviewBanner } from "./ItemFrame";
 import { useT } from "@/lib/i18n";
+import { useQueued } from "@/lib/offline";
 import s from "./Item.module.css";
 
 const STUDENT_FEATURES: Feature[] = ["text_styles", "links", "lists", "code", "math"];
@@ -32,6 +33,7 @@ export function AssignmentPage({ item, courseId, staff }: { item: Item; courseId
   const profiles = useEditorProfiles();
   const save = useSaveDraft(item.id);
   const submit = useSubmitDraft(item.id);
+  const waiting = useQueued(`/assignments/${item.id}/submission/submit`);
   const [focus, setFocus] = useState(false);
   const [doc, setDoc] = useState<Document | null>(null);
   const [savedAt, setSavedAt] = useState<string | null>(null);
@@ -45,7 +47,7 @@ export function AssignmentPage({ item, courseId, staff }: { item: Item; courseId
   const draft = sub.data?.draft ?? null;
   const grade = grades.data?.items.find((g) => g.assignment_id === item.id);
   const attemptsLeft = a.max_attempts == null ? Infinity : a.max_attempts - attempts.length;
-  const canEdit = !staff && dl.open && attemptsLeft > 0;
+  const canEdit = !staff && dl.open && attemptsLeft > 0 && !waiting;
 
   const view: View = grade ? "graded" : draft ? (focus ? "focus" : "draft") : latest ? "submitted" : dl.closed ? "closed" : "not-started";
   const loading = !staff && (!sub.data || !grades.data);
@@ -120,11 +122,12 @@ export function AssignmentPage({ item, courseId, staff }: { item: Item; courseId
 
           <DueBar due={a.due_at ?? null} open={dl.open && view !== "graded"} points={a.max_points} pill={pill} danger={view === "closed"}>
             {view === "not-started" && canEdit && <button type="button" className="btn btn-primary" onClick={start} disabled={save.pending}>{t("asg.start")}</button>}
-            {(view === "draft" || view === "focus") && <button type="button" className="btn btn-primary" onClick={send} disabled={submit.pending || save.pending}>{t("asg.submit")}</button>}
+            {(view === "draft" || view === "focus") && <button type="button" className="btn btn-primary" onClick={send} disabled={submit.pending || save.pending || waiting}>{t("asg.submit")}</button>}
             {view === "graded" && grade && (
               <span className={s.score}><span className={s.scoreNum}>{grade.score}</span><span className="muted" style={{ fontSize: 14 }}> / {a.max_points}</span></span>
             )}
           </DueBar>
+          {waiting && <p role="status" className="alert alert-info" style={{ marginTop: 12 }}>{t("offline.queuedNote")}</p>}
           {submit.error && <p role="alert" className="alert alert-danger" style={{ marginTop: 12 }}>{submit.error.detail ?? submit.error.title}</p>}
 
           {view === "closed" && (

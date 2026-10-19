@@ -1,6 +1,5 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import { useEffect, useState, type FormEvent } from "react";
 import { Icon, type IconName } from "@/components/Icon";
 import { PasswordField } from "@/components/PasswordField";
@@ -10,7 +9,8 @@ import { useInstitution } from "@/lib/api/hooks/institution";
 import { LANGUAGES, useLanguage, useT, type Language } from "@/lib/i18n";
 import type { MessageKey } from "@/lib/i18n/core";
 import { dayLong, initials, lastActive } from "@/lib/format";
-import { fullName, useChangePassword, useLogout, useMe } from "@/lib/session";
+import { fullName, useChangePassword, useMe } from "@/lib/session";
+import { useSignOut } from "@/components/shell/useSignOut";
 import { useTheme, type ThemePreference } from "@/lib/theme";
 import s from "./Profile.module.css";
 
@@ -27,13 +27,12 @@ const THEMES = { system: "theme.system", light: "theme.lightOption", dark: "them
 export function ProfileScreen() {
   const t = useT();
   const { language, setLanguage } = useLanguage();
-  const router = useRouter();
   const me = useMe();
   const institution = useInstitution();
   const sessions = useSessions();
   const revoke = useRevokeSessions();
   const change = useChangePassword();
-  const logout = useLogout();
+  const { signOut, dialog: signOutDialog } = useSignOut();
   const { preference, setPreference } = useTheme();
   const [active, setActive] = useState<string>("profile");
   const [cur, setCur] = useState("");
@@ -166,10 +165,11 @@ export function ProfileScreen() {
           </section>
 
           <div>
-            <button type="button" className="btn btn-outline" onClick={async () => { await logout.run(); router.replace("/login"); }}>
+            <button type="button" className="btn btn-outline" onClick={signOut}>
               <Icon name="logout" size={16} />
               {t("account.signOut")}
             </button>
+            {signOutDialog}
           </div>
         </div>
       </div>

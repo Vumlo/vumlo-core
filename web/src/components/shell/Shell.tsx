@@ -5,10 +5,12 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { Icon } from "@/components/Icon";
 import { navFor } from "@/lib/nav";
-import { fullName, useLogout, useMe, type User } from "@/lib/session";
+import { fullName, useMe, type User } from "@/lib/session";
 import { useTheme } from "@/lib/theme";
 import { initials } from "@/lib/format";
 import { useInstitution } from "@/lib/api/hooks/institution";
+import { OfflineBar } from "./OfflineBar";
+import { useSignOut } from "./useSignOut";
 import { useT } from "@/lib/i18n";
 import s from "./Shell.module.css";
 
@@ -18,8 +20,7 @@ const here = () => window.location.pathname + window.location.search;
 function AccountMenu({ user }: { user: User }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
-  const router = useRouter();
-  const logout = useLogout();
+  const { signOut, dialog } = useSignOut();
   const t = useT();
 
   useEffect(() => {
@@ -38,11 +39,6 @@ function AccountMenu({ user }: { user: User }) {
       document.removeEventListener("keydown", close);
     };
   }, [open]);
-
-  async function signOut() {
-    await logout.run();
-    router.replace("/login");
-  }
 
   return (
     <div ref={ref} className={s.actions}>
@@ -65,11 +61,12 @@ function AccountMenu({ user }: { user: User }) {
           <Link role="menuitem" href="/profile" className="menu-item" onClick={() => setOpen(false)}>
             <Icon name="user" size={16} /> {t("account.profile")}
           </Link>
-          <button type="button" role="menuitem" className="menu-item" onClick={signOut}>
+          <button type="button" role="menuitem" className="menu-item" onClick={() => { setOpen(false); signOut(); }}>
             <Icon name="logout" size={16} /> {t("account.signOut")}
           </button>
         </div>
       )}
+      {dialog}
     </div>
   );
 }
@@ -142,6 +139,7 @@ export function Shell({ children }: { children: ReactNode }) {
         </span>
         <AccountMenu user={user} />
       </header>
+      <OfflineBar role={user.role} />
       <main className={s.main}>{children}</main>
       <nav aria-label={t("shell.main")} className={s.tabs}>
         {nav.map((n) => (
