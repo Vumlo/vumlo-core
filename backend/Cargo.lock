@@ -766,7 +766,7 @@ checksum = "be1e0bca6c3637f992fc1cc7cbc52a78c1ef6db076dbf1059c4323d6a2048376"
 
 [[package]]
 name = "db"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "argon2",
  "base64 0.23.1",
@@ -1978,7 +1978,7 @@ dependencies = [
 
 [[package]]
 name = "module-api"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "anyhow",
  "axum",
@@ -3102,7 +3102,7 @@ dependencies = [
 
 [[package]]
 name = "server"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "anyhow",
  "api-types",
@@ -4102,7 +4102,7 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 
 [[package]]
 name = "vumlo-cli"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "anyhow",
  "api-types",
@@ -4127,7 +4127,7 @@ dependencies = [
 
 [[package]]
 name = "vumlo-config"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "api-types",
  "chrono-tz",
@@ -4139,7 +4139,7 @@ dependencies = [
 
 [[package]]
 name = "vumlo-module-dummy"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "anyhow",
  "axum",

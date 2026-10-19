@@ -9,6 +9,7 @@
   display: flex; align-items: center; justify-content: center; flex: none; width: 32px; height: 32px;
   border-radius: 8px; background: var(--accent); color: var(--accent-text); font-size: 16px; font-weight: 700;
 }
+.logoImg { flex: none; width: 32px; height: 32px; object-fit: contain; }
 .brandName { font-size: 15px; font-weight: 600; }
 .nav { display: flex; gap: 4px; }
 .navLink { display: flex; align-items: center; min-height: 40px; padding: 0 14px; border-radius: 8px; }
@@ -33,6 +34,7 @@
   .header { flex-wrap: nowrap; gap: 8px; min-height: 56px; padding: 0 8px 0 16px; }
   .nav, .search, .desktopOnly { display: none; }
   .logo { width: 28px; height: 28px; border-radius: 7px; font-size: 14px; }
+  .logoImg { width: 28px; height: 28px; }
   .phoneOnly { display: flex; }
   .main { min-height: calc(100vh - 57px); padding-bottom: 0; }
   .tabs {

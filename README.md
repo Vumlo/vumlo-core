@@ -20,7 +20,7 @@ Download `vumlo-<version>-source.tar.gz` and `SHA256SUMS` from the
 ```sh
 sha256sum --check --ignore-missing SHA256SUMS && tar xzf vumlo-*-source.tar.gz && cd vumlo-*/
 ./vumlo init && cp deploy/env.example .env && chmod 600 .env   # then edit vumlo.toml and .env
-./vumlo config check && ./vumlo brand apply                    # your name and logo (brand/logo.svg) go into the web app
+./vumlo config check && ./vumlo brand apply                    # your name and logo (brand/logo.png) go into the web app
 export COMPOSE_FILE=deploy/compose.yaml COMPOSE_ENV_FILES=.env && docker compose build
 # then migrate, create the administrator and start: docs/install.md, "Then, in this order"
 ```

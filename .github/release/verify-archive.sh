@@ -37,7 +37,7 @@ cd "vumlo-$version"
 for unwanted in .github docs/decisions backend/crates/server/tests backend/crates/modules ARCHITECTURE.md AGENTS.md; do
     [ ! -e "$unwanted" ] || { echo "the archive contains $unwanted" >&2; exit 1; }
 done
-for wanted in vumlo vumlo.toml.example docs/install.md docs/desktop.md CHANGELOG.md brand/logo.svg deploy/compose.yaml backend/.sqlx desktop/scripts/build.mjs desktop/release/desktop-release.yml desktop/Cargo.lock; do
+for wanted in vumlo vumlo.toml.example docs/install.md docs/desktop.md CHANGELOG.md brand/logo.png deploy/compose.yaml backend/.sqlx desktop/scripts/build.mjs desktop/release/desktop-release.yml desktop/Cargo.lock; do
     [ -e "$wanted" ] || { echo "the archive lacks $wanted" >&2; exit 1; }
 done
 
@@ -50,16 +50,16 @@ cp deploy/env.example .env && chmod 600 .env
 db_password="$(openssl rand -hex 16)"
 sed -i "s/change-me/$db_password/g" .env
 grep -q '^name = "Vumlo"' vumlo.toml          # the placeholder name
-cp brand/logo.svg placeholder-logo.svg
-printf '%s\n' '<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"><rect width="64" height="64" fill="#b00020"/></svg>' >brand/logo.svg
+printf '%s\n' '<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"><rect width="64" height="64" fill="#b00020"/></svg>' >brand/own-logo.svg
+sed -i 's#^logo = "brand/logo.png"#logo = "brand/own-logo.svg"#' vumlo.toml
 sed -i 's/^name = "Vumlo"/name = "Verification University"/' vumlo.toml
 
 step "3. config check, brand apply"
 ./vumlo config check
 ./vumlo brand apply
 grep -q 'Verification University' .vumlo/generated/client-config.json
-! cmp -s brand/logo.svg placeholder-logo.svg
-[ "$(cat .vumlo/generated/logo.svg)" = "$(cat brand/logo.svg)" ]   # the placeholder is not what was generated
+[ ! -e .vumlo/generated/logo.png ]   # the placeholder is not what was generated
+[ "$(cat .vumlo/generated/logo.svg)" = "$(cat brand/own-logo.svg)" ]
 
 step "4. build"
 ./vumlo version

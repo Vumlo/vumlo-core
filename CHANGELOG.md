@@ -10,6 +10,18 @@ must do, in order, besides getting the new release. See [RELEASING.md](RELEASING
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-10-20
+
+The Vumlo logo.
+
+### Changed
+
+- **The Vumlo logo** is the placeholder logo (`brand/logo.png`, in place of `brand/logo.svg`), and the web app shows an
+  institution's logo as it is, in the header and on the sign-in pages, instead of the first letter of its name in a
+  coloured tile. An institution with no `institution.logo` still gets the letter. **Upgrade notes:** if your
+  `vumlo.toml` has `logo = "brand/logo.svg"` and you did not replace that file, change it to `brand/logo.png` or point it
+  at your own logo; a logo of your own needs no change.
+
 ## [0.2.0] - 2026-10-20
 
 The desktop app, and the two API conventions it needs.
@@ -116,6 +128,7 @@ There is nothing to upgrade from; follow [docs/install.md](docs/install.md).
 - Any optional module, and an end-user CLI (ADR-0055).
 - Published container images: the images are built on your server from the archive.
 
-[Unreleased]: https://github.com/Vumlo/vumlo-core/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/Vumlo/vumlo-core/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/Vumlo/vumlo-core/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/Vumlo/vumlo-core/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/Vumlo/vumlo-core/releases/tag/v0.1.0
