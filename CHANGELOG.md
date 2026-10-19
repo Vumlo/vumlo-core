@@ -10,8 +10,13 @@ must do, in order, besides getting the new release. See [RELEASING.md](RELEASING
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-20
+
+The desktop app, and the two API conventions it needs.
+
 ### Upgrade notes
 
+- `config_version` is still **1**.
 - The newest core migration is `0030` (`idempotency` schema; Google sign-in for apps). `vumlo-cli db migrate`
   applies it; take a backup first, as always.
 - **The addresses of the web app changed** (ADR-0057). A course is `/course?id=<id>` and an item
@@ -104,5 +109,6 @@ There is nothing to upgrade from; follow [docs/install.md](docs/install.md).
 - Any optional module, and an end-user CLI (ADR-0055).
 - Published container images: the images are built on your server from the archive.
 
-[Unreleased]: https://github.com/Vumlo/vumlo-core/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/Vumlo/vumlo-core/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/Vumlo/vumlo-core/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/Vumlo/vumlo-core/releases/tag/v0.1.0
