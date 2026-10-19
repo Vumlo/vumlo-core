@@ -1184,4 +1184,8 @@ export const en = {
   "offline.unsent.one": "{n} change has not been sent. If you sign out, it is deleted.",
   "offline.unsent.other": "{n} changes have not been sent. If you sign out, they are deleted.",
   "offline.signOutAnyway": "Sign out anyway",
+  "login.googleWaiting": "Finish signing in with Google in your browser. This window continues by itself.",
+  "google.returnTitle": "You are signed in",
+  "google.returnLead": "Your browser should hand you back to the Vumlo app. If nothing happens, open the app with the button.",
+  "google.returnButton": "Open the app",
 } as const;

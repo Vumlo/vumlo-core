@@ -107,6 +107,8 @@ export const authHandlers = [
   }),
   http.post(`${A}/auth/google/callback`, async ({ request }) => {
     const b = (await request.json()) as { code?: string; hint?: string };
+    // A sign-in the desktop app started ends with a code for the app, not with a session (ADR-0062).
+    if (b.code === "mock-app") return HttpResponse.json({ handoff: "mock-handoff" }, { headers: { "Cache-Control": "no-store" } });
     if (b.code !== "mock") throw problem(401, "Unauthorized");
     const db = getDb();
     const email = clean(b.hint).toLowerCase() || "maya.okafor@northfield.edu";

@@ -71,6 +71,8 @@ export type { Document };
 
 /** `POST /auth/google/start`: where to send the browser for Google's consent screen (ADR-0017, path 3). */
 export type GoogleStart = { authorization_url: string };
+/** The end of a sign-in a native app started: a code the page hands to the app by a link (ADR-0062). */
+export type GoogleHandoff = { handoff: string };
 
 /** Mock only: the mail a real server would send. Lets `pnpm dev:mock` follow a verification or reset link. */
 export type MockMail = { id: string; to: string; kind: "verify" | "reset"; path: string; sent_at: string };

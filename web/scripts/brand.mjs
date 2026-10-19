@@ -44,6 +44,7 @@ if (existsSync(join(generated, "client-config.json"))) {
     modules: {},
     web_modules: [],
     logo: null,
+    desktop: { url_scheme: "vumlo" },
   };
   writeFileSync(join(outDir, "client-config.json"), JSON.stringify(config, null, 2) + "\n");
   writeFileSync(join(outDir, "client-config.d.ts"), "export type ClientConfig = any;\n");

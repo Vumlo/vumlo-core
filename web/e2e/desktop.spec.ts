@@ -13,6 +13,7 @@ const standIn = `
     calls: [],
     outbox: [],
     route: null,
+    emitEvent(name, payload) { for (const id of listeners[name] ?? []) callbacks.get(id)({ event: name, id: 0, payload }); },
     ping(name) { for (const id of listeners[name] ?? []) callbacks.get(id)({ event: name, id: 0, payload: null }); },
     emit(partial) {
       state = { ...state, ...partial };
@@ -29,7 +30,7 @@ const standIn = `
       if (cmd === "plugin:event|listen") { (listeners[args.event] ??= []).push(args.handler); return n++; }
       if (cmd === "sync_state") return state;
       if (cmd === "outbox_list") return window.__fake.outbox;
-      if (cmd === "sync_now" || cmd === "outbox_discard" || cmd === "set_language" || cmd === "plugin:event|unlisten") return null;
+      if (cmd === "sync_now" || cmd === "outbox_discard" || cmd === "set_language" || cmd === "google_start" || cmd === "plugin:event|unlisten") return null;
       if (cmd === "take_route") { const r = window.__fake.route; window.__fake.route = null; return r; }
       if (cmd === "api") {
         const res = await fetch("/api/v1" + args.path, {
@@ -164,4 +165,39 @@ test("a link from outside opens the screen it names", async ({ page }) => {
 test("the app is told the language of the window", async ({ page }) => {
   await signedIn(page);
   await expect.poll(async () => (await calls(page)).filter((c) => c.cmd === "set_language").map((c) => (c.args as { language: string }).language)).toContain("en");
+});
+
+test("signing in with Google in the app opens the browser and finishes by itself", async ({ page }) => {
+  await page.addInitScript(standIn);
+  await page.goto("/login");
+  await page.getByLabel("Email").fill(accounts.student);
+  await page.getByRole("button", { name: "Continue with Google" }).click();
+  await expect(page.getByText("Finish signing in with Google in your browser.")).toBeVisible();
+  const started = (await calls(page)).find((c) => c.cmd === "google_start");
+  expect((started!.args as { loginHint: string }).loginHint).toBe(accounts.student);
+
+  // The app got the link back and the server accepted it: here the mock opens the session the app would hold.
+  const user = await page.evaluate(async ([email, password]) => {
+    const res = await fetch("/api/v1/auth/login", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ email, password, client: "web" }) });
+    return res.json();
+  }, [accounts.student, PASSWORD]);
+  await page.evaluate((u) => (window as unknown as { __fake: { emitEvent: (n: string, p: unknown) => void } }).__fake.emitEvent("google", { ok: true, user: u }), user);
+  await expect(page.getByRole("navigation", { name: "Main" }).first()).toBeVisible();
+  await expect(page).not.toHaveURL(/\/login/);
+});
+
+test("a sign-in with Google that the app could not finish says so", async ({ page }) => {
+  await page.addInitScript(standIn);
+  await page.goto("/login");
+  await page.getByRole("button", { name: "Continue with Google" }).click();
+  await page.evaluate(() => (window as unknown as { __fake: { emitEvent: (n: string, p: unknown) => void } }).__fake.emitEvent("google", { ok: false, error: "the sign-in attempt is not valid" }));
+  await expect(page.getByText("Google sign-in is not available right now.")).toBeVisible();
+  await expect(page.getByText("Finish signing in with Google in your browser.")).toHaveCount(0);
+});
+
+test("the browser page of an app's sign-in hands the code to the app by a link", async ({ page }) => {
+  await page.goto("/auth/google/callback?code=mock-app&state=s");
+  await expect(page.getByRole("heading", { name: "You are signed in" })).toBeVisible();
+  const link = page.getByRole("link", { name: "Open the app" });
+  await expect(link).toHaveAttribute("href", /^vumlo[a-z-]*:\/\/auth\/google\?code=mock-handoff$/);
 });

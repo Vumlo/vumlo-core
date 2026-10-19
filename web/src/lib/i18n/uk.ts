@@ -1235,4 +1235,8 @@ export const uk: Record<Keys, string> & Extra = {
   "offline.unsent.many": "{n} змін не надіслано. Якщо ви вийдете, їх буде видалено.",
   "offline.unsent.other": "{n} зміни не надіслано. Якщо ви вийдете, їх буде видалено.",
   "offline.signOutAnyway": "Усе одно вийти",
+  "login.googleWaiting": "Завершіть вхід через Google у браузері. Це вікно продовжить саме.",
+  "google.returnTitle": "Ви увійшли",
+  "google.returnLead": "Браузер має повернути вас до застосунку Vumlo. Якщо нічого не сталося, відкрийте застосунок кнопкою.",
+  "google.returnButton": "Відкрити застосунок",
 };

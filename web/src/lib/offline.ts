@@ -112,6 +112,32 @@ export function onNavigate(go: (route: string) => void) {
   };
 }
 
+/** How a sign-in with Google that the app started ended (ADR-0062). */
+export type GoogleOutcome = { ok: true; user: import("./session").User } | { ok: false; error: string };
+
+/** Opens Google's page in the system browser; the answer comes as the `google` event. */
+export async function startGoogleInApp(loginHint: string) {
+  const { invoke } = await import("@tauri-apps/api/core");
+  await invoke("google_start", { loginHint: loginHint || null });
+}
+
+/** Calls `done` when a sign-in with Google ends in the app. Returns the function that stops listening. */
+export function onGoogleOutcome(done: (outcome: GoogleOutcome) => void) {
+  if (!isDesktop()) return () => undefined;
+  let stop: (() => void) | undefined;
+  let stopped = false;
+  void import("@tauri-apps/api/event").then(({ listen }) =>
+    listen<GoogleOutcome>("google", (event) => done(event.payload)).then((off) => {
+      if (stopped) off();
+      else stop = off;
+    }),
+  );
+  return () => {
+    stopped = true;
+    stop?.();
+  };
+}
+
 export async function syncNow() {
   const { invoke } = await import("@tauri-apps/api/core");
   await invoke("sync_now");
