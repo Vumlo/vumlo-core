@@ -32,6 +32,7 @@ const SCHEMAS: &[&str] = &[
     "gradebook",
     "files",
     "events",
+    "idempotency",
 ];
 
 /// (schema of the view, table of another schema it may read). Each is an interface an ADR

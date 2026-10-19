@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE idempotency.keys SET started_at = now()\n         WHERE scope_hash = $1 AND key = $2 AND status IS NULL AND started_at = $3",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Bytea",
+        "Text",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "75dcb18348ccf79d464e7f009b343f908002d5b10a71742cde7b7ffbee1ec4ff"
+}

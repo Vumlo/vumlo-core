@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE idempotency.keys SET expires_at = now() - interval '1 second'",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "66f6f7142dc41e7324d05877889bdb377a1ace85ead3ac1cf101e86df30c6326"
+}

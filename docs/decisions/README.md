@@ -92,3 +92,5 @@ What gets easier, what gets harder, what we must remember.
 | 0055 | [Deferred directions: widgets, plugins, an end-user CLI, native clients](0055-deferred-directions.md) |
 | 0056 | [Desktop client: Tauri 2, the web app in a native window, the network in Rust](0056-desktop-client.md) |
 | 0057 | [Query-string routes and the desktop export build](0057-query-string-routes-and-the-desktop-export.md) |
+| 0058 | [`Idempotency-Key` on POST](0058-idempotency-key.md) |
+| 0059 | [Conditional `GET`: `ETag` and `If-None-Match`](0059-conditional-get.md) |

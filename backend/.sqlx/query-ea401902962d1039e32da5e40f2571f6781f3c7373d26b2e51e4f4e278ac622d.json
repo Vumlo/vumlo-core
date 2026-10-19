@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE idempotency.keys SET status = $3, content_type = $4, body = $5\n         WHERE scope_hash = $1 AND key = $2 AND status IS NULL",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Bytea",
+        "Text",
+        "Int2",
+        "Text",
+        "Bytea"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "ea401902962d1039e32da5e40f2571f6781f3c7373d26b2e51e4f4e278ac622d"
+}
