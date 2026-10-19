@@ -3,6 +3,12 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "scripts": { "tauri": "tauri" },
-  "devDependencies": { "@tauri-apps/cli": "2.12.3" }
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "test": "node --test scripts/config.test.mjs",
+    "tauri": "tauri"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "2.12.3"
+  }
 }
