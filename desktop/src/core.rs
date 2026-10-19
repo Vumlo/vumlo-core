@@ -109,6 +109,8 @@ pub struct Core {
     paused: AtomicBool,
     last_ok: AtomicI64,
     sent: AtomicU64,
+    /// The secret of the sign-in with Google that is waiting for its link (ADR-0062).
+    google: std::sync::Mutex<Option<String>>,
 }
 
 pub fn now_ms() -> i64 {
@@ -170,6 +172,23 @@ pub fn rfc3339(ms: i64) -> String {
     )
 }
 
+/// `bytes` random bytes as lowercase hex.
+fn random_hex(bytes: usize) -> Result<String, String> {
+    let mut buffer = vec![0_u8; bytes];
+    getrandom::fill(&mut buffer).map_err(|e| format!("no source of randomness: {e}"))?;
+    Ok(hex(&buffer))
+}
+
+fn hex(bytes: &[u8]) -> String {
+    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
+}
+
+/// The SHA-256 of `text` as 64 lowercase hex characters, the form the server takes as an `app_challenge`.
+pub fn sha256_hex(text: &str) -> String {
+    use sha2::{Digest, Sha256};
+    hex(&Sha256::digest(text.as_bytes()))
+}
+
 fn parse(text: &str) -> Option<Value> {
     if text.is_empty() {
         None
@@ -202,6 +221,7 @@ impl Core {
             paused: AtomicBool::new(false),
             last_ok: AtomicI64::new(0),
             sent: AtomicU64::new(0),
+            google: std::sync::Mutex::new(None),
         }
     }
 
@@ -453,39 +473,101 @@ impl Core {
         self.set_online(true);
         let mut json = parse(&wire.text);
         if wire.status == 200 {
-            let Some(Value::Object(map)) = json.as_mut() else {
-                return Err("the server did not answer with a session".to_owned());
-            };
-            let (Some(Value::String(token)), Some(user)) =
-                (map.remove("token"), map.remove("user"))
-            else {
-                return Err("the server did not return a session token".to_owned());
-            };
-            // Another person on this device starts with nothing of the last one's (ADR-0060).
-            let id = user
-                .get("id")
-                .and_then(Value::as_str)
-                .unwrap_or_default()
-                .to_owned();
-            let same = self
-                .store
-                .meta_get("user_id")
-                .map_err(|e| e.to_string())?
-                .as_deref()
-                == Some(id.as_str());
-            if !same {
-                self.store.wipe().map_err(|e| e.to_string())?;
-                self.store
-                    .meta_set("user_id", &id)
-                    .map_err(|e| e.to_string())?;
-            }
-            self.token.set(&token)?;
-            self.paused.store(false, Ordering::Relaxed);
-            self.wake.notify_one();
-            self.publish();
-            json = Some(user);
+            json = Some(self.accept_session(json)?);
         }
         Ok(Reply::plain(wire.status, json))
+    }
+
+    /// Takes the `{token, user}` of a sign-in: the token goes to the keychain, the user is returned. Another
+    /// person on this device starts with nothing of the last one's (ADR-0060).
+    fn accept_session(&self, answer: Option<Value>) -> Result<Value, String> {
+        let Some(Value::Object(mut map)) = answer else {
+            return Err("the server did not answer with a session".to_owned());
+        };
+        let (Some(Value::String(token)), Some(user)) = (map.remove("token"), map.remove("user"))
+        else {
+            return Err("the server did not return a session token".to_owned());
+        };
+        let id = user
+            .get("id")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_owned();
+        let same = self
+            .store
+            .meta_get("user_id")
+            .map_err(|e| e.to_string())?
+            .as_deref()
+            == Some(id.as_str());
+        if !same {
+            self.store.wipe().map_err(|e| e.to_string())?;
+            self.store
+                .meta_set("user_id", &id)
+                .map_err(|e| e.to_string())?;
+        }
+        self.token.set(&token)?;
+        self.paused.store(false, Ordering::Relaxed);
+        self.wake.notify_one();
+        self.publish();
+        Ok(user)
+    }
+
+    // --- sign-in with Google (ADR-0062) ----------------------------------------------------------
+
+    /// Starts it: the server is given the SHA-256 of a secret that stays here, and answers with the address
+    /// for the system browser. The sign-in ends when a `vumlo-<abbr>://auth/google?code=` link arrives.
+    pub async fn google_start(&self, login_hint: Option<String>) -> Result<String, String> {
+        let verifier = random_hex(32)?;
+        let mut body = json!({"app_challenge": sha256_hex(&verifier)});
+        if let Some(hint) = login_hint.filter(|hint| !hint.is_empty()) {
+            body["login_hint"] = Value::String(hint);
+        }
+        let wire = self
+            .send("POST", "/auth/google/start", Some(body.to_string()), &[])
+            .await
+            .inspect_err(|_| self.set_online(false))
+            .map_err(|e| e.to_string())?;
+        self.set_online(true);
+        if wire.status != 200 {
+            return Err(format!("Google sign-in is not available ({})", wire.status));
+        }
+        let url = parse(&wire.text)
+            .and_then(|json| {
+                json.get("authorization_url")
+                    .and_then(Value::as_str)
+                    .map(str::to_owned)
+            })
+            .filter(|url| url.starts_with("https://") || url.starts_with("http://"))
+            .ok_or("the server did not return an address to sign in at")?;
+        *self.google.lock().map_err(|e| e.to_string())? = Some(verifier);
+        Ok(url)
+    }
+
+    /// Ends it with the code of the link. The secret is used up by the attempt, right or wrong.
+    pub async fn google_finish(&self, code: &str) -> Result<Value, String> {
+        let verifier = self
+            .google
+            .lock()
+            .map_err(|e| e.to_string())?
+            .take()
+            .ok_or("no sign-in with Google was started in this app")?;
+        let body = json!({"code": code, "verifier": verifier});
+        let wire = self
+            .send("POST", "/auth/app/exchange", Some(body.to_string()), &[])
+            .await
+            .inspect_err(|_| self.set_online(false))
+            .map_err(|e| e.to_string())?;
+        self.set_online(true);
+        if wire.status != 200 {
+            return Err(parse(&wire.text)
+                .and_then(|json| {
+                    json.get("detail")
+                        .and_then(Value::as_str)
+                        .map(str::to_owned)
+                })
+                .unwrap_or_else(|| format!("the sign-in was not accepted ({})", wire.status)));
+        }
+        self.accept_session(parse(&wire.text))
     }
 
     async fn logout(&self) -> Reply {

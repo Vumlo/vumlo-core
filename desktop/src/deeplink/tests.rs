@@ -36,3 +36,34 @@ fn anything_else_is_dropped() {
         assert_eq!(route(link), None, "{link}");
     }
 }
+
+#[test]
+fn the_code_of_a_sign_in_link_is_taken_and_nothing_else() {
+    let code = |link: &str| google_code(link, "vumlo-ucu");
+    assert_eq!(
+        code("vumlo-ucu://auth/google?code=AbC-123_x").as_deref(),
+        Some("AbC-123_x")
+    );
+    assert_eq!(
+        code("vumlo-ucu://auth/google/?code=a#frag").as_deref(),
+        Some("a")
+    );
+    for link in [
+        "vumlo-ucu://auth/google",
+        "vumlo-ucu://auth/google?code=",
+        "vumlo-ucu://auth/google?code=a%2Fb",
+        "vumlo-ucu://auth/google?code=a b",
+        "vumlo-ucu://auth/other?code=a",
+        "vumlo://auth/google?code=a",
+        "vumlo-ucu://home?code=a",
+    ] {
+        assert_eq!(code(link), None, "{link}");
+    }
+    let long = format!("vumlo-ucu://auth/google?code={}", "a".repeat(129));
+    assert_eq!(code(&long), None);
+    assert_eq!(
+        route_of("vumlo-ucu://auth/google?code=abc", "vumlo-ucu"),
+        None,
+        "not a screen"
+    );
+}

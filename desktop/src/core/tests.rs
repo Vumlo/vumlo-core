@@ -670,6 +670,119 @@ async fn what_is_not_a_path_inside_the_api_is_refused() {
     assert!(rig.mock.seen().is_empty());
 }
 
+// --- sign-in with Google (ADR-0062) ---------------------------------------------------------------
+
+#[test]
+fn the_challenge_is_the_sha256_of_the_secret_in_hex() {
+    // From RFC 6234: SHA-256("abc").
+    assert_eq!(
+        sha256_hex("abc"),
+        "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+    );
+    let secret = random_hex(32).unwrap();
+    assert_eq!(secret.len(), 64);
+    assert_ne!(secret, random_hex(32).unwrap(), "not the same twice");
+}
+
+fn session_for(id: &str) -> Value {
+    json!({"token": "APP-T0KEN", "expires_at": "x", "user": {"id": id, "name": "Maya"}})
+}
+
+#[tokio::test]
+async fn a_google_sign_in_gives_the_server_a_hash_and_gets_a_session_for_the_secret() {
+    let rig = rig().await;
+    rig.mock.answer(
+        200,
+        json!({"authorization_url": "https://accounts.example/o/oauth2/auth?x=1"}),
+    );
+    let url = rig
+        .core
+        .google_start(Some("maya@lms.test".into()))
+        .await
+        .unwrap();
+    assert_eq!(url, "https://accounts.example/o/oauth2/auth?x=1");
+    let started = serde_json::from_str::<Value>(&rig.mock.seen()[0].body).unwrap();
+    assert_eq!(started["login_hint"], "maya@lms.test");
+    let challenge = started["app_challenge"].as_str().unwrap().to_owned();
+    assert_eq!(challenge.len(), 64);
+
+    rig.mock.answer(200, session_for("u1"));
+    let user = rig.core.google_finish("HANDOFF-code_1").await.unwrap();
+    assert_eq!(user["id"], "u1");
+    let exchange = rig.mock.seen().pop().unwrap();
+    assert_eq!(exchange.path, "/auth/app/exchange");
+    let sent = serde_json::from_str::<Value>(&exchange.body).unwrap();
+    assert_eq!(sent["code"], "HANDOFF-code_1");
+    assert_eq!(
+        sha256_hex(sent["verifier"].as_str().unwrap()),
+        challenge,
+        "the secret behind the hash"
+    );
+    assert_eq!(rig.token.get().as_deref(), Some("APP-T0KEN"));
+    assert!(user.get("token").is_none());
+}
+
+#[tokio::test]
+async fn a_google_link_with_nothing_started_or_started_twice_signs_nobody_in() {
+    let rig = rig().await;
+    assert!(
+        rig.core.google_finish("code").await.is_err(),
+        "nothing was started"
+    );
+    assert!(rig.mock.seen().is_empty(), "and the server was not asked");
+
+    rig.mock.answer(
+        200,
+        json!({"authorization_url": "https://accounts.example/a"}),
+    );
+    rig.core.google_start(None).await.unwrap();
+    rig.mock.answer(
+        401,
+        json!({"title": "Unauthorized", "detail": "the sign-in attempt is not valid"}),
+    );
+    let error = rig.core.google_finish("stolen").await.unwrap_err();
+    assert_eq!(error, "the sign-in attempt is not valid");
+    assert!(rig.token.get().is_none());
+    assert!(
+        rig.core.google_finish("stolen").await.is_err(),
+        "the secret is spent by the attempt"
+    );
+    let started = serde_json::from_str::<Value>(&rig.mock.seen()[0].body).unwrap();
+    assert!(started.get("login_hint").is_none(), "no hint: none is sent");
+}
+
+#[tokio::test]
+async fn only_a_web_address_is_opened_and_a_failed_start_says_so() {
+    let rig = rig().await;
+    for bad in ["file:///etc/passwd", "javascript:alert(1)", "vumlo://x", ""] {
+        rig.mock.answer(200, json!({"authorization_url": bad}));
+        assert!(rig.core.google_start(None).await.is_err(), "{bad:?}");
+    }
+    rig.mock.answer(404, json!({"title": "Not Found"}));
+    let error = rig.core.google_start(None).await.unwrap_err();
+    assert!(error.contains("404"), "{error}");
+    assert!(
+        rig.core.google_finish("code").await.is_err(),
+        "nothing is waiting after a failed start"
+    );
+}
+
+#[tokio::test]
+async fn a_google_sign_in_of_another_person_starts_with_an_empty_store() {
+    let rig = rig().await;
+    sign_in(&rig, "u1").await;
+    rig.mock.answer(200, json!({"n": 1}));
+    rig.core.request(get("/courses/c1")).await.unwrap();
+    rig.mock.answer(
+        200,
+        json!({"authorization_url": "https://accounts.example/a"}),
+    );
+    rig.core.google_start(None).await.unwrap();
+    rig.mock.answer(200, session_for("u2"));
+    rig.core.google_finish("code").await.unwrap();
+    assert!(rig.core.store.cache_get("/courses/c1").unwrap().is_none());
+}
+
 // --- against a real server (not run by default) ---------------------------------------------------
 
 /// Checks the app against a running `vumlo-server` with the demo data: its `ETag`, its `Idempotency-Key`, the

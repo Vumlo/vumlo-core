@@ -40,5 +40,22 @@ pub fn route_of(link: &str, scheme: &str) -> Option<String> {
     }
 }
 
+/// The code of a `vumlo-<abbr>://auth/google?code=...` link: what the web app's sign-in page hands to the app
+/// (ADR-0062). Only the characters a code is made of; anything else is not a code.
+pub fn google_code(link: &str, scheme: &str) -> Option<String> {
+    let rest = link.strip_prefix(scheme)?.strip_prefix("://")?;
+    let (path, query) = rest.split_once('?')?;
+    if path.trim_end_matches('/') != "auth/google" {
+        return None;
+    }
+    param(query.split('#').next()?, "code")
+        .filter(|code| (1..=128).contains(&code.len()))
+        .filter(|code| {
+            code.bytes()
+                .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
+        })
+        .map(str::to_owned)
+}
+
 #[cfg(test)]
 mod tests;

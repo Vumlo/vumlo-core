@@ -37,6 +37,19 @@ fn show(app: &AppHandle) {
 }
 
 fn open_link(app: &AppHandle, link: &str) {
+    if let Some(code) = deeplink::google_code(link, deeplink::scheme()) {
+        // The end of a sign-in with Google (ADR-0062): trade the code, then tell the window.
+        show(app);
+        let (app, core) = (app.clone(), app.state::<Arc<Core>>().inner().clone());
+        tauri::async_runtime::spawn(async move {
+            let outcome = match core.google_finish(&code).await {
+                Ok(user) => serde_json::json!({"ok": true, "user": user}),
+                Err(error) => serde_json::json!({"ok": false, "error": error}),
+            };
+            let _ = app.emit("google", outcome);
+        });
+        return;
+    }
     let Some(route) = deeplink::route_of(link, deeplink::scheme()) else {
         return;
     };
@@ -55,6 +68,7 @@ pub fn run() {
         }))
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             let dir = app.path().app_data_dir()?;
             std::fs::create_dir_all(&dir)?;
@@ -114,6 +128,7 @@ pub fn run() {
             api::outbox_discard,
             api::set_language,
             api::take_route,
+            api::google_start,
         ])
         .run(tauri::generate_context!())
         .expect("error while running the Vumlo desktop client");

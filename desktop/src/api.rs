@@ -5,6 +5,7 @@ use std::sync::Arc;
 
 use serde_json::Value;
 use tauri::{AppHandle, Manager, State};
+use tauri_plugin_opener::OpenerExt;
 
 use crate::PendingRoute;
 use crate::core::{ApiRequest, Core, Reply, SyncState};
@@ -72,4 +73,18 @@ pub fn set_language(
 #[tauri::command]
 pub fn take_route(pending: State<'_, PendingRoute>) -> Option<String> {
     pending.0.lock().ok()?.take()
+}
+
+/// Starts sign-in with Google in the system browser (ADR-0062). The sign-in ends with a link back to the
+/// app, which tells the window with the `google` event.
+#[tauri::command]
+pub async fn google_start(
+    app: AppHandle,
+    core: State<'_, Arc<Core>>,
+    login_hint: Option<String>,
+) -> Result<(), String> {
+    let url = core.google_start(login_hint).await?;
+    app.opener()
+        .open_url(url, None::<&str>)
+        .map_err(|e| e.to_string())
 }
