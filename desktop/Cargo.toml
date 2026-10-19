@@ -17,7 +17,12 @@ tauri-build = { version = "=2.7.3", features = [] }
 tauri = { version = "=2.12.4", features = [] }
 reqwest = { version = "0.13", default-features = false, features = ["rustls", "json"] }
 serde = { version = "1", features = ["derive"] }
+rusqlite = { version = "0.40", features = ["bundled"] }
 serde_json = "1"
+tokio = { version = "1", features = ["time", "sync", "macros"] }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["rt", "net", "io-util", "time", "sync", "macros"] }
 
 [profile.release]
 codegen-units = 1

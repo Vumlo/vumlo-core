@@ -94,3 +94,4 @@ What gets easier, what gets harder, what we must remember.
 | 0057 | [Query-string routes and the desktop export build](0057-query-string-routes-and-the-desktop-export.md) |
 | 0058 | [`Idempotency-Key` on POST](0058-idempotency-key.md) |
 | 0059 | [Conditional `GET`: `ETag` and `If-None-Match`](0059-conditional-get.md) |
+| 0060 | [Desktop offline store and send queue](0060-desktop-offline-store-and-send-queue.md) |
