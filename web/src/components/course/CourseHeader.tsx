@@ -2,8 +2,10 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import type { ReactNode } from "react";
-import { useCourse, useCourseInfo } from "@/lib/api/hooks/courses";
+import { useState, type ReactNode } from "react";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { StatusPill } from "@/components/StatusPill";
+import { useCourse, useCourseInfo, usePublishCourse } from "@/lib/api/hooks/courses";
 import { ownerName } from "@/lib/course";
 import { plural } from "@/lib/format";
 import { useT } from "@/lib/i18n";
@@ -19,6 +21,10 @@ export function CourseHeader({ courseId, subtitle }: { courseId: string; subtitl
   const course = useCourse(courseId);
   const info = useCourseInfo(courseId);
   const { staff } = useCourseAccess(courseId);
+  const publish = usePublishCourse(courseId);
+  const [asking, setAsking] = useState(false);
+  // A draft course is invisible to students, whoever is on its roster (ADR-0019): say so, where it can be fixed.
+  const draft = staff && course.data?.status === "draft";
   const tabs: Tab[] = staff
     ? [
         { id: "content", label: t("course.content"), href: courseHref(courseId) },
@@ -46,8 +52,29 @@ export function CourseHeader({ courseId, subtitle }: { courseId: string; subtitl
         <span aria-hidden="true" style={{ padding: "0 6px" }}>/</span>
         <span aria-current="page">{i?.code || course.data?.title || "…"}</span>
       </nav>
-      <h1 className="page-title" style={{ margin: "6px 0 4px" }}>{course.data?.title ?? " "}</h1>
+      <h1 className="page-title" style={{ margin: "6px 0 4px" }}>
+        {course.data?.title ?? " "}
+        {draft && <>{" "}<StatusPill tone="plain">{t("common.draft")}</StatusPill></>}
+      </h1>
       <p className="muted">{subtitle ?? defaultSub}</p>
+      {draft && (
+        <div role="status" className="alert alert-info" style={{ margin: "12px 0", flexWrap: "wrap", alignItems: "center" }}>
+          <span style={{ flex: "1 1 320px" }}>{t("course.draftNote")}</span>
+          <button type="button" className="btn btn-primary" onClick={() => { publish.reset(); setAsking(true); }}>{t("course.publish")}</button>
+        </div>
+      )}
+      {asking && (
+        <ConfirmDialog
+          title={t("course.publishQ")}
+          confirm={t("course.publishConfirm")}
+          pending={publish.pending}
+          error={publish.error?.detail ?? publish.error?.title}
+          onClose={() => setAsking(false)}
+          onConfirm={async () => { if (await publish.run()) setAsking(false); }}
+        >
+          {t("course.publishLead")}
+        </ConfirmDialog>
+      )}
       <div role="tablist" aria-label={t("course.sections")} className="tabs">
         {tabs.map((t) => (
           <Link key={t.id} href={t.href} role="tab" aria-selected={t.id === current}>{t.label}</Link>

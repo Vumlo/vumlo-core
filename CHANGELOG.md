@@ -44,6 +44,9 @@ The desktop app, and the two API conventions it needs.
 
 ### Changed
 
+- **A teacher can publish a course** from the course page: a draft course shows a notice ("Students cannot see it yet,
+  even those you have added") with a "Publish course" button, and a Draft badge by the title. The endpoint existed
+  since 0.1.0, but no screen used it, so a new course could not be shown to students from the web app.
 - The web app builds in two modes: the server build as before, and a static export for the desktop
   (`npm run build:desktop`). Ids are in the query string in both.
 - A student's pending draft is sent when they leave the page (it used to be dropped).

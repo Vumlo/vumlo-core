@@ -1218,4 +1218,10 @@ export const en = {
   "ai.appOff": "Saved. No links: the notice and the download page are off.",
   "ai.appInvalid": "Each link must be an address that starts with https:// and has no spaces.",
   "ai.appOpen": "Open the download page",
+  // publishing a course (ADR-0019)
+  "course.draftNote": "This course is a draft. Students cannot see it yet, even those you have added. Publish it when it is ready.",
+  "course.publish": "Publish course",
+  "course.publishQ": "Publish this course?",
+  "course.publishLead": "The people on its roster will see it in their courses. Sections and items that you have not published stay hidden from students.",
+  "course.publishConfirm": "Publish",
 } as const;
