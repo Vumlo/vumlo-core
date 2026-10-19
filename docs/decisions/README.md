@@ -97,3 +97,4 @@ What gets easier, what gets harder, what we must remember.
 | 0060 | [Desktop offline store and send queue](0060-desktop-offline-store-and-send-queue.md) |
 | 0061 | [Desktop native extras: keychain, tray, deadline notifications, deep links](0061-desktop-native-extras.md) |
 | 0062 | [Sign-in with Google for the desktop app](0062-google-sign-in-for-the-desktop-app.md) |
+| 0063 | [Desktop installers: built by the institution, signed when it has certificates](0063-desktop-release-and-signing.md) |

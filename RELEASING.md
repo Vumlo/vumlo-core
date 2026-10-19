@@ -9,9 +9,10 @@ What is published is a **source archive**, `vumlo-X.Y.Z-source.tar.gz`, with `SH
 the GitHub Release. Administrators install from it ([docs/install.md](docs/install.md)); they never
 clone this repository.
 
-1. Branch from `main`. Set the new version in all three places (a test fails if they differ):
-   `[workspace.package] version` in `backend/Cargo.toml`, `"version"` in `web/package.json`, and the
-   default of `VUMLO_VERSION` (twice) in `deploy/compose.yaml`. Run `cargo update --workspace` in
+1. Branch from `main`. Set the new version in all the places (a test fails if they differ):
+   `[workspace.package] version` in `backend/Cargo.toml`, `"version"` in `web/package.json` and in
+   `desktop/package.json`, `version` in the `[package]` of `desktop/Cargo.toml` (then `cargo update --workspace` in
+   `desktop/` as well), and the default of `VUMLO_VERSION` (twice) in `deploy/compose.yaml`. Run `cargo update --workspace` in
    `backend/` so `Cargo.lock` follows.
 2. In `CHANGELOG.md` move the `[Unreleased]` entries under `## [X.Y.Z] - YYYY-MM-DD`, write the
    **Upgrade notes** (a new `config_version`, a manual step, the migrations that run), and update the
@@ -32,7 +33,7 @@ next patch version.
 ## What the archive contains
 
 An explicit allowlist: `backend/` (the crates, the migrations, the offline SQL data, the lockfile),
-`web/`, `deploy/`, `brand/` (the placeholder logo), the `vumlo` script, `docs/install.md`,
+`web/`, `desktop/` (the desktop app, ADR-0056; its tests are left out), `deploy/`, `brand/` (the placeholder logo), the `vumlo` script, `docs/install.md`, `docs/desktop.md`,
 `CHANGELOG.md`, `README.md`, and `vumlo.toml.example`. Not in it: the tests directories, the ADRs,
 `ARCHITECTURE.md`, `AGENTS.md`, the CI files and the development compose file.
 

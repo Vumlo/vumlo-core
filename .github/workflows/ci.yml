@@ -85,3 +85,50 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - run: npm run build
+
+  # The desktop app (ADR-0056): the Rust crate's own checks, the unit tests of the installer's configuration, and
+  # the whole path from vumlo.toml to a program, without the installer (that is for the institution's own workflow,
+  # desktop/release/desktop-release.yml).
+  desktop:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            web/package-lock.json
+            desktop/package-lock.json
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            backend
+            desktop
+      - name: The libraries Tauri links on Linux
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libgtk-3-dev patchelf
+      - name: Generate the branding
+        working-directory: backend
+        env:
+          SQLX_OFFLINE: "true"
+          DATABASE_URL: postgres://ci:ci@localhost:5432/ci
+        run: |
+          cargo run -q -p vumlo-cli -- init --dir ..
+          cargo run -q -p vumlo-cli -- --config ../vumlo.toml brand apply
+      - run: npm ci
+        working-directory: web
+      - run: npm ci
+        working-directory: desktop
+      - run: npm test
+        working-directory: desktop
+      - name: Format, lints and tests of the crate
+        working-directory: desktop
+        run: |
+          cargo fmt --check
+          cargo clippy --all-targets -- -D warnings
+          cargo test
+      - name: From the configuration to a program
+        working-directory: desktop
+        run: node scripts/build.mjs -- --debug --no-bundle

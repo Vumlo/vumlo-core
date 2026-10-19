@@ -24,12 +24,18 @@ jobs:
           version=$(sed -n '/^\[workspace.package\]/,/^\[/{s/^version *= *"\(.*\)"/\1/p}' backend/Cargo.toml)
           web=$(sed -n 's/^  "version": "\(.*\)",/\1/p' web/package.json)
           compose=$(sed -n 's/.*VUMLO_VERSION:-\([^}]*\)}.*/\1/p' deploy/compose.yaml | sort -u)
+          desktop=$(sed -n 's/^  "version": "\(.*\)",/\1/p' desktop/package.json)
+          desktop_crate=$(sed -n '/^\[package\]/,/^\[/{s/^version *= *"\(.*\)"/\1/p}' desktop/Cargo.toml)
           if [ "${GITHUB_REF_NAME}" != "v${version}" ]; then
             echo "::error::the tag is ${GITHUB_REF_NAME}, but the workspace version is ${version}"
             exit 1
           fi
           if [ "${web}" != "${version}" ] || [ "${compose}" != "${version}" ]; then
             echo "::error::web/package.json (${web}) and deploy/compose.yaml (${compose}) must say ${version}"
+            exit 1
+          fi
+          if [ "${desktop}" != "${version}" ] || [ "${desktop_crate}" != "${version}" ]; then
+            echo "::error::desktop/package.json (${desktop}) and desktop/Cargo.toml (${desktop_crate}) must say ${version}"
             exit 1
           fi
           if ! git merge-base --is-ancestor "${GITHUB_SHA}" origin/main; then

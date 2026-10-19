@@ -10,6 +10,36 @@ must do, in order, besides getting the new release. See [RELEASING.md](RELEASING
 
 ## [Unreleased]
 
+### Upgrade notes
+
+- The newest core migration is `0030` (`idempotency` schema; Google sign-in for apps). `vumlo-cli db migrate`
+  applies it; take a backup first, as always.
+- **The addresses of the web app changed** (ADR-0057). A course is `/course?id=<id>` and an item
+  `/course/item?id=<id>&item=<id>` (was `/courses/<id>/items/<id>`); `/courses` and `/courses/new` are as they were.
+  Old bookmarks show "not found"; nothing is redirected.
+- Run `vumlo-cli brand apply` again before you build the web app: `client-config.json` has a new `desktop` part
+  (the scheme of the desktop app's links) and the generated directory a 1024-pixel `icon-1024.png`.
+- New optional section `[desktop]` with `url_scheme`. Nothing to do unless you build the desktop app.
+- Cross-origin frontends (ADR-0041) may now send `Idempotency-Key` and `If-None-Match`, and read `ETag`.
+
+### Added
+
+- **A desktop app** (ADR-0056, ADR-0060, ADR-0061, ADR-0062, ADR-0063; `docs/desktop.md`): Tauri 2 for Linux,
+  Windows and macOS, built by each institution from its own `vumlo.toml` (`desktop/`). It reads courses,
+  materials, deadlines and grades without a connection, keeps a student's drafts and submits in a send queue that
+  the server always has the last word on, stays in the tray, announces deadlines, opens `vumlo-<abbr>://` links,
+  keeps the session in the operating system's keychain and signs in with Google through the browser.
+  `desktop/release/desktop-release.yml` builds and (with certificates) signs the installers.
+- `Idempotency-Key` on `POST` (ADR-0058) and `ETag` / `If-None-Match` on `GET` (ADR-0059), for every client.
+- `POST /auth/app/exchange` and an optional `app_challenge` on `POST /auth/google/start` (ADR-0062).
+
+### Changed
+
+- The web app builds in two modes: the server build as before, and a static export for the desktop
+  (`npm run build:desktop`). Ids are in the query string in both.
+- A student's pending draft is sent when they leave the page (it used to be dropped).
+- `vumlo-cli brand apply` makes every icon from a 1024-pixel master.
+
 ## [0.1.0] - 2026-10-19
 
 The first release: a complete core for one school or university, and the tool to install it.
