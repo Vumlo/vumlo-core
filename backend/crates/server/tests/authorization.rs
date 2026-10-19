@@ -706,6 +706,7 @@ async fn the_list_of_operations_is_the_api() {
             "POST /auth/password-reset/confirm",
             "POST /auth/google/start",
             "POST /auth/google/callback",
+            "POST /auth/app/exchange",
             "POST /auth/logout",
             "GET /me",
             "POST /me/password",

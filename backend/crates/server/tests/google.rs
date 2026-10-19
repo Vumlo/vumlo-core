@@ -376,3 +376,275 @@ async fn an_unreachable_google_is_a_503_that_can_be_tried_again() {
     })
     .await;
 }
+
+// --- a native app's sign-in (ADR-0062) -----------------------------------------------------------
+
+const VERIFIER: &str = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+
+fn challenge_of(verifier: &str) -> String {
+    use sha2::{Digest, Sha256};
+    Sha256::digest(verifier.as_bytes())
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
+}
+
+/// Starts as an app does: no cookie comes back, and the attempt is tied to the challenge.
+async fn start_as_app(http: &Http, verifier: &str) -> String {
+    let response = http
+        .post("/auth/google/start")
+        .json(&serde_json::json!({"app_challenge": challenge_of(verifier)}))
+        .send()
+        .await;
+    assert_eq!(
+        response.status,
+        200,
+        "{}",
+        String::from_utf8_lossy(&response.body)
+    );
+    assert_eq!(response.header("cache-control"), "no-store");
+    assert!(
+        response.headers.get("set-cookie").is_none(),
+        "the app has no browser to tie it to"
+    );
+    response.json()["authorization_url"]
+        .as_str()
+        .unwrap()
+        .to_owned()
+}
+
+async fn exchange(http: &Http, code: &str, verifier: &str) -> Resp {
+    http.post("/auth/app/exchange")
+        .json(&serde_json::json!({"code": code, "verifier": verifier}))
+        .send()
+        .await
+}
+
+/// The handoff of a complete app sign-in of `person`: the browser finishes it without any cookie.
+async fn handoff_of(http: &Http, issuer: &FakeIssuer, person: Person, verifier: &str) -> String {
+    let url = start_as_app(http, verifier).await;
+    let (code, state) = issuer.approve(&url, person);
+    let response = callback(http, &code, &state, None).await;
+    assert_eq!(
+        response.status,
+        200,
+        "{}",
+        String::from_utf8_lossy(&response.body)
+    );
+    assert_eq!(response.header("cache-control"), "no-store");
+    assert!(
+        response.headers.get("set-cookie").is_none(),
+        "no web session for an app"
+    );
+    let body = response.json();
+    assert!(
+        body.get("email").is_none(),
+        "no user and no token reach the browser: {body}"
+    );
+    body["handoff"].as_str().expect("a handoff").to_owned()
+}
+
+#[tokio::test]
+async fn an_app_signs_in_with_google_through_a_handoff_that_only_it_can_redeem() {
+    db_test(async |pool| {
+        let (http, issuer) = setup(&pool).await;
+        let handoff = handoff_of(&http, &issuer, Person::new("sub-app", "maya@lms.test"), VERIFIER).await;
+
+        let response = exchange(&http, &handoff, VERIFIER).await;
+        assert_eq!(response.status, 200, "{}", String::from_utf8_lossy(&response.body));
+        assert_eq!(response.header("cache-control"), "no-store");
+        let body = response.json();
+        assert_eq!(body["user"]["email"], "maya@lms.test");
+        assert_eq!(body["user"]["role"], "student");
+        let token = body["token"].as_str().unwrap();
+        assert_eq!(http.get("/me").bearer(token).send().await.status, 200);
+
+        let kind = sqlx::query_scalar!(
+            r#"SELECT s.kind AS "kind!" FROM identity.sessions s JOIN identity.users u ON u.id = s.user_id
+               WHERE u.email = 'maya@lms.test'"#
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(kind, "app");
+        let verified = sqlx::query_scalar!(
+            r#"SELECT email_verified_at IS NOT NULL AS "v!" FROM identity.users WHERE email = 'maya@lms.test'"#
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert!(verified, "the same account rules as the web sign-in");
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn a_handoff_is_used_once_and_a_wrong_secret_spends_it() {
+    db_test(async |pool| {
+        let (http, issuer) = setup(&pool).await;
+        let handoff = handoff_of(
+            &http,
+            &issuer,
+            Person::new("sub-1", "maya@lms.test"),
+            VERIFIER,
+        )
+        .await;
+        assert_eq!(
+            exchange(&http, &handoff, &"f".repeat(64)).await.status,
+            401,
+            "another secret"
+        );
+        assert_eq!(
+            exchange(&http, &handoff, VERIFIER).await.status,
+            401,
+            "and the code is gone"
+        );
+
+        let handoff = handoff_of(
+            &http,
+            &issuer,
+            Person::new("sub-1", "maya@lms.test"),
+            VERIFIER,
+        )
+        .await;
+        assert_eq!(exchange(&http, &handoff, VERIFIER).await.status, 200);
+        assert_eq!(
+            exchange(&http, &handoff, VERIFIER).await.status,
+            401,
+            "used once"
+        );
+        assert_eq!(exchange(&http, "no-such-code", VERIFIER).await.status, 401);
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn a_handoff_expires_after_a_minute() {
+    db_test(async |pool| {
+        let (http, issuer) = setup(&pool).await;
+        let handoff = handoff_of(&http, &issuer, Person::new("sub-1", "maya@lms.test"), VERIFIER).await;
+        sqlx::query!(
+            "UPDATE identity.app_handoffs SET created_at = now() - interval '2 minutes', expires_at = now() - interval '1 minute'"
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        assert_eq!(exchange(&http, &handoff, VERIFIER).await.status, 401);
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn an_apps_attempt_is_used_once_and_does_not_open_a_browser_session() {
+    db_test(async |pool| {
+        let (http, issuer) = setup(&pool).await;
+        let url = start_as_app(&http, VERIFIER).await;
+        let (code, state) = issuer.approve(&url, Person::new("sub-1", "maya@lms.test"));
+        assert_eq!(callback(&http, &code, &state, None).await.status, 200);
+        assert_eq!(
+            callback(&http, &code, &state, None).await.status,
+            401,
+            "once"
+        );
+        // A browser's attempt still needs its cookie; an app's needs none.
+        let (other_url, binding) = start(&http, None).await;
+        let (other_code, other_state) =
+            issuer.approve(&other_url, Person::new("sub-2", "other@lms.test"));
+        assert_eq!(
+            callback(&http, &other_code, &other_state, None)
+                .await
+                .status,
+            401,
+            "a browser's attempt needs its cookie"
+        );
+        let finished = callback(&http, &other_code, &other_state, Some(&binding)).await;
+        assert_eq!(
+            finished.status, 200,
+            "the refusal did not spend it, as before"
+        );
+        assert!(
+            set_cookie(&finished, "vumlo_session").is_some(),
+            "a browser's attempt still opens a web session"
+        );
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn an_app_challenge_that_is_not_a_hash_is_refused_before_google_is_asked() {
+    db_test(async |pool| {
+        let (http, _issuer) = setup(&pool).await;
+        for bad in [
+            "",
+            "abc",
+            &"A".repeat(64),
+            &"g".repeat(64),
+            &"a".repeat(63),
+            &"a".repeat(65),
+        ] {
+            let response = http
+                .post("/auth/google/start")
+                .json(&serde_json::json!({"app_challenge": bad}))
+                .send()
+                .await;
+            assert_eq!(response.status, 422, "{bad:?}");
+        }
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn an_apps_sign_in_has_the_same_limits_as_the_browser_s() {
+    db_test(async |pool| {
+        let (http, issuer) = setup(&pool).await;
+        // A foreign origin cannot finish it, a foreign domain and an unverified address do not sign in.
+        let url = start_as_app(&http, VERIFIER).await;
+        let (code, state) = issuer.approve(&url, Person::new("sub-1", "maya@lms.test"));
+        let foreign = http
+            .post("/auth/google/callback")
+            .origin("https://evil.test")
+            .json(&serde_json::json!({"code": code, "state": state}))
+            .send()
+            .await;
+        assert_eq!(foreign.status, 403);
+
+        let url = start_as_app(&http, VERIFIER).await;
+        let (code, state) = issuer.approve(&url, Person::new("sub-3", "eve@elsewhere.test"));
+        assert_eq!(
+            callback(&http, &code, &state, None).await.status,
+            403,
+            "a foreign domain"
+        );
+        let count = sqlx::query_scalar!(r#"SELECT count(*) AS "n!" FROM identity.app_handoffs"#)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(count, 0, "no handoff for either");
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn an_account_disabled_after_the_sign_in_gets_no_session_from_the_handoff() {
+    db_test(async |pool| {
+        let (http, issuer) = setup(&pool).await;
+        let handoff = handoff_of(
+            &http,
+            &issuer,
+            Person::new("sub-1", "maya@lms.test"),
+            VERIFIER,
+        )
+        .await;
+        sqlx::query!("UPDATE identity.users SET status = 'disabled' WHERE email = 'maya@lms.test'")
+            .execute(&pool)
+            .await
+            .unwrap();
+        assert_eq!(exchange(&http, &handoff, VERIFIER).await.status, 403);
+        let sessions = sqlx::query_scalar!(r#"SELECT count(*) AS "n!" FROM identity.sessions"#)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(sessions, 0);
+    })
+    .await;
+}

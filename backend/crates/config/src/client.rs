@@ -24,6 +24,14 @@ pub struct ClientConfig {
     pub web_modules: Vec<String>,
     /// The generated logo, relative to the generated directory. Absent without `institution.logo`.
     pub logo: Option<String>,
+    /// What the desktop app and the web app's sign-in page agree on (ADR-0062).
+    pub desktop: ClientDesktop,
+}
+
+#[derive(Debug, Clone, Serialize, JsonSchema)]
+pub struct ClientDesktop {
+    /// The scheme of the app's links, `vumlo-ucu` for `vumlo-ucu://course?id=...`.
+    pub url_scheme: String,
 }
 
 #[derive(Debug, Clone, Serialize, JsonSchema)]
@@ -72,8 +80,47 @@ impl ClientConfig {
                 .map(|m| m.name.to_owned())
                 .collect(),
             logo,
+            desktop: ClientDesktop {
+                url_scheme: url_scheme(settings),
+            },
         }
     }
+}
+
+/// The scheme of the desktop app's links: `desktop.url_scheme`, else `vumlo-` and the short name reduced to
+/// lowercase ASCII letters and digits. A short name with none (Cyrillic, say) leaves plain `vumlo`; two such
+/// institutions on one computer set their own.
+pub fn url_scheme(settings: &Settings) -> String {
+    if let Some(scheme) = &settings.desktop.url_scheme {
+        return scheme.clone();
+    }
+    let mut slug = String::new();
+    for c in settings.institution.short_name.chars() {
+        if c.is_ascii_alphanumeric() {
+            slug.push(c.to_ascii_lowercase());
+        } else if !slug.is_empty() && !slug.ends_with('-') {
+            slug.push('-');
+        }
+    }
+    let slug = slug.trim_end_matches('-');
+    if slug.is_empty() {
+        "vumlo".to_owned()
+    } else {
+        format!("vumlo-{slug}")
+    }
+}
+
+/// `vumlo-` and lowercase letters, digits and single hyphens (a scheme may hold these and starts with a letter).
+pub fn is_url_scheme(text: &str) -> bool {
+    text.strip_prefix("vumlo-").is_some_and(|rest| {
+        !rest.is_empty()
+            && !rest.starts_with('-')
+            && !rest.ends_with('-')
+            && !rest.contains("--")
+            && rest
+                .chars()
+                .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+    })
 }
 
 /// The API base URL, derived once from `[server].public_origin`.

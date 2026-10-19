@@ -98,3 +98,72 @@ fn every_module_of_the_registry_is_listed_with_its_state() {
             .all(|s| *s == ModuleStatus::Unavailable)
     );
 }
+
+// --- the scheme of the desktop app's links (ADR-0062) --------------------------------------------
+
+fn scheme_of(extra: &str) -> String {
+    let settings = build(&format!("{VALID}\n{extra}"), &[]).unwrap();
+    ClientConfig::new(&settings, "1.2.3", None)
+        .desktop
+        .url_scheme
+}
+
+#[test]
+fn the_scheme_is_vumlo_and_the_short_name_unless_the_config_names_one() {
+    assert_eq!(
+        scheme_of(""),
+        "vumlo-example-university",
+        "no short name: the name"
+    );
+    assert_eq!(
+        scheme_of("[desktop]\nurl_scheme = \"vumlo-ucu\""),
+        "vumlo-ucu"
+    );
+}
+
+#[test]
+fn a_short_name_with_no_ascii_letters_leaves_plain_vumlo() {
+    let toml = VALID.replace(
+        "name = \"Example University\"",
+        "name = \"Університет\"\nshort_name = \"УКУ\"",
+    );
+    let settings = build(&toml, &[]).unwrap();
+    assert_eq!(url_scheme(&settings), "vumlo");
+    let toml = VALID.replace(
+        "name = \"Example University\"",
+        "name = \"X\"\nshort_name = \"  U.C.U  (Kyiv) \"",
+    );
+    assert_eq!(url_scheme(&build(&toml, &[]).unwrap()), "vumlo-u-c-u-kyiv");
+}
+
+#[test]
+fn a_scheme_that_is_not_ours_is_refused_with_its_key_named() {
+    for bad in [
+        "ucu",
+        "vumlo-",
+        "vumlo-UCU",
+        "vumlo-u cu",
+        "vumlo--ucu",
+        "vumlo-ucu-",
+        "vumlo-ucu://",
+        "http",
+    ] {
+        let toml = format!("{VALID}\n[desktop]\nurl_scheme = \"{bad}\"");
+        let error = build(&toml, &[]).unwrap_err().to_string();
+        assert!(
+            error.contains("desktop.url_scheme") && error.contains(bad),
+            "{bad}: {error}"
+        );
+    }
+    assert!(
+        build(&format!("{VALID}\n[desktop]\nbogus = 1"), &[]).is_err(),
+        "a stray key is refused"
+    );
+}
+
+#[test]
+fn the_scheme_is_in_the_client_config() {
+    let settings = build(VALID, &[]).unwrap();
+    let json = serde_json::to_value(ClientConfig::new(&settings, "1.2.3", None)).unwrap();
+    assert_eq!(json["desktop"]["url_scheme"], "vumlo-example-university");
+}

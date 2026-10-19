@@ -1,0 +1,21 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT email_verified_at IS NOT NULL AS \"v!\" FROM identity.users WHERE email = 'maya@lms.test'",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "v!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "0da8728e7fa58ebf8451c3b1c6e7fb566b9836d31272fb93163ca913c59fd35b"
+}

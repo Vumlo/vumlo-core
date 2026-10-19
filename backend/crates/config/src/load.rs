@@ -351,6 +351,14 @@ fn validate(settings: &mut Settings) -> Vec<String> {
     if let Some(core_url) = settings.cli.core_url.as_mut() {
         check("cli.core_url", core_url);
     }
+    if let Some(scheme) = &settings.desktop.url_scheme
+        && !crate::client::is_url_scheme(scheme)
+    {
+        errors.push(format!(
+            "desktop.url_scheme \"{scheme}\" must be \"vumlo-\" and lowercase letters, digits and \
+             hyphens, such as vumlo-ucu"
+        ));
+    }
     if settings.database.url.expose().is_empty() {
         errors.push(format!(
             "database.url is not set: put {} in the environment",

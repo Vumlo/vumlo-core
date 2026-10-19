@@ -429,6 +429,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/auth/app/exchange": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * The end of a native app's sign-in with Google (ADR-0062): trades the handoff code and the secret behind
+         *     the `app_challenge` of `start` for an app session, as a login with `client: app` does. A code is good once,
+         *     for a minute; one that is wrong, used, expired or paired with the wrong secret is the same `401`.
+         */
+        post: operations["exchange"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/auth/google/callback": {
         parameters: {
             query?: never;
@@ -441,6 +462,8 @@ export interface paths {
         /**
          * Finishes sign-in with Google: checks the state against the browser's cookie, exchanges the
          *     code, verifies the ID token and opens a web session, like a password login with `client: web`.
+         *     For an attempt a native app started there is no cookie to check and no session is opened: the
+         *     answer is a handoff code, which the page gives to the app by a link (ADR-0062).
          * @description The Google account needs a verified email in one of `auth.allowed_domains`. A first sign-in
          *     creates a `student`; an existing account with that address is linked.
          */
@@ -462,7 +485,8 @@ export interface paths {
         put?: never;
         /**
          * Starts sign-in with Google: answers the URL to send the browser to and sets a cookie that ties
-         *     the attempt to this browser. Off (`404`) without `[auth.google]`.
+         *     the attempt to this browser. A native app sends an `app_challenge` instead and gets no cookie: its
+         *     attempt is tied to the secret the app holds (ADR-0062). Off (`404`) without `[auth.google]`.
          */
         post: operations["start"];
         delete?: never;
@@ -1799,6 +1823,12 @@ export interface components {
          * @enum {string}
          */
         AllStudents: "all";
+        /** @description The app trades the handoff and its secret for a session (ADR-0062). */
+        AppExchangeRequest: {
+            code: string;
+            /** @description The secret whose SHA-256 the app gave to `start`, 32 to 128 characters. */
+            verifier: string;
+        };
         /** @description Response to a login with `client = app`. */
         AppLoginResponse: {
             /** Format: date-time */
@@ -2370,8 +2400,19 @@ export interface components {
             code: string;
             state: string;
         };
+        /** @description A sign-in with Google ends with a web session, or, when a native app started it, with a handoff. */
+        GoogleCallbackResponse: components["schemas"]["GoogleHandoffResponse"] | components["schemas"]["User"];
+        /** @description The end of a native app's sign-in with Google (ADR-0062): a code for the app, good once for a minute. */
+        GoogleHandoffResponse: {
+            handoff: string;
+        };
         /** @description Starts sign-in with Google (ADR-0047). */
         GoogleStartRequest: {
+            /**
+             * @description From a native app (ADR-0062): the SHA-256 of a secret the app keeps, as 64 lowercase hex characters.
+             *     The attempt is then tied to the app, not to a browser, and ends in a `handoff` for the app.
+             */
+            app_challenge?: string | null;
             /** @description An address to pre-fill on Google's page. */
             login_hint?: string | null;
         };
@@ -4949,6 +4990,57 @@ export interface operations {
             };
         };
     };
+    exchange: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AppExchangeRequest"];
+            };
+        };
+        responses: {
+            /** @description Signed in; the token is for Authorization: Bearer */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AppLoginResponse"];
+                };
+            };
+            /** @description The code is unknown, used, expired or not for this secret */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The account is disabled */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Too many requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
     callback: {
         parameters: {
             query?: never;
@@ -4962,13 +5054,13 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Signed in; the session cookie is set */
+            /** @description Signed in; the session cookie is set. For an app's attempt: the handoff, and no session */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["LoginResponse"];
+                    "application/json": components["schemas"]["GoogleCallbackResponse"];
                 };
             };
             /** @description The attempt is unknown, used, expired or from another browser, or Google did not accept it */
@@ -5042,6 +5134,15 @@ export interface operations {
             };
             /** @description Sign-in with Google is not configured */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The app_challenge is not 64 lowercase hex characters */
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };
