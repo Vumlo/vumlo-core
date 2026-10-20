@@ -21,7 +21,8 @@ The names of the desktop installers, and of the app.
   Cyrillic broke the checksum step of `desktop-release.yml`, so no release was made. `scripts/build.mjs` copies them to
   `desktop/dist/`.
 - **The desktop app is called by the short name** (`institution.short_name`, `UCU`) in the shortcut and the installer's
-  metadata, not by the full name; the full name is the publisher. **Upgrade notes:** nothing to change in `vumlo.toml`. If you copied `desktop-release.yml` into your
+  metadata, not by the full name; the full name is the publisher. (A name in another alphabet made a `.deb` that dpkg
+  refuses, "invalid package name"; the app is then called by its URL scheme.) **Upgrade notes:** nothing to change in `vumlo.toml`. If you copied `desktop-release.yml` into your
   repository, copy it again from `desktop/release/`.
 
 ## [0.2.1] - 2026-10-20

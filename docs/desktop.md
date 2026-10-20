@@ -30,7 +30,7 @@ Everything comes from `vumlo.toml`, as for the web app, and `vumlo-cli brand app
 | Key | What it becomes |
 | --- | --- |
 | `server.public_origin` | The server the app talks to (compiled in). The identifier of the app is its host, reversed: `lms.ucu.edu.ua` is `ua.edu.ucu.lms`. |
-| `institution.short_name` | The name of the app and of its shortcut (`UCU`), and, with `vumlo-`, the URL scheme of its links, `vumlo-ucu://...`, and the name of the installers, `vumlo-ucu_0.2.2_amd64.deb`. |
+| `institution.short_name` | The name of the app and of its shortcut (`UCU`; a short name that is not in Latin letters gives way to the scheme, `vumlo-uku`, because a Debian package can only be named in ASCII), and, with `vumlo-`, the URL scheme of its links, `vumlo-ucu://...`, and the name of the installers, `vumlo-ucu_0.2.2_amd64.deb`. |
 | `institution.name` | The publisher of the installer and its description (the full name can be long, and in any alphabet). |
 | `institution.logo` | The icon of the app, in every size each system wants. Without it the app has Vumlo's placeholder icon. |
 | `desktop.url_scheme` (optional) | The scheme of the links, `vumlo-` and letters, digits and hyphens. **Set it if your short name has no Latin letters**; otherwise it is plain `vumlo`, and two institutions' apps on one computer would fight over `vumlo://`. |
