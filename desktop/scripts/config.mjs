@@ -25,6 +25,16 @@ export function productNameOf(institutionName) {
   return name || "Vumlo";
 }
 
+/**
+ * Tauri names an installer `<productName>_<version>_<arch>.<ext>`, and the product name is the institution's own,
+ * with spaces and perhaps Cyrillic. What is handed out is named after the scheme instead: `vumlo-ucu_0.2.1_amd64.deb`.
+ * Returns null for a file that does not start with the product name.
+ */
+export function installerNameFor(fileName, productName, scheme) {
+  const prefix = `${productName}_`;
+  return fileName.startsWith(prefix) ? `${scheme}_${fileName.slice(prefix.length)}` : null;
+}
+
 const ICONS = ["32x32.png", "128x128.png", "128x128@2x.png", "icon.icns", "icon.ico"];
 
 /** The Tauri configuration to merge over `tauri.conf.json` for this institution. */

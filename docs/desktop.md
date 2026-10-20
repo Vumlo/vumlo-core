@@ -57,7 +57,7 @@ node scripts/build.mjs -- --bundles deb,appimage      # Linux; nsis on Windows, 
 
 `scripts/build.mjs` builds the web app as a static export, makes the icons from your logo, writes the
 configuration of the installer (`desktop/gen/`) and runs `tauri build`. The installers are in
-`desktop/target/release/bundle/`. It warns, before the long part, if the server address is `http` or
+`desktop/dist/`, named `<scheme>_<version>_<arch>.<ext>`, for example `vumlo-ucu_0.2.1_amd64.deb`. It warns, before the long part, if the server address is `http` or
 `localhost`, or the scheme is plain `vumlo`. If your configuration is not beside `desktop/`, give the
 generated directory: `node scripts/build.mjs --generated /path/to/.vumlo/generated`.
 

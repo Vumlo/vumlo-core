@@ -153,9 +153,7 @@ jobs:
         run: |
           mkdir -p out
           [ -f out/signing.txt ] || echo "linux: not signed" > out/signing.txt
-          find "$CORE_DIR/desktop/target" -path '*/release/bundle/*' -type f \
-            \( -name '*.deb' -o -name '*.AppImage' -o -name '*-setup.exe' -o -name '*.msi' -o -name '*.dmg' \) \
-            -exec cp {} out/ \;
+          cp "$CORE_DIR"/desktop/dist/* out/
           ls -la out
           [ "$(ls out | grep -vc '^signing.txt$')" -gt 0 ] || { echo "no installer was built" >&2; exit 1; }
       - uses: actions/upload-artifact@v7

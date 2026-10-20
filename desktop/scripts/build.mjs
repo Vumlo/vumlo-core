@@ -5,13 +5,14 @@
 // It takes the web app's static export (built here unless --skip-web), the names, scheme and server address
 // from the client config that `vumlo-cli brand apply` generated, makes the installer icons from the generated
 // logo, and runs `tauri build`. The generated directory is, in order: --generated, $VUMLO_GENERATED_DIR,
-// ../.vumlo/generated next to vumlo.toml.
+// ../.vumlo/generated next to vumlo.toml. The installers are copied to desktop/dist/ as `<scheme>_<version>_<arch>.<ext>`,
+// for example `vumlo-ucu_0.2.1_amd64.deb`.
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { buildEnvFor, tauriConfigFor, warningsFor } from "./config.mjs";
+import { buildEnvFor, installerNameFor, tauriConfigFor, warningsFor } from "./config.mjs";
 
 const desktop = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const web = join(desktop, "..", "web");
@@ -75,3 +76,28 @@ run(`building ${config.productName} ${config.version} (${config.identifier}, ${c
   cwd: desktop,
   env: { ...process.env, ...buildEnvFor(client) },
 });
+
+// The installers, named after the scheme and not after the institution's name (which has spaces and may not be ASCII).
+const target = join(desktop, "target");
+const bundles = [join(target, "release", "bundle")];
+for (const entry of existsSync(target) ? readdirSync(target, { withFileTypes: true }) : []) {
+  if (entry.isDirectory()) bundles.push(join(target, entry.name, "release", "bundle"));
+}
+const dist = join(desktop, "dist");
+rmSync(dist, { recursive: true, force: true });
+mkdirSync(dist, { recursive: true });
+const installers = /\.(deb|AppImage|msi|dmg)$|-setup\.exe$/;
+for (const bundle of bundles.filter((dir) => existsSync(dir))) {
+  for (const kind of readdirSync(bundle, { withFileTypes: true }).filter((entry) => entry.isDirectory())) {
+    for (const file of readdirSync(join(bundle, kind.name), { withFileTypes: true })) {
+      const name = file.isFile() && installers.test(file.name) ? installerNameFor(file.name, config.productName, client.desktop.url_scheme) : null;
+      if (name) copyFileSync(join(bundle, kind.name, file.name), join(dist, name));
+    }
+  }
+}
+const made = readdirSync(dist);
+if (made.length === 0) {
+  console.error("desktop: tauri built no installer (see the output above).");
+  process.exit(1);
+}
+console.log(`desktop: installers in ${dist}:\n  ${made.join("\n  ")}`);
