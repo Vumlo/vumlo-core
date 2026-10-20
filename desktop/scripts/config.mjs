@@ -19,7 +19,7 @@ export function versionOf(version) {
   return match ? `${match[1]}.${match[2]}.${match[3]}` : "0.0.0";
 }
 
-/** The name on the installer and the shortcut: the institution's own, without what a file name cannot hold. */
+/** A name for the installer's metadata and the shortcut, without what a file name cannot hold. */
 export function productNameOf(institutionName) {
   const name = (institutionName ?? "").replace(/[\\/:*?"<>|\u0000-\u001f]/g, " ").replace(/\s+/g, " ").trim();
   return name || "Vumlo";
@@ -39,7 +39,11 @@ const ICONS = ["32x32.png", "128x128.png", "128x128@2x.png", "icon.icns", "icon.
 
 /** The Tauri configuration to merge over `tauri.conf.json` for this institution. */
 export function tauriConfigFor(client, { frontendDist, iconDir }) {
-  const productName = productNameOf(client.public.institution.name);
+  const institution = client.public.institution;
+  // The app is called by the short name (`UCU`), as the programs and links are (`vumlo-ucu`); the full name, which
+  // can be long and in any alphabet, is the publisher and in the descriptions.
+  const productName = productNameOf(institution.short_name || institution.name);
+  const fullName = productNameOf(institution.name);
   return {
     productName,
     // The program's file name is the scheme, `vumlo-ucu`: unique per institution, ASCII, and what the
@@ -52,9 +56,9 @@ export function tauriConfigFor(client, { frontendDist, iconDir }) {
     bundle: {
       icon: ICONS.map((name) => `${iconDir}/${name}`),
       category: "Education",
-      publisher: productName,
+      publisher: fullName,
       shortDescription: `${productName}: courses, deadlines and grades`,
-      longDescription: `The desktop app of ${productName}, a Vumlo installation. Read your courses and deadlines without a connection and send your work when you are back online.`,
+      longDescription: `The desktop app of ${fullName}, a Vumlo installation. Read your courses and deadlines without a connection and send your work when you are back online.`,
     },
   };
 }

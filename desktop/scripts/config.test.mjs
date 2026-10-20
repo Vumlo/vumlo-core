@@ -5,7 +5,7 @@ import { buildEnvFor, identifierOf, installerNameFor, productNameOf, tauriConfig
 const client = {
   version: "0.2.0",
   api_url: "https://lms.ucu.edu.ua/api/v1",
-  public: { server: { public_origin: "https://lms.ucu.edu.ua" }, institution: { name: "Український католицький університет" } },
+  public: { server: { public_origin: "https://lms.ucu.edu.ua" }, institution: { name: "Український католицький університет", short_name: "UCU" } },
   desktop: { url_scheme: "vumlo-ucu" },
 };
 
@@ -36,6 +36,8 @@ test("the configuration for the installer carries the institution's names, schem
   assert.equal(config.version, "0.2.0");
   assert.equal(config.build.frontendDist, "/src/web/out");
   assert.equal(config.mainBinaryName, "vumlo-ucu", "one program name per institution");
+  assert.equal(config.productName, "UCU", "the app is called by the short name");
+  assert.equal(config.bundle.publisher, "Український католицький університет");
   assert.equal(config.bundle.category, "Education");
   assert.match(config.bundle.longDescription, /Український католицький університет/);
   assert.ok(config.bundle.icon.includes("gen/icons/icon.icns") && config.bundle.icon.includes("gen/icons/icon.ico"));

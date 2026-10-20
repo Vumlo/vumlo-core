@@ -12,14 +12,16 @@ must do, in order, besides getting the new release. See [RELEASING.md](RELEASING
 
 ## [0.2.2] - 2026-10-20
 
-The names of the desktop installers.
+The names of the desktop installers, and of the app.
 
 ### Fixed
 
 - **The installers of the desktop app are named after the URL scheme**, `vumlo-ucu_0.2.2_amd64.deb`, `..._x64-setup.exe`,
   `..._aarch64.dmg`, `..._x64.dmg`, `..._amd64.AppImage`, and not after the institution's name. A name with spaces or
   Cyrillic broke the checksum step of `desktop-release.yml`, so no release was made. `scripts/build.mjs` copies them to
-  `desktop/dist/`. **Upgrade notes:** nothing to change in `vumlo.toml`. If you copied `desktop-release.yml` into your
+  `desktop/dist/`.
+- **The desktop app is called by the short name** (`institution.short_name`, `UCU`) in the shortcut and the installer's
+  metadata, not by the full name; the full name is the publisher. **Upgrade notes:** nothing to change in `vumlo.toml`. If you copied `desktop-release.yml` into your
   repository, copy it again from `desktop/release/`.
 
 ## [0.2.1] - 2026-10-20
