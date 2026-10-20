@@ -96,8 +96,8 @@ for (const bundle of bundles.filter((dir) => existsSync(dir))) {
   }
 }
 const made = readdirSync(dist);
-if (made.length === 0) {
+if (made.length === 0 && !tauriArgs.includes("--no-bundle")) {
   console.error("desktop: tauri built no installer (see the output above).");
   process.exit(1);
 }
-console.log(`desktop: installers in ${dist}:\n  ${made.join("\n  ")}`);
+if (made.length > 0) console.log(`desktop: installers in ${dist}:\n  ${made.join("\n  ")}`);
