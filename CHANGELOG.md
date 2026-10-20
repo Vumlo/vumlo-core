@@ -20,6 +20,9 @@ The names of the desktop installers, and of the app.
   `..._aarch64.dmg`, `..._x64.dmg`, `..._amd64.AppImage`, and not after the institution's name. A name with spaces or
   Cyrillic broke the checksum step of `desktop-release.yml`, so no release was made. `scripts/build.mjs` copies them to
   `desktop/dist/`.
+- **A `vumlo-ucu://` link reaches the desktop app on Linux.** The `.deb`'s desktop file had `Exec=vumlo-ucu` without `%u`, so
+  "Open app" at the end of a sign-in with Google started the app but never gave it the code. (The AppImage is built by
+  Tauri with its own desktop file, which cannot be replaced: for Google sign-in on Linux use the `.deb`; password sign-in works in both.)
 - **The desktop app is called by the short name** (`institution.short_name`, `UCU`) in the shortcut and the installer's
   metadata, not by the full name; the full name is the publisher. (A name in another alphabet made a `.deb` that dpkg
   refuses, "invalid package name"; the app is then called by its URL scheme.) **Upgrade notes:** nothing to change in `vumlo.toml`. If you copied `desktop-release.yml` into your

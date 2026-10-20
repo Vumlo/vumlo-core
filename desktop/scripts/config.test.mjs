@@ -30,7 +30,7 @@ test("the product name is the institution's, safe for a file name", () => {
 });
 
 test("the configuration for the installer carries the institution's names, scheme and icons", () => {
-  const config = tauriConfigFor(client, { frontendDist: "/src/web/out", iconDir: "gen/icons" });
+  const config = tauriConfigFor(client, { frontendDist: "/src/web/out", iconDir: "gen/icons", desktopTemplate: "/src/desktop/desktop-template.desktop" });
   assert.deepEqual(config.plugins["deep-link"].desktop.schemes, ["vumlo-ucu"]);
   assert.equal(config.identifier, "ua.edu.ucu.lms");
   assert.equal(config.version, "0.2.0");
@@ -38,6 +38,7 @@ test("the configuration for the installer carries the institution's names, schem
   assert.equal(config.mainBinaryName, "vumlo-ucu", "one program name per institution");
   assert.equal(config.productName, "UCU", "the app is called by the short name");
   assert.equal(config.bundle.publisher, "Український католицький університет");
+  assert.equal(config.bundle.linux.deb.desktopTemplate, "/src/desktop/desktop-template.desktop");
   assert.equal(config.bundle.category, "Education");
   assert.match(config.bundle.longDescription, /Український католицький університет/);
   assert.ok(config.bundle.icon.includes("gen/icons/icon.icns") && config.bundle.icon.includes("gen/icons/icon.ico"));
@@ -67,4 +68,11 @@ test("the app is called by the short name, unless a Debian package cannot be nam
   assert.equal(appNameOf({ name: "Український католицький університет", short_name: "УКУ" }, "vumlo-uku"), "vumlo-uku");
   assert.equal(appNameOf({ name: "Український католицький університет", short_name: "Український католицький університет" }, "vumlo-ucu"), "vumlo-ucu");
   assert.equal(appNameOf({ name: "Test", short_name: "!" }, "vumlo"), "vumlo");
+});
+
+test("the desktop file hands the address of a link to the program", async () => {
+  const { readFileSync } = await import("node:fs");
+  const file = readFileSync(new URL("../desktop-template.desktop", import.meta.url), "utf8");
+  assert.match(file, /^Exec=\{\{exec\}\} %u$/m);
+  assert.match(file, /^MimeType=\{\{mime_type\}\}$/m);
 });
