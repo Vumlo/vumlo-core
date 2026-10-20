@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { buildEnvFor, identifierOf, productNameOf, tauriConfigFor, versionOf, warningsFor } from "./config.mjs";
+import { buildEnvFor, identifierOf, installerNameFor, productNameOf, tauriConfigFor, versionOf, warningsFor } from "./config.mjs";
 
 const client = {
   version: "0.2.0",
@@ -48,4 +48,13 @@ test("a build that would be wrong for other people is warned about", () => {
   assert.equal(warningsFor(local).length, 2);
   const plain = { ...client, api_url: "http://lms.example.edu/api/v1" };
   assert.match(warningsFor(plain)[0], /not https/);
+});
+
+test("an installer is named after the scheme, not the institution's name", () => {
+  const name = "Український католицький університет";
+  assert.equal(installerNameFor(`${name}_0.2.1_amd64.deb`, name, "vumlo-ucu"), "vumlo-ucu_0.2.1_amd64.deb");
+  assert.equal(installerNameFor(`${name}_0.2.1_amd64.AppImage`, name, "vumlo-ucu"), "vumlo-ucu_0.2.1_amd64.AppImage");
+  assert.equal(installerNameFor(`${name}_0.2.1_x64-setup.exe`, name, "vumlo-ucu"), "vumlo-ucu_0.2.1_x64-setup.exe");
+  assert.equal(installerNameFor(`${name}_0.2.1_aarch64.dmg`, name, "vumlo-ucu"), "vumlo-ucu_0.2.1_aarch64.dmg");
+  assert.equal(installerNameFor("Other_0.2.1_amd64.deb", name, "vumlo-ucu"), null);
 });

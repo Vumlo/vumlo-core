@@ -1,6 +1,6 @@
 [package]
 name = "vumlo-desktop"
-version = "0.2.1"
+version = "0.2.2"
 edition = "2024"
 license = "MIT"
 description = "The Vumlo desktop client (Tauri 2): the web app in a native window, with the network, the token and the offline store in Rust (ADR-0056)."
