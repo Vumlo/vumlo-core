@@ -69,26 +69,38 @@ pub async fn find_login(
     }))
 }
 
-/// Locks the user and their password identity `FOR SHARE` until the transaction ends and says
+/// Locks the password identity and the user `FOR SHARE` until the transaction ends and says
 /// whether the account is still active and the password hash is still `password_hash`. A change of
 /// either waits for this transaction (ADR-0038).
+///
+/// The identity is locked first, then the user: the order a password reset writes them in. One statement
+/// over both (`FOR SHARE OF u, i`) took them in the planner's order, and a login that held the user while it
+/// waited for the identity deadlocked with a reset that held the identity and wanted the user.
 pub async fn lock_verified_login(
     conn: &mut PgConnection,
     user_id: Uuid,
     password_hash: &str,
 ) -> Result<bool, sqlx::Error> {
-    let row = sqlx::query_scalar!(
+    let identity = sqlx::query_scalar!(
         r#"SELECT 1 AS "locked!"
-           FROM identity.users u
-           JOIN identity.identities i ON i.user_id = u.id AND i.provider = 'password'
-           WHERE u.id = $1 AND u.status = 'active' AND i.password_hash = $2
-           FOR SHARE OF u, i"#,
+           FROM identity.identities
+           WHERE user_id = $1 AND provider = 'password' AND password_hash = $2
+           FOR SHARE"#,
         user_id,
         password_hash
     )
+    .fetch_optional(&mut *conn)
+    .await?;
+    if identity.is_none() {
+        return Ok(false);
+    }
+    let user = sqlx::query_scalar!(
+        r#"SELECT 1 AS "locked!" FROM identity.users WHERE id = $1 AND status = 'active' FOR SHARE"#,
+        user_id
+    )
     .fetch_optional(conn)
     .await?;
-    Ok(row.is_some())
+    Ok(user.is_some())
 }
 
 pub async fn insert_user(
