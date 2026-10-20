@@ -19,6 +19,16 @@ export function versionOf(version) {
   return match ? `${match[1]}.${match[2]}.${match[3]}` : "0.0.0";
 }
 
+/**
+ * The name of the app: the short name, as the programs and links are named. A Debian package is named after it, and
+ * Debian allows only ASCII letters, digits and `+ - .` in a package name, so a short name in another alphabet
+ * (`УКУ`) gives way to the URL scheme (`vumlo-uku`, which is ASCII by definition).
+ */
+export function appNameOf(institution, scheme) {
+  const short = productNameOf(institution.short_name || institution.name);
+  return /^[A-Za-z0-9][A-Za-z0-9 .+-]*$/.test(short) ? short : scheme;
+}
+
 /** A name for the installer's metadata and the shortcut, without what a file name cannot hold. */
 export function productNameOf(institutionName) {
   const name = (institutionName ?? "").replace(/[\\/:*?"<>|\u0000-\u001f]/g, " ").replace(/\s+/g, " ").trim();
@@ -42,7 +52,7 @@ export function tauriConfigFor(client, { frontendDist, iconDir }) {
   const institution = client.public.institution;
   // The app is called by the short name (`UCU`), as the programs and links are (`vumlo-ucu`); the full name, which
   // can be long and in any alphabet, is the publisher and in the descriptions.
-  const productName = productNameOf(institution.short_name || institution.name);
+  const productName = appNameOf(institution, client.desktop.url_scheme);
   const fullName = productNameOf(institution.name);
   return {
     productName,

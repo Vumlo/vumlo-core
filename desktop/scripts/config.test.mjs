@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { buildEnvFor, identifierOf, installerNameFor, productNameOf, tauriConfigFor, versionOf, warningsFor } from "./config.mjs";
+import { appNameOf, buildEnvFor, identifierOf, installerNameFor, productNameOf, tauriConfigFor, versionOf, warningsFor } from "./config.mjs";
 
 const client = {
   version: "0.2.0",
@@ -59,4 +59,12 @@ test("an installer is named after the scheme, not the institution's name", () =>
   assert.equal(installerNameFor(`${name}_0.2.1_x64-setup.exe`, name, "vumlo-ucu"), "vumlo-ucu_0.2.1_x64-setup.exe");
   assert.equal(installerNameFor(`${name}_0.2.1_aarch64.dmg`, name, "vumlo-ucu"), "vumlo-ucu_0.2.1_aarch64.dmg");
   assert.equal(installerNameFor("Other_0.2.1_amd64.deb", name, "vumlo-ucu"), null);
+});
+
+test("the app is called by the short name, unless a Debian package cannot be named so", () => {
+  assert.equal(appNameOf({ name: "Український католицький університет", short_name: "UCU" }, "vumlo-ucu"), "UCU");
+  assert.equal(appNameOf({ name: "Northfield University", short_name: "Northfield" }, "vumlo-northfield"), "Northfield");
+  assert.equal(appNameOf({ name: "Український католицький університет", short_name: "УКУ" }, "vumlo-uku"), "vumlo-uku");
+  assert.equal(appNameOf({ name: "Український католицький університет", short_name: "Український католицький університет" }, "vumlo-ucu"), "vumlo-ucu");
+  assert.equal(appNameOf({ name: "Test", short_name: "!" }, "vumlo"), "vumlo");
 });
