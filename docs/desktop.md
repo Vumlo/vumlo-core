@@ -120,7 +120,8 @@ at once. They install over the old version and keep their data.
 - **Linux needs a keychain.** The session is kept in the system keychain (GNOME Keyring, KWallet or another Secret
   Service), never in a file. On a desktop without one, signing in says so.
 - **Links** (`vumlo-ucu://course?id=...`) need the app installed and registered by its installer. A bare AppImage
-  is registered by the tool that integrates AppImages.
+  is registered by the tool that integrates AppImages, and its desktop file cannot pass the link on: on Linux, sign-in
+  with Google needs the `.deb` (sign-in with a password works in both).
 - **What is on the device.** What the person read and what they have not sent are in one file in the app's data
   folder (`~/.local/share/<identifier>`, `%APPDATA%\<identifier>`, `~/Library/Application Support/<identifier>`),
   not encrypted: disk encryption of the device protects it. Signing out deletes it.

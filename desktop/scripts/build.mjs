@@ -69,7 +69,7 @@ if (hasLogo) {
   console.warn("desktop: warning: institution.logo is not set, so the app has the placeholder icon of Vumlo. Set it and run `vumlo-cli brand apply`.");
 }
 
-const config = tauriConfigFor(client, { frontendDist: join(web, "out"), iconDir: hasLogo ? "gen/icons" : "icons" });
+const config = tauriConfigFor(client, { frontendDist: join(web, "out"), iconDir: hasLogo ? "gen/icons" : "icons", desktopTemplate: join(desktop, "desktop-template.desktop") });
 writeFileSync(join(gen, "tauri.conf.json"), JSON.stringify(config, null, 2) + "\n");
 
 run(`building ${config.productName} ${config.version} (${config.identifier}, ${client.desktop.url_scheme}://)`, process.execPath, [tauri, "build", "--config", join(gen, "tauri.conf.json"), ...tauriArgs], {

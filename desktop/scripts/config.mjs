@@ -48,7 +48,7 @@ export function installerNameFor(fileName, productName, scheme) {
 const ICONS = ["32x32.png", "128x128.png", "128x128@2x.png", "icon.icns", "icon.ico"];
 
 /** The Tauri configuration to merge over `tauri.conf.json` for this institution. */
-export function tauriConfigFor(client, { frontendDist, iconDir }) {
+export function tauriConfigFor(client, { frontendDist, iconDir, desktopTemplate }) {
   const institution = client.public.institution;
   // The app is called by the short name (`UCU`), as the programs and links are (`vumlo-ucu`); the full name, which
   // can be long and in any alphabet, is the publisher and in the descriptions.
@@ -66,6 +66,9 @@ export function tauriConfigFor(client, { frontendDist, iconDir }) {
     bundle: {
       icon: ICONS.map((name) => `${iconDir}/${name}`),
       category: "Education",
+      // Tauri's own desktop file has `Exec=<program>` with no `%u`: the system opens a link with the program but does not
+      // hand it the address, so a `vumlo-ucu://` link would start the app and never arrive. Ours adds it.
+      linux: { deb: { desktopTemplate }, rpm: { desktopTemplate } },
       publisher: fullName,
       shortDescription: `${productName}: courses, deadlines and grades`,
       longDescription: `The desktop app of ${fullName}, a Vumlo installation. Read your courses and deadlines without a connection and send your work when you are back online.`,
