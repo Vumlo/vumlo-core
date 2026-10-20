@@ -16,6 +16,9 @@ The names of the desktop installers, and of the app.
 
 ### Fixed
 
+- **A login at the moment an administrator resets that user's password could fail with 500** (a deadlock in the database: the
+  login held the user while it waited for the password, the reset held the password and wanted the user). The login now
+  locks them in the order the reset writes them. Nothing to do on upgrade.
 - **The installers of the desktop app are named after the URL scheme**, `vumlo-ucu_0.2.2_amd64.deb`, `..._x64-setup.exe`,
   `..._aarch64.dmg`, `..._x64.dmg`, `..._amd64.AppImage`, and not after the institution's name. A name with spaces or
   Cyrillic broke the checksum step of `desktop-release.yml`, so no release was made. `scripts/build.mjs` copies them to

@@ -127,6 +127,44 @@ async fn a_login_that_verified_a_password_the_reset_replaced_is_refused() {
     .await;
 }
 
+/// A reset writes the password, then the user's flag, then deletes the sessions. A login that waits for the password
+/// row must not hold the user's row while it waits, or the two wait for each other: Postgres ends the deadlock by
+/// failing one of them, and the login answers 500 (found by the test above under load).
+#[tokio::test]
+async fn a_login_waiting_for_a_reset_does_not_deadlock_with_it() {
+    db_test(async |pool| {
+        let env = Env::new(pool.clone()).await;
+        let victim = env.user("victim@x.edu", Role::Teacher).await;
+        let mut reset = pool.begin().await.unwrap();
+        sqlx::query("UPDATE identity.identities SET password_hash = password_hash || 'x' WHERE user_id = $1")
+            .bind(victim.id)
+            .execute(&mut *reset)
+            .await
+            .unwrap();
+        let attempt = tokio::spawn({
+            let base = env.base.clone();
+            async move {
+                common::Http::new(&base)
+                    .post("/auth/login")
+                    .json(&json!({"email": "victim@x.edu", "password": common::PASSWORD, "client": "app"}))
+                    .send()
+                    .await
+            }
+        });
+        wait_until_blocked(&pool, &attempt).await;
+        // The reset's next write, the user's row: with the login holding that row, this would wait for the login.
+        sqlx::query("UPDATE identity.users SET must_change_password = true WHERE id = $1")
+            .bind(victim.id)
+            .execute(&mut *reset)
+            .await
+            .unwrap();
+        reset.commit().await.unwrap();
+        let outcome = attempt.await.unwrap();
+        assert_eq!(outcome.problem(401).status, 401);
+    })
+    .await;
+}
+
 #[tokio::test]
 async fn a_login_that_verified_an_account_that_was_disabled_meanwhile_is_refused() {
     db_test(async |pool| {
