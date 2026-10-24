@@ -10,6 +10,15 @@ must do, in order, besides getting the new release. See [RELEASING.md](RELEASING
 
 ## [Unreleased]
 
+### Changed
+
+- **The Postgres schema `identity` is now `auth`** (migration `0032_auth_schema.sql`, `ALTER SCHEMA ... RENAME`), and the
+  `identity` module of the server is the `auth` module. `vumlo-cli modules list` names `auth` and `access` (it named
+  `identity` and `policy`). The HTTP API is unchanged.
+  - **Upgrade notes:** run `vumlo db migrate` as always; rows, keys and indexes are kept. Anything of your own that reads the
+    database directly (a report, a backup script that dumps `--schema=identity`) must say `auth`. A server older than this
+    release cannot run against a migrated database.
+
 ## [0.2.2] - 2026-10-20
 
 The names of the desktop installers, and of the app.
