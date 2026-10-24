@@ -232,7 +232,7 @@ async fn a_change_that_changes_nothing_is_not_audited() {
     db_test(async |pool| {
         let w = world(pool).await;
         let name: String =
-            sqlx::query_scalar!("SELECT name FROM identity.users WHERE id = $1", w.student.0)
+            sqlx::query_scalar!("SELECT name FROM auth.users WHERE id = $1", w.student.0)
                 .fetch_one(&w.pool)
                 .await
                 .unwrap();
@@ -290,7 +290,7 @@ async fn a_refused_or_failed_write_is_not_audited() {
 
         assert!(w.rows().await.is_empty());
         let name: String =
-            sqlx::query_scalar!("SELECT name FROM identity.users WHERE id = $1", w.admin.0)
+            sqlx::query_scalar!("SELECT name FROM auth.users WHERE id = $1", w.admin.0)
                 .fetch_one(&w.pool)
                 .await
                 .unwrap();
@@ -343,7 +343,7 @@ async fn a_non_admin_is_refused_and_nothing_is_audited() {
         }
 
         assert!(w.rows().await.is_empty());
-        let role = sqlx::query_scalar!("SELECT role FROM identity.users WHERE id = $1", target)
+        let role = sqlx::query_scalar!("SELECT role FROM auth.users WHERE id = $1", target)
             .fetch_one(&w.pool)
             .await
             .unwrap();

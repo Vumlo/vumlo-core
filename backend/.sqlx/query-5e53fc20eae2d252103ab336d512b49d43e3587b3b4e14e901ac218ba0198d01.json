@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO auth.identities (id, user_id, provider, subject, password_hash)\n         VALUES ($1, $2, 'password', $3, $4)\n         ON CONFLICT (provider, subject) DO UPDATE SET password_hash = EXCLUDED.password_hash",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "5e53fc20eae2d252103ab336d512b49d43e3587b3b4e14e901ac218ba0198d01"
+}

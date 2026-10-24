@@ -3,7 +3,7 @@ use uuid::Uuid;
 use common::Role;
 
 /// Who performs a request: an active user holding a valid session whose password is not
-/// pending a forced change. Only the `identity` extractors build one.
+/// pending a forced change. Only the `auth` extractors build one.
 #[derive(Debug, Clone)]
 pub struct Actor {
     user_id: Uuid,

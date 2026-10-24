@@ -1,6 +1,6 @@
 //! SQL only. Every function takes the connection it runs on and never begins a transaction.
 //!
-//! `content`, `teaching` and `identity` tables are read here with plain JOINs and never written.
+//! `content`, `teaching` and `auth` tables are read here with plain JOINs and never written.
 //! The students of a course come from the view `teaching.effective_members`. Every read that
 //! staff can reach selects `status = 'submitted'` rows only (ADR-0011): a draft has no way into it.
 
@@ -227,7 +227,7 @@ pub async fn latest_contents(
                   s.student_id, u.name, u.surname, s.attempt AS "attempt!",
                   s.submitted_at AS "submitted_at!", s.is_late, s.content AS "content: Body"
            FROM assessment.submissions s
-           JOIN identity.users u ON u.id = s.student_id
+           JOIN auth.users u ON u.id = s.student_id
            WHERE s.assignment_id = $1 AND s.status = 'submitted'
            ORDER BY s.student_id, s.attempt DESC"#,
         assignment_id
@@ -258,7 +258,7 @@ pub async fn current_students(
     let rows = sqlx::query!(
         r#"SELECT u.id, u.name, u.surname
            FROM teaching.effective_members m
-           JOIN identity.users u ON u.id = m.user_id
+           JOIN auth.users u ON u.id = m.user_id
            WHERE m.course_id = $1 AND m.role = 'student'
            ORDER BY u.surname, u.name, u.id"#,
         course_id
@@ -370,7 +370,7 @@ pub async fn is_student_or_has_attempts(
 /// The students of the course after `after`, by surname, name and id, at most `limit`, each with
 /// their latest submitted attempt: the current students, and the former ones who have a submitted
 /// attempt for this assignment (ADR-0037). The cursor is a user id; its place in the order is read
-/// from `identity.users`.
+/// from `auth.users`.
 pub async fn list_students(
     conn: &mut PgConnection,
     course_id: Uuid,
@@ -393,7 +393,7 @@ pub async fn list_students(
                   s.id AS "attempt_id?", s.attempt AS "attempt?", s.submitted_at AS "submitted_at?",
                   s.is_late AS "is_late?"
            FROM candidates c
-           JOIN identity.users u ON u.id = c.id
+           JOIN auth.users u ON u.id = c.id
            LEFT JOIN LATERAL (
                SELECT id, attempt, submitted_at, is_late FROM assessment.submissions
                WHERE assignment_id = $2 AND student_id = u.id AND status = 'submitted'
@@ -401,7 +401,7 @@ pub async fn list_students(
            ) s ON true
            WHERE ($3::uuid IS NULL
                   OR (u.surname, u.name, u.id) > (SELECT x.surname, x.name, x.id
-                                                  FROM identity.users x WHERE x.id = $3))
+                                                  FROM auth.users x WHERE x.id = $3))
            ORDER BY u.surname, u.name, u.id
            LIMIT $4"#,
         course_id,

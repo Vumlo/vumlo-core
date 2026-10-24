@@ -828,7 +828,7 @@ async fn members_must_exist_and_may_hold_only_roles_their_institution_role_allow
 
 async fn disable(pool: &PgPool, user: Uuid) {
     sqlx::query!(
-        "UPDATE identity.users SET status = 'disabled' WHERE id = $1",
+        "UPDATE auth.users SET status = 'disabled' WHERE id = $1",
         user
     )
     .execute(pool)
@@ -895,7 +895,7 @@ async fn a_disabled_student_is_off_the_roster_and_back_when_enabled() {
         assert_eq!(again.problem(422).errors[0].field, "user_id");
 
         sqlx::query!(
-            "UPDATE identity.users SET status = 'active' WHERE id = $1",
+            "UPDATE auth.users SET status = 'active' WHERE id = $1",
             w.student.id
         )
         .execute(&w.pool)

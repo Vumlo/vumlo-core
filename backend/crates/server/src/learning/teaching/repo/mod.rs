@@ -335,7 +335,7 @@ pub async fn info_row(
                     WHERE m.course_id = c.id AND m.role = 'student') AS "student_count!",
                   (SELECT count(*) FROM teaching.effective_members m
                     WHERE m.course_id = c.id AND m.role = 'assistant') AS "assistant_count!",
-                  (SELECT count(*) FROM identity.users f WHERE f.id IN (
+                  (SELECT count(*) FROM auth.users f WHERE f.id IN (
                        SELECT g.student_id FROM gradebook.grades g
                        JOIN content.items i ON i.id = g.assignment_id
                        WHERE i.course_id = c.id
@@ -349,7 +349,7 @@ pub async fn info_row(
                                      WHERE m.course_id = c.id AND m.user_id = f.id))
                       AS "former_count!"
            FROM teaching.courses c
-           JOIN identity.users u ON u.id = c.owner_id
+           JOIN auth.users u ON u.id = c.owner_id
            LEFT JOIN org.terms t ON t.id = c.term_id
            WHERE c.id = $1"#,
         course_id
@@ -530,7 +530,7 @@ pub async fn list_people(
                   false AS "former!"
            FROM teaching.effective_members m
            JOIN teaching.courses c ON c.id = m.course_id
-           JOIN identity.users u ON u.id = m.user_id
+           JOIN auth.users u ON u.id = m.user_id
            WHERE m.course_id = $1
            ORDER BY CASE m.role WHEN 'teacher' THEN 0 WHEN 'assistant' THEN 1 ELSE 2 END,
                     u.surname, u.name, u.id"#,
@@ -552,7 +552,7 @@ pub async fn list_former(
                   'student' AS "role!: CourseRole", false AS "is_owner!",
                   'direct' AS "source!: MemberSource", NULL::text AS "group?",
                   true AS "former!"
-           FROM identity.users u
+           FROM auth.users u
            WHERE u.id IN (
                    SELECT g.student_id FROM gradebook.grades g
                    JOIN content.items i ON i.id = g.assignment_id
@@ -608,7 +608,7 @@ pub async fn search_candidates(
     sqlx::query_as!(
         Candidate,
         r#"SELECT u.id AS user_id, u.name, u.surname, u.email, u.role AS "role: Role"
-           FROM identity.users u
+           FROM auth.users u
            WHERE u.status = 'active' AND u.role <> 'admin'
              AND NOT EXISTS (SELECT 1 FROM teaching.effective_members m
                              WHERE m.course_id = $1 AND m.user_id = u.id)

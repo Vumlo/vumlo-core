@@ -118,7 +118,7 @@ pub async fn demo(options: &Options, args: SeedDemo) -> anyhow::Result<()> {
         .fetch_one(&pool)
         .await?;
     let people =
-        sqlx::query_scalar!(r#"SELECT count(*) AS "n!" FROM identity.users WHERE role <> 'admin'"#)
+        sqlx::query_scalar!(r#"SELECT count(*) AS "n!" FROM auth.users WHERE role <> 'admin'"#)
             .fetch_one(&pool)
             .await?;
     if (courses > 0 || people > 0) && !args.yes {
@@ -160,7 +160,7 @@ pub async fn demo(options: &Options, args: SeedDemo) -> anyhow::Result<()> {
         let name = PersonName::name(person.name).context("a demo name")?;
         let surname = PersonName::surname(person.surname).context("a demo surname")?;
         sqlx::query!(
-            "INSERT INTO identity.users (id, email, name, surname, role, must_change_password, email_verified_at)
+            "INSERT INTO auth.users (id, email, name, surname, role, must_change_password, email_verified_at)
              VALUES ($1, $2, $3, $4, $5, true, now())",
             id,
             email.as_str(),
@@ -172,7 +172,7 @@ pub async fn demo(options: &Options, args: SeedDemo) -> anyhow::Result<()> {
         .await
         .context("cannot create a demo user (does one of them exist already?)")?;
         sqlx::query!(
-            "INSERT INTO identity.identities (id, user_id, provider, subject, password_hash)
+            "INSERT INTO auth.identities (id, user_id, provider, subject, password_hash)
              VALUES ($1, $2, 'password', $3, $4)",
             Uuid::now_v7(),
             id,

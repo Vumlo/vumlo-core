@@ -48,8 +48,8 @@ pub async fn list_audit(
                           WHEN 'module' THEN rm.title
                       END AS label
                FROM events.audit_log l
-               LEFT JOIN identity.users a ON a.id = l.actor_id
-               LEFT JOIN identity.users ru ON l.resource_type = 'user' AND ru.id = l.resource_id
+               LEFT JOIN auth.users a ON a.id = l.actor_id
+               LEFT JOIN auth.users ru ON l.resource_type = 'user' AND ru.id = l.resource_id
                LEFT JOIN teaching.courses rc ON l.resource_type = 'course' AND rc.id = l.resource_id
                LEFT JOIN org.groups rg ON l.resource_type = 'group' AND rg.id = l.resource_id
                LEFT JOIN org.subgroups rs ON l.resource_type = 'subgroup' AND rs.id = l.resource_id

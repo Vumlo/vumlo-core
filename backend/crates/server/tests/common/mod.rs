@@ -305,7 +305,7 @@ pub async fn seed_pending_user(pool: &PgPool, email: &str, role: Role) -> String
     let id = uuid::Uuid::now_v7();
     let mut tx = pool.begin().await.expect("begin");
     sqlx::query!(
-        "INSERT INTO identity.users
+        "INSERT INTO auth.users
              (id, email, name, surname, role, must_change_password, email_verified_at)
          VALUES ($1, $2, 'Test', 'User', $3, true, now())",
         id,
@@ -316,7 +316,7 @@ pub async fn seed_pending_user(pool: &PgPool, email: &str, role: Role) -> String
     .await
     .expect("insert user");
     sqlx::query!(
-        "INSERT INTO identity.identities (id, user_id, provider, subject, password_hash)
+        "INSERT INTO auth.identities (id, user_id, provider, subject, password_hash)
          VALUES ($1, $2, 'password', $3, $4)",
         uuid::Uuid::now_v7(),
         id,
@@ -335,8 +335,8 @@ pub async fn seed_user(pool: &PgPool, email: &str, role: Role) -> String {
     seed_pending_user(pool, email, role).await;
     let hash = auth::hash_password(PASSWORD).await.expect("hash");
     sqlx::query!(
-        "UPDATE identity.identities SET password_hash = $2
-         WHERE subject = (SELECT id::text FROM identity.users WHERE email = $1)",
+        "UPDATE auth.identities SET password_hash = $2
+         WHERE subject = (SELECT id::text FROM auth.users WHERE email = $1)",
         email,
         hash.as_str()
     )
@@ -344,7 +344,7 @@ pub async fn seed_user(pool: &PgPool, email: &str, role: Role) -> String {
     .await
     .expect("set password");
     sqlx::query!(
-        "UPDATE identity.users SET must_change_password = false WHERE email = $1",
+        "UPDATE auth.users SET must_change_password = false WHERE email = $1",
         email
     )
     .execute(pool)
@@ -361,7 +361,7 @@ pub async fn seed_and_login(
     role: Role,
 ) -> (uuid::Uuid, String) {
     let password = seed_user(pool, email, role).await;
-    let id = sqlx::query_scalar!("SELECT id FROM identity.users WHERE email = $1", email)
+    let id = sqlx::query_scalar!("SELECT id FROM auth.users WHERE email = $1", email)
         .fetch_one(pool)
         .await
         .expect("user id");

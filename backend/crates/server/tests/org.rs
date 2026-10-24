@@ -320,7 +320,7 @@ impl World {
 
     async fn set_names(&self, user: Uuid, name: &str, surname: &str) {
         sqlx::query!(
-            "UPDATE identity.users SET name = $2, surname = $3 WHERE id = $1",
+            "UPDATE auth.users SET name = $2, surname = $3 WHERE id = $1",
             user,
             name,
             surname

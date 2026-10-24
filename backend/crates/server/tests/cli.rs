@@ -253,7 +253,7 @@ async fn create_user_refuses_bad_input_and_duplicates() {
             );
             assert!(!output.stdout.contains("Temporary password"), "{args:?}");
         }
-        let users = sqlx::query_scalar!(r#"SELECT count(*) AS "n!" FROM identity.users"#)
+        let users = sqlx::query_scalar!(r#"SELECT count(*) AS "n!" FROM auth.users"#)
             .fetch_one(&pool)
             .await
             .unwrap();
@@ -325,7 +325,7 @@ async fn the_first_command_records_the_mode_and_a_different_mode_is_refused() {
                 refused.stderr
             );
         }
-        let users = sqlx::query_scalar!(r#"SELECT count(*) AS "n!" FROM identity.users"#)
+        let users = sqlx::query_scalar!(r#"SELECT count(*) AS "n!" FROM auth.users"#)
             .fetch_one(&pool)
             .await
             .unwrap();

@@ -313,7 +313,7 @@ pub async fn group_overview(
     })
 }
 
-/// The groups a person is in, by name. The read interface `identity` uses for a person's facts;
+/// The groups a person is in, by name. The read interface `auth` uses for a person's facts;
 /// the caller has authorized the administrator.
 pub async fn groups_of_user(
     conn: &mut PgConnection,

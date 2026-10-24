@@ -41,7 +41,7 @@ async fn a_session_minted_while_the_password_is_reset_does_not_survive_the_reset
         .await
         .unwrap();
         sqlx::query(
-            "CREATE TRIGGER slow BEFORE INSERT ON identity.sessions
+            "CREATE TRIGGER slow BEFORE INSERT ON auth.sessions
              FOR EACH ROW EXECUTE FUNCTION slow_insert()",
         )
         .execute(&pool)
@@ -80,7 +80,7 @@ async fn a_session_minted_while_the_password_is_reset_does_not_survive_the_reset
         } else {
             assert_eq!(minted.status, 401);
         }
-        let live: i64 = sqlx::query_scalar("SELECT count(*) FROM identity.sessions WHERE user_id = $1")
+        let live: i64 = sqlx::query_scalar("SELECT count(*) FROM auth.sessions WHERE user_id = $1")
             .bind(victim.id)
             .fetch_one(&pool)
             .await
@@ -98,7 +98,7 @@ async fn a_login_that_verified_a_password_the_reset_replaced_is_refused() {
         let env = Env::new(pool.clone()).await;
         let victim = env.user("victim@x.edu", Role::Teacher).await;
         let mut reset = pool.begin().await.unwrap();
-        sqlx::query("UPDATE identity.identities SET password_hash = password_hash || 'x' WHERE user_id = $1")
+        sqlx::query("UPDATE auth.identities SET password_hash = password_hash || 'x' WHERE user_id = $1")
             .bind(victim.id)
             .execute(&mut *reset)
             .await
@@ -115,7 +115,7 @@ async fn a_login_that_verified_a_password_the_reset_replaced_is_refused() {
             }
         });
         wait_until_blocked(&pool, &attempt).await;
-        sqlx::query("DELETE FROM identity.sessions WHERE user_id = $1")
+        sqlx::query("DELETE FROM auth.sessions WHERE user_id = $1")
             .bind(victim.id)
             .execute(&mut *reset)
             .await
@@ -136,7 +136,7 @@ async fn a_login_waiting_for_a_reset_does_not_deadlock_with_it() {
         let env = Env::new(pool.clone()).await;
         let victim = env.user("victim@x.edu", Role::Teacher).await;
         let mut reset = pool.begin().await.unwrap();
-        sqlx::query("UPDATE identity.identities SET password_hash = password_hash || 'x' WHERE user_id = $1")
+        sqlx::query("UPDATE auth.identities SET password_hash = password_hash || 'x' WHERE user_id = $1")
             .bind(victim.id)
             .execute(&mut *reset)
             .await
@@ -153,7 +153,7 @@ async fn a_login_waiting_for_a_reset_does_not_deadlock_with_it() {
         });
         wait_until_blocked(&pool, &attempt).await;
         // The reset's next write, the user's row: with the login holding that row, this would wait for the login.
-        sqlx::query("UPDATE identity.users SET must_change_password = true WHERE id = $1")
+        sqlx::query("UPDATE auth.users SET must_change_password = true WHERE id = $1")
             .bind(victim.id)
             .execute(&mut *reset)
             .await
@@ -172,13 +172,13 @@ async fn a_login_that_verified_an_account_that_was_disabled_meanwhile_is_refused
         let victim = env.user("victim@x.edu", Role::Teacher).await;
         // The seeding login left one session; the refused login must not add another.
         let before: i64 =
-            sqlx::query_scalar("SELECT count(*) FROM identity.sessions WHERE user_id = $1")
+            sqlx::query_scalar("SELECT count(*) FROM auth.sessions WHERE user_id = $1")
                 .bind(victim.id)
                 .fetch_one(&pool)
                 .await
                 .unwrap();
         let mut disabling = pool.begin().await.unwrap();
-        sqlx::query("UPDATE identity.users SET status = 'disabled' WHERE id = $1")
+        sqlx::query("UPDATE auth.users SET status = 'disabled' WHERE id = $1")
             .bind(victim.id)
             .execute(&mut *disabling)
             .await
@@ -197,7 +197,7 @@ async fn a_login_that_verified_an_account_that_was_disabled_meanwhile_is_refused
         disabling.commit().await.unwrap();
         assert_eq!(attempt.await.unwrap().problem(401).status, 401);
         let sessions: i64 =
-            sqlx::query_scalar("SELECT count(*) FROM identity.sessions WHERE user_id = $1")
+            sqlx::query_scalar("SELECT count(*) FROM auth.sessions WHERE user_id = $1")
                 .bind(victim.id)
                 .fetch_one(&pool)
                 .await

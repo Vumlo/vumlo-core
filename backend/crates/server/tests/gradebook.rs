@@ -231,7 +231,7 @@ async fn gradebook(w: &World, token: &str, query: &str) -> Value {
 
 async fn set_name(w: &World, user: Uuid, name: &str, surname: &str) {
     sqlx::query!(
-        "UPDATE identity.users SET name = $2, surname = $3 WHERE id = $1",
+        "UPDATE auth.users SET name = $2, surname = $3 WHERE id = $1",
         user,
         name,
         surname

@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE auth.app_handoffs SET created_at = now() - interval '2 minutes', expires_at = now() - interval '1 minute'",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "dc19b6d41db7205cf5b6769cd01605b15557c82e00bd0ae4c213aae5e6d2f783"
+}

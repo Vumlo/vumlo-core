@@ -7,7 +7,7 @@
 //! Two more rules (AGENTS §4, ADR-0001): a module writes only its own schema, and a view reads
 //! another schema's tables only where an ADR declared that interface (`VIEW_READS`). Other
 //! modules' tables are otherwise not covered for reading: the gradebook reads `content` and
-//! `identity` with read-only JOINs on purpose (ADR-0015, ADR-0028).
+//! `auth` with read-only JOINs on purpose (ADR-0015, ADR-0028).
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -24,7 +24,7 @@ const OWNED: &[(&str, &str)] = &[
 
 /// The schemas of the modules that own tables.
 const SCHEMAS: &[&str] = &[
-    "identity",
+    "auth",
     "org",
     "teaching",
     "content",
@@ -40,7 +40,7 @@ const SCHEMAS: &[&str] = &[
 const VIEW_READS: &[(&str, &str)] = &[
     ("teaching", "org.group_members"),
     ("teaching", "org.subgroup_members"),
-    ("teaching", "identity.users"),
+    ("teaching", "auth.users"),
 ];
 
 fn rust_files(dir: &Path, found: &mut Vec<PathBuf>) {
@@ -104,10 +104,6 @@ fn module_of(src: &Path, file: &Path) -> Option<String> {
     if first == "learning" {
         first = parts.next()?.as_os_str().to_str()?.to_owned();
     }
-    // The `auth` module still owns the `identity` schema.
-    if first == "auth" {
-        first = "identity".to_owned();
-    }
     parts.next().map(|_| first)
 }
 
@@ -121,7 +117,7 @@ fn a_module_writes_only_its_own_schema() {
     for file in files {
         let owner = module_of(&src, &file);
         let text = fs::read_to_string(&file).expect("a Rust file is UTF-8");
-        // SQL spans lines; one space between words makes `INSERT INTO\n   identity.users` one phrase.
+        // SQL spans lines; one space between words makes `INSERT INTO\n   auth.users` one phrase.
         let flat = text.split_whitespace().collect::<Vec<_>>().join(" ");
         for schema in SCHEMAS
             .iter()

@@ -34,7 +34,7 @@ pub async fn card_courses(
            JOIN teaching.courses c ON c.id = mine.id
            LEFT JOIN teaching.effective_members m ON m.course_id = c.id AND m.user_id = $1
            LEFT JOIN org.terms t ON t.id = c.term_id
-           JOIN identity.users o ON o.id = c.owner_id
+           JOIN auth.users o ON o.id = c.owner_id
            WHERE c.kind = 'regular'
              AND (c.status IN ('published', 'archived') OR c.owner_id = $1
                   OR m.role IN ('teacher', 'assistant'))

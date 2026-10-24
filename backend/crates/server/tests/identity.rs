@@ -101,7 +101,7 @@ async fn raw_token_is_never_stored() {
         for token in [&app, &web] {
             let expected = hex(&Sha256::digest(token.as_bytes()));
             let stored = sqlx::query_scalar!(
-                r#"SELECT count(*) AS "n!" FROM identity.sessions WHERE encode(token_hash, 'hex') = $1"#,
+                r#"SELECT count(*) AS "n!" FROM auth.sessions WHERE encode(token_hash, 'hex') = $1"#,
                 expected
             )
             .fetch_one(&pool)
@@ -109,7 +109,7 @@ async fn raw_token_is_never_stored() {
             .unwrap();
             assert_eq!(stored, 1, "the SHA-256 of the token is stored");
             let leaked = sqlx::query_scalar!(
-                r#"SELECT count(*) AS "n!" FROM identity.sessions s WHERE s::text LIKE '%' || $1 || '%'"#,
+                r#"SELECT count(*) AS "n!" FROM auth.sessions s WHERE s::text LIKE '%' || $1 || '%'"#,
                 token
             )
             .fetch_one(&pool)
@@ -118,7 +118,7 @@ async fn raw_token_is_never_stored() {
             assert_eq!(leaked, 0, "the raw token appears nowhere in the table");
         }
         let kinds =
-            sqlx::query_scalar!(r#"SELECT kind AS "kind!" FROM identity.sessions ORDER BY kind"#)
+            sqlx::query_scalar!(r#"SELECT kind AS "kind!" FROM auth.sessions ORDER BY kind"#)
                 .fetch_all(&pool)
                 .await
                 .unwrap();
@@ -136,12 +136,10 @@ async fn wrong_password_and_unknown_email_return_identical_401() {
     db_test(async |pool| {
         let http = setup(&pool).await;
         seed_user(&pool, "gone@school.edu", Role::Student).await;
-        sqlx::query!(
-            "UPDATE identity.users SET status = 'disabled' WHERE email = 'gone@school.edu'"
-        )
-        .execute(&pool)
-        .await
-        .unwrap();
+        sqlx::query!("UPDATE auth.users SET status = 'disabled' WHERE email = 'gone@school.edu'")
+            .execute(&pool)
+            .await
+            .unwrap();
 
         let mut responses = Vec::new();
         for (email, password) in [
@@ -337,7 +335,7 @@ async fn expired_session_is_rejected() {
     db_test(async |pool| {
         let http = setup(&pool).await;
         let token = login_app(&http, "anna@school.edu", PASSWORD).await;
-        sqlx::query!("UPDATE identity.sessions SET expires_at = now() - interval '1 second'")
+        sqlx::query!("UPDATE auth.sessions SET expires_at = now() - interval '1 second'")
             .execute(&pool)
             .await
             .unwrap();
@@ -356,7 +354,7 @@ async fn disabled_users_session_is_rejected() {
     db_test(async |pool| {
         let http = setup(&pool).await;
         let token = login_app(&http, "anna@school.edu", PASSWORD).await;
-        sqlx::query!("UPDATE identity.users SET status = 'disabled'")
+        sqlx::query!("UPDATE auth.users SET status = 'disabled'")
             .execute(&pool)
             .await
             .unwrap();
@@ -435,7 +433,7 @@ async fn logout_deletes_the_session_and_clears_the_cookie() {
             .send()
             .await
             .problem(401);
-        let remaining = sqlx::query_scalar!(r#"SELECT count(*) AS "n!" FROM identity.sessions"#)
+        let remaining = sqlx::query_scalar!(r#"SELECT count(*) AS "n!" FROM auth.sessions"#)
             .fetch_one(&pool)
             .await
             .unwrap();
@@ -772,7 +770,7 @@ async fn session_times(
 ) -> (chrono::DateTime<chrono::Utc>, chrono::DateTime<chrono::Utc>) {
     let row = sqlx::query!(
         r#"SELECT last_seen_at AS "last_seen_at!", expires_at AS "expires_at!"
-           FROM identity.sessions"#
+           FROM auth.sessions"#
     )
     .fetch_one(pool)
     .await
@@ -782,7 +780,7 @@ async fn session_times(
 
 async fn age_session(pool: &PgPool) {
     sqlx::query!(
-        "UPDATE identity.sessions
+        "UPDATE auth.sessions
          SET last_seen_at = now() - interval '2 hours', expires_at = now() + interval '1 day'"
     )
     .execute(pool)
@@ -794,7 +792,7 @@ async fn age_session(pool: &PgPool) {
 async fn sliding_expiry_is_extended_at_most_once_per_hour() {
     db_test(async |pool| {
         for (client, days) in [("web", 30), ("app", 90)] {
-            sqlx::query!("DELETE FROM identity.sessions")
+            sqlx::query!("DELETE FROM auth.sessions")
                 .execute(&pool)
                 .await
                 .unwrap();
@@ -844,7 +842,7 @@ async fn sliding_expiry_is_extended_at_most_once_per_hour() {
 
 /// `setup` seeds the user once per test; the loop above reuses it.
 async fn setup_once(pool: &PgPool) -> Http {
-    let exists = sqlx::query_scalar!(r#"SELECT count(*) AS "n!" FROM identity.users"#)
+    let exists = sqlx::query_scalar!(r#"SELECT count(*) AS "n!" FROM auth.users"#)
         .fetch_one(pool)
         .await
         .unwrap();
@@ -860,7 +858,7 @@ async fn absolute_sessions_are_seen_but_never_extended() {
         let http = setup(&pool).await;
         let token = login_app(&http, "anna@school.edu", PASSWORD).await;
         sqlx::query!(
-            "UPDATE identity.sessions
+            "UPDATE auth.sessions
              SET kind = 'cli', last_seen_at = now() - interval '2 hours', expires_at = now() + interval '5 days'"
         )
         .execute(&pool)
@@ -941,7 +939,7 @@ async fn sessions_list_hides_expired_ones_and_rejects_bad_cursors() {
         let token = login_app(&http, "anna@school.edu", PASSWORD).await;
         let hash = hex(&Sha256::digest(stale.as_bytes()));
         sqlx::query!(
-            "UPDATE identity.sessions SET expires_at = now() - interval '1 day'
+            "UPDATE auth.sessions SET expires_at = now() - interval '1 day'
              WHERE encode(token_hash, 'hex') = $1",
             hash
         )
@@ -1042,7 +1040,7 @@ async fn admin(pool: &PgPool, http: &Http) -> String {
 
 async fn user_id(pool: &PgPool, email: &str) -> uuid::Uuid {
     sqlx::query_scalar!(
-        r#"SELECT id AS "id!" FROM identity.users WHERE email = $1"#,
+        r#"SELECT id AS "id!" FROM auth.users WHERE email = $1"#,
         email
     )
     .fetch_one(pool)
@@ -1051,7 +1049,7 @@ async fn user_id(pool: &PgPool, email: &str) -> uuid::Uuid {
 }
 
 async fn count_users(pool: &PgPool) -> i64 {
-    sqlx::query_scalar!(r#"SELECT count(*) AS "n!" FROM identity.users"#)
+    sqlx::query_scalar!(r#"SELECT count(*) AS "n!" FROM auth.users"#)
         .fetch_one(pool)
         .await
         .unwrap()
@@ -1093,7 +1091,7 @@ async fn non_admins_get_403_on_every_admin_endpoint() {
 
         assert_eq!(count_users(&pool).await, users_before);
         let role = sqlx::query_scalar!(
-            r#"SELECT role AS "role!" FROM identity.users WHERE id = $1"#,
+            r#"SELECT role AS "role!" FROM auth.users WHERE id = $1"#,
             victim
         )
         .fetch_one(&pool)
@@ -1139,7 +1137,7 @@ async fn admin_creates_a_user_with_a_temporary_password() {
 
         // Only the Argon2id hash is stored.
         let stored = sqlx::query_scalar!(
-            r#"SELECT password_hash AS "h!" FROM identity.identities WHERE provider = 'password'
+            r#"SELECT password_hash AS "h!" FROM auth.identities WHERE provider = 'password'
                AND subject = $1"#,
             body["user"]["id"].as_str().unwrap()
         )
@@ -1251,7 +1249,7 @@ async fn admin_lists_users_with_filters_and_cursor() {
         ] {
             seed_user(&pool, email, role).await;
         }
-        sqlx::query!("UPDATE identity.users SET status = 'disabled' WHERE email = 'carol@b.edu'")
+        sqlx::query!("UPDATE auth.users SET status = 'disabled' WHERE email = 'carol@b.edu'")
             .execute(&pool)
             .await
             .unwrap();
@@ -1420,7 +1418,7 @@ async fn disabling_a_user_deletes_their_sessions() {
             let pool = pool.clone();
             async move {
                 sqlx::query_scalar!(
-                    r#"SELECT count(*) AS "n!" FROM identity.sessions WHERE user_id = $1"#,
+                    r#"SELECT count(*) AS "n!" FROM auth.sessions WHERE user_id = $1"#,
                     id
                 )
                 .fetch_one(&pool)

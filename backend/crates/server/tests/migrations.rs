@@ -21,12 +21,12 @@ async fn migrations_create_exactly_the_module_schemas() {
             schemas,
             [
                 "assessment",
+                "auth",
                 "content",
                 "events",
                 "files",
                 "gradebook",
                 "idempotency",
-                "identity",
                 "org",
                 "teaching"
             ]
@@ -59,7 +59,7 @@ async fn serve_check_refuses_an_unmigrated_database() {
 
 async fn insert_user(pool: &PgPool, email: &str, role: &str) -> Result<(), sqlx::Error> {
     sqlx::query!(
-        "INSERT INTO identity.users (id, email, name, surname, role) VALUES ($1, $2, 'Test', 'User', $3)",
+        "INSERT INTO auth.users (id, email, name, surname, role) VALUES ($1, $2, 'Test', 'User', $3)",
         uuid::Uuid::now_v7(),
         email,
         role
@@ -89,14 +89,14 @@ async fn deleting_a_user_cascades_to_identities_and_sessions() {
     db_test(async |pool| {
         let user_id = uuid::Uuid::now_v7();
         sqlx::query!(
-            "INSERT INTO identity.users (id, email, name, surname, role) VALUES ($1, 'c@x.edu', 'C', 'D', 'teacher')",
+            "INSERT INTO auth.users (id, email, name, surname, role) VALUES ($1, 'c@x.edu', 'C', 'D', 'teacher')",
             user_id
         )
         .execute(&pool)
         .await
         .unwrap();
         sqlx::query!(
-            "INSERT INTO identity.identities (id, user_id, provider, subject, password_hash)
+            "INSERT INTO auth.identities (id, user_id, provider, subject, password_hash)
              VALUES ($1, $2, 'password', $3, 'hash')",
             uuid::Uuid::now_v7(),
             user_id,
@@ -106,7 +106,7 @@ async fn deleting_a_user_cascades_to_identities_and_sessions() {
         .await
         .unwrap();
         sqlx::query!(
-            "INSERT INTO identity.sessions (id, user_id, token_hash, kind, expires_at)
+            "INSERT INTO auth.sessions (id, user_id, token_hash, kind, expires_at)
              VALUES ($1, $2, $3, 'web', now() + interval '1 day')",
             uuid::Uuid::now_v7(),
             user_id,
@@ -116,14 +116,14 @@ async fn deleting_a_user_cascades_to_identities_and_sessions() {
         .await
         .unwrap();
 
-        sqlx::query!("DELETE FROM identity.users WHERE id = $1", user_id)
+        sqlx::query!("DELETE FROM auth.users WHERE id = $1", user_id)
             .execute(&pool)
             .await
             .unwrap();
 
         let left = sqlx::query_scalar!(
-            r#"SELECT (SELECT count(*) FROM identity.identities)
-                    + (SELECT count(*) FROM identity.sessions) AS "n!""#
+            r#"SELECT (SELECT count(*) FROM auth.identities)
+                    + (SELECT count(*) FROM auth.sessions) AS "n!""#
         )
         .fetch_one(&pool)
         .await
@@ -137,13 +137,13 @@ async fn deleting_a_user_cascades_to_identities_and_sessions() {
 async fn password_identity_requires_a_hash_and_google_must_not_have_one() {
     db_test(async |pool| {
         insert_user(&pool, "d@x.edu", "student").await.unwrap();
-        let user_id = sqlx::query_scalar!(r#"SELECT id AS "id!" FROM identity.users"#)
+        let user_id = sqlx::query_scalar!(r#"SELECT id AS "id!" FROM auth.users"#)
             .fetch_one(&pool)
             .await
             .unwrap();
 
         let no_hash = sqlx::query!(
-            "INSERT INTO identity.identities (id, user_id, provider, subject)
+            "INSERT INTO auth.identities (id, user_id, provider, subject)
              VALUES ($1, $2, 'password', 's1')",
             uuid::Uuid::now_v7(),
             user_id
@@ -151,7 +151,7 @@ async fn password_identity_requires_a_hash_and_google_must_not_have_one() {
         .execute(&pool)
         .await;
         let google_with_hash = sqlx::query!(
-            "INSERT INTO identity.identities (id, user_id, provider, subject, password_hash)
+            "INSERT INTO auth.identities (id, user_id, provider, subject, password_hash)
              VALUES ($1, $2, 'google', 's2', 'h')",
             uuid::Uuid::now_v7(),
             user_id
@@ -243,7 +243,7 @@ async fn content_row_count(pool: &PgPool) -> i64 {
 
 async fn owner(pool: &PgPool, email: &str) -> uuid::Uuid {
     insert_user(pool, email, "teacher").await.unwrap();
-    sqlx::query_scalar!("SELECT id FROM identity.users WHERE email = $1", email)
+    sqlx::query_scalar!("SELECT id FROM auth.users WHERE email = $1", email)
         .fetch_one(pool)
         .await
         .unwrap()
@@ -633,6 +633,22 @@ async fn item_kind(pool: &PgPool, id: uuid::Uuid) -> String {
         .unwrap()
 }
 
+/// A user as the schema before migration 32 stores them: in the `identity` schema. A runtime
+/// query, because the compile-time macros are checked against the full schema, where it is `auth`.
+async fn insert_user_before_auth(pool: &PgPool, email: &str, role: &str) -> uuid::Uuid {
+    let id = uuid::Uuid::now_v7();
+    sqlx::query(
+        "INSERT INTO identity.users (id, email, name, surname, role) VALUES ($1, $2, 'Test', 'User', $3)",
+    )
+    .bind(id)
+    .bind(email)
+    .bind(role)
+    .execute(pool)
+    .await
+    .unwrap();
+    id
+}
+
 /// A teacher as the schema before migration 10 stores them: one `display_name`. A runtime query,
 /// because the compile-time macros are checked against the full schema, where that column is gone.
 /// A runtime query on purpose: it writes `display_name`, a column the current schema no longer
@@ -787,7 +803,7 @@ async fn migration_10_splits_display_names_into_name_and_surname() {
 
         for (email, _, name, surname) in cases {
             let row = sqlx::query!(
-                "SELECT name, surname FROM identity.users WHERE email = $1",
+                "SELECT name, surname FROM auth.users WHERE email = $1",
                 email
             )
             .fetch_one(&pool)
@@ -801,7 +817,7 @@ async fn migration_10_splits_display_names_into_name_and_surname() {
         }
         let column = sqlx::query_scalar!(
             r#"SELECT count(*) AS "n!" FROM information_schema.columns
-               WHERE table_schema = 'identity' AND table_name = 'users' AND column_name = 'display_name'"#
+               WHERE table_schema = 'auth' AND table_name = 'users' AND column_name = 'display_name'"#
         )
         .fetch_one(&pool)
         .await
@@ -819,7 +835,7 @@ async fn a_user_needs_a_trimmed_name_and_surname_of_at_most_a_hundred_characters
             let pool = pool.clone();
             async move {
                 sqlx::query!(
-                    "INSERT INTO identity.users (id, email, name, surname, role)
+                    "INSERT INTO auth.users (id, email, name, surname, role)
                      VALUES ($1, $2, $3, $4, 'student')",
                     uuid::Uuid::now_v7(),
                     format!("{}@x.edu", uuid::Uuid::now_v7()),
@@ -1131,7 +1147,7 @@ async fn count(pool: &PgPool, table: &'static str) -> i64 {
 
 async fn student(pool: &PgPool, email: &str) -> uuid::Uuid {
     insert_user(pool, email, "student").await.unwrap();
-    sqlx::query_scalar!("SELECT id FROM identity.users WHERE email = $1", email)
+    sqlx::query_scalar!("SELECT id FROM auth.users WHERE email = $1", email)
         .fetch_one(pool)
         .await
         .unwrap()
@@ -1702,9 +1718,9 @@ async fn migration_22_counts_every_existing_account_as_verified() {
     bare_db_test(async |pool| {
         app::MIGRATOR.run_to(21, &pool).await.unwrap();
         for email in ["a@x.edu", "b@x.edu"] {
-            insert_user(&pool, email, "student").await.unwrap();
+            insert_user_before_auth(&pool, email, "student").await;
         }
-        sqlx::query!("UPDATE identity.users SET email_verified_at = NULL")
+        sqlx::query("UPDATE identity.users SET email_verified_at = NULL")
             .execute(&pool)
             .await
             .unwrap();
@@ -1712,7 +1728,7 @@ async fn migration_22_counts_every_existing_account_as_verified() {
         app::MIGRATOR.run(&pool).await.unwrap();
 
         let unverified = sqlx::query_scalar!(
-            r#"SELECT count(*) AS "n!" FROM identity.users
+            r#"SELECT count(*) AS "n!" FROM auth.users
                WHERE email_verified_at IS DISTINCT FROM created_at"#
         )
         .fetch_one(&pool)
@@ -1725,10 +1741,36 @@ async fn migration_22_counts_every_existing_account_as_verified() {
 }
 
 #[tokio::test]
+async fn migration_32_renames_the_identity_schema_and_keeps_its_rows() {
+    bare_db_test(async |pool| {
+        app::MIGRATOR.run_to(31, &pool).await.unwrap();
+        let user = insert_user_before_auth(&pool, "a@x.edu", "teacher").await;
+
+        app::MIGRATOR.run(&pool).await.unwrap();
+
+        let schemas = sqlx::query_scalar!(
+            r#"SELECT schema_name AS "name!" FROM information_schema.schemata
+               WHERE schema_name IN ('identity', 'auth')"#
+        )
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+        assert_eq!(schemas, ["auth"]);
+        let email = sqlx::query_scalar!("SELECT email FROM auth.users WHERE id = $1", user)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(email, "a@x.edu");
+        app::ensure_migrated(&pool).await.unwrap();
+    })
+    .await;
+}
+
+#[tokio::test]
 async fn email_tokens_are_hashed_unique_and_expire_after_they_are_made() {
     db_test(async |pool| {
         insert_user(&pool, "a@x.edu", "student").await.unwrap();
-        let user = sqlx::query_scalar!("SELECT id FROM identity.users")
+        let user = sqlx::query_scalar!("SELECT id FROM auth.users")
             .fetch_one(&pool)
             .await
             .unwrap();
@@ -1736,7 +1778,7 @@ async fn email_tokens_are_hashed_unique_and_expire_after_they_are_made() {
             let pool = pool.clone();
             async move {
                 sqlx::query!(
-                    "INSERT INTO identity.email_tokens (id, user_id, purpose, token_hash, expires_at)
+                    "INSERT INTO auth.email_tokens (id, user_id, purpose, token_hash, expires_at)
                      VALUES ($1, $2, $3, $4, now() + make_interval(hours => $5))",
                     uuid::Uuid::now_v7(),
                     user,
@@ -1750,16 +1792,32 @@ async fn email_tokens_are_hashed_unique_and_expire_after_they_are_made() {
         };
 
         insert("verify", vec![1; 32], 24).await.unwrap();
-        assert_eq!(sqlstate(insert("verify", vec![1; 32], 24).await), "23505", "unique");
-        assert_eq!(sqlstate(insert("other", vec![2; 32], 24).await), "23514", "purpose");
-        assert_eq!(sqlstate(insert("verify", vec![3; 31], 24).await), "23514", "a sha-256");
-        assert_eq!(sqlstate(insert("reset", vec![4; 32], 0).await), "23514", "expires later");
+        assert_eq!(
+            sqlstate(insert("verify", vec![1; 32], 24).await),
+            "23505",
+            "unique"
+        );
+        assert_eq!(
+            sqlstate(insert("other", vec![2; 32], 24).await),
+            "23514",
+            "purpose"
+        );
+        assert_eq!(
+            sqlstate(insert("verify", vec![3; 31], 24).await),
+            "23514",
+            "a sha-256"
+        );
+        assert_eq!(
+            sqlstate(insert("reset", vec![4; 32], 0).await),
+            "23514",
+            "expires later"
+        );
 
-        sqlx::query!("DELETE FROM identity.users WHERE id = $1", user)
+        sqlx::query!("DELETE FROM auth.users WHERE id = $1", user)
             .execute(&pool)
             .await
             .unwrap();
-        let left = sqlx::query_scalar!(r#"SELECT count(*) AS "n!" FROM identity.email_tokens"#)
+        let left = sqlx::query_scalar!(r#"SELECT count(*) AS "n!" FROM auth.email_tokens"#)
             .fetch_one(&pool)
             .await
             .unwrap();
@@ -1777,7 +1835,7 @@ async fn a_google_sign_in_attempt_is_found_by_two_hashes_and_expires_after_it_st
             let pool = pool.clone();
             async move {
                 sqlx::query!(
-                    "INSERT INTO identity.oauth_states
+                    "INSERT INTO auth.oauth_states
                          (state_hash, browser_hash, nonce, pkce_verifier, expires_at)
                      VALUES ($1, $2, 'n', 'v', now() + make_interval(mins => $3))",
                     state,
@@ -1908,7 +1966,7 @@ async fn group_roster_links_has_a_row_per_link_where_the_roster_has_one_per_stud
 async fn migration_26_gives_published_items_a_published_copy_and_leaves_drafts_without_one() {
     bare_db_test(async |pool| {
         app::MIGRATOR.run_to(25, &pool).await.unwrap();
-        let teacher = owner(&pool, "t@x.edu").await;
+        let teacher = insert_user_before_auth(&pool, "t@x.edu", "teacher").await;
         let course = insert_course(&pool, teacher).await;
         let module = insert_module_row(&pool, course, None, 1).await.unwrap();
         let live = insert_item_of_kind(&pool, module, course, 1, "text")
@@ -2098,7 +2156,7 @@ async fn a_sign_in_time_is_one_row_per_person_and_goes_with_the_person() {
             let pool = pool.clone();
             async move {
                 sqlx::query!(
-                    "INSERT INTO identity.last_logins (user_id, at) VALUES ($1, $2::text::timestamptz)",
+                    "INSERT INTO auth.last_logins (user_id, at) VALUES ($1, $2::text::timestamptz)",
                     user,
                     at
                 )
@@ -2109,7 +2167,7 @@ async fn a_sign_in_time_is_one_row_per_person_and_goes_with_the_person() {
         record("2026-10-01T10:00:00Z").await.unwrap();
         assert_eq!(sqlstate(record("2026-10-02T10:00:00Z").await), "23505");
         let unknown = sqlx::query!(
-            "INSERT INTO identity.last_logins (user_id, at) VALUES ($1, now())",
+            "INSERT INTO auth.last_logins (user_id, at) VALUES ($1, now())",
             uuid::Uuid::now_v7()
         )
         .execute(&pool)

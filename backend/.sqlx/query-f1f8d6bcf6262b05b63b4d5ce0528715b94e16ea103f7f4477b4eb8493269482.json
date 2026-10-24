@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE auth.users SET status = 'disabled' WHERE email = 'off@lms.test'",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "f1f8d6bcf6262b05b63b4d5ce0528715b94e16ea103f7f4477b4eb8493269482"
+}

@@ -20,7 +20,7 @@ pub async fn admin_courses(
                   (SELECT count(*) FROM teaching.effective_members m
                    WHERE m.course_id = c.id AND m.role = 'student') AS "student_count!"
            FROM teaching.courses c
-           JOIN identity.users o ON o.id = c.owner_id
+           JOIN auth.users o ON o.id = c.owner_id
            LEFT JOIN org.terms t ON t.id = c.term_id
            WHERE c.kind = 'regular' AND ($1::uuid IS NULL OR c.id > $1)
            ORDER BY c.id
@@ -43,7 +43,7 @@ pub async fn linked_courses_of_group(
                   o.surname AS owner_surname, min(l.created_at) AS "linked_on!"
            FROM teaching.course_groups l
            JOIN teaching.courses c ON c.id = l.course_id
-           JOIN identity.users o ON o.id = c.owner_id
+           JOIN auth.users o ON o.id = c.owner_id
            WHERE l.group_id = $1 AND c.kind = 'regular'
            GROUP BY c.id, c.code, c.title, o.name, o.surname
            ORDER BY c.code, c.title, c.id"#,

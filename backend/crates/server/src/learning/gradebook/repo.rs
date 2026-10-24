@@ -1,6 +1,6 @@
 //! SQL only. Every function takes the connection it runs on and never begins a transaction.
 //!
-//! `content`, `teaching` and `identity` tables are read here with plain JOINs and never written
+//! `content`, `teaching` and `auth` tables are read here with plain JOINs and never written
 //! (ADR-0028). The students of a course come from the view `teaching.effective_members`. Student-facing reads select `published_*` columns only.
 
 use chrono::{DateTime, Utc};
@@ -64,7 +64,7 @@ pub async fn to_grade(
            JOIN content.assignments a ON a.item_id = i.id
            JOIN teaching.effective_members m
              ON m.course_id = i.course_id AND m.user_id = s.student_id AND m.role = 'student'
-           JOIN identity.users u ON u.id = s.student_id
+           JOIN auth.users u ON u.id = s.student_id
            LEFT JOIN gradebook.grades g
              ON g.assignment_id = s.assignment_id AND g.student_id = s.student_id
            WHERE i.course_id = ANY($1) AND s.status = 'submitted' AND g.draft_score IS NULL
@@ -277,7 +277,7 @@ pub async fn list_history(
         r#"SELECT h.id, h.action, h.score, h.feedback, h.at,
                   h.actor_id AS "actor_id?", u.name AS "actor_name?", u.surname AS "actor_surname?"
            FROM gradebook.grade_history h
-           LEFT JOIN identity.users u ON u.id = h.actor_id
+           LEFT JOIN auth.users u ON u.id = h.actor_id
            WHERE h.assignment_id = $1 AND h.student_id = $2 AND ($3::uuid IS NULL OR h.id < $3)
            ORDER BY h.id DESC
            LIMIT $4"#,
@@ -402,7 +402,7 @@ pub struct StudentRow {
 
 /// The students of the course after `after`, by surname, name and id, at most `limit`: the current
 /// students, and the former ones who still have a grade with a value in the course. The cursor is
-/// a user id; its place in the order is read from `identity.users`, so it still works for a
+/// a user id; its place in the order is read from `auth.users`, so it still works for a
 /// student who left.
 pub async fn students(
     conn: &mut PgConnection,
@@ -427,10 +427,10 @@ pub async fn students(
                               WHERE m.course_id = $1 AND m.user_id = u.id AND m.role = 'student')
                       AS "former!"
            FROM candidates c
-           JOIN identity.users u ON u.id = c.id
+           JOIN auth.users u ON u.id = c.id
            WHERE ($2::uuid IS NULL
                   OR (u.surname, u.name, u.id) > (SELECT x.surname, x.name, x.id
-                                                  FROM identity.users x WHERE x.id = $2))
+                                                  FROM auth.users x WHERE x.id = $2))
            ORDER BY u.surname, u.name, u.id
            LIMIT $3"#,
         course_id,

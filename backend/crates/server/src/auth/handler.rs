@@ -1,4 +1,4 @@
-//! The outbox handlers of `identity` (ADR-0045, ADR-0046): mint the token in a short transaction,
+//! The outbox handlers of `auth` (ADR-0045, ADR-0046): mint the token in a short transaction,
 //! then send the mail, with no transaction open.
 
 use std::sync::Arc;

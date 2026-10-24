@@ -206,7 +206,7 @@ pub async fn group_member_lines(
         MemberLine,
         "SELECT u.id AS user_id, u.name, u.surname, u.email, m.added_at
          FROM org.group_members m
-         JOIN identity.users u ON u.id = m.user_id
+         JOIN auth.users u ON u.id = m.user_id
          WHERE m.group_id = $1
          ORDER BY u.surname, u.name, u.id",
         group_id
@@ -315,7 +315,7 @@ pub async fn delete_group_member(
 }
 
 /// The members of the group after `after` (a user id), by surname, name and id, at most `limit`.
-/// The place of the cursor in the order is read from `identity.users` (a read-only JOIN, as the
+/// The place of the cursor in the order is read from `auth.users` (a read-only JOIN, as the
 /// gradebook roster does), so it also works for a user who has just left.
 pub async fn list_group_members(
     conn: &mut PgConnection,
@@ -327,11 +327,11 @@ pub async fn list_group_members(
         GroupMember,
         r#"SELECT u.id AS user_id, u.name, u.surname
            FROM org.group_members m
-           JOIN identity.users u ON u.id = m.user_id
+           JOIN auth.users u ON u.id = m.user_id
            WHERE m.group_id = $1
              AND ($2::uuid IS NULL
                   OR (u.surname, u.name, u.id) > (SELECT c.surname, c.name, c.id
-                                                  FROM identity.users c WHERE c.id = $2))
+                                                  FROM auth.users c WHERE c.id = $2))
            ORDER BY u.surname, u.name, u.id
            LIMIT $3"#,
         group_id,
@@ -483,11 +483,11 @@ pub async fn list_subgroup_members(
         GroupMember,
         r#"SELECT u.id AS user_id, u.name, u.surname
            FROM org.subgroup_members m
-           JOIN identity.users u ON u.id = m.user_id
+           JOIN auth.users u ON u.id = m.user_id
            WHERE m.subgroup_id = $1
              AND ($2::uuid IS NULL
                   OR (u.surname, u.name, u.id) > (SELECT c.surname, c.name, c.id
-                                                  FROM identity.users c WHERE c.id = $2))
+                                                  FROM auth.users c WHERE c.id = $2))
            ORDER BY u.surname, u.name, u.id
            LIMIT $3"#,
         subgroup_id,
