@@ -73,15 +73,6 @@ pub struct RoleCounts {
     pub disabled: i64,
 }
 
-/// What one person does in the institution (ADR-0053).
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct UserFacts {
-    pub user: User,
-    pub last_login_at: Option<DateTime<Utc>>,
-    pub groups: Vec<(Uuid, String)>,
-    pub courses: crate::learning::teaching::UserCourseFacts,
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SessionInfo {
     pub id: Uuid,

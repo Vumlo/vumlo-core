@@ -7,6 +7,7 @@ use std::sync::{LazyLock, Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
 use argon2::password_hash::PasswordVerifier;
+use chrono::{DateTime, Utc};
 use serde_json::json;
 use sha2::{Digest, Sha256};
 use sqlx::PgConnection;
@@ -16,14 +17,14 @@ use super::google::{Begin, GoogleProfile};
 use super::model::{
     BrowserBinding, Email, EmailToken, HashedPassword, ModelError, NewSession, NewUser, Password,
     PasswordPolicy, PersonName, RoleCounts, SessionInfo, SessionKind, SessionToken,
-    TemporaryPassword, TokenPurpose, User, UserFacts, UserFilter, UserStatus, UserUpdate,
+    TemporaryPassword, TokenPurpose, User, UserFilter, UserStatus, UserUpdate,
 };
 use super::repo::{self, LoginRecord};
 use crate::access::{self, AccessError, Action};
 use crate::actor::Actor;
 use crate::events::{self, AuditEntry, Event, EventsError};
 use crate::learning::teaching::{self, TeachingError};
-use crate::org::{self, OrgError};
+use crate::org::OrgError;
 use common::Role;
 use common::{Page, PageParams};
 
@@ -994,32 +995,6 @@ pub async fn user_summary(conn: &mut PgConnection, actor: &Actor) -> Result<Role
     Ok(repo::role_counts(conn).await?)
 }
 
-/// What one person does in the institution: groups, courses, last sign-in. Admins only
-/// (ADR-0053).
-pub async fn user_facts(
-    conn: &mut PgConnection,
-    actor: &Actor,
-    id: Uuid,
-) -> Result<UserFacts, AuthError> {
-    access::authorize(actor, Action::ViewAdminReports)?;
-    let user = repo::find_user(conn, id)
-        .await?
-        .ok_or(AuthError::UserNotFound)?;
-    let last_login_at = repo::last_login_at(conn, id).await?;
-    let groups = org::groups_of_user(conn, id)
-        .await
-        .map_err(|e| AuthError::Org(Box::new(e)))?;
-    let courses = teaching::user_course_facts(conn, id)
-        .await
-        .map_err(|e| AuthError::Teaching(Box::new(e)))?;
-    Ok(UserFacts {
-        user,
-        last_login_at,
-        groups,
-        courses,
-    })
-}
-
 /// Creates a user with a temporary password for an admin. The hash is computed by the caller
 /// before the transaction starts.
 pub async fn admin_create_user(
@@ -1158,6 +1133,15 @@ pub async fn reset_password(
 /// authorized the action already: this checks nothing.
 pub async fn find_user(conn: &mut PgConnection, id: Uuid) -> Result<Option<User>, AuthError> {
     Ok(repo::find_user(conn, id).await?)
+}
+
+/// When the user last signed in. Like [`find_user`], it checks nothing: the caller has authorized
+/// its own action.
+pub async fn last_login_at(
+    conn: &mut PgConnection,
+    id: Uuid,
+) -> Result<Option<DateTime<Utc>>, AuthError> {
+    Ok(repo::last_login_at(conn, id).await?)
 }
 
 /// The users with these ids, in no particular order; an id that names no user is absent. Like

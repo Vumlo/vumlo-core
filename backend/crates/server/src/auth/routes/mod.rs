@@ -161,7 +161,6 @@ pub fn router(settings: &Settings) -> Result<OpenApiRouter<AppState>, SetupError
         .routes(routes!(me::revoke_session))
         .routes(routes!(admin::list_users, admin::create_user))
         .routes(routes!(admin::user_summary))
-        .routes(routes!(admin::user_facts))
         .routes(routes!(admin::update_user))
         .routes(routes!(admin::reset_password))
         .layer(Extension(Arc::new(throttle)))
@@ -258,7 +257,7 @@ pub(super) fn password_error(field: &str, reasons: Vec<String>) -> ApiError {
 /// it is not mixed up with the login throttle in the request extensions.
 pub(super) struct MailThrottle(pub(super) LoginThrottle);
 
-pub(super) fn api_role(role: Role) -> api_types::Role {
+pub fn api_role(role: Role) -> api_types::Role {
     match role {
         Role::Admin => api_types::Role::Admin,
         Role::Teacher => api_types::Role::Teacher,
@@ -281,7 +280,7 @@ pub(super) fn domain_status(status: api_types::UserStatus) -> UserStatus {
     }
 }
 
-pub(super) fn api_status(status: UserStatus) -> api_types::UserStatus {
+pub fn api_status(status: UserStatus) -> api_types::UserStatus {
     match status {
         UserStatus::Active => api_types::UserStatus::Active,
         UserStatus::Disabled => api_types::UserStatus::Disabled,

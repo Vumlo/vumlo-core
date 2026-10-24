@@ -26,6 +26,7 @@ use utoipa_scalar::{Scalar, Servable};
 use crate::auth::{self, SetupError};
 use crate::events::Handlers;
 use crate::health;
+use crate::learning;
 use crate::learning::assessment;
 use crate::learning::content::{self, EditorConfigError, EffectiveProfiles};
 use crate::learning::gradebook;
@@ -160,6 +161,7 @@ pub fn router(state: AppState) -> Result<Router, SetupError> {
                 .routes(routes!(health::health))
                 .merge(identity)
                 .merge(teaching::router())
+                .merge(learning::people::router())
                 .merge(content::router())
                 .merge(gradebook::router())
                 .merge(assessment::router())
