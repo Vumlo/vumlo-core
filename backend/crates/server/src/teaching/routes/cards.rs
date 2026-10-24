@@ -10,10 +10,10 @@ use chrono::Utc;
 use super::api_course;
 use crate::actor::Actor;
 use crate::app::AppState;
-use crate::error::ApiError;
 use crate::policy::CourseRole;
 use crate::teaching::model::{CourseCardData, NextDeadline, Todo};
 use crate::teaching::service::{self, TeachingError};
+use common::ApiError;
 
 fn api_todo(todo: Todo) -> CardTodo {
     match todo {

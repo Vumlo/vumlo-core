@@ -14,8 +14,8 @@ use utoipa_axum::routes;
 use super::model::{self, MemberProblem, ModelError};
 use super::service::OrgError;
 use crate::app::AppState;
-use crate::error::ApiError;
-use crate::pagination::{self, PageParams};
+use common::ApiError;
+use common::{self, PageParams};
 
 pub fn router() -> OpenApiRouter<AppState> {
     OpenApiRouter::new()
@@ -115,7 +115,7 @@ fn page_params(query: &PageQuery) -> Result<PageParams, ApiError> {
     Ok(PageParams::new(query.cursor.as_deref(), query.limit)?)
 }
 
-fn api_page<T, U>(page: pagination::Page<T>, map: impl Fn(T) -> U) -> Page<U> {
+fn api_page<T, U>(page: common::Page<T>, map: impl Fn(T) -> U) -> Page<U> {
     Page {
         items: page.items.into_iter().map(map).collect(),
         next_cursor: page.next.map(|id| id.to_string()),

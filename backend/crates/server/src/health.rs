@@ -3,7 +3,7 @@ use axum::Json;
 use axum::extract::State;
 
 use crate::app::AppState;
-use crate::error::ApiError;
+use common::ApiError;
 
 #[utoipa::path(
     get,

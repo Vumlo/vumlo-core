@@ -9,9 +9,9 @@ use uuid::Uuid;
 use super::{api_kind, api_user};
 use crate::actor::{Actor, PendingActor};
 use crate::app::AppState;
-use crate::error::{ApiError, ValidJson, ValidQuery};
 use crate::identity::service::{self, IdentityError, LoginThrottle};
-use crate::pagination::PageParams;
+use common::PageParams;
+use common::{ApiError, ValidJson, ValidQuery};
 
 /// The signed-in user.
 ///

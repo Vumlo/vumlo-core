@@ -10,7 +10,7 @@ use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
 use sha2::{Digest, Sha256};
 
-use crate::error::ApiError;
+use common::ApiError;
 
 /// The most a tagged answer may hold. Answers are built in memory already; one past this is a bug to see.
 const MAX_BODY_BYTES: usize = 32 * 1024 * 1024;

@@ -12,9 +12,9 @@ use super::auth::{COOKIE_MAX_AGE_SECS, session_cookie};
 use super::extract::check_origin;
 use super::{api_user, no_store};
 use crate::app::AppState;
-use crate::error::{ApiError, ValidJson};
 use crate::identity::model::{BrowserBinding, NewSession, SessionKind};
 use crate::identity::service::{self, IdentityError};
+use common::{ApiError, ValidJson};
 
 /// Ties a started sign-in to its browser (ADR-0047). It is sent to the Google endpoints only.
 const BINDING_COOKIE: &str = "vumlo_oauth";

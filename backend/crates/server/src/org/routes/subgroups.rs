@@ -10,9 +10,9 @@ use uuid::Uuid;
 use super::{api_member, api_page, page_params};
 use crate::actor::Actor;
 use crate::app::AppState;
-use crate::error::{ApiError, ValidJson, ValidQuery};
 use crate::org::model;
 use crate::org::service::{self, OrgError};
+use common::{ApiError, ValidJson, ValidQuery};
 
 fn api_subgroup(subgroup: model::Subgroup) -> Subgroup {
     Subgroup {

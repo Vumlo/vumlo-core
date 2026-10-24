@@ -6,7 +6,7 @@ use sqlx::types::Decimal;
 use uuid::Uuid;
 
 use crate::content::{Holders, ResultQuestion, SubmissionSettings};
-use crate::pagination::Page;
+use common::Page;
 
 /// The unsubmitted document of a student for an assignment (ADR-0011). Only its owner reads it.
 #[derive(Debug, Clone, PartialEq, Eq)]

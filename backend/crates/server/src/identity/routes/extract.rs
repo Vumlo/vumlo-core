@@ -8,9 +8,9 @@ use axum_extra::extract::CookieJar;
 
 use crate::actor::{Actor, PendingActor};
 use crate::app::AppState;
-use crate::error::ApiError;
 use crate::identity::model::SessionToken;
 use crate::identity::service::{self, Authenticated, IdentityError};
+use common::ApiError;
 use vumlo_config::ServerSettings;
 
 pub const COOKIE_NAME: &str = "vumlo_session";

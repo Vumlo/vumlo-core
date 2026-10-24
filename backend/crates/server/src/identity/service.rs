@@ -22,10 +22,10 @@ use super::repo::{self, LoginRecord};
 use crate::actor::Actor;
 use crate::events::{self, AuditEntry, Event, EventsError};
 use crate::org::{self, OrgError};
-use crate::pagination::{Page, PageParams};
 use crate::policy::{self, Action, PolicyError};
 use crate::teaching::{self, TeachingError};
 use common::Role;
+use common::{Page, PageParams};
 
 const LOGIN_MAX_ATTEMPTS: u32 = 10;
 const LOGIN_WINDOW: Duration = Duration::from_secs(15 * 60);

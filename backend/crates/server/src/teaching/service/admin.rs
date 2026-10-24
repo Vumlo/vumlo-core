@@ -5,10 +5,10 @@ use uuid::Uuid;
 
 use super::TeachingError;
 use crate::actor::Actor;
-use crate::pagination::{Page, PageParams};
 use crate::policy::{self, Action};
 use crate::teaching::model::{AdminCourseRow, LinkedCourseRow, UserCourseFacts};
 use crate::teaching::repo;
+use common::{Page, PageParams};
 
 /// Every regular course of the institution, paged by id. Admins only.
 pub async fn admin_courses(

@@ -25,7 +25,6 @@ use utoipa_scalar::{Scalar, Servable};
 
 use crate::assessment;
 use crate::content::{self, EditorConfigError, EffectiveProfiles};
-use crate::error::{ApiError, problem_details};
 use crate::events::Handlers;
 use crate::gradebook;
 use crate::health;
@@ -33,6 +32,7 @@ use crate::identity::{self, SetupError};
 use crate::mail::{MailError, Mailer};
 use crate::org;
 use crate::teaching;
+use common::{ApiError, problem_details};
 use vumlo_config::Settings;
 
 // Shared with `vumlo-cli`: the migrations live in the `db` crate.

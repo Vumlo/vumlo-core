@@ -1,5 +1,6 @@
 use std::time::Duration;
 
+use common::ApiError;
 use sqlx::{PgConnection, PgPool};
 
 use super::model::{AuditEntry, AuditFilter, AuditRow, Event, Handlers};
@@ -13,6 +14,15 @@ pub enum EventsError {
     Forbidden(#[from] PolicyError),
     #[error(transparent)]
     Db(#[from] sqlx::Error),
+}
+
+impl From<EventsError> for ApiError {
+    fn from(error: EventsError) -> Self {
+        match error {
+            EventsError::Forbidden(policy) => policy.into(),
+            EventsError::Db(e) => Self::from_db("events", &e),
+        }
+    }
 }
 
 /// Records that `actor` did something, on the caller's connection so the entry commits or rolls

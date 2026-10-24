@@ -12,8 +12,8 @@ use super::model::{AuditFilter, AuditRow};
 use super::service::{self, EventsError};
 use crate::actor::Actor;
 use crate::app::AppState;
-use crate::error::{ApiError, ValidQuery};
-use crate::pagination::PageParams;
+use common::PageParams;
+use common::{ApiError, ValidQuery};
 
 const DEFAULT_DAYS: u32 = 7;
 
@@ -111,7 +111,7 @@ async fn list_audit(
         i64::from(page.limit) + 1,
     )
     .await?;
-    let page = crate::pagination::Page::from_rows(rows, page.limit, |row| row.id);
+    let page = common::Page::from_rows(rows, page.limit, |row| row.id);
     Ok(Json(Page {
         items: page.items.into_iter().map(api_record).collect(),
         next_cursor: page.next.map(|id| id.to_string()),

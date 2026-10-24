@@ -22,7 +22,7 @@ use super::google::GoogleError;
 use super::model::{SessionKind, User, UserStatus};
 use super::service::{IdentityError, LoginThrottle, THROTTLE_CAPACITY};
 use crate::app::AppState;
-use crate::error::ApiError;
+use common::ApiError;
 use common::Role;
 use vumlo_config::Settings;
 
@@ -181,7 +181,7 @@ impl From<IdentityError> for ApiError {
             }
             IdentityError::OriginMismatch => Self::Forbidden("origin not allowed"),
             IdentityError::Forbidden(policy) => policy.into(),
-            IdentityError::Invalid(model) => model.into(),
+            IdentityError::Invalid(model) => model_error(model),
             IdentityError::WrongCurrentPassword => {
                 Self::invalid_field("current_password", "is incorrect")
             }
@@ -231,15 +231,14 @@ impl From<IdentityError> for ApiError {
     }
 }
 
-impl From<super::model::ModelError> for ApiError {
-    fn from(error: super::model::ModelError) -> Self {
-        use super::model::ModelError;
-        match error {
-            ModelError::Email => Self::invalid_field("email", error.to_string()),
-            ModelError::Name => Self::invalid_field("name", error.to_string()),
-            ModelError::Surname => Self::invalid_field("surname", error.to_string()),
-            ModelError::Password(reasons) => password_error("new_password", reasons),
-        }
+/// The `422` of a value that failed validation.
+pub(super) fn model_error(error: super::model::ModelError) -> ApiError {
+    use super::model::ModelError;
+    match error {
+        ModelError::Email => ApiError::invalid_field("email", error.to_string()),
+        ModelError::Name => ApiError::invalid_field("name", error.to_string()),
+        ModelError::Surname => ApiError::invalid_field("surname", error.to_string()),
+        ModelError::Password(reasons) => password_error("new_password", reasons),
     }
 }
 

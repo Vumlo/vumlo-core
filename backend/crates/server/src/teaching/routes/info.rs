@@ -14,10 +14,10 @@ use uuid::Uuid;
 use super::{api_course, api_role, api_source, page_params};
 use crate::actor::Actor;
 use crate::app::AppState;
-use crate::error::{ApiError, ValidJson, ValidQuery};
 use crate::teaching::model::{self, CourseInfoUpdate, CourseTitle};
 use crate::teaching::service::{self, TeachingError};
 use common::Role;
+use common::{ApiError, ValidJson, ValidQuery};
 
 /// Counts are far below `u32::MAX`; a database that disagreed would still not overflow the field.
 fn count(n: i64) -> u32 {

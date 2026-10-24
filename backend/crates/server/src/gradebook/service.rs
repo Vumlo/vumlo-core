@@ -26,9 +26,9 @@ use super::repo;
 use crate::actor::Actor;
 use crate::content::{self, OpenError, OpenedAssignment};
 use crate::events::{self, AuditEntry, Event, EventsError};
-use crate::pagination::{Page, PageParams};
 use crate::policy::{self, Action, CourseAccess, CourseRole, CourseStatus, PolicyError};
 use crate::teaching::{self, TeachingError};
+use common::{Page, PageParams};
 
 #[derive(Debug, thiserror::Error)]
 pub enum GradebookError {

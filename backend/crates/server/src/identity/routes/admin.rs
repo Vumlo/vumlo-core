@@ -11,13 +11,13 @@ use uuid::Uuid;
 use super::{api_role, api_status, api_user, domain_role, domain_status, no_store};
 use crate::actor::Actor;
 use crate::app::AppState;
-use crate::error::{ApiError, ValidJson, ValidQuery};
 use crate::identity::model::{
     Email, NewUser, PersonName, TemporaryPassword, UserFilter, UserUpdate,
 };
 use crate::identity::service::{self, IdentityError};
-use crate::pagination::PageParams;
 use crate::policy::{self, Action};
+use common::PageParams;
+use common::{ApiError, ValidJson, ValidQuery};
 
 /// Refuses non-admins before any work is done on their behalf (parsing, hashing a password).
 fn require_admin(actor: &Actor) -> Result<(), IdentityError> {

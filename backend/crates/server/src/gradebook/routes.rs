@@ -20,8 +20,8 @@ use super::model::{self, ColumnStatus, FeedbackInput, GradeInput, Students};
 use super::service::{self, GradebookError};
 use crate::actor::Actor;
 use crate::app::AppState;
-use crate::error::{ApiError, ValidJson, ValidQuery};
-use crate::pagination::PageParams;
+use common::PageParams;
+use common::{ApiError, ValidJson, ValidQuery};
 
 pub fn router() -> OpenApiRouter<AppState> {
     OpenApiRouter::new()

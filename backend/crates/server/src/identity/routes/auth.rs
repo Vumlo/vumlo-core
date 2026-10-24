@@ -12,11 +12,11 @@ use super::extract::check_origin;
 use super::{COOKIE_NAME, MailThrottle, api_user, no_store, password_error, session_kind};
 use crate::actor::PendingActor;
 use crate::app::AppState;
-use crate::error::{ApiError, ValidJson};
 use crate::identity::model::{EmailToken, ModelError, NewSession};
 use crate::identity::service::{
     self, IdentityError, LoginThrottle, RegistrationRules, ThrottleKey,
 };
+use common::{ApiError, ValidJson};
 
 /// The browsers' maximum cookie lifetime. The session's own `expires_at` decides validity, so
 /// a sliding session is not cut short by the cookie.

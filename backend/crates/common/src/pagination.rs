@@ -2,7 +2,7 @@
 
 use uuid::Uuid;
 
-use crate::error::ApiError;
+use crate::ApiError;
 
 const DEFAULT_PAGE_SIZE: u32 = 50;
 const MAX_PAGE_SIZE: u32 = 100;

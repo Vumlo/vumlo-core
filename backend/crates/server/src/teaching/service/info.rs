@@ -11,13 +11,13 @@ use crate::assessment;
 use crate::content;
 use crate::events::{self, AuditEntry};
 use crate::gradebook;
-use crate::pagination::{Page, PageParams};
 use crate::policy::{self, Action, CourseStatus};
 use crate::teaching::model::{
     Candidate, Course, CourseCode, CourseDescription, CourseInfo, CourseInfoUpdate, CourseKind,
     CoursePeople, CourseTitle, TemplateSummary,
 };
 use crate::teaching::repo;
+use common::{Page, PageParams};
 
 /// The most candidates a search returns.
 const CANDIDATE_LIMIT: i64 = 20;

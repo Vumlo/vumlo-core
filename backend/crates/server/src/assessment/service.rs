@@ -25,9 +25,9 @@ use crate::content::{
 };
 use crate::events::{self, Event, EventsError};
 use crate::gradebook::{self, GradebookError};
-use crate::pagination::{Page, PageParams};
 use crate::policy::{self, Action, PolicyError};
 use crate::teaching::TeachingError;
+use common::{Page, PageParams};
 
 #[derive(Debug, thiserror::Error)]
 pub enum AssessmentError {

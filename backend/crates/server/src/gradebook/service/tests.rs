@@ -15,9 +15,9 @@ use crate::content::{
     ItemRules, MaxPoints, SubmissionSettings,
 };
 use crate::identity::{self, Email, NewUser, PersonName};
-use crate::pagination::PageParams;
 use crate::policy::CourseRole;
 use crate::teaching::{self, CourseTitle};
+use common::PageParams;
 use common::Role;
 use vumlo_config::GradingScale;
 

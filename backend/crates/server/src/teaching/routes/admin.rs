@@ -7,8 +7,8 @@ use axum::extract::State;
 use super::{api_status, page_params};
 use crate::actor::Actor;
 use crate::app::AppState;
-use crate::error::{ApiError, ValidQuery};
 use crate::teaching::service::{self, TeachingError};
+use common::{ApiError, ValidQuery};
 
 /// Every regular course of the institution with its owner, term and student count, paged by id.
 /// Admin only.

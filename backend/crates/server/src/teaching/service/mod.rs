@@ -32,11 +32,11 @@ use crate::events::{self, AuditEntry, EventsError};
 use crate::gradebook::GradebookError;
 use crate::identity::{self, IdentityError, UserStatus};
 use crate::org::{self, GroupOption, OrgError};
-use crate::pagination::{Page, PageParams};
 use crate::policy::{
     self, Action, CourseAccess, CourseRole, CourseStatus, PolicyError, course_role_allowed,
     implicit_course_owner,
 };
+use common::{Page, PageParams};
 
 #[derive(Debug, thiserror::Error)]
 pub enum TeachingError {

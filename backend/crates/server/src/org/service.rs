@@ -17,9 +17,9 @@ use super::repo;
 use crate::actor::Actor;
 use crate::events::{self, AuditEntry, EventsError};
 use crate::identity::{self, IdentityError};
-use crate::pagination::{Page, PageParams};
 use crate::policy::{self, Action, PolicyError, group_role_allowed};
 use crate::teaching::{self, TeachingError};
+use common::{Page, PageParams};
 use vumlo_config::InstitutionMode;
 
 #[derive(Debug, thiserror::Error)]

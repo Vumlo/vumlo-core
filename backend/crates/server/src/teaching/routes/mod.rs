@@ -21,9 +21,9 @@ use super::model::{self, CourseKind, CourseTitle, CourseUpdate, ModelError};
 use super::service::{self, TeachingError};
 use crate::actor::Actor;
 use crate::app::AppState;
-use crate::error::{ApiError, ValidJson, ValidQuery};
-use crate::pagination::PageParams;
 use crate::policy::{CourseRole, CourseStatus};
+use common::PageParams;
+use common::{ApiError, ValidJson, ValidQuery};
 
 pub fn router() -> OpenApiRouter<AppState> {
     OpenApiRouter::new()

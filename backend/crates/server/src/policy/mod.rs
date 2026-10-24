@@ -3,8 +3,7 @@
 use chrono::{DateTime, Utc};
 
 use crate::actor::Actor;
-use common::Role;
-use common::text_enum;
+use common::{ApiError, Role, text_enum};
 
 /// The user's role in the course. The owner is a `Teacher`
 /// whose course has `owner_id` set to them; that fact travels in [`CourseAccess::is_owner`].
@@ -323,6 +322,15 @@ pub enum PolicyError {
     /// The actor may do this in an open course, but the course is archived (ADR-0048).
     #[error("the course is archived")]
     Archived,
+}
+
+impl From<PolicyError> for ApiError {
+    fn from(error: PolicyError) -> Self {
+        match error {
+            PolicyError::Denied => Self::Forbidden("not allowed"),
+            PolicyError::Archived => Self::Conflict("the course is archived"),
+        }
+    }
 }
 
 /// Allows or denies `action`. The match has no wildcard: a new action does not compile

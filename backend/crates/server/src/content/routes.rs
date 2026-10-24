@@ -22,7 +22,7 @@ use super::model::{
 use super::service::{self, ContentError, ItemRules};
 use crate::actor::Actor;
 use crate::app::AppState;
-use crate::error::{ApiError, ValidJson, ValidQuery};
+use common::{ApiError, ValidJson, ValidQuery};
 
 pub fn router() -> OpenApiRouter<AppState> {
     OpenApiRouter::new()

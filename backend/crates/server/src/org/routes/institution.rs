@@ -6,8 +6,8 @@ use axum::extract::State;
 
 use crate::actor::Actor;
 use crate::app::AppState;
-use crate::error::{ApiError, ValidJson};
 use crate::org::service::{self, OrgError};
+use common::{ApiError, ValidJson};
 use vumlo_config::{self as settings, InstitutionSettings};
 
 fn platform_of(name: &str) -> Option<AppPlatform> {

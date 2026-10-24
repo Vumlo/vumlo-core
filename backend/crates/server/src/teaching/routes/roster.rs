@@ -12,10 +12,10 @@ use uuid::Uuid;
 use super::page_params;
 use crate::actor::Actor;
 use crate::app::AppState;
-use crate::error::{ApiError, ValidJson, ValidQuery};
 use crate::org;
 use crate::teaching::model;
 use crate::teaching::service::{self, TeachingError};
+use common::{ApiError, ValidJson, ValidQuery};
 
 fn api_link(link: model::CourseGroupLink) -> CourseGroupLink {
     CourseGroupLink {

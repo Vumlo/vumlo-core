@@ -10,8 +10,8 @@ use uuid::Uuid;
 
 use crate::actor::Actor;
 use crate::app::AppState;
-use crate::error::ApiError;
 use crate::org::service::{self, OrgError};
+use common::ApiError;
 
 /// A group with its people (name, email, when they were added) and the courses that use it or one
 /// of its subgroups. Admin only.
