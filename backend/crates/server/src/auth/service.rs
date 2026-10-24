@@ -23,7 +23,7 @@ use super::repo::{self, LoginRecord};
 use crate::access::{self, AccessError, Action};
 use crate::actor::Actor;
 use crate::events::{self, AuditEntry, Event, EventsError};
-use crate::learning::teaching::{self, TeachingError};
+use crate::learning::teaching::TeachingError;
 use crate::org::OrgError;
 use common::Role;
 use common::{Page, PageParams};
@@ -80,9 +80,6 @@ pub enum AuthError {
     ConcurrentChange,
     #[error("the last active admin cannot be demoted or disabled")]
     LastAdmin,
-    /// A teacher or admin cannot become a student while they own a course (ADR-0037).
-    #[error("the user owns courses")]
-    OwnsCourses,
     #[error(transparent)]
     Teaching(Box<TeachingError>),
     #[error(transparent)]
@@ -1015,17 +1012,95 @@ pub async fn admin_create_user(
     Ok(user)
 }
 
-/// Changes a user's name, role or status. Disabling also deletes all their sessions, in the
-/// same transaction. The last active admin can be neither demoted nor disabled.
-pub async fn update_user(
+/// A user's update that is applied but not yet audited: the output of [`apply_user_update`].
+/// Whoever holds it must call [`AppliedUserUpdate::audit`] in the same transaction, after any step
+/// of their own that can still refuse the change.
+#[must_use = "the audit rows are written by `audit`, in the same transaction"]
+#[derive(Debug)]
+pub struct AppliedUserUpdate {
+    previous: User,
+    user: User,
+    update: UserUpdate,
+}
+
+impl AppliedUserUpdate {
+    /// The user as they were before the update.
+    pub fn previous(&self) -> &User {
+        &self.previous
+    }
+
+    /// The user as they are now.
+    pub fn user(&self) -> &User {
+        &self.user
+    }
+
+    /// Records the change: one row for each kind of change, and none for a field that was sent
+    /// with its old value.
+    pub async fn audit(self, conn: &mut PgConnection, actor: &Actor) -> Result<User, AuthError> {
+        let Self {
+            previous,
+            user,
+            update,
+        } = self;
+        let mut renamed = Vec::new();
+        if update
+            .name
+            .as_ref()
+            .is_some_and(|n| n.as_str() != previous.name)
+        {
+            renamed.push("name");
+        }
+        if update
+            .surname
+            .as_ref()
+            .is_some_and(|n| n.as_str() != previous.surname)
+        {
+            renamed.push("surname");
+        }
+        if !renamed.is_empty() {
+            events::audit(
+                conn,
+                actor,
+                user_entry("user.rename", previous.id, json!({"fields": renamed})),
+            )
+            .await?;
+        }
+        if let Some(to) = update.role.filter(|role| *role != previous.role) {
+            let meta = json!({"from": previous.role.as_str(), "to": to.as_str()});
+            events::audit(
+                conn,
+                actor,
+                user_entry("user.role_change", previous.id, meta),
+            )
+            .await?;
+        }
+        if let Some(status) = update.status.filter(|status| *status != previous.status) {
+            let action = match status {
+                UserStatus::Disabled => "user.disable",
+                UserStatus::Active => "user.enable",
+            };
+            events::audit(conn, actor, user_entry(action, previous.id, json!({}))).await?;
+        }
+        Ok(user)
+    }
+}
+
+/// Changes a user's name, role or status, without the audit rows. Disabling also deletes all
+/// their sessions, in the same transaction. The last active admin can be neither demoted nor
+/// disabled.
+///
+/// A role change has consequences in the courses of the user (ADR-0037) that only `learning` can
+/// see, so only `learning` calls this: `learning::people::update_user` is the function that
+/// changes a user.
+pub async fn apply_user_update(
     conn: &mut PgConnection,
     actor: &Actor,
     user_id: Uuid,
     update: UserUpdate,
-) -> Result<User, AuthError> {
+) -> Result<AppliedUserUpdate, AuthError> {
     access::authorize(actor, Action::ManageUsers)?;
     let active_admins = repo::lock_active_admins(conn).await?;
-    let target = repo::find_user(conn, user_id)
+    let previous = repo::find_user(conn, user_id)
         .await?
         .ok_or(AuthError::UserNotFound)?;
     let stops_being_active_admin = update.role.is_some_and(|role| role != Role::Admin)
@@ -1033,9 +1108,9 @@ pub async fn update_user(
     if stops_being_active_admin && active_admins == [user_id] {
         return Err(AuthError::LastAdmin);
     }
-    let updated = repo::update_user(
+    let user = repo::update_user(
         conn,
-        target.id,
+        previous.id,
         update.name.as_ref().map(PersonName::as_str),
         update.surname.as_ref().map(PersonName::as_str),
         update.role,
@@ -1044,60 +1119,13 @@ pub async fn update_user(
     .await?
     .ok_or(AuthError::UserNotFound)?;
     if update.status == Some(UserStatus::Disabled) {
-        repo::delete_sessions_of(conn, updated.id).await?;
+        repo::delete_sessions_of(conn, user.id).await?;
     }
-    // A teacher or admin who becomes a student: they must not own a course, and they stop being a
-    // course teacher everywhere (ADR-0037). This comes after the UPDATE, whose row lock waits for
-    // a course being created for this user, so the check sees it; a refusal rolls the UPDATE back.
-    let demoted =
-        updated.role == Role::Student && matches!(target.role, Role::Teacher | Role::Admin);
-    if demoted {
-        if teaching::owns_courses(conn, updated.id)
-            .await
-            .map_err(|e| AuthError::Teaching(Box::new(e)))?
-        {
-            return Err(AuthError::OwnsCourses);
-        }
-        teaching::drop_teacher_memberships(conn, actor, updated.id)
-            .await
-            .map_err(|e| AuthError::Teaching(Box::new(e)))?;
-    }
-    // One row for each kind of change, and none for a field that was sent with its old value.
-    let mut renamed = Vec::new();
-    if update
-        .name
-        .as_ref()
-        .is_some_and(|n| n.as_str() != target.name)
-    {
-        renamed.push("name");
-    }
-    if update
-        .surname
-        .as_ref()
-        .is_some_and(|n| n.as_str() != target.surname)
-    {
-        renamed.push("surname");
-    }
-    if !renamed.is_empty() {
-        events::audit(
-            conn,
-            actor,
-            user_entry("user.rename", target.id, json!({"fields": renamed})),
-        )
-        .await?;
-    }
-    if let Some(to) = update.role.filter(|role| *role != target.role) {
-        let meta = json!({"from": target.role.as_str(), "to": to.as_str()});
-        events::audit(conn, actor, user_entry("user.role_change", target.id, meta)).await?;
-    }
-    if let Some(status) = update.status.filter(|status| *status != target.status) {
-        let action = match status {
-            UserStatus::Disabled => "user.disable",
-            UserStatus::Active => "user.enable",
-        };
-        events::audit(conn, actor, user_entry(action, target.id, json!({}))).await?;
-    }
-    Ok(updated)
+    Ok(AppliedUserUpdate {
+        previous,
+        user,
+        update,
+    })
 }
 
 /// Replaces a user's password with a temporary one they must change, and signs them out

@@ -14,10 +14,12 @@ pub use model::{
     PersonName, SessionInfo, SessionKind, SessionToken, TemporaryPassword, TokenPurpose, User,
     UserStatus, UserUpdate,
 };
-pub use routes::{COOKIE_NAME, SetupError, api_role, api_status, router};
+pub use routes::{
+    COOKIE_NAME, SetupError, api_role, api_status, api_user, domain_role, domain_status, router,
+};
 #[cfg(test)]
 pub use service::create_user_unaudited_for_tests;
 pub use service::{
-    AuthError, HashGate, LoginThrottle, create_user_from_cli, find_user, find_user_shared,
-    find_users, hash_password, hash_password_gated, last_login_at, update_user,
+    AppliedUserUpdate, AuthError, HashGate, LoginThrottle, apply_user_update, create_user_from_cli,
+    find_user, find_user_shared, find_users, hash_password, hash_password_gated, last_login_at,
 };

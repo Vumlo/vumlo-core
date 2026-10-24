@@ -16,6 +16,9 @@ pub enum LearningError {
     Org(#[from] OrgError),
     #[error(transparent)]
     Teaching(#[from] TeachingError),
+    /// A teacher or admin cannot become a student while they own a course (ADR-0037).
+    #[error("the user owns courses")]
+    OwnsCourses,
     #[error(transparent)]
     Db(#[from] sqlx::Error),
 }
@@ -27,6 +30,9 @@ impl From<LearningError> for ApiError {
             LearningError::Auth(e) => e.into(),
             LearningError::Org(e) => e.into(),
             LearningError::Teaching(e) => e.into(),
+            LearningError::OwnsCourses => {
+                Self::Conflict("the user owns courses: transfer them to someone else first")
+            }
             LearningError::Db(e) => Self::from_db("learning", &e),
         }
     }

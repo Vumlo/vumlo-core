@@ -4,10 +4,35 @@ use uuid::Uuid;
 use super::model::UserFacts;
 use crate::access::{self, Action};
 use crate::actor::Actor;
-use crate::auth;
+use crate::auth::{self, User, UserUpdate};
 use crate::learning::LearningError;
 use crate::learning::teaching;
 use crate::org;
+use common::Role;
+
+/// Changes a user's name, role or status. Disabling also deletes all their sessions. The last
+/// active admin can be neither demoted nor disabled, and a teacher or admin who becomes a student
+/// must not own a course and stops being a course teacher everywhere (ADR-0037).
+pub async fn update_user(
+    conn: &mut PgConnection,
+    actor: &Actor,
+    user_id: Uuid,
+    update: UserUpdate,
+) -> Result<User, LearningError> {
+    access::authorize(actor, Action::ManageUsers)?;
+    let applied = auth::apply_user_update(conn, actor, user_id, update).await?;
+    // This comes after the UPDATE, whose row lock waits for a course being created for this user,
+    // so the check sees it; a refusal rolls the UPDATE back.
+    let demoted = applied.user().role == Role::Student
+        && matches!(applied.previous().role, Role::Teacher | Role::Admin);
+    if demoted {
+        if teaching::owns_courses(conn, user_id).await? {
+            return Err(LearningError::OwnsCourses);
+        }
+        teaching::drop_teacher_memberships(conn, actor, user_id).await?;
+    }
+    Ok(applied.audit(conn, actor).await?)
+}
 
 /// What one person does in the institution: groups, courses, last sign-in. Admins only
 /// (ADR-0053).

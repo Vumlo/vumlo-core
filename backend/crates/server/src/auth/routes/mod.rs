@@ -161,7 +161,6 @@ pub fn router(settings: &Settings) -> Result<OpenApiRouter<AppState>, SetupError
         .routes(routes!(me::revoke_session))
         .routes(routes!(admin::list_users, admin::create_user))
         .routes(routes!(admin::user_summary))
-        .routes(routes!(admin::update_user))
         .routes(routes!(admin::reset_password))
         .layer(Extension(Arc::new(throttle)))
         .layer(Extension(Arc::new(mail_throttle))))
@@ -215,9 +214,6 @@ impl From<AuthError> for ApiError {
             AuthError::LastAdmin => {
                 Self::Conflict("the last active admin cannot be demoted or disabled")
             }
-            AuthError::OwnsCourses => {
-                Self::Conflict("the user owns courses: transfer them to someone else first")
-            }
             AuthError::Teaching(e) => (*e).into(),
             AuthError::Org(e) => (*e).into(),
             AuthError::UserNotFound | AuthError::SessionNotFound => Self::NotFound,
@@ -265,7 +261,7 @@ pub fn api_role(role: Role) -> api_types::Role {
     }
 }
 
-pub(super) fn domain_role(role: api_types::Role) -> Role {
+pub fn domain_role(role: api_types::Role) -> Role {
     match role {
         api_types::Role::Admin => Role::Admin,
         api_types::Role::Teacher => Role::Teacher,
@@ -273,7 +269,7 @@ pub(super) fn domain_role(role: api_types::Role) -> Role {
     }
 }
 
-pub(super) fn domain_status(status: api_types::UserStatus) -> UserStatus {
+pub fn domain_status(status: api_types::UserStatus) -> UserStatus {
     match status {
         api_types::UserStatus::Active => UserStatus::Active,
         api_types::UserStatus::Disabled => UserStatus::Disabled,
@@ -296,7 +292,7 @@ pub(super) fn api_kind(kind: SessionKind) -> api_types::SessionKind {
     }
 }
 
-pub(super) fn api_user(user: User) -> api_types::User {
+pub fn api_user(user: User) -> api_types::User {
     api_types::User {
         id: user.id,
         email: user.email,

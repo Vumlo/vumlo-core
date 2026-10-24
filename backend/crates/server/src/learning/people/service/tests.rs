@@ -1,5 +1,6 @@
+use super::*;
 use crate::actor::Actor;
-use crate::auth::{self, AuthError, Email, NewUser, PersonName, UserUpdate};
+use crate::auth::{self, AuthError, Email, NewUser, PersonName};
 use crate::learning::teaching::{self, TeachingError};
 use crate::test_support::{db_test, wait_until_blocked};
 use common::Role;
@@ -39,7 +40,7 @@ async fn concurrent_demotions_cannot_remove_every_admin() {
 
         // `a` demotes `b` and holds its transaction open; `b` tries to demote `a` meanwhile.
         let mut first = pool.begin().await.unwrap();
-        auth::update_user(&mut first, &a, b.user_id(), demote())
+        update_user(&mut first, &a, b.user_id(), demote())
             .await
             .unwrap();
         let second = tokio::spawn({
@@ -47,14 +48,17 @@ async fn concurrent_demotions_cannot_remove_every_admin() {
             let (b, a_id) = (b.clone(), a.user_id());
             async move {
                 let mut tx = pool.begin().await.unwrap();
-                auth::update_user(&mut tx, &b, a_id, demote()).await
+                update_user(&mut tx, &b, a_id, demote()).await
             }
         });
         wait_until_blocked(&pool, &second).await;
         first.commit().await.unwrap();
 
         let outcome = second.await.unwrap();
-        assert!(matches!(outcome, Err(AuthError::LastAdmin)), "{outcome:?}");
+        assert!(
+            matches!(outcome, Err(LearningError::Auth(AuthError::LastAdmin))),
+            "{outcome:?}"
+        );
         let mut conn = pool.acquire().await.unwrap();
         let a_now = auth::find_user(&mut conn, a.user_id())
             .await
@@ -134,8 +138,8 @@ async fn a_demotion_waits_for_a_member_write_and_then_removes_the_membership() {
             let (admin, who) = (admin.clone(), candidate.user_id());
             async move {
                 let mut tx = pool.begin().await.unwrap();
-                auth::update_user(&mut tx, &admin, who, to_student()).await?;
-                tx.commit().await.map_err(AuthError::from)
+                update_user(&mut tx, &admin, who, to_student()).await?;
+                tx.commit().await.map_err(LearningError::from)
             }
         });
         wait_until_blocked(&pool, &second).await;
@@ -168,7 +172,7 @@ async fn a_member_write_waits_for_a_demotion_and_then_refuses_the_teacher_role()
         let course = course_of(&pool, &owner).await;
 
         let mut first = pool.begin().await.unwrap();
-        auth::update_user(&mut first, &admin, candidate.user_id(), to_student())
+        update_user(&mut first, &admin, candidate.user_id(), to_student())
             .await
             .unwrap();
         let second = tokio::spawn({
