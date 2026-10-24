@@ -8,7 +8,7 @@ use crate::runtime;
 
 /// The modules every installation has (AGENTS section 4). They are always on and not configurable.
 pub const CORE_MODULES: [&str; 9] = [
-    "identity",
+    "auth",
     "org",
     "teaching",
     "content",
@@ -16,7 +16,7 @@ pub const CORE_MODULES: [&str; 9] = [
     "gradebook",
     "files",
     "events",
-    "policy",
+    "access",
 ];
 
 pub fn list(options: &Options, as_json: bool) -> anyhow::Result<()> {

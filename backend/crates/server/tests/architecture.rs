@@ -14,10 +14,10 @@ use std::path::{Path, PathBuf};
 
 /// (text no module but the owner may mention, the module that owns it)
 const OWNED: &[(&str, &str)] = &[
-    ("teaching.memberships", "teaching"),
-    ("teaching.course_groups", "teaching"),
-    ("teaching.course_exclusions", "teaching"),
-    ("teaching.group_roster", "teaching"),
+    ("teaching.memberships", "learning/teaching"),
+    ("teaching.course_groups", "learning/teaching"),
+    ("teaching.course_exclusions", "learning/teaching"),
+    ("teaching.group_roster", "learning/teaching"),
     ("org.group_members", "org"),
     ("org.subgroup_members", "org"),
 ];
@@ -95,12 +95,19 @@ fn no_module_reads_a_table_another_module_owns() {
     }
 }
 
-/// The module a source file belongs to: the folder under `src`. A file at the top (`main.rs`,
-/// `app.rs`) belongs to none.
+/// The module a source file belongs to, named after the schema it owns: the folder under `src`, or
+/// under `src/learning`. A file at the top (`main.rs`, `app.rs`) belongs to none.
 fn module_of(src: &Path, file: &Path) -> Option<String> {
     let relative = file.strip_prefix(src).ok()?;
     let mut parts = relative.components();
-    let first = parts.next()?.as_os_str().to_str()?.to_owned();
+    let mut first = parts.next()?.as_os_str().to_str()?.to_owned();
+    if first == "learning" {
+        first = parts.next()?.as_os_str().to_str()?.to_owned();
+    }
+    // The `auth` module still owns the `identity` schema.
+    if first == "auth" {
+        first = "identity".to_owned();
+    }
     parts.next().map(|_| first)
 }
 

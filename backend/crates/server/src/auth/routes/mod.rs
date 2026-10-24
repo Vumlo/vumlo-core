@@ -224,7 +224,7 @@ impl From<AuthError> for ApiError {
             AuthError::UserNotFound | AuthError::SessionNotFound => Self::NotFound,
             AuthError::Hashing => Self::Internal,
             AuthError::Events(e) => e.into(),
-            AuthError::Db(e) => Self::from_db("identity", &e),
+            AuthError::Db(e) => Self::from_db("auth", &e),
         }
     }
 }

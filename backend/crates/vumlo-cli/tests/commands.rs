@@ -170,12 +170,7 @@ async fn modules_list_shows_the_core_modules_and_the_optional_ones() {
         assert!(out.ok, "{}", out.stderr);
         let value: Value = serde_json::from_str(&out.stdout).unwrap();
         assert_eq!(value["core"].as_array().unwrap().len(), 9);
-        assert!(
-            value["core"]
-                .as_array()
-                .unwrap()
-                .contains(&json!("identity"))
-        );
+        assert!(value["core"].as_array().unwrap().contains(&json!("auth")));
         #[cfg(not(feature = "dummy"))]
         assert_eq!(
             value["optional"],
