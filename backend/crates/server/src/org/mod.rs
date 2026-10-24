@@ -6,12 +6,13 @@ mod routes;
 mod service;
 
 pub use model::{
-    DownloadUrl, Group, GroupMember, GroupOption, GroupOverview, MemberLine, MemberProblem,
-    ModelError, OrgName, Subgroup, Term, TermDates, TermUpdate, TermUsage,
+    DownloadUrl, Group, GroupMember, GroupOption, MemberLine, MemberProblem, ModelError, OrgName,
+    Subgroup, Term, TermDates, TermUpdate, TermUsage,
 };
 pub use routes::router;
 #[cfg(test)]
 pub use service::seed_group;
 pub use service::{
-    OrgError, group_options, groups_of_user, record_mode, view_institution_settings,
+    OrgError, group_member_lines, group_options, groups_of_user, record_mode,
+    view_institution_settings,
 };

@@ -21,7 +21,7 @@ pub async fn admin_courses(
     Ok(Page::from_rows(rows, page.limit, |row| row.course_id))
 }
 
-/// The regular courses that use a group or one of its subgroups. The read interface `org` uses
+/// The regular courses that use a group or one of its subgroups. The read interface `learning` uses
 /// for the group overview; the caller has authorized the administrator.
 pub async fn linked_courses_of_group(
     conn: &mut PgConnection,
@@ -30,7 +30,7 @@ pub async fn linked_courses_of_group(
     Ok(repo::linked_courses_of_group(conn, group_id).await?)
 }
 
-/// What a person owns, teaches and studies. The read interface `identity` uses for a person's
+/// What a person owns, teaches and studies. The read interface `learning` uses for a person's
 /// facts; the caller has authorized the administrator.
 pub async fn user_course_facts(
     conn: &mut PgConnection,

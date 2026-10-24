@@ -10,15 +10,14 @@ use sqlx::PgConnection;
 use uuid::Uuid;
 
 use super::model::{
-    DownloadUrl, Group, GroupMember, GroupOption, GroupOverview, MemberProblem, ModelError,
-    OrgName, Subgroup, Term, TermDates, TermUpdate, TermUsage,
+    DownloadUrl, Group, GroupMember, GroupOption, MemberLine, MemberProblem, ModelError, OrgName,
+    Subgroup, Term, TermDates, TermUpdate, TermUsage,
 };
 use super::repo;
 use crate::access::{self, AccessError, Action, group_role_allowed};
 use crate::actor::Actor;
 use crate::auth::{self, AuthError};
 use crate::events::{self, AuditEntry, EventsError};
-use crate::learning::teaching::{self, TeachingError};
 use common::{Page, PageParams};
 use vumlo_config::InstitutionMode;
 
@@ -51,8 +50,6 @@ pub enum OrgError {
     /// The positions (in the request's `user_ids`) that were refused, with the reason.
     #[error("some of the users cannot be members")]
     Members(Vec<(usize, MemberProblem)>),
-    #[error(transparent)]
-    Teaching(Box<TeachingError>),
     #[error(transparent)]
     Identity(#[from] AuthError),
     #[error(transparent)]
@@ -294,26 +291,20 @@ pub async fn get_group(
         .ok_or(OrgError::GroupNotFound)
 }
 
-/// A group with its people and the courses that use it (ADR-0053). Admins only.
-pub async fn group_overview(
+/// The people of a group with their names and emails, by surname (ADR-0053). Admins only.
+pub async fn group_member_lines(
     conn: &mut PgConnection,
     actor: &Actor,
     id: Uuid,
-) -> Result<GroupOverview, OrgError> {
+) -> Result<Vec<MemberLine>, OrgError> {
     access::authorize(actor, Action::ViewGroups)?;
     repo::find_group(conn, id)
         .await?
         .ok_or(OrgError::GroupNotFound)?;
-    Ok(GroupOverview {
-        group_id: id,
-        members: repo::group_member_lines(conn, id).await?,
-        linked_courses: teaching::linked_courses_of_group(conn, id)
-            .await
-            .map_err(|e| OrgError::Teaching(Box::new(e)))?,
-    })
+    Ok(repo::group_member_lines(conn, id).await?)
 }
 
-/// The groups a person is in, by name. The read interface `auth` uses for a person's facts;
+/// The groups a person is in, by name. The read interface `learning` uses for a person's facts;
 /// the caller has authorized the administrator.
 pub async fn groups_of_user(
     conn: &mut PgConnection,

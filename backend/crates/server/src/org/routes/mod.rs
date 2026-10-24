@@ -22,7 +22,6 @@ pub fn router() -> OpenApiRouter<AppState> {
         .routes(routes!(institution::get_institution))
         .routes(routes!(institution::get_admin_institution))
         .routes(routes!(institution::set_app_downloads))
-        .routes(routes!(reports::get_group_overview))
         .routes(routes!(reports::get_term_stats))
         .routes(routes!(terms::create_term, terms::list_terms))
         .routes(routes!(
@@ -100,7 +99,6 @@ impl From<OrgError> for ApiError {
                     .collect(),
             },
             OrgError::Identity(e) => e.into(),
-            OrgError::Teaching(e) => (*e).into(),
             OrgError::Events(e) => e.into(),
             OrgError::Db(e) => Self::from_db("org", &e),
             OrgError::ModeChanged { .. } => {

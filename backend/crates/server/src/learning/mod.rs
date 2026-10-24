@@ -6,6 +6,7 @@ pub mod assessment;
 pub mod content;
 mod error;
 pub mod gradebook;
+pub mod groups;
 pub mod people;
 mod points;
 pub mod teaching;

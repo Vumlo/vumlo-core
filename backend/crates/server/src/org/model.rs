@@ -119,14 +119,6 @@ pub struct MemberLine {
     pub added_at: Option<chrono::DateTime<chrono::Utc>>,
 }
 
-/// A group, its people and the courses that use it (ADR-0053).
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct GroupOverview {
-    pub group_id: Uuid,
-    pub members: Vec<MemberLine>,
-    pub linked_courses: Vec<crate::learning::teaching::LinkedCourseRow>,
-}
-
 /// How many regular courses use a term, and where today stands against it (ADR-0053).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TermUsage {

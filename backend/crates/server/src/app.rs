@@ -162,6 +162,7 @@ pub fn router(state: AppState) -> Result<Router, SetupError> {
                 .merge(identity)
                 .merge(teaching::router())
                 .merge(learning::people::router())
+                .merge(learning::groups::router())
                 .merge(content::router())
                 .merge(gradebook::router())
                 .merge(assessment::router())
