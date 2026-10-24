@@ -19,10 +19,11 @@ use utoipa_axum::router::OpenApiRouter;
 use utoipa_axum::routes;
 
 use super::google::GoogleError;
-use super::model::{Role, SessionKind, User, UserStatus};
+use super::model::{SessionKind, User, UserStatus};
 use super::service::{IdentityError, LoginThrottle, THROTTLE_CAPACITY};
 use crate::app::AppState;
 use crate::error::ApiError;
+use common::Role;
 use vumlo_config::Settings;
 
 pub use extract::COOKIE_NAME;

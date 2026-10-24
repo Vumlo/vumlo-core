@@ -6,9 +6,9 @@ mod common;
 
 use std::time::Duration;
 
+use ::common::Role;
 use common::{Env, db_test, wait_until_blocked};
 use serde_json::json;
-use server::identity::Role;
 
 /// `x-real-ip` is the client address the test configuration trusts.
 async fn login(env: &Env, email: &str, password: &str, ip: &str) -> common::Resp {

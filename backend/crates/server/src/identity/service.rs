@@ -15,7 +15,7 @@ use uuid::Uuid;
 use super::google::{Begin, GoogleProfile};
 use super::model::{
     BrowserBinding, Email, EmailToken, HashedPassword, ModelError, NewSession, NewUser, Password,
-    PasswordPolicy, PersonName, Role, RoleCounts, SessionInfo, SessionKind, SessionToken,
+    PasswordPolicy, PersonName, RoleCounts, SessionInfo, SessionKind, SessionToken,
     TemporaryPassword, TokenPurpose, User, UserFacts, UserFilter, UserStatus, UserUpdate,
 };
 use super::repo::{self, LoginRecord};
@@ -25,6 +25,7 @@ use crate::org::{self, OrgError};
 use crate::pagination::{Page, PageParams};
 use crate::policy::{self, Action, PolicyError};
 use crate::teaching::{self, TeachingError};
+use common::Role;
 
 const LOGIN_MAX_ATTEMPTS: u32 = 10;
 const LOGIN_WINDOW: Duration = Duration::from_secs(15 * 60);

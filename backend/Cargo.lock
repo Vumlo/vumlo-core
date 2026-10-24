@@ -497,6 +497,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1d07550c9036bf2ae0c684c4297d503f838287c83c53686d05370d0e139ae570"
 
 [[package]]
+name = "common"
+version = "0.2.2"
+dependencies = [
+ "sqlx",
+]
+
+[[package]]
 name = "compact_str"
 version = "0.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -770,6 +777,7 @@ version = "0.2.2"
 dependencies = [
  "argon2",
  "base64 0.23.1",
+ "common",
  "rand 0.10.3",
  "serde_json",
  "sqlx",
@@ -3113,6 +3121,7 @@ dependencies = [
  "chrono",
  "chrono-tz",
  "clap",
+ "common",
  "db",
  "garde",
  "lettre",
@@ -4109,6 +4118,7 @@ dependencies = [
  "axum",
  "chrono",
  "clap",
+ "common",
  "db",
  "image",
  "module-api",

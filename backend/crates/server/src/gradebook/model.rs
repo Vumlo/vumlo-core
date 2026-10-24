@@ -3,7 +3,7 @@ use sqlx::types::Decimal;
 use uuid::Uuid;
 
 use crate::points;
-use db::text_enum;
+use common::text_enum;
 
 const FEEDBACK_MAX_LEN: usize = 4000;
 

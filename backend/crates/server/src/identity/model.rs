@@ -3,11 +3,11 @@ use std::fmt;
 use chrono::{DateTime, Duration, Utc};
 use db::identity::random_base64url;
 // The value types of an account are shared with `vumlo-cli`, which creates accounts too.
+use common::{Role, text_enum};
 pub use db::identity::{
-    Email, HashedPassword, ModelError, NewUser, Password, PasswordPolicy, PersonName, Role,
+    Email, HashedPassword, ModelError, NewUser, Password, PasswordPolicy, PersonName,
     TemporaryPassword,
 };
-use db::text_enum;
 use sha2::{Digest, Sha256};
 use uuid::Uuid;
 

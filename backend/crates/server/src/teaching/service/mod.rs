@@ -183,7 +183,7 @@ async fn insert_owned_course(
     let creator = identity::find_user_shared(conn, actor.user_id())
         .await?
         .ok_or(TeachingError::UserNotFound)?;
-    if creator.status == UserStatus::Disabled || creator.role == identity::Role::Student {
+    if creator.status == UserStatus::Disabled || creator.role == common::Role::Student {
         return Err(TeachingError::Forbidden(PolicyError::Denied));
     }
     let course = repo::insert_copy(
@@ -432,11 +432,11 @@ pub async fn transfer_ownership(
         .await?
         .ok_or(TeachingError::UserNotFound)?;
     if user.status == UserStatus::Disabled
-        || !matches!(user.role, identity::Role::Teacher | identity::Role::Admin)
+        || !matches!(user.role, common::Role::Teacher | common::Role::Admin)
     {
         return Err(TeachingError::OwnerNotAllowed);
     }
-    if user.role == identity::Role::Teacher {
+    if user.role == common::Role::Teacher {
         repo::upsert_membership(conn, course_id, new_owner_id, CourseRole::Teacher).await?;
         repo::delete_exclusion(conn, course_id, new_owner_id).await?;
     }

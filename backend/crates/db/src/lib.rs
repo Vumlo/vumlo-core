@@ -6,7 +6,6 @@ mod audit;
 pub mod identity;
 mod installation;
 mod migrate;
-mod text_enum;
 
 pub use audit::insert_cli_audit;
 pub use installation::{ModeError, record_mode};

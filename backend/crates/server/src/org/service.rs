@@ -423,7 +423,7 @@ async fn check_new_members(
         .filter(|id| !members.contains(id))
         .copied()
         .collect();
-    let roles: HashMap<Uuid, identity::Role> = identity::find_users(conn, &others)
+    let roles: HashMap<Uuid, common::Role> = identity::find_users(conn, &others)
         .await?
         .into_iter()
         .map(|user| (user.id, user.role))

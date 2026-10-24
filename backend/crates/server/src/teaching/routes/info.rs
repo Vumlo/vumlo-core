@@ -15,9 +15,9 @@ use super::{api_course, api_role, api_source, page_params};
 use crate::actor::Actor;
 use crate::app::AppState;
 use crate::error::{ApiError, ValidJson, ValidQuery};
-use crate::identity::Role;
 use crate::teaching::model::{self, CourseInfoUpdate, CourseTitle};
 use crate::teaching::service::{self, TeachingError};
+use common::Role;
 
 /// Counts are far below `u32::MAX`; a database that disagreed would still not overflow the field.
 fn count(n: i64) -> u32 {

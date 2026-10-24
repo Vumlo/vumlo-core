@@ -18,8 +18,8 @@ pub use cards::{
     unpublished_items,
 };
 
-use crate::identity::Role;
 use crate::policy::{CourseRole, CourseStatus};
+use common::Role;
 
 /// A course together with the asking user's membership in it, if any.
 pub struct CourseRow {

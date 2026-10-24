@@ -3,9 +3,9 @@
 
 mod common;
 
+use ::common::Role;
 use common::{Account, Env, Resp, db_test, essay};
 use serde_json::{Value, json};
-use server::identity::Role;
 use sqlx::PgPool;
 use uuid::Uuid;
 

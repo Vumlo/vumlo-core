@@ -13,7 +13,7 @@ use super::document::{DocumentErrors, EffectiveProfiles, validate_document_withi
 use super::types::{AutoGrade, Claims, Stage, ValidContent, form, quiz};
 use crate::points;
 use crate::policy::{CourseAccess, Release};
-use db::text_enum;
+use common::text_enum;
 
 const TITLE_MAX_LEN: usize = 200;
 

@@ -3,8 +3,8 @@
 use chrono::{DateTime, Utc};
 
 use crate::actor::Actor;
-use crate::identity::Role;
-use db::text_enum;
+use common::Role;
+use common::text_enum;
 
 /// The user's role in the course. The owner is a `Teacher`
 /// whose course has `owner_id` set to them; that fact travels in [`CourseAccess::is_owner`].

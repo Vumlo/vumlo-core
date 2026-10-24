@@ -3,8 +3,9 @@
 
 pub mod google;
 
+use ::common::Role;
 use server::app::{self, AppState};
-use server::identity::{self, Email, Role, TemporaryPassword};
+use server::identity::{self, Email, TemporaryPassword};
 use sqlx::PgPool;
 use tokio::net::TcpListener;
 use vumlo_config::{

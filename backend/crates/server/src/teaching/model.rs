@@ -2,7 +2,7 @@ use chrono::{DateTime, Utc};
 use uuid::Uuid;
 
 use crate::policy::{CourseRole, CourseStatus};
-use db::text_enum;
+use common::text_enum;
 
 const TITLE_MAX_LEN: usize = 200;
 const CODE_MAX_LEN: usize = 32;
@@ -136,7 +136,7 @@ pub struct Candidate {
     pub name: String,
     pub surname: String,
     pub email: String,
-    pub role: crate::identity::Role,
+    pub role: common::Role,
 }
 
 /// ADR-0005: templates share the table. Only regular courses can be created through the API yet.

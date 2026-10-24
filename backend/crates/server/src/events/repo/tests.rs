@@ -2,7 +2,8 @@ use crate::test_support::db_test;
 use serde_json::json;
 
 use super::*;
-use crate::identity::{self, Email, NewUser, PersonName, Role};
+use crate::identity::{self, Email, NewUser, PersonName};
+use common::Role;
 
 #[tokio::test]
 async fn an_audit_entry_commits_and_rolls_back_with_its_transaction() {

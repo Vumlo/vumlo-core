@@ -2,9 +2,9 @@
 
 mod common;
 
+use ::common::Role;
 use common::google::{CLIENT_ID, CLIENT_SECRET, FakeIssuer, Person, REDIRECT_URI};
 use common::{Http, ORIGIN, PASSWORD, Resp, db_test, seed_user, spawn_app, test_settings};
-use server::identity::Role;
 use sqlx::PgPool;
 use vumlo_config::{GoogleSettings, Secret, Settings};
 

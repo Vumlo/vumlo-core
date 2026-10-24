@@ -1,0 +1,12 @@
+[package]
+name = "common"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+description = "What every layer shares: the institution role, the text-enum macro, the API error and pagination."
+
+[dependencies]
+sqlx.workspace = true
+
+[lints]
+workspace = true

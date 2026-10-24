@@ -14,10 +14,11 @@ use crate::content::{
     self, Assignment, BuiltinType, ContentError, ContentTitle, EffectiveProfiles, ItemPatch,
     ItemRules, MaxPoints, SubmissionSettings,
 };
-use crate::identity::{self, Email, NewUser, PersonName, Role};
+use crate::identity::{self, Email, NewUser, PersonName};
 use crate::pagination::PageParams;
 use crate::policy::CourseRole;
 use crate::teaching::{self, CourseTitle};
+use common::Role;
 use vumlo_config::GradingScale;
 
 static PROFILES: LazyLock<EffectiveProfiles> = LazyLock::new(EffectiveProfiles::unrestricted);

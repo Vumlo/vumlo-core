@@ -26,6 +26,7 @@ axum.workspace = true
 axum-extra.workspace = true
 chrono.workspace = true
 clap.workspace = true
+common.workspace = true
 db.workspace = true
 garde.workspace = true
 lettre.workspace = true

@@ -11,8 +11,8 @@ pub use google::{Google, GoogleSetupError};
 pub use handler::{MailContext, event_handlers};
 pub use model::{
     Email, EmailToken, HashedPassword, ModelError, NewSession, NewUser, Password, PasswordPolicy,
-    PersonName, Role, SessionInfo, SessionKind, SessionToken, TemporaryPassword, TokenPurpose,
-    User, UserStatus,
+    PersonName, SessionInfo, SessionKind, SessionToken, TemporaryPassword, TokenPurpose, User,
+    UserStatus,
 };
 pub use routes::{COOKIE_NAME, SetupError, router};
 #[cfg(test)]

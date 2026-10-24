@@ -2,9 +2,10 @@ use std::process::ExitCode;
 
 use anyhow::Context;
 use clap::{Parser, Subcommand};
+use common::Role;
 use server::app::{self, AppState};
 use server::events;
-use server::identity::{self, Email, NewUser, PersonName, Role, TemporaryPassword};
+use server::identity::{self, Email, NewUser, PersonName, TemporaryPassword};
 use server::modules;
 use server::org;
 use sqlx::PgPool;

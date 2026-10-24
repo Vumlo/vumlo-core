@@ -1,10 +1,10 @@
 mod common;
 
+use ::common::Role;
 use common::{
     Http, Resp, create_course, db_test, id_of, publish_course, put_member, seed_and_login,
 };
 use serde_json::{Value, json};
-use server::identity::Role;
 use sqlx::PgPool;
 use uuid::Uuid;
 

@@ -7,7 +7,8 @@
 //! key, the grades are published, and the quiz can be taken and scored.
 
 use anyhow::{Context, bail};
-use db::identity::{Email, PersonName, Role, TemporaryPassword};
+use common::Role;
+use db::identity::{Email, PersonName, TemporaryPassword};
 use serde_json::{Value, json};
 use sqlx::types::Decimal;
 use uuid::Uuid;

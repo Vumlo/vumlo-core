@@ -1,6 +1,6 @@
 use uuid::Uuid;
 
-use crate::identity::Role;
+use common::Role;
 
 /// Who performs a request: an active user holding a valid session whose password is not
 /// pending a forced change. Only the `identity` extractors build one.

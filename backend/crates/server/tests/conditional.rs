@@ -2,9 +2,9 @@
 
 mod common;
 
+use ::common::Role;
 use common::{Env, db_test};
 use serde_json::json;
-use server::identity::Role;
 
 #[tokio::test]
 async fn an_answer_carries_a_tag_and_an_unchanged_one_is_a_304() {

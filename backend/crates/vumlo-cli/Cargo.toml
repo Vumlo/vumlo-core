@@ -19,6 +19,7 @@ anyhow.workspace = true
 api-types.workspace = true
 chrono.workspace = true
 clap.workspace = true
+common.workspace = true
 db.workspace = true
 image.workspace = true
 module-api.workspace = true

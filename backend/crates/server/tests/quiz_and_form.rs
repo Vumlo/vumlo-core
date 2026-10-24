@@ -2,9 +2,9 @@
 
 mod common;
 
+use ::common::Role;
 use common::{Account, Env, db_test, id_of};
 use serde_json::{Value, json};
-use server::identity::Role;
 use uuid::Uuid;
 
 struct World {

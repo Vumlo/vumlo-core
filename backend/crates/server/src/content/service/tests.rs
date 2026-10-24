@@ -7,8 +7,9 @@ use std::sync::LazyLock;
 
 use super::*;
 use crate::error::ApiError;
-use crate::identity::{self, Email, NewUser, PersonName, Role};
+use crate::identity::{self, Email, NewUser, PersonName};
 use crate::teaching::CourseTitle;
+use common::Role;
 
 static PROFILES: LazyLock<EffectiveProfiles> = LazyLock::new(EffectiveProfiles::unrestricted);
 

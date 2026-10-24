@@ -3,6 +3,7 @@ resolver = "3"
 # `crates/modules/` only holds the optional modules; each of them is a member.
 members = [
     "crates/api-types",
+    "crates/common",
     "crates/config",
     "crates/db",
     "crates/module-api",
@@ -52,6 +53,7 @@ uuid = { version = "1", features = ["v7", "serde"] }
 zxcvbn = "3"
 
 api-types = { path = "crates/api-types" }
+common = { path = "crates/common" }
 db = { path = "crates/db" }
 module-api = { path = "crates/module-api" }
 server = { path = "crates/server" }

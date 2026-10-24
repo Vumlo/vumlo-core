@@ -10,7 +10,7 @@ use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use rand::Rng;
 
-use crate::text_enum;
+use common::Role;
 
 pub const PASSWORD_MAX_LEN: usize = 128;
 const EMAIL_MAX_LEN: usize = 254;
@@ -35,14 +35,6 @@ pub enum ModelError {
     #[error("password rejected")]
     Password(Vec<String>),
 }
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Role {
-    Admin,
-    Teacher,
-    Student,
-}
-text_enum!(Role { Admin => "admin", Teacher => "teacher", Student => "student" });
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NewUser {

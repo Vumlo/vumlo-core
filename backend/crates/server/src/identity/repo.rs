@@ -1,11 +1,12 @@
 //! SQL only. Every function takes the connection it runs on and never begins a transaction.
 
 use chrono::{DateTime, Utc};
+use common::Role;
 use sqlx::PgConnection;
 use uuid::Uuid;
 
 use super::model::{
-    NewUser, Role, RoleCounts, SessionInfo, SessionKind, TokenPurpose, User, UserFilter, UserStatus,
+    NewUser, RoleCounts, SessionInfo, SessionKind, TokenPurpose, User, UserFilter, UserStatus,
 };
 
 pub struct LoginRecord {

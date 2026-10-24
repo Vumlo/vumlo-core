@@ -151,11 +151,3 @@ fn a_hash_is_an_argon2id_phc_string_with_the_owasp_parameters() {
         hashed.as_str()
     );
 }
-
-#[test]
-fn role_text_round_trips() {
-    for role in [Role::Admin, Role::Teacher, Role::Student] {
-        assert_eq!(role.as_str().parse::<Role>(), Ok(role));
-    }
-    assert!("owner".parse::<Role>().is_err());
-}

@@ -1,10 +1,10 @@
 mod common;
 
+use ::common::Role;
 use common::{
     Http, ORIGIN, PASSWORD, db_test, login_app, login_web, seed_pending_user, seed_user, spawn,
 };
 use serde_json::json;
-use server::identity::Role;
 use sha2::{Digest, Sha256};
 use sqlx::PgPool;
 

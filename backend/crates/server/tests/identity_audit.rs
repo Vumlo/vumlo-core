@@ -2,9 +2,9 @@
 
 mod common;
 
+use ::common::Role;
 use common::{Http, Resp, db_test, seed_and_login};
 use serde_json::{Value, json};
-use server::identity::Role;
 use sqlx::PgPool;
 use uuid::Uuid;
 

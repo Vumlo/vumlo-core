@@ -1,7 +1,8 @@
 use crate::test_support::{db_test, wait_until_blocked};
 
 use super::*;
-use crate::identity::{self, Email, HashedPassword, NewUser, PersonName, Role};
+use crate::identity::{self, Email, HashedPassword, NewUser, PersonName};
+use common::Role;
 
 async fn actor(pool: &sqlx::PgPool, hash: &HashedPassword, email: &str, role: Role) -> Actor {
     let mut tx = pool.begin().await.unwrap();

@@ -3,9 +3,9 @@
 
 mod common;
 
+use ::common::Role;
 use common::{Http, ORIGIN, PASSWORD, Resp, db_test, login_app, login_web, seed_user, spawn_with};
 use serde_json::json;
-use server::identity::Role;
 use sqlx::PgPool;
 
 const TRUSTED: &str = "https://app.example.edu";
