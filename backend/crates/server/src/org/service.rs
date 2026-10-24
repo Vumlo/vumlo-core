@@ -14,18 +14,18 @@ use super::model::{
     OrgName, Subgroup, Term, TermDates, TermUpdate, TermUsage,
 };
 use super::repo;
+use crate::access::{self, AccessError, Action, group_role_allowed};
 use crate::actor::Actor;
+use crate::auth::{self, AuthError};
 use crate::events::{self, AuditEntry, EventsError};
-use crate::identity::{self, IdentityError};
-use crate::policy::{self, Action, PolicyError, group_role_allowed};
-use crate::teaching::{self, TeachingError};
+use crate::learning::teaching::{self, TeachingError};
 use common::{Page, PageParams};
 use vumlo_config::InstitutionMode;
 
 #[derive(Debug, thiserror::Error)]
 pub enum OrgError {
     #[error(transparent)]
-    Forbidden(#[from] PolicyError),
+    Forbidden(#[from] AccessError),
     #[error(transparent)]
     Invalid(#[from] ModelError),
     #[error("term not found")]
@@ -54,7 +54,7 @@ pub enum OrgError {
     #[error(transparent)]
     Teaching(Box<TeachingError>),
     #[error(transparent)]
-    Identity(#[from] IdentityError),
+    Identity(#[from] AuthError),
     #[error(transparent)]
     Events(#[from] EventsError),
     #[error(transparent)]
@@ -125,7 +125,7 @@ pub async fn create_term(
     starts_on: NaiveDate,
     ends_on: NaiveDate,
 ) -> Result<Term, OrgError> {
-    policy::authorize(actor, Action::ManageTerms)?;
+    access::authorize(actor, Action::ManageTerms)?;
     let name = OrgName::parse(name)?;
     let dates = TermDates::new(starts_on, ends_on)?;
     let term = repo::insert_term(
@@ -146,7 +146,7 @@ pub async fn list_terms(
     actor: &Actor,
     page: PageParams,
 ) -> Result<Page<Term>, OrgError> {
-    policy::authorize(actor, Action::ViewTerms)?;
+    access::authorize(actor, Action::ViewTerms)?;
     let rows = repo::list_terms(conn, page.after, i64::from(page.limit) + 1).await?;
     Ok(Page::from_rows(rows, page.limit, |term| term.id))
 }
@@ -154,7 +154,7 @@ pub async fn list_terms(
 /// Authorizes the admin view of the institution settings (ADR-0044). The settings themselves come
 /// from the configuration the server parsed at startup, so there is nothing to read.
 pub fn view_institution_settings(actor: &Actor) -> Result<(), OrgError> {
-    policy::authorize(actor, Action::ViewInstitutionSettings)?;
+    access::authorize(actor, Action::ViewInstitutionSettings)?;
     Ok(())
 }
 
@@ -169,7 +169,7 @@ pub async fn set_app_downloads(
     actor: &Actor,
     links: &[(&'static str, String)],
 ) -> Result<Vec<(String, String)>, OrgError> {
-    policy::authorize(actor, Action::ManageAppDownloads)?;
+    access::authorize(actor, Action::ManageAppDownloads)?;
     let mut clean: Vec<(String, String)> = Vec::with_capacity(links.len());
     for (platform, url) in links {
         if clean.iter().any(|(seen, _)| seen == platform) {
@@ -200,7 +200,7 @@ pub async fn set_app_downloads(
 }
 
 pub async fn get_term(conn: &mut PgConnection, actor: &Actor, id: Uuid) -> Result<Term, OrgError> {
-    policy::authorize(actor, Action::ViewTerms)?;
+    access::authorize(actor, Action::ViewTerms)?;
     repo::find_term(conn, id)
         .await?
         .ok_or(OrgError::TermNotFound)
@@ -214,7 +214,7 @@ pub async fn update_term(
     id: Uuid,
     update: TermUpdate,
 ) -> Result<Term, OrgError> {
-    policy::authorize(actor, Action::ManageTerms)?;
+    access::authorize(actor, Action::ManageTerms)?;
     let name = update.name.as_deref().map(OrgName::parse).transpose()?;
     let current = repo::lock_term(conn, id)
         .await?
@@ -238,7 +238,7 @@ pub async fn update_term(
 
 /// Deletes a term no course uses. The foreign key from `teaching.courses` refuses the rest.
 pub async fn delete_term(conn: &mut PgConnection, actor: &Actor, id: Uuid) -> Result<(), OrgError> {
-    policy::authorize(actor, Action::ManageTerms)?;
+    access::authorize(actor, Action::ManageTerms)?;
     let deleted = repo::delete_term(conn, id).await.map_err(|e| match &e {
         // ON DELETE RESTRICT reports 23001 (restrict_violation), not 23503 like NO ACTION.
         sqlx::Error::Database(db)
@@ -264,7 +264,7 @@ pub async fn create_group(
     actor: &Actor,
     name: &str,
 ) -> Result<Group, OrgError> {
-    policy::authorize(actor, Action::ManageGroups)?;
+    access::authorize(actor, Action::ManageGroups)?;
     let name = OrgName::parse(name)?;
     let group = repo::insert_group(conn, Uuid::now_v7(), name.as_str())
         .await
@@ -278,7 +278,7 @@ pub async fn list_groups(
     actor: &Actor,
     page: PageParams,
 ) -> Result<Page<Group>, OrgError> {
-    policy::authorize(actor, Action::ViewGroups)?;
+    access::authorize(actor, Action::ViewGroups)?;
     let rows = repo::list_groups(conn, page.after, i64::from(page.limit) + 1).await?;
     Ok(Page::from_rows(rows, page.limit, |group| group.id))
 }
@@ -288,7 +288,7 @@ pub async fn get_group(
     actor: &Actor,
     id: Uuid,
 ) -> Result<Group, OrgError> {
-    policy::authorize(actor, Action::ViewGroups)?;
+    access::authorize(actor, Action::ViewGroups)?;
     repo::find_group(conn, id)
         .await?
         .ok_or(OrgError::GroupNotFound)
@@ -300,7 +300,7 @@ pub async fn group_overview(
     actor: &Actor,
     id: Uuid,
 ) -> Result<GroupOverview, OrgError> {
-    policy::authorize(actor, Action::ViewGroups)?;
+    access::authorize(actor, Action::ViewGroups)?;
     repo::find_group(conn, id)
         .await?
         .ok_or(OrgError::GroupNotFound)?;
@@ -329,7 +329,7 @@ pub async fn term_stats(
     actor: &Actor,
     today: NaiveDate,
 ) -> Result<Vec<TermUsage>, OrgError> {
-    policy::authorize(actor, Action::ViewAdminReports)?;
+    access::authorize(actor, Action::ViewAdminReports)?;
     Ok(repo::term_usage(conn, today).await?)
 }
 
@@ -339,7 +339,7 @@ pub async fn rename_group(
     id: Uuid,
     name: &str,
 ) -> Result<Group, OrgError> {
-    policy::authorize(actor, Action::ManageGroups)?;
+    access::authorize(actor, Action::ManageGroups)?;
     let name = OrgName::parse(name)?;
     let group = repo::rename_group(conn, id, name.as_str())
         .await
@@ -356,7 +356,7 @@ pub async fn delete_group(
     actor: &Actor,
     id: Uuid,
 ) -> Result<(), OrgError> {
-    policy::authorize(actor, Action::ManageGroups)?;
+    access::authorize(actor, Action::ManageGroups)?;
     let deleted = repo::delete_group(conn, id)
         .await
         .map_err(|e| in_use(e, OrgError::GroupInUse))?;
@@ -369,7 +369,7 @@ pub async fn delete_group(
 /// The groups with their subgroups, ids and names only, after `after` (a group id), in id order.
 ///
 /// Acts for no user: the caller (`teaching`, for those who may manage a course's roster) has
-/// authorized its own action, as with `identity::find_user`. Groups stay admin-only to read
+/// authorized its own action, as with `auth::find_user`. Groups stay admin-only to read
 /// through this module's own endpoints (ADR-0033).
 pub async fn group_options(
     conn: &mut PgConnection,
@@ -402,7 +402,7 @@ pub async fn list_group_members(
     group_id: Uuid,
     page: PageParams,
 ) -> Result<Page<GroupMember>, OrgError> {
-    policy::authorize(actor, Action::ViewGroups)?;
+    access::authorize(actor, Action::ViewGroups)?;
     repo::find_group(conn, group_id)
         .await?
         .ok_or(OrgError::GroupNotFound)?;
@@ -423,7 +423,7 @@ async fn check_new_members(
         .filter(|id| !members.contains(id))
         .copied()
         .collect();
-    let roles: HashMap<Uuid, common::Role> = identity::find_users(conn, &others)
+    let roles: HashMap<Uuid, common::Role> = auth::find_users(conn, &others)
         .await?
         .into_iter()
         .map(|user| (user.id, user.role))
@@ -456,7 +456,7 @@ pub async fn add_group_members(
     group_id: Uuid,
     user_ids: &[Uuid],
 ) -> Result<Vec<Uuid>, OrgError> {
-    policy::authorize(actor, Action::ManageGroups)?;
+    access::authorize(actor, Action::ManageGroups)?;
     repo::lock_group(conn, group_id)
         .await?
         .ok_or(OrgError::GroupNotFound)?;
@@ -490,7 +490,7 @@ pub async fn replace_group_members(
     group_id: Uuid,
     user_ids: &[Uuid],
 ) -> Result<(Vec<Uuid>, Vec<Uuid>), OrgError> {
-    policy::authorize(actor, Action::ManageGroups)?;
+    access::authorize(actor, Action::ManageGroups)?;
     repo::lock_group(conn, group_id)
         .await?
         .ok_or(OrgError::GroupNotFound)?;
@@ -525,7 +525,7 @@ pub async fn remove_group_members(
     group_id: Uuid,
     user_ids: &[Uuid],
 ) -> Result<Vec<Uuid>, OrgError> {
-    policy::authorize(actor, Action::ManageGroups)?;
+    access::authorize(actor, Action::ManageGroups)?;
     repo::lock_group(conn, group_id)
         .await?
         .ok_or(OrgError::GroupNotFound)?;
@@ -551,7 +551,7 @@ pub async fn remove_group_member(
     group_id: Uuid,
     user_id: Uuid,
 ) -> Result<(), OrgError> {
-    policy::authorize(actor, Action::ManageGroups)?;
+    access::authorize(actor, Action::ManageGroups)?;
     repo::lock_group(conn, group_id)
         .await?
         .ok_or(OrgError::GroupNotFound)?;
@@ -604,7 +604,7 @@ pub async fn create_subgroup(
     group_id: Uuid,
     name: &str,
 ) -> Result<Subgroup, OrgError> {
-    policy::authorize(actor, Action::ManageGroups)?;
+    access::authorize(actor, Action::ManageGroups)?;
     let name = OrgName::parse(name)?;
     repo::lock_group(conn, group_id)
         .await?
@@ -630,7 +630,7 @@ pub async fn list_subgroups(
     group_id: Uuid,
     page: PageParams,
 ) -> Result<Page<Subgroup>, OrgError> {
-    policy::authorize(actor, Action::ViewGroups)?;
+    access::authorize(actor, Action::ViewGroups)?;
     repo::find_group(conn, group_id)
         .await?
         .ok_or(OrgError::GroupNotFound)?;
@@ -644,7 +644,7 @@ pub async fn rename_subgroup(
     id: Uuid,
     name: &str,
 ) -> Result<Subgroup, OrgError> {
-    policy::authorize(actor, Action::ManageGroups)?;
+    access::authorize(actor, Action::ManageGroups)?;
     let name = OrgName::parse(name)?;
     lock_subgroup(conn, id).await?;
     let subgroup = repo::rename_subgroup(conn, id, name.as_str())
@@ -659,7 +659,7 @@ pub async fn delete_subgroup(
     actor: &Actor,
     id: Uuid,
 ) -> Result<(), OrgError> {
-    policy::authorize(actor, Action::ManageGroups)?;
+    access::authorize(actor, Action::ManageGroups)?;
     lock_subgroup(conn, id).await?;
     repo::delete_subgroup(conn, id)
         .await
@@ -673,7 +673,7 @@ pub async fn list_subgroup_members(
     subgroup_id: Uuid,
     page: PageParams,
 ) -> Result<Page<GroupMember>, OrgError> {
-    policy::authorize(actor, Action::ViewGroups)?;
+    access::authorize(actor, Action::ViewGroups)?;
     repo::find_subgroup(conn, subgroup_id)
         .await?
         .ok_or(OrgError::SubgroupNotFound)?;
@@ -692,7 +692,7 @@ pub async fn add_subgroup_members(
     subgroup_id: Uuid,
     user_ids: &[Uuid],
 ) -> Result<Vec<Uuid>, OrgError> {
-    policy::authorize(actor, Action::ManageGroups)?;
+    access::authorize(actor, Action::ManageGroups)?;
     let subgroup = lock_subgroup(conn, subgroup_id).await?;
     let in_group: HashSet<Uuid> = repo::group_members_among(conn, subgroup.group_id, user_ids)
         .await?
@@ -730,7 +730,7 @@ pub async fn remove_subgroup_member(
     subgroup_id: Uuid,
     user_id: Uuid,
 ) -> Result<(), OrgError> {
-    policy::authorize(actor, Action::ManageGroups)?;
+    access::authorize(actor, Action::ManageGroups)?;
     lock_subgroup(conn, subgroup_id).await?;
     if repo::delete_subgroup_member(conn, subgroup_id, user_id).await? == 0 {
         return Err(OrgError::MemberNotFound);

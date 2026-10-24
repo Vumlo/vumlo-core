@@ -5,13 +5,13 @@ use sqlx::{PgConnection, PgPool};
 
 use super::model::{AuditEntry, AuditFilter, AuditRow, Event, Handlers};
 use super::repo;
+use crate::access::{self, AccessError, Action, implicit_course_owner};
 use crate::actor::Actor;
-use crate::policy::{self, Action, PolicyError, implicit_course_owner};
 
 #[derive(Debug, thiserror::Error)]
 pub enum EventsError {
     #[error(transparent)]
-    Forbidden(#[from] PolicyError),
+    Forbidden(#[from] AccessError),
     #[error(transparent)]
     Db(#[from] sqlx::Error),
 }
@@ -45,7 +45,7 @@ pub async fn list_audit(
     before: Option<uuid::Uuid>,
     limit: i64,
 ) -> Result<Vec<AuditRow>, EventsError> {
-    policy::authorize(actor, Action::ViewAdminReports)?;
+    access::authorize(actor, Action::ViewAdminReports)?;
     let pattern = filter.text.take().map(|text| like_pattern(text.trim()));
     Ok(repo::list_audit(conn, &filter, pattern.as_deref(), before, limit).await?)
 }

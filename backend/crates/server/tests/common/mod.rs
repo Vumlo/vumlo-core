@@ -5,7 +5,7 @@ pub mod google;
 
 use ::common::Role;
 use server::app::{self, AppState};
-use server::identity::{self, Email, TemporaryPassword};
+use server::auth::{self, Email, TemporaryPassword};
 use sqlx::PgPool;
 use tokio::net::TcpListener;
 use vumlo_config::{
@@ -296,13 +296,11 @@ impl Resp {
 pub const PASSWORD: &str = "correct horse battery staple";
 
 /// Creates a user the way the CLI does (temporary password, `must_change_password = true`) and
-/// returns the temporary password. Plain SQL: `identity::create_user` is private so that no
+/// returns the temporary password. Plain SQL: `auth::create_user` is private so that no
 /// production code can skip the audit (ADR-0034), and this writes no audit row either.
 pub async fn seed_pending_user(pool: &PgPool, email: &str, role: Role) -> String {
     let temporary = TemporaryPassword::generate();
-    let hash = identity::hash_password(temporary.expose())
-        .await
-        .expect("hash");
+    let hash = auth::hash_password(temporary.expose()).await.expect("hash");
     let email = Email::parse(email).expect("email");
     let id = uuid::Uuid::now_v7();
     let mut tx = pool.begin().await.expect("begin");
@@ -335,7 +333,7 @@ pub async fn seed_pending_user(pool: &PgPool, email: &str, role: Role) -> String
 /// A user who can act right away: password [`PASSWORD`], no pending change.
 pub async fn seed_user(pool: &PgPool, email: &str, role: Role) -> String {
     seed_pending_user(pool, email, role).await;
-    let hash = identity::hash_password(PASSWORD).await.expect("hash");
+    let hash = auth::hash_password(PASSWORD).await.expect("hash");
     sqlx::query!(
         "UPDATE identity.identities SET password_hash = $2
          WHERE subject = (SELECT id::text FROM identity.users WHERE email = $1)",

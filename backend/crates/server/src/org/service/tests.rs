@@ -3,13 +3,13 @@ use crate::test_support::{db_test, wait_until_blocked};
 use sqlx::PgPool;
 
 use super::*;
-use crate::identity::{self, Email, NewUser, PersonName};
+use crate::auth::{self, Email, NewUser, PersonName};
 use common::Role;
 
 async fn user(pool: &PgPool, email: &str, role: Role) -> Uuid {
-    let hash = identity::hash_password("irrelevant").await.unwrap();
+    let hash = auth::hash_password("irrelevant").await.unwrap();
     let mut tx = pool.begin().await.unwrap();
-    let user = identity::create_user_unaudited_for_tests(
+    let user = auth::create_user_unaudited_for_tests(
         &mut tx,
         NewUser {
             email: Email::parse(email).unwrap(),

@@ -28,7 +28,7 @@ impl Actor {
         self.session_id
     }
 
-    /// Roles are read only by `policy`; everything else asks `policy::authorize`.
+    /// Roles are read only by `policy`; everything else asks `access::authorize`.
     pub(crate) fn role(&self) -> Role {
         self.role
     }

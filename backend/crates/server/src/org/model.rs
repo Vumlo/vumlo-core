@@ -124,7 +124,7 @@ pub struct MemberLine {
 pub struct GroupOverview {
     pub group_id: Uuid,
     pub members: Vec<MemberLine>,
-    pub linked_courses: Vec<crate::teaching::LinkedCourseRow>,
+    pub linked_courses: Vec<crate::learning::teaching::LinkedCourseRow>,
 }
 
 /// How many regular courses use a term, and where today stands against it (ADR-0053).

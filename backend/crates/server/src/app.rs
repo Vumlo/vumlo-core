@@ -23,15 +23,15 @@ use utoipa_axum::router::OpenApiRouter;
 use utoipa_axum::routes;
 use utoipa_scalar::{Scalar, Servable};
 
-use crate::assessment;
-use crate::content::{self, EditorConfigError, EffectiveProfiles};
+use crate::auth::{self, SetupError};
 use crate::events::Handlers;
-use crate::gradebook;
 use crate::health;
-use crate::identity::{self, SetupError};
+use crate::learning::assessment;
+use crate::learning::content::{self, EditorConfigError, EffectiveProfiles};
+use crate::learning::gradebook;
+use crate::learning::teaching;
 use crate::mail::{MailError, Mailer};
 use crate::org;
-use crate::teaching;
 use common::{ApiError, problem_details};
 use vumlo_config::Settings;
 
@@ -51,11 +51,11 @@ pub struct AppState {
     /// The editor profiles, resolved once from `config.editor` (ADR-0025, ADR-0027).
     pub editor: Arc<EffectiveProfiles>,
     /// The bound on password hashes and checks that run at once (ADR-0038).
-    pub hashing: Arc<identity::HashGate>,
+    pub hashing: Arc<auth::HashGate>,
     /// Outgoing mail (ADR-0045); `None` without `[mail]`, and the features that must send mail are off.
     pub mailer: Option<Arc<Mailer>>,
     /// Sign-in with Google (ADR-0047); `None` without `[auth.google]`, and its endpoints are `404`.
-    pub google: Option<Arc<identity::Google>>,
+    pub google: Option<Arc<auth::Google>>,
 }
 
 /// The configuration cannot be applied. The message names the key and the value.
@@ -66,7 +66,7 @@ pub enum StateError {
     #[error(transparent)]
     Mail(#[from] MailError),
     #[error(transparent)]
-    Google(#[from] identity::GoogleSetupError),
+    Google(#[from] auth::GoogleSetupError),
 }
 
 impl AppState {
@@ -75,7 +75,7 @@ impl AppState {
     /// that names the key and the value, and never at the first request.
     pub fn new(db: PgPool, config: Settings) -> Result<Self, StateError> {
         let editor = EffectiveProfiles::resolve(&config.editor)?;
-        let hashing = identity::HashGate::new(config.auth.max_concurrent_hashes);
+        let hashing = auth::HashGate::new(config.auth.max_concurrent_hashes);
         let mailer = config
             .mail
             .as_ref()
@@ -85,7 +85,7 @@ impl AppState {
             .auth
             .google
             .as_ref()
-            .map(|google| identity::Google::new(google).map(Arc::new))
+            .map(|google| auth::Google::new(google).map(Arc::new))
             .transpose()?;
         Ok(Self {
             db,
@@ -102,9 +102,9 @@ impl AppState {
     pub fn event_handlers(&self) -> Handlers {
         let mut handlers = Handlers::default();
         if let Some(mailer) = &self.mailer {
-            handlers = handlers.merge(identity::event_handlers(
+            handlers = handlers.merge(auth::event_handlers(
                 self.db.clone(),
-                identity::MailContext {
+                auth::MailContext {
                     mailer: mailer.clone(),
                     language: self.config.institution.language,
                     institution_name: self.config.institution.name.clone(),
@@ -127,7 +127,7 @@ impl Modify for SecurityAddon {
         let components = openapi.components.get_or_insert_with(Default::default);
         components.add_security_scheme(
             "cookie",
-            SecurityScheme::ApiKey(ApiKey::Cookie(ApiKeyValue::new(identity::COOKIE_NAME))),
+            SecurityScheme::ApiKey(ApiKey::Cookie(ApiKeyValue::new(auth::COOKIE_NAME))),
         );
         components.add_security_scheme(
             "bearer",
@@ -152,7 +152,7 @@ pub async fn connect(settings: &Settings) -> Result<PgPool, sqlx::Error> {
 }
 
 pub fn router(state: AppState) -> Result<Router, SetupError> {
-    let identity = identity::router(&state.config)?;
+    let identity = auth::router(&state.config)?;
     let (router, openapi) = OpenApiRouter::with_openapi(ApiDoc::openapi())
         .nest(
             "/api/v1",

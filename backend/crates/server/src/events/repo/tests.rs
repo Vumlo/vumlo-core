@@ -2,15 +2,15 @@ use crate::test_support::db_test;
 use serde_json::json;
 
 use super::*;
-use crate::identity::{self, Email, NewUser, PersonName};
+use crate::auth::{self, Email, NewUser, PersonName};
 use common::Role;
 
 #[tokio::test]
 async fn an_audit_entry_commits_and_rolls_back_with_its_transaction() {
     db_test(async |pool| {
-            let hash = identity::hash_password("irrelevant").await.unwrap();
+            let hash = auth::hash_password("irrelevant").await.unwrap();
             let mut tx = pool.begin().await.unwrap();
-            let user = identity::create_user_unaudited_for_tests(
+            let user = auth::create_user_unaudited_for_tests(
                 &mut tx,
                 NewUser {
                     email: Email::parse("a@x.edu").unwrap(),
