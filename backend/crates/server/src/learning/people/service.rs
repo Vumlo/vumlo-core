@@ -30,3 +30,6 @@ pub async fn user_facts(
         courses,
     })
 }
+
+#[cfg(test)]
+mod tests;

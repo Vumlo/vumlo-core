@@ -12,12 +12,12 @@ pub use handler::{MailContext, event_handlers};
 pub use model::{
     Email, EmailToken, HashedPassword, ModelError, NewSession, NewUser, Password, PasswordPolicy,
     PersonName, SessionInfo, SessionKind, SessionToken, TemporaryPassword, TokenPurpose, User,
-    UserStatus,
+    UserStatus, UserUpdate,
 };
 pub use routes::{COOKIE_NAME, SetupError, api_role, api_status, router};
 #[cfg(test)]
 pub use service::create_user_unaudited_for_tests;
 pub use service::{
     AuthError, HashGate, LoginThrottle, create_user_from_cli, find_user, find_user_shared,
-    find_users, hash_password, hash_password_gated, last_login_at,
+    find_users, hash_password, hash_password_gated, last_login_at, update_user,
 };
