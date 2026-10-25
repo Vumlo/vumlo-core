@@ -1,5 +1,7 @@
 //! What the administrator reads about courses (ADR-0053).
 
+use std::collections::HashMap;
+
 use sqlx::PgConnection;
 use uuid::Uuid;
 
@@ -41,4 +43,15 @@ pub async fn user_course_facts(
         teaches: repo::taught_courses(conn, user_id).await?,
         studies: repo::studied_courses(conn, user_id).await?,
     })
+}
+
+/// How many regular courses each term has; a term with none is absent. The read interface
+/// `learning` uses for the term statistics; the caller has authorized the administrator.
+pub async fn regular_courses_per_term(
+    conn: &mut PgConnection,
+) -> Result<HashMap<Uuid, i64>, TeachingError> {
+    Ok(repo::regular_courses_per_term(conn)
+        .await?
+        .into_iter()
+        .collect())
 }

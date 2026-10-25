@@ -99,3 +99,21 @@ pub async fn studied_courses(conn: &mut PgConnection, user_id: Uuid) -> Result<i
     .fetch_one(conn)
     .await
 }
+
+/// The number of regular courses of each term that has any.
+pub async fn regular_courses_per_term(
+    conn: &mut PgConnection,
+) -> Result<Vec<(Uuid, i64)>, sqlx::Error> {
+    let rows = sqlx::query!(
+        r#"SELECT term_id AS "term_id!", count(*) AS "courses!"
+           FROM teaching.courses
+           WHERE kind = 'regular' AND term_id IS NOT NULL
+           GROUP BY term_id"#
+    )
+    .fetch_all(conn)
+    .await?;
+    Ok(rows
+        .into_iter()
+        .map(|row| (row.term_id, row.courses))
+        .collect())
+}

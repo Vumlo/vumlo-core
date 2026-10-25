@@ -9,6 +9,7 @@ pub mod gradebook;
 pub mod groups;
 pub mod people;
 mod points;
+pub mod reports;
 pub mod teaching;
 
 pub use error::LearningError;

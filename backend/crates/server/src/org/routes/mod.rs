@@ -3,7 +3,6 @@
 
 mod groups;
 mod institution;
-mod reports;
 mod subgroups;
 mod terms;
 
@@ -22,7 +21,6 @@ pub fn router() -> OpenApiRouter<AppState> {
         .routes(routes!(institution::get_institution))
         .routes(routes!(institution::get_admin_institution))
         .routes(routes!(institution::set_app_downloads))
-        .routes(routes!(reports::get_term_stats))
         .routes(routes!(terms::create_term, terms::list_terms))
         .routes(routes!(
             terms::get_term,

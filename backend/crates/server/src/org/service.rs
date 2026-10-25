@@ -11,7 +11,7 @@ use uuid::Uuid;
 
 use super::model::{
     DownloadUrl, Group, GroupMember, GroupOption, MemberLine, MemberProblem, ModelError, OrgName,
-    Subgroup, Term, TermDates, TermUpdate, TermUsage,
+    Subgroup, Term, TermDates, TermUpdate,
 };
 use super::repo;
 use crate::access::{self, AccessError, Action, group_role_allowed};
@@ -313,15 +313,13 @@ pub async fn groups_of_user(
     Ok(repo::groups_of_user(conn, user_id).await?)
 }
 
-/// How many regular courses each term has, and whether it is current or over on `today`
-/// (ADR-0053). Admins only.
-pub async fn term_stats(
+/// Every term, newest first, for the administrator's term statistics (ADR-0053). Admins only.
+pub async fn terms_newest_first(
     conn: &mut PgConnection,
     actor: &Actor,
-    today: NaiveDate,
-) -> Result<Vec<TermUsage>, OrgError> {
+) -> Result<Vec<Term>, OrgError> {
     access::authorize(actor, Action::ViewAdminReports)?;
-    Ok(repo::term_usage(conn, today).await?)
+    Ok(repo::all_terms_newest_first(conn).await?)
 }
 
 pub async fn rename_group(

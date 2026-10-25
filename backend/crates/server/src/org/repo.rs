@@ -4,7 +4,7 @@ use chrono::NaiveDate;
 use sqlx::PgConnection;
 use uuid::Uuid;
 
-use super::model::{Group, GroupMember, MemberLine, Subgroup, Term, TermUsage};
+use super::model::{Group, GroupMember, MemberLine, Subgroup, Term};
 
 // ---------------------------------------------------------------------------------------------
 // Terms
@@ -215,21 +215,11 @@ pub async fn group_member_lines(
     .await
 }
 
-/// Every term with the number of regular courses that use it, and where `today` stands.
-pub async fn term_usage(
-    conn: &mut PgConnection,
-    today: NaiveDate,
-) -> Result<Vec<TermUsage>, sqlx::Error> {
+/// Every term, newest first.
+pub async fn all_terms_newest_first(conn: &mut PgConnection) -> Result<Vec<Term>, sqlx::Error> {
     sqlx::query_as!(
-        TermUsage,
-        r#"SELECT t.id AS term_id,
-                  (SELECT count(*) FROM teaching.courses c
-                   WHERE c.term_id = t.id AND c.kind = 'regular') AS "courses!",
-                  ($1 BETWEEN t.starts_on AND t.ends_on) AS "current!",
-                  (t.ends_on < $1) AS "ended!"
-           FROM org.terms t
-           ORDER BY t.starts_on DESC, t.id"#,
-        today
+        Term,
+        "SELECT id, name, starts_on, ends_on FROM org.terms ORDER BY starts_on DESC, id"
     )
     .fetch_all(conn)
     .await

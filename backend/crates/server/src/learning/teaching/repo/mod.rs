@@ -11,7 +11,8 @@ use super::model::{
 mod admin;
 mod cards;
 pub use admin::{
-    admin_courses, linked_courses_of_group, owned_courses, studied_courses, taught_courses,
+    admin_courses, linked_courses_of_group, owned_courses, regular_courses_per_term,
+    studied_courses, taught_courses,
 };
 pub use cards::{
     card_courses, staff_next_deadline, staff_todo_counts, student_next, student_progress,
