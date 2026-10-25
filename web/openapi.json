@@ -6,7 +6,7 @@
     "license": {
       "name": ""
     },
-    "version": "0.2.0"
+    "version": "0.2.2"
   },
   "paths": {
     "/api/v1/admin/audit": {
@@ -1201,6 +1201,87 @@
           },
           "422": {
             "description": "Invalid cursor",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          },
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/assignments/{id}/plugin-launch": {
+      "post": {
+        "tags": [
+          "plugin-api"
+        ],
+        "summary": "A token that lets the plugin's page learn who looks at this assignment: its own server checks\nthe signature with the secret it has. Valid for a minute; ask again for a fresh one. Anyone who\ncan see the assignment.",
+        "operationId": "launch",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Assignment id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LaunchRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "The token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Launch"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not logged in",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such assignment, or not visible to the caller, or no such plugin, or it offers no tab",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "No plugin id",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -6910,6 +6991,24 @@
         ]
       }
     },
+    "/api/v1/meta": {
+      "get": {
+        "summary": "Which optional modules are on. Public: it names the modules and their versions, nothing else.",
+        "operationId": "meta",
+        "responses": {
+          "200": {
+            "description": "The enabled optional modules, in start order",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MetaResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/modules/{id}": {
       "delete": {
         "tags": [
@@ -7342,6 +7441,215 @@
           },
           "422": {
             "description": "`cascade` is missing",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          },
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/plugin-api/submissions/{id}": {
+      "get": {
+        "tags": [
+          "plugin-api"
+        ],
+        "summary": "A submitted attempt: which work, whose, and what it says. The scope `submissions:read`. Never a\ndraft, a score or a grade.",
+        "operationId": "get_submission",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The `submission_id` of the event",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The submitted attempt",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PluginSubmission"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No token, or one that is unknown or disabled",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The plugin was not granted `submissions:read`",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such submitted attempt",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "plugin": []
+          }
+        ]
+      }
+    },
+    "/api/v1/plugin-api/submissions/{id}/report": {
+      "put": {
+        "tags": [
+          "plugin-api"
+        ],
+        "summary": "The plugin's report on a submitted attempt, replacing its earlier one. The scope\n`reports:write`. Sending the same report twice leaves one.",
+        "operationId": "put_report",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The `submission_id` of the event",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PutReportRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "The report is stored"
+          },
+          "401": {
+            "description": "No token, or one that is unknown or disabled",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The plugin was not granted `reports:write`",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such submitted attempt",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The summary or the data is not valid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "plugin": []
+          }
+        ]
+      }
+    },
+    "/api/v1/plugin-slots": {
+      "get": {
+        "tags": [
+          "plugin-api"
+        ],
+        "summary": "The pages that enabled plugins offer in a slot of the web app. Any signed-in user. The web app\nframes nothing but these addresses.",
+        "operationId": "list_slots",
+        "parameters": [
+          {
+            "name": "slot",
+            "in": "query",
+            "description": "A slot a plugin may name, e.g. `assignment.tab`. Another value is a `422`.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The pages, by plugin",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PluginSlots"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not logged in",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "No such slot",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -7839,6 +8147,77 @@
           },
           "404": {
             "description": "No such subgroup or member",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          },
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/submissions/{id}/plugin-reports": {
+      "get": {
+        "tags": [
+          "plugin-api"
+        ],
+        "summary": "What the plugins reported about a submitted attempt, by plugin. Staff and admins who may see\nthe attempt.",
+        "operationId": "list_reports",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "A submitted attempt",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The reports, by plugin",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PluginReports"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not logged in",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller may see the assignment but not its submissions",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such attempt, or not visible to the caller",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -11232,6 +11611,35 @@
           }
         }
       },
+      "Launch": {
+        "type": "object",
+        "description": "A token for the plugin's own server, valid for a minute. It says who looks at which assignment, in\nthe course's terms (`student` or `staff`), and is signed with the plugin's secret (ADR-0066).",
+        "required": [
+          "token",
+          "expires_at"
+        ],
+        "properties": {
+          "expires_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "token": {
+            "type": "string"
+          }
+        }
+      },
+      "LaunchRequest": {
+        "type": "object",
+        "description": "Asks for the token a plugin page uses to learn who is looking and at what.",
+        "required": [
+          "plugin_id"
+        ],
+        "properties": {
+          "plugin_id": {
+            "type": "string"
+          }
+        }
+      },
       "LinkGroupRequest": {
         "type": "object",
         "required": [
@@ -11431,6 +11839,22 @@
           }
         }
       },
+      "MetaResponse": {
+        "type": "object",
+        "description": "The optional modules that are on (ADR-0066).",
+        "required": [
+          "modules"
+        ],
+        "properties": {
+          "modules": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ModuleMeta"
+            },
+            "description": "Enabled modules, each after the ones it requires."
+          }
+        }
+      },
       "Module": {
         "type": "object",
         "description": "A top-level module or a sub-module (ADR-0020).",
@@ -11486,6 +11910,21 @@
           "updated_at": {
             "type": "string",
             "format": "date-time"
+          }
+        }
+      },
+      "ModuleMeta": {
+        "type": "object",
+        "required": [
+          "id",
+          "version"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
           }
         }
       },
@@ -12568,6 +13007,122 @@
           }
         }
       },
+      "PluginReport": {
+        "type": "object",
+        "description": "The report of one plugin on one submitted attempt, for the staff who may see the attempt.",
+        "required": [
+          "plugin_id",
+          "summary",
+          "data",
+          "updated_at"
+        ],
+        "properties": {
+          "data": {
+            "type": "object"
+          },
+          "plugin_id": {
+            "type": "string",
+            "description": "The id the plugin gave in its manifest."
+          },
+          "summary": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "PluginReports": {
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PluginReport"
+            }
+          }
+        }
+      },
+      "PluginSlot": {
+        "type": "object",
+        "description": "A page that an enabled plugin offers in a slot.",
+        "required": [
+          "plugin_id",
+          "title",
+          "url"
+        ],
+        "properties": {
+          "plugin_id": {
+            "type": "string",
+            "description": "The id the plugin gave in its manifest."
+          },
+          "title": {
+            "type": "string",
+            "description": "The plugin's own words, shown as the name of the tab. Plain text."
+          },
+          "url": {
+            "type": "string",
+            "description": "Where the page is. The web app puts it in a sandboxed frame and nowhere else."
+          }
+        }
+      },
+      "PluginSlots": {
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PluginSlot"
+            }
+          }
+        }
+      },
+      "PluginSubmission": {
+        "type": "object",
+        "description": "A submitted attempt as a plugin with `submissions:read` sees it: which work, whose, and what it\nsays. No draft, no score and no grade.",
+        "required": [
+          "id",
+          "assignment_id",
+          "student_id",
+          "attempt",
+          "content",
+          "submitted_at"
+        ],
+        "properties": {
+          "assignment_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "attempt": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "content": {
+            "type": "object",
+            "description": "A block document for a `text` assignment, `{\"answers\": {...}}` for a quiz or a form."
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The id the `submission.submitted` event carries as `submission_id`."
+          },
+          "student_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "submitted_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
       "ProblemDetails": {
         "type": "object",
         "description": "RFC 9457 Problem Details (`application/problem+json`).",
@@ -12676,6 +13231,24 @@
         "properties": {
           "role": {
             "$ref": "#/components/schemas/CourseRole"
+          }
+        }
+      },
+      "PutReportRequest": {
+        "type": "object",
+        "description": "What a plugin says about one submitted attempt. It replaces the plugin's earlier report on it.",
+        "required": [
+          "summary",
+          "data"
+        ],
+        "properties": {
+          "data": {
+            "type": "object",
+            "description": "What a program may want: a JSON object of at most 16 KiB."
+          },
+          "summary": {
+            "type": "string",
+            "description": "One line for people to read, 1 to 500 characters."
           }
         }
       },
@@ -14104,6 +14677,11 @@
         "type": "apiKey",
         "in": "cookie",
         "name": "vumlo_session"
+      },
+      "plugin": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "A plugin token (`vplg_...`) from `vumlo-cli plugin install` (ADR-0066)."
       }
     }
   }

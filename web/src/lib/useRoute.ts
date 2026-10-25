@@ -12,6 +12,11 @@ export function useItemId() {
   return useSearchParams().get("item") ?? "";
 }
 
+/** The plugin whose tab is open on an assignment, `&tab=<plugin id>`; empty for the assignment itself. */
+export function useItemTab() {
+  return useSearchParams().get("tab") ?? "";
+}
+
 /** The segments of a module page address, `/m?name=x&path=a/b`. */
 export function useModuleAddress() {
   const params = useSearchParams();

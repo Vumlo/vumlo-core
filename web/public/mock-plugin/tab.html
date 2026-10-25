@@ -1,0 +1,53 @@
+<!doctype html>
+<!-- The page of the mock plugin "words" (pnpm dev:mock and the e2e test). It does what a real plugin
+     page does (ADR-0066): ask for its context, draw with the colours it is sent, report its height.
+     It writes what it received into the page, so a test can read it. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Words (mock)</title>
+<style>
+  html { background: var(--surface); color: var(--text); }
+  body { margin: 0; padding: 16px; font: 14px/1.5 system-ui, sans-serif; }
+  dl { display: grid; grid-template-columns: max-content 1fr; gap: 4px 16px; margin: 0; }
+  dt { color: var(--muted); }
+  dd { margin: 0; }
+</style>
+</head>
+<body>
+<main>
+  <p id="state">Waiting for the context…</p>
+  <dl id="facts" hidden>
+    <dt>assignment</dt><dd id="assignment"></dd>
+    <dt>role</dt><dd id="role"></dd>
+    <dt>theme</dt><dd id="theme"></dd>
+    <dt>language</dt><dd id="language"></dd>
+    <dt>tokens</dt><dd id="tokens"></dd>
+    <dt>contexts</dt><dd id="contexts">0</dd>
+  </dl>
+</main>
+<script>
+  var contexts = 0;
+  addEventListener("message", function (event) {
+    if (event.source !== parent) return;
+    var m = event.data;
+    if (!m || m.v !== 1 || m.type !== "vumlo.context") return;
+    contexts += 1;
+    var root = document.documentElement;
+    root.lang = m.language;
+    root.dataset.theme = m.theme;
+    Object.keys(m.tokens).forEach(function (name) { root.style.setProperty(name, m.tokens[name]); });
+    document.getElementById("state").textContent = "Context received.";
+    document.getElementById("facts").hidden = false;
+    document.getElementById("assignment").textContent = m.assignment_id;
+    document.getElementById("role").textContent = m.launch.token.split(".")[1];
+    document.getElementById("theme").textContent = m.theme;
+    document.getElementById("language").textContent = m.language;
+    document.getElementById("tokens").textContent = Object.keys(m.tokens).length + " tokens, --surface = " + m.tokens["--surface"];
+    document.getElementById("contexts").textContent = String(contexts);
+    parent.postMessage({ type: "vumlo.resize", v: 1, height: 300 }, "*");
+  });
+  parent.postMessage({ type: "vumlo.ready", v: 1 }, "*");
+</script>
+</body>
+</html>

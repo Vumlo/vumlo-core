@@ -21,7 +21,25 @@ export const staticRoutes: Record<RoleName, string[]> = {
   admin: ["/admin", "/admin/people", "/admin/groups", "/admin/courses", "/admin/institution", "/admin/audit", "/courses", "/calendar", "/profile", "/search?q=merge", "/no-such-page"],
 };
 
-type Tree = { modules: { items: { id: string }[]; submodules: { items: { id: string }[] }[] }[] };
+/**
+ * Puts a value in localStorage before the scripts of a page run. The script runs in every frame, and the
+ * sandboxed frame of a plugin has no storage (ADR-0066), so a failure there is the expected answer.
+ */
+export async function store(page: Page, key: string, value: string) {
+  await page.addInitScript(
+    (entry) => {
+      try {
+        localStorage.setItem(entry.key, entry.value);
+      } catch {
+        // A frame without storage.
+      }
+    },
+    { key, value },
+  );
+}
+
+type TreeItem = { id: string; kind: string };
+type Tree = { modules: { items: TreeItem[]; submodules: { items: TreeItem[] }[] }[] };
 
 async function api<T>(page: Page, path: string): Promise<T> {
   return page.evaluate(async (p) => (await fetch(`/api/v1${p}`)).json(), path);
@@ -38,6 +56,8 @@ export async function courseRoutes(page: Page, role: RoleName): Promise<string[]
     for (const m of tree.modules) {
       for (const it of [...m.items, ...m.submodules.flatMap((s) => s.items)]) {
         routes.push(itemHref(id, it.id));
+        // The tab of the mock plugin "words" (ADR-0066) is on every assignment.
+        if (it.kind === "assignment") routes.push(itemHref(id, it.id, "words"));
         if (role !== "student") routes.push(editItemHref(id, it.id));
       }
     }

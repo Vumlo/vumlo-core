@@ -293,6 +293,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/assignments/{id}/plugin-launch": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * A token that lets the plugin's page learn who looks at this assignment: its own server checks
+         *     the signature with the secret it has. Valid for a minute; ask again for a fresh one. Anyone who
+         *     can see the assignment.
+         */
+        post: operations["launch"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/assignments/{id}/responses": {
         parameters: {
             query?: never;
@@ -1576,6 +1597,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/meta": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Which optional modules are on. Public: it names the modules and their versions, nothing else. */
+        get: operations["meta"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/modules/{id}": {
         parameters: {
             query?: never;
@@ -1666,6 +1704,66 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/plugin-api/submissions/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * A submitted attempt: which work, whose, and what it says. The scope `submissions:read`. Never a
+         *     draft, a score or a grade.
+         */
+        get: operations["get_submission"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/plugin-api/submissions/{id}/report": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * The plugin's report on a submitted attempt, replacing its earlier one. The scope
+         *     `reports:write`. Sending the same report twice leaves one.
+         */
+        put: operations["put_report"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/plugin-slots": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The pages that enabled plugins offer in a slot of the web app. Any signed-in user. The web app
+         *     frames nothing but these addresses.
+         */
+        get: operations["list_slots"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/search": {
         parameters: {
             query?: never;
@@ -1739,6 +1837,26 @@ export interface paths {
         post?: never;
         /** Removes a user from a subgroup; they stay in the group. Admin only. */
         delete: operations["remove_subgroup_member"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/submissions/{id}/plugin-reports": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * What the plugins reported about a submitted attempt, by plugin. Staff and admins who may see
+         *     the attempt.
+         */
+        get: operations["list_reports"];
+        put?: never;
+        post?: never;
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -2779,6 +2897,19 @@ export interface components {
             /** Format: date-time */
             submitted_at: string;
         };
+        /**
+         * @description A token for the plugin's own server, valid for a minute. It says who looks at which assignment, in
+         *     the course's terms (`student` or `staff`), and is signed with the plugin's secret (ADR-0066).
+         */
+        Launch: {
+            /** Format: date-time */
+            expires_at: string;
+            token: string;
+        };
+        /** @description Asks for the token a plugin page uses to learn who is looking and at what. */
+        LaunchRequest: {
+            plugin_id: string;
+        };
         LinkGroupRequest: {
             /** Format: uuid */
             group_id: string;
@@ -2848,6 +2979,11 @@ export interface components {
             /** Format: uuid */
             user_id: string;
         };
+        /** @description The optional modules that are on (ADR-0066). */
+        MetaResponse: {
+            /** @description Enabled modules, each after the ones it requires. */
+            modules: components["schemas"]["ModuleMeta"][];
+        };
         /** @description A top-level module or a sub-module (ADR-0020). */
         Module: {
             /** Format: uuid */
@@ -2875,6 +3011,10 @@ export interface components {
             title: string;
             /** Format: date-time */
             updated_at: string;
+        };
+        ModuleMeta: {
+            id: string;
+            version: string;
         };
         /** @description A published grade as its student sees it. It has no draft field by construction. */
         MyGrade: {
@@ -3225,6 +3365,51 @@ export interface components {
             /** Format: uuid */
             user_id: string;
         };
+        /** @description The report of one plugin on one submitted attempt, for the staff who may see the attempt. */
+        PluginReport: {
+            data: Record<string, never>;
+            /** @description The id the plugin gave in its manifest. */
+            plugin_id: string;
+            summary: string;
+            /** Format: date-time */
+            updated_at: string;
+        };
+        PluginReports: {
+            items: components["schemas"]["PluginReport"][];
+        };
+        /** @description A page that an enabled plugin offers in a slot. */
+        PluginSlot: {
+            /** @description The id the plugin gave in its manifest. */
+            plugin_id: string;
+            /** @description The plugin's own words, shown as the name of the tab. Plain text. */
+            title: string;
+            /** @description Where the page is. The web app puts it in a sandboxed frame and nowhere else. */
+            url: string;
+        };
+        PluginSlots: {
+            items: components["schemas"]["PluginSlot"][];
+        };
+        /**
+         * @description A submitted attempt as a plugin with `submissions:read` sees it: which work, whose, and what it
+         *     says. No draft, no score and no grade.
+         */
+        PluginSubmission: {
+            /** Format: uuid */
+            assignment_id: string;
+            /** Format: int32 */
+            attempt: number;
+            /** @description A block document for a `text` assignment, `{"answers": {...}}` for a quiz or a form. */
+            content: Record<string, never>;
+            /**
+             * Format: uuid
+             * @description The id the `submission.submitted` event carries as `submission_id`.
+             */
+            id: string;
+            /** Format: uuid */
+            student_id: string;
+            /** Format: date-time */
+            submitted_at: string;
+        };
         /** @description RFC 9457 Problem Details (`application/problem+json`). */
         ProblemDetails: {
             detail?: string | null;
@@ -3257,6 +3442,13 @@ export interface components {
         PublishStudents: components["schemas"]["AllStudents"] | string[];
         PutMemberRequest: {
             role: components["schemas"]["CourseRole"];
+        };
+        /** @description What a plugin says about one submitted attempt. It replaces the plugin's earlier report on it. */
+        PutReportRequest: {
+            /** @description What a program may want: a JSON object of at most 16 KiB. */
+            data: Record<string, never>;
+            /** @description One line for people to read, 1 to 500 characters. */
+            summary: string;
         };
         /**
          * @description The result of a quiz for the student who took it (ADR-0050 point 8). Only once the grade is
@@ -4560,6 +4752,60 @@ export interface operations {
                 };
             };
             /** @description Invalid cursor */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    launch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Assignment id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LaunchRequest"];
+            };
+        };
+        responses: {
+            /** @description The token */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Launch"];
+                };
+            };
+            /** @description Not logged in */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description No such assignment, or not visible to the caller, or no such plugin, or it offers no tab */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description No plugin id */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -8601,6 +8847,26 @@ export interface operations {
             };
         };
     };
+    meta: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The enabled optional modules, in start order */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MetaResponse"];
+                };
+            };
+        };
+    };
     delete_module: {
         parameters: {
             query?: never;
@@ -8916,6 +9182,158 @@ export interface operations {
                 };
             };
             /** @description `cascade` is missing */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    get_submission: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The `submission_id` of the event */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The submitted attempt */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PluginSubmission"];
+                };
+            };
+            /** @description No token, or one that is unknown or disabled */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The plugin was not granted `submissions:read` */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description No such submitted attempt */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    put_report: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The `submission_id` of the event */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PutReportRequest"];
+            };
+        };
+        responses: {
+            /** @description The report is stored */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description No token, or one that is unknown or disabled */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The plugin was not granted `reports:write` */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description No such submitted attempt */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The summary or the data is not valid */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    list_slots: {
+        parameters: {
+            query: {
+                /** @description A slot a plugin may name, e.g. `assignment.tab`. Another value is a `422`. */
+                slot: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The pages, by plugin */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PluginSlots"];
+                };
+            };
+            /** @description Not logged in */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description No such slot */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -9262,6 +9680,56 @@ export interface operations {
                 };
             };
             /** @description No such subgroup or member */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    list_reports: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A submitted attempt */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The reports, by plugin */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PluginReports"];
+                };
+            };
+            /** @description Not logged in */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The caller may see the assignment but not its submissions */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description No such attempt, or not visible to the caller */
             404: {
                 headers: {
                     [name: string]: unknown;
