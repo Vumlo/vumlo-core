@@ -19,6 +19,11 @@ must do, in order, besides getting the new release. See [RELEASING.md](RELEASING
   plugins reported at `GET /api/v1/submissions/{id}/plugin-reports`. An example is in `examples/hello-plugin/`.
   - **Upgrade notes:** run `vumlo db migrate` (migration `0034_plugins.sql` adds the schema `plugins`). To use plugins set
     `VUMLO__PLUGINS__SECRET_KEY` (32 characters or more) in the environment; without it none can be installed.
+- **A plugin can show a page in a tab of an assignment** (ADR-0066). The page is a sandboxed frame with no session and no access
+  to the web app; it learns who is looking from a signed token the core issues for a minute (`POST /assignments/{id}/plugin-launch`)
+  and draws with the theme and the design tokens the web app sends it. `GET /api/v1/plugin-slots?slot=assignment.tab` lists the
+  pages. The tab is on text assignments and on assignments that take no submission, not yet on quizzes and forms, and the desktop
+  app shows none. `deploy/Caddyfile` has an optional `frame-src` line for the origins of your plugins.
 - **`GET /api/v1/meta`** lists the enabled optional modules and their versions.
 
 ### Changed

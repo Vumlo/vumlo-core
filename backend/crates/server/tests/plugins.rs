@@ -564,4 +564,267 @@ impl World {
             .await
             .expect("the install")
     }
+
+    /// An install that offers a page in the tab of an assignment, with no process behind it.
+    async fn install_with_a_page(&self, id: &str, base_url: &str) -> Installed {
+        let manifest = parse_manifest(
+            json!({"id": id, "version": "1", "api": "1", "ui": [
+                {"slot": "assignment.tab", "title": format!("{id} tab"), "path": "/ui/page"}
+            ]})
+            .to_string()
+            .as_bytes(),
+        )
+        .unwrap();
+        let key = self
+            .state
+            .plugins
+            .key
+            .as_deref()
+            .expect("a plugin key is set");
+        let mut conn = self.state.db.acquire().await.expect("a connection");
+        plugins::install(&mut conn, key, base_url, &manifest, &[])
+            .await
+            .expect("the install")
+    }
+
+    /// Asks for the launch token of `plugin_id` in the tab of the assignment, as `token`'s owner.
+    async fn launch(&self, token: &str, plugin_id: &str) -> common::Resp {
+        self.env
+            .call(
+                "POST",
+                token,
+                &format!("/assignments/{}/plugin-launch", self.assignment),
+                Some(json!({"plugin_id": plugin_id})),
+            )
+            .await
+    }
+}
+
+/// The claims inside a launch token, without checking the signature (the plugin does that).
+fn claims_of(token: &str) -> Value {
+    use base64::Engine;
+    let payload = token.split('.').next().expect("a payload");
+    let bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD
+        .decode(payload)
+        .expect("base64url");
+    serde_json::from_slice(&bytes).expect("JSON claims")
+}
+
+#[tokio::test]
+async fn the_slot_lists_the_pages_of_enabled_plugins_for_anyone_signed_in() {
+    db_test(async |pool| {
+        let w = world(pool).await;
+        w.install_with_a_page("beta", "https://tools.example.edu/beta").await;
+        w.install_with_a_page("alpha", "http://127.0.0.1:9000").await;
+        w.install_without_a_process("quiet", &[]).await;
+        let slots = |token: String, query: &'static str| {
+            let env = &w.env;
+            async move { env.call("GET", &token, &format!("/plugin-slots{query}"), None).await }
+        };
+
+        // A session is needed; a student has one; the answer is by plugin, with the address joined.
+        common::Http::new(&w.env.base)
+            .get("/plugin-slots?slot=assignment.tab")
+            .send()
+            .await
+            .problem(401);
+        let listed = slots(w.student.token.clone(), "?slot=assignment.tab").await;
+        assert_eq!(listed.status, 200, "{}", String::from_utf8_lossy(&listed.body));
+        assert_eq!(
+            listed.json()["items"],
+            json!([
+                {"plugin_id": "alpha", "title": "alpha tab", "url": "http://127.0.0.1:9000/ui/page"},
+                {"plugin_id": "beta", "title": "beta tab", "url": "https://tools.example.edu/beta/ui/page"},
+            ])
+        );
+
+        // A disabled plugin vanishes, and comes back.
+        let mut conn = w.env.pool.acquire().await.unwrap();
+        plugins::set_status(&mut conn, "alpha", InstallStatus::Disabled).await.unwrap();
+        let after = slots(w.teacher.token.clone(), "?slot=assignment.tab").await.json();
+        assert_eq!(after["items"].as_array().unwrap().len(), 1);
+        assert_eq!(after["items"][0]["plugin_id"], "beta");
+        plugins::set_status(&mut conn, "alpha", InstallStatus::Enabled).await.unwrap();
+
+        // A slot nobody can name is a 422 on `slot`, and so is no slot at all.
+        let unknown = slots(w.student.token.clone(), "?slot=page.header").await.problem(422);
+        assert_eq!(unknown.errors[0].field, "slot");
+        slots(w.student.token.clone(), "").await.problem(422);
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn a_launch_token_says_who_looks_and_is_given_only_to_those_who_may_look() {
+    db_test(async |pool| {
+        let w = world(pool).await;
+        w.install_with_a_page("hello", "http://127.0.0.1:9").await;
+        w.install_without_a_process("blank", &[]).await;
+        let admin = w.env.user("admin@x.edu", Role::Admin).await;
+        let outsider = w.env.user("out@x.edu", Role::Teacher).await;
+
+        // A student of the course is a `student`; its teacher and an admin are `staff`.
+        let as_student = w.launch(&w.student.token, "hello").await;
+        assert_eq!(
+            as_student.status,
+            200,
+            "{}",
+            String::from_utf8_lossy(&as_student.body)
+        );
+        assert_eq!(as_student.header("cache-control"), "no-store");
+        let claims = claims_of(as_student.json()["token"].as_str().unwrap());
+        assert_eq!(claims["role"], "student");
+        assert_eq!(claims["plugin"], "hello");
+        assert_eq!(claims["assignment"], json!(w.assignment));
+        assert_eq!(claims["user"], json!(w.student.id));
+        assert_eq!(
+            claims["exp"].as_i64().unwrap() - claims["iat"].as_i64().unwrap(),
+            60
+        );
+        let expires =
+            chrono::DateTime::parse_from_rfc3339(as_student.json()["expires_at"].as_str().unwrap())
+                .unwrap()
+                .timestamp();
+        assert_eq!(expires, claims["exp"].as_i64().unwrap());
+        for token in [&w.teacher.token, &admin.token] {
+            let staff = w.launch(token, "hello").await;
+            assert_eq!(
+                claims_of(staff.json()["token"].as_str().unwrap())["role"],
+                "staff"
+            );
+        }
+
+        // No session: 401. Somebody who may not see the assignment, a plugin that does not exist,
+        // one with no tab, one that is disabled: all the same 404.
+        common::Http::new(&w.env.base)
+            .post(&format!("/assignments/{}/plugin-launch", w.assignment))
+            .json(&json!({"plugin_id": "hello"}))
+            .send()
+            .await
+            .problem(401);
+        w.launch(&outsider.token, "hello").await.problem(404);
+        w.launch(&w.student.token, "nobody").await.problem(404);
+        w.launch(&w.student.token, "blank").await.problem(404);
+        let nowhere = w
+            .env
+            .call(
+                "POST",
+                &w.student.token,
+                &format!("/assignments/{}/plugin-launch", Uuid::now_v7()),
+                Some(json!({"plugin_id": "hello"})),
+            )
+            .await;
+        nowhere.problem(404);
+        let mut conn = w.env.pool.acquire().await.unwrap();
+        plugins::set_status(&mut conn, "hello", InstallStatus::Disabled)
+            .await
+            .unwrap();
+        w.launch(&w.student.token, "hello").await.problem(404);
+
+        // No plugin id is a 422.
+        w.env
+            .call(
+                "POST",
+                &w.student.token,
+                &format!("/assignments/{}/plugin-launch", w.assignment),
+                Some(json!({"plugin_id": ""})),
+            )
+            .await
+            .problem(422);
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn the_example_page_trusts_only_a_token_the_core_signed() {
+    db_test(async |pool| {
+        let w = world(pool).await;
+        let port = Plugin::free_port();
+        let installed = {
+            let bare = Plugin::start(port, &w.api, None).await;
+            w.install(&bare.url(), &[Scope::SubmissionsRead, Scope::ReportsWrite])
+                .await
+        };
+        let plugin = Plugin::start(port, &w.api, Some(&installed)).await;
+        let data = async |token: &str| {
+            reqwest::Client::new()
+                .get(format!("{}/ui/data", plugin.url()))
+                .header("authorization", format!("Launch {token}"))
+                .send()
+                .await
+                .expect("the plugin answers")
+        };
+        let launch = async |who: &str| {
+            let reply = w.launch(who, "hello").await;
+            reply.json()["token"].as_str().expect("a token").to_owned()
+        };
+
+        // The page itself: a strict CSP of its own, and the answer to a preflight for the call.
+        let page = reqwest::get(format!("{}/ui/words", plugin.url()))
+            .await
+            .unwrap();
+        assert_eq!(page.status(), 200);
+        let csp = page.headers()["content-security-policy"]
+            .to_str()
+            .unwrap()
+            .to_owned();
+        assert!(csp.starts_with("default-src 'none'") && csp.contains("script-src 'sha256-"));
+        assert!(!csp.contains("unsafe-inline") && !csp.contains("unsafe-eval"));
+        let preflight = reqwest::Client::new()
+            .request(
+                reqwest::Method::OPTIONS,
+                format!("{}/ui/data", plugin.url()),
+            )
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(preflight.status(), 204);
+        assert_eq!(preflight.headers()["access-control-allow-origin"], "*");
+
+        // A teacher's token gets the totals; they are empty until a work is reported.
+        let teacher = launch(&w.teacher.token).await;
+        let empty = data(&teacher).await;
+        assert_eq!(empty.status(), 200);
+        assert_eq!(empty.headers()["access-control-allow-origin"], "*");
+        let body: Value = serde_json::from_slice(&empty.bytes().await.unwrap()).unwrap();
+        assert_eq!(body, json!({"role": "staff", "submissions": 0, "words": 0}));
+        let submission = w.submit("one two three").await;
+        assert_eq!(w.pump().await, 1);
+        wait_for_report(&w, submission).await;
+        let counted =
+            serde_json::from_slice::<Value>(&data(&teacher).await.bytes().await.unwrap()).unwrap();
+        assert_eq!(
+            counted,
+            json!({"role": "staff", "submissions": 1, "words": 3})
+        );
+
+        // A student's token is a student: no numbers.
+        let student = launch(&w.student.token).await;
+        let for_student =
+            serde_json::from_slice::<Value>(&data(&student).await.bytes().await.unwrap()).unwrap();
+        assert_eq!(for_student, json!({"role": "student"}));
+
+        // A token the core did not sign, one with a changed payload, one cut short, and none.
+        let (payload, signature) = teacher.split_once('.').unwrap();
+        let flipped = format!(
+            "{}{}",
+            &signature[..signature.len() - 1],
+            if signature.ends_with('0') { '1' } else { '0' }
+        );
+        let as_student_payload = student.split_once('.').unwrap().0;
+        for bad in [
+            format!("{payload}.{flipped}"),
+            format!("{as_student_payload}.{signature}"),
+            payload.to_owned(),
+            "garbage".to_owned(),
+            String::new(),
+        ] {
+            assert_eq!(data(&bad).await.status(), 401, "{bad}");
+        }
+        // The signature of an event over the same bytes is not a token (the prefix differs).
+        let as_event = plugins::sign(&installed.secret, 1_700_000_000, payload.as_bytes()).unwrap();
+        let as_event = as_event.trim_start_matches("sha256=");
+        assert_eq!(data(&format!("{payload}.{as_event}")).await.status(), 401);
+    })
+    .await;
 }

@@ -39,6 +39,62 @@ fn the_secret_of_an_install_is_derived_the_same_way_every_time() {
     assert_ne!(first, derive_secret(&other, id, 1).unwrap());
 }
 
+const LAUNCH_VECTOR: &str = "eyJhc3NpZ25tZW50IjoiMDE4ZjAwMDAtMDAwMC03MDAwLTgwMDAtMDAwMDAwMDAwMDAyIiwiZXhwIjoxNzAwMDAwMDYwLCJpYXQiOjE3MDAwMDAwMDAsInBsdWdpbiI6ImhlbGxvIiwicm9sZSI6InN0YWZmIiwidXNlciI6IjAxOGYwMDAwLTAwMDAtNzAwMC04MDAwLTAwMDAwMDAwMDAwMyIsInYiOjF9.9dfee57a6b11ea16056625ebbc8e28cb9a32e7fada4f7a630218fff1996bc9c0";
+
+fn claims(role: &str) -> LaunchClaims<'_> {
+    LaunchClaims {
+        plugin: "hello",
+        assignment: Uuid::parse_str("018f0000-0000-7000-8000-000000000002").unwrap(),
+        user: Uuid::parse_str("018f0000-0000-7000-8000-000000000003").unwrap(),
+        role,
+        issued_at: 1_700_000_000,
+    }
+}
+
+#[test]
+fn a_launch_token_is_the_payload_and_its_hmac_under_its_own_prefix() {
+    // Computed with Python's `hmac`; the example plugin checks the same vector.
+    assert_eq!(
+        launch_token("test-secret", &claims("staff")).unwrap(),
+        LAUNCH_VECTOR
+    );
+    let (payload, _) = LAUNCH_VECTOR.split_once('.').unwrap();
+    let decoded = URL_SAFE_NO_PAD.decode(payload).unwrap();
+    let claims: serde_json::Value = serde_json::from_slice(&decoded).unwrap();
+    assert_eq!(
+        claims["exp"].as_i64().unwrap() - claims["iat"].as_i64().unwrap(),
+        LAUNCH_TTL_SECONDS
+    );
+    assert_eq!(
+        (claims["v"].as_i64(), claims["role"].as_str()),
+        (Some(1), Some("staff"))
+    );
+}
+
+#[test]
+fn a_launch_token_depends_on_the_secret_and_on_every_claim() {
+    let base = launch_token("test-secret", &claims("staff")).unwrap();
+    assert_ne!(
+        base,
+        launch_token("other-secret", &claims("staff")).unwrap()
+    );
+    assert_ne!(
+        base,
+        launch_token("test-secret", &claims("student")).unwrap()
+    );
+    let mut later = claims("staff");
+    later.issued_at += 1;
+    assert_ne!(base, launch_token("test-secret", &later).unwrap());
+}
+
+#[test]
+fn the_signature_of_an_event_is_not_the_signature_of_a_token() {
+    // The same bytes, signed as an event would be: the prefix makes the two differ.
+    let (payload, token_signature) = LAUNCH_VECTOR.split_once('.').unwrap();
+    let as_event = sign("test-secret", 1_700_000_000, payload.as_bytes()).unwrap();
+    assert_ne!(as_event.trim_start_matches("sha256="), token_signature);
+}
+
 #[test]
 fn an_unset_key_gives_no_secret_key_and_the_key_is_never_shown() {
     assert!(SecretKey::from_config(&Secret::new("")).is_none());

@@ -8,6 +8,7 @@ use access::{self, Actor};
 use access::{PluginCaller, Scope};
 use events::OutboxEvent;
 use learning::assessment;
+use learning::content::{self, OpenError};
 use module_api::OutboundClient;
 use serde_json::{Value, json};
 use sqlx::PgConnection;
@@ -16,10 +17,10 @@ use uuid::Uuid;
 use crate::PluginsError;
 use crate::manifest::parse_manifest;
 use crate::model::{
-    Install, InstallStatus, InstallSummary, Installed, PluginManifest, PluginToken,
+    ASSIGNMENT_TAB, Install, InstallStatus, InstallSummary, Installed, PluginManifest, PluginToken,
 };
 use crate::repo::{self, NewInstall, ReportRow, scope_names};
-use crate::secret::{SecretKey, derive_secret};
+use crate::secret::{LaunchClaims, SecretKey, derive_secret, launch_token};
 
 const MANIFEST_CONNECT: Duration = Duration::from_secs(3);
 const MANIFEST_TOTAL: Duration = Duration::from_secs(5);
@@ -189,6 +190,79 @@ pub async fn fan_out(conn: &mut PgConnection, event: &OutboxEvent) -> Result<u64
         }
     }
     Ok(owed)
+}
+
+/// A page that an enabled plugin offers in a slot, with its full address.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SlotPage {
+    pub plugin_id: String,
+    pub title: String,
+    pub url: String,
+}
+
+/// The pages the enabled plugins offer in `slot`, by plugin. The address is the plugin's base URL
+/// and the path it declared; the web app frames nothing else (ADR-0066).
+pub async fn slots(conn: &mut PgConnection, slot: &str) -> Result<Vec<SlotPage>, PluginsError> {
+    Ok(repo::list_installs(conn)
+        .await?
+        .into_iter()
+        .filter(|install| install.status == InstallStatus::Enabled)
+        .flat_map(|install| {
+            let base = install.base_url;
+            let plugin_id = install.plugin_id;
+            install
+                .ui
+                .into_iter()
+                .filter(|page| page.slot == slot)
+                .map(move |page| SlotPage {
+                    plugin_id: plugin_id.clone(),
+                    title: page.title,
+                    url: format!("{base}{}", page.path),
+                })
+        })
+        .collect())
+}
+
+/// A token for the page of `plugin_id` in the tab of `assignment_id`, for someone who can see that
+/// assignment. Everything that is not found is the same `NotFound`: the assignment (or a draft, or
+/// one in a course the caller cannot see), an unknown or disabled plugin, and one that offers no
+/// tab.
+pub async fn launch(
+    conn: &mut PgConnection,
+    actor: &Actor,
+    key: &SecretKey,
+    assignment_id: Uuid,
+    plugin_id: &str,
+    now: i64,
+) -> Result<String, PluginsError> {
+    let not_found = || PluginsError::NotFound(plugin_id.to_owned());
+    let opened = content::open_assignment(conn, actor, assignment_id)
+        .await
+        .map_err(|error| match error {
+            OpenError::NotFound => not_found(),
+            OpenError::Teaching(error) => PluginsError::Teaching(error),
+            OpenError::Db(error) => PluginsError::Db(error),
+        })?;
+    let install = repo::find_install(conn, plugin_id)
+        .await?
+        .filter(|install| install.status == InstallStatus::Enabled)
+        .filter(|install| install.ui.iter().any(|page| page.slot == ASSIGNMENT_TAB))
+        .ok_or_else(not_found)?;
+    let secret = derive_secret(key, install.id, install.secret_version)?;
+    let claims = LaunchClaims {
+        plugin: &install.plugin_id,
+        assignment: assignment_id,
+        user: actor.user_id(),
+        // The role in this course, not the institution role: a teacher is a student of another
+        // teacher's course.
+        role: if opened.access.is_student() {
+            "student"
+        } else {
+            "staff"
+        },
+        issued_at: now,
+    };
+    Ok(launch_token(&secret, &claims)?)
 }
 
 /// Stores the plugin's report on a submitted attempt, replacing its earlier one.

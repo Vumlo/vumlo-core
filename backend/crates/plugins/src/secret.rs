@@ -59,13 +59,46 @@ pub fn sign(secret: &str, timestamp: i64, body: &[u8]) -> Result<String, SecretE
     mac.update(timestamp.to_string().as_bytes());
     mac.update(b".");
     mac.update(body);
-    let hex: String = mac
-        .finalize()
-        .into_bytes()
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect();
-    Ok(format!("sha256={hex}"))
+    Ok(format!("sha256={}", hex(&mac.finalize().into_bytes())))
+}
+
+fn hex(bytes: &[u8]) -> String {
+    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
+}
+
+/// How long a launch token lives.
+pub const LAUNCH_TTL_SECONDS: i64 = 60;
+
+/// What a launch token says: who looks at which assignment, in the terms of its course.
+pub struct LaunchClaims<'a> {
+    pub plugin: &'a str,
+    pub assignment: Uuid,
+    pub user: Uuid,
+    /// `student` or `staff`.
+    pub role: &'a str,
+    /// Unix seconds. The token expires [`LAUNCH_TTL_SECONDS`] later.
+    pub issued_at: i64,
+}
+
+/// `base64url(payload) + "." + hex(HMAC-SHA256(secret, "vumlo-launch." + base64url(payload)))`.
+/// The prefix keeps the signature apart from that of an event (`timestamp.body`), so a signed event
+/// cannot be passed off as a token or the other way round. The plugin's server checks it with the
+/// secret it has.
+pub fn launch_token(secret: &str, claims: &LaunchClaims<'_>) -> Result<String, SecretError> {
+    let payload = serde_json::json!({
+        "v": 1,
+        "plugin": claims.plugin,
+        "assignment": claims.assignment,
+        "user": claims.user,
+        "role": claims.role,
+        "iat": claims.issued_at,
+        "exp": claims.issued_at + LAUNCH_TTL_SECONDS,
+    });
+    let body = URL_SAFE_NO_PAD.encode(payload.to_string());
+    let mut mac = mac(secret.as_bytes())?;
+    mac.update(b"vumlo-launch.");
+    mac.update(body.as_bytes());
+    Ok(format!("{body}.{}", hex(&mac.finalize().into_bytes())))
 }
 
 #[cfg(test)]

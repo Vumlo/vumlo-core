@@ -4,7 +4,7 @@ use chrono::{DateTime, Utc};
 use garde::Validate;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
-use utoipa::ToSchema;
+use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
 /// The most a report's `data` may take when written as JSON.
@@ -63,6 +63,46 @@ pub struct PluginReport {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct PluginReports {
     pub items: Vec<PluginReport>,
+}
+
+/// Which place of the web app the pages are wanted for.
+#[derive(Debug, Clone, Serialize, Deserialize, Validate, IntoParams)]
+#[into_params(parameter_in = Query)]
+pub struct SlotQuery {
+    /// A slot a plugin may name, e.g. `assignment.tab`. Another value is a `422`.
+    #[garde(length(min = 1, max = 40))]
+    pub slot: String,
+}
+
+/// A page that an enabled plugin offers in a slot.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct PluginSlot {
+    /// The id the plugin gave in its manifest.
+    pub plugin_id: String,
+    /// The plugin's own words, shown as the name of the tab. Plain text.
+    pub title: String,
+    /// Where the page is. The web app puts it in a sandboxed frame and nowhere else.
+    pub url: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct PluginSlots {
+    pub items: Vec<PluginSlot>,
+}
+
+/// Asks for the token a plugin page uses to learn who is looking and at what.
+#[derive(Debug, Clone, Serialize, Deserialize, Validate, ToSchema)]
+pub struct LaunchRequest {
+    #[garde(length(min = 1, max = 32))]
+    pub plugin_id: String,
+}
+
+/// A token for the plugin's own server, valid for a minute. It says who looks at which assignment, in
+/// the course's terms (`student` or `staff`), and is signed with the plugin's secret (ADR-0066).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct Launch {
+    pub token: String,
+    pub expires_at: DateTime<Utc>,
 }
 
 #[cfg(test)]

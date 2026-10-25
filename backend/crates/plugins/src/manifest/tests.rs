@@ -116,6 +116,16 @@ fn a_ui_path_stays_on_the_plugins_own_origin() {
 }
 
 #[test]
+fn a_plugin_offers_one_page_in_a_slot() {
+    let mut value = hello();
+    value["ui"] = json!([
+        {"slot": "assignment.tab", "title": "One", "path": "/one"},
+        {"slot": "assignment.tab", "title": "Two", "path": "/two"}
+    ]);
+    assert!(message(value).contains("`assignment.tab` has two pages"));
+}
+
+#[test]
 fn a_long_value_is_cut_in_the_message() {
     let mut value = hello();
     value["scopes"] = json!(["x".repeat(500)]);

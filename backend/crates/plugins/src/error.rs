@@ -1,6 +1,7 @@
 use access::AccessError;
 use common::ApiError;
 use learning::assessment::AssessmentError;
+use learning::teaching::TeachingError;
 
 use crate::secret::SecretError;
 
@@ -28,6 +29,8 @@ pub enum PluginsError {
     #[error(transparent)]
     Assessment(#[from] AssessmentError),
     #[error(transparent)]
+    Teaching(TeachingError),
+    #[error(transparent)]
     Secret(#[from] SecretError),
     #[error(transparent)]
     Db(#[from] sqlx::Error),
@@ -38,6 +41,7 @@ impl From<PluginsError> for ApiError {
         match error {
             PluginsError::Forbidden(access) => access.into(),
             PluginsError::Assessment(error) => error.into(),
+            PluginsError::Teaching(error) => error.into(),
             PluginsError::NotFound(_) => Self::NotFound,
             PluginsError::Db(error) => Self::from_db("plugins", &error),
             // The rest happen at install time, in the CLI, and never in a request.

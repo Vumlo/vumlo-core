@@ -2,7 +2,7 @@
 
 Status: Accepted
 Supersedes in part: ADR-0054 (items 17, 18, 19 and 22), ADR-0055 (items 1, 2 and 5)
-Amends: ADR-0014 (`hmac` becomes a workspace dependency; it was already listed), ADR-0065 (two layers are added)
+Amends: ADR-0014 (`hmac` becomes a workspace dependency; it was already listed), ADR-0057 (the address of an item may carry `&tab=<plugin id>`), ADR-0065 (two layers are added)
 Supplements: ADR-0007, ADR-0045
 
 ## Context
@@ -109,12 +109,45 @@ module-api -> common, access, events          (and vumlo-config, beside the chai
 16. A plugin sees no user's session, no cookie and no other plugin's report, and the plugin API never
     accepts a session.
 
-### Plugin UI (a later step, the same trust model)
-17. A plugin names a slot (`assignment.tab`). The web app shows it as an `<iframe>` with
-    `sandbox="allow-scripts"` and without `allow-same-origin`, so the plugin's page has an opaque origin,
-    no cookie of ours and no access to our DOM. The page CSP allows `frame-src` for the installed plugin
-    origins only. The frame and the host talk by `postMessage` with two message types, and the host
-    accepts a message only from the frame it created. The plugin page sends its own strict CSP.
+### Plugin UI
+17. **The frame.** A plugin names a slot in its manifest (`assignment.tab`: a tab on the page of an
+    assignment). The web app shows the page as `<iframe sandbox="allow-scripts" referrerpolicy="no-referrer"
+    allow="">`, never with `allow-same-origin`, `allow-top-navigation`, `allow-forms` or `allow-popups`. The
+    page therefore has an opaque origin: no cookie of ours, no storage, no access to our DOM, no way to
+    navigate the window or open another. The web app builds the frame only from a URL the core returned
+    (`GET /plugin-slots`), and takes a message only from that frame (`event.source` is its window and
+    `event.origin` is `"null"`).
+18. **No CSP from the core.** An earlier draft of this item put the origins of the installed plugins in
+    a CSP `frame-src`. The web app sends no CSP (ADR-0057 item 7: Next.js would need a nonce, which means
+    dynamic rendering, against ADR-0042), and a header cannot list origins that are installed after the
+    build. The boundary is the sandbox and the source of the URL. An operator who wants `frame-src` as
+    well adds it in the reverse proxy (an example is commented in `deploy/Caddyfile`). **The desktop app
+    shows no plugin tabs**: its CSP is fixed when it is built (`frame-src` YouTube and Vimeo only) and its
+    webview never touches the network (ADR-0056).
+19. **Who is looking.** The frame has no session, so a plugin cannot tell a student from a teacher by what
+    it can see. `POST /assignments/{id}/plugin-launch {plugin_id}` answers `{token, expires_at}` for a
+    caller who can see the assignment; unknown, disabled and slotless plugins, and an assignment the caller
+    cannot see, are `404`. The token is `base64url(payload) + "." + hex`, the HMAC-SHA256, under the
+    plugin's secret, of `"vumlo-launch." + base64url(payload)`. The prefix keeps it apart from the
+    signature of an event (`timestamp.body`), so neither can be used for the other. The payload is
+    `{v, plugin, assignment, user, role, iat, exp}` with `role` either `student` or `staff` (the caller's
+    role in the course, not their institution role) and `exp` sixty seconds after `iat`. The plugin's own
+    server checks it, with the secret it already has.
+20. **Messages** (all carry `v: 1`). `vumlo.ready` (frame to host): the frame is listening and wants its
+    context; it may send it again for a fresh token. `vumlo.context` (host to frame): `{assignment_id,
+    launch: {token, expires_at}, theme, language, tokens}`. `vumlo.resize` (frame to host): `{height}`, an
+    integer, clamped to 120 to 4000 pixels. Any other message is ignored. The host has to post with the
+    target `"*"`, because the frame's origin is opaque, so the context holds ids, a token that lives sixty
+    seconds, and colours: never a session or the token of an API.
+21. **Look.** A sandboxed page cannot share the React components of the web app, and it should not.
+    What it can share is the look: `tokens` is the computed value of a fixed list of design tokens
+    (`--bg`, `--surface`, `--text`, `--accent`, ...) and `theme` says `light` or `dark`; the host posts
+    the context again when the theme changes. The plugin draws with `var(--text)` and the others.
+    Components the host draws from data a plugin returns (widgets, ADR-0055 item 1) are a design of
+    their own and are not decided here.
+22. **The plugin's own page** sends a strict CSP of its own (the example hashes its inline script and
+    style), and, when it wants to be framed by the institution only, `frame-ancestors` with its origin. Its
+    server answers a call from the frame with CORS, because the origin of the frame is `null`.
 
 ## Consequences
 - The core never executes foreign code. A plugin that is down delays its events; it breaks nothing.
@@ -135,4 +168,7 @@ module-api -> common, access, events          (and vumlo-config, beside the chai
 - The token is stored only as a hash, so an administrator who lost it removes the plugin and installs
   it again. The secret is derived and could be shown again, but no command does: it is printed once,
   with the token. There is no command to raise `secret_version` yet.
-- Not decided here: WASM, a marketplace, signing of plugins, per-course scopes, and slots for modules.
+- The tab is on a text assignment and on one that takes no submission. A quiz and a form are answered on a
+  full-screen sheet (`focus`), where the web app shows no tab, so a plugin has no page there yet.
+- Not decided here: WASM, a marketplace, signing of plugins, per-course scopes, slots for modules, tabs on a
+  quiz or a form, and components that the web app draws from data a plugin returns.

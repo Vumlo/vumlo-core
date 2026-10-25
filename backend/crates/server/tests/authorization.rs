@@ -711,11 +711,14 @@ async fn the_list_of_operations_is_the_api() {
             }
         }
         // Operations that need no sign-in or only a session of one's own are not in the list above.
-        // The two plugin operations take a plugin token, not a session: `tests/plugins.rs` checks
-        // them with and without the scope.
+        // The two plugin-api operations take a plugin token, not a session: `tests/plugins.rs`
+        // checks them with and without the scope. The slot list and the launch are for anyone
+        // signed in, the launch with its own check of who may see the assignment (same file).
         let own: BTreeSet<String> = [
             "GET /plugin-api/submissions/{id}",
             "PUT /plugin-api/submissions/{id}/report",
+            "GET /plugin-slots",
+            "POST /assignments/{id}/plugin-launch",
             "GET /health",
             "GET /meta",
             "GET /institution",

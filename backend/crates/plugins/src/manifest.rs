@@ -116,6 +116,18 @@ pub fn parse_manifest(bytes: &[u8]) -> Result<PluginManifest, PluginsError> {
         .into_iter()
         .map(slot)
         .collect::<Result<Vec<_>, _>>()?;
+    // The web app names a tab by the plugin, so one plugin has one page in a slot.
+    if let Some(twice) = ui
+        .iter()
+        .enumerate()
+        .find(|(at, page)| ui[..*at].iter().any(|before| before.slot == page.slot))
+        .map(|(_, page)| page)
+    {
+        return Err(invalid(format!(
+            "ui slot {} has two pages; a plugin offers one page in a slot",
+            shown(&twice.slot)
+        )));
+    }
     Ok(PluginManifest {
         id: raw.id,
         version: raw.version,

@@ -6,7 +6,7 @@ use chrono::{DateTime, Utc};
 use sqlx::PgConnection;
 use uuid::Uuid;
 
-use crate::model::{Install, InstallStatus};
+use crate::model::{Install, InstallStatus, UiSlot};
 
 /// The columns of `plugin_installs`, as the database holds them.
 struct InstallRow {
@@ -17,9 +17,28 @@ struct InstallRow {
     subscribes: Vec<String>,
     requested_scopes: Vec<String>,
     scopes: Vec<String>,
+    ui_slots: serde_json::Value,
     secret_version: i32,
     status: InstallStatus,
     created_at: DateTime<Utc>,
+}
+
+/// The pages in `ui_slots`. They were checked when the plugin was installed; an entry that does not
+/// read back is left out.
+fn ui_of(value: &serde_json::Value) -> Vec<UiSlot> {
+    let text = |entry: &serde_json::Value, key: &str| entry[key].as_str().map(str::to_owned);
+    value
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|entry| {
+            Some(UiSlot {
+                slot: text(entry, "slot")?,
+                title: text(entry, "title")?,
+                path: text(entry, "path")?,
+            })
+        })
+        .collect()
 }
 
 /// The scopes in the database were checked when they were written; one that does not parse (a
@@ -38,6 +57,7 @@ impl From<InstallRow> for Install {
             subscribes: row.subscribes,
             requested_scopes: scopes_of(&row.requested_scopes),
             scopes: scopes_of(&row.scopes),
+            ui: ui_of(&row.ui_slots),
             secret_version: row.secret_version,
             status: row.status,
             created_at: row.created_at,
@@ -100,7 +120,7 @@ pub async fn find_install(
         InstallRow,
         r#"SELECT id, plugin_id, version, base_url,
                   subscribes AS "subscribes!", requested_scopes AS "requested_scopes!",
-                  scopes AS "scopes!", secret_version,
+                  scopes AS "scopes!", ui_slots, secret_version,
                   status AS "status: InstallStatus", created_at
            FROM plugins.plugin_installs WHERE plugin_id = $1"#,
         plugin_id
@@ -115,7 +135,7 @@ pub async fn list_installs(conn: &mut PgConnection) -> Result<Vec<Install>, sqlx
         InstallRow,
         r#"SELECT id, plugin_id, version, base_url,
                   subscribes AS "subscribes!", requested_scopes AS "requested_scopes!",
-                  scopes AS "scopes!", secret_version,
+                  scopes AS "scopes!", ui_slots, secret_version,
                   status AS "status: InstallStatus", created_at
            FROM plugins.plugin_installs ORDER BY plugin_id"#
     )

@@ -15,7 +15,10 @@ use uuid::Uuid;
 pub const SUBSCRIBABLE: [&str; 2] = ["submission.submitted", "grade.published"];
 
 /// The places in the web app a plugin may put a page (a later step of ADR-0066).
-pub const SLOTS: [&str; 1] = ["assignment.tab"];
+pub const SLOTS: [&str; 1] = [ASSIGNMENT_TAB];
+
+/// A tab on the page of an assignment.
+pub const ASSIGNMENT_TAB: &str = "assignment.tab";
 
 /// The version of the plugin protocol this core speaks.
 pub const API_VERSION: &str = "1";
@@ -57,6 +60,8 @@ pub struct Install {
     pub subscribes: Vec<String>,
     pub requested_scopes: Vec<Scope>,
     pub scopes: Vec<Scope>,
+    /// The pages the plugin offers, as its manifest said (checked when it was installed).
+    pub ui: Vec<UiSlot>,
     pub secret_version: i32,
     pub status: InstallStatus,
     pub created_at: DateTime<Utc>,
