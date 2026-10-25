@@ -3,7 +3,7 @@
 //! transaction open, starts a second on a task, waits until that task is observed blocked on
 //! a lock, and only then lets the first one commit. Nothing sleeps: the order is forced by
 //! the locks, not by timing.
-use crate::test_support::{db_test, wait_until_blocked};
+use test_support::{db_test, wait_until_blocked};
 
 use std::sync::LazyLock;
 

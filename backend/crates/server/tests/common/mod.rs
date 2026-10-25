@@ -14,9 +14,7 @@ use vumlo_config::{
     ServerSettings, Settings, WebSettings,
 };
 
-// One copy of the per-test database harness, shared with the library's own unit tests.
-#[path = "../../src/test_support.rs"]
-mod test_support;
+// The per-test database harness (ADR-0036).
 // Not every test binary needs the bare variant.
 #[allow(unused_imports)]
 pub use test_support::{bare_db_test, db_test, wait_until_blocked};

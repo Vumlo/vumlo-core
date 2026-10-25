@@ -1,0 +1,15 @@
+[package]
+name = "test-support"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+description = "The per-test database harness (ADR-0036). Dev-dependency only; never in a release."
+
+[dependencies]
+db.workspace = true
+sqlx.workspace = true
+tokio.workspace = true
+uuid.workspace = true
+
+[lints]
+workspace = true

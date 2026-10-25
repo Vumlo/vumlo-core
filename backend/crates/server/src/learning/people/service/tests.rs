@@ -2,8 +2,8 @@ use super::*;
 use crate::access::Actor;
 use crate::auth::{self, AuthError, Email, NewUser, PersonName};
 use crate::learning::teaching::{self, TeachingError};
-use crate::test_support::{db_test, wait_until_blocked};
 use common::Role;
+use test_support::{db_test, wait_until_blocked};
 use uuid::Uuid;
 
 async fn admin_actor(pool: &sqlx::PgPool, email: &str) -> Actor {

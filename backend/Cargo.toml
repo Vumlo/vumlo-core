@@ -8,6 +8,7 @@ members = [
     "crates/db",
     "crates/module-api",
     "crates/server",
+    "crates/test-support",
     "crates/vumlo-cli",
     "crates/modules/*",
 ]
@@ -57,6 +58,7 @@ common = { path = "crates/common" }
 db = { path = "crates/db" }
 module-api = { path = "crates/module-api" }
 server = { path = "crates/server" }
+test-support = { path = "crates/test-support" }
 vumlo-config = { path = "crates/config" }
 # The test-only module (feature `dummy` of server and vumlo-cli); never in a default build.
 vumlo-module-dummy = { path = "crates/modules/dummy" }

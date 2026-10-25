@@ -54,6 +54,7 @@ vumlo-module-dummy = { workspace = true, optional = true }
 base64.workspace = true
 chrono-tz.workspace = true
 reqwest.workspace = true
+test-support.workspace = true
 
 [lints]
 workspace = true

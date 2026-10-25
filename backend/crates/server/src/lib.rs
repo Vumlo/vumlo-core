@@ -9,5 +9,3 @@ pub mod learning;
 pub mod mail;
 pub mod modules;
 pub mod org;
-#[cfg(test)]
-mod test_support;

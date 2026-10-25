@@ -34,9 +34,15 @@ step "1. verify and unpack"
 sha256sum --check --ignore-missing SHA256SUMS
 tar xzf "vumlo-$version-source.tar.gz"
 cd "vumlo-$version"
-for unwanted in .github docs/decisions backend/crates/server/tests backend/crates/modules ARCHITECTURE.md AGENTS.md; do
+for unwanted in .github docs/decisions backend/crates/server/tests backend/crates/modules backend/crates/test-support ARCHITECTURE.md AGENTS.md; do
     [ ! -e "$unwanted" ] || { echo "the archive contains $unwanted" >&2; exit 1; }
 done
+# No crate ships its tests or the test harness: every `tests.rs` is deleted, and a `mod tests;` declaration
+# behind #[cfg(test)] compiles away.
+leftover="$(find backend/crates -type f \( -name tests.rs -o -name content_tests.rs -o -name test_support.rs \) -print)"
+[ -z "$leftover" ] || { echo "the archive contains test files:" >&2; echo "$leftover" >&2; exit 1; }
+leftover="$(find backend/crates -type d \( -name tests -o -name test-support \) -print)"
+[ -z "$leftover" ] || { echo "the archive contains test directories:" >&2; echo "$leftover" >&2; exit 1; }
 for wanted in vumlo vumlo.toml.example docs/install.md docs/desktop.md CHANGELOG.md brand/logo.png deploy/compose.yaml backend/.sqlx desktop/scripts/build.mjs desktop/release/desktop-release.yml desktop/Cargo.lock; do
     [ -e "$wanted" ] || { echo "the archive lacks $wanted" >&2; exit 1; }
 done

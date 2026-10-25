@@ -7,18 +7,16 @@
 //! 014, A-10). Here each test has its own pool, bounded only by PostgreSQL's `max_connections`
 //! (`compose.yaml` raises it to 300).
 //!
-//! The file is compiled into the library for its unit tests and, by path, into every integration
-//! test binary through `tests/common`.
+//! It is a crate of its own, a dev-dependency of everything that tests against a database, and the
+//! release archive leaves it out (`RELEASING.md`).
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use sqlx::migrate::Migrator;
+use db::MIGRATOR;
 use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 use sqlx::{AssertSqlSafe, Connection, Executor, PgConnection, PgPool};
 use uuid::Uuid;
-
-static MIGRATOR: Migrator = sqlx::migrate!("../../migrations");
 
 /// Enough for the server (two at a time) and a test that holds a transaction open while a second
 /// writer waits behind it.
@@ -65,8 +63,6 @@ pub async fn db_test(body: impl AsyncFnOnce(PgPool)) {
 }
 
 /// Runs `body` against a new database with no migration applied.
-// Only `tests/migrations.rs` needs it; the library's unit tests do not.
-#[allow(dead_code)]
 pub async fn bare_db_test(body: impl AsyncFnOnce(PgPool)) {
     run(false, body).await;
 }

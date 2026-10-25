@@ -1,4 +1,4 @@
-use crate::test_support::{db_test, wait_until_blocked};
+use test_support::{db_test, wait_until_blocked};
 
 use super::*;
 use crate::auth::{self, Email, HashedPassword, NewUser, PersonName};

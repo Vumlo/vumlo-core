@@ -5,7 +5,7 @@ use uuid::Uuid;
 
 use super::*;
 use crate::events::{HandlerError, HandlerFuture, OutboxEvent};
-use crate::test_support::db_test;
+use test_support::db_test;
 
 async fn emit_grade(pool: &PgPool) -> Uuid {
     let mut conn = pool.acquire().await.unwrap();

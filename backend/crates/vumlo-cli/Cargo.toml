@@ -37,6 +37,7 @@ vumlo-module-dummy = { workspace = true, optional = true }
 [dev-dependencies]
 axum.workspace = true
 server.workspace = true
+test-support.workspace = true
 
 [lints]
 workspace = true
