@@ -28,6 +28,8 @@ If a rule blocks the task, stop and say so. Do not work around it.
 Each layer is a crate, and a crate depends only on the ones below it. Cargo enforces the direction.
 
     server, vumlo-cli
+      -> plugins    plugin installs, event delivery to plugins, the plugin API (ADR-0066)
+      -> modules/*  optional crates behind Cargo features, built on module-api (ADR-0066)
       -> learning   teaching, content, assessment, gradebook, and the flows that need several of them
       -> org        terms, groups, subgroups, the installation record
       -> auth       users, sessions, sign-in, account value types, the mailer

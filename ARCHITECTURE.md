@@ -76,7 +76,7 @@ docs/decisions/
 
 ## Crates and modules
 
-Each layer is a crate, and a crate may depend only on the ones below it ([ADR-0065](docs/decisions/0065-layered-crates.md)): `server` → `learning` → `org` → `auth` → `events` → `access` → `common`. Cargo enforces the direction; nothing below can name something above.
+Each layer is a crate, and a crate may depend only on the ones below it ([ADR-0065](docs/decisions/0065-layered-crates.md)): `server` → `learning` → `org` → `auth` → `events` → `access` → `common`. Cargo enforces the direction; nothing below can name something above. Two more layers sit beside `learning`, both below `server` and `vumlo-cli` and neither visible to the chain ([ADR-0066](docs/decisions/0066-modules-and-plugins.md)): `plugins` (installs, delivery of events to external plugins, the plugin API) and the optional `modules/*` (built on `module-api`, which depends only on `common`, `access` and `events`). A module is mounted at `/api/v1/modules/{id}`, owns the schema `mod_<id>`, and is listed by `GET /api/v1/meta`; a plugin is an external HTTP service the core does not trust.
 
 | Crate      | Module / owns (Postgres schema)  | Responsibility |
 |------------|----------------------------------|----------------|

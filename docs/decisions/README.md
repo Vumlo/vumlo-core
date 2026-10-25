@@ -100,3 +100,4 @@ What gets easier, what gets harder, what we must remember.
 | 0063 | [Desktop installers: built by the institution, signed when it has certificates](0063-desktop-release-and-signing.md) |
 | 0064 | [Download links of the desktop app, set by an admin](0064-desktop-app-download-links.md) |
 | 0065 | [Layered crates: dependencies point only downward, enforced by Cargo](0065-layered-crates.md) |
+| 0066 | [Modules and plugins: a Module trait, the schema `mod_<id>`, and out-of-process plugins the core does not trust](0066-modules-and-plugins.md) |
