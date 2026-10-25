@@ -113,7 +113,8 @@ async fn run(state: AppState, request: Request, next: Next) -> Result<Response, 
 }
 
 /// Only a `POST` to the API proper. Sign-in and the other `/auth` calls answer with credentials, which
-/// must never be kept (AGENTS §11); a `PUT` and a `DELETE` repeat harmlessly by themselves.
+/// must never be kept (AGENTS §11), and neither does any other answer that says `no-store`
+/// (`carries_credential`); a `PUT` and a `DELETE` repeat harmlessly by themselves.
 fn applies(method: &Method, path: &str) -> bool {
     method == Method::POST && path.starts_with("/api/v1/") && !path.starts_with("/api/v1/auth/")
 }
@@ -165,6 +166,17 @@ fn storable(status: StatusCode) -> bool {
     status.is_success() || (status.is_client_error() && !matches!(status.as_u16(), 401 | 408 | 429))
 }
 
+/// An answer that says `no-store` carries a credential (a temporary password, a launch token) and is never
+/// kept (ADR-0058 decision 2, AGENTS §11). The handlers mark such answers, so no path list can fall behind.
+fn carries_credential(headers: &HeaderMap) -> bool {
+    headers.get_all(header::CACHE_CONTROL).iter().any(|value| {
+        value.to_str().is_ok_and(|v| {
+            v.split(',')
+                .any(|directive| directive.trim().eq_ignore_ascii_case("no-store"))
+        })
+    })
+}
+
 async fn finish(db: &PgPool, scope: &Digest32, key: &str, response: Response) -> Response {
     let (parts, body) = response.into_parts();
     let Ok(bytes) = to_bytes(body, MAX_RESPONSE_BYTES).await else {
@@ -172,7 +184,7 @@ async fn finish(db: &PgPool, scope: &Digest32, key: &str, response: Response) ->
         forget(db, scope, key).await;
         return ApiError::Internal.into_response();
     };
-    if storable(parts.status) {
+    if storable(parts.status) && !carries_credential(&parts.headers) {
         let stored = Stored {
             status: parts.status.as_u16() as i16,
             content_type: parts

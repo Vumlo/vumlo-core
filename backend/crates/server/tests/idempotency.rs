@@ -316,6 +316,58 @@ async fn sign_in_is_not_covered_because_its_answer_is_a_credential() {
 }
 
 #[tokio::test]
+async fn an_admin_answer_with_a_temporary_password_is_not_kept() {
+    db_test(async |pool| {
+        let env = Env::new(pool).await;
+        let admin = env.user("admin@x.edu", Role::Admin).await;
+        let user =
+            json!({"email": "new@x.edu", "name": "New", "surname": "Person", "role": "student"});
+        let created = post_with_key(
+            &env,
+            &admin.token,
+            "/admin/users",
+            "create-1",
+            Some(user.clone()),
+        )
+        .await;
+        assert_eq!(created.status, 201);
+        assert!(created.json()["temporary_password"].is_string());
+        assert_eq!(
+            stored_keys(&env.pool).await,
+            0,
+            "the password answer is not kept"
+        );
+        // Nothing of the answer is kept, so the same key runs the request again (the address is taken now)
+        // and never replays a password.
+        let again = post_with_key(&env, &admin.token, "/admin/users", "create-1", Some(user)).await;
+        assert_eq!(again.status, 409);
+        assert_eq!(again.headers.get("idempotency-replayed"), None);
+
+        let id = created.json()["user"]["id"].as_str().unwrap().to_owned();
+        let reset = || async {
+            post_with_key(
+                &env,
+                &admin.token,
+                &format!("/admin/users/{id}/reset-password"),
+                "reset-1",
+                None,
+            )
+            .await
+        };
+        let (first, second) = (reset().await, reset().await);
+        assert_eq!((first.status, second.status), (200, 200));
+        assert_eq!(second.headers.get("idempotency-replayed"), None);
+        assert_ne!(
+            first.json()["temporary_password"],
+            second.json()["temporary_password"]
+        );
+        // Only the refusal of the second create is kept: it says nothing but that the address is taken.
+        assert_eq!(stored_keys(&env.pool).await, 1);
+    })
+    .await;
+}
+
+#[tokio::test]
 async fn a_key_that_cannot_be_one_is_refused_before_anything_runs() {
     db_test(async |pool| {
         let (env, owner, course) = teacher_world(pool).await;
