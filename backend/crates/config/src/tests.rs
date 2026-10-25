@@ -168,6 +168,34 @@ fn only_double_underscore_variables_are_configuration() {
 // --- secrets ------------------------------------------------------------------------------
 
 #[test]
+fn the_plugin_key_comes_from_the_environment_is_long_enough_and_never_shown() {
+    const KEY: &str = "0123456789abcdef0123456789abcdef";
+    assert!(
+        build(VALID, &[])
+            .unwrap()
+            .plugins
+            .secret_key
+            .expose()
+            .is_empty()
+    );
+
+    let s = build(VALID, &[("VUMLO__PLUGINS__SECRET_KEY", KEY)]).unwrap();
+    assert_eq!(s.plugins.secret_key.expose(), KEY);
+    assert!(!format!("{s:?}").contains(KEY));
+
+    let toml = format!("{VALID}\n[plugins]\nsecret_key = \"{KEY}\"\n");
+    let e = build(&toml, &[]).unwrap_err().to_string();
+    assert!(e.contains("VUMLO__PLUGINS__SECRET_KEY"), "{e}");
+    assert!(!e.contains(KEY), "{e}");
+
+    let e = build(VALID, &[("VUMLO__PLUGINS__SECRET_KEY", "too-short")])
+        .unwrap_err()
+        .to_string();
+    assert!(e.contains("plugins.secret_key must be at least 32"), "{e}");
+    assert!(!e.contains("too-short"), "{e}");
+}
+
+#[test]
 fn the_database_url_comes_from_database_url_and_not_from_the_file() {
     let s = build(VALID, &[("DATABASE_URL", "postgres://env/db")]).unwrap();
     assert_eq!(s.database.url.expose(), "postgres://env/db");

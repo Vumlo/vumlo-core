@@ -68,6 +68,10 @@ pub struct Settings {
     #[serde(default)]
     #[schemars(extend("x-visibility" = "private"))]
     pub mail: Option<MailSettings>,
+    /// Plugins, the external services of ADR-0066. Only the key that signs their events.
+    #[serde(default)]
+    #[schemars(extend("x-visibility" = "private"))]
+    pub plugins: PluginsSettings,
     /// Optional add-on modules: `name = true` or a `[modules.name]` table (ADR-0054).
     #[serde(default)]
     #[schemars(extend("x-visibility" = "private"))]
@@ -255,6 +259,21 @@ pub struct GoogleSettings {
 fn default_google_issuer() -> String {
     "https://accounts.google.com".to_owned()
 }
+
+/// The `[plugins]` section (ADR-0066). The webhook secret of every plugin is derived from this key,
+/// the id of its install and its secret version, so nothing about it is stored.
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct PluginsSettings {
+    /// Secret: `VUMLO__PLUGINS__SECRET_KEY`, at least 32 characters. Empty means "not set": no
+    /// plugin can be installed and no event is sent to one. Changing it changes every plugin's
+    /// secret, so each plugin has to be given the new one.
+    #[serde(default)]
+    pub secret_key: Secret,
+}
+
+/// The shortest `plugins.secret_key` accepted. Generate one with `openssl rand -base64 32`.
+pub const MIN_PLUGIN_KEY_CHARS: usize = 32;
 
 /// The `[institution]` section as it is loaded. `mode` has no default (ADR-0031).
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]

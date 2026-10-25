@@ -23,7 +23,7 @@ fn the_public_keys_are_the_institution_profile_and_the_origin() {
 }
 
 #[test]
-fn the_secret_keys_are_the_database_url_google_and_the_smtp_password() {
+fn the_secret_keys_are_the_database_url_google_the_smtp_password_and_the_plugin_key() {
     let secrets: Vec<_> = secret_paths().into_iter().collect();
     assert_eq!(
         secrets,
@@ -31,6 +31,7 @@ fn the_secret_keys_are_the_database_url_google_and_the_smtp_password() {
             "auth.google.client_secret",
             "database.url",
             "mail.transport.password",
+            "plugins.secret_key",
         ]
     );
 }

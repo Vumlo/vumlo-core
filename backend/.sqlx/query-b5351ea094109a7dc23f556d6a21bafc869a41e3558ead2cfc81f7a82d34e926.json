@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO plugins.reports (install_id, submission_id, summary, data)\n         VALUES ($1, $2, $3, $4)\n         ON CONFLICT (install_id, submission_id)\n         DO UPDATE SET summary = $3, data = $4, updated_at = now()",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Jsonb"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "b5351ea094109a7dc23f556d6a21bafc869a41e3558ead2cfc81f7a82d34e926"
+}

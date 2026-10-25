@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE plugins.deliveries SET run_after = now()",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "de13e80bcdc02686007cd6838d8d66cc90845104766f12ffe67233e1247e1ab5"
+}

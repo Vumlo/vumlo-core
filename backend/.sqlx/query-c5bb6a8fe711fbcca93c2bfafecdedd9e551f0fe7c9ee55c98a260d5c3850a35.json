@@ -1,0 +1,134 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id, plugin_id, version, base_url,\n                  subscribes AS \"subscribes!\", requested_scopes AS \"requested_scopes!\",\n                  scopes AS \"scopes!\", secret_version,\n                  status AS \"status: InstallStatus\", created_at\n           FROM plugins.plugin_installs ORDER BY plugin_id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "plugins.plugin_installs",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "plugin_id",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "plugins.plugin_installs",
+            "name": "plugin_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "version",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "plugins.plugin_installs",
+            "name": "version"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "base_url",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "plugins.plugin_installs",
+            "name": "base_url"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "subscribes!",
+        "type_info": "TextArray",
+        "origin": {
+          "Table": {
+            "table": "plugins.plugin_installs",
+            "name": "subscribes"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "requested_scopes!",
+        "type_info": "TextArray",
+        "origin": {
+          "Table": {
+            "table": "plugins.plugin_installs",
+            "name": "requested_scopes"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "scopes!",
+        "type_info": "TextArray",
+        "origin": {
+          "Table": {
+            "table": "plugins.plugin_installs",
+            "name": "scopes"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "secret_version",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "plugins.plugin_installs",
+            "name": "secret_version"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "status: InstallStatus",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "plugins.plugin_installs",
+            "name": "status"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "plugins.plugin_installs",
+            "name": "created_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "c5bb6a8fe711fbcca93c2bfafecdedd9e551f0fe7c9ee55c98a260d5c3850a35"
+}

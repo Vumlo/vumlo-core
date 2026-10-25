@@ -15,6 +15,7 @@ default = []
 dummy = ["dep:vumlo-module-dummy"]
 
 [dependencies]
+access.workspace = true
 anyhow.workspace = true
 api-types.workspace = true
 auth.workspace = true
@@ -24,6 +25,7 @@ common.workspace = true
 db.workspace = true
 image.workspace = true
 module-api.workspace = true
+plugins.workspace = true
 reqwest.workspace = true
 resvg.workspace = true
 rpassword.workspace = true

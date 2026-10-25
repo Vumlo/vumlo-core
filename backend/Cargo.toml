@@ -12,6 +12,7 @@ members = [
     "crates/learning",
     "crates/module-api",
     "crates/org",
+    "crates/plugins",
     "crates/server",
     "crates/test-support",
     "crates/vumlo-cli",
@@ -34,6 +35,7 @@ chrono-tz = { version = "0.10", default-features = false }
 clap = { version = "4", features = ["derive"] }
 config = { version = "0.15", default-features = false, features = ["toml"] }
 garde = { version = "0.23", features = ["derive"] }
+hmac = "0.13"
 openidconnect = { version = "4", default-features = false, features = ["reqwest", "rustls-tls"] }
 lettre = { version = "0.11", default-features = false, features = ["builder", "smtp-transport", "tokio1", "tokio1-rustls-tls", "file-transport"] }
 image = { version = "0.25", default-features = false, features = ["png", "ico", "jpeg", "webp"] }
@@ -67,6 +69,7 @@ events = { path = "crates/events" }
 learning = { path = "crates/learning" }
 module-api = { path = "crates/module-api" }
 org = { path = "crates/org" }
+plugins = { path = "crates/plugins" }
 server = { path = "crates/server" }
 test-support = { path = "crates/test-support" }
 vumlo-config = { path = "crates/config" }

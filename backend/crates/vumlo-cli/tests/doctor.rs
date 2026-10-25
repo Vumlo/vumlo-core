@@ -60,9 +60,58 @@ async fn a_healthy_installation_passes_and_doctor_changes_nothing() {
             "core",
             "versions",
             "module sets",
+            "plugins",
         ] {
             assert_eq!(status(&r, name), "ok", "{name}: {r:#}");
         }
+        assert!(audit(&pool).await.is_empty(), "doctor is read-only");
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn doctor_warns_about_plugins_that_are_sent_nothing_and_about_dead_letters() {
+    db_test(async |pool| {
+        let env = Env::new(&pool);
+        let key = plugins::SecretKey::from_config(&vumlo_config::Secret::new(
+            "0123456789abcdef0123456789abcdef",
+        ))
+        .unwrap();
+        let manifest = plugins::parse_manifest(
+            br#"{"id": "hello", "version": "1", "api": "1", "subscribes": ["submission.submitted"]}"#,
+        )
+        .unwrap();
+        let mut conn = pool.acquire().await.unwrap();
+        plugins::install(&mut conn, &key, "http://127.0.0.1:9", &manifest, &[])
+            .await
+            .unwrap();
+        drop(conn);
+        let doctor = async |key_set: bool| {
+            let mut vars = vec![("DATABASE_URL", env.url.as_str())];
+            if key_set {
+                vars.push(("VUMLO__PLUGINS__SECRET_KEY", "0123456789abcdef0123456789abcdef"));
+            }
+            report(&env.run_with(&["doctor", "--json"], None, &vars).await)
+        };
+
+        // Installed, but no key: nothing can be signed, so nothing is sent.
+        let r = doctor(false).await;
+        assert_eq!(status(&r, "plugins"), "warn", "{r:#}");
+        assert!(detail(&r, "plugins").contains("plugins.secret_key is not set"));
+
+        // With the key it is fine, until an event has failed for good.
+        assert_eq!(status(&doctor(true).await, "plugins"), "ok");
+        sqlx::query(
+            "INSERT INTO plugins.deliveries (id, install_id, event_id, event_type, data, failed_at)
+             SELECT gen_random_uuid(), id, gen_random_uuid(), 'submission.submitted', '{}', now()
+             FROM plugins.plugin_installs",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        let r = doctor(true).await;
+        assert_eq!(status(&r, "plugins"), "warn", "{r:#}");
+        assert!(detail(&r, "plugins").contains("1 event(s) could not be delivered"));
         assert!(audit(&pool).await.is_empty(), "doctor is read-only");
     })
     .await;

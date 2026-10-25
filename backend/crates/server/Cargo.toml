@@ -33,6 +33,7 @@ events.workspace = true
 learning.workspace = true
 module-api.workspace = true
 org.workspace = true
+plugins.workspace = true
 sha2.workspace = true
 sqlx.workspace = true
 thiserror.workspace = true

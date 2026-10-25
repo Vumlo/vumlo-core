@@ -965,3 +965,33 @@ fn an_institution_student_is_never_a_course_teacher_or_owner() {
         Ok(())
     );
 }
+
+fn plugin(scopes: &[Scope]) -> PluginCaller {
+    PluginCaller::new(Uuid::now_v7(), "test".to_owned(), scopes.to_vec())
+}
+
+#[test]
+fn a_plugin_may_do_only_what_it_was_granted() {
+    let reader = plugin(&[Scope::SubmissionsRead]);
+    assert_eq!(authorize_plugin(&reader, Scope::SubmissionsRead), Ok(()));
+    assert_eq!(
+        authorize_plugin(&reader, Scope::ReportsWrite),
+        Err(AccessError::Denied)
+    );
+    let nothing = plugin(&[]);
+    for scope in Scope::ALL {
+        assert_eq!(authorize_plugin(&nothing, scope), Err(AccessError::Denied));
+    }
+}
+
+#[test]
+fn scopes_have_the_names_the_manifest_and_the_cli_use() {
+    for (text, scope) in [
+        ("submissions:read", Scope::SubmissionsRead),
+        ("reports:write", Scope::ReportsWrite),
+    ] {
+        assert_eq!(text.parse::<Scope>(), Ok(scope));
+        assert_eq!(scope.as_str(), text);
+    }
+    assert!("submissions:write".parse::<Scope>().is_err());
+}

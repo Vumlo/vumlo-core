@@ -12,7 +12,7 @@ use serde_json::Value;
 
 use crate::modules::{self, ModuleSpec};
 use crate::schema;
-use crate::settings::{SUPPORTED_CONFIG_VERSION, Settings};
+use crate::settings::{MIN_PLUGIN_KEY_CHARS, SUPPORTED_CONFIG_VERSION, Settings};
 
 /// Every problem found, not only the first.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -288,6 +288,12 @@ fn leaf_paths(value: &Value) -> Vec<String> {
 
 fn validate(settings: &mut Settings) -> Vec<String> {
     let mut errors = Vec::new();
+    let key = settings.plugins.secret_key.expose();
+    if !key.is_empty() && key.chars().count() < MIN_PLUGIN_KEY_CHARS {
+        errors.push(format!(
+            "plugins.secret_key must be at least {MIN_PLUGIN_KEY_CHARS} characters"
+        ));
+    }
     let auth = &settings.auth;
     if !(8..=128).contains(&auth.password_min_length) {
         errors.push("auth.password_min_length must be between 8 and 128".to_owned());

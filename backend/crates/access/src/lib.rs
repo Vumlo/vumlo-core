@@ -4,11 +4,13 @@ use chrono::{DateTime, Utc};
 
 mod actor;
 mod extract;
+mod plugin;
 #[cfg(feature = "testing")]
 mod test_support;
 
 pub use actor::{Actor, PendingActor};
 pub use extract::{ActorSource, Authenticated};
+pub use plugin::{AuthenticatedPlugin, PluginCaller, PluginSource, Scope, authorize_plugin};
 
 use common::{ApiError, Role, text_enum};
 

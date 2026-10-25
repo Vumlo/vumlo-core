@@ -15,7 +15,8 @@ use sqlx::PgConnection;
 use uuid::Uuid;
 
 use super::model::{
-    Attempt, Draft, FormFacts, MySubmission, QuizResult, Responses, StudentSubmission, Window,
+    Attempt, Draft, FormFacts, MySubmission, PluginSubmission, QuizResult, Responses,
+    StudentSubmission, Window,
 };
 use super::repo;
 use crate::content::{
@@ -25,7 +26,7 @@ use crate::content::{
 use crate::gradebook::{self, GradebookError};
 use crate::teaching::TeachingError;
 use access::Actor;
-use access::{self, AccessError, Action};
+use access::{self, AccessError, Action, PluginCaller, Scope};
 use common::{Page, PageParams};
 use events::{self, Event, EventsError};
 
@@ -36,6 +37,9 @@ pub enum AssessmentError {
     /// No such assignment, or the actor may not see it.
     #[error("assignment not found")]
     AssignmentNotFound,
+    /// No such submitted attempt (a draft does not count).
+    #[error("submission not found")]
+    SubmissionNotFound,
     /// The user is neither a current student of the course nor the author of an attempt.
     #[error("student not found")]
     StudentNotFound,
@@ -463,6 +467,53 @@ pub async fn student_attempts(
         }
     }
     Ok(page)
+}
+
+// ---------------------------------------------------------------------------------------------
+// Plugins (ADR-0066). A plugin has no `Actor`: its scope is checked first, then only a submitted
+// attempt is read, never a draft.
+// ---------------------------------------------------------------------------------------------
+
+/// A submitted attempt for a plugin granted `submissions:read`.
+pub async fn submission_for_plugin(
+    conn: &mut PgConnection,
+    caller: &PluginCaller,
+    submission_id: Uuid,
+) -> Result<PluginSubmission, AssessmentError> {
+    access::authorize_plugin(caller, Scope::SubmissionsRead)?;
+    repo::submitted_by_id(conn, submission_id)
+        .await?
+        .ok_or(AssessmentError::SubmissionNotFound)
+}
+
+/// Whether there is a submitted attempt a plugin granted `reports:write` may report on. The scope
+/// is checked first, so a plugin without it learns nothing about which ids exist.
+pub async fn ensure_reportable(
+    conn: &mut PgConnection,
+    caller: &PluginCaller,
+    submission_id: Uuid,
+) -> Result<(), AssessmentError> {
+    access::authorize_plugin(caller, Scope::ReportsWrite)?;
+    repo::assignment_of_submitted(conn, submission_id)
+        .await?
+        .map(|_| ())
+        .ok_or(AssessmentError::SubmissionNotFound)
+}
+
+/// May `actor` see the submitted attempt `submission_id` the way staff do (`ViewSubmissions` in its
+/// course)? Anything they may not see, a draft included, is `404`. The caller then reads whatever
+/// else hangs on the attempt, such as the reports of plugins.
+pub async fn authorize_view_submission(
+    conn: &mut PgConnection,
+    actor: &Actor,
+    submission_id: Uuid,
+) -> Result<(), AssessmentError> {
+    let assignment_id = repo::assignment_of_submitted(conn, submission_id)
+        .await?
+        .ok_or(AssessmentError::SubmissionNotFound)?;
+    let opened = open(conn, actor, assignment_id).await?;
+    access::authorize(actor, Action::ViewSubmissions(opened.access))?;
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------------------------

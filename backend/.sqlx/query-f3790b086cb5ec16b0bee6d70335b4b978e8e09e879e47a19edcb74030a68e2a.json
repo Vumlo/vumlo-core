@@ -1,0 +1,52 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id AS install_id, plugin_id, scopes AS \"scopes!\"\n           FROM plugins.plugin_installs\n           WHERE token_hash = $1 AND status = 'enabled'",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "install_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "plugins.plugin_installs",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "plugin_id",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "plugins.plugin_installs",
+            "name": "plugin_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "scopes!",
+        "type_info": "TextArray",
+        "origin": {
+          "Table": {
+            "table": "plugins.plugin_installs",
+            "name": "scopes"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Bytea"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "f3790b086cb5ec16b0bee6d70335b4b978e8e09e879e47a19edcb74030a68e2a"
+}

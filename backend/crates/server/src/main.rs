@@ -90,10 +90,14 @@ async fn run(cli: Cli) -> anyhow::Result<()> {
             let state = AppState::new(pool, settings).context("invalid configuration")?;
             prepare_database(&state.db, &state.config).await?;
             let started = modules::spawn_workers(&state);
+            let deliverer = state
+                .plugin_deliverer()
+                .context("cannot start the plugin delivery")?;
             let shutdown = app::shutdown_signal().context("cannot install signal handlers")?;
-            tracing::info!(modules = ?started, "worker running");
+            tracing::info!(modules = ?started, plugins = deliverer.is_some(), "worker running");
             tokio::select! {
                 () = events::run_worker(state.db.clone(), state.event_handlers()) => {}
+                () = run_plugin_delivery(deliverer, state.db.clone()) => {}
                 () = shutdown => {}
             }
             tracing::info!("shut down");
@@ -104,7 +108,13 @@ async fn run(cli: Cli) -> anyhow::Result<()> {
             if !no_worker {
                 tokio::spawn(events::run_worker(state.db.clone(), state.event_handlers()));
                 let started = modules::spawn_workers(&state);
-                tracing::info!(modules = ?started, "background work started");
+                let deliverer = state
+                    .plugin_deliverer()
+                    .context("cannot start the plugin delivery")?;
+                tracing::info!(modules = ?started, plugins = deliverer.is_some(), "background work started");
+                if let Some(deliverer) = deliverer {
+                    tokio::spawn(deliverer.run(state.db.clone()));
+                }
             }
             let bind_addr = state.config.server.bind_addr;
             let listener = tokio::net::TcpListener::bind(bind_addr)
@@ -152,6 +162,15 @@ async fn run(cli: Cli) -> anyhow::Result<()> {
         }
     }
     Ok(())
+}
+
+/// Sends the events plugins are owed, or waits for ever while `plugins.secret_key` is not set, so
+/// the worker's `select!` has one arm either way.
+async fn run_plugin_delivery(deliverer: Option<plugins::Deliverer>, pool: PgPool) {
+    match deliverer {
+        Some(deliverer) => deliverer.run(pool).await,
+        None => std::future::pending().await,
+    }
 }
 
 /// Refuses a database with pending migrations, then records or checks the institution mode

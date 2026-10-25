@@ -16,6 +16,7 @@ mod groups;
 mod home;
 mod items;
 mod org;
+mod plugins;
 
 pub use admin::*;
 pub use assessment::*;
@@ -26,6 +27,7 @@ pub use groups::*;
 pub use home::*;
 pub use items::*;
 pub use org::*;
+pub use plugins::*;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct HealthResponse {

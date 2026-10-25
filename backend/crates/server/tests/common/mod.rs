@@ -10,8 +10,8 @@ use sqlx::PgPool;
 use tokio::net::TcpListener;
 use vumlo_config::{
     AuthSettings, CliSettings, DatabaseSettings, DesktopSettings, EditorSettings, GradingScale,
-    InstitutionMode, InstitutionSettings, Language, LogFormat, LogSettings, Modules, Secret,
-    ServerSettings, Settings, WebSettings,
+    InstitutionMode, InstitutionSettings, Language, LogFormat, LogSettings, Modules,
+    PluginsSettings, Secret, ServerSettings, Settings, WebSettings,
 };
 
 // The per-test database harness (ADR-0036).
@@ -76,6 +76,7 @@ pub fn test_settings() -> Settings {
         },
         editor: EditorSettings::default(),
         mail: None,
+        plugins: PluginsSettings::default(),
         modules: std::collections::BTreeMap::new(),
         module_state: Modules::default(),
         base_dir: std::path::PathBuf::new(),

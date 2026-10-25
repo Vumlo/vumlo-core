@@ -23,6 +23,8 @@ struct Ctx {
     submodule: Uuid,
     text: Uuid,
     assignment: Uuid,
+    /// The submitted attempt of `student` at `assignment`.
+    submission: Uuid,
     student: Uuid,
     link: Uuid,
     group: Uuid,
@@ -185,6 +187,11 @@ fn operations(c: &Ctx, other_user: Uuid) -> Vec<Call> {
         call(
             "GET",
             format!("/assignments/{}/submissions/{}", c.assignment, c.student),
+            None,
+        ),
+        call(
+            "GET",
+            format!("/submissions/{}/plugin-reports", c.submission),
             None,
         ),
         call(
@@ -387,14 +394,16 @@ async fn build(env: &Env, admin: &Account, owner: &Account, student: &Account, t
         200,
     )
     .await;
-    env.ok(
-        "POST",
-        &student.token,
-        &format!("/assignments/{assignment}/submission/submit"),
-        None,
-        201,
-    )
-    .await;
+    let submission = id_of(
+        &env.ok(
+            "POST",
+            &student.token,
+            &format!("/assignments/{assignment}/submission/submit"),
+            None,
+            201,
+        )
+        .await,
+    );
     env.ok(
         "PUT",
         &student.token,
@@ -417,6 +426,7 @@ async fn build(env: &Env, admin: &Account, owner: &Account, student: &Account, t
         submodule: sub,
         text,
         assignment,
+        submission,
         student: student.id,
         link,
         group,
@@ -701,7 +711,11 @@ async fn the_list_of_operations_is_the_api() {
             }
         }
         // Operations that need no sign-in or only a session of one's own are not in the list above.
+        // The two plugin operations take a plugin token, not a session: `tests/plugins.rs` checks
+        // them with and without the scope.
         let own: BTreeSet<String> = [
+            "GET /plugin-api/submissions/{id}",
+            "PUT /plugin-api/submissions/{id}/report",
             "GET /health",
             "GET /meta",
             "GET /institution",
@@ -740,6 +754,7 @@ async fn the_list_of_operations_is_the_api() {
             submodule: any,
             text: any,
             assignment: any,
+            submission: any,
             student: any,
             link: any,
             group: any,

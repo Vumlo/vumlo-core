@@ -6,7 +6,8 @@ every change are in [AGENTS.md](../AGENTS.md); releasing is in [RELEASING.md](..
 
 ### Prerequisites
 
-Rust (stable, via rustup) and Docker with the Compose plugin.
+Rust (stable, via rustup) and Docker with the Compose plugin. `python3` (standard library only) for the
+tests of the plugin protocol, which run the example plugin in `examples/hello-plugin/`.
 
 ### Run
 
@@ -56,7 +57,7 @@ Choose `institution.mode` (`school` or `university`) before the first start: it 
 The configuration is read by one shared crate (`backend/crates/config`), in this order, later wins:
 the defaults, `vumlo.toml`, `VUMLO__<SECTION>__<KEY>` environment variables, `--set section.key=value`
 flags. Secrets are never in `vumlo.toml`: the database URL is `DATABASE_URL`, the Google client secret
-`VUMLO__AUTH__GOOGLE__CLIENT_SECRET`, the SMTP password `VUMLO__MAIL__TRANSPORT__PASSWORD`; put them in
+`VUMLO__AUTH__GOOGLE__CLIENT_SECRET`, the SMTP password `VUMLO__MAIL__TRANSPORT__PASSWORD`, the plugin key `VUMLO__PLUGINS__SECRET_KEY`; put them in
 the environment or in `.env` (read when the variable is not already set). A secret in the file, or a key
 the schema does not know (a typo, or the removed `institution.accent`), stops the server.
 For plain-HTTP local development set `auth.cookie_secure = false`; keep it `true` in production.

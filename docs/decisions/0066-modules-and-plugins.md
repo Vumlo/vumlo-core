@@ -96,8 +96,8 @@ module-api -> common, access, events          (and vumlo-config, beside the chai
 13. **The secret is derived**: `base64url(HMAC-SHA256(plugins.secret_key, "vumlo-plugin:" + install id +
     ":" + secret version))`. `plugins.secret_key` is a secret key of the configuration (environment only,
     redacted in `Debug`). Without it the CLI refuses to install a plugin and the delivery worker does not
-    start. Changing the key or the version changes the secret, so rotation is a re-install of the secret
-    in the plugin.
+    start. Changing the key changes the secret of every plugin, so each plugin has to be given a new
+    one: remove it and install it again.
 14. **Plugin to core.** `/api/v1/plugin-api/*` with `Authorization: Bearer <token>`. It is a separate,
     narrow API, read-first. The extractor `PluginCaller` (in `access`, built through a `PluginSource`
     like `ActorSource`) answers 401 for an unknown or disabled token; every handler then calls
@@ -132,6 +132,7 @@ module-api -> common, access, events          (and vumlo-config, beside the chai
   `dummy`, whose single migration is edited in place for the new schema name; that breaks the append-only
   rule of AGENTS section 8 for a module that never ships.
 - Several handlers per event type changes `events::Handlers::merge` from "replace" to "add".
-- The derived secret cannot be shown again: an administrator who lost it re-installs, or raises the
-  secret version.
+- The token is stored only as a hash, so an administrator who lost it removes the plugin and installs
+  it again. The secret is derived and could be shown again, but no command does: it is printed once,
+  with the token. There is no command to raise `secret_version` yet.
 - Not decided here: WASM, a marketplace, signing of plugins, per-course scopes, and slots for modules.
