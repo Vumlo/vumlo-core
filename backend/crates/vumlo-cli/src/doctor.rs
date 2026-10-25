@@ -22,13 +22,7 @@ use CheckStatus::{Fail, Ok as Pass, Skip, Warn};
 pub async fn run(options: &Options, as_json: bool) -> anyhow::Result<bool> {
     let mut checks = Vec::new();
 
-    // Leniently: a module the config enables but this binary lacks is a warning here, not an
-    // error, so the rest of the report still shows.
-    let known: Vec<&str> = vumlo_config::known_modules()
-        .iter()
-        .map(|m| m.name)
-        .collect();
-    let loaded = vumlo_config::load_process(options, &known);
+    let loaded = vumlo_config::load_process(options, &runtime::specs());
     let loaded = match loaded {
         Ok(loaded) => {
             checks.push(Check::new("configuration", Pass, describe(&loaded)));
@@ -411,21 +405,6 @@ fn module_sets(health: Option<&HealthResponse>) -> Check {
 async fn modules(settings: &Settings, pool: Option<&PgPool>) -> Vec<Check> {
     let mut checks = Vec::new();
     let compiled = runtime::compiled();
-    for module in vumlo_config::known_modules() {
-        let enabled = settings.module_state.is_enabled(module.name);
-        let built = compiled.iter().any(|m| m.name == module.name);
-        if enabled && !built {
-            checks.push(Check::new(
-                format!("module {}", module.name),
-                Warn,
-                format!(
-                    "enabled in the configuration, but this binary was built without it; build \
-                     with the Cargo feature `{}`",
-                    module.cargo_feature
-                ),
-            ));
-        }
-    }
     let Some(pool) = pool else {
         checks.push(skip("modules", "needs the database"));
         return checks;
@@ -434,7 +413,7 @@ async fn modules(settings: &Settings, pool: Option<&PgPool>) -> Vec<Check> {
         && let Ok(migrated) = db::migrated_modules(&mut conn).await
     {
         for name in migrated {
-            if !compiled.iter().any(|m| m.name == name) {
+            if !compiled.iter().any(|m| m.manifest().id == name) {
                 checks.push(Check::new(
                     format!("module {name}"),
                     Warn,
@@ -445,8 +424,8 @@ async fn modules(settings: &Settings, pool: Option<&PgPool>) -> Vec<Check> {
         }
     }
     for module in compiled {
-        let ctx = runtime::module_context(settings, pool, module.name);
-        checks.extend((module.doctor)(ctx).await);
+        let state = runtime::module_state(module, settings, pool);
+        checks.extend(module.doctor(state).await);
     }
     if checks.is_empty() {
         checks.push(Check::new("modules", Pass, "no optional modules"));

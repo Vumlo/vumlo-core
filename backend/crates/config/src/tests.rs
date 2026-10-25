@@ -37,7 +37,7 @@ pub(crate) fn build_with(
             env: vars,
             overrides: Vec::new(),
         },
-        compiled,
+        &crate::modules::test_specs(compiled),
     )
 }
 
@@ -351,15 +351,15 @@ fn modules_are_read_from_the_file_and_the_environment() {
 }
 
 #[test]
-fn an_unknown_module_name_stops_the_load() {
-    let e = build_with(&format!("{VALID}\n[modules]\nvpl = true\n"), &[], &[]).unwrap_err();
-    assert!(e.to_string().contains("modules.vpl: unknown module"), "{e}");
-}
-
-#[test]
-fn enabling_a_module_this_binary_lacks_says_to_build_with_its_feature() {
-    let e = build_with(&format!("{VALID}\n[modules]\ndummy = true\n"), &[], &[]).unwrap_err();
-    assert!(e.to_string().contains("Cargo feature `dummy`"), "{e}");
+fn a_module_name_this_binary_lacks_stops_the_load_on_or_off() {
+    for line in ["vpl = true", "dummy = true", "dummy = false"] {
+        let e = build_with(&format!("{VALID}\n[modules]\n{line}\n"), &[], &[]).unwrap_err();
+        assert!(
+            e.to_string()
+                .contains("unknown, or not compiled into this binary"),
+            "{line}: {e}"
+        );
+    }
 }
 
 #[test]

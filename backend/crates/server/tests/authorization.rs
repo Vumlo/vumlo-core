@@ -703,6 +703,7 @@ async fn the_list_of_operations_is_the_api() {
         // Operations that need no sign-in or only a session of one's own are not in the list above.
         let own: BTreeSet<String> = [
             "GET /health",
+            "GET /meta",
             "GET /institution",
             "POST /auth/login",
             "POST /auth/register",

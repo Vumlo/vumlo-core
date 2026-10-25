@@ -108,10 +108,12 @@ pub struct HandlerError(pub String);
 pub type HandlerFuture = Pin<Box<dyn Future<Output = Result<(), HandlerError>> + Send>>;
 type HandlerFn = Arc<dyn Fn(OutboxEvent) -> HandlerFuture + Send + Sync>;
 
-/// Which function handles which event type. Built by the composition root from the handlers the
-/// modules expose; a type without an entry is marked processed (ADR-0045).
+/// Which functions handle which event type. Built by the composition root from the handlers the
+/// modules expose; a type without an entry is marked processed (ADR-0045). A type may have several
+/// handlers, in the order they were added (ADR-0066): all must succeed, and when one fails the
+/// event is delivered again to all of them, so every handler tolerates a repeat.
 #[derive(Clone, Default)]
-pub struct Handlers(HashMap<&'static str, HandlerFn>);
+pub struct Handlers(HashMap<&'static str, Vec<HandlerFn>>);
 
 impl Handlers {
     pub fn on(
@@ -119,16 +121,18 @@ impl Handlers {
         kind: &'static str,
         handler: impl Fn(OutboxEvent) -> HandlerFuture + Send + Sync + 'static,
     ) -> Self {
-        self.0.insert(kind, Arc::new(handler));
+        self.0.entry(kind).or_default().push(Arc::new(handler));
         self
     }
 
     pub fn merge(mut self, other: Handlers) -> Self {
-        self.0.extend(other.0);
+        for (kind, mut handlers) in other.0 {
+            self.0.entry(kind).or_default().append(&mut handlers);
+        }
         self
     }
 
-    pub(super) fn get(&self, kind: &str) -> Option<&HandlerFn> {
-        self.0.get(kind)
+    pub(super) fn get(&self, kind: &str) -> &[HandlerFn] {
+        self.0.get(kind).map_or(&[], Vec::as_slice)
     }
 }

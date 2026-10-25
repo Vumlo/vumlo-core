@@ -21,6 +21,31 @@ fn every_role_may_view_the_editor_profiles() {
 }
 
 #[test]
+fn a_module_permission_is_held_by_the_roles_the_module_declared_and_nobody_else() {
+    let action = Action::Module {
+        module: "dummy",
+        permission: "items.write",
+        roles: &[Role::Teacher, Role::Admin],
+    };
+    for role in [Role::Teacher, Role::Admin] {
+        assert_eq!(authorize(&actor(role), action), Ok(()), "{role:?}");
+    }
+    assert_eq!(
+        authorize(&actor(Role::Student), action),
+        Err(AccessError::Denied)
+    );
+    let nobody = Action::Module {
+        module: "dummy",
+        permission: "none",
+        roles: &[],
+    };
+    assert_eq!(
+        authorize(&actor(Role::Admin), nobody),
+        Err(AccessError::Denied)
+    );
+}
+
+#[test]
 fn only_admins_manage_users() {
     assert_eq!(authorize(&actor(Role::Admin), Action::ManageUsers), Ok(()));
     for role in [Role::Teacher, Role::Student] {

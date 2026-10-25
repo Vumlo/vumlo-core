@@ -20,15 +20,15 @@ fn no_env() -> BTreeMap<String, String> {
 }
 
 #[test]
-fn an_unknown_module_is_refused_and_the_known_ones_are_listed() {
+fn an_unknown_module_is_refused_and_the_compiled_ones_are_listed() {
     let e = resolve(
         &entries(&[("ai-agent", ModuleEntry::Flag(true))]),
         &no_env(),
-        &[],
+        &test_specs(&["dummy"]),
     )
     .unwrap_err();
     assert!(
-        e[0].contains("modules.ai-agent") && e[0].contains("dummy"),
+        e[0].contains("modules.ai-agent") && e[0].contains("this build has: dummy"),
         "{e:?}"
     );
 }
@@ -38,59 +38,56 @@ fn a_module_is_unavailable_disabled_or_enabled() {
     let off = resolve(
         &entries(&[("dummy", ModuleEntry::Flag(false))]),
         &no_env(),
-        &["dummy"],
+        &test_specs(&["dummy"]),
     )
     .unwrap();
     assert_eq!(off.status("dummy"), ModuleStatus::Disabled);
     let on = resolve(
         &entries(&[("dummy", ModuleEntry::Flag(true))]),
         &no_env(),
-        &["dummy"],
+        &test_specs(&["dummy"]),
     )
     .unwrap();
     assert_eq!(on.status("dummy"), ModuleStatus::Enabled);
     let none = resolve(&BTreeMap::new(), &no_env(), &[]).unwrap();
     assert_eq!(none.status("dummy"), ModuleStatus::Unavailable);
-    assert_eq!(none.statuses().len(), known_modules().len());
+    assert!(none.statuses().is_empty());
+    let one = resolve(&BTreeMap::new(), &no_env(), &test_specs(&["dummy"])).unwrap();
+    assert_eq!(one.statuses().len(), 1);
 }
 
 #[test]
-fn enabling_a_module_that_is_not_compiled_in_says_which_feature_to_build_with() {
-    let e = resolve(
-        &entries(&[("dummy", ModuleEntry::Flag(true))]),
-        &no_env(),
-        &[],
-    )
-    .unwrap_err();
-    assert!(
-        e[0].contains("build with the Cargo feature `dummy`"),
-        "{e:?}"
-    );
-    // Switched off, the same line is fine.
-    resolve(
-        &entries(&[("dummy", ModuleEntry::Flag(false))]),
-        &no_env(),
-        &[],
-    )
-    .unwrap();
+fn a_module_that_is_not_compiled_in_is_refused_on_or_off() {
+    for flag in [true, false] {
+        let e = resolve(
+            &entries(&[("dummy", ModuleEntry::Flag(flag))]),
+            &no_env(),
+            &[],
+        )
+        .unwrap_err();
+        assert!(
+            e[0].contains("unknown, or not compiled into this binary"),
+            "{e:?}"
+        );
+    }
 }
 
 #[test]
 fn a_module_whose_dependency_is_off_cannot_be_enabled() {
     let e = resolve(
-        &entries(&[("dummy-absent", ModuleEntry::Flag(true))]),
+        &entries(&[("dummy-dep", ModuleEntry::Flag(true))]),
         &no_env(),
-        &["dummy", "dummy-absent"],
+        &test_specs(&["dummy", "dummy-dep"]),
     )
     .unwrap_err();
     assert!(e.iter().any(|m| m.contains("needs modules.dummy")), "{e:?}");
     resolve(
         &entries(&[
             ("dummy", ModuleEntry::Flag(true)),
-            ("dummy-absent", ModuleEntry::Flag(true)),
+            ("dummy-dep", ModuleEntry::Flag(true)),
         ]),
         &no_env(),
-        &["dummy", "dummy-absent"],
+        &test_specs(&["dummy", "dummy-dep"]),
     )
     .unwrap();
 }
@@ -107,7 +104,7 @@ fn module_settings_are_checked_and_a_secret_in_the_file_is_refused() {
             ]),
         )]),
         &no_env(),
-        &["dummy"],
+        &test_specs(&["dummy"]),
     )
     .unwrap_err();
     assert!(e.iter().any(|m| m.contains("VUMLO_DUMMY_API_KEY")), "{e:?}");
@@ -125,7 +122,7 @@ fn a_module_secret_comes_from_its_environment_variable() {
     let m = resolve(
         &entries(&[("dummy", table(&[("enabled", true.into())]))]),
         &env,
-        &["dummy"],
+        &test_specs(&["dummy"]),
     )
     .unwrap();
     assert_eq!(m.get("dummy").unwrap().secrets["api_key"].expose(), "k");
@@ -158,7 +155,7 @@ fn an_endpoint_setting_is_checked_when_the_table_is_read() {
     let e = resolve(
         &entries(&[("dummy", table(&[("endpoint", "http://example.com".into())]))]),
         &no_env(),
-        &["dummy"],
+        &test_specs(&["dummy"]),
     )
     .unwrap_err();
     assert!(e[0].contains("modules.dummy.endpoint"), "{e:?}");

@@ -54,6 +54,8 @@ pub struct AppState {
     pub auth: AuthState,
     pub org: OrgState,
     pub learning: LearningState,
+    /// The optional modules compiled in, each after the ones it requires.
+    pub modules: Arc<Vec<&'static dyn module_api::Module>>,
 }
 
 impl FromRef<AppState> for AuthState {
@@ -95,6 +97,8 @@ pub enum StateError {
     Mail(#[from] MailError),
     #[error(transparent)]
     Google(#[from] auth::GoogleSetupError),
+    #[error("the optional modules cannot be started: {0}")]
+    Modules(#[from] module_api::OrderError),
 }
 
 impl AppState {
@@ -115,6 +119,7 @@ impl AppState {
             .as_ref()
             .map(|google| auth::Google::new(google).map(Arc::new))
             .transpose()?;
+        let modules = Arc::new(crate::modules::ordered()?);
         let config = Arc::new(config);
         Ok(Self {
             auth: AuthState {
@@ -135,6 +140,7 @@ impl AppState {
             },
             db,
             config,
+            modules,
         })
     }
 
@@ -152,7 +158,7 @@ impl AppState {
                 },
             ));
         }
-        handlers
+        handlers.merge(crate::modules::event_handlers(self))
     }
 }
 
@@ -199,6 +205,7 @@ pub fn router(state: AppState) -> Result<Router, SetupError> {
             "/api/v1",
             OpenApiRouter::new()
                 .routes(routes!(health::health))
+                .routes(routes!(health::meta))
                 .merge(identity)
                 .merge(teaching::router())
                 .merge(learning::people::router())
@@ -251,29 +258,35 @@ pub fn router(state: AppState) -> Result<Router, SetupError> {
     Ok(cors(router, &config.server.allowed_origins))
 }
 
-/// Mounts every module that is compiled in and enabled under `/api/v1/<name>`, and adds its paths
-/// to the OpenAPI document. A module that is off gets nothing: its paths answer `404` and are not
-/// in the document (ADR-0054).
+/// Mounts every module that is compiled in and enabled under `/api/v1/modules/<id>`, and adds its
+/// paths to the OpenAPI document. A module that is off gets nothing: its paths answer `404` and
+/// are not in the document (ADR-0054, ADR-0066).
 fn mount_modules(
     state: &AppState,
     mut router: Router<AppState>,
     mut openapi: utoipa::openapi::OpenApi,
 ) -> (Router<AppState>, utoipa::openapi::OpenApi) {
-    for module in crate::modules::compiled() {
-        if !state.config.module_state.is_enabled(module.name) {
-            continue;
-        }
-        let prefix = format!("/api/v1/{}", module.name);
-        router = router.nest_service(
-            &prefix,
-            (module.router)(crate::modules::context(state, module.name)),
-        );
-        let mut doc = (module.openapi)();
+    for one in crate::modules::active(state) {
+        let prefix = format!("/api/v1/modules/{}", one.module.manifest().id);
+        let (routes, mut doc) = one.registered.routes.split_for_parts();
+        router = router.nest_service(&prefix, routes.with_state(one.state));
         doc.paths.paths = std::mem::take(&mut doc.paths.paths)
             .into_iter()
             .map(|(path, item)| (format!("{prefix}{path}"), item))
             .collect();
         openapi.merge(doc);
+    }
+    // The core has routes of its own below `/api/v1/modules/` (the modules of a course, whose ids
+    // are UUIDs, so they never clash with a module id). A module that is off still answers `404`
+    // there, not the `405` of a core route that happens to match the shape of its path.
+    for module in state.modules.iter() {
+        let id = module.manifest().id;
+        if !state.config.module_state.is_enabled(id) {
+            router = router.nest_service(
+                &format!("/api/v1/modules/{id}"),
+                Router::new().fallback(|| async { ApiError::NotFound }),
+            );
+        }
     }
     (router, openapi)
 }

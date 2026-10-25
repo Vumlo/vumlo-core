@@ -7,7 +7,7 @@ use crate::runtime::{self, VERSION};
 /// Validates the configuration: the file, the environment and the flags together, the way the
 /// server would read them. Lists every problem; the exit code is non-zero if there is one.
 pub fn check(options: &Options) -> anyhow::Result<bool> {
-    match vumlo_config::load_process(options, &runtime::compiled_names()) {
+    match vumlo_config::load_process(options, &runtime::specs()) {
         Ok(loaded) => {
             let s = &loaded.settings;
             if let Some(problem) = crate::brand::logo_problem(s) {

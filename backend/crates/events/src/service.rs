@@ -74,7 +74,7 @@ const BATCH: i64 = 20;
 /// How long a claimed row belongs to the worker that claimed it.
 const LEASE: Duration = Duration::from_secs(5 * 60);
 /// Failed attempts after which a row becomes a dead letter.
-const MAX_ATTEMPTS: i32 = 5;
+pub const MAX_ATTEMPTS: i32 = 5;
 /// How long the worker sleeps when there was nothing to do.
 const POLL: Duration = Duration::from_secs(2);
 /// The longest wait before a retry.
@@ -82,7 +82,7 @@ const MAX_BACKOFF: Duration = Duration::from_secs(60 * 60);
 const MAX_ERROR_CHARS: usize = 500;
 
 /// 10 s, 20 s, 40 s, ... capped at an hour.
-fn backoff(attempts: i32) -> Duration {
+pub fn backoff(attempts: i32) -> Duration {
     let exponent = u32::try_from(attempts.saturating_sub(1))
         .unwrap_or(0)
         .min(20);
@@ -101,10 +101,13 @@ pub async fn process_once(pool: &PgPool, handlers: &Handlers) -> Result<usize, E
     };
     let claimed_count = claimed.len();
     for (event, attempts) in claimed {
-        let outcome = match handlers.get(&event.kind) {
-            Some(handler) => handler(event.clone()).await,
-            None => Ok(()),
-        };
+        let mut outcome = Ok(());
+        for handler in handlers.get(&event.kind) {
+            outcome = handler(event.clone()).await;
+            if outcome.is_err() {
+                break;
+            }
+        }
         let mut conn = pool.acquire().await?;
         match outcome {
             Ok(()) => repo::mark_processed(&mut conn, event.id).await?,

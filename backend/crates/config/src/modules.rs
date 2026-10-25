@@ -1,27 +1,24 @@
-//! Optional add-on modules (ADR-0054): the registry of the names this build line knows, and the
-//! check of `[modules]` against it.
+//! Optional add-on modules (ADR-0054, ADR-0066): the check of `[modules]` against the specs of the
+//! modules this binary was built with.
 //!
 //! A module has two switches. The Cargo feature of the same name compiles it in (without it the
-//! module is `unavailable`); `[modules] name = true` turns a compiled-in module on. The registry
-//! lives here, whatever features are on, so every binary can say "build with feature X".
+//! name is unknown to this binary); `[modules] name = true` turns a compiled-in module on. Each
+//! module declares its own [`ModuleSpec`]; nothing here lists modules.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::settings::Secret;
 
-/// One module this build line knows, compiled in or not.
+/// What the configuration needs to know about a module compiled into this binary. The module
+/// declares it in its manifest (`module_api::Manifest::spec`).
 #[derive(Debug, Clone, Copy)]
-pub struct KnownModule {
+pub struct ModuleSpec {
     pub name: &'static str,
-    /// The Cargo feature that compiles it in (the same on `server` and `vumlo-cli`).
-    pub cargo_feature: &'static str,
     /// Modules that must be enabled for this one to be.
     pub requires: &'static [&'static str],
-    /// It has routes or background work on the server.
-    pub server: bool,
     /// It has UI in the web app.
     pub web: bool,
     pub settings: &'static [SettingSpec],
@@ -50,55 +47,45 @@ pub enum SettingKind {
 /// The keys every `[modules.name]` table has, besides the module's own.
 pub const RESERVED_KEYS: &[&str] = &["enabled", "allow_insecure_http"];
 
-#[cfg(any(test, feature = "test-registry"))]
-const KNOWN: &[KnownModule] = &[
-    KnownModule {
-        name: "dummy",
-        cargo_feature: "dummy",
-        requires: &[],
-        server: true,
-        web: true,
-        settings: &[
-            SettingSpec {
-                key: "endpoint",
-                kind: SettingKind::Endpoint,
-                required: false,
-            },
-            SettingSpec {
-                key: "api_key",
-                kind: SettingKind::Secret {
-                    env: "VUMLO_DUMMY_API_KEY",
+/// The specs the tests of this crate use for the modules they call `dummy` and `dummy-dep`.
+#[cfg(test)]
+pub(crate) fn test_specs(names: &[&str]) -> Vec<ModuleSpec> {
+    const ALL: &[ModuleSpec] = &[
+        ModuleSpec {
+            name: "dummy",
+            requires: &[],
+            web: true,
+            settings: &[
+                SettingSpec {
+                    key: "endpoint",
+                    kind: SettingKind::Endpoint,
+                    required: false,
                 },
-                required: false,
-            },
-            SettingSpec {
-                key: "label",
-                kind: SettingKind::Text,
-                required: false,
-            },
-        ],
-    },
-    // Has no crate: how the tests reach the `unavailable` state in a build that has `dummy`.
-    KnownModule {
-        name: "dummy-absent",
-        cargo_feature: "dummy-absent",
-        requires: &["dummy"],
-        server: true,
-        web: false,
-        settings: &[],
-    },
-];
-
-#[cfg(not(any(test, feature = "test-registry")))]
-const KNOWN: &[KnownModule] = &[];
-
-/// Every optional module this build line knows. Empty until the first real module lands.
-pub fn known_modules() -> &'static [KnownModule] {
-    KNOWN
-}
-
-pub fn known(name: &str) -> Option<&'static KnownModule> {
-    known_modules().iter().find(|m| m.name == name)
+                SettingSpec {
+                    key: "api_key",
+                    kind: SettingKind::Secret {
+                        env: "VUMLO_DUMMY_API_KEY",
+                    },
+                    required: false,
+                },
+                SettingSpec {
+                    key: "label",
+                    kind: SettingKind::Text,
+                    required: false,
+                },
+            ],
+        },
+        ModuleSpec {
+            name: "dummy-dep",
+            requires: &["dummy"],
+            web: false,
+            settings: &[],
+        },
+    ];
+    ALL.iter()
+        .filter(|m| names.contains(&m.name))
+        .copied()
+        .collect()
 }
 
 /// `name = true` or `[modules.name]` with `enabled` and the module's own keys. TOML cannot hold
@@ -151,16 +138,16 @@ pub struct ResolvedModule {
     pub secrets: BTreeMap<String, Secret>,
 }
 
-/// `[modules]` checked against the registry and the set of modules this binary was built with.
+/// `[modules]` checked against the specs of the modules this binary was built with.
 #[derive(Debug, Clone, Default)]
 pub struct Modules {
     resolved: BTreeMap<String, ResolvedModule>,
-    compiled: BTreeSet<String>,
+    compiled: Vec<ModuleSpec>,
 }
 
 impl Modules {
     pub fn status(&self, name: &str) -> ModuleStatus {
-        if !self.compiled.contains(name) {
+        if !self.compiled.iter().any(|m| m.name == name) {
             ModuleStatus::Unavailable
         } else if self.is_enabled(name) {
             ModuleStatus::Enabled
@@ -177,37 +164,41 @@ impl Modules {
         self.resolved.get(name)
     }
 
-    pub fn compiled(&self) -> impl Iterator<Item = &str> {
-        self.compiled.iter().map(String::as_str)
+    /// The specs of the modules compiled in, enabled or not.
+    pub fn compiled(&self) -> &[ModuleSpec] {
+        &self.compiled
     }
 
-    /// The state of every module in the registry, by name.
+    /// The state of every module compiled in, by name.
     pub fn statuses(&self) -> BTreeMap<String, ModuleStatus> {
-        known_modules()
+        self.compiled
             .iter()
             .map(|m| (m.name.to_owned(), self.status(m.name)))
             .collect()
     }
 }
 
-/// Checks `[modules]` and the module secrets in `env`; `compiled` names the modules this binary
-/// contains. Every problem is reported, not only the first.
+/// Checks `[modules]` and the module secrets in `env`; `compiled` holds the specs of the modules
+/// this binary contains. Every problem is reported, not only the first.
 pub fn resolve(
     entries: &BTreeMap<String, ModuleEntry>,
     env: &BTreeMap<String, String>,
-    compiled: &[&str],
+    compiled: &[ModuleSpec],
 ) -> Result<Modules, Vec<String>> {
     let mut errors = Vec::new();
     let mut resolved = BTreeMap::new();
     for (name, entry) in entries {
-        let Some(module) = known(name) else {
-            let known_names: Vec<&str> = known_modules().iter().map(|m| m.name).collect();
-            let list = if known_names.is_empty() {
+        let Some(module) = compiled.iter().find(|m| m.name == name) else {
+            let list = if compiled.is_empty() {
                 "this build has no optional modules".to_owned()
             } else {
-                format!("known modules: {}", known_names.join(", "))
+                let names: Vec<&str> = compiled.iter().map(|m| m.name).collect();
+                format!("this build has: {}", names.join(", "))
             };
-            errors.push(format!("modules.{name}: unknown module ({list})"));
+            errors.push(format!(
+                "modules.{name}: unknown, or not compiled into this binary ({list}); a module is \
+                 compiled in by the Cargo feature of its name"
+            ));
             continue;
         };
         match resolve_one(module, entry, env) {
@@ -217,17 +208,9 @@ pub fn resolve(
             Err(mut found) => errors.append(&mut found),
         }
     }
-    for module in known_modules() {
-        let on = resolved.get(module.name).is_some_and(|m| m.enabled);
-        if !on {
+    for module in compiled {
+        if !resolved.get(module.name).is_some_and(|m| m.enabled) {
             continue;
-        }
-        if !compiled.contains(&module.name) {
-            errors.push(format!(
-                "modules.{}: enabled, but this binary was built without it; build with the Cargo \
-                 feature `{}`",
-                module.name, module.cargo_feature
-            ));
         }
         for required in module.requires {
             if !resolved.get(*required).is_some_and(|m| m.enabled) {
@@ -239,17 +222,16 @@ pub fn resolve(
         }
     }
     if errors.is_empty() {
-        Ok(Modules {
-            resolved,
-            compiled: compiled.iter().map(|s| (*s).to_owned()).collect(),
-        })
+        let mut compiled = compiled.to_vec();
+        compiled.sort_by_key(|m| m.name);
+        Ok(Modules { resolved, compiled })
     } else {
         Err(errors)
     }
 }
 
 fn resolve_one(
-    module: &KnownModule,
+    module: &ModuleSpec,
     entry: &ModuleEntry,
     env: &BTreeMap<String, String>,
 ) -> Result<ResolvedModule, Vec<String>> {
@@ -316,7 +298,7 @@ fn resolve_one(
 
 /// Reads the secrets and, for a module that is on, demands its required settings.
 fn check_required(
-    module: &KnownModule,
+    module: &ModuleSpec,
     mut one: ResolvedModule,
     env: &BTreeMap<String, String>,
 ) -> Result<ResolvedModule, Vec<String>> {

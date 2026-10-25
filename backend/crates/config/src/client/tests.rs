@@ -82,20 +82,19 @@ fn only_enabled_modules_with_a_web_part_are_built_into_the_web_app() {
 }
 
 #[test]
-fn every_module_of_the_registry_is_listed_with_its_state() {
-    let settings = build(VALID, &[]).unwrap();
+fn every_module_compiled_in_is_listed_with_its_state() {
+    let none = build(VALID, &[]).unwrap();
+    assert!(ClientConfig::new(&none, "1", None).modules.is_empty());
+
+    let settings = crate::tests::build_with(VALID, &[], &["dummy", "dummy-dep"]).unwrap();
     let client = ClientConfig::new(&settings, "1", None);
     let names: Vec<_> = client.modules.keys().map(String::as_str).collect();
-    let known: Vec<_> = crate::modules::known_modules()
-        .iter()
-        .map(|m| m.name)
-        .collect();
-    assert_eq!(names, known);
+    assert_eq!(names, ["dummy", "dummy-dep"]);
     assert!(
         client
             .modules
             .values()
-            .all(|s| *s == ModuleStatus::Unavailable)
+            .all(|s| *s == ModuleStatus::Disabled)
     );
 }
 

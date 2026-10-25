@@ -207,3 +207,20 @@ fn the_wait_doubles_from_ten_seconds_up_to_an_hour() {
     assert_eq!(secs, [10, 20, 40, 80, 160]);
     assert_eq!(backoff(40), MAX_BACKOFF);
 }
+
+#[tokio::test]
+async fn several_handlers_of_one_type_all_run_and_one_failure_retries_the_event() {
+    db_test(async |pool| {
+        let first = Arc::new(AtomicUsize::new(0));
+        let second = Arc::new(AtomicUsize::new(0));
+        let both = counting(&first, false).merge(counting(&second, true));
+        let id = emit_grade(&pool).await;
+        process_once(&pool, &both).await.unwrap();
+        assert_eq!(first.load(Ordering::SeqCst), 1);
+        assert_eq!(second.load(Ordering::SeqCst), 1);
+        let (attempts, processed, failed, error) = state(&pool, id).await;
+        assert_eq!((attempts, processed, failed), (1, false, false));
+        assert!(error.is_some());
+    })
+    .await;
+}

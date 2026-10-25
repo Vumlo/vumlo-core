@@ -12,7 +12,7 @@ path = "src/main.rs"
 [features]
 default = []
 # Optional modules (ADR-0054): the same feature names as on `server`. Build both with one set.
-dummy = ["dep:vumlo-module-dummy", "vumlo-config/test-registry"]
+dummy = ["dep:vumlo-module-dummy"]
 
 [dependencies]
 anyhow.workspace = true

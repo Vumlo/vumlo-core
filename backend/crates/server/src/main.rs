@@ -78,7 +78,7 @@ async fn run(cli: Cli) -> anyhow::Result<()> {
         config: cli.config,
         set: cli.set,
     };
-    let settings = vumlo_config::load_process(&options, &modules::compiled_names())
+    let settings = vumlo_config::load_process(&options, &modules::specs())
         .context("invalid configuration")?
         .settings;
     init_tracing(settings.log.format);

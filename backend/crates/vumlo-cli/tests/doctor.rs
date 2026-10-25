@@ -44,7 +44,7 @@ async fn a_healthy_installation_passes_and_doctor_changes_nothing() {
     db_test(async |pool| {
         common::migrate_modules(&pool).await;
         let env = Env::new(&pool);
-        let core = spawn_server(&pool, settings_for(&env.url, CONFIG, &[])).await;
+        let core = spawn_server(&pool, settings_for(&env.url, CONFIG)).await;
         let flag = format!("cli.core_url={core}");
 
         let out = env.run(&["doctor", "--json", "--set", &flag]).await;

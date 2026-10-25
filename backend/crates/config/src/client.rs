@@ -74,7 +74,9 @@ impl ClientConfig {
                 },
             },
             modules: settings.module_state.statuses(),
-            web_modules: crate::modules::known_modules()
+            web_modules: settings
+                .module_state
+                .compiled()
                 .iter()
                 .filter(|m| m.web && settings.module_state.is_enabled(m.name))
                 .map(|m| m.name.to_owned())

@@ -91,6 +91,13 @@ impl Release {
 pub enum Action {
     /// Read or change one's own profile, password and sessions; log out.
     ManageOwnAccount,
+    /// A permission an optional module declared in its manifest (ADR-0066): `roles` are the
+    /// institution roles that hold it. The module and the permission name are for the record.
+    Module {
+        module: &'static str,
+        permission: &'static str,
+        roles: &'static [Role],
+    },
     /// Archive a course and restore it (ADR-0048). A root action: the owner, a course teacher and
     /// admins (ADR-0004). Ignores the status: it is how a course leaves `archived`.
     ArchiveCourse(CourseAccess),
@@ -235,6 +242,7 @@ impl Action {
             Self::LinkGroups(access) => Self::LinkGroups(mine(access)),
             Self::EditCourse(access) => Self::EditCourse(mine(access)),
             Self::ManageOwnAccount
+            | Self::Module { .. }
             | Self::ManageUsers
             | Self::ViewInstitutionSettings
             | Self::ManageAppDownloads
@@ -264,6 +272,7 @@ impl Action {
             | Self::PublishGrades(access)
             | Self::SubmitWork(access) => Some(access),
             Self::ManageOwnAccount
+            | Self::Module { .. }
             | Self::ManageUsers
             | Self::ViewInstitutionSettings
             | Self::ManageAppDownloads
@@ -354,6 +363,7 @@ pub fn authorize(actor: &Actor, action: Action) -> Result<(), AccessError> {
     let is_admin = actor.role() == Role::Admin;
     let allowed = match action {
         Action::ManageOwnAccount => true,
+        Action::Module { roles, .. } => roles.contains(&actor.role()),
         Action::ManageUsers
         | Action::ViewInstitutionSettings
         | Action::ManageAppDownloads

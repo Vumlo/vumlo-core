@@ -46,7 +46,8 @@ module-api -> common, access, events          (and vumlo-config, beside the chai
 ```
 1. No crate of the chain depends on `plugins`, on a module or on `module-api`. `server` and `vumlo-cli`
    name a module in exactly one place each. A module depends on `module-api` and on the layers below it,
-   never on `server`, `vumlo-cli` or `plugins`.
+   never on `server`, `vumlo-cli` or `plugins`. `plugins` uses `module-api` for one thing, the bounded
+   `OutboundClient` that is the one way the program makes outgoing requests.
 2. A module may depend on another module only if it lists that module in `requires`, and then only on its
    public API (the re-exports of its `lib.rs`; a module has no `pub mod`). A test over `cargo metadata`
    checks all of this, and Cargo itself rejects a cycle of crates.
@@ -119,8 +120,14 @@ module-api -> common, access, events          (and vumlo-config, beside the chai
 - The core never executes foreign code. A plugin that is down delays its events; it breaks nothing.
 - The scopes are checked in `access` and in the service, so a handler cannot forget to check by reading a
   different table.
-- `vumlo-config` no longer lists modules. A mistyped module name gets "unknown or not compiled in",
-  without a hint about a feature.
+- `vumlo-config` no longer lists modules. A name in `[modules]` that this binary does not contain, a
+  typo or a module left out of the build, stops the load whether it is switched on or off, with
+  "unknown, or not compiled into this binary" and the modules the build has. There is no `unavailable`
+  state to report any more: `client-config.json` and `modules list` show the modules compiled in.
+- The core already has routes under `/api/v1/modules/` (the modules of a course, whose ids are UUIDs).
+  A module id has no hyphen, so it never equals one, and the router prefers the fixed segment. A module
+  that is compiled in but off gets an explicit `404` mount, because otherwise a path such as
+  `/modules/<id>/items` would reach the core route and answer `405`.
 - A module that was written against the old `ModuleDef` is rewritten. The only one is the test-only
   `dummy`, whose single migration is edited in place for the new schema name; that breaks the append-only
   rule of AGENTS section 8 for a module that never ships.

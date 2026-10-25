@@ -1,5 +1,5 @@
-//! ADR-0054 in the CLI: a module that is compiled in migrates into its own table, has a
-//! subcommand, and is reported in all three states. The module is the test-only `dummy`.
+//! ADR-0054 and ADR-0066 in the CLI: a module that is compiled in migrates into its own schema, has
+//! a subcommand, and is reported as enabled or disabled; one that is not compiled in is refused. The module is the test-only `dummy`.
 #![cfg(feature = "dummy")]
 
 mod common;
@@ -22,7 +22,8 @@ async fn migrate_applies_the_module_into_its_own_table_and_records_it_in_the_aud
         let meta = audit_meta(&pool, "db.migrate").await;
         assert_eq!(meta["applied"]["dummy"], json!([1]), "{meta}");
         let tables: i64 = sqlx::query_scalar(
-            "SELECT count(*) FROM pg_tables WHERE tablename = '_sqlx_migrations_dummy'",
+            "SELECT count(*) FROM pg_tables
+             WHERE schemaname = 'mod_dummy' AND tablename = '_sqlx_migrations'",
         )
         .fetch_one(&pool)
         .await
@@ -38,14 +39,14 @@ async fn migrate_applies_the_module_into_its_own_table_and_records_it_in_the_aud
 }
 
 #[tokio::test]
-async fn config_reports_a_module_as_enabled_disabled_or_unavailable() {
+async fn config_reports_a_module_that_is_compiled_in_as_enabled_or_disabled() {
     bare_db_test(async |pool| {
         let env = Env::with_config(&pool, &with_modules("dummy = true"));
         let out = env.run(&["config", "show", "--public"]).await;
         assert!(out.ok, "{}", out.stderr);
         let value: Value = serde_json::from_str(&out.stdout).unwrap();
         assert_eq!(value["modules"]["dummy"], "enabled");
-        assert_eq!(value["modules"]["dummy-absent"], "unavailable");
+        assert_eq!(value["modules"].as_object().unwrap().len(), 1, "{value}");
         assert!(
             !out.stdout.contains("endpoint"),
             "module settings never reach the client"
@@ -60,41 +61,33 @@ async fn config_reports_a_module_as_enabled_disabled_or_unavailable() {
 }
 
 #[tokio::test]
-async fn enabling_a_module_that_is_not_compiled_in_says_which_feature_to_build_with() {
+async fn a_module_that_is_not_compiled_in_stops_the_configuration_on_or_off() {
     bare_db_test(async |pool| {
-        let env = Env::with_config(&pool, &with_modules("dummy = true\ndummy-absent = true"));
+        for line in ["ghost = true", "ghost = false"] {
+            let env = Env::with_config(&pool, &with_modules(line));
 
-        let check = env.run(&["config", "check"]).await;
-        assert!(!check.ok);
-        assert!(
-            check
-                .stderr
-                .contains("build with the Cargo feature `dummy-absent`"),
-            "{}",
-            check.stderr
-        );
+            let check = env.run(&["config", "check"]).await;
+            assert!(!check.ok, "{line}");
+            assert!(
+                check
+                    .stderr
+                    .contains("modules.ghost: unknown, or not compiled into this binary"),
+                "{}",
+                check.stderr
+            );
 
-        // Doctor carries on and warns instead.
-        let doctor = env.run(&["doctor", "--json"]).await;
-        let r: Value = serde_json::from_str(&doctor.stdout).unwrap();
-        let line = r["checks"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .find(|c| c["name"] == "module dummy-absent")
-            .unwrap_or_else(|| panic!("{r:#}"));
-        assert_eq!(line["status"], "warn");
-    })
-    .await;
-}
-
-#[tokio::test]
-async fn a_module_needs_the_modules_it_depends_on() {
-    bare_db_test(async |pool| {
-        let env = Env::with_config(&pool, &with_modules("dummy-absent = true"));
-        let out = env.run(&["config", "check"]).await;
-        assert!(!out.ok);
-        assert!(out.stderr.contains("needs modules.dummy"), "{}", out.stderr);
+            // Doctor reports it as the configuration failing, and still runs the rest.
+            let doctor = env.run(&["doctor", "--json"]).await;
+            let r: Value = serde_json::from_str(&doctor.stdout).unwrap();
+            let line = r["checks"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|c| c["name"] == "configuration")
+                .unwrap_or_else(|| panic!("{r:#}"));
+            assert_eq!(line["status"], "fail");
+            assert!(line["detail"].as_str().unwrap().contains("modules.ghost"));
+        }
     })
     .await;
 }
@@ -139,7 +132,7 @@ async fn the_module_subcommand_runs_only_while_the_module_is_enabled() {
     bare_db_test(async |pool| {
         let on = Env::with_config(&pool, &with_modules("dummy = true"));
         assert!(on.run(&["db", "migrate"]).await.ok);
-        sqlx::query("INSERT INTO dummy.items (id, label) VALUES (gen_random_uuid(), 'x')")
+        sqlx::query("INSERT INTO mod_dummy.items (id, label) VALUES (gen_random_uuid(), 'x')")
             .execute(&pool)
             .await
             .unwrap();
@@ -161,7 +154,7 @@ async fn doctor_warns_about_data_of_a_disabled_module_and_flags_a_missing_secret
     bare_db_test(async |pool| {
         let off = Env::with_config(&pool, &with_modules("dummy = false"));
         assert!(off.run(&["db", "migrate"]).await.ok);
-        sqlx::query("INSERT INTO dummy.items (id, label) VALUES (gen_random_uuid(), 'x')")
+        sqlx::query("INSERT INTO mod_dummy.items (id, label) VALUES (gen_random_uuid(), 'x')")
             .execute(&pool)
             .await
             .unwrap();

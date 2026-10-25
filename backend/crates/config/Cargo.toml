@@ -7,11 +7,6 @@ publish.workspace = true
 [lib]
 name = "vumlo_config"
 
-[features]
-# The registry also lists the two modules the tests use (`dummy`, `dummy-absent`). Enabled by the
-# `dummy` feature of server and vumlo-cli, never in a default build.
-test-registry = []
-
 [dependencies]
 api-types.workspace = true
 chrono-tz.workspace = true
