@@ -18,7 +18,7 @@ use uuid::Uuid;
 
 use super::model::{self, ColumnStatus, FeedbackInput, GradeInput, Students};
 use super::service::{self, GradebookError};
-use crate::actor::Actor;
+use crate::access::Actor;
 use crate::app::AppState;
 use common::PageParams;
 use common::{ApiError, ValidJson, ValidQuery};

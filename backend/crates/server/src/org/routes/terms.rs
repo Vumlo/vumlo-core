@@ -5,7 +5,7 @@ use axum::http::StatusCode;
 use uuid::Uuid;
 
 use super::{api_page, page_params};
-use crate::actor::Actor;
+use crate::access::Actor;
 use crate::app::AppState;
 use crate::org::model::{self, TermUpdate};
 use crate::org::service::{self, OrgError};

@@ -4,7 +4,7 @@ use api_types::{
 use axum::Json;
 use axum::extract::State;
 
-use crate::actor::Actor;
+use crate::access::Actor;
 use crate::app::AppState;
 use crate::org::service::{self, OrgError};
 use common::{ApiError, ValidJson};

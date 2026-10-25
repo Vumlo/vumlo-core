@@ -1,16 +1,13 @@
-//! Turns a request into an `Actor`: finds the credential, enforces the CSRF rule for cookies,
+//! Resolves a request to its session: finds the credential, enforces the CSRF rule for cookies,
 //! resolves the session and refreshes it at most once an hour.
 
-use axum::extract::FromRequestParts;
 use axum::http::request::Parts;
 use axum::http::{HeaderMap, Method, header};
 use axum_extra::extract::CookieJar;
 
-use crate::actor::{Actor, PendingActor};
 use crate::app::AppState;
 use crate::auth::model::SessionToken;
 use crate::auth::service::{self, AuthError, Authenticated};
-use common::ApiError;
 use vumlo_config::ServerSettings;
 
 pub const COOKIE_NAME: &str = "vumlo_session";
@@ -65,7 +62,12 @@ pub(super) fn check_origin(
     }
 }
 
-async fn authenticate_request(parts: &Parts, state: &AppState) -> Result<Authenticated, AuthError> {
+/// Resolves the credential of a request to the session it names, and refreshes the session at most
+/// once an hour. The caller turns the answer into an `Actor`.
+pub async fn authenticate_request(
+    parts: &Parts,
+    state: &AppState,
+) -> Result<Authenticated, AuthError> {
     let token = match credential(&parts.headers)? {
         Credential::Bearer(token) => token,
         Credential::Cookie(token) => {
@@ -78,39 +80,10 @@ async fn authenticate_request(parts: &Parts, state: &AppState) -> Result<Authent
     drop(conn);
     if let Some(kind) = authenticated.touch {
         let mut tx = state.db.begin().await?;
-        service::touch_session(&mut tx, authenticated.actor.session_id(), kind).await?;
+        service::touch_session(&mut tx, authenticated.session_id, kind).await?;
         tx.commit().await?;
     }
     Ok(authenticated)
-}
-
-/// A user who may act: valid session, active account, no password change pending.
-impl FromRequestParts<AppState> for Actor {
-    type Rejection = ApiError;
-
-    async fn from_request_parts(
-        parts: &mut Parts,
-        state: &AppState,
-    ) -> Result<Self, Self::Rejection> {
-        let authenticated = authenticate_request(parts, state).await?;
-        if authenticated.must_change_password {
-            return Err(AuthError::PasswordChangeRequired.into());
-        }
-        Ok(authenticated.actor)
-    }
-}
-
-/// Like `Actor`, but also accepts a user who still has to change a temporary password.
-/// Only logout, `GET /me` and change password may use it.
-impl FromRequestParts<AppState> for PendingActor {
-    type Rejection = ApiError;
-
-    async fn from_request_parts(
-        parts: &mut Parts,
-        state: &AppState,
-    ) -> Result<Self, Self::Rejection> {
-        Ok(Self(authenticate_request(parts, state).await?.actor))
-    }
 }
 
 #[cfg(test)]

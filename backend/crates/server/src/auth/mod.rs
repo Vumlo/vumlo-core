@@ -15,7 +15,8 @@ pub use model::{
     UserStatus, UserUpdate,
 };
 pub use routes::{
-    COOKIE_NAME, SetupError, api_role, api_status, api_user, domain_role, domain_status, router,
+    COOKIE_NAME, SetupError, api_role, api_status, api_user, authenticate_request, domain_role,
+    domain_status, router,
 };
 #[cfg(test)]
 pub use service::create_user_unaudited_for_tests;

@@ -10,7 +10,7 @@ use utoipa_axum::routes;
 
 use super::model::{AuditFilter, AuditRow};
 use super::service;
-use crate::actor::Actor;
+use crate::access::Actor;
 use crate::app::AppState;
 use crate::learning::LearningError;
 use common::PageParams;

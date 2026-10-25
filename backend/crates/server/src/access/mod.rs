@@ -2,7 +2,12 @@
 
 use chrono::{DateTime, Utc};
 
-use crate::actor::Actor;
+mod actor;
+mod extract;
+
+pub use actor::{Actor, PendingActor};
+pub use extract::{ActorSource, Authenticated};
+
 use common::{ApiError, Role, text_enum};
 
 /// The user's role in the course. The owner is a `Teacher`
@@ -322,6 +327,10 @@ pub enum AccessError {
     /// The actor may do this in an open course, but the course is archived (ADR-0048).
     #[error("the course is archived")]
     Archived,
+    /// The user signed in with a temporary password they have not changed yet (ADR-0017): only
+    /// logout, `GET /me` and the change of the password are open to them.
+    #[error("the password must be changed first")]
+    PasswordChangeRequired,
 }
 
 impl From<AccessError> for ApiError {
@@ -329,6 +338,9 @@ impl From<AccessError> for ApiError {
         match error {
             AccessError::Denied => Self::Forbidden("not allowed"),
             AccessError::Archived => Self::Conflict("the course is archived"),
+            AccessError::PasswordChangeRequired => {
+                Self::Forbidden("the password must be changed first")
+            }
         }
     }
 }

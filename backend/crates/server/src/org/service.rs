@@ -14,8 +14,8 @@ use super::model::{
     Subgroup, Term, TermDates, TermUpdate,
 };
 use super::repo;
+use crate::access::Actor;
 use crate::access::{self, AccessError, Action, group_role_allowed};
-use crate::actor::Actor;
 use crate::auth::{self, AuthError};
 use crate::events::{self, AuditEntry, EventsError};
 use common::{Page, PageParams};

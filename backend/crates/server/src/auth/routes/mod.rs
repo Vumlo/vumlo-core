@@ -1,4 +1,4 @@
-//! HTTP edge of `identity`: extractors, DTO mapping, OpenAPI annotations.
+//! HTTP edge of `auth`: extractors, DTO mapping, OpenAPI annotations.
 
 mod admin;
 mod auth;
@@ -26,7 +26,7 @@ use common::ApiError;
 use common::Role;
 use vumlo_config::Settings;
 
-pub use extract::COOKIE_NAME;
+pub use extract::{COOKIE_NAME, authenticate_request};
 
 #[derive(Debug, thiserror::Error)]
 pub enum SetupError {
@@ -174,9 +174,6 @@ impl From<AuthError> for ApiError {
                 retry_after_secs: Some(retry_after_secs),
             },
             AuthError::Unauthenticated => Self::Unauthorized("authentication required"),
-            AuthError::PasswordChangeRequired => {
-                Self::Forbidden("the password must be changed first")
-            }
             AuthError::OriginMismatch => Self::Forbidden("origin not allowed"),
             AuthError::Forbidden(policy) => policy.into(),
             AuthError::Invalid(model) => model_error(model),

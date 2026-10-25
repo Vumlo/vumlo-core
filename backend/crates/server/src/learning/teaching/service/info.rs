@@ -6,8 +6,8 @@ use sqlx::PgConnection;
 use uuid::Uuid;
 
 use super::{NewCourse, TeachingError, insert_owned_course, load};
+use crate::access::Actor;
 use crate::access::{self, Action, CourseStatus};
-use crate::actor::Actor;
 use crate::events::{self, AuditEntry};
 use crate::learning::assessment;
 use crate::learning::content;

@@ -6,8 +6,8 @@ use utoipa_axum::routes;
 use uuid::Uuid;
 
 use super::service;
+use crate::access::Actor;
 use crate::access::{self, Action};
-use crate::actor::Actor;
 use crate::app::AppState;
 use crate::auth::{
     AuthError, PersonName, UserUpdate, api_role, api_status, api_user, domain_role, domain_status,

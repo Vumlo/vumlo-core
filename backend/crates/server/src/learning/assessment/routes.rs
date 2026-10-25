@@ -17,7 +17,7 @@ use uuid::Uuid;
 
 use super::model;
 use super::service::{self, AssessmentError};
-use crate::actor::Actor;
+use crate::access::Actor;
 use crate::app::AppState;
 use common::PageParams;
 use common::{ApiError, ValidJson, ValidQuery};

@@ -20,8 +20,8 @@ use super::model::{
     TemporaryPassword, TokenPurpose, User, UserFilter, UserStatus, UserUpdate,
 };
 use super::repo::{self, LoginRecord};
+use crate::access::Actor;
 use crate::access::{self, AccessError, Action};
-use crate::actor::Actor;
 use crate::events::{self, AuditEntry, Event, EventsError};
 use common::Role;
 use common::{Page, PageParams};
@@ -39,8 +39,6 @@ pub enum AuthError {
     TooManyAttempts { retry_after_secs: u64 },
     #[error("no valid session")]
     Unauthenticated,
-    #[error("the password must be changed first")]
-    PasswordChangeRequired,
     #[error("the request origin is not allowed")]
     OriginMismatch,
     #[error(transparent)]
@@ -455,13 +453,15 @@ pub async fn create_session(
 
 /// A request's session, resolved.
 pub struct Authenticated {
-    pub actor: Actor,
+    pub user_id: Uuid,
+    pub role: Role,
+    pub session_id: Uuid,
     pub must_change_password: bool,
     /// Set when the session should be refreshed (not seen for an hour); see [`touch_session`].
     pub touch: Option<SessionKind>,
 }
 
-/// Resolves a token to its actor. A missing, expired or disabled-user session is `Unauthenticated`.
+/// Resolves a token to its session. A missing, expired or disabled-user session is `Unauthenticated`.
 pub async fn authenticate(
     conn: &mut PgConnection,
     token: &SessionToken,
@@ -470,7 +470,9 @@ pub async fn authenticate(
         .await?
         .ok_or(AuthError::Unauthenticated)?;
     Ok(Authenticated {
-        actor: Actor::new(found.user_id, found.role, found.session_id),
+        user_id: found.user_id,
+        role: found.role,
+        session_id: found.session_id,
         must_change_password: found.must_change_password,
         touch: found.stale.then_some(found.kind),
     })

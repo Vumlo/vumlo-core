@@ -10,7 +10,7 @@ use std::sync::Arc;
 
 use super::extract::check_origin;
 use super::{COOKIE_NAME, MailThrottle, api_user, no_store, password_error, session_kind};
-use crate::actor::PendingActor;
+use crate::access::PendingActor;
 use crate::app::AppState;
 use crate::auth::model::{EmailToken, ModelError, NewSession};
 use crate::auth::service::{self, AuthError, LoginThrottle, RegistrationRules, ThrottleKey};

@@ -20,7 +20,7 @@ use super::model::{
     ModelError, ModulePatch, ModuleStatus, OnDeadline, SettingsPatch, SubmissionSettings,
 };
 use super::service::{self, ContentError, ItemRules};
-use crate::actor::Actor;
+use crate::access::Actor;
 use crate::app::AppState;
 use common::{ApiError, ValidJson, ValidQuery};
 

@@ -1,5 +1,5 @@
 use super::*;
-use crate::actor::Actor;
+use crate::access::Actor;
 use crate::auth::{self, AuthError, Email, NewUser, PersonName};
 use crate::learning::teaching::{self, TeachingError};
 use crate::test_support::{db_test, wait_until_blocked};

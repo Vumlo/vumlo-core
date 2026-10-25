@@ -2,8 +2,8 @@ use sqlx::PgConnection;
 
 use super::model::{AuditFilter, AuditRow};
 use super::repo;
+use crate::access::Actor;
 use crate::access::{self, Action};
-use crate::actor::Actor;
 use crate::learning::LearningError;
 
 /// The rows of the audit log, newest first, paged by id (ADR-0053). Admins only.

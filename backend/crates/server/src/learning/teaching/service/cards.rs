@@ -7,8 +7,8 @@ use sqlx::PgConnection;
 use uuid::Uuid;
 
 use super::{TeachingError, access_of};
+use crate::access::Actor;
 use crate::access::{self, Action};
-use crate::actor::Actor;
 use crate::learning::teaching::model::{
     CardCourse, CourseCardData, DraftItem, NextDeadline, Progress, ScopedCourse, Todo, TodoCounts,
 };

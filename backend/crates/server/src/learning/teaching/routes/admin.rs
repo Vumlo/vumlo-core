@@ -5,7 +5,7 @@ use axum::Json;
 use axum::extract::State;
 
 use super::{api_status, page_params};
-use crate::actor::Actor;
+use crate::access::Actor;
 use crate::app::AppState;
 use crate::learning::teaching::service::{self, TeachingError};
 use common::{ApiError, ValidQuery};

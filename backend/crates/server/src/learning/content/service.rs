@@ -24,8 +24,8 @@ use super::model::{
 };
 use super::repo::{self, ItemRow, ModuleRow};
 use super::types::form;
+use crate::access::Actor;
 use crate::access::{self, AccessError, Action, CourseAccess, CourseStatus, Release};
-use crate::actor::Actor;
 use crate::events::{self, AuditEntry, EventsError};
 use crate::learning::assessment::{self, AssessmentError};
 use crate::learning::gradebook::{self, GradebookError};

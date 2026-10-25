@@ -12,7 +12,7 @@ use sqlx::types::Decimal;
 use uuid::Uuid;
 
 use super::{api_course, api_role, api_source, page_params};
-use crate::actor::Actor;
+use crate::access::Actor;
 use crate::app::AppState;
 use crate::learning::teaching::model::{self, CourseInfoUpdate, CourseTitle};
 use crate::learning::teaching::service::{self, TeachingError};

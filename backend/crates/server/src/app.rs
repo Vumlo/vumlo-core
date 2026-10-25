@@ -4,6 +4,7 @@ use std::time::Duration;
 
 use std::net::SocketAddr;
 
+use axum::http::request::Parts;
 use axum::http::{HeaderValue, Method, StatusCode, header};
 use axum::middleware::{self, map_response};
 use axum::routing::get;
@@ -23,6 +24,7 @@ use utoipa_axum::router::OpenApiRouter;
 use utoipa_axum::routes;
 use utoipa_scalar::{Scalar, Servable};
 
+use crate::access::{self, ActorSource};
 use crate::auth::{self, SetupError};
 use crate::events::Handlers;
 use crate::health;
@@ -57,6 +59,18 @@ pub struct AppState {
     pub mailer: Option<Arc<Mailer>>,
     /// Sign-in with Google (ADR-0047); `None` without `[auth.google]`, and its endpoints are `404`.
     pub google: Option<Arc<auth::Google>>,
+}
+
+impl ActorSource for AppState {
+    async fn authenticate(&self, parts: &Parts) -> Result<access::Authenticated, ApiError> {
+        let session = auth::authenticate_request(parts, self).await?;
+        Ok(access::Authenticated {
+            user_id: session.user_id,
+            role: session.role,
+            session_id: session.session_id,
+            must_change_password: session.must_change_password,
+        })
+    }
 }
 
 /// The configuration cannot be applied. The message names the key and the value.

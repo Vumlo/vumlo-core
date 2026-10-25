@@ -18,8 +18,8 @@ use super::model::{
     Attempt, Draft, FormFacts, MySubmission, QuizResult, Responses, StudentSubmission, Window,
 };
 use super::repo;
+use crate::access::Actor;
 use crate::access::{self, AccessError, Action};
-use crate::actor::Actor;
 use crate::events::{self, Event, EventsError};
 use crate::learning::content::{
     self, Assignment, AssignmentType, AutoGrade, BuiltinType, DocumentErrors, EffectiveProfiles,

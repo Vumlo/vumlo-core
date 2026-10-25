@@ -27,11 +27,11 @@ use super::model::{
     Membership, ModelError,
 };
 use super::repo;
+use crate::access::Actor;
 use crate::access::{
     self, AccessError, Action, CourseAccess, CourseRole, CourseStatus, course_role_allowed,
     implicit_course_owner,
 };
-use crate::actor::Actor;
 use crate::auth::{self, AuthError, UserStatus};
 use crate::events::{self, AuditEntry, EventsError};
 use crate::learning::assessment::AssessmentError;

@@ -19,8 +19,8 @@ use uuid::Uuid;
 
 use super::model::{self, CourseKind, CourseTitle, CourseUpdate, ModelError};
 use super::service::{self, TeachingError};
+use crate::access::Actor;
 use crate::access::{CourseRole, CourseStatus};
-use crate::actor::Actor;
 use crate::app::AppState;
 use common::PageParams;
 use common::{ApiError, ValidJson, ValidQuery};

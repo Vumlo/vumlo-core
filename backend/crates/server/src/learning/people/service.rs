@@ -2,8 +2,8 @@ use sqlx::PgConnection;
 use uuid::Uuid;
 
 use super::model::UserFacts;
+use crate::access::Actor;
 use crate::access::{self, Action};
-use crate::actor::Actor;
 use crate::auth::{self, User, UserUpdate};
 use crate::learning::LearningError;
 use crate::learning::teaching;

@@ -8,8 +8,8 @@ use axum::extract::State;
 use chrono::Utc;
 
 use super::api_course;
+use crate::access::Actor;
 use crate::access::CourseRole;
-use crate::actor::Actor;
 use crate::app::AppState;
 use crate::learning::teaching::model::{CourseCardData, NextDeadline, Todo};
 use crate::learning::teaching::service::{self, TeachingError};
