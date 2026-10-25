@@ -13,6 +13,7 @@ testing = []
 axum.workspace = true
 chrono.workspace = true
 common.workspace = true
+# `text_enum!` expands to impls for sqlx.
 sqlx.workspace = true
 thiserror.workspace = true
 uuid.workspace = true
