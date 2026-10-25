@@ -2,9 +2,9 @@
 
 mod common;
 
+use ::common::Role;
 use chrono_tz::Tz;
 use common::{Http, db_test, seed_and_login, spawn, spawn_with, test_settings};
-use server::identity::Role;
 use vumlo_config::Language;
 
 #[tokio::test]

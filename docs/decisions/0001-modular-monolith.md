@@ -1,6 +1,6 @@
 # 0001. Modular monolith: Rust + PostgreSQL, nothing else
 
-Status: Accepted
+Status: Accepted. Superseded in part by [ADR-0065](0065-layered-crates.md): the list of modules and the Cargo workspace.
 
 ## Context
 The previous project (LearnSystem) had 6 Spring services, a gateway, Supabase, and 3 frontends for a single LMS. It was hard to run, hard to deploy, and the architecture was never chosen deliberately. The new goal is a self-hosted LMS that one institution can deploy on its own server. A secondary goal is learning Rust and backend architecture.

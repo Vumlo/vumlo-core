@@ -3,12 +3,12 @@
 
 mod common;
 
+use ::common::Role;
 use chrono::{DateTime, Duration, Utc};
 use common::{
     Http, Resp, create_course, db_test, id_of, publish_course, put_member, seed_and_login,
 };
 use serde_json::{Value, json};
-use server::identity::Role;
 use sqlx::PgPool;
 use uuid::Uuid;
 use vumlo_config::{EditorSettings, ProfileSettings, Settings};
@@ -1289,7 +1289,7 @@ async fn name_students(w: &World) {
         (&w.other, "Olek", "Adamski"),
     ] {
         sqlx::query!(
-            "UPDATE identity.users SET name = $2, surname = $3 WHERE id = $1",
+            "UPDATE auth.users SET name = $2, surname = $3 WHERE id = $1",
             user.id,
             name,
             surname
@@ -1598,7 +1598,7 @@ async fn insert(
 async fn the_table_refuses_what_the_rules_forbid() {
     db_test(async |pool| {
         common::seed_user(&pool, "s@x.edu", Role::Student).await;
-        let student = sqlx::query_scalar!("SELECT id FROM identity.users")
+        let student = sqlx::query_scalar!("SELECT id FROM auth.users")
             .fetch_one(&pool)
             .await
             .unwrap();
@@ -1677,7 +1677,7 @@ async fn the_table_refuses_what_the_rules_forbid() {
 async fn a_submitted_row_is_never_changed_but_a_draft_can_become_one() {
     db_test(async |pool| {
         common::seed_user(&pool, "s@x.edu", Role::Student).await;
-        let student = sqlx::query_scalar!("SELECT id FROM identity.users")
+        let student = sqlx::query_scalar!("SELECT id FROM auth.users")
             .fetch_one(&pool)
             .await
             .unwrap();

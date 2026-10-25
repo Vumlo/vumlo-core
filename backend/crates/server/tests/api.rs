@@ -208,7 +208,7 @@ async fn building_the_app_from_a_bad_editor_configuration_fails_and_names_the_cu
         let mut narrowed = test_settings();
         narrowed.editor.video_providers = vec!["vimeo".to_owned()];
         let state = AppState::new(pool.clone(), narrowed.clone()).unwrap();
-        assert_eq!(state.editor.video_providers().len(), 1);
+        assert_eq!(state.learning.editor.video_providers().len(), 1);
         spawn_with(pool, narrowed).await;
     })
     .await;

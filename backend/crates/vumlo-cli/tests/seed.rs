@@ -72,7 +72,7 @@ async fn it_creates_the_demo_data_once_and_audits_it() {
             count(&pool, "SELECT count(*) FROM teaching.courses").await,
             1
         );
-        assert_eq!(count(&pool, "SELECT count(*) FROM identity.users").await, 4);
+        assert_eq!(count(&pool, "SELECT count(*) FROM auth.users").await, 4);
         assert_eq!(count(&pool, "SELECT count(*) FROM content.items").await, 2);
         assert_eq!(
             count(&pool, "SELECT count(*) FROM gradebook.grades").await,
@@ -89,7 +89,7 @@ async fn it_creates_the_demo_data_once_and_audits_it() {
             "{}",
             again.stdout
         );
-        assert_eq!(count(&pool, "SELECT count(*) FROM identity.users").await, 4);
+        assert_eq!(count(&pool, "SELECT count(*) FROM auth.users").await, 4);
         assert_eq!(
             audit(&pool).await.len(),
             1,
@@ -105,7 +105,7 @@ async fn it_asks_for_confirmation_on_a_database_that_is_not_empty() {
         migrate_modules(&pool).await;
         let env = Env::new(&pool);
         sqlx::query(
-            "INSERT INTO identity.users (id, email, name, surname, role)
+            "INSERT INTO auth.users (id, email, name, surname, role)
              VALUES (gen_random_uuid(), 'someone@school.edu', 'Some', 'One', 'student')",
         )
         .execute(&pool)

@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM auth.identities WHERE user_id = $1 AND provider = 'password'",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "15f060e17227b83e20820b146efb5a72ca1d86d5e6e790a0b588c633afa4ac44"
+}

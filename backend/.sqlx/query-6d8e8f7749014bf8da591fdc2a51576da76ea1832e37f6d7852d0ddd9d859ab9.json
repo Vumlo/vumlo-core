@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE auth.identities SET password_hash = $3\n         WHERE user_id = $1 AND provider = 'password' AND password_hash = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "6d8e8f7749014bf8da591fdc2a51576da76ea1832e37f6d7852d0ddd9d859ab9"
+}

@@ -23,37 +23,57 @@ If a rule blocks the task, stop and say so. Do not work around it.
 - A new crate, a version bump or a new feature flag means: stop and propose an ADR.
 - Features required to implement a use already described in ADR-0014 are allowed without a new ADR, but must be listed in the plan.
 
-## 4. Architecture (ADR-0001, ADR-0015, ADR-0016)
+## 4. Architecture (ADR-0001, ADR-0016, ADR-0065)
 
-Modules: `identity`, `org`, `teaching`, `content`, `assessment`, `gradebook`, `files`, `events`, `policy`.
+Each layer is a crate, and a crate depends only on the ones below it. Cargo enforces the direction.
+
+    server, vumlo-cli
+      -> learning   teaching, content, assessment, gradebook, and the flows that need several of them
+      -> org        terms, groups, subgroups, the installation record
+      -> auth       users, sessions, sign-in, account value types, the mailer
+      -> events     audit writes, the outbox and its worker
+      -> access     Actor and authorize
+      -> common     Role, ApiError, pagination, text_enum!
+
+`db` (migrations, the installation record, the CLI's audit row) is a crate beside the chain.
+`test-support` is the test database harness and a dev-dependency only. Modules in the code:
+`auth`, `org`, `teaching`, `content`, `assessment`, `gradebook`, `events`, `access`, and `files` (planned).
 
     backend/crates/server/src/
       main.rs      CLI entry: serve | worker | migrate | create-admin | create-user (import-users: planned)
-      app.rs       AppState, router assembly (nests each module's router())
-      error.rs     shared API error → Problem Details, ValidJson/ValidQuery extractors
+      app.rs       AppState (one state per layer, combined with FromRef), router assembly
       modules.rs   the optional modules compiled in (one line per Cargo feature)
-      actor.rs     Actor: who performs the action
+      health.rs  conditional.rs  idempotency/   middleware that only the application needs
 
 The configuration schema is `backend/crates/config` (`vumlo-config`), shared with `vumlo-cli`: a new
 key must be marked `public`, `private` or `secret` (ADR-0054), and a secret is never read from the
 file. The administrator CLI is `backend/crates/vumlo-cli`; a CLI command that changes the database
 writes an audit row (source `cli`). An optional module is its own crate under `backend/crates/modules/`
 behind a Cargo feature, and `server` and `vumlo-cli` name it in exactly one place each.
-      <module>/
-        mod.rs     the ONLY public surface: pub fn router(), pub service functions, pub types
-        model.rs   domain types and newtypes (public)
-        routes.rs  private: extractors, DTO ↔ domain mapping, utoipa annotations
-        service.rs private: business rules; exposed only through mod.rs re-exports
-        repo.rs    private: SQL only
+
+    <crate>/src/<module>/        (a crate with one module has it at the root: lib.rs)
+      mod.rs     the ONLY public surface: pub fn router(), pub service functions, pub types
+      model.rs   domain types and newtypes (public)
+      routes.rs  private: extractors, DTO ↔ domain mapping, utoipa annotations
+      service.rs private: business rules; exposed only through mod.rs re-exports
+      repo.rs    private: SQL only
 
 - `routes`, `service` and `repo` are declared without `pub`. Other modules may use only what `mod.rs` exposes.
 - Each module owns its Postgres schema. **A module writes only to its own schema.**
   To change another module's data, call that module's public function and pass the connection.
-- Cross-module JOINs are allowed **only in read-model queries** (e.g. the gradebook view in `gradebook`), never for writes.
-  A module reads another module's data only through a read interface the owner declares; `teaching.effective_members` is the first one.
+- **Reads across layers:** a layer reads the tables of its own layer, and those of a lower layer **only through a view
+  that layer declared** (`auth.people`, `org.term_list`, `org.group_list`, `org.subgroup_list`, `events.audit_entries`,
+  and `teaching.effective_members` for the roster). It never names the schema of a higher layer. Inside `learning`
+  the four modules may read one another (the gradebook is a read model over content and assessment). Declaring a view
+  is a migration and a line in `architecture.rs`.
+- **What needs the data of several layers is a flow in `learning`**, one service function with one transaction
+  (`learning::people::update_user`), never a call from a lower crate to a higher one. `auth::apply_user_update` is
+  called only from `learning`.
 - SQL lives only in `repo.rs`. HTTP types (`axum`, DTOs) never appear in `service.rs` or `repo.rs`.
 - Exception: the block document types of ADR-0025 and ADR-0027 live in `api-types` and `content` uses them directly.
 - A large file becomes a folder (`routes/courses.rs`, `routes/groups.rs`). The module's public surface does not change.
+- `Actor::new` and `Actor::role` are private to `access`; a test builds an actor with `Actor::for_tests` (feature `testing`).
+  A crate enables `testing` of another only under `[dev-dependencies]`.
 
 ### Transactions
 
@@ -69,12 +89,12 @@ behind a Cargo feature, and `server` and `vumlo-cli` name it in exactly one plac
 
 ## 5. Authorization
 
-- Every service function acting for a user takes an `Actor` and authorizes (`policy::authorize(&actor, Action)`)
+- Every service function acting for a user takes an `Actor` and authorizes (`access::authorize(&actor, Action)`)
   before it changes or reveals anything.
   The resource a check needs travels inside the `Action` variant: when the action needs the resource, load it first,
   then authorize, and report a denied view as "not found".
   A handler may also call it early, before costly work such as hashing, but the service still authorizes first.
-- No role checks anywhere except `policy`. Deny by default.
+- No role checks anywhere except `access`. Deny by default.
 - Every action by an `admin` inside a course that changes data writes to `events.audit_log` in the same transaction; reads are not audited.
 
 ## 6. Visibility invariants (each one must have a test)
@@ -139,7 +159,7 @@ behind a Cargo feature, and `server` and `vumlo-cli` name it in exactly one plac
 - Every change comes with tests that check behavior, not just "it compiles".
 - Unit tests are never written inside a source file: `foo.rs` declares `#[cfg(test)] mod tests;` and the
   tests are in `foo/tests.rs` (for `mod.rs` and `lib.rs`: `tests.rs` beside it). The release archive leaves
-  out every `tests.rs` and `test_support.rs` (`RELEASING.md`), and a test written inline would ship.
+  out every `tests.rs` and the `test-support` crate (`RELEASING.md`), and a test written inline would ship.
 - DB tests are `#[tokio::test]` functions that run in `db_test(async |pool| { … })` (ADR-0036); never `#[sqlx::test]`. API tests start the real server and call it with `reqwest`.
   Shared helpers (server spawn, seeding, login) live in `backend/crates/server/tests/common/`.
 - A test never holds a pooled connection across a request to the server, and never waits for a lock with a fixed sleep: it uses `test_support::wait_until_blocked`.

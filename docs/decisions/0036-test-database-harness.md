@@ -1,6 +1,6 @@
 # 0036. Each test gets its own database and its own pool
 
-Status: Accepted
+Status: Accepted. Superseded in part by [ADR-0065](0065-layered-crates.md): the harness is the crate `backend/crates/test-support`, not a file of `server`.
 Amends: ADR-0014 (Testing)
 
 ## Context

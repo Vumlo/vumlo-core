@@ -1,0 +1,115 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT h.id, h.action, h.score, h.feedback, h.at,\n                  h.actor_id AS \"actor_id?\", u.name AS \"actor_name?\", u.surname AS \"actor_surname?\"\n           FROM gradebook.grade_history h\n           LEFT JOIN auth.people u ON u.id = h.actor_id\n           WHERE h.assignment_id = $1 AND h.student_id = $2 AND ($3::uuid IS NULL OR h.id < $3)\n           ORDER BY h.id DESC\n           LIMIT $4",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "gradebook.grade_history",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "action",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "gradebook.grade_history",
+            "name": "action"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "score",
+        "type_info": "Numeric",
+        "origin": {
+          "Table": {
+            "table": "gradebook.grade_history",
+            "name": "score"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "feedback",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "gradebook.grade_history",
+            "name": "feedback"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "gradebook.grade_history",
+            "name": "at"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "actor_id?",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "gradebook.grade_history",
+            "name": "actor_id"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "actor_name?",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "auth.people",
+            "name": "name"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "actor_surname?",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "auth.people",
+            "name": "surname"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      true,
+      false,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "b70d8cc6dc45c4521e0f225f2152410351a9e46c28203353b1e33cfd12aea40d"
+}

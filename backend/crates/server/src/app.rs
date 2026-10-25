@@ -4,6 +4,8 @@ use std::time::Duration;
 
 use std::net::SocketAddr;
 
+use axum::extract::FromRef;
+use axum::http::request::Parts;
 use axum::http::{HeaderValue, Method, StatusCode, header};
 use axum::middleware::{self, map_response};
 use axum::routing::get;
@@ -23,20 +25,19 @@ use utoipa_axum::router::OpenApiRouter;
 use utoipa_axum::routes;
 use utoipa_scalar::{Scalar, Servable};
 
-use crate::assessment;
-use crate::content::{self, EditorConfigError, EffectiveProfiles};
-use crate::error::{ApiError, problem_details};
-use crate::events::Handlers;
-use crate::gradebook;
 use crate::health;
-use crate::identity::{self, SetupError};
-use crate::mail::{MailError, Mailer};
-use crate::org;
-use crate::teaching;
+use access::{self, ActorSource};
+use auth::{self, AuthState, SetupError};
+use auth::{MailError, Mailer};
+use common::{ApiError, problem_details};
+use events::Handlers;
+use learning::assessment;
+use learning::content::{self, EditorConfigError, EffectiveProfiles};
+use learning::gradebook;
+use learning::teaching;
+use learning::{self, LearningState};
+use org::{self, OrgState};
 use vumlo_config::Settings;
-
-// Shared with `vumlo-cli`: the migrations live in the `db` crate.
-pub use db::{MIGRATOR, MigrationCheckError, ensure_migrated};
 
 /// Shorter than the request timeout, so an unreachable database surfaces as 503, not 408.
 const DB_ACQUIRE_TIMEOUT: Duration = Duration::from_secs(5);
@@ -44,18 +45,45 @@ const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 /// Room for a 1 MiB document (ADR-0025) and the rest of the request around it.
 pub(crate) const MAX_BODY_BYTES: usize = 2 * 1024 * 1024;
 
+/// The application's state: what each layer needs from it, and what the composition root keeps
+/// for itself. Each layer's router asks for its own part (`FromRef`).
 #[derive(Clone)]
 pub struct AppState {
     pub db: PgPool,
     pub config: Arc<Settings>,
-    /// The editor profiles, resolved once from `config.editor` (ADR-0025, ADR-0027).
-    pub editor: Arc<EffectiveProfiles>,
-    /// The bound on password hashes and checks that run at once (ADR-0038).
-    pub hashing: Arc<identity::HashGate>,
-    /// Outgoing mail (ADR-0045); `None` without `[mail]`, and the features that must send mail are off.
-    pub mailer: Option<Arc<Mailer>>,
-    /// Sign-in with Google (ADR-0047); `None` without `[auth.google]`, and its endpoints are `404`.
-    pub google: Option<Arc<identity::Google>>,
+    pub auth: AuthState,
+    pub org: OrgState,
+    pub learning: LearningState,
+}
+
+impl FromRef<AppState> for AuthState {
+    fn from_ref(state: &AppState) -> Self {
+        state.auth.clone()
+    }
+}
+
+impl FromRef<AppState> for OrgState {
+    fn from_ref(state: &AppState) -> Self {
+        state.org.clone()
+    }
+}
+
+impl FromRef<AppState> for LearningState {
+    fn from_ref(state: &AppState) -> Self {
+        state.learning.clone()
+    }
+}
+
+impl ActorSource for AppState {
+    async fn authenticate(&self, parts: &Parts) -> Result<access::Authenticated, ApiError> {
+        let session = auth::authenticate_request(parts, &self.auth).await?;
+        Ok(access::Authenticated {
+            user_id: session.user_id,
+            role: session.role,
+            session_id: session.session_id,
+            must_change_password: session.must_change_password,
+        })
+    }
 }
 
 /// The configuration cannot be applied. The message names the key and the value.
@@ -66,7 +94,7 @@ pub enum StateError {
     #[error(transparent)]
     Mail(#[from] MailError),
     #[error(transparent)]
-    Google(#[from] identity::GoogleSetupError),
+    Google(#[from] auth::GoogleSetupError),
 }
 
 impl AppState {
@@ -75,7 +103,7 @@ impl AppState {
     /// that names the key and the value, and never at the first request.
     pub fn new(db: PgPool, config: Settings) -> Result<Self, StateError> {
         let editor = EffectiveProfiles::resolve(&config.editor)?;
-        let hashing = identity::HashGate::new(config.auth.max_concurrent_hashes);
+        let hashing = auth::HashGate::new(config.auth.max_concurrent_hashes);
         let mailer = config
             .mail
             .as_ref()
@@ -85,15 +113,28 @@ impl AppState {
             .auth
             .google
             .as_ref()
-            .map(|google| identity::Google::new(google).map(Arc::new))
+            .map(|google| auth::Google::new(google).map(Arc::new))
             .transpose()?;
+        let config = Arc::new(config);
         Ok(Self {
+            auth: AuthState {
+                db: db.clone(),
+                config: config.clone(),
+                hashing: Arc::new(hashing),
+                mailer,
+                google,
+            },
+            org: OrgState {
+                db: db.clone(),
+                config: config.clone(),
+            },
+            learning: LearningState {
+                db: db.clone(),
+                config: config.clone(),
+                editor: Arc::new(editor),
+            },
             db,
-            config: Arc::new(config),
-            editor: Arc::new(editor),
-            hashing: Arc::new(hashing),
-            mailer,
-            google,
+            config,
         })
     }
 
@@ -101,10 +142,10 @@ impl AppState {
     /// deliver by hand with `events::process_once`.
     pub fn event_handlers(&self) -> Handlers {
         let mut handlers = Handlers::default();
-        if let Some(mailer) = &self.mailer {
-            handlers = handlers.merge(identity::event_handlers(
+        if let Some(mailer) = &self.auth.mailer {
+            handlers = handlers.merge(auth::event_handlers(
                 self.db.clone(),
-                identity::MailContext {
+                auth::MailContext {
                     mailer: mailer.clone(),
                     language: self.config.institution.language,
                     institution_name: self.config.institution.name.clone(),
@@ -127,7 +168,7 @@ impl Modify for SecurityAddon {
         let components = openapi.components.get_or_insert_with(Default::default);
         components.add_security_scheme(
             "cookie",
-            SecurityScheme::ApiKey(ApiKey::Cookie(ApiKeyValue::new(identity::COOKIE_NAME))),
+            SecurityScheme::ApiKey(ApiKey::Cookie(ApiKeyValue::new(auth::COOKIE_NAME))),
         );
         components.add_security_scheme(
             "bearer",
@@ -152,7 +193,7 @@ pub async fn connect(settings: &Settings) -> Result<PgPool, sqlx::Error> {
 }
 
 pub fn router(state: AppState) -> Result<Router, SetupError> {
-    let identity = identity::router(&state.config)?;
+    let identity = auth::router(&state.config)?;
     let (router, openapi) = OpenApiRouter::with_openapi(ApiDoc::openapi())
         .nest(
             "/api/v1",
@@ -160,11 +201,14 @@ pub fn router(state: AppState) -> Result<Router, SetupError> {
                 .routes(routes!(health::health))
                 .merge(identity)
                 .merge(teaching::router())
+                .merge(learning::people::router())
+                .merge(learning::groups::router())
+                .merge(learning::reports::router())
                 .merge(content::router())
                 .merge(gradebook::router())
                 .merge(assessment::router())
                 .merge(org::router())
-                .merge(crate::events::router()),
+                .merge(learning::audit::router()),
         )
         .split_for_parts();
     let (router, openapi) = mount_modules(&state, router, openapi);

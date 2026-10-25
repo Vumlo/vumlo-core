@@ -4,9 +4,9 @@
 
 mod common;
 
+use ::common::Role;
 use common::{Env, db_test, essay, id_of};
 use serde_json::{Value, json};
-use server::identity::Role;
 use sqlx::PgPool;
 use uuid::Uuid;
 
@@ -242,7 +242,7 @@ async fn an_owner_who_is_an_institution_student_has_no_powers_even_if_the_row_sa
         let (course, module) = env.course(&owner, &[]).await;
         // A state the rules prevent, forced in the database: policy must still refuse it.
         sqlx::query!(
-            "UPDATE identity.users SET role = 'student' WHERE id = $1",
+            "UPDATE auth.users SET role = 'student' WHERE id = $1",
             owner.id
         )
         .execute(&env.pool)
@@ -388,7 +388,7 @@ async fn an_admin_may_take_a_course_and_only_a_teacher_or_admin_may_own_one() {
         ] {
             if label == "a disabled teacher" {
                 sqlx::query!(
-                    "UPDATE identity.users SET status = 'disabled' WHERE id = $1",
+                    "UPDATE auth.users SET status = 'disabled' WHERE id = $1",
                     sleeper.id
                 )
                 .execute(&env.pool)

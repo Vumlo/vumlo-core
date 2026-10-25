@@ -18,8 +18,8 @@ use sha2::{Digest, Sha256};
 use sqlx::PgPool;
 
 use crate::app::{AppState, MAX_BODY_BYTES};
-use crate::error::ApiError;
-use crate::identity::COOKIE_NAME;
+use auth::COOKIE_NAME;
+use common::ApiError;
 use repo::{Claim, Stored};
 
 pub const KEY_HEADER: HeaderName = HeaderName::from_static("idempotency-key");

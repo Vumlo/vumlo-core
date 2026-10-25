@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO auth.users (id, email, name, surname, role, must_change_password, email_verified_at)\n             VALUES ($1, $2, $3, $4, $5, true, now())",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "dbad11e2170b91a6e82a745e26e31f210a38c9c8d7bdd22046e60aa9d6145fa4"
+}

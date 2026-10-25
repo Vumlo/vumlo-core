@@ -1,12 +1,13 @@
 use std::process::ExitCode;
 
+use ::auth::{self, Email, NewUser, PersonName, TemporaryPassword};
+use ::events;
+use ::org;
 use anyhow::Context;
 use clap::{Parser, Subcommand};
+use common::Role;
 use server::app::{self, AppState};
-use server::events;
-use server::identity::{self, Email, NewUser, PersonName, Role, TemporaryPassword};
 use server::modules;
-use server::org;
 use sqlx::PgPool;
 use vumlo_config::{LogFormat, Options, Settings};
 
@@ -186,11 +187,11 @@ async fn create_account(
     };
     let temporary = TemporaryPassword::generate();
     // Hash before the transaction opens (ADR-0016).
-    let hash = identity::hash_password(temporary.expose())
+    let hash = auth::hash_password(temporary.expose())
         .await
         .context("cannot hash the password")?;
     let mut tx = pool.begin().await.context("cannot start a transaction")?;
-    let user = identity::create_user_from_cli(&mut tx, new, hash)
+    let user = auth::create_user_from_cli(&mut tx, new, hash)
         .await
         .context("cannot create the user")?;
     tx.commit().await.context("cannot commit")?;

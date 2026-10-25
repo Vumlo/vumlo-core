@@ -1,0 +1,26 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT schema_name AS \"name!\" FROM information_schema.schemata\n               WHERE schema_name IN ('identity', 'auth')",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "name!",
+        "type_info": "Name",
+        "origin": {
+          "Table": {
+            "table": "information_schema.schemata",
+            "name": "schema_name"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "9f160b80981745ace61c28a39fd6029b5246f44bfdbbf2e2f679993e9160a785"
+}

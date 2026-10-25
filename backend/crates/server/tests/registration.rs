@@ -3,9 +3,9 @@
 
 mod common;
 
+use ::common::Role;
+use ::events;
 use common::{Http, Mailbox, PASSWORD, db_test, seed_and_login, seed_user, spawn_app};
-use server::events;
-use server::identity::Role;
 use sqlx::PgPool;
 
 const NEW_PASSWORD: &str = "a different sturdy passphrase 7";
@@ -51,7 +51,7 @@ async fn a_new_address_gets_a_mail_and_can_log_in_only_after_the_link() {
         assert_eq!(response.status, 202);
         assert!(response.body.is_empty());
         let row = sqlx::query!(
-            "SELECT role, status, must_change_password, email_verified_at FROM identity.users
+            "SELECT role, status, must_change_password, email_verified_at FROM auth.users
              WHERE email = 'maya@lms.test'"
         )
         .fetch_one(&pool)
@@ -101,7 +101,7 @@ async fn a_new_address_gets_a_mail_and_can_log_in_only_after_the_link() {
         let stored = sqlx::query!(
             "SELECT purpose, token_hash, used_at,
                     expires_at - created_at = interval '24 hours' AS \"is_a_day!\"
-             FROM identity.email_tokens"
+             FROM auth.email_tokens"
         )
         .fetch_one(&pool)
         .await
@@ -159,7 +159,7 @@ async fn registration_answers_the_same_for_every_address() {
         seed_user(&pool, "verified@lms.test", Role::Student).await;
         seed_user(&pool, "teacher@lms.test", Role::Teacher).await;
         seed_user(&pool, "off@lms.test", Role::Student).await;
-        sqlx::query!("UPDATE identity.users SET status = 'disabled' WHERE email = 'off@lms.test'")
+        sqlx::query!("UPDATE auth.users SET status = 'disabled' WHERE email = 'off@lms.test'")
             .execute(&pool)
             .await
             .unwrap();
@@ -205,7 +205,7 @@ async fn registration_answers_the_same_for_every_address() {
         let mut emailed = Vec::new();
         for id in events {
             emailed.push(
-                sqlx::query_scalar!("SELECT email FROM identity.users WHERE id = $1", id)
+                sqlx::query_scalar!("SELECT email FROM auth.users WHERE id = $1", id)
                     .fetch_one(&pool)
                     .await
                     .unwrap(),
@@ -216,7 +216,7 @@ async fn registration_answers_the_same_for_every_address() {
         deliver(&state).await;
         // The existing accounts are untouched: same names, still verified, same role.
         let teacher =
-            sqlx::query!("SELECT name, role FROM identity.users WHERE email = 'teacher@lms.test'")
+            sqlx::query!("SELECT name, role FROM auth.users WHERE email = 'teacher@lms.test'")
                 .fetch_one(&pool)
                 .await
                 .unwrap();
@@ -271,7 +271,7 @@ async fn a_registration_is_checked_before_anything_is_created() {
             .problem(422);
         assert_eq!(bad_name.errors[0].field, "name");
 
-        let users = sqlx::query_scalar!(r#"SELECT count(*) AS "n!" FROM identity.users"#)
+        let users = sqlx::query_scalar!(r#"SELECT count(*) AS "n!" FROM auth.users"#)
             .fetch_one(&pool)
             .await
             .unwrap();
@@ -356,11 +356,10 @@ async fn registering_again_replaces_the_password_and_voids_the_earlier_link() {
                 .status,
             401
         );
-        let name =
-            sqlx::query_scalar!("SELECT name FROM identity.users WHERE email = 'maya@lms.test'")
-                .fetch_one(&pool)
-                .await
-                .unwrap();
+        let name = sqlx::query_scalar!("SELECT name FROM auth.users WHERE email = 'maya@lms.test'")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
         assert_eq!(name, "Maya");
     })
     .await;
@@ -379,7 +378,7 @@ async fn an_expired_or_malformed_verification_link_is_gone() {
         deliver(&state).await;
         let token = Mailbox::token_in(&mailbox.messages()[0]);
         sqlx::query!(
-            "UPDATE identity.email_tokens
+            "UPDATE auth.email_tokens
              SET created_at = now() - interval '25 hours', expires_at = now() - interval '1 hour'"
         )
         .execute(&pool)
@@ -480,7 +479,7 @@ async fn a_reset_asks_nothing_about_unknown_or_disabled_addresses_and_verifies_t
         let (base, state) = spawn_app(pool.clone(), mailbox.settings()).await;
         let http = Http::new(&base);
         seed_user(&pool, "off@lms.test", Role::Student).await;
-        sqlx::query!("UPDATE identity.users SET status = 'disabled' WHERE email = 'off@lms.test'")
+        sqlx::query!("UPDATE auth.users SET status = 'disabled' WHERE email = 'off@lms.test'")
             .execute(&pool)
             .await
             .unwrap();
@@ -544,7 +543,7 @@ async fn the_link_of_an_account_disabled_since_is_gone() {
             .await;
         deliver(&state).await;
         let token = Mailbox::token_in(&mailbox.messages()[0]);
-        sqlx::query!("UPDATE identity.users SET status = 'disabled'")
+        sqlx::query!("UPDATE auth.users SET status = 'disabled'")
             .execute(&pool)
             .await
             .unwrap();

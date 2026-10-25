@@ -19,40 +19,44 @@ default = []
 dummy = ["dep:vumlo-module-dummy", "vumlo-config/test-registry"]
 
 [dependencies]
+access.workspace = true
 anyhow.workspace = true
 api-types.workspace = true
-argon2.workspace = true
+auth.workspace = true
 axum.workspace = true
 axum-extra.workspace = true
 chrono.workspace = true
 clap.workspace = true
+common.workspace = true
 db.workspace = true
-garde.workspace = true
-lettre.workspace = true
+events.workspace = true
+learning.workspace = true
 module-api.workspace = true
-openidconnect.workspace = true
-rand.workspace = true
-serde.workspace = true
-serde_json.workspace = true
+org.workspace = true
 sha2.workspace = true
 sqlx.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 tower-http.workspace = true
-tower_governor.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
 utoipa.workspace = true
 utoipa-axum.workspace = true
 utoipa-scalar.workspace = true
-uuid.workspace = true
 vumlo-config.workspace = true
 vumlo-module-dummy = { workspace = true, optional = true }
 
 [dev-dependencies]
+access = { workspace = true, features = ["testing"] }
+auth = { workspace = true, features = ["testing"] }
 base64.workspace = true
 chrono-tz.workspace = true
+openidconnect.workspace = true
+org = { workspace = true, features = ["testing"] }
 reqwest.workspace = true
+serde_json.workspace = true
+test-support.workspace = true
+uuid.workspace = true
 
 [lints]
 workspace = true

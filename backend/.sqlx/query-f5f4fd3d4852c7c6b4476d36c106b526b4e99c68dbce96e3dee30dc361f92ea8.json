@@ -1,0 +1,32 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO auth.sessions (id, user_id, token_hash, kind, expires_at)\n         VALUES ($1, $2, $3, $4, now() + $5::bigint * interval '1 second')\n         RETURNING expires_at",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "expires_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "auth.sessions",
+            "name": "expires_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Bytea",
+        "Text",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "f5f4fd3d4852c7c6b4476d36c106b526b4e99c68dbce96e3dee30dc361f92ea8"
+}

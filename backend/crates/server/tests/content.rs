@@ -1,10 +1,10 @@
 mod common;
 
+use ::common::Role;
 use common::{
     Http, Resp, create_course, db_test, id_of, publish_course, put_member, seed_and_login,
 };
 use serde_json::{Value, json};
-use server::identity::Role;
 use sqlx::PgPool;
 use uuid::Uuid;
 use vumlo_config::{EditorSettings, GradingScale, ProfileSettings, Settings};
@@ -3305,7 +3305,7 @@ async fn a_document_of_exactly_one_mebibyte_is_accepted_and_one_byte_more_is_not
         let w = world(pool).await;
         let m = module(&w, "M", None).await;
         let path = format!("/modules/{m}/items");
-        let limit = usize::try_from(server::content::limits().max_document_bytes).unwrap();
+        let limit = usize::try_from(::learning::content::limits().max_document_bytes).unwrap();
 
         // The last paragraph's text is sized so that the compact serialization is `target` bytes.
         let sized = |target: usize| {

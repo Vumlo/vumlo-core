@@ -1,10 +1,10 @@
 mod common;
 
+use ::common::Role;
 use common::{
     Http, Resp, create_course, db_test, id_of, publish_course, put_member, seed_and_login,
 };
 use serde_json::{Value, json};
-use server::identity::Role;
 use sqlx::PgPool;
 use uuid::Uuid;
 
@@ -231,7 +231,7 @@ async fn gradebook(w: &World, token: &str, query: &str) -> Value {
 
 async fn set_name(w: &World, user: Uuid, name: &str, surname: &str) {
     sqlx::query!(
-        "UPDATE identity.users SET name = $2, surname = $3 WHERE id = $1",
+        "UPDATE auth.users SET name = $2, surname = $3 WHERE id = $1",
         user,
         name,
         surname
@@ -1263,7 +1263,7 @@ async fn saved_and_cleared(w: &World, assignment: Uuid) {
 
 // --- the callbacks `content` calls --------------------------------------------------------------
 
-use server::gradebook::{self, GradebookError};
+use ::learning::gradebook::{self, GradebookError};
 
 async fn rows_of(pool: &PgPool, assignment: Uuid) -> (i64, i64) {
     let grades = sqlx::query_scalar!(

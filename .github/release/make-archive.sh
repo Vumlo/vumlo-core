@@ -34,6 +34,7 @@ git archive --format=tar "--prefix=$name/" HEAD -- "${allow[@]}" | tar -x -C "$w
 rm -rf \
     "$stage"/backend/crates/*/tests \
     "$stage"/backend/crates/modules \
+    "$stage"/backend/crates/test-support \
     "$stage"/web/e2e "$stage"/web/playwright.config.ts "$stage"/web/src/modules/dummy \
     "$stage"/web/AGENTS.md "$stage"/web/API_GAPS.md "$stage"/web/pnpm-lock.yaml
 # The unit tests of a source file live in a file of their own (`mod tests;` behind #[cfg(test)]).
@@ -51,6 +52,10 @@ sed -i -e '/dummy/d' "$stage/backend/crates/server/Cargo.toml" "$stage/backend/c
     "$stage/backend/crates/config/Cargo.toml"
 sed -i -e '/feature = "dummy"/d' -e '/vumlo_module_dummy/d' \
     "$stage/backend/crates/server/src/modules.rs" "$stage/backend/crates/vumlo-cli/src/runtime.rs"
+# The test harness is a crate of its own and a dev-dependency of every crate that tests against a
+# database: its member line, its workspace dependency and each dev-dependency on it go.
+sed -i -e '/crates\/test-support/d' -e '/^test-support[ .=]/d' "$stage/backend/Cargo.toml" \
+    "$stage"/backend/crates/*/Cargo.toml
 # The offline query data of the module's own queries.
 { grep -rl 'dummy\.' "$stage/backend/.sqlx" || true; } | xargs -r rm -f
 

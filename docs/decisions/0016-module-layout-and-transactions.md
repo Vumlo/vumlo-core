@@ -1,6 +1,6 @@
 # 0016. Module layout and transaction handling
 
-Status: Accepted
+Status: Accepted. Superseded in part by [ADR-0065](0065-layered-crates.md): the module layout (now spread over crates); the transaction rules stand.
 
 ## Context
 ADR-0001 defines modules with owned schemas, and ADR-0007 requires a state change and its event to commit together, often across modules. We need a code layout that keeps module boundaries enforceable, and a way to pass one transaction through several modules.

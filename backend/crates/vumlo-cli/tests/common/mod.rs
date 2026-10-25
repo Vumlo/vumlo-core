@@ -10,9 +10,7 @@ use sqlx::PgPool;
 use tokio::net::TcpListener;
 use vumlo_config::{FileSource, Settings, Sources};
 
-// One copy of the per-test database harness, shared with the server's tests (ADR-0036).
-#[path = "../../../server/src/test_support.rs"]
-mod test_support;
+// The per-test database harness (ADR-0036).
 // Not every test binary needs both variants.
 #[allow(unused_imports)]
 pub use test_support::{bare_db_test, db_test};

@@ -10,6 +10,23 @@ must do, in order, besides getting the new release. See [RELEASING.md](RELEASING
 
 ## [Unreleased]
 
+### Changed
+
+- **The backend is one crate per layer** ([ADR-0065](docs/decisions/0065-layered-crates.md)): `server` → `learning` → `org`
+  → `auth` → `events` → `access` → `common`, so the compiler refuses a call from a lower layer to a higher one. The HTTP API,
+  its OpenAPI document, the configuration and the commands are unchanged. For a build from source: the library crate `server`
+  no longer holds the modules (`server::identity` is the crate `auth`, `server::policy` is `access`), and the database harness
+  is the crate `test-support`, which the release archive leaves out.
+  - **Upgrade notes:** run `vumlo db migrate`: migration `0033_read_views.sql` adds five read-only views
+    (`auth.people`, `org.term_list`, `org.group_list`, `org.subgroup_list`, `events.audit_entries`) next to the rename of
+    the next entry. Nothing else to do.
+- **The Postgres schema `identity` is now `auth`** (migration `0032_auth_schema.sql`, `ALTER SCHEMA ... RENAME`), and the
+  `identity` module of the server is the `auth` module. `vumlo-cli modules list` names `auth` and `access` (it named
+  `identity` and `policy`). The HTTP API is unchanged.
+  - **Upgrade notes:** run `vumlo db migrate` as always; rows, keys and indexes are kept. Anything of your own that reads the
+    database directly (a report, a backup script that dumps `--schema=identity`) must say `auth`. A server older than this
+    release cannot run against a migrated database.
+
 ## [0.2.2] - 2026-10-20
 
 The names of the desktop installers, and of the app.

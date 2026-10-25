@@ -6,8 +6,8 @@ mod common;
 use std::io::Write;
 use std::sync::{Arc, Mutex};
 
+use ::common::Role;
 use common::{Env, db_test};
-use server::identity::Role;
 
 #[derive(Clone, Default)]
 struct Captured(Arc<Mutex<Vec<u8>>>);

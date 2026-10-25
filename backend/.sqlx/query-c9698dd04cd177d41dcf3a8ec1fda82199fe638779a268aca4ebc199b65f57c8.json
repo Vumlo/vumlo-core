@@ -1,0 +1,116 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE auth.users\n           SET name = COALESCE($2, name),\n               surname = COALESCE($3, surname),\n               role = COALESCE($4, role),\n               status = COALESCE($5, status),\n               updated_at = now()\n           WHERE id = $1\n           RETURNING id, email, name, surname,\n                     role AS \"role: Role\", status AS \"status: UserStatus\",\n                     must_change_password, created_at",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "auth.users",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "email",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "auth.users",
+            "name": "email"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "auth.users",
+            "name": "name"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "surname",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "auth.users",
+            "name": "surname"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "role: Role",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "auth.users",
+            "name": "role"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "status: UserStatus",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "auth.users",
+            "name": "status"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "must_change_password",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "auth.users",
+            "name": "must_change_password"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "auth.users",
+            "name": "created_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "c9698dd04cd177d41dcf3a8ec1fda82199fe638779a268aca4ebc199b65f57c8"
+}

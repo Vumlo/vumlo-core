@@ -3,7 +3,7 @@
 use std::io::{IsTerminal, Read};
 
 use anyhow::{Context, bail};
-use db::identity::{Email, ModelError, Password, PasswordPolicy, PersonName};
+use auth::{Email, ModelError, Password, PasswordPolicy, PersonName};
 use serde_json::json;
 use uuid::Uuid;
 use vumlo_config::Options;
@@ -32,7 +32,7 @@ pub async fn create(options: &Options, args: CreateAdmin) -> anyhow::Result<()> 
 
     let existing = sqlx::query!(
         r#"SELECT id, role AS "role!", status AS "status!"
-           FROM identity.users WHERE email = $1"#,
+           FROM auth.users WHERE email = $1"#,
         email.as_str()
     )
     .fetch_optional(&pool)
@@ -86,7 +86,7 @@ pub async fn create(options: &Options, args: CreateAdmin) -> anyhow::Result<()> 
 
     // Hash before the transaction opens (ADR-0016).
     let plain = password.expose().to_owned();
-    let hash = tokio::task::spawn_blocking(move || db::identity::hash(&plain))
+    let hash = tokio::task::spawn_blocking(move || auth::hash(&plain))
         .await
         .context("the hashing task failed")?
         .map_err(|e| anyhow::anyhow!("cannot hash the password: {e}"))?;
@@ -95,7 +95,7 @@ pub async fn create(options: &Options, args: CreateAdmin) -> anyhow::Result<()> 
     let mut tx = pool.begin().await.context("cannot start a transaction")?;
     db::record_mode(&mut tx, settings.institution.mode).await?;
     let inserted = sqlx::query!(
-        "INSERT INTO identity.users (id, email, name, surname, role, must_change_password, email_verified_at)
+        "INSERT INTO auth.users (id, email, name, surname, role, must_change_password, email_verified_at)
          VALUES ($1, $2, $3, $4, 'admin', false, now())",
         id,
         email.as_str(),
@@ -111,7 +111,7 @@ pub async fn create(options: &Options, args: CreateAdmin) -> anyhow::Result<()> 
     }
     inserted?;
     sqlx::query!(
-        "INSERT INTO identity.identities (id, user_id, provider, subject, password_hash)
+        "INSERT INTO auth.identities (id, user_id, provider, subject, password_hash)
          VALUES ($1, $2, 'password', $3, $4)",
         Uuid::now_v7(),
         id,

@@ -31,7 +31,7 @@ pub async fn claim(
     key: &str,
     request: &[u8],
 ) -> Result<Claim, sqlx::Error> {
-    // The expired records of every key go on the way in, as `identity.oauth_states` does.
+    // The expired records of every key go on the way in, as `auth.oauth_states` does.
     sqlx::query!("DELETE FROM idempotency.keys WHERE expires_at <= now()")
         .execute(&mut *conn)
         .await?;

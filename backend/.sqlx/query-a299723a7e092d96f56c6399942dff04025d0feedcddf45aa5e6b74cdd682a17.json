@@ -1,0 +1,54 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT u.id AS \"user_id!\", u.name AS \"name!\", u.surname AS \"surname!\"\n           FROM org.subgroup_members m\n           JOIN auth.people u ON u.id = m.user_id\n           WHERE m.subgroup_id = $1\n             AND ($2::uuid IS NULL\n                  OR (u.surname, u.name, u.id) > (SELECT c.surname, c.name, c.id\n                                                  FROM auth.people c WHERE c.id = $2))\n           ORDER BY u.surname, u.name, u.id\n           LIMIT $3",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "user_id!",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "auth.people",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "name!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "auth.people",
+            "name": "name"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "surname!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "auth.people",
+            "name": "surname"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "a299723a7e092d96f56c6399942dff04025d0feedcddf45aa5e6b74cdd682a17"
+}

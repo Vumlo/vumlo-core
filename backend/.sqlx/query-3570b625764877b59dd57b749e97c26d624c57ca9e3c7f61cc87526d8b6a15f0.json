@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT password_hash AS \"h!\" FROM auth.identities WHERE provider = 'password'\n               AND subject = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "h!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "auth.identities",
+            "name": "password_hash"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "3570b625764877b59dd57b749e97c26d624c57ca9e3c7f61cc87526d8b6a15f0"
+}

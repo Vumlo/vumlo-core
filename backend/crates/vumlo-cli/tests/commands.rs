@@ -170,12 +170,7 @@ async fn modules_list_shows_the_core_modules_and_the_optional_ones() {
         assert!(out.ok, "{}", out.stderr);
         let value: Value = serde_json::from_str(&out.stdout).unwrap();
         assert_eq!(value["core"].as_array().unwrap().len(), 9);
-        assert!(
-            value["core"]
-                .as_array()
-                .unwrap()
-                .contains(&json!("identity"))
-        );
+        assert!(value["core"].as_array().unwrap().contains(&json!("auth")));
         #[cfg(not(feature = "dummy"))]
         assert_eq!(
             value["optional"],
@@ -367,7 +362,7 @@ async fn admin_create_makes_an_admin_who_can_log_in_and_audits_it() {
         assert!(!out.stdout.contains(PASSWORD) && !out.stderr.contains(PASSWORD));
 
         let role: String =
-            sqlx::query_scalar("SELECT role FROM identity.users WHERE email = 'root@school.edu'")
+            sqlx::query_scalar("SELECT role FROM auth.users WHERE email = 'root@school.edu'")
                 .fetch_one(&pool)
                 .await
                 .unwrap();
@@ -417,7 +412,7 @@ async fn admin_create_never_takes_the_password_as_an_argument() {
             .await;
         assert!(!out.ok);
         assert!(out.stderr.contains("--password"), "{}", out.stderr);
-        assert_eq!(count(&pool, "SELECT count(*) FROM identity.users").await, 0);
+        assert_eq!(count(&pool, "SELECT count(*) FROM auth.users").await, 0);
     })
     .await;
 }
@@ -445,7 +440,7 @@ async fn admin_create_rejects_a_weak_password_and_writes_nothing() {
             .await;
         assert!(!out.ok);
         assert!(out.stderr.contains("password rejected"), "{}", out.stderr);
-        assert_eq!(count(&pool, "SELECT count(*) FROM identity.users").await, 0);
+        assert_eq!(count(&pool, "SELECT count(*) FROM auth.users").await, 0);
         assert!(audit(&pool).await.is_empty());
     })
     .await;
@@ -481,7 +476,7 @@ async fn admin_create_is_idempotent_and_has_a_dry_run() {
             "{}",
             dry.stderr
         );
-        assert_eq!(count(&pool, "SELECT count(*) FROM identity.users").await, 0);
+        assert_eq!(count(&pool, "SELECT count(*) FROM auth.users").await, 0);
 
         assert!(env.run_with(&create(&[]), Some(&stdin), &vars).await.ok);
         let again = env.run_with(&create(&[]), Some(&stdin), &vars).await;
@@ -490,7 +485,7 @@ async fn admin_create_is_idempotent_and_has_a_dry_run() {
             "{}",
             again.stdout
         );
-        assert_eq!(count(&pool, "SELECT count(*) FROM identity.users").await, 1);
+        assert_eq!(count(&pool, "SELECT count(*) FROM auth.users").await, 1);
         assert_eq!(audit(&pool).await.len(), 1);
     })
     .await;

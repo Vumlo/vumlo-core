@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO auth.sessions (id, user_id, token_hash, kind, expires_at)\n             VALUES ($1, $2, $3, 'web', now() + interval '1 day')",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Bytea"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "aeed9f816d695ae96ddbbd0f8d36c9853d1d275410ec224629d4c8c63f84a237"
+}

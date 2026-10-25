@@ -2,11 +2,18 @@
 resolver = "3"
 # `crates/modules/` only holds the optional modules; each of them is a member.
 members = [
+    "crates/access",
     "crates/api-types",
+    "crates/auth",
+    "crates/common",
     "crates/config",
     "crates/db",
+    "crates/events",
+    "crates/learning",
     "crates/module-api",
+    "crates/org",
     "crates/server",
+    "crates/test-support",
     "crates/vumlo-cli",
     "crates/modules/*",
 ]
@@ -51,10 +58,17 @@ utoipa-scalar = { version = "0.4", features = ["axum"] }
 uuid = { version = "1", features = ["v7", "serde"] }
 zxcvbn = "3"
 
+access = { path = "crates/access" }
 api-types = { path = "crates/api-types" }
+auth = { path = "crates/auth" }
+common = { path = "crates/common" }
 db = { path = "crates/db" }
+events = { path = "crates/events" }
+learning = { path = "crates/learning" }
 module-api = { path = "crates/module-api" }
+org = { path = "crates/org" }
 server = { path = "crates/server" }
+test-support = { path = "crates/test-support" }
 vumlo-config = { path = "crates/config" }
 # The test-only module (feature `dummy` of server and vumlo-cli); never in a default build.
 vumlo-module-dummy = { path = "crates/modules/dummy" }

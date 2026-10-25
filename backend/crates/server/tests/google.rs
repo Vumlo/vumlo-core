@@ -2,9 +2,9 @@
 
 mod common;
 
+use ::common::Role;
 use common::google::{CLIENT_ID, CLIENT_SECRET, FakeIssuer, Person, REDIRECT_URI};
 use common::{Http, ORIGIN, PASSWORD, Resp, db_test, seed_user, spawn_app, test_settings};
-use server::identity::Role;
 use sqlx::PgPool;
 use vumlo_config::{GoogleSettings, Secret, Settings};
 
@@ -132,11 +132,11 @@ async fn a_first_sign_in_creates_a_verified_student_and_opens_a_web_session() {
 
         let account = sqlx::query!(
             r#"SELECT u.email_verified_at IS NOT NULL AS "verified!",
-                      (SELECT count(*) FROM identity.identities i
+                      (SELECT count(*) FROM auth.identities i
                         WHERE i.user_id = u.id AND i.provider = 'password') AS "passwords!",
-                      (SELECT subject FROM identity.identities i
+                      (SELECT subject FROM auth.identities i
                         WHERE i.user_id = u.id AND i.provider = 'google') AS google
-               FROM identity.users u WHERE u.email = 'maya@lms.test'"#
+               FROM auth.users u WHERE u.email = 'maya@lms.test'"#
         )
         .fetch_one(&pool)
         .await
@@ -148,7 +148,7 @@ async fn a_first_sign_in_creates_a_verified_student_and_opens_a_web_session() {
         // The same Google account next time is the same user.
         let again = sign_in(&http, &issuer, Person::new("sub-1", "maya@lms.test")).await;
         assert_eq!(again.json()["id"], user["id"]);
-        let users = sqlx::query_scalar!(r#"SELECT count(*) AS "n!" FROM identity.users"#)
+        let users = sqlx::query_scalar!(r#"SELECT count(*) AS "n!" FROM auth.users"#)
             .fetch_one(&pool)
             .await
             .unwrap();
@@ -235,14 +235,14 @@ async fn an_expired_attempt_and_a_foreign_origin_are_refused() {
             .await;
         foreign.problem(403);
 
-        sqlx::query!("UPDATE identity.oauth_states SET created_at = now() - interval '11 minutes', expires_at = now() - interval '1 minute'")
+        sqlx::query!("UPDATE auth.oauth_states SET created_at = now() - interval '11 minutes', expires_at = now() - interval '1 minute'")
             .execute(&pool)
             .await
             .unwrap();
         callback(&http, &code, &state, Some(&binding)).await.problem(401);
         // Starting another attempt forgets the expired one.
         start(&http, None).await;
-        let left = sqlx::query_scalar!(r#"SELECT count(*) AS "n!" FROM identity.oauth_states"#)
+        let left = sqlx::query_scalar!(r#"SELECT count(*) AS "n!" FROM auth.oauth_states"#)
             .fetch_one(&pool)
             .await
             .unwrap();
@@ -265,7 +265,7 @@ async fn an_unverified_google_email_a_foreign_domain_and_a_wrong_nonce_do_not_si
         forged.wrong_nonce = true;
         sign_in(&http, &issuer, forged).await.problem(401);
 
-        let users = sqlx::query_scalar!(r#"SELECT count(*) AS "n!" FROM identity.users"#)
+        let users = sqlx::query_scalar!(r#"SELECT count(*) AS "n!" FROM auth.users"#)
             .fetch_one(&pool)
             .await
             .unwrap();
@@ -290,7 +290,7 @@ async fn an_existing_account_with_that_address_is_linked_and_keeps_its_password(
             .send()
             .await;
         assert_eq!(login.status, 200, "the password still works");
-        let identities = sqlx::query_scalar!(r#"SELECT count(*) AS "n!" FROM identity.identities"#)
+        let identities = sqlx::query_scalar!(r#"SELECT count(*) AS "n!" FROM auth.identities"#)
             .fetch_one(&pool)
             .await
             .unwrap();
@@ -314,7 +314,7 @@ async fn google_takes_the_password_of_an_account_registered_with_an_address_nobo
             .json(&serde_json::json!({"name": "Stranger", "surname": "S", "email": "maya@lms.test", "password": PASSWORD}))
             .send()
             .await;
-        server::events::process_once(&state.db, &state.event_handlers()).await.unwrap();
+        ::events::process_once(&state.db, &state.event_handlers()).await.unwrap();
         assert_eq!(mailbox.messages().len(), 1);
 
         let response = sign_in(&http, &issuer, Person::new("sub-9", "maya@lms.test")).await;
@@ -328,8 +328,8 @@ async fn google_takes_the_password_of_an_account_registered_with_an_address_nobo
         assert_eq!(login.status, 401, "the stranger's password is gone");
         let account = sqlx::query!(
             r#"SELECT email_verified_at IS NOT NULL AS "verified!",
-                      (SELECT count(*) FROM identity.email_tokens WHERE used_at IS NULL) AS "open_tokens!"
-               FROM identity.users WHERE email = 'maya@lms.test'"#
+                      (SELECT count(*) FROM auth.email_tokens WHERE used_at IS NULL) AS "open_tokens!"
+               FROM auth.users WHERE email = 'maya@lms.test'"#
         )
         .fetch_one(&pool)
         .await
@@ -345,7 +345,7 @@ async fn a_disabled_account_cannot_sign_in_with_google() {
     db_test(async |pool| {
         let (http, issuer) = setup(&pool).await;
         sign_in(&http, &issuer, Person::new("sub-10", "maya@lms.test")).await;
-        sqlx::query!("UPDATE identity.users SET status = 'disabled'")
+        sqlx::query!("UPDATE auth.users SET status = 'disabled'")
             .execute(&pool)
             .await
             .unwrap();
@@ -460,7 +460,7 @@ async fn an_app_signs_in_with_google_through_a_handoff_that_only_it_can_redeem()
         assert_eq!(http.get("/me").bearer(token).send().await.status, 200);
 
         let kind = sqlx::query_scalar!(
-            r#"SELECT s.kind AS "kind!" FROM identity.sessions s JOIN identity.users u ON u.id = s.user_id
+            r#"SELECT s.kind AS "kind!" FROM auth.sessions s JOIN auth.users u ON u.id = s.user_id
                WHERE u.email = 'maya@lms.test'"#
         )
         .fetch_one(&pool)
@@ -468,7 +468,7 @@ async fn an_app_signs_in_with_google_through_a_handoff_that_only_it_can_redeem()
         .unwrap();
         assert_eq!(kind, "app");
         let verified = sqlx::query_scalar!(
-            r#"SELECT email_verified_at IS NOT NULL AS "v!" FROM identity.users WHERE email = 'maya@lms.test'"#
+            r#"SELECT email_verified_at IS NOT NULL AS "v!" FROM auth.users WHERE email = 'maya@lms.test'"#
         )
         .fetch_one(&pool)
         .await
@@ -524,7 +524,7 @@ async fn a_handoff_expires_after_a_minute() {
         let (http, issuer) = setup(&pool).await;
         let handoff = handoff_of(&http, &issuer, Person::new("sub-1", "maya@lms.test"), VERIFIER).await;
         sqlx::query!(
-            "UPDATE identity.app_handoffs SET created_at = now() - interval '2 minutes', expires_at = now() - interval '1 minute'"
+            "UPDATE auth.app_handoffs SET created_at = now() - interval '2 minutes', expires_at = now() - interval '1 minute'"
         )
         .execute(&pool)
         .await
@@ -615,7 +615,7 @@ async fn an_apps_sign_in_has_the_same_limits_as_the_browser_s() {
             403,
             "a foreign domain"
         );
-        let count = sqlx::query_scalar!(r#"SELECT count(*) AS "n!" FROM identity.app_handoffs"#)
+        let count = sqlx::query_scalar!(r#"SELECT count(*) AS "n!" FROM auth.app_handoffs"#)
             .fetch_one(&pool)
             .await
             .unwrap();
@@ -635,12 +635,12 @@ async fn an_account_disabled_after_the_sign_in_gets_no_session_from_the_handoff(
             VERIFIER,
         )
         .await;
-        sqlx::query!("UPDATE identity.users SET status = 'disabled' WHERE email = 'maya@lms.test'")
+        sqlx::query!("UPDATE auth.users SET status = 'disabled' WHERE email = 'maya@lms.test'")
             .execute(&pool)
             .await
             .unwrap();
         assert_eq!(exchange(&http, &handoff, VERIFIER).await.status, 403);
-        let sessions = sqlx::query_scalar!(r#"SELECT count(*) AS "n!" FROM identity.sessions"#)
+        let sessions = sqlx::query_scalar!(r#"SELECT count(*) AS "n!" FROM auth.sessions"#)
             .fetch_one(&pool)
             .await
             .unwrap();

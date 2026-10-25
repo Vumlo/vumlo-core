@@ -1,0 +1,78 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT u.id AS \"user_id!\", u.name AS \"name!\", u.surname AS \"surname!\", u.email AS \"email!\",\n                  u.role AS \"role!: Role\"\n           FROM auth.people u\n           WHERE u.status = 'active' AND u.role <> 'admin'\n             AND NOT EXISTS (SELECT 1 FROM teaching.effective_members m\n                             WHERE m.course_id = $1 AND m.user_id = u.id)\n             AND u.id <> (SELECT owner_id FROM teaching.courses WHERE id = $1)\n             AND (u.name ILIKE $2 ESCAPE '\\' OR u.surname ILIKE $2 ESCAPE '\\'\n                  OR u.email ILIKE $2 ESCAPE '\\'\n                  OR (u.name || ' ' || u.surname) ILIKE $2 ESCAPE '\\')\n           ORDER BY u.surname, u.name, u.id\n           LIMIT $3",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "user_id!",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "auth.people",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "name!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "auth.people",
+            "name": "name"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "surname!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "auth.people",
+            "name": "surname"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "email!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "auth.people",
+            "name": "email"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "role!: Role",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "auth.people",
+            "name": "role"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "a9e010f20445d4c1ae44451c484614ec3ce7363b81fe56b86906089320c5f473"
+}

@@ -98,11 +98,22 @@ cargo test --workspace                 # needs the running PostgreSQL and DATABA
 cargo test --workspace -- --test-threads=16
 ```
 
-Each test creates its own database (`t_…`) through `backend/crates/server/src/test_support.rs` and drops it
+Each test creates its own database (`t_…`) through `backend/crates/test-support` and drops it
 afterwards (ADR-0036). `DATABASE_URL` only supplies the server and the credentials: the tests connect
 to the `postgres` database, so the development database does not have to exist. A test that fails
 keeps its database; the next run drops the ones older than an hour. Building without a database:
 `SQLX_OFFLINE=true`.
+
+### Where code and tests go (ADR-0065)
+
+The backend is one crate per layer: `server` → `learning` → `org` → `auth` → `events` → `access` → `common`.
+Code goes in the lowest crate that owns the data it uses. A feature that needs the data of two layers is a
+function in `learning`, which may call all the others; a lower crate never calls a higher one, and Cargo
+refuses it. A unit test is in the `tests.rs` beside its source file and runs with `cargo test -p <crate>`;
+the tests that start the whole server are in `backend/crates/server/tests`. A test of a crate that needs a
+helper of a lower one enables its `testing` feature under `[dev-dependencies]` (`Actor::for_tests`,
+`auth::create_user_unaudited_for_tests`, `org::seed_group`). `backend/crates/server/tests/architecture.rs`
+fails when a layer reads a table it may not or a feature is enabled where it must not be.
 
 ## The desktop app
 

@@ -48,9 +48,11 @@ workspace members and the workspace dependencies, the `dummy` feature and option
 (and fails if anything else in the lock changed).
 
 Unit tests never live inside a source file: `foo.rs` has `#[cfg(test)] mod tests;` and the tests are in
-`foo/tests.rs` (`mod.rs`, `lib.rs`: `tests.rs` beside it). The script deletes every `tests.rs` and
-`test_support.rs`, and fails if one is left; the declaration stays, and does nothing outside a test
-build. A new test module follows that naming, or it ships.
+`foo/tests.rs` (`mod.rs`, `lib.rs`: `tests.rs` beside it). The script deletes every `tests.rs`, and fails
+if one is left; the declaration stays, and does nothing outside a test build. A new test module follows
+that naming, or it ships. The test database harness is the crate `backend/crates/test-support`, a
+dev-dependency of `server` and `vumlo-cli`: the script deletes it with its lines in the manifests, and
+`verify-archive.sh` checks that neither it nor any `tests.rs` is in the archive.
 
 ## Experimental
 

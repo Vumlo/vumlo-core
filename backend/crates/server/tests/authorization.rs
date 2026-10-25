@@ -10,9 +10,9 @@ mod common;
 
 use std::collections::BTreeSet;
 
+use ::common::Role;
 use common::{Account, Env, db_test, essay, id_of};
 use serde_json::{Value, json};
-use server::identity::Role;
 use uuid::Uuid;
 
 /// The resources of one course, and the ids of a user and of the other kinds of things a request

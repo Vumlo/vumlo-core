@@ -3,6 +3,18 @@
 version = 4
 
 [[package]]
+name = "access"
+version = "0.2.2"
+dependencies = [
+ "axum",
+ "chrono",
+ "common",
+ "sqlx",
+ "thiserror 2.0.21",
+ "uuid",
+]
+
+[[package]]
 name = "adler2"
 version = "2.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -149,6 +161,39 @@ name = "atomic-waker"
 version = "1.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1505bd5d3d116872e7271a6d4e16d81d0c8570876c8de68093a09ac269d8aac0"
+
+[[package]]
+name = "auth"
+version = "0.2.2"
+dependencies = [
+ "access",
+ "api-types",
+ "argon2",
+ "axum",
+ "axum-extra",
+ "base64 0.23.1",
+ "chrono",
+ "common",
+ "events",
+ "lettre",
+ "openidconnect",
+ "rand 0.10.3",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sha2 0.11.1",
+ "sqlx",
+ "test-support",
+ "thiserror 2.0.21",
+ "tokio",
+ "tower_governor",
+ "tracing",
+ "utoipa",
+ "utoipa-axum",
+ "uuid",
+ "vumlo-config",
+ "zxcvbn",
+]
 
 [[package]]
 name = "autocfg"
@@ -497,6 +542,21 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1d07550c9036bf2ae0c684c4297d503f838287c83c53686d05370d0e139ae570"
 
 [[package]]
+name = "common"
+version = "0.2.2"
+dependencies = [
+ "api-types",
+ "axum",
+ "garde",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "thiserror 2.0.21",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
 name = "compact_str"
 version = "0.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -768,15 +828,11 @@ checksum = "be1e0bca6c3637f992fc1cc7cbc52a78c1ef6db076dbf1059c4323d6a2048376"
 name = "db"
 version = "0.2.2"
 dependencies = [
- "argon2",
- "base64 0.23.1",
- "rand 0.10.3",
  "serde_json",
  "sqlx",
  "thiserror 2.0.21",
  "uuid",
  "vumlo-config",
- "zxcvbn",
 ]
 
 [[package]]
@@ -1035,6 +1091,21 @@ checksum = "5a23add41df1562121a9393cb065eab5146a1242410f23a644851e90cfd669d2"
 dependencies = [
  "parking",
  "pin-project-lite",
+]
+
+[[package]]
+name = "events"
+version = "0.2.2"
+dependencies = [
+ "access",
+ "common",
+ "serde_json",
+ "sqlx",
+ "test-support",
+ "thiserror 2.0.21",
+ "tokio",
+ "tracing",
+ "uuid",
 ]
 
 [[package]]
@@ -1841,6 +1912,30 @@ dependencies = [
 ]
 
 [[package]]
+name = "learning"
+version = "0.2.2"
+dependencies = [
+ "access",
+ "api-types",
+ "auth",
+ "axum",
+ "chrono",
+ "common",
+ "events",
+ "org",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "test-support",
+ "thiserror 2.0.21",
+ "tokio",
+ "utoipa",
+ "utoipa-axum",
+ "uuid",
+ "vumlo-config",
+]
+
+[[package]]
 name = "lettre"
 version = "0.11.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2153,6 +2248,30 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "68f19d67e5a2795c94e73e0bb1cc1a7edeb2e28efd39e2e1c9b7a40c1108b11c"
 dependencies = [
  "num-traits",
+]
+
+[[package]]
+name = "org"
+version = "0.2.2"
+dependencies = [
+ "access",
+ "api-types",
+ "auth",
+ "axum",
+ "chrono",
+ "common",
+ "db",
+ "events",
+ "serde_json",
+ "sqlx",
+ "test-support",
+ "thiserror 2.0.21",
+ "tokio",
+ "tracing",
+ "utoipa",
+ "utoipa-axum",
+ "uuid",
+ "vumlo-config",
 ]
 
 [[package]]
@@ -3104,30 +3223,31 @@ dependencies = [
 name = "server"
 version = "0.2.2"
 dependencies = [
+ "access",
  "anyhow",
  "api-types",
- "argon2",
+ "auth",
  "axum",
  "axum-extra",
  "base64 0.23.1",
  "chrono",
  "chrono-tz",
  "clap",
+ "common",
  "db",
- "garde",
- "lettre",
+ "events",
+ "learning",
  "module-api",
  "openidconnect",
- "rand 0.10.3",
+ "org",
  "reqwest",
- "serde",
  "serde_json",
  "sha2 0.11.1",
  "sqlx",
+ "test-support",
  "thiserror 2.0.21",
  "tokio",
  "tower-http 0.7.1",
- "tower_governor",
  "tracing",
  "tracing-subscriber",
  "utoipa",
@@ -3558,6 +3678,16 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 3.0.9",
+]
+
+[[package]]
+name = "test-support"
+version = "0.2.2"
+dependencies = [
+ "db",
+ "sqlx",
+ "tokio",
+ "uuid",
 ]
 
 [[package]]
@@ -4106,9 +4236,11 @@ version = "0.2.2"
 dependencies = [
  "anyhow",
  "api-types",
+ "auth",
  "axum",
  "chrono",
  "clap",
+ "common",
  "db",
  "image",
  "module-api",
@@ -4119,6 +4251,7 @@ dependencies = [
  "serde_json",
  "server",
  "sqlx",
+ "test-support",
  "tokio",
  "uuid",
  "vumlo-config",

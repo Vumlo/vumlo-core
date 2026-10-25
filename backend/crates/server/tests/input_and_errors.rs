@@ -5,9 +5,9 @@ mod common;
 
 use std::time::Duration;
 
+use ::common::Role;
 use common::{Env, db_test, essay, id_of, wait_until_blocked};
 use serde_json::{Value, json};
-use server::identity::Role;
 use sqlx::postgres::PgPoolOptions;
 use uuid::Uuid;
 

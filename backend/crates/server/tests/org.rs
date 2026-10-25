@@ -5,10 +5,10 @@ mod common;
 
 use std::time::Duration;
 
+use ::common::Role;
+use ::org::{self, OrgError};
 use common::{Http, Resp, db_test, seed_and_login};
 use serde_json::{Value, json};
-use server::identity::Role;
-use server::org::{self, OrgError};
 use sqlx::PgPool;
 use uuid::Uuid;
 use vumlo_config::InstitutionMode::{self, School, University};
@@ -320,7 +320,7 @@ impl World {
 
     async fn set_names(&self, user: Uuid, name: &str, surname: &str) {
         sqlx::query!(
-            "UPDATE identity.users SET name = $2, surname = $3 WHERE id = $1",
+            "UPDATE auth.users SET name = $2, surname = $3 WHERE id = $1",
             user,
             name,
             surname

@@ -17,8 +17,10 @@ dummy = ["dep:vumlo-module-dummy", "vumlo-config/test-registry"]
 [dependencies]
 anyhow.workspace = true
 api-types.workspace = true
+auth.workspace = true
 chrono.workspace = true
 clap.workspace = true
+common.workspace = true
 db.workspace = true
 image.workspace = true
 module-api.workspace = true
@@ -36,6 +38,7 @@ vumlo-module-dummy = { workspace = true, optional = true }
 [dev-dependencies]
 axum.workspace = true
 server.workspace = true
+test-support.workspace = true
 
 [lints]
 workspace = true
