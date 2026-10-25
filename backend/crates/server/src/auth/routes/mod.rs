@@ -214,8 +214,6 @@ impl From<AuthError> for ApiError {
             AuthError::LastAdmin => {
                 Self::Conflict("the last active admin cannot be demoted or disabled")
             }
-            AuthError::Teaching(e) => (*e).into(),
-            AuthError::Org(e) => (*e).into(),
             AuthError::UserNotFound | AuthError::SessionNotFound => Self::NotFound,
             AuthError::Hashing => Self::Internal,
             AuthError::Events(e) => e.into(),

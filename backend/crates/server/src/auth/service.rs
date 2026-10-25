@@ -23,8 +23,6 @@ use super::repo::{self, LoginRecord};
 use crate::access::{self, AccessError, Action};
 use crate::actor::Actor;
 use crate::events::{self, AuditEntry, Event, EventsError};
-use crate::learning::teaching::TeachingError;
-use crate::org::OrgError;
 use common::Role;
 use common::{Page, PageParams};
 
@@ -80,10 +78,6 @@ pub enum AuthError {
     ConcurrentChange,
     #[error("the last active admin cannot be demoted or disabled")]
     LastAdmin,
-    #[error(transparent)]
-    Teaching(Box<TeachingError>),
-    #[error(transparent)]
-    Org(Box<OrgError>),
     #[error("user not found")]
     UserNotFound,
     #[error("session not found")]
