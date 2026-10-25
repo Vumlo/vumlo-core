@@ -218,7 +218,7 @@ impl fmt::Debug for TemporaryPassword {
 }
 
 /// `N` random bytes in unpadded base64url.
-pub fn random_base64url<const N: usize>() -> String {
+pub(crate) fn random_base64url<const N: usize>() -> String {
     let mut bytes = [0u8; N];
     rand::rng().fill_bytes(&mut bytes);
     URL_SAFE_NO_PAD.encode(bytes)

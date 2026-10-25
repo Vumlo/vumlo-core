@@ -7,8 +7,8 @@
 //! key, the grades are published, and the quiz can be taken and scored.
 
 use anyhow::{Context, bail};
+use auth::{Email, PersonName, TemporaryPassword};
 use common::Role;
-use db::identity::{Email, PersonName, TemporaryPassword};
 use serde_json::{Value, json};
 use sqlx::types::Decimal;
 use uuid::Uuid;
@@ -143,7 +143,7 @@ pub async fn demo(options: &Options, args: SeedDemo) -> anyhow::Result<()> {
     let mut hashes = Vec::new();
     for (_, password) in &people {
         let plain = password.expose().to_owned();
-        let hash = tokio::task::spawn_blocking(move || db::identity::hash(&plain))
+        let hash = tokio::task::spawn_blocking(move || auth::hash(&plain))
             .await
             .context("the hashing task failed")?
             .map_err(|e| anyhow::anyhow!("cannot hash a password: {e}"))?;

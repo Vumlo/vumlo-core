@@ -3,7 +3,7 @@
 use std::io::{IsTerminal, Read};
 
 use anyhow::{Context, bail};
-use db::identity::{Email, ModelError, Password, PasswordPolicy, PersonName};
+use auth::{Email, ModelError, Password, PasswordPolicy, PersonName};
 use serde_json::json;
 use uuid::Uuid;
 use vumlo_config::Options;
@@ -86,7 +86,7 @@ pub async fn create(options: &Options, args: CreateAdmin) -> anyhow::Result<()> 
 
     // Hash before the transaction opens (ADR-0016).
     let plain = password.expose().to_owned();
-    let hash = tokio::task::spawn_blocking(move || db::identity::hash(&plain))
+    let hash = tokio::task::spawn_blocking(move || auth::hash(&plain))
         .await
         .context("the hashing task failed")?
         .map_err(|e| anyhow::anyhow!("cannot hash the password: {e}"))?;

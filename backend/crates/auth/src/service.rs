@@ -103,7 +103,7 @@ fn email_taken(error: sqlx::Error) -> AuthError {
 /// Verified when the account does not exist, so the response time is the same either way.
 /// Computed lazily on a blocking thread, with the same parameters as real hashes.
 static DUMMY_HASH: LazyLock<Option<String>> = LazyLock::new(|| {
-    db::identity::hash(TemporaryPassword::generate().expose())
+    crate::model::hash(TemporaryPassword::generate().expose())
         .map(|hash| hash.as_str().to_owned())
         .map_err(|e| tracing::error!(error = %e, "cannot compute the dummy password hash"))
         .ok()
@@ -143,7 +143,7 @@ fn hashed(result: Result<HashedPassword, String>) -> Result<HashedPassword, Auth
 /// server's own CLI and for tests; a request goes through [`hash_password_gated`].
 pub async fn hash_password(password: &str) -> Result<HashedPassword, AuthError> {
     let password = password.to_owned();
-    let result = tokio::task::spawn_blocking(move || db::identity::hash(&password))
+    let result = tokio::task::spawn_blocking(move || crate::model::hash(&password))
         .await
         .map_err(|e| {
             tracing::error!(error = %e, "password hashing task failed");
@@ -158,7 +158,7 @@ pub async fn hash_password_gated(
     password: &str,
 ) -> Result<HashedPassword, AuthError> {
     let password = password.to_owned();
-    hashed(gate.run(move || db::identity::hash(&password)).await?)
+    hashed(gate.run(move || crate::model::hash(&password)).await?)
 }
 
 /// Checks `password` against `hash` on a blocking thread, once the gate has a free permit. With no
@@ -169,7 +169,7 @@ pub(super) async fn verify_password(
     hash: Option<String>,
 ) -> Result<bool, AuthError> {
     gate.run(move || {
-        let Ok(argon2) = db::identity::argon2() else {
+        let Ok(argon2) = crate::model::argon2() else {
             tracing::error!("argon2 parameters are invalid");
             return Err(AuthError::Hashing);
         };
@@ -823,7 +823,7 @@ pub async fn create_app_handoff(
     if !repo::lock_active_user(conn, user.id).await? {
         return Err(AuthError::AccountDisabled);
     }
-    let code = db::identity::random_base64url::<32>();
+    let code = crate::model::random_base64url::<32>();
     repo::insert_app_handoff(
         conn,
         &Sha256::digest(code.as_bytes()),

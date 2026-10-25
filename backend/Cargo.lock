@@ -171,12 +171,14 @@ dependencies = [
  "argon2",
  "axum",
  "axum-extra",
+ "base64 0.23.1",
  "chrono",
  "common",
  "db",
  "events",
  "lettre",
  "openidconnect",
+ "rand 0.10.3",
  "reqwest",
  "serde",
  "serde_json",
@@ -191,6 +193,7 @@ dependencies = [
  "utoipa-axum",
  "uuid",
  "vumlo-config",
+ "zxcvbn",
 ]
 
 [[package]]
@@ -826,16 +829,11 @@ checksum = "be1e0bca6c3637f992fc1cc7cbc52a78c1ef6db076dbf1059c4323d6a2048376"
 name = "db"
 version = "0.2.2"
 dependencies = [
- "argon2",
- "base64 0.23.1",
- "common",
- "rand 0.10.3",
  "serde_json",
  "sqlx",
  "thiserror 2.0.21",
  "uuid",
  "vumlo-config",
- "zxcvbn",
 ]
 
 [[package]]
@@ -4195,6 +4193,7 @@ version = "0.2.2"
 dependencies = [
  "anyhow",
  "api-types",
+ "auth",
  "axum",
  "chrono",
  "clap",

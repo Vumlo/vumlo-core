@@ -1,9 +1,7 @@
 //! What the server and `vumlo-cli` share about the database (ADR-0054): the migrations and their
-//! state, the installation record, the CLI's audit row, and the value types of an account (an
-//! email, a name, a password and how it is hashed), so both validate and hash identically.
+//! state, the installation record and the CLI's audit row.
 
 mod audit;
-pub mod identity;
 mod installation;
 mod migrate;
 

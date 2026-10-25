@@ -15,12 +15,14 @@ argon2.workspace = true
 api-types.workspace = true
 axum.workspace = true
 axum-extra.workspace = true
+base64.workspace = true
 chrono.workspace = true
 common.workspace = true
 db.workspace = true
 events.workspace = true
 lettre.workspace = true
 openidconnect.workspace = true
+rand.workspace = true
 reqwest.workspace = true
 serde.workspace = true
 serde_json.workspace = true
@@ -34,6 +36,7 @@ utoipa.workspace = true
 utoipa-axum.workspace = true
 uuid.workspace = true
 vumlo-config.workspace = true
+zxcvbn.workspace = true
 
 [dev-dependencies]
 test-support.workspace = true

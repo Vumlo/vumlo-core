@@ -17,7 +17,7 @@ pub use mail::{MailError, Mailer};
 pub use model::{
     Email, EmailToken, HashedPassword, ModelError, NewSession, NewUser, Password, PasswordPolicy,
     PersonName, SessionInfo, SessionKind, SessionToken, TemporaryPassword, TokenPurpose, User,
-    UserStatus, UserUpdate,
+    UserStatus, UserUpdate, hash,
 };
 pub use routes::{
     COOKIE_NAME, SetupError, api_role, api_status, api_user, authenticate_request, domain_role,

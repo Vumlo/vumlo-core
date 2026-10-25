@@ -182,7 +182,7 @@ impl From<AuthError> for ApiError {
             AuthError::Unauthenticated => Self::Unauthorized("authentication required"),
             AuthError::OriginMismatch => Self::Forbidden("origin not allowed"),
             AuthError::Forbidden(policy) => policy.into(),
-            AuthError::Invalid(model) => model_error(model),
+            AuthError::Invalid(model) => model.into(),
             AuthError::WrongCurrentPassword => {
                 Self::invalid_field("current_password", "is incorrect")
             }
@@ -225,14 +225,15 @@ impl From<AuthError> for ApiError {
     }
 }
 
-/// The `422` of a value that failed validation.
-pub(super) fn model_error(error: super::model::ModelError) -> ApiError {
-    use super::model::ModelError;
-    match error {
-        ModelError::Email => ApiError::invalid_field("email", error.to_string()),
-        ModelError::Name => ApiError::invalid_field("name", error.to_string()),
-        ModelError::Surname => ApiError::invalid_field("surname", error.to_string()),
-        ModelError::Password(reasons) => password_error("new_password", reasons),
+impl From<super::model::ModelError> for ApiError {
+    fn from(error: super::model::ModelError) -> Self {
+        use super::model::ModelError;
+        match error {
+            ModelError::Email => Self::invalid_field("email", error.to_string()),
+            ModelError::Name => Self::invalid_field("name", error.to_string()),
+            ModelError::Surname => Self::invalid_field("surname", error.to_string()),
+            ModelError::Password(reasons) => password_error("new_password", reasons),
+        }
     }
 }
 
