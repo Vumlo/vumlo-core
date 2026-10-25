@@ -11,8 +11,8 @@ use uuid::Uuid;
 
 use super::document::{DocumentErrors, EffectiveProfiles, validate_document_within};
 use super::types::{AutoGrade, Claims, Stage, ValidContent, form, quiz};
-use crate::access::{CourseAccess, Release};
 use crate::learning::points;
+use access::{CourseAccess, Release};
 use common::text_enum;
 
 const TITLE_MAX_LEN: usize = 200;

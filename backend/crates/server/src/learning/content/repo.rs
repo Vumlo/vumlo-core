@@ -13,7 +13,7 @@ use super::model::{
     ItemSummary, MaxPoints, Module, ModuleStatus, OnDeadline, PublishedSlot, StaffFacts,
     SubmissionSettings, WorkFacts, WorkStatus,
 };
-use crate::access::Release;
+use access::Release;
 
 type Body = Json<Map<String, Value>>;
 

@@ -19,7 +19,7 @@ pub use cards::{
     unpublished_items,
 };
 
-use crate::access::{CourseRole, CourseStatus};
+use access::{CourseRole, CourseStatus};
 use common::Role;
 
 /// A course together with the asking user's membership in it, if any.

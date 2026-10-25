@@ -1,4 +1,4 @@
-use crate::access::ActorSource;
+use access::ActorSource;
 use api_types::{CourseLine, GroupName, ProblemDetails, UpdateUserRequest, User, UserFacts};
 use axum::Json;
 use axum::extract::FromRef;
@@ -8,13 +8,13 @@ use utoipa_axum::routes;
 use uuid::Uuid;
 
 use super::service;
-use crate::access::Actor;
-use crate::access::{self, Action};
 use crate::auth::{
     AuthError, PersonName, UserUpdate, api_role, api_status, api_user, domain_role, domain_status,
 };
 use crate::learning::LearningError;
 use crate::learning::LearningState;
+use access::Actor;
+use access::{self, Action};
 use common::{ApiError, ValidJson};
 
 pub fn router<S>() -> OpenApiRouter<S>

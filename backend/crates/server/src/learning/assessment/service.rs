@@ -18,8 +18,6 @@ use super::model::{
     Attempt, Draft, FormFacts, MySubmission, QuizResult, Responses, StudentSubmission, Window,
 };
 use super::repo;
-use crate::access::Actor;
-use crate::access::{self, AccessError, Action};
 use crate::events::{self, Event, EventsError};
 use crate::learning::content::{
     self, Assignment, AssignmentType, AutoGrade, BuiltinType, DocumentErrors, EffectiveProfiles,
@@ -27,6 +25,8 @@ use crate::learning::content::{
 };
 use crate::learning::gradebook::{self, GradebookError};
 use crate::learning::teaching::TeachingError;
+use access::Actor;
+use access::{self, AccessError, Action};
 use common::{Page, PageParams};
 
 #[derive(Debug, thiserror::Error)]

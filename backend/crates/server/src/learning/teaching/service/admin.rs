@@ -6,10 +6,10 @@ use sqlx::PgConnection;
 use uuid::Uuid;
 
 use super::TeachingError;
-use crate::access::Actor;
-use crate::access::{self, Action};
 use crate::learning::teaching::model::{AdminCourseRow, LinkedCourseRow, UserCourseFacts};
 use crate::learning::teaching::repo;
+use access::Actor;
+use access::{self, Action};
 use common::{Page, PageParams};
 
 /// Every regular course of the institution, paged by id. Admins only.

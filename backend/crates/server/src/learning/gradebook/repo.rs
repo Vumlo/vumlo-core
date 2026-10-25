@@ -12,7 +12,7 @@ use super::model::{
     Cell, Column, ColumnStatus, DeadlineRow, HistoryActor, HistoryEntry, MyGrade, PublishedGrade,
     ToGradeRow, UnpublishedContentRow, UnpublishedRow,
 };
-use crate::access::Release;
+use access::Release;
 
 pub async fn is_student_member(
     conn: &mut PgConnection,

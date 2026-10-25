@@ -1,7 +1,7 @@
 use chrono::{DateTime, Utc};
 use uuid::Uuid;
 
-use crate::access::{CourseRole, CourseStatus};
+use access::{CourseRole, CourseStatus};
 use common::text_enum;
 
 const TITLE_MAX_LEN: usize = 200;

@@ -11,13 +11,13 @@ use serde_json::{Map, json};
 use sqlx::PgPool;
 
 use super::*;
-use crate::access::CourseRole;
 use crate::auth::{self, Email, NewUser, PersonName};
 use crate::learning::content::{
     Assignment, BuiltinType, ContentError, ContentTitle, ItemPatch, ItemRules, MaxPoints,
     OnDeadline, SettingsPatch, SubmissionSettings,
 };
 use crate::learning::teaching::{self, CourseTitle};
+use access::CourseRole;
 use common::Role;
 use vumlo_config::GradingScale;
 
@@ -70,8 +70,8 @@ async fn fixture(pool: PgPool, settings: SubmissionSettings) -> Fixture {
     };
     let owner_user = create("owner@x.edu", Role::Teacher).await;
     let student_user = create("student@x.edu", Role::Student).await;
-    let owner = Actor::new(owner_user.id, Role::Teacher, Uuid::now_v7());
-    let student = Actor::new(student_user.id, Role::Student, Uuid::now_v7());
+    let owner = Actor::for_tests(owner_user.id, Role::Teacher, Uuid::now_v7());
+    let student = Actor::for_tests(student_user.id, Role::Student, Uuid::now_v7());
     let course = teaching::create_course(
         &mut tx,
         &owner,

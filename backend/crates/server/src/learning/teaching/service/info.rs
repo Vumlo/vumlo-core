@@ -6,8 +6,6 @@ use sqlx::PgConnection;
 use uuid::Uuid;
 
 use super::{NewCourse, TeachingError, insert_owned_course, load};
-use crate::access::Actor;
-use crate::access::{self, Action, CourseStatus};
 use crate::events::{self, AuditEntry};
 use crate::learning::assessment;
 use crate::learning::content;
@@ -17,6 +15,8 @@ use crate::learning::teaching::model::{
     CoursePeople, CourseTitle, TemplateSummary,
 };
 use crate::learning::teaching::repo;
+use access::Actor;
+use access::{self, Action, CourseStatus};
 use common::{Page, PageParams};
 
 /// The most candidates a search returns.

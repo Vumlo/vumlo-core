@@ -6,7 +6,7 @@ mod institution;
 mod subgroups;
 mod terms;
 
-use crate::access::ActorSource;
+use access::ActorSource;
 use api_types::{FieldError, GroupMember, Page, PageQuery};
 use axum::extract::FromRef;
 use utoipa_axum::router::OpenApiRouter;

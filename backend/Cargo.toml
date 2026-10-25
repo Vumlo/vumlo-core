@@ -2,6 +2,7 @@
 resolver = "3"
 # `crates/modules/` only holds the optional modules; each of them is a member.
 members = [
+    "crates/access",
     "crates/api-types",
     "crates/common",
     "crates/config",
@@ -53,6 +54,7 @@ utoipa-scalar = { version = "0.4", features = ["axum"] }
 uuid = { version = "1", features = ["v7", "serde"] }
 zxcvbn = "3"
 
+access = { path = "crates/access" }
 api-types = { path = "crates/api-types" }
 common = { path = "crates/common" }
 db = { path = "crates/db" }

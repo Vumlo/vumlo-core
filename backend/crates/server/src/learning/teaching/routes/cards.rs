@@ -8,11 +8,11 @@ use axum::extract::State;
 use chrono::Utc;
 
 use super::api_course;
-use crate::access::Actor;
-use crate::access::CourseRole;
 use crate::learning::LearningState;
 use crate::learning::teaching::model::{CourseCardData, NextDeadline, Todo};
 use crate::learning::teaching::service::{self, TeachingError};
+use access::Actor;
+use access::CourseRole;
 use common::ApiError;
 
 fn api_todo(todo: Todo) -> CardTodo {

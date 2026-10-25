@@ -4,6 +4,8 @@ use chrono::{DateTime, Utc};
 
 mod actor;
 mod extract;
+#[cfg(feature = "testing")]
+mod test_support;
 
 pub use actor::{Actor, PendingActor};
 pub use extract::{ActorSource, Authenticated};

@@ -2,7 +2,7 @@
 //! transaction, call exactly one service function and commit; reads use a pooled connection,
 //! except the gradebook, which reads three statements from one snapshot.
 
-use crate::access::ActorSource;
+use access::ActorSource;
 use api_types::{
     CourseRef, Deadline, GradeAction, GradeActor, GradeCell, GradeHistoryEntry, GradebookCell,
     GradebookColumn, GradebookPage, GradebookRow, MyGrade, MyGrades, Page, PageQuery,
@@ -20,8 +20,8 @@ use uuid::Uuid;
 
 use super::model::{self, ColumnStatus, FeedbackInput, GradeInput, Students};
 use super::service::{self, GradebookError};
-use crate::access::Actor;
 use crate::learning::LearningState;
+use access::Actor;
 use common::PageParams;
 use common::{ApiError, ValidJson, ValidQuery};
 

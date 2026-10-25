@@ -20,9 +20,9 @@ use super::model::{
     TemporaryPassword, TokenPurpose, User, UserFilter, UserStatus, UserUpdate,
 };
 use super::repo::{self, LoginRecord};
-use crate::access::Actor;
-use crate::access::{self, AccessError, Action};
 use crate::events::{self, AuditEntry, Event, EventsError};
+use access::Actor;
+use access::{self, AccessError, Action};
 use common::Role;
 use common::{Page, PageParams};
 

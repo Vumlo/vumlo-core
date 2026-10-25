@@ -1,0 +1,21 @@
+[package]
+name = "access"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+description = "Who may do what (ADR-0004, ADR-0065): the Actor, the actions and the one function that decides."
+
+[features]
+# Helpers for the tests of the crates above. A dependency enables it only under [dev-dependencies].
+testing = []
+
+[dependencies]
+axum.workspace = true
+chrono.workspace = true
+common.workspace = true
+sqlx.workspace = true
+thiserror.workspace = true
+uuid.workspace = true
+
+[lints]
+workspace = true

@@ -8,7 +8,7 @@ mod me;
 
 use std::sync::Arc;
 
-use crate::access::ActorSource;
+use access::ActorSource;
 use api_types::LoginClient;
 use axum::Extension;
 use axum::extract::FromRef;

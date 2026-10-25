@@ -7,12 +7,12 @@ use sqlx::PgConnection;
 use uuid::Uuid;
 
 use super::{TeachingError, access_of};
-use crate::access::Actor;
-use crate::access::{self, Action};
 use crate::learning::teaching::model::{
     CardCourse, CourseCardData, DraftItem, NextDeadline, Progress, ScopedCourse, Todo, TodoCounts,
 };
 use crate::learning::teaching::repo;
+use access::Actor;
+use access::{self, Action};
 
 /// How many titles of unpublished items a card names.
 const TITLES_SHOWN: usize = 3;

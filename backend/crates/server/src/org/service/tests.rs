@@ -37,7 +37,7 @@ struct Fixture {
 async fn fixture(pool: PgPool) -> Fixture {
     let admin = user(&pool, "admin@x.edu", Role::Admin).await;
     let student = user(&pool, "student@x.edu", Role::Student).await;
-    let admin = Actor::new(admin, Role::Admin, Uuid::now_v7());
+    let admin = Actor::for_tests(admin, Role::Admin, Uuid::now_v7());
     let mut tx = pool.begin().await.unwrap();
     let group = create_group(&mut tx, &admin, "7-A").await.unwrap();
     add_group_members(&mut tx, &admin, group.id, &[student])

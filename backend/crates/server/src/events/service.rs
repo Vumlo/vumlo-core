@@ -5,8 +5,8 @@ use sqlx::{PgConnection, PgPool};
 
 use super::model::{AuditEntry, Event, Handlers};
 use super::repo;
-use crate::access::Actor;
-use crate::access::{AccessError, implicit_course_owner};
+use access::Actor;
+use access::{AccessError, implicit_course_owner};
 
 #[derive(Debug, thiserror::Error)]
 pub enum EventsError {

@@ -2,7 +2,7 @@
 //! transaction, call exactly one service function and commit; reads use a pooled connection. The
 //! handler reads the clock once and hands it to the service (ADR-0035).
 
-use crate::access::ActorSource;
+use access::ActorSource;
 use api_types::{
     Attempt, AttemptsPage, FormResponseRow, FormResponses, LatestAttempt, MySubmission, PageQuery,
     ProblemDetails, QuizResult, QuizResultQuestion, SaveDraftRequest, StudentName, SubmissionDraft,
@@ -19,8 +19,8 @@ use uuid::Uuid;
 
 use super::model;
 use super::service::{self, AssessmentError};
-use crate::access::Actor;
 use crate::learning::LearningState;
+use access::Actor;
 use common::PageParams;
 use common::{ApiError, ValidJson, ValidQuery};
 

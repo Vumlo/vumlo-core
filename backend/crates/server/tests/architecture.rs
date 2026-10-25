@@ -37,7 +37,7 @@ const UNITS: &[Unit] = &[
     },
     Unit {
         name: "access",
-        dir: "server/src/access",
+        dir: "access/src",
         schema: None,
         layer: 1,
     },

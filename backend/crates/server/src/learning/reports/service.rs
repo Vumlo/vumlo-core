@@ -2,11 +2,11 @@ use chrono::NaiveDate;
 use sqlx::PgConnection;
 
 use super::model::TermUsage;
-use crate::access::Actor;
-use crate::access::{self, Action};
 use crate::learning::LearningError;
 use crate::learning::teaching;
 use crate::org;
+use access::Actor;
+use access::{self, Action};
 
 /// How many regular courses each term has, and whether it is current or over on `today`
 /// (ADR-0053). Admins only. The terms come from `org` and the counts from `teaching`.

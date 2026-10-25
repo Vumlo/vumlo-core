@@ -42,7 +42,7 @@ async fn two_creates_racing_for_the_last_position_one_gets_409() {
         )
         .await
         .unwrap();
-        let owner = Actor::new(user.id, Role::Teacher, Uuid::now_v7());
+        let owner = Actor::for_tests(user.id, Role::Teacher, Uuid::now_v7());
         let course = teaching::create_course(
             &mut tx,
             &owner,
@@ -143,7 +143,7 @@ async fn course(pool: sqlx::PgPool) -> Course {
     )
     .await
     .unwrap();
-    let owner = Actor::new(user.id, Role::Teacher, Uuid::now_v7());
+    let owner = Actor::for_tests(user.id, Role::Teacher, Uuid::now_v7());
     let course = teaching::create_course(
         &mut tx,
         &owner,

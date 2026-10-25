@@ -19,7 +19,7 @@ async fn actor(pool: &sqlx::PgPool, hash: &HashedPassword, email: &str, role: Ro
     .await
     .unwrap();
     tx.commit().await.unwrap();
-    Actor::new(user.id, role, Uuid::now_v7())
+    Actor::for_tests(user.id, role, Uuid::now_v7())
 }
 
 /// The owner promotes a student to teacher and holds its transaction open; an assistant

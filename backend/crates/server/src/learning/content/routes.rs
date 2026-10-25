@@ -1,7 +1,7 @@
 //! HTTP edge of `content`: extractors, DTO mapping, OpenAPI annotations. Writes open the
 //! transaction, call exactly one service function and commit; reads use a pooled connection.
 
-use crate::access::ActorSource;
+use access::ActorSource;
 use api_types::{
     ContentModule, ContentStatus, ContentSubModule, ContentTree, CourseRef, CreateItemRequest,
     CreateModuleRequest, EditorProfiles, FieldError, HitKind, HitStatus, Item, ItemMeta,
@@ -22,8 +22,8 @@ use super::model::{
     ModelError, ModulePatch, ModuleStatus, OnDeadline, SettingsPatch, SubmissionSettings,
 };
 use super::service::{self, ContentError, ItemRules};
-use crate::access::Actor;
 use crate::learning::LearningState;
+use access::Actor;
 use common::{ApiError, ValidJson, ValidQuery};
 
 pub fn router<S>() -> OpenApiRouter<S>

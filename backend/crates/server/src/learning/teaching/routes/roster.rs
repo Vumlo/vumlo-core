@@ -10,11 +10,11 @@ use axum::http::StatusCode;
 use uuid::Uuid;
 
 use super::page_params;
-use crate::access::Actor;
 use crate::learning::LearningState;
 use crate::learning::teaching::model;
 use crate::learning::teaching::service::{self, TeachingError};
 use crate::org;
+use access::Actor;
 use common::{ApiError, ValidJson, ValidQuery};
 
 fn api_link(link: model::CourseGroupLink) -> CourseGroupLink {

@@ -12,10 +12,10 @@ use sqlx::types::Decimal;
 use uuid::Uuid;
 
 use super::{api_course, api_role, api_source, page_params};
-use crate::access::Actor;
 use crate::learning::LearningState;
 use crate::learning::teaching::model::{self, CourseInfoUpdate, CourseTitle};
 use crate::learning::teaching::service::{self, TeachingError};
+use access::Actor;
 use common::Role;
 use common::{ApiError, ValidJson, ValidQuery};
 

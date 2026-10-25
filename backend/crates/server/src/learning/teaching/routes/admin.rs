@@ -5,9 +5,9 @@ use axum::Json;
 use axum::extract::State;
 
 use super::{api_status, page_params};
-use crate::access::Actor;
 use crate::learning::LearningState;
 use crate::learning::teaching::service::{self, TeachingError};
+use access::Actor;
 use common::{ApiError, ValidQuery};
 
 /// Every regular course of the institution with its owner, term and student count, paged by id.

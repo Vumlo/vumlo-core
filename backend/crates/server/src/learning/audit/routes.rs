@@ -1,6 +1,6 @@
 //! `GET /admin/audit` (ADR-0053).
 
-use crate::access::ActorSource;
+use access::ActorSource;
 use api_types::{
     AuditActor, AuditKind, AuditQuery, AuditRecord, AuditSource, Page, ProblemDetails,
 };
@@ -12,9 +12,9 @@ use utoipa_axum::routes;
 
 use super::model::{AuditFilter, AuditRow};
 use super::service;
-use crate::access::Actor;
 use crate::learning::LearningError;
 use crate::learning::LearningState;
+use access::Actor;
 use common::PageParams;
 use common::{ApiError, ValidQuery};
 

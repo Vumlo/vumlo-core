@@ -23,11 +23,11 @@ use super::model::{
     HistoryEntry, ModelError, MyGrade, PublishedGrade, Score, Students, TeachingOverview,
 };
 use super::repo;
-use crate::access::Actor;
-use crate::access::{self, AccessError, Action, CourseAccess, CourseRole, CourseStatus};
 use crate::events::{self, AuditEntry, Event, EventsError};
 use crate::learning::content::{self, OpenError, OpenedAssignment};
 use crate::learning::teaching::{self, TeachingError};
+use access::Actor;
+use access::{self, AccessError, Action, CourseAccess, CourseRole, CourseStatus};
 use common::{Page, PageParams};
 
 #[derive(Debug, thiserror::Error)]

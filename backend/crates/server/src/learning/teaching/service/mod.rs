@@ -27,17 +27,17 @@ use super::model::{
     Membership, ModelError,
 };
 use super::repo;
-use crate::access::Actor;
-use crate::access::{
-    self, AccessError, Action, CourseAccess, CourseRole, CourseStatus, course_role_allowed,
-    implicit_course_owner,
-};
 use crate::auth::{self, AuthError, UserStatus};
 use crate::events::{self, AuditEntry, EventsError};
 use crate::learning::assessment::AssessmentError;
 use crate::learning::content::ContentError;
 use crate::learning::gradebook::GradebookError;
 use crate::org::{self, GroupOption, OrgError};
+use access::Actor;
+use access::{
+    self, AccessError, Action, CourseAccess, CourseRole, CourseStatus, course_role_allowed,
+    implicit_course_owner,
+};
 use common::{Page, PageParams};
 
 #[derive(Debug, thiserror::Error)]

@@ -7,10 +7,10 @@ use sqlx::PgConnection;
 use uuid::Uuid;
 
 use super::{CourseRow, RawCourseRow};
-use crate::access::{CourseRole, CourseStatus};
 use crate::learning::teaching::model::{
     CardCourse, CourseKind, DraftItem, NextDeadline, Progress, TodoCounts,
 };
+use access::{CourseRole, CourseStatus};
 
 /// The regular courses of the user, with what a card shows of the course itself. A student sees
 /// a course only while it is published or archived (ADR-0048).

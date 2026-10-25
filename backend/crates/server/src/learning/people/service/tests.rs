@@ -1,7 +1,7 @@
 use super::*;
-use crate::access::Actor;
 use crate::auth::{self, AuthError, Email, NewUser, PersonName};
 use crate::learning::teaching::{self, TeachingError};
+use access::Actor;
 use common::Role;
 use test_support::{db_test, wait_until_blocked};
 use uuid::Uuid;
@@ -22,7 +22,7 @@ async fn admin_actor(pool: &sqlx::PgPool, email: &str) -> Actor {
     .await
     .unwrap();
     tx.commit().await.unwrap();
-    Actor::new(user.id, Role::Admin, Uuid::now_v7())
+    Actor::for_tests(user.id, Role::Admin, Uuid::now_v7())
 }
 
 fn demote() -> UserUpdate {
@@ -96,7 +96,7 @@ async fn teacher_actor(pool: &sqlx::PgPool, email: &str) -> Actor {
     .await
     .unwrap();
     tx.commit().await.unwrap();
-    Actor::new(user.id, Role::Teacher, Uuid::now_v7())
+    Actor::for_tests(user.id, Role::Teacher, Uuid::now_v7())
 }
 
 async fn course_of(pool: &sqlx::PgPool, owner: &Actor) -> Uuid {
@@ -129,7 +129,7 @@ async fn a_demotion_waits_for_a_member_write_and_then_removes_the_membership() {
             &owner,
             course,
             candidate.user_id(),
-            crate::access::CourseRole::Teacher,
+            access::CourseRole::Teacher,
         )
         .await
         .unwrap();
@@ -149,7 +149,7 @@ async fn a_demotion_waits_for_a_member_write_and_then_removes_the_membership() {
         // The course is a draft: only a member who is staff can still see it.
         let access = teaching::course_access(
             &mut pool.acquire().await.unwrap(),
-            &Actor::new(candidate.user_id(), Role::Student, Uuid::now_v7()),
+            &Actor::for_tests(candidate.user_id(), Role::Student, Uuid::now_v7()),
             course,
         )
         .await;
@@ -180,14 +180,8 @@ async fn a_member_write_waits_for_a_demotion_and_then_refuses_the_teacher_role()
             let (owner, who) = (owner.clone(), candidate.user_id());
             async move {
                 let mut tx = pool.begin().await.unwrap();
-                teaching::put_member(
-                    &mut tx,
-                    &owner,
-                    course,
-                    who,
-                    crate::access::CourseRole::Teacher,
-                )
-                .await
+                teaching::put_member(&mut tx, &owner, course, who, access::CourseRole::Teacher)
+                    .await
             }
         });
         wait_until_blocked(&pool, &second).await;

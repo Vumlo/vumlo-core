@@ -19,6 +19,7 @@ default = []
 dummy = ["dep:vumlo-module-dummy", "vumlo-config/test-registry"]
 
 [dependencies]
+access.workspace = true
 anyhow.workspace = true
 api-types.workspace = true
 argon2.workspace = true
@@ -51,6 +52,7 @@ vumlo-config.workspace = true
 vumlo-module-dummy = { workspace = true, optional = true }
 
 [dev-dependencies]
+access = { workspace = true, features = ["testing"] }
 base64.workspace = true
 chrono-tz.workspace = true
 reqwest.workspace = true

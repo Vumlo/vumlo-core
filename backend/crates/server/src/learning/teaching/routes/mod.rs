@@ -6,7 +6,7 @@ mod cards;
 mod info;
 mod roster;
 
-use crate::access::ActorSource;
+use access::ActorSource;
 use api_types::{
     Course, CreateCourseRequest, MemberSource, Membership, Page, PageQuery, ProblemDetails,
     PutMemberRequest, TransferOwnershipRequest, UpdateCourseRequest,
@@ -21,9 +21,9 @@ use uuid::Uuid;
 
 use super::model::{self, CourseKind, CourseTitle, CourseUpdate, ModelError};
 use super::service::{self, TeachingError};
-use crate::access::Actor;
-use crate::access::{CourseRole, CourseStatus};
 use crate::learning::LearningState;
+use access::Actor;
+use access::{CourseRole, CourseStatus};
 use common::PageParams;
 use common::{ApiError, ValidJson, ValidQuery};
 

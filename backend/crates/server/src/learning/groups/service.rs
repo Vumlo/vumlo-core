@@ -2,11 +2,11 @@ use sqlx::PgConnection;
 use uuid::Uuid;
 
 use super::model::GroupOverview;
-use crate::access::Actor;
-use crate::access::{self, Action};
 use crate::learning::LearningError;
 use crate::learning::teaching;
 use crate::org;
+use access::Actor;
+use access::{self, Action};
 
 /// A group with its people and the courses that use it (ADR-0053). Admins only.
 pub async fn group_overview(
