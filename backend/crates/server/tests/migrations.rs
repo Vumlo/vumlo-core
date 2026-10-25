@@ -28,6 +28,7 @@ async fn migrations_create_exactly_the_module_schemas() {
                 "gradebook",
                 "idempotency",
                 "org",
+                "plugins",
                 "teaching"
             ]
         );

@@ -5,6 +5,7 @@ const q = encodeURIComponent;
 export type CourseTab = "grades" | "people" | "settings";
 
 export const courseHref = (courseId: string, tab?: CourseTab) => `/course${tab ? `/${tab}` : ""}?id=${q(courseId)}`;
-export const itemHref = (courseId: string, itemId: string) => `/course/item?id=${q(courseId)}&item=${q(itemId)}`;
+/** `tab`: the id of a plugin whose page is shown in the tab of an assignment instead of the assignment (ADR-0066). */
+export const itemHref = (courseId: string, itemId: string, tab?: string) => `/course/item?id=${q(courseId)}&item=${q(itemId)}${tab ? `&tab=${q(tab)}` : ""}`;
 export const editItemHref = (courseId: string, itemId: string) => `/course/item/edit?id=${q(courseId)}&item=${q(itemId)}`;
 export const moduleHref = (name: string, path: string[] = []) => `/m?name=${q(name)}${path.length ? `&path=${path.map(q).join("/")}` : ""}`;

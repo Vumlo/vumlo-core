@@ -2075,15 +2075,18 @@ dependencies = [
 name = "module-api"
 version = "0.2.2"
 dependencies = [
+ "access",
  "anyhow",
  "axum",
  "clap",
+ "common",
+ "events",
  "reqwest",
  "serde",
  "sqlx",
  "thiserror 2.0.21",
  "tokio",
- "utoipa",
+ "utoipa-axum",
  "vumlo-config",
 ]
 
@@ -2451,6 +2454,35 @@ name = "pkg-config"
 version = "0.3.34"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f6b464fbc74e149a392436b17d523f769e057cb6877f6a5c4618bc6f11800548"
+
+[[package]]
+name = "plugins"
+version = "0.2.2"
+dependencies = [
+ "access",
+ "api-types",
+ "axum",
+ "base64 0.23.1",
+ "chrono",
+ "common",
+ "events",
+ "hmac 0.13.0",
+ "learning",
+ "module-api",
+ "rand 0.10.3",
+ "serde",
+ "serde_json",
+ "sha2 0.11.1",
+ "sqlx",
+ "test-support",
+ "thiserror 2.0.21",
+ "tokio",
+ "tracing",
+ "utoipa",
+ "utoipa-axum",
+ "uuid",
+ "vumlo-config",
+]
 
 [[package]]
 name = "png"
@@ -3240,6 +3272,7 @@ dependencies = [
  "module-api",
  "openidconnect",
  "org",
+ "plugins",
  "reqwest",
  "serde_json",
  "sha2 0.11.1",
@@ -4234,6 +4267,7 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 name = "vumlo-cli"
 version = "0.2.2"
 dependencies = [
+ "access",
  "anyhow",
  "api-types",
  "auth",
@@ -4244,6 +4278,7 @@ dependencies = [
  "db",
  "image",
  "module-api",
+ "plugins",
  "reqwest",
  "resvg",
  "rpassword",
@@ -4274,14 +4309,19 @@ dependencies = [
 name = "vumlo-module-dummy"
 version = "0.2.2"
 dependencies = [
+ "access",
  "anyhow",
  "axum",
  "clap",
+ "common",
+ "events",
  "module-api",
  "serde",
+ "serde_json",
  "sqlx",
  "tokio",
  "utoipa",
+ "utoipa-axum",
  "uuid",
  "vumlo-config",
 ]

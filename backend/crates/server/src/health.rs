@@ -1,4 +1,4 @@
-use api_types::{HealthResponse, ProblemDetails};
+use api_types::{HealthResponse, MetaResponse, ModuleMeta, ProblemDetails};
 use axum::Json;
 use axum::extract::State;
 
@@ -31,4 +31,25 @@ pub async fn health(State(state): State<AppState>) -> Result<Json<HealthResponse
             .map(str::to_owned)
             .collect(),
     }))
+}
+
+/// Which optional modules are on. Public: it names the modules and their versions, nothing else.
+#[utoipa::path(
+    get,
+    path = "/meta",
+    responses((status = 200, description = "The enabled optional modules, in start order", body = MetaResponse))
+)]
+pub async fn meta(State(state): State<AppState>) -> Json<MetaResponse> {
+    Json(MetaResponse {
+        modules: state
+            .modules
+            .iter()
+            .map(|module| module.manifest())
+            .filter(|manifest| state.config.module_state.is_enabled(manifest.id))
+            .map(|manifest| ModuleMeta {
+                id: manifest.id.to_owned(),
+                version: manifest.version.to_owned(),
+            })
+            .collect(),
+    })
 }

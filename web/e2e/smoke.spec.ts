@@ -1,5 +1,5 @@
 import { expect, test, type ConsoleMessage, type Page } from "@playwright/test";
-import { accounts, courseRoutes, PASSWORD, publicRoutes, staticRoutes, type RoleName } from "./routes";
+import { accounts, courseRoutes, PASSWORD, publicRoutes, staticRoutes, store, type RoleName } from "./routes";
 
 const roles: RoleName[] = ["student", "teacher", "admin"];
 const themes = ["light", "dark"] as const;
@@ -41,7 +41,7 @@ async function open(page: Page, path: string, theme: string, problems: string[])
 for (const role of roles) {
   for (const theme of themes) {
     test(`${role} screens open in ${theme} theme`, async ({ page }) => {
-      await page.addInitScript((t) => localStorage.setItem("vumlo.theme", t), theme);
+      await store(page, "vumlo.theme", theme);
       const problems = watch(page);
       await signIn(page, role);
       const routes = [...staticRoutes[role], ...(await courseRoutes(page, role))];
@@ -67,7 +67,7 @@ for (const role of roles) {
 
 for (const role of roles) {
   test(`${role} screens open in Ukrainian`, async ({ page }) => {
-    await page.addInitScript(() => localStorage.setItem("vumlo.language", "uk"));
+    await store(page, "vumlo.language", "uk");
     const problems = watch(page);
     await page.goto("/login");
     await page.getByLabel("Електронна пошта").fill(accounts[role]);

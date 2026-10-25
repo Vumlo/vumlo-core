@@ -1,0 +1,38 @@
+[package]
+name = "plugins"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+description = "Plugins: external HTTP services the core does not trust (ADR-0066). Installs, events sent to them, the API they call."
+
+[dependencies]
+access.workspace = true
+api-types.workspace = true
+axum.workspace = true
+base64.workspace = true
+chrono.workspace = true
+common.workspace = true
+events.workspace = true
+hmac.workspace = true
+learning.workspace = true
+# Only for `OutboundClient`, the one way the program makes outgoing requests (ADR-0054).
+module-api.workspace = true
+rand.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+sqlx.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+utoipa.workspace = true
+utoipa-axum.workspace = true
+uuid.workspace = true
+vumlo-config.workspace = true
+
+[dev-dependencies]
+access = { workspace = true, features = ["testing"] }
+test-support.workspace = true
+
+[lints]
+workspace = true

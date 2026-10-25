@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE plugins.deliveries SET delivered_at = now(), last_error = NULL WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "a9f595fd711e5aee6202ad0bd88903d70c95925cda3b1f93c1cc2cff8f647cc8"
+}

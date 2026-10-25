@@ -3,17 +3,21 @@ name = "module-api"
 version.workspace = true
 edition.workspace = true
 publish.workspace = true
+description = "The contract between the core and an optional module (ADR-0054, ADR-0066): it depends on common, access and events only."
 
 [dependencies]
+access.workspace = true
 anyhow.workspace = true
 axum.workspace = true
 clap.workspace = true
+common.workspace = true
+events.workspace = true
 reqwest.workspace = true
 serde.workspace = true
 sqlx.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
-utoipa.workspace = true
+utoipa-axum.workspace = true
 vumlo-config.workspace = true
 
 [lints]

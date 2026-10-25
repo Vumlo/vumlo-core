@@ -26,7 +26,7 @@ use utoipa_axum::routes;
 use utoipa_scalar::{Scalar, Servable};
 
 use crate::health;
-use access::{self, ActorSource};
+use access::{self, ActorSource, PluginSource};
 use auth::{self, AuthState, SetupError};
 use auth::{MailError, Mailer};
 use common::{ApiError, problem_details};
@@ -37,6 +37,7 @@ use learning::gradebook;
 use learning::teaching;
 use learning::{self, LearningState};
 use org::{self, OrgState};
+use plugins::PluginsState;
 use vumlo_config::Settings;
 
 /// Shorter than the request timeout, so an unreachable database surfaces as 503, not 408.
@@ -54,6 +55,9 @@ pub struct AppState {
     pub auth: AuthState,
     pub org: OrgState,
     pub learning: LearningState,
+    pub plugins: PluginsState,
+    /// The optional modules compiled in, each after the ones it requires.
+    pub modules: Arc<Vec<&'static dyn module_api::Module>>,
 }
 
 impl FromRef<AppState> for AuthState {
@@ -71,6 +75,21 @@ impl FromRef<AppState> for OrgState {
 impl FromRef<AppState> for LearningState {
     fn from_ref(state: &AppState) -> Self {
         state.learning.clone()
+    }
+}
+
+impl FromRef<AppState> for PluginsState {
+    fn from_ref(state: &AppState) -> Self {
+        state.plugins.clone()
+    }
+}
+
+impl PluginSource for AppState {
+    async fn authenticate_plugin(
+        &self,
+        parts: &Parts,
+    ) -> Result<access::AuthenticatedPlugin, ApiError> {
+        self.plugins.authenticate_plugin(parts).await
     }
 }
 
@@ -95,6 +114,8 @@ pub enum StateError {
     Mail(#[from] MailError),
     #[error(transparent)]
     Google(#[from] auth::GoogleSetupError),
+    #[error("the optional modules cannot be started: {0}")]
+    Modules(#[from] module_api::OrderError),
 }
 
 impl AppState {
@@ -115,6 +136,7 @@ impl AppState {
             .as_ref()
             .map(|google| auth::Google::new(google).map(Arc::new))
             .transpose()?;
+        let modules = Arc::new(crate::modules::ordered()?);
         let config = Arc::new(config);
         Ok(Self {
             auth: AuthState {
@@ -133,8 +155,10 @@ impl AppState {
                 config: config.clone(),
                 editor: Arc::new(editor),
             },
+            plugins: PluginsState::new(db.clone(), &config),
             db,
             config,
+            modules,
         })
     }
 
@@ -152,7 +176,21 @@ impl AppState {
                 },
             ));
         }
-        handlers
+        // Without `plugins.secret_key` no plugin can be installed, so there is nobody to owe.
+        if self.plugins.key.is_some() {
+            handlers = handlers.merge(plugins::event_handlers(self.db.clone()));
+        }
+        handlers.merge(crate::modules::event_handlers(self))
+    }
+
+    /// Sends the events plugins are owed until the process ends. `None` while
+    /// `plugins.secret_key` is not set (ADR-0066).
+    pub fn plugin_deliverer(&self) -> Result<Option<plugins::Deliverer>, plugins::PluginsError> {
+        self.plugins
+            .key
+            .as_deref()
+            .map(|key| plugins::Deliverer::new(key.clone()))
+            .transpose()
     }
 }
 
@@ -181,6 +219,17 @@ impl Modify for SecurityAddon {
                     .build(),
             ),
         );
+        components.add_security_scheme(
+            "plugin",
+            SecurityScheme::Http(
+                HttpBuilder::new()
+                    .scheme(HttpAuthScheme::Bearer)
+                    .description(Some(
+                        "A plugin token (`vplg_...`) from `vumlo-cli plugin install` (ADR-0066).",
+                    ))
+                    .build(),
+            ),
+        );
     }
 }
 
@@ -199,6 +248,7 @@ pub fn router(state: AppState) -> Result<Router, SetupError> {
             "/api/v1",
             OpenApiRouter::new()
                 .routes(routes!(health::health))
+                .routes(routes!(health::meta))
                 .merge(identity)
                 .merge(teaching::router())
                 .merge(learning::people::router())
@@ -208,7 +258,8 @@ pub fn router(state: AppState) -> Result<Router, SetupError> {
                 .merge(gradebook::router())
                 .merge(assessment::router())
                 .merge(org::router())
-                .merge(learning::audit::router()),
+                .merge(learning::audit::router())
+                .merge(plugins::router()),
         )
         .split_for_parts();
     let (router, openapi) = mount_modules(&state, router, openapi);
@@ -251,29 +302,35 @@ pub fn router(state: AppState) -> Result<Router, SetupError> {
     Ok(cors(router, &config.server.allowed_origins))
 }
 
-/// Mounts every module that is compiled in and enabled under `/api/v1/<name>`, and adds its paths
-/// to the OpenAPI document. A module that is off gets nothing: its paths answer `404` and are not
-/// in the document (ADR-0054).
+/// Mounts every module that is compiled in and enabled under `/api/v1/modules/<id>`, and adds its
+/// paths to the OpenAPI document. A module that is off gets nothing: its paths answer `404` and
+/// are not in the document (ADR-0054, ADR-0066).
 fn mount_modules(
     state: &AppState,
     mut router: Router<AppState>,
     mut openapi: utoipa::openapi::OpenApi,
 ) -> (Router<AppState>, utoipa::openapi::OpenApi) {
-    for module in crate::modules::compiled() {
-        if !state.config.module_state.is_enabled(module.name) {
-            continue;
-        }
-        let prefix = format!("/api/v1/{}", module.name);
-        router = router.nest_service(
-            &prefix,
-            (module.router)(crate::modules::context(state, module.name)),
-        );
-        let mut doc = (module.openapi)();
+    for one in crate::modules::active(state) {
+        let prefix = format!("/api/v1/modules/{}", one.module.manifest().id);
+        let (routes, mut doc) = one.registered.routes.split_for_parts();
+        router = router.nest_service(&prefix, routes.with_state(one.state));
         doc.paths.paths = std::mem::take(&mut doc.paths.paths)
             .into_iter()
             .map(|(path, item)| (format!("{prefix}{path}"), item))
             .collect();
         openapi.merge(doc);
+    }
+    // The core has routes of its own below `/api/v1/modules/` (the modules of a course, whose ids
+    // are UUIDs, so they never clash with a module id). A module that is off still answers `404`
+    // there, not the `405` of a core route that happens to match the shape of its path.
+    for module in state.modules.iter() {
+        let id = module.manifest().id;
+        if !state.config.module_state.is_enabled(id) {
+            router = router.nest_service(
+                &format!("/api/v1/modules/{id}"),
+                Router::new().fallback(|| async { ApiError::NotFound }),
+            );
+        }
     }
     (router, openapi)
 }

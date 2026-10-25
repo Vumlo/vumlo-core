@@ -10,7 +10,9 @@ use sqlx::PgConnection;
 use sqlx::types::Json;
 use uuid::Uuid;
 
-use super::model::{Attempt, Draft, LatestAttempt, LatestContent, StudentName, StudentSubmission};
+use super::model::{
+    Attempt, Draft, LatestAttempt, LatestContent, PluginSubmission, StudentName, StudentSubmission,
+};
 
 type Body = Json<Map<String, Value>>;
 
@@ -431,6 +433,48 @@ pub async fn list_students(
             },
         })
         .collect())
+}
+
+// ---------------------------------------------------------------------------------------------
+// Plugins and the staff who read their reports (ADR-0066): submitted attempts only
+// ---------------------------------------------------------------------------------------------
+
+/// A submitted attempt by its row id. A draft has no way through `status = 'submitted'`.
+pub async fn submitted_by_id(
+    conn: &mut PgConnection,
+    submission_id: Uuid,
+) -> Result<Option<PluginSubmission>, sqlx::Error> {
+    let row = sqlx::query!(
+        r#"SELECT id, assignment_id, student_id, attempt AS "attempt!",
+                  content AS "content: Body", submitted_at AS "submitted_at!"
+           FROM assessment.submissions
+           WHERE id = $1 AND status = 'submitted'"#,
+        submission_id
+    )
+    .fetch_optional(conn)
+    .await?;
+    Ok(row.map(|row| PluginSubmission {
+        id: row.id,
+        assignment_id: row.assignment_id,
+        student_id: row.student_id,
+        attempt: row.attempt,
+        content: row.content.0,
+        submitted_at: row.submitted_at,
+    }))
+}
+
+/// The assignment of a submitted attempt, without reading its content.
+pub async fn assignment_of_submitted(
+    conn: &mut PgConnection,
+    submission_id: Uuid,
+) -> Result<Option<Uuid>, sqlx::Error> {
+    sqlx::query_scalar!(
+        "SELECT assignment_id FROM assessment.submissions
+         WHERE id = $1 AND status = 'submitted'",
+        submission_id
+    )
+    .fetch_optional(conn)
+    .await
 }
 
 // ---------------------------------------------------------------------------------------------

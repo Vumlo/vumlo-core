@@ -1,7 +1,7 @@
 //! The embedded migrations and what a database has applied of them.
 //!
 //! The core migrations share one table, `_sqlx_migrations`. Every optional module keeps its own
-//! table (`_sqlx_migrations_<module>`, set on its `Migrator`), so a module that is compiled out
+//! table inside its own schema (`mod_<id>._sqlx_migrations`, set on its `Migrator`), so a module that is compiled out
 //! can never make the core refuse to start, and a database that is newer than the binary is
 //! always the core's doing.
 
@@ -128,19 +128,20 @@ fn into_sqlx(e: MigrateError) -> sqlx::Error {
     sqlx::Error::Protocol(e.to_string())
 }
 
-/// The optional modules whose migrations table exists in the database, by module name: the
-/// modules that were ever migrated here, compiled in now or not. Their data is never deleted.
+/// The optional modules whose migrations table exists in the database, by module id: the modules
+/// that were ever migrated here, compiled in now or not. Their data is never deleted. A module
+/// keeps its history in `mod_<id>._sqlx_migrations` (ADR-0066).
 pub async fn migrated_modules(conn: &mut PgConnection) -> Result<Vec<String>, sqlx::Error> {
-    let tables: Vec<String> = sqlx::query_scalar(
-        r"SELECT tablename::text FROM pg_catalog.pg_tables
-          WHERE schemaname = current_schema() AND tablename LIKE '\_sqlx\_migrations\_%'
-          ORDER BY tablename",
+    let schemas: Vec<String> = sqlx::query_scalar(
+        r"SELECT schemaname::text FROM pg_catalog.pg_tables
+          WHERE schemaname LIKE 'mod\_%' AND tablename = '_sqlx_migrations'
+          ORDER BY schemaname",
     )
     .fetch_all(conn)
     .await?;
-    Ok(tables
+    Ok(schemas
         .iter()
-        .filter_map(|table| table.strip_prefix("_sqlx_migrations_"))
+        .filter_map(|schema| schema.strip_prefix("mod_"))
         .map(str::to_owned)
         .collect())
 }

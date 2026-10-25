@@ -322,6 +322,10 @@ export const uk: Record<Keys, string> & Extra = {
   "bar.notGraded": ", без оцінки",
   "bar.worth": ", {points} балів",
   "preview.banner": "Ви переглядаєте це як викладач. Студенти відповідають тут; ви не можете здавати.",
+  "plugin.tabs": "Вигляди цього завдання",
+  "plugin.tab.assignment": "Завдання",
+  "plugin.frame.title": "{name}, плагін",
+  "plugin.frame.failed": "Сторінку цього плагіна не вдалося відкрити.",
 
   // course pages, student content
   "outline.label": "Структура курсу",

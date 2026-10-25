@@ -14,6 +14,7 @@ mod db_cmd;
 mod doctor;
 mod init;
 mod modules_cmd;
+mod plugin_cmd;
 mod runtime;
 mod seed;
 mod version;
@@ -61,6 +62,9 @@ enum Command {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
+    /// External plugins (ADR-0066): services that receive events and call the plugin API.
+    #[command(subcommand)]
+    Plugin(PluginCommand),
     /// What the web build takes from the institution's configuration.
     #[command(subcommand)]
     Brand(BrandCommand),
@@ -111,6 +115,55 @@ enum ModulesCommand {
     List {
         #[arg(long)]
         json: bool,
+    },
+}
+
+#[derive(Subcommand)]
+enum PluginCommand {
+    /// Read the plugin's manifest, approve the scopes it asks for, and register it. Prints its
+    /// token and its secret, once. Needs `plugins.secret_key`.
+    Install {
+        /// Where the plugin listens, e.g. `https://tools.example.edu/hello`. `http://` is
+        /// accepted for a service on this machine.
+        base_url: String,
+        /// The scopes to grant, comma-separated, or `none`. Without it each requested scope is
+        /// asked for.
+        #[arg(long, value_name = "SCOPES")]
+        grant: Option<String>,
+        /// Read the manifest and say what would be installed, install nothing.
+        #[arg(long)]
+        dry_run: bool,
+    },
+    /// The installed plugins, their scopes and what is waiting to be sent.
+    List,
+    /// Replace the scopes a plugin has. At most the ones it asked for.
+    Grant {
+        plugin_id: String,
+        /// Comma-separated scopes, or `none`.
+        scopes: String,
+        #[arg(long)]
+        dry_run: bool,
+    },
+    /// Stop sending events to a plugin and refuse its token. Nothing is deleted.
+    Disable {
+        plugin_id: String,
+        #[arg(long)]
+        dry_run: bool,
+    },
+    /// Undo `disable`: the plugin is sent what it missed, and its token works again.
+    Enable {
+        plugin_id: String,
+        #[arg(long)]
+        dry_run: bool,
+    },
+    /// Delete a plugin, the events it is owed and the reports it wrote.
+    Remove {
+        plugin_id: String,
+        /// Do it. Without it the command only says what it would delete.
+        #[arg(long)]
+        yes: bool,
+        #[arg(long)]
+        dry_run: bool,
     },
 }
 
@@ -204,6 +257,52 @@ async fn run(cli: Cli) -> anyhow::Result<bool> {
         Command::Config(ConfigCommand::Show { public }) => config_cmd::show(&options, public)?,
         Command::Modules(ModulesCommand::List { json }) => modules_cmd::list(&options, json)?,
         Command::Module { name, args } => modules_cmd::run_module(&options, &name, &args).await?,
+        Command::Plugin(command) => match command {
+            PluginCommand::Install {
+                base_url,
+                grant,
+                dry_run,
+            } => {
+                plugin_cmd::install(
+                    &options,
+                    plugin_cmd::InstallArgs {
+                        base_url,
+                        grant,
+                        dry_run,
+                    },
+                )
+                .await?
+            }
+            PluginCommand::List => plugin_cmd::list(&options).await?,
+            PluginCommand::Grant {
+                plugin_id,
+                scopes,
+                dry_run,
+            } => plugin_cmd::grant(&options, &plugin_id, &scopes, dry_run).await?,
+            PluginCommand::Disable { plugin_id, dry_run } => {
+                plugin_cmd::set_status(
+                    &options,
+                    &plugin_id,
+                    plugins::InstallStatus::Disabled,
+                    dry_run,
+                )
+                .await?
+            }
+            PluginCommand::Enable { plugin_id, dry_run } => {
+                plugin_cmd::set_status(
+                    &options,
+                    &plugin_id,
+                    plugins::InstallStatus::Enabled,
+                    dry_run,
+                )
+                .await?
+            }
+            PluginCommand::Remove {
+                plugin_id,
+                yes,
+                dry_run,
+            } => plugin_cmd::remove(&options, &plugin_id, yes, dry_run).await?,
+        },
         Command::Brand(BrandCommand::Apply { dry_run }) => brand::apply(&options, dry_run).await?,
         Command::Build(BuildCommand::Web { dry_run }) => build_web::run(&options, dry_run).await?,
         Command::Seed { demo, yes, dry_run } => {

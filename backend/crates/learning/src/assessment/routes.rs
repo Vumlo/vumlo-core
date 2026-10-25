@@ -43,9 +43,9 @@ impl From<AssessmentError> for ApiError {
     fn from(error: AssessmentError) -> Self {
         match error {
             AssessmentError::Forbidden(policy) => policy.into(),
-            AssessmentError::AssignmentNotFound | AssessmentError::StudentNotFound => {
-                Self::NotFound
-            }
+            AssessmentError::AssignmentNotFound
+            | AssessmentError::SubmissionNotFound
+            | AssessmentError::StudentNotFound => Self::NotFound,
             AssessmentError::TakesNoSubmissions => {
                 Self::Conflict("this assignment takes no submissions")
             }

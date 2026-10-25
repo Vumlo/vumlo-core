@@ -19,8 +19,8 @@ pub use test_support::{bare_db_test, db_test};
 /// the core, and the CLI treats a database with a module migration pending as not ready.
 pub async fn migrate_modules(pool: &PgPool) {
     #[cfg(feature = "dummy")]
-    vumlo_module_dummy::def()
-        .migrator
+    vumlo_module_dummy::module()
+        .migrations()
         .expect("the dummy module has migrations")
         .run(pool)
         .await
@@ -164,15 +164,23 @@ fn run_binary(dir: &Path, args: &[String], stdin: Option<&str>, env: &[(String, 
     }
 }
 
+/// The specs of the modules this build contains.
+fn vumlo_cli_specs() -> Vec<vumlo_config::ModuleSpec> {
+    #[cfg(feature = "dummy")]
+    return vec![vumlo_module_dummy::module().manifest().spec()];
+    #[cfg(not(feature = "dummy"))]
+    return Vec::new();
+}
+
 /// The settings `CONFIG` gives for the database `url`: what the real server would load.
-pub fn settings_for(url: &str, config: &str, compiled: &[&str]) -> Settings {
+pub fn settings_for(url: &str, config: &str) -> Settings {
     vumlo_config::load(
         Sources {
             file: Some(FileSource::Text(config.to_owned())),
             env: BTreeMap::from([("DATABASE_URL".to_owned(), url.to_owned())]),
             overrides: Vec::new(),
         },
-        compiled,
+        &vumlo_cli_specs(),
     )
     .expect("test settings")
 }

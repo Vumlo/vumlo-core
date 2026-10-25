@@ -14,8 +14,8 @@ pub use load::{
     parse_overrides,
 };
 pub use modules::{
-    KnownModule, ModuleEntry, ModuleStatus, Modules, RESERVED_KEYS, ResolvedModule, SettingKind,
-    SettingSpec, check_endpoint, known, known_modules, resolve as resolve_modules,
+    ModuleEntry, ModuleSpec, ModuleStatus, Modules, RESERVED_KEYS, ResolvedModule, SettingKind,
+    SettingSpec, check_endpoint, resolve as resolve_modules,
 };
 pub use schema::{Visibility, env_name, public_paths, secret_paths, settings_schema};
 pub use settings::*;

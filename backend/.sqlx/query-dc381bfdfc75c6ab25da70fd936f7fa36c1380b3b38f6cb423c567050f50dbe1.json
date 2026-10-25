@@ -1,0 +1,113 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "WITH due AS (\n               SELECT d.id FROM plugins.deliveries d\n               JOIN plugins.plugin_installs i ON i.id = d.install_id\n               WHERE d.delivered_at IS NULL AND d.failed_at IS NULL\n                 AND d.run_after <= now() AND i.status = 'enabled'\n               ORDER BY d.id\n               LIMIT $1\n               FOR UPDATE OF d SKIP LOCKED\n           ), claimed AS (\n               UPDATE plugins.deliveries d\n               SET attempts = d.attempts + 1, run_after = now() + make_interval(secs => $2)\n               FROM due WHERE d.id = due.id\n               RETURNING d.id, d.install_id, d.event_id, d.event_type, d.data, d.attempts\n           )\n           SELECT c.id AS \"id!\", c.install_id AS \"install_id!\", c.event_id AS \"event_id!\",\n                  c.event_type AS \"event_type!\", c.data AS \"data!\", c.attempts AS \"attempts!\",\n                  i.base_url, i.secret_version\n           FROM claimed c JOIN plugins.plugin_installs i ON i.id = c.install_id\n           ORDER BY c.id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id!",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "plugins.deliveries",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "install_id!",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "plugins.deliveries",
+            "name": "install_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "event_id!",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "plugins.deliveries",
+            "name": "event_id"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "event_type!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "plugins.deliveries",
+            "name": "event_type"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "data!",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "plugins.deliveries",
+            "name": "data"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "attempts!",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "plugins.deliveries",
+            "name": "attempts"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "base_url",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "plugins.plugin_installs",
+            "name": "base_url"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "secret_version",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "plugins.plugin_installs",
+            "name": "secret_version"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Float8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "dc381bfdfc75c6ab25da70fd936f7fa36c1380b3b38f6cb423c567050f50dbe1"
+}

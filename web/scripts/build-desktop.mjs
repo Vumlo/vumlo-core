@@ -15,3 +15,5 @@ run([join(web, "scripts", "brand.mjs"), ...process.argv.slice(2).filter((a) => a
 rmSync(join(web, "out"), { recursive: true, force: true });
 run([join(web, "node_modules", "next", "dist", "bin", "next"), "build"], { VUMLO_TARGET: "desktop" });
 rmSync(join(web, "out", "mockServiceWorker.js"), { force: true });
+// The page of the mock plugin is for `dev:mock` and the e2e test; the desktop app shows no plugin pages (ADR-0066).
+rmSync(join(web, "out", "mock-plugin"), { recursive: true, force: true });

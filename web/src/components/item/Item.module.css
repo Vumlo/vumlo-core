@@ -51,5 +51,8 @@
 .pagerSmall { font-size: 13px; color: var(--muted); }
 .pagerLink[data-kind="assignment"] .pagerSmall { color: var(--asg-fg); }
 .preview { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-bottom: 16px; }
+.pluginTabs { margin: 0 0 20px; }
+.pluginHeading { margin: 0 0 12px; font-size: 20px; }
+.pluginFrame { display: block; width: 100%; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); color-scheme: normal; }
 @media (max-width: 960px) { .toc { display: none; } }
 @media (max-width: 720px) { .title, .lectureTitle { font-size: 28px; } .bar { top: 64px; } }

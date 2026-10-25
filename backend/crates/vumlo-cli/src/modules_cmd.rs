@@ -54,7 +54,10 @@ pub fn list(options: &Options, as_json: bool) -> anyhow::Result<()> {
 pub async fn run_module(options: &Options, name: &str, args: &[String]) -> anyhow::Result<()> {
     let loaded = runtime::load(options)?;
     let status = loaded.settings.module_state.status(name);
-    let Some(module) = runtime::compiled().into_iter().find(|m| m.name == name) else {
+    let Some(module) = runtime::compiled()
+        .into_iter()
+        .find(|m| m.manifest().id == name)
+    else {
         bail!(
             "module {name} is not compiled into this binary (status: {})",
             status.as_str()
@@ -66,7 +69,7 @@ pub async fn run_module(options: &Options, name: &str, args: &[String]) -> anyho
             status.as_str()
         );
     }
-    let Some(cli) = module.cli else {
+    let Some(cli) = module.cli() else {
         bail!("module {name} has no subcommands");
     };
     let matches = (cli.command)()
@@ -78,7 +81,7 @@ pub async fn run_module(options: &Options, name: &str, args: &[String]) -> anyho
         .context("the database is not ready")?;
     (cli.run)(
         matches,
-        runtime::module_context(&loaded.settings, &pool, name),
+        runtime::module_state(module, &loaded.settings, &pool),
     )
     .await
 }

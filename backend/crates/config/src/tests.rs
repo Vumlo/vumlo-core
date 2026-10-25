@@ -37,7 +37,7 @@ pub(crate) fn build_with(
             env: vars,
             overrides: Vec::new(),
         },
-        compiled,
+        &crate::modules::test_specs(compiled),
     )
 }
 
@@ -166,6 +166,34 @@ fn only_double_underscore_variables_are_configuration() {
 }
 
 // --- secrets ------------------------------------------------------------------------------
+
+#[test]
+fn the_plugin_key_comes_from_the_environment_is_long_enough_and_never_shown() {
+    const KEY: &str = "0123456789abcdef0123456789abcdef";
+    assert!(
+        build(VALID, &[])
+            .unwrap()
+            .plugins
+            .secret_key
+            .expose()
+            .is_empty()
+    );
+
+    let s = build(VALID, &[("VUMLO__PLUGINS__SECRET_KEY", KEY)]).unwrap();
+    assert_eq!(s.plugins.secret_key.expose(), KEY);
+    assert!(!format!("{s:?}").contains(KEY));
+
+    let toml = format!("{VALID}\n[plugins]\nsecret_key = \"{KEY}\"\n");
+    let e = build(&toml, &[]).unwrap_err().to_string();
+    assert!(e.contains("VUMLO__PLUGINS__SECRET_KEY"), "{e}");
+    assert!(!e.contains(KEY), "{e}");
+
+    let e = build(VALID, &[("VUMLO__PLUGINS__SECRET_KEY", "too-short")])
+        .unwrap_err()
+        .to_string();
+    assert!(e.contains("plugins.secret_key must be at least 32"), "{e}");
+    assert!(!e.contains("too-short"), "{e}");
+}
 
 #[test]
 fn the_database_url_comes_from_database_url_and_not_from_the_file() {
@@ -351,15 +379,15 @@ fn modules_are_read_from_the_file_and_the_environment() {
 }
 
 #[test]
-fn an_unknown_module_name_stops_the_load() {
-    let e = build_with(&format!("{VALID}\n[modules]\nvpl = true\n"), &[], &[]).unwrap_err();
-    assert!(e.to_string().contains("modules.vpl: unknown module"), "{e}");
-}
-
-#[test]
-fn enabling_a_module_this_binary_lacks_says_to_build_with_its_feature() {
-    let e = build_with(&format!("{VALID}\n[modules]\ndummy = true\n"), &[], &[]).unwrap_err();
-    assert!(e.to_string().contains("Cargo feature `dummy`"), "{e}");
+fn a_module_name_this_binary_lacks_stops_the_load_on_or_off() {
+    for line in ["vpl = true", "dummy = true", "dummy = false"] {
+        let e = build_with(&format!("{VALID}\n[modules]\n{line}\n"), &[], &[]).unwrap_err();
+        assert!(
+            e.to_string()
+                .contains("unknown, or not compiled into this binary"),
+            "{line}: {e}"
+        );
+    }
 }
 
 #[test]

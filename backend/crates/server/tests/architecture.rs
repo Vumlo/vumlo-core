@@ -90,12 +90,20 @@ const UNITS: &[Unit] = &[
         schema: None,
         layer: 5,
     },
+    // The plugins (ADR-0066) sit on `learning` and write only the schema `plugins`. They read the
+    // submissions of `assessment` through its public functions, never its tables.
+    Unit {
+        name: "plugins",
+        dir: "plugins/src",
+        schema: Some("plugins"),
+        layer: 6,
+    },
     // The composition root and the middleware that has a table of its own.
     Unit {
         name: "server",
         dir: "server/src",
         schema: Some("idempotency"),
-        layer: 6,
+        layer: 7,
     },
 ];
 

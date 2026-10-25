@@ -44,9 +44,29 @@ impl OutboundClient {
 
     /// GET `url`; returns the status and the body, at most `max_response_bytes` of it.
     pub async fn get(&self, url: &str) -> Result<(u16, Vec<u8>), OutboundError> {
-        let mut response = self
-            .client
-            .get(url)
+        self.read(self.client.get(url)).await
+    }
+
+    /// POST `body` to `url` with `headers`; returns the status and the body, at most
+    /// `max_response_bytes` of it. The caller names the content type in `headers`.
+    pub async fn post(
+        &self,
+        url: &str,
+        headers: &[(&str, &str)],
+        body: Vec<u8>,
+    ) -> Result<(u16, Vec<u8>), OutboundError> {
+        let mut request = self.client.post(url).body(body);
+        for (name, value) in headers {
+            request = request.header(*name, *value);
+        }
+        self.read(request).await
+    }
+
+    async fn read(
+        &self,
+        request: reqwest::RequestBuilder,
+    ) -> Result<(u16, Vec<u8>), OutboundError> {
+        let mut response = request
             .send()
             .await
             .map_err(|e| OutboundError::Request(without_url(e)))?;

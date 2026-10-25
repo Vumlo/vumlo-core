@@ -76,9 +76,7 @@ pub async fn status(options: &Options, as_json: bool) -> anyhow::Result<bool> {
         }
     }
     for name in kept {
-        println!(
-            "{name:<10} not compiled in; its tables and data are kept (_sqlx_migrations_{name})"
-        );
+        println!("{name:<10} not compiled in; its tables and data are kept (schema mod_{name})");
     }
     Ok(healthy)
 }

@@ -10,9 +10,9 @@ use api_types::ProfileName;
 use config::{Config, Environment, File, FileFormat};
 use serde_json::Value;
 
-use crate::modules;
+use crate::modules::{self, ModuleSpec};
 use crate::schema;
-use crate::settings::{SUPPORTED_CONFIG_VERSION, Settings};
+use crate::settings::{MIN_PLUGIN_KEY_CHARS, SUPPORTED_CONFIG_VERSION, Settings};
 
 /// Every problem found, not only the first.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -85,8 +85,8 @@ pub(crate) fn check_renamed(old_file: bool, new_file: bool, vars: &[String]) -> 
     }
 }
 
-/// Builds the settings from `sources`. `compiled` names the optional modules this binary contains.
-pub fn load(sources: Sources, compiled: &[&str]) -> Result<Settings, Error> {
+/// Builds the settings from `sources`. `compiled` holds the specs of the optional modules this binary contains.
+pub fn load(sources: Sources, compiled: &[ModuleSpec]) -> Result<Settings, Error> {
     let names: Vec<String> = sources.env.keys().cloned().collect();
     check_renamed(false, false, &names)?;
 
@@ -288,6 +288,12 @@ fn leaf_paths(value: &Value) -> Vec<String> {
 
 fn validate(settings: &mut Settings) -> Vec<String> {
     let mut errors = Vec::new();
+    let key = settings.plugins.secret_key.expose();
+    if !key.is_empty() && key.chars().count() < MIN_PLUGIN_KEY_CHARS {
+        errors.push(format!(
+            "plugins.secret_key must be at least {MIN_PLUGIN_KEY_CHARS} characters"
+        ));
+    }
     let auth = &settings.auth;
     if !(8..=128).contains(&auth.password_min_length) {
         errors.push("auth.password_min_length must be between 8 and 128".to_owned());
@@ -459,7 +465,7 @@ pub struct Loaded {
 /// The configuration as the process sees it: `--config`, `VUMLO_CONFIG`, `./vumlo.toml`, then
 /// `../vumlo.toml`; the variables of `[cli].env_file` (never overriding the environment); the
 /// `VUMLO__*` variables; `--set`.
-pub fn load_process(options: &Options, compiled: &[&str]) -> Result<Loaded, Error> {
+pub fn load_process(options: &Options, compiled: &[ModuleSpec]) -> Result<Loaded, Error> {
     let mut env: BTreeMap<String, String> = std::env::vars().collect();
     let config_file = find_file(options.config.as_deref(), &env)?;
     let overrides = parse_overrides(&options.set)?;

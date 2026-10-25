@@ -307,6 +307,10 @@ export const en = {
   "bar.notGraded": ", not graded",
   "bar.worth": ", worth {points} points",
   "preview.banner": "You're viewing this as a teacher. Students answer here; you can't submit.",
+  "plugin.tabs": "Views of this assignment",
+  "plugin.tab.assignment": "Assignment",
+  "plugin.frame.title": "{name}, a plugin",
+  "plugin.frame.failed": "This plugin page could not be opened.",
 
   // course pages, student content
   "outline.label": "Course outline",

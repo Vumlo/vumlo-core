@@ -16,6 +16,7 @@ mod groups;
 mod home;
 mod items;
 mod org;
+mod plugins;
 
 pub use admin::*;
 pub use assessment::*;
@@ -26,6 +27,7 @@ pub use groups::*;
 pub use home::*;
 pub use items::*;
 pub use org::*;
+pub use plugins::*;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct HealthResponse {
@@ -35,6 +37,19 @@ pub struct HealthResponse {
     pub version: String,
     /// The optional modules compiled into the server, enabled or not.
     pub modules: Vec<String>,
+}
+
+/// The optional modules that are on (ADR-0066).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct MetaResponse {
+    /// Enabled modules, each after the ones it requires.
+    pub modules: Vec<ModuleMeta>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct ModuleMeta {
+    pub id: String,
+    pub version: String,
 }
 
 /// One rejected field of a `422` response.

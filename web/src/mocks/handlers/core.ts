@@ -423,6 +423,25 @@ export const coreHandlers = [
     if (!staff && !itemVisibleToStudent(item, course)) throw notFound();
     return HttpResponse.json(itemFor(item, staff));
   }),
+
+  // ---- plugins (ADR-0066): one plugin, "words", with a page in the tab of an assignment ----
+  http.get(`${A}/plugin-slots`, ({ request }) => {
+    requireUser();
+    if (new URL(request.url).searchParams.get("slot") !== "assignment.tab") throw problem(422, "Unprocessable Entity");
+    return HttpResponse.json({ items: [{ plugin_id: "words", title: "Words", url: "/mock-plugin/tab.html" }] });
+  }),
+  http.post(`${A}/assignments/:id/plugin-launch`, async ({ request, params }) => {
+    const user = requireUser();
+    const item = itemById(String(params.id));
+    const course = courseById(item.course_id);
+    if (!item.assignment || !canView(user, course)) throw notFound();
+    const staff = isStaff(user, course);
+    if (!staff && !itemVisibleToStudent(item, course)) throw notFound();
+    const body = (await request.json()) as { plugin_id?: string };
+    if (body.plugin_id !== "words") throw notFound();
+    // Not signed: the mock page only reads the role from it.
+    return HttpResponse.json({ token: `mock.${staff ? "staff" : "student"}`, expires_at: new Date(MOCK_NOW.getTime() + 60_000).toISOString() });
+  }),
   http.patch(`${A}/items/:id`, async ({ request, params }) => {
     const item = itemById(String(params.id));
     requireStaff(item.course_id);

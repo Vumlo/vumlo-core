@@ -28,6 +28,18 @@ pub struct Attempt {
     pub auto_scores: Option<Map<String, Value>>,
 }
 
+/// A submitted attempt as a plugin with `submissions:read` sees it (ADR-0066): which work, whose,
+/// and what it says. No draft, no score and no grade.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PluginSubmission {
+    pub id: Uuid,
+    pub assignment_id: Uuid,
+    pub student_id: Uuid,
+    pub attempt: i32,
+    pub content: Map<String, Value>,
+    pub submitted_at: DateTime<Utc>,
+}
+
 /// A current student, named.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StudentName {

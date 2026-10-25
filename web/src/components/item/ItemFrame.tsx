@@ -8,6 +8,10 @@ import { findItem } from "@/lib/course";
 import { useT } from "@/lib/i18n";
 import s from "./Item.module.css";
 import { courseHref, editItemHref } from "@/lib/routes";
+import { usePluginTabs } from "@/lib/api/hooks/plugins";
+import { useItemTab } from "@/lib/useRoute";
+import { PluginFrame } from "./PluginFrame";
+import { PluginTabs } from "./PluginTabs";
 
 /** Outline on the left, the item on the right. `focus` hides the outline (focus mode of the answer editor). */
 export function ItemFrame({ courseId, itemId, children, focus = false }: { courseId: string; itemId: string; children: (ctx: { crumbs: ReactNode }) => ReactNode; focus?: boolean }) {
@@ -17,6 +21,11 @@ export function ItemFrame({ courseId, itemId, children, focus = false }: { cours
   const info = useCourseInfo(courseId);
   const course = useCourse(courseId);
   const found = tree.data ? findItem(tree.data, itemId) : undefined;
+  // The pages that plugins offer in the tab of an assignment (ADR-0066). None: the page is as it was.
+  const pluginSlots = usePluginTabs();
+  const tab = useItemTab();
+  const tabs = found?.item.kind === "assignment" && !focus ? pluginSlots : [];
+  const openTab = tabs.find((slot) => slot.plugin_id === tab);
   const crumbs = (
     <nav aria-label={t("common.breadcrumb")} className="crumbs">
       <Link href={courseHref(courseId)}>{info.data?.code ?? t("search.kind.course")}</Link>
@@ -28,7 +37,19 @@ export function ItemFrame({ courseId, itemId, children, focus = false }: { cours
     <div className="container" style={{ paddingTop: 24 }}>
       <div className={focus ? s.frameFocus : s.frame}>
         {!focus && tree.data && <CourseOutline courseId={courseId} tree={tree.data} meta={meta.data?.items ?? {}} code={info.data?.code} title={course.data?.title} currentItemId={itemId} />}
-        <div className={s.main} style={focus ? { maxWidth: "none" } : undefined}>{children({ crumbs })}</div>
+        <div className={s.main} style={focus ? { maxWidth: "none" } : undefined}>
+          {tabs.length === 0 ? (
+            children({ crumbs })
+          ) : (
+            <>
+              <PluginTabs courseId={courseId} itemId={itemId} slots={tabs} current={openTab?.plugin_id ?? ""} />
+              {openTab && <h2 className={s.pluginHeading}>{openTab.title}</h2>}
+              {openTab && <PluginFrame key={openTab.plugin_id} assignmentId={itemId} slot={openTab} />}
+              {/* Kept mounted while a plugin tab is open, so a student's unsent draft is not lost. */}
+              <div hidden={openTab !== undefined}>{children({ crumbs })}</div>
+            </>
+          )}
+        </div>
       </div>
     </div>
   );

@@ -6,14 +6,19 @@ publish.workspace = true
 description = "A test-only module: the smallest thing that exercises every part of the module mechanism."
 
 [dependencies]
+access.workspace = true
 anyhow.workspace = true
 axum.workspace = true
 clap.workspace = true
+common.workspace = true
+events.workspace = true
 module-api.workspace = true
 serde.workspace = true
+serde_json.workspace = true
 sqlx.workspace = true
 tokio.workspace = true
 utoipa.workspace = true
+utoipa-axum.workspace = true
 uuid.workspace = true
 vumlo-config.workspace = true
 

@@ -77,7 +77,12 @@ async fn config_check_lists_every_problem_and_never_echoes_a_secret() {
         assert!(!out.ok);
         assert!(out.stderr.contains("database.url is a secret"), "{}", out.stderr);
         assert!(out.stderr.contains("DATABASE_URL"), "{}", out.stderr);
-        assert!(out.stderr.contains("modules.nope: unknown module"), "{}", out.stderr);
+        assert!(
+            out.stderr
+                .contains("modules.nope: unknown, or not compiled into this binary"),
+            "{}",
+            out.stderr
+        );
         assert!(!out.stderr.contains("file-secret") && !out.stdout.contains("file-secret"));
     })
     .await;
@@ -192,7 +197,8 @@ async fn an_unknown_module_name_is_refused() {
             .await;
         assert!(!out.ok);
         assert!(
-            out.stderr.contains("modules.ai-agent: unknown module"),
+            out.stderr
+                .contains("modules.ai-agent: unknown, or not compiled into this binary"),
             "{}",
             out.stderr
         );
@@ -377,7 +383,7 @@ async fn admin_create_makes_an_admin_who_can_log_in_and_audits_it() {
         );
 
         // The real server accepts the password the CLI hashed.
-        let base = spawn_server(&pool, settings_for(&env.url, common::CONFIG, &[])).await;
+        let base = spawn_server(&pool, settings_for(&env.url, common::CONFIG)).await;
         let login = reqwest::Client::new()
             .post(format!("{base}/api/v1/auth/login"))
             .header("content-type", "application/json")

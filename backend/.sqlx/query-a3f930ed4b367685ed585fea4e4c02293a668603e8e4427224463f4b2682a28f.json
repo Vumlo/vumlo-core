@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE plugins.deliveries SET attempts = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "a3f930ed4b367685ed585fea4e4c02293a668603e8e4427224463f4b2682a28f"
+}

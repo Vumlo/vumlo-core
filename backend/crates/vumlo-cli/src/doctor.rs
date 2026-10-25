@@ -22,13 +22,7 @@ use CheckStatus::{Fail, Ok as Pass, Skip, Warn};
 pub async fn run(options: &Options, as_json: bool) -> anyhow::Result<bool> {
     let mut checks = Vec::new();
 
-    // Leniently: a module the config enables but this binary lacks is a warning here, not an
-    // error, so the rest of the report still shows.
-    let known: Vec<&str> = vumlo_config::known_modules()
-        .iter()
-        .map(|m| m.name)
-        .collect();
-    let loaded = vumlo_config::load_process(options, &known);
+    let loaded = vumlo_config::load_process(options, &runtime::specs());
     let loaded = match loaded {
         Ok(loaded) => {
             checks.push(Check::new("configuration", Pass, describe(&loaded)));
@@ -69,10 +63,11 @@ pub async fn run(options: &Options, as_json: bool) -> anyhow::Result<bool> {
             checks.push(versions(&l.settings, health.as_ref()));
             checks.push(module_sets(health.as_ref()));
             checks.extend(modules(&l.settings, pool.as_ref()).await);
+            checks.push(plugins(&l.settings, pool.as_ref()).await);
             checks.push(web_build(&l.settings));
         }
         None => {
-            for name in ["versions", "module sets", "modules", "web build"] {
+            for name in ["versions", "module sets", "modules", "plugins", "web build"] {
                 checks.push(skip(name, "needs a valid configuration"));
             }
         }
@@ -411,21 +406,6 @@ fn module_sets(health: Option<&HealthResponse>) -> Check {
 async fn modules(settings: &Settings, pool: Option<&PgPool>) -> Vec<Check> {
     let mut checks = Vec::new();
     let compiled = runtime::compiled();
-    for module in vumlo_config::known_modules() {
-        let enabled = settings.module_state.is_enabled(module.name);
-        let built = compiled.iter().any(|m| m.name == module.name);
-        if enabled && !built {
-            checks.push(Check::new(
-                format!("module {}", module.name),
-                Warn,
-                format!(
-                    "enabled in the configuration, but this binary was built without it; build \
-                     with the Cargo feature `{}`",
-                    module.cargo_feature
-                ),
-            ));
-        }
-    }
     let Some(pool) = pool else {
         checks.push(skip("modules", "needs the database"));
         return checks;
@@ -434,7 +414,7 @@ async fn modules(settings: &Settings, pool: Option<&PgPool>) -> Vec<Check> {
         && let Ok(migrated) = db::migrated_modules(&mut conn).await
     {
         for name in migrated {
-            if !compiled.iter().any(|m| m.name == name) {
+            if !compiled.iter().any(|m| m.manifest().id == name) {
                 checks.push(Check::new(
                     format!("module {name}"),
                     Warn,
@@ -445,13 +425,57 @@ async fn modules(settings: &Settings, pool: Option<&PgPool>) -> Vec<Check> {
         }
     }
     for module in compiled {
-        let ctx = runtime::module_context(settings, pool, module.name);
-        checks.extend((module.doctor)(ctx).await);
+        let state = runtime::module_state(module, settings, pool);
+        checks.extend(module.doctor(state).await);
     }
     if checks.is_empty() {
         checks.push(Check::new("modules", Pass, "no optional modules"));
     }
     checks
+}
+
+/// Plugins (ADR-0066): installed ones are sent nothing without `plugins.secret_key`, and a delivery
+/// that failed five times is a dead letter nobody will retry.
+async fn plugins(settings: &Settings, pool: Option<&PgPool>) -> Check {
+    let Some(pool) = pool else {
+        return skip("plugins", "needs the database");
+    };
+    let Ok(mut conn) = pool.acquire().await else {
+        return skip("plugins", "needs the database");
+    };
+    let Ok(installed) = plugins::list(&mut conn).await else {
+        return Check::new(
+            "plugins",
+            Fail,
+            "cannot read the plugins; run `vumlo-cli db migrate`",
+        );
+    };
+    if installed.is_empty() {
+        return Check::new("plugins", Pass, "none installed");
+    }
+    let dead: i64 = installed.iter().map(|one| one.failed).sum();
+    if settings.plugins.secret_key.expose().is_empty() {
+        return Check::new(
+            "plugins",
+            Warn,
+            format!(
+                "{} installed, but plugins.secret_key is not set, so no event is sent to them",
+                installed.len()
+            ),
+        );
+    }
+    if dead > 0 {
+        return Check::new(
+            "plugins",
+            Warn,
+            format!(
+                "{} installed; {dead} event(s) could not be delivered after five tries (see \
+                 `vumlo-cli plugin list`)",
+                installed.len()
+            ),
+        );
+    }
+    Check::new("plugins", Pass, format!("{} installed", installed.len()))
 }
 
 /// The web build must be newer than the last `brand apply`: the build reads what it generated.

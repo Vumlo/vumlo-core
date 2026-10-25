@@ -1,0 +1,59 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT attempts, delivered_at IS NOT NULL AS \"delivered!\",\n                  failed_at IS NOT NULL AS \"failed!\", last_error,\n                  run_after <= now() AS \"due!\"\n           FROM plugins.deliveries",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "attempts",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "plugins.deliveries",
+            "name": "attempts"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "delivered!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 2,
+        "name": "failed!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 3,
+        "name": "last_error",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "plugins.deliveries",
+            "name": "last_error"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "due!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      null,
+      null,
+      true,
+      null
+    ]
+  },
+  "hash": "0ddba0774e556885a82488da7dbe008fc12ea0abacb8dfbc38c54f71aad71dcc"
+}

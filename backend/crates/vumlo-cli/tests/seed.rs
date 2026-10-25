@@ -182,7 +182,7 @@ async fn the_demo_data_works_through_the_real_server() {
         let seeded = env.run(&["seed", "--demo"]).await;
         assert!(seeded.ok, "{}", seeded.stderr);
         let people = accounts(&seeded.stdout);
-        let base = spawn_server(&pool, settings_for(&env.url, common::CONFIG, &[])).await;
+        let base = spawn_server(&pool, settings_for(&env.url, common::CONFIG)).await;
         let api = format!("{base}/api/v1");
         let client = reqwest::Client::new();
 

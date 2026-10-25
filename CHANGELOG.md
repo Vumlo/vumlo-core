@@ -10,7 +10,32 @@ must do, in order, besides getting the new release. See [RELEASING.md](RELEASING
 
 ## [Unreleased]
 
+### Added
+
+- **Plugins** ([ADR-0066](docs/decisions/0066-modules-and-plugins.md)): external HTTP services in any language that the core
+  does not trust. `vumlo-cli plugin install|list|grant|disable|enable|remove`; the core sends the events a plugin subscribed to
+  (`submission.submitted`, `grade.published`), signed with `X-Vumlo-Timestamp` and `X-Vumlo-Signature`, and the plugin calls
+  `/api/v1/plugin-api/*` with its token, where every call needs a scope (`submissions:read`, `reports:write`). Staff read what
+  plugins reported at `GET /api/v1/submissions/{id}/plugin-reports`. An example is in `examples/hello-plugin/`.
+  - **Upgrade notes:** run `vumlo db migrate` (migrations `0034_plugins.sql` and `0035_reports_follow_their_submission.sql` add the
+    schema `plugins`). To use plugins set
+    `VUMLO__PLUGINS__SECRET_KEY` (32 characters or more) in the environment; without it none can be installed.
+- **A plugin can show a page in a tab of an assignment** (ADR-0066). The page is a sandboxed frame with no session and no access
+  to the web app; it learns who is looking from a signed token the core issues for a minute (`POST /assignments/{id}/plugin-launch`)
+  and draws with the theme and the design tokens the web app sends it. `GET /api/v1/plugin-slots?slot=assignment.tab` lists the
+  pages. The tab is on text assignments and on assignments that take no submission, not yet on quizzes and forms, and the desktop
+  app shows none. `deploy/Caddyfile` has an optional `frame-src` line for the origins of your plugins.
+- **`GET /api/v1/meta`** lists the enabled optional modules and their versions.
+
 ### Changed
+
+- **Optional modules are a `Module` trait** ([ADR-0066](docs/decisions/0066-modules-and-plugins.md)): a manifest (id, version,
+  `requires`, permissions, settings), migrations, and `register` for routes, event handlers and background jobs; they start in
+  the order of their `requires`. Module routes moved to `/api/v1/modules/{id}/...` and sign in like the core's, with permissions
+  decided by `access`. A module's tables are in the schema `mod_<id>` with its history in `mod_<id>._sqlx_migrations`.
+  `vumlo-config` no longer lists modules, and a name in `[modules]` that the binary was not built with is a configuration error
+  whether it is on or off. Several event handlers may listen to one event type. The only module in the tree is still the
+  test-only `dummy`, so a release installation has nothing to migrate; a fork with its own module has to port it to the trait.
 
 - **The backend is one crate per layer** ([ADR-0065](docs/decisions/0065-layered-crates.md)): `server` → `learning` → `org`
   → `auth` → `events` → `access` → `common`, so the compiler refuses a call from a lower layer to a higher one. The HTTP API,
