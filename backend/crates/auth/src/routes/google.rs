@@ -11,9 +11,9 @@ use axum_extra::extract::CookieJar;
 use super::auth::{COOKIE_MAX_AGE_SECS, session_cookie};
 use super::extract::check_origin;
 use super::{api_user, no_store};
-use crate::auth::AuthState;
-use crate::auth::model::{BrowserBinding, NewSession, SessionKind};
-use crate::auth::service::{self, AuthError};
+use crate::AuthState;
+use crate::model::{BrowserBinding, NewSession, SessionKind};
+use crate::service::{self, AuthError};
 use common::{ApiError, ValidJson};
 
 /// Ties a started sign-in to its browser (ADR-0047). It is sent to the Google endpoints only.

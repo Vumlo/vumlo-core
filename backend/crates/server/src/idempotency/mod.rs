@@ -18,7 +18,7 @@ use sha2::{Digest, Sha256};
 use sqlx::PgPool;
 
 use crate::app::{AppState, MAX_BODY_BYTES};
-use crate::auth::COOKIE_NAME;
+use auth::COOKIE_NAME;
 use common::ApiError;
 use repo::{Claim, Stored};
 

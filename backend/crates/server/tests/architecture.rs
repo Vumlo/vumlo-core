@@ -49,7 +49,7 @@ const UNITS: &[Unit] = &[
     },
     Unit {
         name: "auth",
-        dir: "server/src/auth",
+        dir: "auth/src",
         schema: Some("auth"),
         layer: 3,
     },

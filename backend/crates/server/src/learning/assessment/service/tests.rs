@@ -11,13 +11,13 @@ use serde_json::{Map, json};
 use sqlx::PgPool;
 
 use super::*;
-use crate::auth::{self, Email, NewUser, PersonName};
 use crate::learning::content::{
     Assignment, BuiltinType, ContentError, ContentTitle, ItemPatch, ItemRules, MaxPoints,
     OnDeadline, SettingsPatch, SubmissionSettings,
 };
 use crate::learning::teaching::{self, CourseTitle};
 use access::CourseRole;
+use auth::{self, Email, NewUser, PersonName};
 use common::Role;
 use vumlo_config::GradingScale;
 

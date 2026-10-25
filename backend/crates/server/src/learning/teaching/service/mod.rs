@@ -27,7 +27,6 @@ use super::model::{
     Membership, ModelError,
 };
 use super::repo;
-use crate::auth::{self, AuthError, UserStatus};
 use crate::learning::assessment::AssessmentError;
 use crate::learning::content::ContentError;
 use crate::learning::gradebook::GradebookError;
@@ -37,6 +36,7 @@ use access::{
     self, AccessError, Action, CourseAccess, CourseRole, CourseStatus, course_role_allowed,
     implicit_course_owner,
 };
+use auth::{self, AuthError, UserStatus};
 use common::{Page, PageParams};
 use events::{self, AuditEntry, EventsError};
 

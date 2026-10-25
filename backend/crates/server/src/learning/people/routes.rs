@@ -8,13 +8,13 @@ use utoipa_axum::routes;
 use uuid::Uuid;
 
 use super::service;
-use crate::auth::{
-    AuthError, PersonName, UserUpdate, api_role, api_status, api_user, domain_role, domain_status,
-};
 use crate::learning::LearningError;
 use crate::learning::LearningState;
 use access::Actor;
 use access::{self, Action};
+use auth::{
+    AuthError, PersonName, UserUpdate, api_role, api_status, api_user, domain_role, domain_status,
+};
 use common::{ApiError, ValidJson};
 
 pub fn router<S>() -> OpenApiRouter<S>

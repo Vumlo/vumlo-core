@@ -7,8 +7,8 @@ use axum::{Extension, Json};
 use uuid::Uuid;
 
 use super::{api_kind, api_user};
-use crate::auth::AuthState;
-use crate::auth::service::{self, AuthError, LoginThrottle};
+use crate::AuthState;
+use crate::service::{self, AuthError, LoginThrottle};
 use access::{Actor, PendingActor};
 use common::PageParams;
 use common::{ApiError, ValidJson, ValidQuery};

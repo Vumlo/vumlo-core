@@ -1,8 +1,8 @@
 use chrono::{DateTime, Utc};
 use uuid::Uuid;
 
-use crate::auth::User;
 use crate::learning::teaching::UserCourseFacts;
+use auth::User;
 
 /// What one person does in the institution (ADR-0053).
 #[derive(Debug, Clone, PartialEq, Eq)]

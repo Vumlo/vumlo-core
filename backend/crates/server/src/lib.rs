@@ -1,9 +1,7 @@
 pub mod app;
-pub mod auth;
 pub mod conditional;
 mod health;
 pub mod idempotency;
 pub mod learning;
-pub mod mail;
 pub mod modules;
 pub mod org;

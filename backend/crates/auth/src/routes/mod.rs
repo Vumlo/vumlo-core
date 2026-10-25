@@ -23,7 +23,7 @@ use utoipa_axum::routes;
 use super::google::GoogleError;
 use super::model::{SessionKind, User, UserStatus};
 use super::service::{AuthError, LoginThrottle, THROTTLE_CAPACITY};
-use crate::auth::AuthState;
+use crate::AuthState;
 use common::ApiError;
 use common::Role;
 use vumlo_config::Settings;

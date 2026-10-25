@@ -163,6 +163,37 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1505bd5d3d116872e7271a6d4e16d81d0c8570876c8de68093a09ac269d8aac0"
 
 [[package]]
+name = "auth"
+version = "0.2.2"
+dependencies = [
+ "access",
+ "api-types",
+ "argon2",
+ "axum",
+ "axum-extra",
+ "chrono",
+ "common",
+ "db",
+ "events",
+ "lettre",
+ "openidconnect",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sha2 0.11.1",
+ "sqlx",
+ "test-support",
+ "thiserror 2.0.21",
+ "tokio",
+ "tower_governor",
+ "tracing",
+ "utoipa",
+ "utoipa-axum",
+ "uuid",
+ "vumlo-config",
+]
+
+[[package]]
 name = "autocfg"
 version = "1.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3151,6 +3182,7 @@ dependencies = [
  "anyhow",
  "api-types",
  "argon2",
+ "auth",
  "axum",
  "axum-extra",
  "base64 0.23.1",

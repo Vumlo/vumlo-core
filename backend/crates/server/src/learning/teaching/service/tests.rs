@@ -1,7 +1,7 @@
 use test_support::{db_test, wait_until_blocked};
 
 use super::*;
-use crate::auth::{self, Email, HashedPassword, NewUser, PersonName};
+use auth::{self, Email, HashedPassword, NewUser, PersonName};
 use common::Role;
 
 async fn actor(pool: &sqlx::PgPool, hash: &HashedPassword, email: &str, role: Role) -> Actor {

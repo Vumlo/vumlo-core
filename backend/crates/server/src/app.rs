@@ -25,16 +25,16 @@ use utoipa_axum::router::OpenApiRouter;
 use utoipa_axum::routes;
 use utoipa_scalar::{Scalar, Servable};
 
-use crate::auth::{self, AuthState, SetupError};
 use crate::health;
 use crate::learning::assessment;
 use crate::learning::content::{self, EditorConfigError, EffectiveProfiles};
 use crate::learning::gradebook;
 use crate::learning::teaching;
 use crate::learning::{self, LearningState};
-use crate::mail::{MailError, Mailer};
 use crate::org::{self, OrgState};
 use access::{self, ActorSource};
+use auth::{self, AuthState, SetupError};
+use auth::{MailError, Mailer};
 use common::{ApiError, problem_details};
 use events::Handlers;
 use vumlo_config::Settings;

@@ -1,9 +1,9 @@
 use common::ApiError;
 
 use super::teaching::TeachingError;
-use crate::auth::AuthError;
 use crate::org::OrgError;
 use access::AccessError;
+use auth::AuthError;
 
 /// What goes wrong in a flow that crosses modules: the error of the module that failed.
 #[derive(Debug, thiserror::Error)]

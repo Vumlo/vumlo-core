@@ -1,7 +1,7 @@
 use super::*;
-use crate::auth::{self, AuthError, Email, NewUser, PersonName};
 use crate::learning::teaching::{self, TeachingError};
 use access::Actor;
+use auth::{self, AuthError, Email, NewUser, PersonName};
 use common::Role;
 use test_support::{db_test, wait_until_blocked};
 use uuid::Uuid;

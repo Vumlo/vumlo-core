@@ -4,6 +4,7 @@ resolver = "3"
 members = [
     "crates/access",
     "crates/api-types",
+    "crates/auth",
     "crates/common",
     "crates/config",
     "crates/db",
@@ -57,6 +58,7 @@ zxcvbn = "3"
 
 access = { path = "crates/access" }
 api-types = { path = "crates/api-types" }
+auth = { path = "crates/auth" }
 common = { path = "crates/common" }
 db = { path = "crates/db" }
 events = { path = "crates/events" }

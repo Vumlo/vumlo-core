@@ -14,9 +14,9 @@ use super::model::{
     Subgroup, Term, TermDates, TermUpdate,
 };
 use super::repo;
-use crate::auth::{self, AuthError};
 use access::Actor;
 use access::{self, AccessError, Action, group_role_allowed};
+use auth::{self, AuthError};
 use common::{Page, PageParams};
 use events::{self, AuditEntry, EventsError};
 use vumlo_config::InstitutionMode;

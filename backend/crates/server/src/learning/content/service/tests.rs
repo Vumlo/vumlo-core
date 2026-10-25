@@ -6,8 +6,8 @@ use test_support::db_test;
 use std::sync::LazyLock;
 
 use super::*;
-use crate::auth::{self, Email, NewUser, PersonName};
 use crate::learning::teaching::CourseTitle;
+use auth::{self, Email, NewUser, PersonName};
 use common::ApiError;
 use common::Role;
 

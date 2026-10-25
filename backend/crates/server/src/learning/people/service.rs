@@ -2,12 +2,12 @@ use sqlx::PgConnection;
 use uuid::Uuid;
 
 use super::model::UserFacts;
-use crate::auth::{self, User, UserUpdate};
 use crate::learning::LearningError;
 use crate::learning::teaching;
 use crate::org;
 use access::Actor;
 use access::{self, Action};
+use auth::{self, User, UserUpdate};
 use common::Role;
 
 /// Changes a user's name, role or status. Disabling also deletes all their sessions. The last

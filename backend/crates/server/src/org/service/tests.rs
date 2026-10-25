@@ -3,7 +3,7 @@ use test_support::{db_test, wait_until_blocked};
 use sqlx::PgPool;
 
 use super::*;
-use crate::auth::{self, Email, NewUser, PersonName};
+use auth::{self, Email, NewUser, PersonName};
 use common::Role;
 
 async fn user(pool: &PgPool, email: &str, role: Role) -> Uuid {

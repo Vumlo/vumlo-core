@@ -5,9 +5,9 @@ use axum::http::request::Parts;
 use axum::http::{HeaderMap, Method, header};
 use axum_extra::extract::CookieJar;
 
-use crate::auth::AuthState;
-use crate::auth::model::SessionToken;
-use crate::auth::service::{self, AuthError, Authenticated};
+use crate::AuthState;
+use crate::model::SessionToken;
+use crate::service::{self, AuthError, Authenticated};
 use vumlo_config::ServerSettings;
 
 pub const COOKIE_NAME: &str = "vumlo_session";
