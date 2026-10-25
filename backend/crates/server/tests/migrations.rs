@@ -1,7 +1,7 @@
 mod common;
 
 use common::{bare_db_test, db_test};
-use server::app::{self, MigrationCheckError};
+use db::MigrationCheckError;
 use sqlx::PgPool;
 
 #[tokio::test]
@@ -38,9 +38,9 @@ async fn migrations_create_exactly_the_module_schemas() {
 #[tokio::test]
 async fn serve_check_refuses_an_unmigrated_database() {
     bare_db_test(async |pool| {
-        let error = app::ensure_migrated(&pool).await.unwrap_err();
+        let error = db::ensure_migrated(&pool).await.unwrap_err();
 
-        let embedded = app::MIGRATOR.iter().count();
+        let embedded = db::MIGRATOR.iter().count();
         assert!(
             matches!(error, MigrationCheckError::Pending(n) if n == embedded),
             "{error}"
@@ -50,9 +50,9 @@ async fn serve_check_refuses_an_unmigrated_database() {
             "{error}"
         );
 
-        app::MIGRATOR.run(&pool).await.unwrap();
+        db::MIGRATOR.run(&pool).await.unwrap();
 
-        app::ensure_migrated(&pool).await.unwrap();
+        db::ensure_migrated(&pool).await.unwrap();
     })
     .await;
 }
@@ -676,7 +676,7 @@ async fn insert_user_before_names(
 #[tokio::test]
 async fn migration_7_turns_lesson_items_into_text_items() {
     bare_db_test(async |pool| {
-        app::MIGRATOR.run_to(6, &pool).await.unwrap();
+        db::MIGRATOR.run_to(6, &pool).await.unwrap();
 
         // Data as it exists before the rename: a `lesson` item and an assignment with its row.
         // The macros are checked against the full schema, but only name columns that exist at 6.
@@ -698,7 +698,7 @@ async fn migration_7_turns_lesson_items_into_text_items() {
             "version 6 does not know the kind yet"
         );
 
-        app::MIGRATOR.run(&pool).await.unwrap();
+        db::MIGRATOR.run(&pool).await.unwrap();
 
         assert_eq!(item_kind(&pool, lesson).await, "text");
         assert_eq!(item_kind(&pool, assignment).await, "assignment");
@@ -715,7 +715,7 @@ async fn migration_7_turns_lesson_items_into_text_items() {
         insert_item_of_kind(&pool, module, course, 3, "text")
             .await
             .unwrap();
-        app::ensure_migrated(&pool).await.unwrap();
+        db::ensure_migrated(&pool).await.unwrap();
     })
     .await;
 }
@@ -745,7 +745,7 @@ async fn an_item_without_a_body_starts_with_the_empty_document() {
 #[tokio::test]
 async fn migration_8_turns_empty_object_bodies_into_the_empty_document() {
     bare_db_test(async |pool| {
-        app::MIGRATOR.run_to(7, &pool).await.unwrap();
+        db::MIGRATOR.run_to(7, &pool).await.unwrap();
 
         let owner = insert_user_before_names(&pool, "t@x.edu", "Teacher", "teacher").await;
         let course = insert_course(&pool, owner).await;
@@ -766,7 +766,7 @@ async fn migration_8_turns_empty_object_bodies_into_the_empty_document() {
         .unwrap();
         assert_eq!(item_body(&pool, empty).await, serde_json::json!({}));
 
-        app::MIGRATOR.run(&pool).await.unwrap();
+        db::MIGRATOR.run(&pool).await.unwrap();
 
         let document: serde_json::Value = serde_json::from_str(EMPTY_DOCUMENT).unwrap();
         assert_eq!(item_body(&pool, empty).await, document);
@@ -779,7 +779,7 @@ async fn migration_8_turns_empty_object_bodies_into_the_empty_document() {
             .await
             .unwrap();
         assert_eq!(item_body(&pool, later).await, document);
-        app::ensure_migrated(&pool).await.unwrap();
+        db::ensure_migrated(&pool).await.unwrap();
     })
     .await;
 }
@@ -787,7 +787,7 @@ async fn migration_8_turns_empty_object_bodies_into_the_empty_document() {
 #[tokio::test]
 async fn migration_10_splits_display_names_into_name_and_surname() {
     bare_db_test(async |pool| {
-        app::MIGRATOR.run_to(9, &pool).await.unwrap();
+        db::MIGRATOR.run_to(9, &pool).await.unwrap();
 
         let cases = [
             ("a@x.edu", "Anna Kowalska", "Anna", "Kowalska"),
@@ -799,7 +799,7 @@ async fn migration_10_splits_display_names_into_name_and_surname() {
             insert_user_before_names(&pool, email, display_name, "student").await;
         }
 
-        app::MIGRATOR.run(&pool).await.unwrap();
+        db::MIGRATOR.run(&pool).await.unwrap();
 
         for (email, _, name, surname) in cases {
             let row = sqlx::query!(
@@ -823,7 +823,7 @@ async fn migration_10_splits_display_names_into_name_and_surname() {
         .await
         .unwrap();
         assert_eq!(column, 0, "display_name is dropped");
-        app::ensure_migrated(&pool).await.unwrap();
+        db::ensure_migrated(&pool).await.unwrap();
     })
     .await;
 }
@@ -1652,7 +1652,7 @@ async fn a_linked_group_or_subgroup_is_protected_and_a_deleted_course_takes_its_
 #[tokio::test]
 async fn migration_21_gives_existing_outbox_rows_their_worker_columns() {
     bare_db_test(async |pool| {
-        app::MIGRATOR.run_to(20, &pool).await.unwrap();
+        db::MIGRATOR.run_to(20, &pool).await.unwrap();
         for processed in [true, false] {
             sqlx::query(
                 "INSERT INTO events.outbox (id, type, payload, processed_at)
@@ -1665,7 +1665,7 @@ async fn migration_21_gives_existing_outbox_rows_their_worker_columns() {
             .unwrap();
         }
 
-        app::MIGRATOR.run(&pool).await.unwrap();
+        db::MIGRATOR.run(&pool).await.unwrap();
 
         let rows = sqlx::query!(
             r#"SELECT attempts, failed_at IS NULL AS "not_failed!", last_error,
@@ -1681,7 +1681,7 @@ async fn migration_21_gives_existing_outbox_rows_their_worker_columns() {
                 .all(|r| r.attempts == 0 && r.not_failed && r.last_error.is_none() && r.due)
         );
         assert_eq!(rows.iter().filter(|r| r.processed).count(), 1);
-        app::ensure_migrated(&pool).await.unwrap();
+        db::ensure_migrated(&pool).await.unwrap();
     })
     .await;
 }
@@ -1716,7 +1716,7 @@ async fn a_processed_outbox_row_is_not_also_failed() {
 #[tokio::test]
 async fn migration_22_counts_every_existing_account_as_verified() {
     bare_db_test(async |pool| {
-        app::MIGRATOR.run_to(21, &pool).await.unwrap();
+        db::MIGRATOR.run_to(21, &pool).await.unwrap();
         for email in ["a@x.edu", "b@x.edu"] {
             insert_user_before_auth(&pool, email, "student").await;
         }
@@ -1725,7 +1725,7 @@ async fn migration_22_counts_every_existing_account_as_verified() {
             .await
             .unwrap();
 
-        app::MIGRATOR.run(&pool).await.unwrap();
+        db::MIGRATOR.run(&pool).await.unwrap();
 
         let unverified = sqlx::query_scalar!(
             r#"SELECT count(*) AS "n!" FROM auth.users
@@ -1735,7 +1735,7 @@ async fn migration_22_counts_every_existing_account_as_verified() {
         .await
         .unwrap();
         assert_eq!(unverified, 0);
-        app::ensure_migrated(&pool).await.unwrap();
+        db::ensure_migrated(&pool).await.unwrap();
     })
     .await;
 }
@@ -1743,10 +1743,10 @@ async fn migration_22_counts_every_existing_account_as_verified() {
 #[tokio::test]
 async fn migration_32_renames_the_identity_schema_and_keeps_its_rows() {
     bare_db_test(async |pool| {
-        app::MIGRATOR.run_to(31, &pool).await.unwrap();
+        db::MIGRATOR.run_to(31, &pool).await.unwrap();
         let user = insert_user_before_auth(&pool, "a@x.edu", "teacher").await;
 
-        app::MIGRATOR.run(&pool).await.unwrap();
+        db::MIGRATOR.run(&pool).await.unwrap();
 
         let schemas = sqlx::query_scalar!(
             r#"SELECT schema_name AS "name!" FROM information_schema.schemata
@@ -1761,7 +1761,7 @@ async fn migration_32_renames_the_identity_schema_and_keeps_its_rows() {
             .await
             .unwrap();
         assert_eq!(email, "a@x.edu");
-        app::ensure_migrated(&pool).await.unwrap();
+        db::ensure_migrated(&pool).await.unwrap();
     })
     .await;
 }
@@ -1965,7 +1965,7 @@ async fn group_roster_links_has_a_row_per_link_where_the_roster_has_one_per_stud
 #[tokio::test]
 async fn migration_26_gives_published_items_a_published_copy_and_leaves_drafts_without_one() {
     bare_db_test(async |pool| {
-        app::MIGRATOR.run_to(25, &pool).await.unwrap();
+        db::MIGRATOR.run_to(25, &pool).await.unwrap();
         let teacher = insert_user_before_auth(&pool, "t@x.edu", "teacher").await;
         let course = insert_course(&pool, teacher).await;
         let module = insert_module_row(&pool, course, None, 1).await.unwrap();
@@ -1984,7 +1984,7 @@ async fn migration_26_gives_published_items_a_published_copy_and_leaves_drafts_w
         .await
         .unwrap();
 
-        app::MIGRATOR.run(&pool).await.unwrap();
+        db::MIGRATOR.run(&pool).await.unwrap();
 
         let row = |id: uuid::Uuid| {
             let pool = pool.clone();
@@ -2006,7 +2006,7 @@ async fn migration_26_gives_published_items_a_published_copy_and_leaves_drafts_w
         let waiting = row(draft).await;
         assert!(waiting.published_title.is_none() && waiting.published_body.is_none());
         assert!(!waiting.stamped);
-        app::ensure_migrated(&pool).await.unwrap();
+        db::ensure_migrated(&pool).await.unwrap();
     })
     .await;
 }

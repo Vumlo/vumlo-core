@@ -39,9 +39,6 @@ use learning::{self, LearningState};
 use org::{self, OrgState};
 use vumlo_config::Settings;
 
-// Shared with `vumlo-cli`: the migrations live in the `db` crate.
-pub use db::{MIGRATOR, MigrationCheckError, ensure_migrated};
-
 /// Shorter than the request timeout, so an unreachable database surfaces as 503, not 408.
 const DB_ACQUIRE_TIMEOUT: Duration = Duration::from_secs(5);
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
