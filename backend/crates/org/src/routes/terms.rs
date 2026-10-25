@@ -5,9 +5,9 @@ use axum::http::StatusCode;
 use uuid::Uuid;
 
 use super::{api_page, page_params};
-use crate::org::OrgState;
-use crate::org::model::{self, TermUpdate};
-use crate::org::service::{self, OrgError};
+use crate::OrgState;
+use crate::model::{self, TermUpdate};
+use crate::service::{self, OrgError};
 use access::Actor;
 use common::{ApiError, ValidJson, ValidQuery};
 

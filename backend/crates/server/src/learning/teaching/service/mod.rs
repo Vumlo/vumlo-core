@@ -30,7 +30,6 @@ use super::repo;
 use crate::learning::assessment::AssessmentError;
 use crate::learning::content::ContentError;
 use crate::learning::gradebook::GradebookError;
-use crate::org::{self, GroupOption, OrgError};
 use access::Actor;
 use access::{
     self, AccessError, Action, CourseAccess, CourseRole, CourseStatus, course_role_allowed,
@@ -39,6 +38,7 @@ use access::{
 use auth::{self, AuthError, UserStatus};
 use common::{Page, PageParams};
 use events::{self, AuditEntry, EventsError};
+use org::{self, GroupOption, OrgError};
 
 #[derive(Debug, thiserror::Error)]
 pub enum TeachingError {

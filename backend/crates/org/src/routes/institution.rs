@@ -4,8 +4,8 @@ use api_types::{
 use axum::Json;
 use axum::extract::State;
 
-use crate::org::OrgState;
-use crate::org::service::{self, OrgError};
+use crate::OrgState;
+use crate::service::{self, OrgError};
 use access::Actor;
 use common::{ApiError, ValidJson};
 use vumlo_config::{self as settings, InstitutionSettings};

@@ -14,7 +14,7 @@ use utoipa_axum::routes;
 
 use super::model::{self, MemberProblem, ModelError};
 use super::service::OrgError;
-use crate::org::OrgState;
+use crate::OrgState;
 use common::ApiError;
 use common::{self, PageParams};
 

@@ -10,6 +10,7 @@ members = [
     "crates/db",
     "crates/events",
     "crates/module-api",
+    "crates/org",
     "crates/server",
     "crates/test-support",
     "crates/vumlo-cli",
@@ -63,6 +64,7 @@ common = { path = "crates/common" }
 db = { path = "crates/db" }
 events = { path = "crates/events" }
 module-api = { path = "crates/module-api" }
+org = { path = "crates/org" }
 server = { path = "crates/server" }
 test-support = { path = "crates/test-support" }
 vumlo-config = { path = "crates/config" }

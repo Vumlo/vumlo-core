@@ -6,9 +6,9 @@ mod common;
 use std::time::Duration;
 
 use ::common::Role;
+use ::org::{self, OrgError};
 use common::{Http, Resp, db_test, seed_and_login};
 use serde_json::{Value, json};
-use server::org::{self, OrgError};
 use sqlx::PgPool;
 use uuid::Uuid;
 use vumlo_config::InstitutionMode::{self, School, University};

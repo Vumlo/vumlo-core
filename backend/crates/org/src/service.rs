@@ -735,20 +735,6 @@ pub async fn remove_subgroup_member(
     .await
 }
 
-/// A group with these students in it, made the way an admin makes one. For the tests of other
-/// modules that need a group; they must not touch `org`'s tables themselves.
-#[cfg(test)]
-pub async fn seed_group(
-    conn: &mut PgConnection,
-    admin: &Actor,
-    name: &str,
-    students: &[Uuid],
-) -> Result<Uuid, OrgError> {
-    let group = create_group(conn, admin, name).await?;
-    add_group_members(conn, admin, group.id, students).await?;
-    Ok(group.id)
-}
-
 // ---------------------------------------------------------------------------------------------
 // The installation record
 // ---------------------------------------------------------------------------------------------

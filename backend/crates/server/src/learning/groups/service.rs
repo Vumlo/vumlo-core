@@ -4,9 +4,9 @@ use uuid::Uuid;
 use super::model::GroupOverview;
 use crate::learning::LearningError;
 use crate::learning::teaching;
-use crate::org;
 use access::Actor;
 use access::{self, Action};
+use org;
 
 /// A group with its people and the courses that use it (ADR-0053). Admins only.
 pub async fn group_overview(

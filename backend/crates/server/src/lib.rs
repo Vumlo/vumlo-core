@@ -4,4 +4,3 @@ mod health;
 pub mod idempotency;
 pub mod learning;
 pub mod modules;
-pub mod org;

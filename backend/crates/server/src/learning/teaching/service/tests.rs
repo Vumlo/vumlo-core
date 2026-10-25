@@ -259,7 +259,7 @@ async fn roster(pool: sqlx::PgPool) -> Roster {
     let owner = actor(&pool, &hash, "owner@x.edu", Role::Teacher).await;
     let student = actor(&pool, &hash, "student@x.edu", Role::Student).await;
     let mut tx = pool.begin().await.unwrap();
-    let group = crate::org::seed_group(&mut tx, &admin, "7-A", &[student.user_id()])
+    let group = org::seed_group(&mut tx, &admin, "7-A", &[student.user_id()])
         .await
         .unwrap();
     let course = create_course(

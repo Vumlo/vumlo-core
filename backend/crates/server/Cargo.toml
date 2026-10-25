@@ -34,6 +34,7 @@ events.workspace = true
 garde.workspace = true
 lettre.workspace = true
 module-api.workspace = true
+org.workspace = true
 openidconnect.workspace = true
 rand.workspace = true
 serde.workspace = true
@@ -56,6 +57,7 @@ vumlo-module-dummy = { workspace = true, optional = true }
 [dev-dependencies]
 access = { workspace = true, features = ["testing"] }
 auth = { workspace = true, features = ["testing"] }
+org = { workspace = true, features = ["testing"] }
 base64.workspace = true
 chrono-tz.workspace = true
 reqwest.workspace = true

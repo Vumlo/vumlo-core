@@ -31,12 +31,12 @@ use crate::learning::content::{self, EditorConfigError, EffectiveProfiles};
 use crate::learning::gradebook;
 use crate::learning::teaching;
 use crate::learning::{self, LearningState};
-use crate::org::{self, OrgState};
 use access::{self, ActorSource};
 use auth::{self, AuthState, SetupError};
 use auth::{MailError, Mailer};
 use common::{ApiError, problem_details};
 use events::Handlers;
+use org::{self, OrgState};
 use vumlo_config::Settings;
 
 // Shared with `vumlo-cli`: the migrations live in the `db` crate.

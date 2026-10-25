@@ -4,11 +4,11 @@ use uuid::Uuid;
 use super::model::UserFacts;
 use crate::learning::LearningError;
 use crate::learning::teaching;
-use crate::org;
 use access::Actor;
 use access::{self, Action};
 use auth::{self, User, UserUpdate};
 use common::Role;
+use org;
 
 /// Changes a user's name, role or status. Disabling also deletes all their sessions. The last
 /// active admin can be neither demoted nor disabled, and a teacher or admin who becomes a student

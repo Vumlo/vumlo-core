@@ -2228,6 +2228,30 @@ dependencies = [
 ]
 
 [[package]]
+name = "org"
+version = "0.2.2"
+dependencies = [
+ "access",
+ "api-types",
+ "auth",
+ "axum",
+ "chrono",
+ "common",
+ "db",
+ "events",
+ "serde_json",
+ "sqlx",
+ "test-support",
+ "thiserror 2.0.21",
+ "tokio",
+ "tracing",
+ "utoipa",
+ "utoipa-axum",
+ "uuid",
+ "vumlo-config",
+]
+
+[[package]]
 name = "p256"
 version = "0.13.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3194,6 +3218,7 @@ dependencies = [
  "lettre",
  "module-api",
  "openidconnect",
+ "org",
  "rand 0.10.3",
  "reqwest",
  "serde",

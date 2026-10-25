@@ -2,12 +2,12 @@ use std::process::ExitCode;
 
 use ::auth::{self, Email, NewUser, PersonName, TemporaryPassword};
 use ::events;
+use ::org;
 use anyhow::Context;
 use clap::{Parser, Subcommand};
 use common::Role;
 use server::app::{self, AppState};
 use server::modules;
-use server::org;
 use sqlx::PgPool;
 use vumlo_config::{LogFormat, Options, Settings};
 

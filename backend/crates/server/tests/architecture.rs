@@ -55,7 +55,7 @@ const UNITS: &[Unit] = &[
     },
     Unit {
         name: "org",
-        dir: "server/src/org",
+        dir: "org/src",
         schema: Some("org"),
         layer: 4,
     },
