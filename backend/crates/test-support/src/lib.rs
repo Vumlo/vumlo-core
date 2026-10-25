@@ -130,6 +130,22 @@ async fn sweep(admin: &PgConnectOptions) {
     let _ = conn.close().await;
 }
 
+/// Inserts a user and returns the id, for the test of a layer below `auth` that needs a user to
+/// point at (the actor of an audit row). Raw SQL on purpose: such a layer cannot name `auth`.
+pub async fn insert_user(pool: &PgPool, email: &str, role: &str) -> Uuid {
+    let id = Uuid::now_v7();
+    sqlx::query(
+        "INSERT INTO auth.users (id, email, name, surname, role) VALUES ($1, $2, 'Test', 'User', $3)",
+    )
+    .bind(id)
+    .bind(email)
+    .bind(role)
+    .execute(pool)
+    .await
+    .expect("insert a user");
+    id
+}
+
 /// Returns once a session of this database waits for a lock, so a test can commit the first
 /// writer knowing the second one is really queued behind it. Fails if the writer finished instead
 /// (it waited for nothing) or if nobody waits within ten seconds.

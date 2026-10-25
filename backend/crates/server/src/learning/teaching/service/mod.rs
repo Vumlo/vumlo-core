@@ -28,7 +28,6 @@ use super::model::{
 };
 use super::repo;
 use crate::auth::{self, AuthError, UserStatus};
-use crate::events::{self, AuditEntry, EventsError};
 use crate::learning::assessment::AssessmentError;
 use crate::learning::content::ContentError;
 use crate::learning::gradebook::GradebookError;
@@ -39,6 +38,7 @@ use access::{
     implicit_course_owner,
 };
 use common::{Page, PageParams};
+use events::{self, AuditEntry, EventsError};
 
 #[derive(Debug, thiserror::Error)]
 pub enum TeachingError {

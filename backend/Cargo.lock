@@ -1066,6 +1066,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "events"
+version = "0.2.2"
+dependencies = [
+ "access",
+ "common",
+ "serde_json",
+ "sqlx",
+ "test-support",
+ "thiserror 2.0.21",
+ "tokio",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
 name = "fancy-regex"
 version = "0.18.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3144,6 +3159,7 @@ dependencies = [
  "clap",
  "common",
  "db",
+ "events",
  "garde",
  "lettre",
  "module-api",

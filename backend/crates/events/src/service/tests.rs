@@ -4,7 +4,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use uuid::Uuid;
 
 use super::*;
-use crate::events::{HandlerError, HandlerFuture, OutboxEvent};
+use crate::{HandlerError, HandlerFuture, OutboxEvent};
 use test_support::db_test;
 
 async fn emit_grade(pool: &PgPool) -> Uuid {

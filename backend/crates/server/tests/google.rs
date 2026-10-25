@@ -314,7 +314,7 @@ async fn google_takes_the_password_of_an_account_registered_with_an_address_nobo
             .json(&serde_json::json!({"name": "Stranger", "surname": "S", "email": "maya@lms.test", "password": PASSWORD}))
             .send()
             .await;
-        server::events::process_once(&state.db, &state.event_handlers()).await.unwrap();
+        ::events::process_once(&state.db, &state.event_handlers()).await.unwrap();
         assert_eq!(mailbox.messages().len(), 1);
 
         let response = sign_in(&http, &issuer, Person::new("sub-9", "maya@lms.test")).await;

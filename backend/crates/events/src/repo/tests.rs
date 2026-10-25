@@ -1,28 +1,12 @@
 use serde_json::json;
-use test_support::db_test;
+use test_support::{db_test, insert_user};
 
 use super::*;
-use crate::auth::{self, Email, NewUser, PersonName};
-use common::Role;
 
 #[tokio::test]
 async fn an_audit_entry_commits_and_rolls_back_with_its_transaction() {
     db_test(async |pool| {
-            let hash = auth::hash_password("irrelevant").await.unwrap();
-            let mut tx = pool.begin().await.unwrap();
-            let user = auth::create_user_unaudited_for_tests(
-                &mut tx,
-                NewUser {
-                    email: Email::parse("a@x.edu").unwrap(),
-                    name: PersonName::name("Admin").unwrap(),
-                    surname: PersonName::surname("Admin").unwrap(),
-                    role: Role::Admin,
-                },
-                hash,
-            )
-            .await
-            .unwrap();
-            tx.commit().await.unwrap();
+            let user_id = insert_user(&pool, "a@x.edu", "admin").await;
             let resource_id = Uuid::now_v7();
             let entry = || AuditEntry {
                 action: "course.publish",
@@ -32,7 +16,7 @@ async fn an_audit_entry_commits_and_rolls_back_with_its_transaction() {
             };
 
             let mut rolled_back = pool.begin().await.unwrap();
-            insert_audit(&mut rolled_back, Some(user.id), "api", &entry())
+            insert_audit(&mut rolled_back, Some(user_id), "api", &entry())
                 .await
                 .unwrap();
             rolled_back.rollback().await.unwrap();
@@ -43,7 +27,7 @@ async fn an_audit_entry_commits_and_rolls_back_with_its_transaction() {
             assert_eq!(count, 0);
 
             let mut tx = pool.begin().await.unwrap();
-            insert_audit(&mut tx, Some(user.id), "api", &entry())
+            insert_audit(&mut tx, Some(user_id), "api", &entry())
                 .await
                 .unwrap();
             tx.commit().await.unwrap();
@@ -53,7 +37,7 @@ async fn an_audit_entry_commits_and_rolls_back_with_its_transaction() {
             .fetch_one(&pool)
             .await
             .unwrap();
-            assert_eq!(row.actor_id, Some(user.id));
+            assert_eq!(row.actor_id, Some(user_id));
             assert_eq!(row.source, "api");
             assert_eq!(row.action, "course.publish");
             assert_eq!(row.resource_type, "course");
@@ -64,7 +48,7 @@ async fn an_audit_entry_commits_and_rolls_back_with_its_transaction() {
             let mut tx = pool.begin().await.unwrap();
             insert_audit(&mut tx, None, "cli", &entry()).await.unwrap();
             tx.commit().await.unwrap();
-            for (actor, source) in [(None, "api"), (Some(user.id), "cli"), (None, "web")] {
+            for (actor, source) in [(None, "api"), (Some(user_id), "cli"), (None, "web")] {
                 let mut tx = pool.begin().await.unwrap();
                 let refused = insert_audit(&mut tx, actor, source, &entry()).await;
                 assert!(

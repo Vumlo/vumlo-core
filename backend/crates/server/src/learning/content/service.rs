@@ -24,12 +24,12 @@ use super::model::{
 };
 use super::repo::{self, ItemRow, ModuleRow};
 use super::types::form;
-use crate::events::{self, AuditEntry, EventsError};
 use crate::learning::assessment::{self, AssessmentError};
 use crate::learning::gradebook::{self, GradebookError};
 use crate::learning::teaching::{self, TeachingError};
 use access::Actor;
 use access::{self, AccessError, Action, CourseAccess, CourseStatus, Release};
+use events::{self, AuditEntry, EventsError};
 use vumlo_config::GradingScale;
 
 /// The most points one assignment can be worth on the `twelve` scale (ADR-0022).

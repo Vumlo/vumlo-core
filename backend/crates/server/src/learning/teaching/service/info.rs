@@ -6,7 +6,6 @@ use sqlx::PgConnection;
 use uuid::Uuid;
 
 use super::{NewCourse, TeachingError, insert_owned_course, load};
-use crate::events::{self, AuditEntry};
 use crate::learning::assessment;
 use crate::learning::content;
 use crate::learning::gradebook;
@@ -18,6 +17,7 @@ use crate::learning::teaching::repo;
 use access::Actor;
 use access::{self, Action, CourseStatus};
 use common::{Page, PageParams};
+use events::{self, AuditEntry};
 
 /// The most candidates a search returns.
 const CANDIDATE_LIMIT: i64 = 20;

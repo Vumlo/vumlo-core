@@ -29,6 +29,7 @@ chrono.workspace = true
 clap.workspace = true
 common.workspace = true
 db.workspace = true
+events.workspace = true
 garde.workspace = true
 lettre.workspace = true
 module-api.workspace = true

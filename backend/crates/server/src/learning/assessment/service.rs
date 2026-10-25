@@ -18,7 +18,6 @@ use super::model::{
     Attempt, Draft, FormFacts, MySubmission, QuizResult, Responses, StudentSubmission, Window,
 };
 use super::repo;
-use crate::events::{self, Event, EventsError};
 use crate::learning::content::{
     self, Assignment, AssignmentType, AutoGrade, BuiltinType, DocumentErrors, EffectiveProfiles,
     OpenError, OpenedAssignment, Stage,
@@ -28,6 +27,7 @@ use crate::learning::teaching::TeachingError;
 use access::Actor;
 use access::{self, AccessError, Action};
 use common::{Page, PageParams};
+use events::{self, Event, EventsError};
 
 #[derive(Debug, thiserror::Error)]
 pub enum AssessmentError {

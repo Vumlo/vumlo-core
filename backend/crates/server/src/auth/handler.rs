@@ -9,8 +9,8 @@ use uuid::Uuid;
 
 use super::model::TokenPurpose;
 use super::service;
-use crate::events::{HandlerError, HandlerFuture, Handlers, OutboxEvent};
 use crate::mail::{MailError, Mailer};
+use events::{HandlerError, HandlerFuture, Handlers, OutboxEvent};
 use vumlo_config::Language;
 
 /// What the handlers need besides the pool.

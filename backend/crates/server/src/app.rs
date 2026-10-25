@@ -26,7 +26,6 @@ use utoipa_axum::routes;
 use utoipa_scalar::{Scalar, Servable};
 
 use crate::auth::{self, AuthState, SetupError};
-use crate::events::Handlers;
 use crate::health;
 use crate::learning::assessment;
 use crate::learning::content::{self, EditorConfigError, EffectiveProfiles};
@@ -37,6 +36,7 @@ use crate::mail::{MailError, Mailer};
 use crate::org::{self, OrgState};
 use access::{self, ActorSource};
 use common::{ApiError, problem_details};
+use events::Handlers;
 use vumlo_config::Settings;
 
 // Shared with `vumlo-cli`: the migrations live in the `db` crate.

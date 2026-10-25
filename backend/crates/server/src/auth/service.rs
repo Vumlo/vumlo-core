@@ -20,11 +20,11 @@ use super::model::{
     TemporaryPassword, TokenPurpose, User, UserFilter, UserStatus, UserUpdate,
 };
 use super::repo::{self, LoginRecord};
-use crate::events::{self, AuditEntry, Event, EventsError};
 use access::Actor;
 use access::{self, AccessError, Action};
 use common::Role;
 use common::{Page, PageParams};
+use events::{self, AuditEntry, Event, EventsError};
 
 const LOGIN_MAX_ATTEMPTS: u32 = 10;
 const LOGIN_WINDOW: Duration = Duration::from_secs(15 * 60);
