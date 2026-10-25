@@ -1,6 +1,6 @@
 # Vumlo — Architecture
 
-Status: **in progress.** Implemented: the foundation (config, migrations, health, OpenAPI, Problem Details), `identity` + `policy` (users, password login, sessions, admin user management), the first slice of `teaching` (courses, members, publishing) with a minimal `events.audit_log`, the `content` tree (modules, sub-modules, `text` items and assignments of type `text` or `no_submission`, whose bodies are block documents), the `gradebook` (draft and published grades, publishing, the staff gradebook, a student's published grades), `assessment` (drafts, attempts and deadlines of `text` assignments, ADR-0035), the first events in `events.outbox`, and `org` with the installation record (the institution mode, ADR-0031) terms, groups and subgroups (ADR-0032), and in `teaching` the group links, the live roster, course exclusions and course editing (ADR-0033). The audit of task 014 added the rules of ADR-0036 to ADR-0040: a test database per test, who is on a course (active students, former students, role changes, owner transfer, the class rollover), login hardening, input and error statuses, and who may link a group. Everything else below is still design.
+Status: **in progress.** Implemented: the foundation (config, migrations, health, OpenAPI, Problem Details), `auth` + `access` (users, password login, sessions, admin user management), the first slice of `teaching` (courses, members, publishing) with a minimal `events.audit_log`, the `content` tree (modules, sub-modules, `text` items and assignments of type `text` or `no_submission`, whose bodies are block documents), the `gradebook` (draft and published grades, publishing, the staff gradebook, a student's published grades), `assessment` (drafts, attempts and deadlines of `text` assignments, ADR-0035), the first events in `events.outbox`, and `org` with the installation record (the institution mode, ADR-0031) terms, groups and subgroups (ADR-0032), and in `teaching` the group links, the live roster, course exclusions and course editing (ADR-0033). The audit of task 014 added the rules of ADR-0036 to ADR-0040: a test database per test, who is on a course (active students, former students, role changes, owner transfer, the class rollover), login hardening, input and error statuses, and who may link a group. Everything else below is still design.
 This file is the current picture of the system. Every decision behind it has a record in [`docs/decisions/`](docs/decisions/). If this file and an ADR disagree, the ADR wins and this file gets fixed.
 
 ## Goal
@@ -48,14 +48,21 @@ vumlo-cli (administrator, same host as the config and the DB)  ──>  PostgreS
 
 ```
 backend/       # Cargo workspace; run every cargo command here
-  crates/
-    server/      # library + binary `vumlo-server`: HTTP API, modules, worker, admin subcommands
-    api-types/   # request/response types; OpenAPI source
-    config/      # `vumlo-config`: the one schema of vumlo.toml, public/private/secret keys, loader
-    db/          # migrations and their state, the installation record, account value types; build.rs
-    module-api/  # the contract between the core and an optional module
-    modules/     # optional modules, one crate each (today only the test-only `dummy`)
-    vumlo-cli/   # binary `vumlo-cli`: the administrator CLI
+  crates/      # the layers, from the top down (ADR-0065)
+    server/        # library + binary `vumlo-server`: the composition root (app, main, modules, health, idempotency)
+    learning/      # teaching, content, assessment, gradebook, and the flows that cross them
+    org/           # terms, groups, subgroups, the installation record
+    auth/          # users, sessions, sign-in, account value types, the mailer
+    events/        # audit writes, the outbox and its worker
+    access/        # Actor and authorize: the only place permissions are decided
+    common/        # Role, ApiError, pagination, text_enum!
+    db/            # migrations and their state, the installation record, the CLI's audit row; build.rs
+    api-types/     # request/response types; OpenAPI source
+    config/        # `vumlo-config`: the one schema of vumlo.toml, public/private/secret keys, loader
+    module-api/    # the contract between the core and an optional module
+    modules/       # optional modules, one crate each (today only the test-only `dummy`)
+    vumlo-cli/     # binary `vumlo-cli`: the administrator CLI
+    test-support/  # the per-test database harness; a dev-dependency only, never in a release
   migrations/
   .sqlx/
   Dockerfile
@@ -65,45 +72,53 @@ docs/decisions/
 .env, vumlo.toml, compose.yaml   # shared by backend and web; stay in the root
 ```
 
-**Migrations** are plain `.sql` files in `backend/migrations/`, append-only, embedded into `vumlo-server` at compile time with `sqlx::migrate!` and applied by `vumlo-server migrate`. `serve` refuses to start while any are pending, and then checks the institution mode against `org.installation` (ADR-0031). `backend/crates/server/build.rs` tells Cargo to rebuild when anything in `migrations/` changes, so a new file is always picked up. The `backend/.sqlx/` folder holds the offline query data for `query!` in the code and in the tests (`cargo sqlx prepare --workspace -- --all-targets`) and is committed; CI also builds every target offline (`SQLX_OFFLINE=true cargo check --workspace --all-targets`).
+**Migrations** are plain `.sql` files in `backend/migrations/`, append-only, embedded into the `db` crate at compile time with `sqlx::migrate!` and applied by `vumlo-server migrate`. `serve` refuses to start while any are pending, and then checks the institution mode against `org.installation` (ADR-0031). `backend/crates/db/build.rs` tells Cargo to rebuild when anything in `migrations/` changes, so a new file is always picked up. The `backend/.sqlx/` folder holds the offline query data for `query!` in the code and in the tests (`cargo sqlx prepare --workspace -- --all-targets`) and is committed; CI also builds every target offline (`SQLX_OFFLINE=true cargo check --workspace --all-targets`).
 
-## Modules (inside `server`)
+## Crates and modules
 
-| Module       | Owns (Postgres schema)          | Responsibility |
-|--------------|---------------------------------|----------------|
-| `identity`   | `identity.*`                    | users, login identities, sessions, tokens |
-| `org`        | `org.*`                         | the installation record (the institution mode, ADR-0031); the read-only institution profile (ADR-0044); terms, groups (cohorts) and subgroups with their members (ADR-0032) |
-| `teaching`   | `teaching.*`                    | courses, memberships, publishing, group links, exclusions and the roster view (ADR-0033); course subgroups are planned |
-| `content`    | `content.*`                     | modules, items (`text` items and assignments of type `text`, `no_submission`, `quiz` (ADR-0050) and `form` (ADR-0051) built, their bodies are block documents (ADR-0025, ADR-0027), the deadline settings of an assignment (ADR-0035); the `file` type is planned). Planned kinds and types: ADR-0023, ADR-0024. |
-| `assessment` | `assessment.*`                  | submissions (drafts and attempts), lateness, the submission window (ADR-0035); the scoring of quizzes at submit, the result of a quiz and the responses to a form (ADR-0050, ADR-0051) |
-| `gradebook`  | `gradebook.*`                   | grades (draft/published), grade history, publishing, gradebook view, my grades |
-| `files`      | `files.*`                       | uploads, storage backends |
-| `events`     | `events.*`                      | audit log and outbox table with `events::emit`, and the outbox worker with its handler registry (ADR-0045) (built); webhooks and scheduled jobs (planned) |
-| `policy`     | — (no tables)                   | `authorize(&Actor, Action)` — the only place permissions are checked |
+Each layer is a crate, and a crate may depend only on the ones below it ([ADR-0065](docs/decisions/0065-layered-crates.md)): `server` → `learning` → `org` → `auth` → `events` → `access` → `common`. Cargo enforces the direction; nothing below can name something above.
 
-Rules ([ADR-0001](docs/decisions/0001-modular-monolith.md)):
+| Crate      | Module / owns (Postgres schema)  | Responsibility |
+|------------|----------------------------------|----------------|
+| `auth`     | `auth.*`                         | users, login identities, sessions, tokens, sign-in, the mailer; the view `auth.people` for the layers above |
+| `org`      | `org.*`                          | the installation record (the institution mode, ADR-0031); the read-only institution profile (ADR-0044); terms, groups (cohorts) and subgroups with their members (ADR-0032); the views `org.term_list`, `org.group_list`, `org.subgroup_list` |
+| `learning` | `teaching.*`                     | courses, memberships, publishing, group links, exclusions and the roster view (ADR-0033); course subgroups are planned |
+| `learning` | `content.*`                      | modules, items (`text` items and assignments of type `text`, `no_submission`, `quiz` (ADR-0050) and `form` (ADR-0051) built, their bodies are block documents (ADR-0025, ADR-0027), the deadline settings of an assignment (ADR-0035); the `file` type is planned). Planned kinds and types: ADR-0023, ADR-0024. |
+| `learning` | `assessment.*`                   | submissions (drafts and attempts), lateness, the submission window (ADR-0035); the scoring of quizzes at submit, the result of a quiz and the responses to a form (ADR-0050, ADR-0051) |
+| `learning` | `gradebook.*`                    | grades (draft/published), grade history, publishing, gradebook view, my grades |
+| `learning` | — (flows, no tables)             | what needs several modules: a person with their groups and courses and the change of a user (`people`), the overview of a group (`groups`), the term statistics (`reports`), the audit log read model (`audit`) |
+| `events`   | `events.*`                       | audit log and outbox table with `events::emit`, and the outbox worker with its handler registry (ADR-0045) (built); webhooks and scheduled jobs (planned); the view `events.audit_entries` |
+| `access`   | — (no tables)                    | `Actor`, and `authorize(&Actor, Action)` — the only place permissions are checked |
+| `common`   | — (no tables)                    | `Role`, `ApiError`, pagination |
+| `server`   | `idempotency.*`                  | the composition root: the router, the application state, the middleware, the worker |
+| —          | `files.*`                        | uploads, storage backends (planned) |
+
+Rules ([ADR-0001](docs/decisions/0001-modular-monolith.md), [ADR-0065](docs/decisions/0065-layered-crates.md)):
 
 1. A module **writes only its own tables**. Other modules change its data through its public Rust functions.
-2. **Cross-module reads with JOIN are allowed** for read models such as the gradebook.
-3. Inside a module the layers are `routes` (HTTP) → `service` (business rules + `policy`) → `repo` (SQL). HTTP types do not leak into `service`.
-4. Every permission check goes through `policy`. There are no ad-hoc role checks in handlers.
+2. A layer reads the tables of its own layer, and those of a lower layer **only through a view that layer declared**; it never names the schema of a higher layer. Inside `learning` the four modules may read one another (the gradebook is a read model over content and assessment).
+3. What needs the data of several layers is a **flow in the highest layer that has them all**, not a call upward: a lower crate cannot call a higher one.
+4. Inside a module the layers are `routes` (HTTP) → `service` (business rules + `access`) → `repo` (SQL). HTTP types do not leak into `service`.
+5. Every permission check goes through `access`. There are no ad-hoc role checks in handlers.
 
-### Module layout ([ADR-0016](docs/decisions/0016-module-layout-and-transactions.md))
+`backend/crates/server/tests/architecture.rs` checks the parts Cargo cannot see: which schemas a unit writes and reads, who reads `Actor::role`, who calls `auth::apply_user_update`, and where the `testing` feature is enabled.
+
+### Module layout ([ADR-0016](docs/decisions/0016-module-layout-and-transactions.md), [ADR-0065](docs/decisions/0065-layered-crates.md))
 
 ```
-backend/crates/server/src/
-  lib.rs    main.rs   app.rs   error.rs   actor.rs   settings.rs   health.rs
-  <module>/
-    mod.rs      # the only public surface: pub fn router(), pub service functions, pub types
-    model.rs    # domain types (public)
-    routes.rs   # private (a folder `routes/` once it grows, as in `identity`)
-    service.rs  # private
-    repo.rs     # private
+backend/crates/<crate>/src/
+  lib.rs          # the facade of a crate with one module: routers, service functions, types
+  <module>/       # a module of `learning`, or the whole crate for the others
+    mod.rs        # the only public surface: pub fn router(), pub service functions, pub types
+    model.rs      # domain types (public)
+    routes.rs     # private (a folder `routes/` once it grows, as in `auth`)
+    service.rs    # private
+    repo.rs       # private
 ```
 
-`server` is a library plus a thin binary `vumlo-server`. `lib.rs` only declares modules, `main.rs` is the CLI entry, and integration tests use the library.
+`server` is a library plus a thin binary `vumlo-server`. Its `lib.rs` only declares modules, `main.rs` is the CLI entry, and integration tests use the library. A unit test of a source file is in the `tests.rs` beside it, in the crate that owns the file.
 
-Private files cannot be reached from other modules, so the compiler enforces module boundaries.
+Private files cannot be reached from other modules, and a crate cannot reach the ones above it, so the compiler enforces both.
 
 ### Transactions ([ADR-0016](docs/decisions/0016-module-layout-and-transactions.md))
 
@@ -115,7 +130,7 @@ Private files cannot be reached from other modules, so the compiler enforces mod
 ## Data model
 
 ```
-identity
+auth
   users            id, email (unique, stored lowercase), name, surname (ADR-0029),
                    role: admin | teacher | student, status: active | disabled,
                    email_verified_at?, must_change_password, created_at, updated_at
@@ -156,7 +171,7 @@ teaching
                    -- built (ADR-0033, ADR-0037): one row per (course, user). Direct membership first (its role, source
                    -- 'direct'), else a member of a linked group or subgroup is a 'student' with source 'group', unless
                    -- excluded. A student row exists only for an active user; a group student must also be an
-                   -- institution student (the view reads identity.users: status, role)
+                   -- institution student (the view reads auth.users: status, role)
   course_subgroups        id, course_id, name           -- lab group 1/2; course-local, flat
   course_subgroup_members course_subgroup_id, user_id
 
@@ -225,9 +240,9 @@ Key points:
 ([ADR-0003](docs/decisions/0003-identity-and-sessions.md), [ADR-0017](docs/decisions/0017-accounts-passwords-sessions.md))
 
 - **Accounts** are created by an admin (`POST /admin/users`, `vumlo-server create-user` / `create-admin`: a generated temporary password, shown once, with `must_change_password`; the address counts as verified), or by the person themselves (`POST /auth/register`, [ADR-0046](docs/decisions/0046-self-registration-verification-and-password-reset.md)). A Google account with a verified address in `auth.allowed_domains` can sign in too ([ADR-0047](docs/decisions/0047-google-sign-in.md)).
-- **Sign-in with Google** (ADR-0047, off without `[auth.google]`): `POST /auth/google/start {login_hint?}` answers `{authorization_url}` and sets the cookie `vumlo_oauth` that ties the attempt to the browser; `POST /auth/google/callback {code, state}` needs that cookie and the state of the attempt (one row of `identity.oauth_states`, single use, 10 minutes, with a PKCE verifier and a nonce), verifies the ID token with `openidconnect`, requires `email_verified` and an allowed domain (`403` otherwise), and opens a `web` session like a password login. The account is the one with the Google identity, else the one with that address (linked; an address nobody verified loses its password, so a pre-registration cannot be kept), else a new verified `student` without a password. Discovery happens on first use.
-- **Sign-in with Google for the desktop app** (ADR-0062): `POST /auth/google/start {app_challenge}` (the SHA-256 of a secret the app keeps, in hex) ties the attempt to the app instead of a browser and sets no cookie; the callback page of the web app finishes it with `POST /auth/google/callback`, which for such an attempt opens no session and answers `{handoff}`, a one-minute single-use code (`identity.app_handoffs`, stored hashed) that the page gives to the app by a `vumlo-<abbr>://auth/google?code=` link; the app trades it with the secret at `POST /auth/app/exchange` for an `app` session.
-- **Self-registration, verification and reset** (ADR-0046): `POST /auth/register {name, surname, email, password}` answers `202` with no body for every address; the address's domain must be in `auth.allowed_domains`. An unverified account cannot log in (`403` after a correct password). `POST /auth/verify-email {token}` is `204`, or `410` for an unknown, used or expired link. `POST /auth/password-reset {email}` is `202` for every address; `POST /auth/password-reset/confirm {token, new_password}` is `204`, `410` (decided before the password is looked at) or `422`, and ends every session of the user. The links are minted by the outbox handler: `identity.email_tokens` holds only the SHA-256 of a token, valid 24 hours (verify) or 1 hour (reset), single use. Registering an unverified address again replaces its name and password and voids the earlier link. Without `[mail]` register and reset are `404`. These routes have a per-client limiter of their own, and the two that send mail also count per address.
+- **Sign-in with Google** (ADR-0047, off without `[auth.google]`): `POST /auth/google/start {login_hint?}` answers `{authorization_url}` and sets the cookie `vumlo_oauth` that ties the attempt to the browser; `POST /auth/google/callback {code, state}` needs that cookie and the state of the attempt (one row of `auth.oauth_states`, single use, 10 minutes, with a PKCE verifier and a nonce), verifies the ID token with `openidconnect`, requires `email_verified` and an allowed domain (`403` otherwise), and opens a `web` session like a password login. The account is the one with the Google identity, else the one with that address (linked; an address nobody verified loses its password, so a pre-registration cannot be kept), else a new verified `student` without a password. Discovery happens on first use.
+- **Sign-in with Google for the desktop app** (ADR-0062): `POST /auth/google/start {app_challenge}` (the SHA-256 of a secret the app keeps, in hex) ties the attempt to the app instead of a browser and sets no cookie; the callback page of the web app finishes it with `POST /auth/google/callback`, which for such an attempt opens no session and answers `{handoff}`, a one-minute single-use code (`auth.app_handoffs`, stored hashed) that the page gives to the app by a `vumlo-<abbr>://auth/google?code=` link; the app trades it with the secret at `POST /auth/app/exchange` for an `app` session.
+- **Self-registration, verification and reset** (ADR-0046): `POST /auth/register {name, surname, email, password}` answers `202` with no body for every address; the address's domain must be in `auth.allowed_domains`. An unverified account cannot log in (`403` after a correct password). `POST /auth/verify-email {token}` is `204`, or `410` for an unknown, used or expired link. `POST /auth/password-reset {email}` is `202` for every address; `POST /auth/password-reset/confirm {token, new_password}` is `204`, `410` (decided before the password is looked at) or `422`, and ends every session of the user. The links are minted by the outbox handler: `auth.email_tokens` holds only the SHA-256 of a token, valid 24 hours (verify) or 1 hour (reset), single use. Registering an unverified address again replaces its name and password and voids the earlier link. Without `[mail]` register and reset are `404`. These routes have a per-client limiter of their own, and the two that send mail also count per address.
 - **Login** `POST /auth/login { email, password, client: web | app }`. `web` sets the `vumlo_session` cookie (HttpOnly, SameSite=Lax, `Secure` from `auth.cookie_secure`); `app` returns the token for `Authorization: Bearer`. A wrong email, a wrong password and a disabled account all give the same 401 and take the same time (a dummy hash is verified for unknown emails).
 - **Tokens** are 32 random bytes in base64url; only their SHA-256 is stored. Passwords use Argon2id (19 MiB, 2 iterations, 1 lane) on a blocking thread, always before a transaction opens.
 - **Lifetimes:** `web` 30 days and `app` 90 days, both sliding; `cli` 90 days and `pat` up to 365 days, absolute. `last_seen_at` and the expiry are written at most once an hour per session.
@@ -255,7 +270,7 @@ The schema of `vumlo.toml` lives in one crate, `backend/crates/config` (package 
 
 ## Authorization
 
-`policy::authorize(&Actor, Action)` decides every check. The resource an action needs travels inside its `Action` variant, so course-level actions can be added without changing existing callers. Today: `ManageOwnAccount` (any role), `ManageUsers` (admin only), the course actions `CreateCourse`, `ViewOwnCourses`, `ViewCourse`, `PublishCourse`, `ManageMembership`, `DeleteCourse` and `TransferOwnership`, the content actions `ManageContent` and `ViewContent`, `ViewEditorProfiles` (any role), and the gradebook actions `GradeAssignment`, `PublishGrades` (staff and admins, not in an archived course) and `ViewGradebook` (staff and admins, any course status) and `ViewOwnGrades` (only a student of a published or archived course; staff and admins read the gradebook instead) and `ViewFormerGrades` (someone off the roster who has published grades there, ADR-0037), the submission actions `SubmitWork` (save, discard and submit one's own work; `409` once the course is archived) and `ViewOwnSubmission` (only a student of a published or archived course; assistants, teachers, owners and admins cannot submit) and `ViewSubmissions` (staff and admins, any course status), `ManageTerms`, `ManageGroups`, `ViewGroups` and `ViewInstitutionSettings` (admins only) and `ViewTerms` (any role), `ManageRoster` (the lists of links and exclusions, the candidates) and `ChangeRoster` (restoring an exclusion), `EditCourse` (title, term, code, description) and `EditContent` (writing content), for assistants, teachers, owners and admins, and `LinkGroups` (the group options) and `ChangeGroupLinks` (linking, unlinking) for the owner, teachers and admins only (ADR-0040), `ArchiveCourse` (archive and restore; the owner, teachers and admins) ([ADR-0048](docs/decisions/0048-course-archive-deletion-templates-and-people.md)), with `group_role_allowed` (only an institution `student` is a group member) next to `course_role_allowed` (ADR-0032). A course action carries a `CourseAccess` (the actor's course role, whether they own it, and its status), which `teaching` reads from the database; `content`, `gradebook` and `assessment` get it through `teaching::course_access`, the one read function of another module that they may call, and open and lock an assignment through `content::open_assignment` and `content::lock_assignment_shared` ([ADR-0035](docs/decisions/0035-submissions-drafts-attempts-and-deadlines.md), [ADR-0030](docs/decisions/0030-gradebook-lock-covers-deletes-and-course-access.md)). `ManageContent` covers viewing drafts for staff and admins in every course status; writing content is `EditContent`. **An archived course is read-only** (ADR-0048): `authorize` answers `PolicyError::Archived`, `409 "the course is archived"`, for `ManageMembership`, `EditCourse`, `EditContent`, `ChangeRoster`, `ChangeGroupLinks`, `GradeAssignment`, `PublishGrades` and `SubmitWork`, after it has decided that the actor may do the action at all; restoring, deleting and handing the course over still work. `ViewContent` carries the release state of every row on the path to the target and the evaluation time, because `policy` has no clock. `TransferOwnership` is `PUT /courses/{id}/owner` and `DeleteCourse` is `DELETE /courses/{id}`. `policy::authorize` ignores a `teacher` course role and ownership for an actor whose institution role is `student` (ADR-0037).
+`access::authorize(&Actor, Action)` decides every check. The resource an action needs travels inside its `Action` variant, so course-level actions can be added without changing existing callers. Today: `ManageOwnAccount` (any role), `ManageUsers` (admin only), the course actions `CreateCourse`, `ViewOwnCourses`, `ViewCourse`, `PublishCourse`, `ManageMembership`, `DeleteCourse` and `TransferOwnership`, the content actions `ManageContent` and `ViewContent`, `ViewEditorProfiles` (any role), and the gradebook actions `GradeAssignment`, `PublishGrades` (staff and admins, not in an archived course) and `ViewGradebook` (staff and admins, any course status) and `ViewOwnGrades` (only a student of a published or archived course; staff and admins read the gradebook instead) and `ViewFormerGrades` (someone off the roster who has published grades there, ADR-0037), the submission actions `SubmitWork` (save, discard and submit one's own work; `409` once the course is archived) and `ViewOwnSubmission` (only a student of a published or archived course; assistants, teachers, owners and admins cannot submit) and `ViewSubmissions` (staff and admins, any course status), `ManageTerms`, `ManageGroups`, `ViewGroups` and `ViewInstitutionSettings` (admins only) and `ViewTerms` (any role), `ManageRoster` (the lists of links and exclusions, the candidates) and `ChangeRoster` (restoring an exclusion), `EditCourse` (title, term, code, description) and `EditContent` (writing content), for assistants, teachers, owners and admins, and `LinkGroups` (the group options) and `ChangeGroupLinks` (linking, unlinking) for the owner, teachers and admins only (ADR-0040), `ArchiveCourse` (archive and restore; the owner, teachers and admins) ([ADR-0048](docs/decisions/0048-course-archive-deletion-templates-and-people.md)), with `group_role_allowed` (only an institution `student` is a group member) next to `course_role_allowed` (ADR-0032). A course action carries a `CourseAccess` (the actor's course role, whether they own it, and its status), which `teaching` reads from the database; `content`, `gradebook` and `assessment` get it through `teaching::course_access`, the one read function of another module that they may call, and open and lock an assignment through `content::open_assignment` and `content::lock_assignment_shared` ([ADR-0035](docs/decisions/0035-submissions-drafts-attempts-and-deadlines.md), [ADR-0030](docs/decisions/0030-gradebook-lock-covers-deletes-and-course-access.md)). `ManageContent` covers viewing drafts for staff and admins in every course status; writing content is `EditContent`. **An archived course is read-only** (ADR-0048): `authorize` answers `PolicyError::Archived`, `409 "the course is archived"`, for `ManageMembership`, `EditCourse`, `EditContent`, `ChangeRoster`, `ChangeGroupLinks`, `GradeAssignment`, `PublishGrades` and `SubmitWork`, after it has decided that the actor may do the action at all; restoring, deleting and handing the course over still work. `ViewContent` carries the release state of every row on the path to the target and the evaluation time, because `policy` has no clock. `TransferOwnership` is `PUT /courses/{id}/owner` and `DeleteCourse` is `DELETE /courses/{id}`. `policy::authorize` ignores a `teacher` course role and ownership for an actor whose institution role is `student` (ADR-0037).
 
 There are two levels of roles ([ADR-0004](docs/decisions/0004-roles-and-policy.md)).
 
@@ -286,7 +301,7 @@ Invariants:
 - Course role `teacher` requires institution role `teacher` or `admin`. An institution `student` can be a course `assistant`. Changing a user from `teacher` or `admin` to `student` is `409` while they own a course (hand it over with `PUT /courses/{id}/owner` first); otherwise the same transaction removes their `teacher` memberships and audits each (`course.member.remove`, reason `role_change`) (ADR-0037).
 - An institution `teacher` may join any course as `student`.
 - An `admin` has no membership rows and acts as an implicit owner everywhere. **Every admin action inside a course is written to `audit_log`** (course creation, publishing, adding and removing members; reads are not audited).
-- **Admin writes outside a course are audited too** ([ADR-0034](docs/decisions/0034-admin-writes-outside-a-course-are-audited.md)): in `identity`, `user.create`, `user.rename`, `user.role_change`, `user.disable`, `user.enable` and `user.password_reset` (resource type `user`, the target as the resource), one row for each kind of change, in the same transaction. A refused write, a change that changes nothing, a read and a user's own account actions write nothing. The meta holds ids, roles and field names, never a password, a hash, a token, an email or a name. The server CLI's `create-admin` and `create-user` write `user.create` with no actor and the source `cli`.
+- **Admin writes outside a course are audited too** ([ADR-0034](docs/decisions/0034-admin-writes-outside-a-course-are-audited.md)): in `auth` and `learning`, `user.create`, `user.rename`, `user.role_change`, `user.disable`, `user.enable` and `user.password_reset` (resource type `user`, the target as the resource), one row for each kind of change, in the same transaction. A refused write, a change that changes nothing, a read and a user's own account actions write nothing. The meta holds ids, roles and field names, never a password, a hash, a token, an email or a name. The server CLI's `create-admin` and `create-user` write `user.create` with no actor and the source `cli`.
 - The owner is also a `teacher` member and can be neither removed nor given another role. A course an admin creates has no owner membership.
 - Putting the role a member already has on the roster changes nothing, also for a student who comes from a linked group. Member, link and exclusion writes lock the course row first and read roles in a later statement, so concurrent writers see each other's committed roles and links.
 - Course endpoints answer 404 to anyone who may not see the course, 403 to those who may see it but not do the action.
@@ -403,7 +418,7 @@ The assessment endpoints (tag `assessment`):
 **Events** ([ADR-0007](docs/decisions/0007-events-outbox.md))
 A state change and its event are written in the same transaction. A worker (a tokio task in the same binary, `events::run_worker`, [ADR-0045](docs/decisions/0045-outbox-worker-and-mail.md)) delivers events to internal handlers (mail) and, later, to webhook subscriptions (HMAC-signed, with retries). It claims up to 20 due rows every 2 seconds with `FOR UPDATE SKIP LOCKED` and a 5-minute lease, runs the handler with no transaction open, then marks the row processed; a failure retries after 10 s, 20 s, 40 s, ... and the fifth makes a dead letter (`failed_at`). A type without a handler is marked processed. Each module exposes its handlers and `AppState::event_handlers` registers them; tests deliver with `events::process_once`. Delivery is **at-least-once**, so consumers deduplicate by event id. The payload contains ids only. **Draft saves emit no events.**
 
-Notes on the worker: `events.outbox.occurred_at` is the time the transaction *began* (`now()`), not the order of commits, and ids are time-ordered at insert, so a row can become visible after a newer one has been delivered. The worker therefore claims unprocessed rows with `FOR UPDATE SKIP LOCKED` (ADR-0007) and never keeps a high-water mark; consumers that need an order read it from the entities, not from the event. The table has a partial index for that claim (ADR-0045) but no retention of processed rows; `identity.sessions` has no index on `expires_at` for the cleanup; `events.audit_log` has neither retention nor a reader. They are added with the scheduled jobs.
+Notes on the worker: `events.outbox.occurred_at` is the time the transaction *began* (`now()`), not the order of commits, and ids are time-ordered at insert, so a row can become visible after a newer one has been delivered. The worker therefore claims unprocessed rows with `FOR UPDATE SKIP LOCKED` (ADR-0007) and never keeps a high-water mark; consumers that need an order read it from the entities, not from the event. The table has a partial index for that claim (ADR-0045) but no retention of processed rows; `auth.sessions` has no index on `expires_at` for the cleanup; `events.audit_log` has neither retention nor a reader. They are added with the scheduled jobs.
 
 **Scheduled jobs** (same worker, not built): items reaching `publish_at` → `item.published`; assignments reaching `due_at` with `on_deadline = auto_submit` → submit drafts (task 013b); outbox delivery; expired-session cleanup.
 
@@ -430,11 +445,11 @@ Examples: in a school, the template "Algebra 7" becomes courses "Algebra 7-A" an
 - **Templates** (ADR-0005, ADR-0048): `POST /courses/{id}/template` and `POST /templates/{id}/courses` copy the whole tree as drafts with one SQL statement (`content::copy_course_content`); `GET /me/templates` lists the caller's templates with counts. **The header, the people and the search** are read models of `teaching` (`GET /courses/{id}/info`, `/people`, `/candidates?q=`): they join the tables of `identity`, `org`, `content`, `gradebook` and `assessment`, and a student's query never selects an email.
 
 - **Home read models and search** ([ADR-0052](docs/decisions/0052-home-read-models-and-search.md)): `GET /me/course-cards` (`teaching`), `GET /me/work` and `GET /search` (`content`) and `GET /me/teaching` (`gradebook`) join `content`, `assessment`, `gradebook` and `teaching` read-only. They are scoped by the caller's roster and ownership, return counts and kinds instead of sentences, and read the published copy for students. They are not paged (the bound is what one person studies or teaches); the teacher's to-grade queue is cut at 200 and search at 50. Search scans the JSON text of item bodies with `ILIKE`; a trigram or full-text index is the upgrade when it is slow. An administrator who is on no roster sees no cards and no hits.
-- **Administrator read models and the audit log** ([ADR-0053](docs/decisions/0053-admin-read-models-and-the-audit-log.md)): `GET /admin/users/summary` and `/admin/users/{id}/facts` (`identity`, which asks `org` for the groups and `teaching` for the courses), `GET /admin/groups/{id}/overview` and `/admin/term-stats` (`org`), `GET /admin/courses` (`teaching`) and `GET /admin/audit` (`events`). All are admin only (`Action::ViewAdminReports`, and `ViewGroups` for the overview) and send ids, labels and metadata, never sentences. The audit kind (`accounts`, `owners`, `teachers`, `groups`, `courses`, `content`, `grades`, `terms`, `other`) is derived from the action in one SQL `CASE`; the label of a target is what it is called today, `null` once it is gone. A sign-in is recorded in `identity.last_logins` (a table of its own, because a login holds the user row `FOR SHARE`), and `org.group_members.added_at` stamps new members. The audit log has no retention and no index on `at`.
+- **Administrator read models and the audit log** ([ADR-0053](docs/decisions/0053-admin-read-models-and-the-audit-log.md)): `GET /admin/users/summary` and `/admin/users/{id}/facts`, `GET /admin/groups/{id}/overview`, `/admin/term-stats` and `GET /admin/audit` (each a flow of `learning` over the layers below it), `GET /admin/users/summary` (`auth`) and `GET /admin/courses` (`teaching`). All are admin only (`Action::ViewAdminReports`, and `ViewGroups` for the overview) and send ids, labels and metadata, never sentences. The audit kind (`accounts`, `owners`, `teachers`, `groups`, `courses`, `content`, `grades`, `terms`, `other`) is derived from the action in one SQL `CASE`; the label of a target is what it is called today, `null` once it is gone. A sign-in is recorded in `auth.last_logins` (a table of its own, because a login holds the user row `FOR SHARE`), and `org.group_members.added_at` stamps new members. The audit log has no retention and no index on `at`.
 - **The yearly rollover has no copy-to-next-year action.** The procedure is `PUT /groups/{id}/members` with the new class, then `PATCH /groups/{id}` to rename it; the linked courses follow at once and last year's students become former students with their results (see "Class rollover"). A course copy for the new year is a template made from the old course (ADR-0048).
 - **Group reads are admin only.** Teachers and assistants read groups through the course-scoped group options (ids and names, no members); `org`'s own endpoints and the member lists stay admin only.
 - **A role change keeps the group memberships.** A user who stops being a student stays in their groups (they do nothing for a course while the role is not `student`); they count again if the role goes back. A teacher can still read the names of any group's members by linking the group to a course (ADR-0033); assistants cannot link (ADR-0040). Closing this takes group ownership, which is not built.
-- **The member lists read `identity.users`** with a read-only JOIN to sort by surname and name, as the gradebook roster does.
+- **The member lists read `auth.people`** (the view `auth` declares for the layers above it) with a read-only JOIN to sort by surname and name, as the gradebook roster does.
 - **A term in use stays undeletable** until its courses move to another term (`PATCH /courses/{id}`) or are gone.
 
 ## Open questions

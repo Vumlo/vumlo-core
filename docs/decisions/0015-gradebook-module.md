@@ -1,6 +1,6 @@
 # 0015. Gradebook as a separate module
 
-Status: Accepted
+Status: Accepted. Superseded in part by [ADR-0065](0065-layered-crates.md): the gradebook is a module of the `learning` crate; its rules stand.
 Amends: ADR-0001 (module list)
 
 ## Context
