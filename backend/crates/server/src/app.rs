@@ -168,7 +168,7 @@ pub fn router(state: AppState) -> Result<Router, SetupError> {
                 .merge(gradebook::router())
                 .merge(assessment::router())
                 .merge(org::router())
-                .merge(crate::events::router()),
+                .merge(learning::audit::router()),
         )
         .split_for_parts();
     let (router, openapi) = mount_modules(&state, router, openapi);

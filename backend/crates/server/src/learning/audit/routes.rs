@@ -9,9 +9,10 @@ use utoipa_axum::router::OpenApiRouter;
 use utoipa_axum::routes;
 
 use super::model::{AuditFilter, AuditRow};
-use super::service::{self, EventsError};
+use super::service;
 use crate::actor::Actor;
 use crate::app::AppState;
+use crate::learning::LearningError;
 use common::PageParams;
 use common::{ApiError, ValidQuery};
 
@@ -102,7 +103,7 @@ async fn list_audit(
         kind: query.kind.map(|kind| kind_name(kind).to_owned()),
         days: i32::try_from(query.days.unwrap_or(DEFAULT_DAYS)).unwrap_or(365),
     };
-    let mut conn = state.db.acquire().await.map_err(EventsError::from)?;
+    let mut conn = state.db.acquire().await.map_err(LearningError::from)?;
     let rows = service::list_audit(
         &mut conn,
         &actor,

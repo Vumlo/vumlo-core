@@ -3,6 +3,7 @@
 //! more than one module (a person with their courses, ...) live here, above all of them.
 
 pub mod assessment;
+pub mod audit;
 pub mod content;
 mod error;
 pub mod gradebook;
