@@ -4,6 +4,7 @@ use std::time::Duration;
 
 use std::net::SocketAddr;
 
+use axum::extract::FromRef;
 use axum::http::request::Parts;
 use axum::http::{HeaderValue, Method, StatusCode, header};
 use axum::middleware::{self, map_response};
@@ -25,16 +26,16 @@ use utoipa_axum::routes;
 use utoipa_scalar::{Scalar, Servable};
 
 use crate::access::{self, ActorSource};
-use crate::auth::{self, SetupError};
+use crate::auth::{self, AuthState, SetupError};
 use crate::events::Handlers;
 use crate::health;
-use crate::learning;
 use crate::learning::assessment;
 use crate::learning::content::{self, EditorConfigError, EffectiveProfiles};
 use crate::learning::gradebook;
 use crate::learning::teaching;
+use crate::learning::{self, LearningState};
 use crate::mail::{MailError, Mailer};
-use crate::org;
+use crate::org::{self, OrgState};
 use common::{ApiError, problem_details};
 use vumlo_config::Settings;
 
@@ -47,23 +48,38 @@ const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 /// Room for a 1 MiB document (ADR-0025) and the rest of the request around it.
 pub(crate) const MAX_BODY_BYTES: usize = 2 * 1024 * 1024;
 
+/// The application's state: what each layer needs from it, and what the composition root keeps
+/// for itself. Each layer's router asks for its own part (`FromRef`).
 #[derive(Clone)]
 pub struct AppState {
     pub db: PgPool,
     pub config: Arc<Settings>,
-    /// The editor profiles, resolved once from `config.editor` (ADR-0025, ADR-0027).
-    pub editor: Arc<EffectiveProfiles>,
-    /// The bound on password hashes and checks that run at once (ADR-0038).
-    pub hashing: Arc<auth::HashGate>,
-    /// Outgoing mail (ADR-0045); `None` without `[mail]`, and the features that must send mail are off.
-    pub mailer: Option<Arc<Mailer>>,
-    /// Sign-in with Google (ADR-0047); `None` without `[auth.google]`, and its endpoints are `404`.
-    pub google: Option<Arc<auth::Google>>,
+    pub auth: AuthState,
+    pub org: OrgState,
+    pub learning: LearningState,
+}
+
+impl FromRef<AppState> for AuthState {
+    fn from_ref(state: &AppState) -> Self {
+        state.auth.clone()
+    }
+}
+
+impl FromRef<AppState> for OrgState {
+    fn from_ref(state: &AppState) -> Self {
+        state.org.clone()
+    }
+}
+
+impl FromRef<AppState> for LearningState {
+    fn from_ref(state: &AppState) -> Self {
+        state.learning.clone()
+    }
 }
 
 impl ActorSource for AppState {
     async fn authenticate(&self, parts: &Parts) -> Result<access::Authenticated, ApiError> {
-        let session = auth::authenticate_request(parts, self).await?;
+        let session = auth::authenticate_request(parts, &self.auth).await?;
         Ok(access::Authenticated {
             user_id: session.user_id,
             role: session.role,
@@ -102,13 +118,26 @@ impl AppState {
             .as_ref()
             .map(|google| auth::Google::new(google).map(Arc::new))
             .transpose()?;
+        let config = Arc::new(config);
         Ok(Self {
+            auth: AuthState {
+                db: db.clone(),
+                config: config.clone(),
+                hashing: Arc::new(hashing),
+                mailer,
+                google,
+            },
+            org: OrgState {
+                db: db.clone(),
+                config: config.clone(),
+            },
+            learning: LearningState {
+                db: db.clone(),
+                config: config.clone(),
+                editor: Arc::new(editor),
+            },
             db,
-            config: Arc::new(config),
-            editor: Arc::new(editor),
-            hashing: Arc::new(hashing),
-            mailer,
-            google,
+            config,
         })
     }
 
@@ -116,7 +145,7 @@ impl AppState {
     /// deliver by hand with `events::process_once`.
     pub fn event_handlers(&self) -> Handlers {
         let mut handlers = Handlers::default();
-        if let Some(mailer) = &self.mailer {
+        if let Some(mailer) = &self.auth.mailer {
             handlers = handlers.merge(auth::event_handlers(
                 self.db.clone(),
                 auth::MailContext {

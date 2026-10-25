@@ -11,7 +11,7 @@ use uuid::Uuid;
 use super::{api_user, domain_role, domain_status, no_store};
 use crate::access::Actor;
 use crate::access::{self, Action};
-use crate::app::AppState;
+use crate::auth::AuthState;
 use crate::auth::model::{Email, NewUser, PersonName, TemporaryPassword, UserFilter};
 use crate::auth::service::{self, AuthError};
 use common::PageParams;
@@ -41,7 +41,7 @@ fn require_admin(actor: &Actor) -> Result<(), AuthError> {
     )
 )]
 pub async fn list_users(
-    State(state): State<AppState>,
+    State(state): State<AuthState>,
     actor: Actor,
     ValidQuery(query): ValidQuery<ListUsersQuery>,
 ) -> Result<Json<Page<User>>, ApiError> {
@@ -83,7 +83,7 @@ pub async fn list_users(
     )
 )]
 pub async fn create_user(
-    State(state): State<AppState>,
+    State(state): State<AuthState>,
     actor: Actor,
     ValidJson(request): ValidJson<CreateUserRequest>,
 ) -> Result<Response, ApiError> {
@@ -133,7 +133,7 @@ pub async fn create_user(
     )
 )]
 pub async fn reset_password(
-    State(state): State<AppState>,
+    State(state): State<AuthState>,
     actor: Actor,
     Path(id): Path<Uuid>,
 ) -> Result<Response, ApiError> {
@@ -170,7 +170,7 @@ pub async fn reset_password(
     )
 )]
 pub async fn user_summary(
-    State(state): State<AppState>,
+    State(state): State<AuthState>,
     actor: Actor,
 ) -> Result<Json<UserSummary>, ApiError> {
     let mut conn = state.db.acquire().await.map_err(AuthError::from)?;

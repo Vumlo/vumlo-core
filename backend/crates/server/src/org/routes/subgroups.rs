@@ -9,7 +9,7 @@ use uuid::Uuid;
 
 use super::{api_member, api_page, page_params};
 use crate::access::Actor;
-use crate::app::AppState;
+use crate::org::OrgState;
 use crate::org::model;
 use crate::org::service::{self, OrgError};
 use common::{ApiError, ValidJson, ValidQuery};
@@ -45,7 +45,7 @@ fn api_subgroup(subgroup: model::Subgroup) -> Subgroup {
     )
 )]
 pub async fn create_subgroup(
-    State(state): State<AppState>,
+    State(state): State<OrgState>,
     actor: Actor,
     Path(group_id): Path<Uuid>,
     ValidJson(request): ValidJson<NameRequest>,
@@ -76,7 +76,7 @@ pub async fn create_subgroup(
     )
 )]
 pub async fn list_subgroups(
-    State(state): State<AppState>,
+    State(state): State<OrgState>,
     actor: Actor,
     Path(group_id): Path<Uuid>,
     ValidQuery(query): ValidQuery<PageQuery>,
@@ -110,7 +110,7 @@ pub async fn list_subgroups(
     )
 )]
 pub async fn rename_subgroup(
-    State(state): State<AppState>,
+    State(state): State<OrgState>,
     actor: Actor,
     Path(id): Path<Uuid>,
     ValidJson(request): ValidJson<NameRequest>,
@@ -141,7 +141,7 @@ pub async fn rename_subgroup(
     )
 )]
 pub async fn delete_subgroup(
-    State(state): State<AppState>,
+    State(state): State<OrgState>,
     actor: Actor,
     Path(id): Path<Uuid>,
 ) -> Result<StatusCode, ApiError> {
@@ -171,7 +171,7 @@ pub async fn delete_subgroup(
     )
 )]
 pub async fn list_subgroup_members(
-    State(state): State<AppState>,
+    State(state): State<OrgState>,
     actor: Actor,
     Path(id): Path<Uuid>,
     ValidQuery(query): ValidQuery<PageQuery>,
@@ -206,7 +206,7 @@ pub async fn list_subgroup_members(
     )
 )]
 pub async fn add_subgroup_members(
-    State(state): State<AppState>,
+    State(state): State<OrgState>,
     actor: Actor,
     Path(id): Path<Uuid>,
     ValidJson(request): ValidJson<AddMembersRequest>,
@@ -238,7 +238,7 @@ pub async fn add_subgroup_members(
     )
 )]
 pub async fn remove_subgroup_member(
-    State(state): State<AppState>,
+    State(state): State<OrgState>,
     actor: Actor,
     Path((id, user_id)): Path<(Uuid, Uuid)>,
 ) -> Result<StatusCode, ApiError> {

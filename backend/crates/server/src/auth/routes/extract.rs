@@ -5,7 +5,7 @@ use axum::http::request::Parts;
 use axum::http::{HeaderMap, Method, header};
 use axum_extra::extract::CookieJar;
 
-use crate::app::AppState;
+use crate::auth::AuthState;
 use crate::auth::model::SessionToken;
 use crate::auth::service::{self, AuthError, Authenticated};
 use vumlo_config::ServerSettings;
@@ -66,7 +66,7 @@ pub(super) fn check_origin(
 /// once an hour. The caller turns the answer into an `Actor`.
 pub async fn authenticate_request(
     parts: &Parts,
-    state: &AppState,
+    state: &AuthState,
 ) -> Result<Authenticated, AuthError> {
     let token = match credential(&parts.headers)? {
         Credential::Bearer(token) => token,

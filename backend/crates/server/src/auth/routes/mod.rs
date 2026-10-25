@@ -8,8 +8,10 @@ mod me;
 
 use std::sync::Arc;
 
+use crate::access::ActorSource;
 use api_types::LoginClient;
 use axum::Extension;
+use axum::extract::FromRef;
 use axum::http::{HeaderValue, header};
 use tower_governor::GovernorError;
 use tower_governor::GovernorLayer;
@@ -21,7 +23,7 @@ use utoipa_axum::routes;
 use super::google::GoogleError;
 use super::model::{SessionKind, User, UserStatus};
 use super::service::{AuthError, LoginThrottle, THROTTLE_CAPACITY};
-use crate::app::AppState;
+use crate::auth::AuthState;
 use common::ApiError;
 use common::Role;
 use vumlo_config::Settings;
@@ -90,7 +92,11 @@ impl KeyExtractor for ClientIp {
     }
 }
 
-pub fn router(settings: &Settings) -> Result<OpenApiRouter<AppState>, SetupError> {
+pub fn router<S>(settings: &Settings) -> Result<OpenApiRouter<S>, SetupError>
+where
+    S: ActorSource + Clone + 'static,
+    AuthState: FromRef<S>,
+{
     let auth = &settings.auth;
     // A per-client limiter built from the login limits of ADR-0038, with the task that forgets idle
     // clients. Each call makes an allowance of its own. A closure, because the type of the config

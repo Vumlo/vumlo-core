@@ -6,11 +6,13 @@ mod cards;
 mod info;
 mod roster;
 
+use crate::access::ActorSource;
 use api_types::{
     Course, CreateCourseRequest, MemberSource, Membership, Page, PageQuery, ProblemDetails,
     PutMemberRequest, TransferOwnershipRequest, UpdateCourseRequest,
 };
 use axum::Json;
+use axum::extract::FromRef;
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use utoipa_axum::router::OpenApiRouter;
@@ -21,11 +23,15 @@ use super::model::{self, CourseKind, CourseTitle, CourseUpdate, ModelError};
 use super::service::{self, TeachingError};
 use crate::access::Actor;
 use crate::access::{CourseRole, CourseStatus};
-use crate::app::AppState;
+use crate::learning::LearningState;
 use common::PageParams;
 use common::{ApiError, ValidJson, ValidQuery};
 
-pub fn router() -> OpenApiRouter<AppState> {
+pub fn router<S>() -> OpenApiRouter<S>
+where
+    S: ActorSource + Clone + 'static,
+    LearningState: FromRef<S>,
+{
     OpenApiRouter::new()
         .routes(routes!(create_course))
         .routes(routes!(get_course, update_course, info::delete_course))
@@ -199,7 +205,7 @@ pub(super) fn page_params(query: &PageQuery) -> Result<PageParams, ApiError> {
     )
 )]
 async fn create_course(
-    State(state): State<AppState>,
+    State(state): State<LearningState>,
     actor: Actor,
     ValidJson(request): ValidJson<CreateCourseRequest>,
 ) -> Result<(StatusCode, Json<Course>), ApiError> {
@@ -226,7 +232,7 @@ async fn create_course(
     )
 )]
 async fn get_course(
-    State(state): State<AppState>,
+    State(state): State<LearningState>,
     actor: Actor,
     Path(id): Path<Uuid>,
 ) -> Result<Json<Course>, ApiError> {
@@ -261,7 +267,7 @@ async fn get_course(
     )
 )]
 async fn update_course(
-    State(state): State<AppState>,
+    State(state): State<LearningState>,
     actor: Actor,
     Path(id): Path<Uuid>,
     ValidJson(request): ValidJson<UpdateCourseRequest>,
@@ -298,7 +304,7 @@ async fn update_course(
     )
 )]
 async fn publish_course(
-    State(state): State<AppState>,
+    State(state): State<LearningState>,
     actor: Actor,
     Path(id): Path<Uuid>,
 ) -> Result<Json<Course>, ApiError> {
@@ -333,7 +339,7 @@ async fn publish_course(
     )
 )]
 async fn transfer_ownership(
-    State(state): State<AppState>,
+    State(state): State<LearningState>,
     actor: Actor,
     Path(id): Path<Uuid>,
     ValidJson(request): ValidJson<TransferOwnershipRequest>,
@@ -362,7 +368,7 @@ async fn transfer_ownership(
     )
 )]
 async fn list_my_courses(
-    State(state): State<AppState>,
+    State(state): State<LearningState>,
     actor: Actor,
     ValidQuery(query): ValidQuery<PageQuery>,
 ) -> Result<Json<Page<Course>>, ApiError> {
@@ -397,7 +403,7 @@ async fn list_my_courses(
     )
 )]
 async fn list_members(
-    State(state): State<AppState>,
+    State(state): State<LearningState>,
     actor: Actor,
     Path(id): Path<Uuid>,
     ValidQuery(query): ValidQuery<PageQuery>,
@@ -442,7 +448,7 @@ async fn list_members(
     )
 )]
 async fn put_member(
-    State(state): State<AppState>,
+    State(state): State<LearningState>,
     actor: Actor,
     Path((course_id, user_id)): Path<(Uuid, Uuid)>,
     ValidJson(request): ValidJson<PutMemberRequest>,
@@ -487,7 +493,7 @@ async fn put_member(
     )
 )]
 async fn remove_member(
-    State(state): State<AppState>,
+    State(state): State<LearningState>,
     actor: Actor,
     Path((course_id, user_id)): Path<(Uuid, Uuid)>,
 ) -> Result<StatusCode, ApiError> {

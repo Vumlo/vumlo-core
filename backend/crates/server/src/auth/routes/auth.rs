@@ -11,7 +11,7 @@ use std::sync::Arc;
 use super::extract::check_origin;
 use super::{COOKIE_NAME, MailThrottle, api_user, no_store, password_error, session_kind};
 use crate::access::PendingActor;
-use crate::app::AppState;
+use crate::auth::AuthState;
 use crate::auth::model::{EmailToken, ModelError, NewSession};
 use crate::auth::service::{self, AuthError, LoginThrottle, RegistrationRules, ThrottleKey};
 use common::{ApiError, ValidJson};
@@ -55,7 +55,7 @@ pub(super) fn session_cookie(
     )
 )]
 pub async fn login(
-    State(state): State<AppState>,
+    State(state): State<AuthState>,
     Extension(throttle): Extension<Arc<LoginThrottle>>,
     headers: HeaderMap,
     ValidJson(request): ValidJson<LoginRequest>,
@@ -123,7 +123,7 @@ pub async fn login(
     )
 )]
 pub async fn logout(
-    State(state): State<AppState>,
+    State(state): State<AuthState>,
     PendingActor(actor): PendingActor,
 ) -> Result<Response, ApiError> {
     let mut tx = state.db.begin().await.map_err(AuthError::from)?;
@@ -158,7 +158,7 @@ fn throttle_mail(throttle: &MailThrottle, email: &str) -> Result<(), ApiError> {
     )
 )]
 pub async fn register(
-    State(state): State<AppState>,
+    State(state): State<AuthState>,
     Extension(throttle): Extension<Arc<MailThrottle>>,
     ValidJson(request): ValidJson<RegisterRequest>,
 ) -> Result<StatusCode, ApiError> {
@@ -205,7 +205,7 @@ pub async fn register(
     )
 )]
 pub async fn verify_email(
-    State(state): State<AppState>,
+    State(state): State<AuthState>,
     ValidJson(request): ValidJson<VerifyEmailRequest>,
 ) -> Result<StatusCode, ApiError> {
     let mut tx = state.db.begin().await.map_err(AuthError::from)?;
@@ -231,7 +231,7 @@ pub async fn verify_email(
     )
 )]
 pub async fn request_password_reset(
-    State(state): State<AppState>,
+    State(state): State<AuthState>,
     Extension(throttle): Extension<Arc<MailThrottle>>,
     ValidJson(request): ValidJson<PasswordResetRequest>,
 ) -> Result<StatusCode, ApiError> {
@@ -265,7 +265,7 @@ pub async fn request_password_reset(
     )
 )]
 pub async fn confirm_password_reset(
-    State(state): State<AppState>,
+    State(state): State<AuthState>,
     ValidJson(request): ValidJson<PasswordResetConfirmRequest>,
 ) -> Result<StatusCode, ApiError> {
     let token = EmailToken::from_presented(&request.token);

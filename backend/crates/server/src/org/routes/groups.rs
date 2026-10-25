@@ -10,7 +10,7 @@ use uuid::Uuid;
 
 use super::{api_member, api_page, page_params};
 use crate::access::Actor;
-use crate::app::AppState;
+use crate::org::OrgState;
 use crate::org::model;
 use crate::org::service::{self, OrgError};
 use common::{ApiError, ValidJson, ValidQuery};
@@ -43,7 +43,7 @@ fn api_group(group: model::Group) -> Group {
     )
 )]
 pub async fn create_group(
-    State(state): State<AppState>,
+    State(state): State<OrgState>,
     actor: Actor,
     ValidJson(request): ValidJson<NameRequest>,
 ) -> Result<(StatusCode, Json<Group>), ApiError> {
@@ -71,7 +71,7 @@ pub async fn create_group(
     )
 )]
 pub async fn list_groups(
-    State(state): State<AppState>,
+    State(state): State<OrgState>,
     actor: Actor,
     ValidQuery(query): ValidQuery<PageQuery>,
 ) -> Result<Json<Page<Group>>, ApiError> {
@@ -99,7 +99,7 @@ pub async fn list_groups(
     )
 )]
 pub async fn get_group(
-    State(state): State<AppState>,
+    State(state): State<OrgState>,
     actor: Actor,
     Path(id): Path<Uuid>,
 ) -> Result<Json<Group>, ApiError> {
@@ -132,7 +132,7 @@ pub async fn get_group(
     )
 )]
 pub async fn rename_group(
-    State(state): State<AppState>,
+    State(state): State<OrgState>,
     actor: Actor,
     Path(id): Path<Uuid>,
     ValidJson(request): ValidJson<NameRequest>,
@@ -163,7 +163,7 @@ pub async fn rename_group(
     )
 )]
 pub async fn delete_group(
-    State(state): State<AppState>,
+    State(state): State<OrgState>,
     actor: Actor,
     Path(id): Path<Uuid>,
 ) -> Result<StatusCode, ApiError> {
@@ -193,7 +193,7 @@ pub async fn delete_group(
     )
 )]
 pub async fn list_group_members(
-    State(state): State<AppState>,
+    State(state): State<OrgState>,
     actor: Actor,
     Path(id): Path<Uuid>,
     ValidQuery(query): ValidQuery<PageQuery>,
@@ -228,7 +228,7 @@ pub async fn list_group_members(
     )
 )]
 pub async fn add_group_members(
-    State(state): State<AppState>,
+    State(state): State<OrgState>,
     actor: Actor,
     Path(id): Path<Uuid>,
     ValidJson(request): ValidJson<AddMembersRequest>,
@@ -265,7 +265,7 @@ pub async fn add_group_members(
     )
 )]
 pub async fn replace_group_members(
-    State(state): State<AppState>,
+    State(state): State<OrgState>,
     actor: Actor,
     Path(id): Path<Uuid>,
     ValidJson(request): ValidJson<ReplaceMembersRequest>,
@@ -298,7 +298,7 @@ pub async fn replace_group_members(
     )
 )]
 pub async fn remove_group_members(
-    State(state): State<AppState>,
+    State(state): State<OrgState>,
     actor: Actor,
     Path(id): Path<Uuid>,
     ValidJson(request): ValidJson<RemoveMembersRequest>,
@@ -330,7 +330,7 @@ pub async fn remove_group_members(
     )
 )]
 pub async fn remove_group_member(
-    State(state): State<AppState>,
+    State(state): State<OrgState>,
     actor: Actor,
     Path((id, user_id)): Path<(Uuid, Uuid)>,
 ) -> Result<StatusCode, ApiError> {

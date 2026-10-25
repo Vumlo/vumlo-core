@@ -8,7 +8,7 @@ use uuid::Uuid;
 
 use super::{api_kind, api_user};
 use crate::access::{Actor, PendingActor};
-use crate::app::AppState;
+use crate::auth::AuthState;
 use crate::auth::service::{self, AuthError, LoginThrottle};
 use common::PageParams;
 use common::{ApiError, ValidJson, ValidQuery};
@@ -29,7 +29,7 @@ use common::{ApiError, ValidJson, ValidQuery};
     )
 )]
 pub async fn get_me(
-    State(state): State<AppState>,
+    State(state): State<AuthState>,
     PendingActor(actor): PendingActor,
 ) -> Result<Json<User>, ApiError> {
     let mut conn = state.db.acquire().await.map_err(AuthError::from)?;
@@ -58,7 +58,7 @@ pub async fn get_me(
     )
 )]
 pub async fn change_password(
-    State(state): State<AppState>,
+    State(state): State<AuthState>,
     Extension(throttle): Extension<Arc<LoginThrottle>>,
     PendingActor(actor): PendingActor,
     ValidJson(request): ValidJson<ChangePasswordRequest>,
@@ -100,7 +100,7 @@ pub async fn change_password(
     )
 )]
 pub async fn list_sessions(
-    State(state): State<AppState>,
+    State(state): State<AuthState>,
     actor: Actor,
     ValidQuery(query): ValidQuery<PageQuery>,
 ) -> Result<Json<Page<Session>>, ApiError> {
@@ -143,7 +143,7 @@ pub async fn list_sessions(
     )
 )]
 pub async fn revoke_session(
-    State(state): State<AppState>,
+    State(state): State<AuthState>,
     actor: Actor,
     Path(id): Path<Uuid>,
 ) -> Result<StatusCode, ApiError> {

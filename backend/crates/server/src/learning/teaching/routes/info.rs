@@ -13,7 +13,7 @@ use uuid::Uuid;
 
 use super::{api_course, api_role, api_source, page_params};
 use crate::access::Actor;
-use crate::app::AppState;
+use crate::learning::LearningState;
 use crate::learning::teaching::model::{self, CourseInfoUpdate, CourseTitle};
 use crate::learning::teaching::service::{self, TeachingError};
 use common::Role;
@@ -104,7 +104,7 @@ fn api_candidate(candidate: model::Candidate) -> Candidate {
     )
 )]
 pub async fn get_course_info(
-    State(state): State<AppState>,
+    State(state): State<LearningState>,
     actor: Actor,
     Path(id): Path<Uuid>,
 ) -> Result<Json<CourseInfo>, ApiError> {
@@ -137,7 +137,7 @@ pub async fn get_course_info(
     )
 )]
 pub async fn update_course_info(
-    State(state): State<AppState>,
+    State(state): State<LearningState>,
     actor: Actor,
     Path(id): Path<Uuid>,
     ValidJson(request): ValidJson<UpdateCourseInfoRequest>,
@@ -171,7 +171,7 @@ pub async fn update_course_info(
     )
 )]
 pub async fn archive_course(
-    State(state): State<AppState>,
+    State(state): State<LearningState>,
     actor: Actor,
     Path(id): Path<Uuid>,
 ) -> Result<Json<Course>, ApiError> {
@@ -200,7 +200,7 @@ pub async fn archive_course(
     )
 )]
 pub async fn restore_course(
-    State(state): State<AppState>,
+    State(state): State<LearningState>,
     actor: Actor,
     Path(id): Path<Uuid>,
 ) -> Result<Json<Course>, ApiError> {
@@ -233,7 +233,7 @@ pub async fn restore_course(
     )
 )]
 pub async fn delete_course(
-    State(state): State<AppState>,
+    State(state): State<LearningState>,
     actor: Actor,
     Path(id): Path<Uuid>,
 ) -> Result<StatusCode, ApiError> {
@@ -260,7 +260,7 @@ pub async fn delete_course(
     )
 )]
 pub async fn list_templates(
-    State(state): State<AppState>,
+    State(state): State<LearningState>,
     actor: Actor,
     ValidQuery(query): ValidQuery<PageQuery>,
 ) -> Result<Json<Page<TemplateSummary>>, ApiError> {
@@ -307,7 +307,7 @@ pub async fn list_templates(
     )
 )]
 pub async fn make_template(
-    State(state): State<AppState>,
+    State(state): State<LearningState>,
     actor: Actor,
     Path(id): Path<Uuid>,
     ValidJson(request): ValidJson<MakeTemplateRequest>,
@@ -345,7 +345,7 @@ pub async fn make_template(
     )
 )]
 pub async fn create_from_template(
-    State(state): State<AppState>,
+    State(state): State<LearningState>,
     actor: Actor,
     Path(id): Path<Uuid>,
     ValidJson(request): ValidJson<CreateFromTemplateRequest>,
@@ -381,7 +381,7 @@ pub async fn create_from_template(
     )
 )]
 pub async fn get_people(
-    State(state): State<AppState>,
+    State(state): State<LearningState>,
     actor: Actor,
     Path(id): Path<Uuid>,
 ) -> Result<Json<CoursePeople>, ApiError> {
@@ -414,7 +414,7 @@ pub async fn get_people(
     )
 )]
 pub async fn get_candidates(
-    State(state): State<AppState>,
+    State(state): State<LearningState>,
     actor: Actor,
     Path(id): Path<Uuid>,
     ValidQuery(query): ValidQuery<CandidatesQuery>,

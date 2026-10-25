@@ -1,5 +1,7 @@
+use crate::access::ActorSource;
 use api_types::{CourseLine, GroupMemberLine, GroupOverview, LinkedCourse, ProblemDetails};
 use axum::Json;
+use axum::extract::FromRef;
 use axum::extract::{Path, State};
 use utoipa_axum::router::OpenApiRouter;
 use utoipa_axum::routes;
@@ -7,11 +9,15 @@ use uuid::Uuid;
 
 use super::service;
 use crate::access::Actor;
-use crate::app::AppState;
 use crate::learning::LearningError;
+use crate::learning::LearningState;
 use common::ApiError;
 
-pub fn router() -> OpenApiRouter<AppState> {
+pub fn router<S>() -> OpenApiRouter<S>
+where
+    S: ActorSource + Clone + 'static,
+    LearningState: FromRef<S>,
+{
     OpenApiRouter::new().routes(routes!(get_group_overview))
 }
 
@@ -34,7 +40,7 @@ pub fn router() -> OpenApiRouter<AppState> {
     )
 )]
 pub async fn get_group_overview(
-    State(state): State<AppState>,
+    State(state): State<LearningState>,
     actor: Actor,
     Path(id): Path<Uuid>,
 ) -> Result<Json<GroupOverview>, ApiError> {

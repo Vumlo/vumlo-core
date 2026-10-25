@@ -2,6 +2,7 @@
 //! transaction, call exactly one service function and commit; reads use a pooled connection,
 //! except the gradebook, which reads three statements from one snapshot.
 
+use crate::access::ActorSource;
 use api_types::{
     CourseRef, Deadline, GradeAction, GradeActor, GradeCell, GradeHistoryEntry, GradebookCell,
     GradebookColumn, GradebookPage, GradebookRow, MyGrade, MyGrades, Page, PageQuery,
@@ -9,6 +10,7 @@ use api_types::{
     TeachingOverview, ToGrade, UnpublishedContent, UnpublishedGrades, UnpublishedReason,
 };
 use axum::Json;
+use axum::extract::FromRef;
 use axum::extract::{Path, State};
 use serde_json::Value;
 use sqlx::types::Decimal;
@@ -19,11 +21,15 @@ use uuid::Uuid;
 use super::model::{self, ColumnStatus, FeedbackInput, GradeInput, Students};
 use super::service::{self, GradebookError};
 use crate::access::Actor;
-use crate::app::AppState;
+use crate::learning::LearningState;
 use common::PageParams;
 use common::{ApiError, ValidJson, ValidQuery};
 
-pub fn router() -> OpenApiRouter<AppState> {
+pub fn router<S>() -> OpenApiRouter<S>
+where
+    S: ActorSource + Clone + 'static,
+    LearningState: FromRef<S>,
+{
     OpenApiRouter::new()
         .routes(routes!(save_grade))
         .routes(routes!(publish_grades))
@@ -126,7 +132,7 @@ fn page_params(query: &PageQuery) -> Result<PageParams, ApiError> {
     )
 )]
 async fn save_grade(
-    State(state): State<AppState>,
+    State(state): State<LearningState>,
     actor: Actor,
     Path((assignment_id, student_id)): Path<(Uuid, Uuid)>,
     ValidJson(request): ValidJson<SaveGradeRequest>,
@@ -172,7 +178,7 @@ async fn save_grade(
     )
 )]
 async fn publish_grades(
-    State(state): State<AppState>,
+    State(state): State<LearningState>,
     actor: Actor,
     Path(assignment_id): Path<Uuid>,
     ValidJson(request): ValidJson<PublishGradesRequest>,
@@ -210,7 +216,7 @@ async fn publish_grades(
     )
 )]
 async fn get_gradebook(
-    State(state): State<AppState>,
+    State(state): State<LearningState>,
     actor: Actor,
     Path(course_id): Path<Uuid>,
     ValidQuery(query): ValidQuery<PageQuery>,
@@ -279,7 +285,7 @@ async fn get_gradebook(
     )
 )]
 async fn get_my_grades(
-    State(state): State<AppState>,
+    State(state): State<LearningState>,
     actor: Actor,
     Path(course_id): Path<Uuid>,
 ) -> Result<Json<MyGrades>, ApiError> {
@@ -316,7 +322,7 @@ async fn get_my_grades(
     )
 )]
 async fn get_teaching(
-    State(state): State<AppState>,
+    State(state): State<LearningState>,
     actor: Actor,
 ) -> Result<Json<TeachingOverview>, ApiError> {
     let mut conn = state.db.acquire().await.map_err(GradebookError::from)?;
@@ -426,7 +432,7 @@ async fn get_teaching(
     )
 )]
 async fn get_grade_history(
-    State(state): State<AppState>,
+    State(state): State<LearningState>,
     actor: Actor,
     Path((assignment_id, student_id)): Path<(Uuid, Uuid)>,
     ValidQuery(query): ValidQuery<PageQuery>,

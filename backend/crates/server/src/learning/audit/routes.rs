@@ -1,9 +1,11 @@
 //! `GET /admin/audit` (ADR-0053).
 
+use crate::access::ActorSource;
 use api_types::{
     AuditActor, AuditKind, AuditQuery, AuditRecord, AuditSource, Page, ProblemDetails,
 };
 use axum::Json;
+use axum::extract::FromRef;
 use axum::extract::State;
 use utoipa_axum::router::OpenApiRouter;
 use utoipa_axum::routes;
@@ -11,14 +13,18 @@ use utoipa_axum::routes;
 use super::model::{AuditFilter, AuditRow};
 use super::service;
 use crate::access::Actor;
-use crate::app::AppState;
 use crate::learning::LearningError;
+use crate::learning::LearningState;
 use common::PageParams;
 use common::{ApiError, ValidQuery};
 
 const DEFAULT_DAYS: u32 = 7;
 
-pub fn router() -> OpenApiRouter<AppState> {
+pub fn router<S>() -> OpenApiRouter<S>
+where
+    S: ActorSource + Clone + 'static,
+    LearningState: FromRef<S>,
+{
     OpenApiRouter::new().routes(routes!(list_audit))
 }
 
@@ -93,7 +99,7 @@ fn api_record(row: AuditRow) -> AuditRecord {
     )
 )]
 async fn list_audit(
-    State(state): State<AppState>,
+    State(state): State<LearningState>,
     actor: Actor,
     ValidQuery(query): ValidQuery<AuditQuery>,
 ) -> Result<Json<Page<AuditRecord>>, ApiError> {

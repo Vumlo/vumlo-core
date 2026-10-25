@@ -5,7 +5,7 @@ use axum::Json;
 use axum::extract::State;
 
 use crate::access::Actor;
-use crate::app::AppState;
+use crate::org::OrgState;
 use crate::org::service::{self, OrgError};
 use common::{ApiError, ValidJson};
 use vumlo_config::{self as settings, InstitutionSettings};
@@ -64,7 +64,7 @@ fn api_institution(
 
 /// The links to the app, or none: the profile is what the sign-in page shows, and it must not fail
 /// because a small list could not be read.
-async fn downloads_or_none(state: &AppState) -> Vec<AppDownload> {
+async fn downloads_or_none(state: &OrgState) -> Vec<AppDownload> {
     let rows = match state.db.acquire().await {
         Ok(mut conn) => service::app_downloads(&mut conn).await,
         Err(error) => Err(OrgError::from(error)),
@@ -85,7 +85,7 @@ async fn downloads_or_none(state: &AppState) -> Vec<AppDownload> {
     tag = "institution",
     responses((status = 200, description = "The institution profile", body = Institution))
 )]
-pub async fn get_institution(State(state): State<AppState>) -> Json<Institution> {
+pub async fn get_institution(State(state): State<OrgState>) -> Json<Institution> {
     let downloads = downloads_or_none(&state).await;
     Json(api_institution(&state.config.institution, downloads))
 }
@@ -106,7 +106,7 @@ pub async fn get_institution(State(state): State<AppState>) -> Json<Institution>
     )
 )]
 pub async fn get_admin_institution(
-    State(state): State<AppState>,
+    State(state): State<OrgState>,
     actor: Actor,
 ) -> Result<Json<AdminInstitution>, ApiError> {
     service::view_institution_settings(&actor)?;
@@ -141,7 +141,7 @@ pub async fn get_admin_institution(
     )
 )]
 pub async fn set_app_downloads(
-    State(state): State<AppState>,
+    State(state): State<OrgState>,
     actor: Actor,
     ValidJson(request): ValidJson<SetAppDownloadsRequest>,
 ) -> Result<Json<Vec<AppDownload>>, ApiError> {

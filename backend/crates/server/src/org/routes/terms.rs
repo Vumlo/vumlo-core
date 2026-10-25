@@ -6,7 +6,7 @@ use uuid::Uuid;
 
 use super::{api_page, page_params};
 use crate::access::Actor;
-use crate::app::AppState;
+use crate::org::OrgState;
 use crate::org::model::{self, TermUpdate};
 use crate::org::service::{self, OrgError};
 use common::{ApiError, ValidJson, ValidQuery};
@@ -40,7 +40,7 @@ fn api_term(term: model::Term) -> Term {
     )
 )]
 pub async fn create_term(
-    State(state): State<AppState>,
+    State(state): State<OrgState>,
     actor: Actor,
     ValidJson(request): ValidJson<CreateTermRequest>,
 ) -> Result<(StatusCode, Json<Term>), ApiError> {
@@ -73,7 +73,7 @@ pub async fn create_term(
     )
 )]
 pub async fn list_terms(
-    State(state): State<AppState>,
+    State(state): State<OrgState>,
     actor: Actor,
     ValidQuery(query): ValidQuery<PageQuery>,
 ) -> Result<Json<Page<Term>>, ApiError> {
@@ -99,7 +99,7 @@ pub async fn list_terms(
     )
 )]
 pub async fn get_term(
-    State(state): State<AppState>,
+    State(state): State<OrgState>,
     actor: Actor,
     Path(id): Path<Uuid>,
 ) -> Result<Json<Term>, ApiError> {
@@ -134,7 +134,7 @@ pub async fn get_term(
     )
 )]
 pub async fn update_term(
-    State(state): State<AppState>,
+    State(state): State<OrgState>,
     actor: Actor,
     Path(id): Path<Uuid>,
     ValidJson(request): ValidJson<UpdateTermRequest>,
@@ -170,7 +170,7 @@ pub async fn update_term(
     )
 )]
 pub async fn delete_term(
-    State(state): State<AppState>,
+    State(state): State<OrgState>,
     actor: Actor,
     Path(id): Path<Uuid>,
 ) -> Result<StatusCode, ApiError> {

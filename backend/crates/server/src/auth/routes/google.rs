@@ -11,7 +11,7 @@ use axum_extra::extract::CookieJar;
 use super::auth::{COOKIE_MAX_AGE_SECS, session_cookie};
 use super::extract::check_origin;
 use super::{api_user, no_store};
-use crate::app::AppState;
+use crate::auth::AuthState;
 use crate::auth::model::{BrowserBinding, NewSession, SessionKind};
 use crate::auth::service::{self, AuthError};
 use common::{ApiError, ValidJson};
@@ -50,7 +50,7 @@ fn binding_cookie(value: &str, max_age_secs: u64, secure: bool) -> Result<Header
     )
 )]
 pub async fn start(
-    State(state): State<AppState>,
+    State(state): State<AuthState>,
     ValidJson(request): ValidJson<GoogleStartRequest>,
 ) -> Result<Response, ApiError> {
     let google = state.google.as_ref().ok_or(ApiError::NotFound)?;
@@ -112,7 +112,7 @@ pub async fn start(
     )
 )]
 pub async fn callback(
-    State(state): State<AppState>,
+    State(state): State<AuthState>,
     headers: HeaderMap,
     ValidJson(request): ValidJson<GoogleCallbackRequest>,
 ) -> Result<Response, ApiError> {
@@ -183,7 +183,7 @@ pub async fn callback(
     )
 )]
 pub async fn exchange(
-    State(state): State<AppState>,
+    State(state): State<AuthState>,
     ValidJson(request): ValidJson<AppExchangeRequest>,
 ) -> Result<Response, ApiError> {
     // The code is used up in this transaction, and the answer to a wrong secret is committed with it.

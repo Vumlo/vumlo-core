@@ -1,6 +1,7 @@
 //! HTTP edge of `content`: extractors, DTO mapping, OpenAPI annotations. Writes open the
 //! transaction, call exactly one service function and commit; reads use a pooled connection.
 
+use crate::access::ActorSource;
 use api_types::{
     ContentModule, ContentStatus, ContentSubModule, ContentTree, CourseRef, CreateItemRequest,
     CreateModuleRequest, EditorProfiles, FieldError, HitKind, HitStatus, Item, ItemMeta,
@@ -9,6 +10,7 @@ use api_types::{
     SearchQuery, SearchResults, UpdateItemRequest, UpdateModuleRequest, WorkCourse, WorkItem,
 };
 use axum::Json;
+use axum::extract::FromRef;
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use utoipa_axum::router::OpenApiRouter;
@@ -21,10 +23,14 @@ use super::model::{
 };
 use super::service::{self, ContentError, ItemRules};
 use crate::access::Actor;
-use crate::app::AppState;
+use crate::learning::LearningState;
 use common::{ApiError, ValidJson, ValidQuery};
 
-pub fn router() -> OpenApiRouter<AppState> {
+pub fn router<S>() -> OpenApiRouter<S>
+where
+    S: ActorSource + Clone + 'static,
+    LearningState: FromRef<S>,
+{
     OpenApiRouter::new()
         .routes(routes!(create_module))
         .routes(routes!(get_tree))
@@ -304,7 +310,7 @@ fn domain_assignment(new: NewAssignment) -> Result<model::Assignment, ApiError> 
 
 /// A 422 about the assignment part of a create request names its field under `assignment.`.
 /// What item writes read from the configuration.
-fn rules(state: &AppState) -> ItemRules<'_> {
+fn rules(state: &LearningState) -> ItemRules<'_> {
     ItemRules {
         scale: state.config.institution.grading_scale,
         profiles: &state.editor,
@@ -357,7 +363,7 @@ fn under_assignment(error: ContentError) -> ApiError {
     )
 )]
 async fn create_module(
-    State(state): State<AppState>,
+    State(state): State<LearningState>,
     actor: Actor,
     Path(course_id): Path<Uuid>,
     ValidJson(request): ValidJson<CreateModuleRequest>,
@@ -391,7 +397,7 @@ async fn create_module(
     )
 )]
 async fn get_tree(
-    State(state): State<AppState>,
+    State(state): State<LearningState>,
     actor: Actor,
     Path(course_id): Path<Uuid>,
 ) -> Result<Json<ContentTree>, ApiError> {
@@ -421,7 +427,7 @@ async fn get_tree(
     )
 )]
 async fn update_module(
-    State(state): State<AppState>,
+    State(state): State<LearningState>,
     actor: Actor,
     Path(id): Path<Uuid>,
     ValidJson(request): ValidJson<UpdateModuleRequest>,
@@ -458,7 +464,7 @@ async fn update_module(
     )
 )]
 async fn delete_module(
-    State(state): State<AppState>,
+    State(state): State<LearningState>,
     actor: Actor,
     Path(id): Path<Uuid>,
 ) -> Result<StatusCode, ApiError> {
@@ -494,7 +500,7 @@ async fn delete_module(
     )
 )]
 async fn reorder_modules(
-    State(state): State<AppState>,
+    State(state): State<LearningState>,
     actor: Actor,
     Path(course_id): Path<Uuid>,
     ValidJson(request): ValidJson<ReorderModulesRequest>,
@@ -530,7 +536,7 @@ async fn reorder_modules(
     )
 )]
 async fn publish_module(
-    State(state): State<AppState>,
+    State(state): State<LearningState>,
     actor: Actor,
     Path(id): Path<Uuid>,
     ValidJson(request): ValidJson<PublishModuleRequest>,
@@ -575,7 +581,7 @@ async fn publish_module(
     )
 )]
 async fn create_item(
-    State(state): State<AppState>,
+    State(state): State<LearningState>,
     actor: Actor,
     Path(module_id): Path<Uuid>,
     ValidJson(request): ValidJson<CreateItemRequest>,
@@ -636,7 +642,7 @@ async fn create_item(
     )
 )]
 async fn reorder_items(
-    State(state): State<AppState>,
+    State(state): State<LearningState>,
     actor: Actor,
     Path(module_id): Path<Uuid>,
     ValidJson(request): ValidJson<ReorderItemsRequest>,
@@ -665,7 +671,7 @@ async fn reorder_items(
     )
 )]
 async fn get_item(
-    State(state): State<AppState>,
+    State(state): State<LearningState>,
     actor: Actor,
     Path(id): Path<Uuid>,
 ) -> Result<Json<Item>, ApiError> {
@@ -702,7 +708,7 @@ async fn get_item(
     )
 )]
 async fn update_item(
-    State(state): State<AppState>,
+    State(state): State<LearningState>,
     actor: Actor,
     Path(id): Path<Uuid>,
     ValidJson(request): ValidJson<UpdateItemRequest>,
@@ -755,7 +761,7 @@ async fn update_item(
     )
 )]
 async fn delete_item(
-    State(state): State<AppState>,
+    State(state): State<LearningState>,
     actor: Actor,
     Path(id): Path<Uuid>,
 ) -> Result<StatusCode, ApiError> {
@@ -783,7 +789,7 @@ async fn delete_item(
     )
 )]
 async fn publish_item(
-    State(state): State<AppState>,
+    State(state): State<LearningState>,
     actor: Actor,
     Path(id): Path<Uuid>,
 ) -> Result<Json<Item>, ApiError> {
@@ -819,7 +825,7 @@ fn api_revision(revision: model::Revision) -> ItemRevision {
     )
 )]
 async fn get_revision(
-    State(state): State<AppState>,
+    State(state): State<LearningState>,
     actor: Actor,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ItemRevision>, ApiError> {
@@ -851,7 +857,7 @@ async fn get_revision(
     )
 )]
 async fn publish_revision(
-    State(state): State<AppState>,
+    State(state): State<LearningState>,
     actor: Actor,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ItemRevision>, ApiError> {
@@ -920,7 +926,7 @@ fn api_meta(facts: model::ItemFacts) -> ItemMeta {
     )
 )]
 async fn get_item_meta(
-    State(state): State<AppState>,
+    State(state): State<LearningState>,
     actor: Actor,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ItemMetaMap>, ApiError> {
@@ -948,7 +954,7 @@ async fn get_item_meta(
     )
 )]
 async fn get_my_work(
-    State(state): State<AppState>,
+    State(state): State<LearningState>,
     actor: Actor,
 ) -> Result<Json<MyWork>, ApiError> {
     let mut conn = state.db.acquire().await.map_err(ContentError::from)?;
@@ -1004,7 +1010,7 @@ async fn get_my_work(
     )
 )]
 async fn search(
-    State(state): State<AppState>,
+    State(state): State<LearningState>,
     actor: Actor,
     ValidQuery(query): ValidQuery<SearchQuery>,
 ) -> Result<Json<SearchResults>, ApiError> {
@@ -1054,7 +1060,7 @@ async fn search(
     )
 )]
 async fn get_editor_profiles(
-    State(state): State<AppState>,
+    State(state): State<LearningState>,
     actor: Actor,
 ) -> Result<Json<EditorProfiles>, ApiError> {
     let profiles = service::editor_profiles(&actor, &state.editor)?;

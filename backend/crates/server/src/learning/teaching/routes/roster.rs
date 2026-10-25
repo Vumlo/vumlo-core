@@ -11,7 +11,7 @@ use uuid::Uuid;
 
 use super::page_params;
 use crate::access::Actor;
-use crate::app::AppState;
+use crate::learning::LearningState;
 use crate::learning::teaching::model;
 use crate::learning::teaching::service::{self, TeachingError};
 use crate::org;
@@ -71,7 +71,7 @@ fn api_exclusion(exclusion: model::Exclusion) -> Exclusion {
     )
 )]
 pub async fn list_links(
-    State(state): State<AppState>,
+    State(state): State<LearningState>,
     actor: Actor,
     Path(id): Path<Uuid>,
     ValidQuery(query): ValidQuery<PageQuery>,
@@ -110,7 +110,7 @@ pub async fn list_links(
     )
 )]
 pub async fn link_group(
-    State(state): State<AppState>,
+    State(state): State<LearningState>,
     actor: Actor,
     Path(id): Path<Uuid>,
     ValidJson(request): ValidJson<LinkGroupRequest>,
@@ -149,7 +149,7 @@ pub async fn link_group(
     )
 )]
 pub async fn unlink_group(
-    State(state): State<AppState>,
+    State(state): State<LearningState>,
     actor: Actor,
     Path((id, link_id)): Path<(Uuid, Uuid)>,
 ) -> Result<StatusCode, ApiError> {
@@ -180,7 +180,7 @@ pub async fn unlink_group(
     )
 )]
 pub async fn group_options(
-    State(state): State<AppState>,
+    State(state): State<LearningState>,
     actor: Actor,
     Path(id): Path<Uuid>,
     ValidQuery(query): ValidQuery<PageQuery>,
@@ -216,7 +216,7 @@ pub async fn group_options(
     )
 )]
 pub async fn list_exclusions(
-    State(state): State<AppState>,
+    State(state): State<LearningState>,
     actor: Actor,
     Path(id): Path<Uuid>,
     ValidQuery(query): ValidQuery<PageQuery>,
@@ -252,7 +252,7 @@ pub async fn list_exclusions(
     )
 )]
 pub async fn restore_exclusion(
-    State(state): State<AppState>,
+    State(state): State<LearningState>,
     actor: Actor,
     Path((id, user_id)): Path<(Uuid, Uuid)>,
 ) -> Result<StatusCode, ApiError> {

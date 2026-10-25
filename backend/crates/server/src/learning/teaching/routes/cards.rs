@@ -10,7 +10,7 @@ use chrono::Utc;
 use super::api_course;
 use crate::access::Actor;
 use crate::access::CourseRole;
-use crate::app::AppState;
+use crate::learning::LearningState;
 use crate::learning::teaching::model::{CourseCardData, NextDeadline, Todo};
 use crate::learning::teaching::service::{self, TeachingError};
 use common::ApiError;
@@ -83,7 +83,7 @@ fn api_card(card: CourseCardData, today: chrono::NaiveDate) -> CourseCard {
     )
 )]
 pub async fn get_course_cards(
-    State(state): State<AppState>,
+    State(state): State<LearningState>,
     actor: Actor,
 ) -> Result<Json<CourseCards>, ApiError> {
     let now = Utc::now();

@@ -6,17 +6,23 @@ mod institution;
 mod subgroups;
 mod terms;
 
+use crate::access::ActorSource;
 use api_types::{FieldError, GroupMember, Page, PageQuery};
+use axum::extract::FromRef;
 use utoipa_axum::router::OpenApiRouter;
 use utoipa_axum::routes;
 
 use super::model::{self, MemberProblem, ModelError};
 use super::service::OrgError;
-use crate::app::AppState;
+use crate::org::OrgState;
 use common::ApiError;
 use common::{self, PageParams};
 
-pub fn router() -> OpenApiRouter<AppState> {
+pub fn router<S>() -> OpenApiRouter<S>
+where
+    S: ActorSource + Clone + 'static,
+    OrgState: FromRef<S>,
+{
     OpenApiRouter::new()
         .routes(routes!(institution::get_institution))
         .routes(routes!(institution::get_admin_institution))

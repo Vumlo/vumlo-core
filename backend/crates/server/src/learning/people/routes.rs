@@ -1,5 +1,7 @@
+use crate::access::ActorSource;
 use api_types::{CourseLine, GroupName, ProblemDetails, UpdateUserRequest, User, UserFacts};
 use axum::Json;
+use axum::extract::FromRef;
 use axum::extract::{Path, State};
 use utoipa_axum::router::OpenApiRouter;
 use utoipa_axum::routes;
@@ -8,14 +10,18 @@ use uuid::Uuid;
 use super::service;
 use crate::access::Actor;
 use crate::access::{self, Action};
-use crate::app::AppState;
 use crate::auth::{
     AuthError, PersonName, UserUpdate, api_role, api_status, api_user, domain_role, domain_status,
 };
 use crate::learning::LearningError;
+use crate::learning::LearningState;
 use common::{ApiError, ValidJson};
 
-pub fn router() -> OpenApiRouter<AppState> {
+pub fn router<S>() -> OpenApiRouter<S>
+where
+    S: ActorSource + Clone + 'static,
+    LearningState: FromRef<S>,
+{
     OpenApiRouter::new()
         .routes(routes!(user_facts))
         .routes(routes!(update_user))
@@ -40,7 +46,7 @@ pub fn router() -> OpenApiRouter<AppState> {
     )
 )]
 pub async fn user_facts(
-    State(state): State<AppState>,
+    State(state): State<LearningState>,
     actor: Actor,
     Path(id): Path<Uuid>,
 ) -> Result<Json<UserFacts>, ApiError> {
@@ -93,7 +99,7 @@ pub async fn user_facts(
     )
 )]
 pub async fn update_user(
-    State(state): State<AppState>,
+    State(state): State<LearningState>,
     actor: Actor,
     Path(id): Path<Uuid>,
     ValidJson(request): ValidJson<UpdateUserRequest>,

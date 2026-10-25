@@ -2,12 +2,14 @@
 //! transaction, call exactly one service function and commit; reads use a pooled connection. The
 //! handler reads the clock once and hands it to the service (ADR-0035).
 
+use crate::access::ActorSource;
 use api_types::{
     Attempt, AttemptsPage, FormResponseRow, FormResponses, LatestAttempt, MySubmission, PageQuery,
     ProblemDetails, QuizResult, QuizResultQuestion, SaveDraftRequest, StudentName, SubmissionDraft,
     SubmissionRow, SubmissionStatus, SubmissionsPage,
 };
 use axum::Json;
+use axum::extract::FromRef;
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use chrono::Utc;
@@ -18,11 +20,15 @@ use uuid::Uuid;
 use super::model;
 use super::service::{self, AssessmentError};
 use crate::access::Actor;
-use crate::app::AppState;
+use crate::learning::LearningState;
 use common::PageParams;
 use common::{ApiError, ValidJson, ValidQuery};
 
-pub fn router() -> OpenApiRouter<AppState> {
+pub fn router<S>() -> OpenApiRouter<S>
+where
+    S: ActorSource + Clone + 'static,
+    LearningState: FromRef<S>,
+{
     OpenApiRouter::new()
         .routes(routes!(save_draft, discard_draft))
         .routes(routes!(get_my_submission))
@@ -149,7 +155,7 @@ fn api_row(row: model::StudentSubmission) -> SubmissionRow {
     )
 )]
 async fn save_draft(
-    State(state): State<AppState>,
+    State(state): State<LearningState>,
     actor: Actor,
     Path(assignment_id): Path<Uuid>,
     ValidJson(request): ValidJson<SaveDraftRequest>,
@@ -190,7 +196,7 @@ async fn save_draft(
     )
 )]
 async fn discard_draft(
-    State(state): State<AppState>,
+    State(state): State<LearningState>,
     actor: Actor,
     Path(assignment_id): Path<Uuid>,
 ) -> Result<StatusCode, ApiError> {
@@ -224,7 +230,7 @@ async fn discard_draft(
     )
 )]
 async fn get_my_submission(
-    State(state): State<AppState>,
+    State(state): State<LearningState>,
     actor: Actor,
     Path(assignment_id): Path<Uuid>,
     ValidQuery(query): ValidQuery<PageQuery>,
@@ -266,7 +272,7 @@ async fn get_my_submission(
     )
 )]
 async fn submit(
-    State(state): State<AppState>,
+    State(state): State<LearningState>,
     actor: Actor,
     Path(assignment_id): Path<Uuid>,
 ) -> Result<(StatusCode, Json<Attempt>), ApiError> {
@@ -301,7 +307,7 @@ async fn submit(
     )
 )]
 async fn list_submissions(
-    State(state): State<AppState>,
+    State(state): State<LearningState>,
     actor: Actor,
     Path(assignment_id): Path<Uuid>,
     ValidQuery(query): ValidQuery<PageQuery>,
@@ -343,7 +349,7 @@ async fn list_submissions(
     )
 )]
 async fn list_student_attempts(
-    State(state): State<AppState>,
+    State(state): State<LearningState>,
     actor: Actor,
     Path((assignment_id, student_id)): Path<(Uuid, Uuid)>,
     ValidQuery(query): ValidQuery<PageQuery>,
@@ -378,7 +384,7 @@ async fn list_student_attempts(
     )
 )]
 async fn get_result(
-    State(state): State<AppState>,
+    State(state): State<LearningState>,
     actor: Actor,
     Path(assignment_id): Path<Uuid>,
 ) -> Result<Json<QuizResult>, ApiError> {
@@ -425,7 +431,7 @@ async fn get_result(
     )
 )]
 async fn get_responses(
-    State(state): State<AppState>,
+    State(state): State<LearningState>,
     actor: Actor,
     Path(assignment_id): Path<Uuid>,
 ) -> Result<Json<FormResponses>, ApiError> {

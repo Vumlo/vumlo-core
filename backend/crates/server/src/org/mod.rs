@@ -4,6 +4,7 @@ mod model;
 mod repo;
 mod routes;
 mod service;
+mod state;
 
 pub use model::{
     DownloadUrl, Group, GroupMember, GroupOption, MemberLine, MemberProblem, ModelError, OrgName,
@@ -16,3 +17,4 @@ pub use service::{
     OrgError, group_member_lines, group_options, groups_of_user, record_mode, terms_newest_first,
     view_institution_settings,
 };
+pub use state::OrgState;

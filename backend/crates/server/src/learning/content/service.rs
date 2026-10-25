@@ -674,7 +674,7 @@ pub async fn publish_module(
 // ---------------------------------------------------------------------------------------------
 
 /// What the item writes read from the configuration: the grading scale (ADR-0022) and the
-/// resolved editor profiles (ADR-0025). Both are resolved once, when `AppState` is built.
+/// resolved editor profiles (ADR-0025). Both are resolved once, when `LearningState` is built.
 #[derive(Debug, Clone, Copy)]
 pub struct ItemRules<'a> {
     pub scale: GradingScale,

@@ -11,6 +11,8 @@ pub mod groups;
 pub mod people;
 mod points;
 pub mod reports;
+mod state;
 pub mod teaching;
 
 pub use error::LearningError;
+pub use state::LearningState;

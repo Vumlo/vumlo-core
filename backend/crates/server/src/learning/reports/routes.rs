@@ -1,5 +1,7 @@
+use crate::access::ActorSource;
 use api_types::{ProblemDetails, TermStat, TermStats};
 use axum::Json;
+use axum::extract::FromRef;
 use axum::extract::State;
 use chrono::Utc;
 use utoipa_axum::router::OpenApiRouter;
@@ -7,11 +9,15 @@ use utoipa_axum::routes;
 
 use super::service;
 use crate::access::Actor;
-use crate::app::AppState;
 use crate::learning::LearningError;
+use crate::learning::LearningState;
 use common::ApiError;
 
-pub fn router() -> OpenApiRouter<AppState> {
+pub fn router<S>() -> OpenApiRouter<S>
+where
+    S: ActorSource + Clone + 'static,
+    LearningState: FromRef<S>,
+{
     OpenApiRouter::new().routes(routes!(get_term_stats))
 }
 
@@ -31,7 +37,7 @@ pub fn router() -> OpenApiRouter<AppState> {
     )
 )]
 pub async fn get_term_stats(
-    State(state): State<AppState>,
+    State(state): State<LearningState>,
     actor: Actor,
 ) -> Result<Json<TermStats>, ApiError> {
     let today = Utc::now()

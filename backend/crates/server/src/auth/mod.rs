@@ -6,6 +6,7 @@ mod model;
 mod repo;
 mod routes;
 mod service;
+mod state;
 
 pub use google::{Google, GoogleSetupError};
 pub use handler::{MailContext, event_handlers};
@@ -24,3 +25,4 @@ pub use service::{
     AppliedUserUpdate, AuthError, HashGate, LoginThrottle, apply_user_update, create_user_from_cli,
     find_user, find_user_shared, find_users, hash_password, hash_password_gated, last_login_at,
 };
+pub use state::AuthState;
