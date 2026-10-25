@@ -2,5 +2,4 @@ pub mod app;
 pub mod conditional;
 mod health;
 pub mod idempotency;
-pub mod learning;
 pub mod modules;

@@ -9,6 +9,7 @@ members = [
     "crates/config",
     "crates/db",
     "crates/events",
+    "crates/learning",
     "crates/module-api",
     "crates/org",
     "crates/server",
@@ -63,6 +64,7 @@ auth = { path = "crates/auth" }
 common = { path = "crates/common" }
 db = { path = "crates/db" }
 events = { path = "crates/events" }
+learning = { path = "crates/learning" }
 module-api = { path = "crates/module-api" }
 org = { path = "crates/org" }
 server = { path = "crates/server" }

@@ -1913,6 +1913,30 @@ dependencies = [
 ]
 
 [[package]]
+name = "learning"
+version = "0.2.2"
+dependencies = [
+ "access",
+ "api-types",
+ "auth",
+ "axum",
+ "chrono",
+ "common",
+ "events",
+ "org",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "test-support",
+ "thiserror 2.0.21",
+ "tokio",
+ "utoipa",
+ "utoipa-axum",
+ "uuid",
+ "vumlo-config",
+]
+
+[[package]]
 name = "lettre"
 version = "0.11.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3215,6 +3239,7 @@ dependencies = [
  "db",
  "events",
  "garde",
+ "learning",
  "lettre",
  "module-api",
  "openidconnect",

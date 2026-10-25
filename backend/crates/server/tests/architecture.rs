@@ -61,32 +61,32 @@ const UNITS: &[Unit] = &[
     },
     Unit {
         name: "teaching",
-        dir: "server/src/learning/teaching",
+        dir: "learning/src/teaching",
         schema: Some("teaching"),
         layer: 5,
     },
     Unit {
         name: "content",
-        dir: "server/src/learning/content",
+        dir: "learning/src/content",
         schema: Some("content"),
         layer: 5,
     },
     Unit {
         name: "assessment",
-        dir: "server/src/learning/assessment",
+        dir: "learning/src/assessment",
         schema: Some("assessment"),
         layer: 5,
     },
     Unit {
         name: "gradebook",
-        dir: "server/src/learning/gradebook",
+        dir: "learning/src/gradebook",
         schema: Some("gradebook"),
         layer: 5,
     },
     // The flows above those four (a person with their courses, the audit report, ...): no schema.
     Unit {
         name: "learning",
-        dir: "server/src/learning",
+        dir: "learning/src",
         schema: None,
         layer: 5,
     },

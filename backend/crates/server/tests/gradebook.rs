@@ -1263,7 +1263,7 @@ async fn saved_and_cleared(w: &World, assignment: Uuid) {
 
 // --- the callbacks `content` calls --------------------------------------------------------------
 
-use server::learning::gradebook::{self, GradebookError};
+use ::learning::gradebook::{self, GradebookError};
 
 async fn rows_of(pool: &PgPool, assignment: Uuid) -> (i64, i64) {
     let grades = sqlx::query_scalar!(

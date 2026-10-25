@@ -32,6 +32,7 @@ common.workspace = true
 db.workspace = true
 events.workspace = true
 garde.workspace = true
+learning.workspace = true
 lettre.workspace = true
 module-api.workspace = true
 org.workspace = true
