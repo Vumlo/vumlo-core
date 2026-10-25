@@ -17,7 +17,8 @@ must do, in order, besides getting the new release. See [RELEASING.md](RELEASING
   (`submission.submitted`, `grade.published`), signed with `X-Vumlo-Timestamp` and `X-Vumlo-Signature`, and the plugin calls
   `/api/v1/plugin-api/*` with its token, where every call needs a scope (`submissions:read`, `reports:write`). Staff read what
   plugins reported at `GET /api/v1/submissions/{id}/plugin-reports`. An example is in `examples/hello-plugin/`.
-  - **Upgrade notes:** run `vumlo db migrate` (migration `0034_plugins.sql` adds the schema `plugins`). To use plugins set
+  - **Upgrade notes:** run `vumlo db migrate` (migrations `0034_plugins.sql` and `0035_reports_follow_their_submission.sql` add the
+    schema `plugins`). To use plugins set
     `VUMLO__PLUGINS__SECRET_KEY` (32 characters or more) in the environment; without it none can be installed.
 - **A plugin can show a page in a tab of an assignment** (ADR-0066). The page is a sandboxed frame with no session and no access
   to the web app; it learns who is looking from a signed token the core issues for a minute (`POST /assignments/{id}/plugin-launch`)

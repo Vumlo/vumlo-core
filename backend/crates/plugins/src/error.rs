@@ -24,6 +24,9 @@ pub enum PluginsError {
     AlreadyInstalled(String),
     #[error("there is no plugin `{0}`")]
     NotFound(String),
+    /// The submitted attempt a report is about is not there.
+    #[error("there is no such submitted attempt")]
+    SubmissionGone,
     #[error(transparent)]
     Forbidden(#[from] AccessError),
     #[error(transparent)]
@@ -42,7 +45,7 @@ impl From<PluginsError> for ApiError {
             PluginsError::Forbidden(access) => access.into(),
             PluginsError::Assessment(error) => error.into(),
             PluginsError::Teaching(error) => error.into(),
-            PluginsError::NotFound(_) => Self::NotFound,
+            PluginsError::NotFound(_) | PluginsError::SubmissionGone => Self::NotFound,
             PluginsError::Db(error) => Self::from_db("plugins", &error),
             // The rest happen at install time, in the CLI, and never in a request.
             other => {

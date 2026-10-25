@@ -168,6 +168,11 @@ module-api -> common, access, events          (and vumlo-config, beside the chai
 - The token is stored only as a hash, so an administrator who lost it removes the plugin and installs
   it again. The secret is derived and could be shown again, but no command does: it is printed once,
   with the token. There is no command to raise `secret_version` yet.
+- A report is about a submitted attempt and has a foreign key to it with `ON DELETE CASCADE` (migration
+  0035; migration 0034 first kept a bare id, as grades do). Nothing deletes a submitted attempt today, so
+  no report can be left behind; the key makes it hold for the delete that will come, such as the erasure
+  of a student's data, with no event, no view and no job to forget. The `deliveries` of a plugin keep
+  ids only and have no retention yet, like the outbox.
 - The tab is on a text assignment and on one that takes no submission. A quiz and a form are answered on a
   full-screen sheet (`focus`), where the web app shows no tab, so a plugin has no page there yet.
 - Not decided here: WASM, a marketplace, signing of plugins, per-course scopes, slots for modules, tabs on a

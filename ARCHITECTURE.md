@@ -228,6 +228,7 @@ plugins                                            -- built (ADR-0066), written 
   deliveries       id, install_id, event_id, event_type, data (ids only), attempts, run_after, last_error,
                    delivered_at?, failed_at?   -- unique (install_id, event_id); a disabled install's rows wait
   reports          install_id, submission_id, summary, data (jsonb object)   -- one per plugin and attempt, replaced by the next
+                   -- submission_id -> assessment.submissions ON DELETE CASCADE (migration 0035): a report cannot outlive its attempt
 
 mod_<id>                                           -- built (ADR-0066): the schema of an optional module, with its own
                                                    -- history table mod_<id>._sqlx_migrations; the core never reads it

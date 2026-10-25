@@ -828,3 +828,63 @@ async fn the_example_page_trusts_only_a_token_the_core_signed() {
     })
     .await;
 }
+
+async fn stored_reports(w: &World) -> i64 {
+    sqlx::query_scalar("SELECT count(*) FROM plugins.reports")
+        .fetch_one(&w.env.pool)
+        .await
+        .unwrap()
+}
+
+#[tokio::test]
+async fn a_report_is_replaced_by_the_next_and_goes_with_its_attempt_and_with_its_plugin() {
+    db_test(async |pool| {
+        let w = world(pool).await;
+        let plugin = w
+            .install_without_a_process("writer", &[Scope::ReportsWrite])
+            .await;
+        let first = w.submit("a b c").await;
+        let second = w.submit("d e").await;
+        let report = |submission: Uuid, summary: &'static str| {
+            let call = w.plugin_call(
+                "PUT",
+                &format!("/submissions/{submission}/report"),
+                plugin.token.expose(),
+            );
+            async move {
+                call.json(&json!({"summary": summary, "data": {}}))
+                    .send()
+                    .await
+            }
+        };
+
+        // A second report on the same attempt replaces the first; another attempt has its own.
+        assert_eq!(report(first, "3 words").await.status, 204);
+        assert_eq!(report(first, "three words").await.status, 204);
+        assert_eq!(report(second, "2 words").await.status, 204);
+        let on_first = w.reports(first).await;
+        assert_eq!(
+            (on_first.len(), on_first[0]["summary"].as_str()),
+            (1, Some("three words"))
+        );
+        assert_eq!(stored_reports(&w).await, 2);
+
+        // The attempt goes (nothing does this today; the erasure of a student's data will): its report
+        // goes in the same statement, the other attempt's stays, and a new one cannot be written.
+        sqlx::query("DELETE FROM assessment.submissions WHERE id = $1")
+            .bind(first)
+            .execute(&w.env.pool)
+            .await
+            .unwrap();
+        assert_eq!(stored_reports(&w).await, 1);
+        assert!(w.reports(second).await.len() == 1);
+        report(first, "again").await.problem(404);
+        assert_eq!(stored_reports(&w).await, 1);
+
+        // The plugin goes: so do its reports.
+        let mut conn = w.env.pool.acquire().await.unwrap();
+        plugins::remove(&mut conn, "writer").await.unwrap();
+        assert_eq!(stored_reports(&w).await, 0);
+    })
+    .await;
+}

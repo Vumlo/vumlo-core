@@ -274,7 +274,15 @@ pub async fn put_report(
     data: &Value,
 ) -> Result<(), PluginsError> {
     access::authorize_plugin(caller, Scope::ReportsWrite)?;
-    repo::upsert_report(conn, caller.install_id(), submission_id, summary, data).await?;
+    repo::upsert_report(conn, caller.install_id(), submission_id, summary, data)
+        .await
+        .map_err(
+            |error| match error.as_database_error().and_then(|e| e.code()).as_deref() {
+                // The foreign key to the attempt: it is not there (any more).
+                Some("23503") => PluginsError::SubmissionGone,
+                _ => PluginsError::Db(error),
+            },
+        )?;
     Ok(())
 }
 

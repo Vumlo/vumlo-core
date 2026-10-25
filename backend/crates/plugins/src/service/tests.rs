@@ -252,24 +252,15 @@ async fn the_fan_out_owes_each_enabled_subscriber_once() {
 }
 
 #[tokio::test]
-async fn removing_a_plugin_removes_its_deliveries_and_reports() {
+async fn removing_a_plugin_removes_its_deliveries() {
+    // Its reports go too; that needs real submitted attempts, so it is in tests/plugins.rs.
     db_test(async |pool| {
-        let installed = install_hello(&pool, &[Scope::ReportsWrite]).await;
+        install_hello(&pool, &[Scope::ReportsWrite]).await;
         let mut conn = pool.acquire().await.unwrap();
         fan_out(&mut conn, &event("submission.submitted"))
             .await
             .unwrap();
-        let me = PluginCaller::for_install(installed.install.id, "hello", &[Scope::ReportsWrite]);
-        put_report(&mut conn, &me, Uuid::now_v7(), "ok", &json!({}))
-            .await
-            .unwrap();
-        assert_eq!(
-            (
-                count(&pool, "deliveries").await,
-                count(&pool, "reports").await
-            ),
-            (1, 1)
-        );
+        assert_eq!(count(&pool, "deliveries").await, 1);
 
         let removed = remove(&mut conn, "hello").await.unwrap();
 
@@ -277,10 +268,9 @@ async fn removing_a_plugin_removes_its_deliveries_and_reports() {
         assert_eq!(
             (
                 count(&pool, "installs").await,
-                count(&pool, "deliveries").await,
-                count(&pool, "reports").await
+                count(&pool, "deliveries").await
             ),
-            (0, 0, 0)
+            (0, 0)
         );
         assert!(matches!(
             remove(&mut conn, "hello").await,
@@ -291,7 +281,8 @@ async fn removing_a_plugin_removes_its_deliveries_and_reports() {
 }
 
 #[tokio::test]
-async fn a_report_needs_the_scope_and_a_second_one_replaces_the_first() {
+async fn a_report_needs_the_scope_and_one_for_an_attempt_that_is_not_there_is_refused() {
+    // A report that is stored, replaced and removed is in tests/plugins.rs, against real attempts.
     db_test(async |pool| {
         let installed = install_hello(&pool, &[Scope::ReportsWrite]).await;
         let mut conn = pool.acquire().await.unwrap();
@@ -301,23 +292,15 @@ async fn a_report_needs_the_scope_and_a_second_one_replaces_the_first() {
 
         let refused = put_report(&mut conn, &without, submission, "x", &json!({})).await;
         assert!(matches!(refused, Err(PluginsError::Forbidden(_))));
-        assert_eq!(count(&pool, "reports").await, 0);
 
+        // With the scope, but nothing to report on: the foreign key says so.
         let me = PluginCaller::for_install(id, "hello", &[Scope::ReportsWrite]);
-        put_report(&mut conn, &me, submission, "5 words", &json!({"words": 5}))
-            .await
-            .unwrap();
-        put_report(&mut conn, &me, submission, "6 words", &json!({"words": 6}))
-            .await
-            .unwrap();
-
-        let rows = repo::reports_of(&mut conn, submission).await.unwrap();
-        assert_eq!(rows.len(), 1);
-        assert_eq!(
-            (rows[0].plugin_id.as_str(), rows[0].summary.as_str()),
-            ("hello", "6 words")
+        let gone = put_report(&mut conn, &me, submission, "x", &json!({})).await;
+        assert!(
+            matches!(gone, Err(PluginsError::SubmissionGone)),
+            "{gone:?}"
         );
-        assert_eq!(rows[0].data, json!({"words": 6}));
+        assert_eq!(count(&pool, "reports").await, 0);
     })
     .await;
 }
