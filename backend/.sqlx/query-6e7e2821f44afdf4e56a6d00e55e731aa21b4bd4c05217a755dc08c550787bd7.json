@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT c.id AS course_id, c.code, c.title, c.status AS \"status: CourseStatus\",\n                  c.owner_id, o.name AS owner_name, o.surname AS owner_surname,\n                  c.term_id, t.name AS \"term_name?\",\n                  (SELECT count(*) FROM teaching.effective_members m\n                   WHERE m.course_id = c.id AND m.role = 'student') AS \"student_count!\"\n           FROM teaching.courses c\n           JOIN auth.users o ON o.id = c.owner_id\n           LEFT JOIN org.terms t ON t.id = c.term_id\n           WHERE c.kind = 'regular' AND ($1::uuid IS NULL OR c.id > $1)\n           ORDER BY c.id\n           LIMIT $2",
+  "query": "SELECT c.id AS course_id, c.code, c.title, c.status AS \"status: CourseStatus\",\n                  c.owner_id, o.name AS \"owner_name!\", o.surname AS \"owner_surname!\",\n                  c.term_id, t.name AS \"term_name?\",\n                  (SELECT count(*) FROM teaching.effective_members m\n                   WHERE m.course_id = c.id AND m.role = 'student') AS \"student_count!\"\n           FROM teaching.courses c\n           JOIN auth.people o ON o.id = c.owner_id\n           LEFT JOIN org.term_list t ON t.id = c.term_id\n           WHERE c.kind = 'regular' AND ($1::uuid IS NULL OR c.id > $1)\n           ORDER BY c.id\n           LIMIT $2",
   "describe": {
     "columns": [
       {
@@ -60,22 +60,22 @@
       },
       {
         "ordinal": 5,
-        "name": "owner_name",
+        "name": "owner_name!",
         "type_info": "Text",
         "origin": {
           "Table": {
-            "table": "auth.users",
+            "table": "auth.people",
             "name": "name"
           }
         }
       },
       {
         "ordinal": 6,
-        "name": "owner_surname",
+        "name": "owner_surname!",
         "type_info": "Text",
         "origin": {
           "Table": {
-            "table": "auth.users",
+            "table": "auth.people",
             "name": "surname"
           }
         }
@@ -97,7 +97,7 @@
         "type_info": "Text",
         "origin": {
           "Table": {
-            "table": "org.terms",
+            "table": "org.term_list",
             "name": "name"
           }
         }
@@ -121,12 +121,12 @@
       false,
       false,
       false,
-      false,
-      false,
       true,
-      false,
+      true,
+      true,
+      true,
       null
     ]
   },
-  "hash": "e5a7b41c6ae4cf87d481423c4dd896c6a3d139cf28df0505f3aee69327651cbe"
+  "hash": "6e7e2821f44afdf4e56a6d00e55e731aa21b4bd4c05217a755dc08c550787bd7"
 }

@@ -22,7 +22,7 @@ pub async fn card_courses(
         r#"SELECT c.id, c.kind AS "kind: CourseKind", c.title, c.status AS "status: CourseStatus",
                   c.owner_id, c.term_id, c.created_at, c.code, c.description,
                   t.name AS "term_name?", t.ends_on AS "term_ends?",
-                  o.name AS owner_name, o.surname AS owner_surname,
+                  o.name AS "owner_name!", o.surname AS "owner_surname!",
                   m.role AS "member_role?: CourseRole",
                   (SELECT count(*) FROM teaching.effective_members x
                    WHERE x.course_id = c.id AND x.role = 'student') AS "student_count!",
@@ -33,8 +33,8 @@ pub async fn card_courses(
                  SELECT id FROM teaching.courses WHERE owner_id = $1) mine
            JOIN teaching.courses c ON c.id = mine.id
            LEFT JOIN teaching.effective_members m ON m.course_id = c.id AND m.user_id = $1
-           LEFT JOIN org.terms t ON t.id = c.term_id
-           JOIN auth.users o ON o.id = c.owner_id
+           LEFT JOIN org.term_list t ON t.id = c.term_id
+           JOIN auth.people o ON o.id = c.owner_id
            WHERE c.kind = 'regular'
              AND (c.status IN ('published', 'archived') OR c.owner_id = $1
                   OR m.role IN ('teacher', 'assistant'))

@@ -15,13 +15,13 @@ pub async fn admin_courses(
     sqlx::query_as!(
         AdminCourseRow,
         r#"SELECT c.id AS course_id, c.code, c.title, c.status AS "status: CourseStatus",
-                  c.owner_id, o.name AS owner_name, o.surname AS owner_surname,
+                  c.owner_id, o.name AS "owner_name!", o.surname AS "owner_surname!",
                   c.term_id, t.name AS "term_name?",
                   (SELECT count(*) FROM teaching.effective_members m
                    WHERE m.course_id = c.id AND m.role = 'student') AS "student_count!"
            FROM teaching.courses c
-           JOIN auth.users o ON o.id = c.owner_id
-           LEFT JOIN org.terms t ON t.id = c.term_id
+           JOIN auth.people o ON o.id = c.owner_id
+           LEFT JOIN org.term_list t ON t.id = c.term_id
            WHERE c.kind = 'regular' AND ($1::uuid IS NULL OR c.id > $1)
            ORDER BY c.id
            LIMIT $2"#,
@@ -39,11 +39,11 @@ pub async fn linked_courses_of_group(
 ) -> Result<Vec<LinkedCourseRow>, sqlx::Error> {
     sqlx::query_as!(
         LinkedCourseRow,
-        r#"SELECT c.id AS course_id, c.code, c.title, o.name AS owner_name,
-                  o.surname AS owner_surname, min(l.created_at) AS "linked_on!"
+        r#"SELECT c.id AS course_id, c.code, c.title, o.name AS "owner_name!",
+                  o.surname AS "owner_surname!", min(l.created_at) AS "linked_on!"
            FROM teaching.course_groups l
            JOIN teaching.courses c ON c.id = l.course_id
-           JOIN auth.users o ON o.id = c.owner_id
+           JOIN auth.people o ON o.id = c.owner_id
            WHERE l.group_id = $1 AND c.kind = 'regular'
            GROUP BY c.id, c.code, c.title, o.name, o.surname
            ORDER BY c.code, c.title, c.id"#,

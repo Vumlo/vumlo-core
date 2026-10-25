@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT DISTINCT ON (s.student_id)\n                  s.student_id, u.name, u.surname, s.attempt AS \"attempt!\",\n                  s.submitted_at AS \"submitted_at!\", s.is_late, s.content AS \"content: Body\"\n           FROM assessment.submissions s\n           JOIN auth.users u ON u.id = s.student_id\n           WHERE s.assignment_id = $1 AND s.status = 'submitted'\n           ORDER BY s.student_id, s.attempt DESC",
+  "query": "SELECT DISTINCT ON (s.student_id)\n                  s.student_id, u.name AS \"name!\", u.surname AS \"surname!\", s.attempt AS \"attempt!\",\n                  s.submitted_at AS \"submitted_at!\", s.is_late, s.content AS \"content: Body\"\n           FROM assessment.submissions s\n           JOIN auth.people u ON u.id = s.student_id\n           WHERE s.assignment_id = $1 AND s.status = 'submitted'\n           ORDER BY s.student_id, s.attempt DESC",
   "describe": {
     "columns": [
       {
@@ -16,22 +16,22 @@
       },
       {
         "ordinal": 1,
-        "name": "name",
+        "name": "name!",
         "type_info": "Text",
         "origin": {
           "Table": {
-            "table": "auth.users",
+            "table": "auth.people",
             "name": "name"
           }
         }
       },
       {
         "ordinal": 2,
-        "name": "surname",
+        "name": "surname!",
         "type_info": "Text",
         "origin": {
           "Table": {
-            "table": "auth.users",
+            "table": "auth.people",
             "name": "surname"
           }
         }
@@ -88,13 +88,13 @@
     },
     "nullable": [
       false,
-      false,
-      false,
+      true,
+      true,
       true,
       true,
       false,
       false
     ]
   },
-  "hash": "24f2c611609eef909dbca4d1c7df496913a0a87547d30238e6d539cc0bea9cc7"
+  "hash": "5714794d33e9f57a5fba4626514b8d6feb5a3b76619fb87a878e55b75499952c"
 }

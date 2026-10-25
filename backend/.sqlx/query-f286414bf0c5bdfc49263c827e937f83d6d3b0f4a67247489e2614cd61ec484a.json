@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT c.code, c.description, t.name AS \"term_name?\",\n                  u.name AS owner_name, u.surname AS owner_surname, u.email AS owner_email,\n                  c.updated_at,\n                  (SELECT count(*) FROM teaching.effective_members m\n                    WHERE m.course_id = c.id AND m.role = 'student') AS \"student_count!\",\n                  (SELECT count(*) FROM teaching.effective_members m\n                    WHERE m.course_id = c.id AND m.role = 'assistant') AS \"assistant_count!\",\n                  (SELECT count(*) FROM auth.users f WHERE f.id IN (\n                       SELECT g.student_id FROM gradebook.grades g\n                       JOIN content.items i ON i.id = g.assignment_id\n                       WHERE i.course_id = c.id\n                         AND (g.draft_score IS NOT NULL OR g.draft_feedback IS NOT NULL\n                              OR g.published_score IS NOT NULL OR g.published_feedback IS NOT NULL)\n                       UNION\n                       SELECT s.student_id FROM assessment.submissions s\n                       JOIN content.items i ON i.id = s.assignment_id\n                       WHERE i.course_id = c.id AND s.status = 'submitted')\n                     AND NOT EXISTS (SELECT 1 FROM teaching.effective_members m\n                                     WHERE m.course_id = c.id AND m.user_id = f.id))\n                      AS \"former_count!\"\n           FROM teaching.courses c\n           JOIN auth.users u ON u.id = c.owner_id\n           LEFT JOIN org.terms t ON t.id = c.term_id\n           WHERE c.id = $1",
+  "query": "SELECT c.code, c.description, t.name AS \"term_name?\",\n                  u.name AS \"owner_name!\", u.surname AS \"owner_surname!\", u.email AS \"owner_email!\",\n                  c.updated_at,\n                  (SELECT count(*) FROM teaching.effective_members m\n                    WHERE m.course_id = c.id AND m.role = 'student') AS \"student_count!\",\n                  (SELECT count(*) FROM teaching.effective_members m\n                    WHERE m.course_id = c.id AND m.role = 'assistant') AS \"assistant_count!\",\n                  (SELECT count(*) FROM auth.people f WHERE f.id IN (\n                       SELECT g.student_id FROM gradebook.grades g\n                       JOIN content.items i ON i.id = g.assignment_id\n                       WHERE i.course_id = c.id\n                         AND (g.draft_score IS NOT NULL OR g.draft_feedback IS NOT NULL\n                              OR g.published_score IS NOT NULL OR g.published_feedback IS NOT NULL)\n                       UNION\n                       SELECT s.student_id FROM assessment.submissions s\n                       JOIN content.items i ON i.id = s.assignment_id\n                       WHERE i.course_id = c.id AND s.status = 'submitted')\n                     AND NOT EXISTS (SELECT 1 FROM teaching.effective_members m\n                                     WHERE m.course_id = c.id AND m.user_id = f.id))\n                      AS \"former_count!\"\n           FROM teaching.courses c\n           JOIN auth.people u ON u.id = c.owner_id\n           LEFT JOIN org.term_list t ON t.id = c.term_id\n           WHERE c.id = $1",
   "describe": {
     "columns": [
       {
@@ -31,40 +31,40 @@
         "type_info": "Text",
         "origin": {
           "Table": {
-            "table": "org.terms",
+            "table": "org.term_list",
             "name": "name"
           }
         }
       },
       {
         "ordinal": 3,
-        "name": "owner_name",
+        "name": "owner_name!",
         "type_info": "Text",
         "origin": {
           "Table": {
-            "table": "auth.users",
+            "table": "auth.people",
             "name": "name"
           }
         }
       },
       {
         "ordinal": 4,
-        "name": "owner_surname",
+        "name": "owner_surname!",
         "type_info": "Text",
         "origin": {
           "Table": {
-            "table": "auth.users",
+            "table": "auth.people",
             "name": "surname"
           }
         }
       },
       {
         "ordinal": 5,
-        "name": "owner_email",
+        "name": "owner_email!",
         "type_info": "Text",
         "origin": {
           "Table": {
-            "table": "auth.users",
+            "table": "auth.people",
             "name": "email"
           }
         }
@@ -108,14 +108,14 @@
       false,
       false,
       true,
-      false,
-      false,
-      false,
+      true,
+      true,
+      true,
       false,
       null,
       null,
       null
     ]
   },
-  "hash": "14ee001ad7b1a615c5a6c29d8c90011507cf5c4b03601a7ef63357556ce78be0"
+  "hash": "f286414bf0c5bdfc49263c827e937f83d6d3b0f4a67247489e2614cd61ec484a"
 }

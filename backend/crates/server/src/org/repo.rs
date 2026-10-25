@@ -204,11 +204,12 @@ pub async fn group_member_lines(
 ) -> Result<Vec<MemberLine>, sqlx::Error> {
     sqlx::query_as!(
         MemberLine,
-        "SELECT u.id AS user_id, u.name, u.surname, u.email, m.added_at
+        r#"SELECT u.id AS "user_id!", u.name AS "name!", u.surname AS "surname!", u.email AS "email!",
+                m.added_at
          FROM org.group_members m
-         JOIN auth.users u ON u.id = m.user_id
+         JOIN auth.people u ON u.id = m.user_id
          WHERE m.group_id = $1
-         ORDER BY u.surname, u.name, u.id",
+         ORDER BY u.surname, u.name, u.id"#,
         group_id
     )
     .fetch_all(conn)
@@ -305,7 +306,7 @@ pub async fn delete_group_member(
 }
 
 /// The members of the group after `after` (a user id), by surname, name and id, at most `limit`.
-/// The place of the cursor in the order is read from `auth.users` (a read-only JOIN, as the
+/// The place of the cursor in the order is read from `auth.people` (a read-only JOIN, as the
 /// gradebook roster does), so it also works for a user who has just left.
 pub async fn list_group_members(
     conn: &mut PgConnection,
@@ -315,13 +316,13 @@ pub async fn list_group_members(
 ) -> Result<Vec<GroupMember>, sqlx::Error> {
     sqlx::query_as!(
         GroupMember,
-        r#"SELECT u.id AS user_id, u.name, u.surname
+        r#"SELECT u.id AS "user_id!", u.name AS "name!", u.surname AS "surname!"
            FROM org.group_members m
-           JOIN auth.users u ON u.id = m.user_id
+           JOIN auth.people u ON u.id = m.user_id
            WHERE m.group_id = $1
              AND ($2::uuid IS NULL
                   OR (u.surname, u.name, u.id) > (SELECT c.surname, c.name, c.id
-                                                  FROM auth.users c WHERE c.id = $2))
+                                                  FROM auth.people c WHERE c.id = $2))
            ORDER BY u.surname, u.name, u.id
            LIMIT $3"#,
         group_id,
@@ -471,13 +472,13 @@ pub async fn list_subgroup_members(
 ) -> Result<Vec<GroupMember>, sqlx::Error> {
     sqlx::query_as!(
         GroupMember,
-        r#"SELECT u.id AS user_id, u.name, u.surname
+        r#"SELECT u.id AS "user_id!", u.name AS "name!", u.surname AS "surname!"
            FROM org.subgroup_members m
-           JOIN auth.users u ON u.id = m.user_id
+           JOIN auth.people u ON u.id = m.user_id
            WHERE m.subgroup_id = $1
              AND ($2::uuid IS NULL
                   OR (u.surname, u.name, u.id) > (SELECT c.surname, c.name, c.id
-                                                  FROM auth.users c WHERE c.id = $2))
+                                                  FROM auth.people c WHERE c.id = $2))
            ORDER BY u.surname, u.name, u.id
            LIMIT $3"#,
         subgroup_id,

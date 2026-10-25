@@ -224,10 +224,10 @@ pub async fn latest_contents(
 ) -> Result<Vec<LatestContent>, sqlx::Error> {
     let rows = sqlx::query!(
         r#"SELECT DISTINCT ON (s.student_id)
-                  s.student_id, u.name, u.surname, s.attempt AS "attempt!",
+                  s.student_id, u.name AS "name!", u.surname AS "surname!", s.attempt AS "attempt!",
                   s.submitted_at AS "submitted_at!", s.is_late, s.content AS "content: Body"
            FROM assessment.submissions s
-           JOIN auth.users u ON u.id = s.student_id
+           JOIN auth.people u ON u.id = s.student_id
            WHERE s.assignment_id = $1 AND s.status = 'submitted'
            ORDER BY s.student_id, s.attempt DESC"#,
         assignment_id
@@ -256,9 +256,9 @@ pub async fn current_students(
     course_id: Uuid,
 ) -> Result<Vec<StudentName>, sqlx::Error> {
     let rows = sqlx::query!(
-        r#"SELECT u.id, u.name, u.surname
+        r#"SELECT u.id AS "id!", u.name AS "name!", u.surname AS "surname!"
            FROM teaching.effective_members m
-           JOIN auth.users u ON u.id = m.user_id
+           JOIN auth.people u ON u.id = m.user_id
            WHERE m.course_id = $1 AND m.role = 'student'
            ORDER BY u.surname, u.name, u.id"#,
         course_id
@@ -370,7 +370,7 @@ pub async fn is_student_or_has_attempts(
 /// The students of the course after `after`, by surname, name and id, at most `limit`, each with
 /// their latest submitted attempt: the current students, and the former ones who have a submitted
 /// attempt for this assignment (ADR-0037). The cursor is a user id; its place in the order is read
-/// from `auth.users`.
+/// from `auth.people`.
 pub async fn list_students(
     conn: &mut PgConnection,
     course_id: Uuid,
@@ -386,14 +386,14 @@ pub async fn list_students(
                SELECT student_id FROM assessment.submissions
                WHERE assignment_id = $2 AND status = 'submitted'
            )
-           SELECT u.id AS student_id, u.name, u.surname,
+           SELECT u.id AS "student_id!", u.name AS "name!", u.surname AS "surname!",
                   NOT EXISTS (SELECT 1 FROM teaching.effective_members m
                               WHERE m.course_id = $1 AND m.user_id = u.id AND m.role = 'student')
                       AS "former!",
                   s.id AS "attempt_id?", s.attempt AS "attempt?", s.submitted_at AS "submitted_at?",
                   s.is_late AS "is_late?"
            FROM candidates c
-           JOIN auth.users u ON u.id = c.id
+           JOIN auth.people u ON u.id = c.id
            LEFT JOIN LATERAL (
                SELECT id, attempt, submitted_at, is_late FROM assessment.submissions
                WHERE assignment_id = $2 AND student_id = u.id AND status = 'submitted'
@@ -401,7 +401,7 @@ pub async fn list_students(
            ) s ON true
            WHERE ($3::uuid IS NULL
                   OR (u.surname, u.name, u.id) > (SELECT x.surname, x.name, x.id
-                                                  FROM auth.users x WHERE x.id = $3))
+                                                  FROM auth.people x WHERE x.id = $3))
            ORDER BY u.surname, u.name, u.id
            LIMIT $4"#,
         course_id,

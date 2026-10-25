@@ -330,13 +330,13 @@ pub async fn info_row(
     sqlx::query_as!(
         InfoRow,
         r#"SELECT c.code, c.description, t.name AS "term_name?",
-                  u.name AS owner_name, u.surname AS owner_surname, u.email AS owner_email,
+                  u.name AS "owner_name!", u.surname AS "owner_surname!", u.email AS "owner_email!",
                   c.updated_at,
                   (SELECT count(*) FROM teaching.effective_members m
                     WHERE m.course_id = c.id AND m.role = 'student') AS "student_count!",
                   (SELECT count(*) FROM teaching.effective_members m
                     WHERE m.course_id = c.id AND m.role = 'assistant') AS "assistant_count!",
-                  (SELECT count(*) FROM auth.users f WHERE f.id IN (
+                  (SELECT count(*) FROM auth.people f WHERE f.id IN (
                        SELECT g.student_id FROM gradebook.grades g
                        JOIN content.items i ON i.id = g.assignment_id
                        WHERE i.course_id = c.id
@@ -350,8 +350,8 @@ pub async fn info_row(
                                      WHERE m.course_id = c.id AND m.user_id = f.id))
                       AS "former_count!"
            FROM teaching.courses c
-           JOIN auth.users u ON u.id = c.owner_id
-           LEFT JOIN org.terms t ON t.id = c.term_id
+           JOIN auth.people u ON u.id = c.owner_id
+           LEFT JOIN org.term_list t ON t.id = c.term_id
            WHERE c.id = $1"#,
         course_id
     )
@@ -514,7 +514,7 @@ pub async fn list_people(
 ) -> Result<Vec<Person>, sqlx::Error> {
     sqlx::query_as!(
         Person,
-        r#"SELECT u.id AS user_id, u.name, u.surname,
+        r#"SELECT u.id AS "user_id!", u.name AS "name!", u.surname AS "surname!",
                   CASE WHEN $2 THEN u.email END AS "email?",
                   m.role AS "role!: CourseRole", (u.id = c.owner_id) AS "is_owner!",
                   m.source AS "source!: MemberSource",
@@ -524,14 +524,14 @@ pub async fn list_people(
                                                 ELSE g.name || ' / ' || sg.name END AS label
                            FROM teaching.group_roster_links l
                            JOIN teaching.course_groups cg ON cg.id = l.link_id
-                           JOIN org.groups g ON g.id = cg.group_id
-                           LEFT JOIN org.subgroups sg ON sg.id = cg.subgroup_id
+                           JOIN org.group_list g ON g.id = cg.group_id
+                           LEFT JOIN org.subgroup_list sg ON sg.id = cg.subgroup_id
                            WHERE l.course_id = m.course_id AND l.user_id = m.user_id) s)
                   END AS "group?",
                   false AS "former!"
            FROM teaching.effective_members m
            JOIN teaching.courses c ON c.id = m.course_id
-           JOIN auth.users u ON u.id = m.user_id
+           JOIN auth.people u ON u.id = m.user_id
            WHERE m.course_id = $1
            ORDER BY CASE m.role WHEN 'teacher' THEN 0 WHEN 'assistant' THEN 1 ELSE 2 END,
                     u.surname, u.name, u.id"#,
@@ -549,11 +549,11 @@ pub async fn list_former(
 ) -> Result<Vec<Person>, sqlx::Error> {
     sqlx::query_as!(
         Person,
-        r#"SELECT u.id AS user_id, u.name, u.surname, u.email AS "email?",
+        r#"SELECT u.id AS "user_id!", u.name AS "name!", u.surname AS "surname!", u.email AS "email?",
                   'student' AS "role!: CourseRole", false AS "is_owner!",
                   'direct' AS "source!: MemberSource", NULL::text AS "group?",
                   true AS "former!"
-           FROM auth.users u
+           FROM auth.people u
            WHERE u.id IN (
                    SELECT g.student_id FROM gradebook.grades g
                    JOIN content.items i ON i.id = g.assignment_id
@@ -581,15 +581,15 @@ pub async fn list_link_summaries(
 ) -> Result<Vec<LinkedGroup>, sqlx::Error> {
     sqlx::query_as!(
         LinkedGroup,
-        r#"SELECT cg.id AS link_id, g.name AS group_name, sg.name AS "subgroup_name?",
+        r#"SELECT cg.id AS link_id, g.name AS "group_name!", sg.name AS "subgroup_name?",
                   (SELECT count(*) FROM teaching.group_roster_links l
                    JOIN teaching.effective_members m
                      ON m.course_id = l.course_id AND m.user_id = l.user_id AND m.source = 'group'
                    WHERE l.link_id = cg.id) AS "student_count!",
                   cg.created_at AS linked_at
            FROM teaching.course_groups cg
-           JOIN org.groups g ON g.id = cg.group_id
-           LEFT JOIN org.subgroups sg ON sg.id = cg.subgroup_id
+           JOIN org.group_list g ON g.id = cg.group_id
+           LEFT JOIN org.subgroup_list sg ON sg.id = cg.subgroup_id
            WHERE cg.course_id = $1
            ORDER BY g.name, sg.name NULLS FIRST, cg.id"#,
         course_id
@@ -608,8 +608,9 @@ pub async fn search_candidates(
 ) -> Result<Vec<Candidate>, sqlx::Error> {
     sqlx::query_as!(
         Candidate,
-        r#"SELECT u.id AS user_id, u.name, u.surname, u.email, u.role AS "role: Role"
-           FROM auth.users u
+        r#"SELECT u.id AS "user_id!", u.name AS "name!", u.surname AS "surname!", u.email AS "email!",
+                  u.role AS "role!: Role"
+           FROM auth.people u
            WHERE u.status = 'active' AND u.role <> 'admin'
              AND NOT EXISTS (SELECT 1 FROM teaching.effective_members m
                              WHERE m.course_id = $1 AND m.user_id = u.id)

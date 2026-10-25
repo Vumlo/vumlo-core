@@ -1,37 +1,37 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT u.id AS user_id, u.name, u.surname, u.email AS \"email?\",\n                  'student' AS \"role!: CourseRole\", false AS \"is_owner!\",\n                  'direct' AS \"source!: MemberSource\", NULL::text AS \"group?\",\n                  true AS \"former!\"\n           FROM auth.users u\n           WHERE u.id IN (\n                   SELECT g.student_id FROM gradebook.grades g\n                   JOIN content.items i ON i.id = g.assignment_id\n                   WHERE i.course_id = $1\n                     AND (g.draft_score IS NOT NULL OR g.draft_feedback IS NOT NULL\n                          OR g.published_score IS NOT NULL OR g.published_feedback IS NOT NULL)\n                   UNION\n                   SELECT s.student_id FROM assessment.submissions s\n                   JOIN content.items i ON i.id = s.assignment_id\n                   WHERE i.course_id = $1 AND s.status = 'submitted')\n             AND NOT EXISTS (SELECT 1 FROM teaching.effective_members m\n                             WHERE m.course_id = $1 AND m.user_id = u.id)\n           ORDER BY u.surname, u.name, u.id",
+  "query": "SELECT u.id AS \"user_id!\", u.name AS \"name!\", u.surname AS \"surname!\", u.email AS \"email?\",\n                  'student' AS \"role!: CourseRole\", false AS \"is_owner!\",\n                  'direct' AS \"source!: MemberSource\", NULL::text AS \"group?\",\n                  true AS \"former!\"\n           FROM auth.people u\n           WHERE u.id IN (\n                   SELECT g.student_id FROM gradebook.grades g\n                   JOIN content.items i ON i.id = g.assignment_id\n                   WHERE i.course_id = $1\n                     AND (g.draft_score IS NOT NULL OR g.draft_feedback IS NOT NULL\n                          OR g.published_score IS NOT NULL OR g.published_feedback IS NOT NULL)\n                   UNION\n                   SELECT s.student_id FROM assessment.submissions s\n                   JOIN content.items i ON i.id = s.assignment_id\n                   WHERE i.course_id = $1 AND s.status = 'submitted')\n             AND NOT EXISTS (SELECT 1 FROM teaching.effective_members m\n                             WHERE m.course_id = $1 AND m.user_id = u.id)\n           ORDER BY u.surname, u.name, u.id",
   "describe": {
     "columns": [
       {
         "ordinal": 0,
-        "name": "user_id",
+        "name": "user_id!",
         "type_info": "Uuid",
         "origin": {
           "Table": {
-            "table": "auth.users",
+            "table": "auth.people",
             "name": "id"
           }
         }
       },
       {
         "ordinal": 1,
-        "name": "name",
+        "name": "name!",
         "type_info": "Text",
         "origin": {
           "Table": {
-            "table": "auth.users",
+            "table": "auth.people",
             "name": "name"
           }
         }
       },
       {
         "ordinal": 2,
-        "name": "surname",
+        "name": "surname!",
         "type_info": "Text",
         "origin": {
           "Table": {
-            "table": "auth.users",
+            "table": "auth.people",
             "name": "surname"
           }
         }
@@ -42,7 +42,7 @@
         "type_info": "Text",
         "origin": {
           "Table": {
-            "table": "auth.users",
+            "table": "auth.people",
             "name": "email"
           }
         }
@@ -84,10 +84,10 @@
       ]
     },
     "nullable": [
-      false,
-      false,
-      false,
-      false,
+      true,
+      true,
+      true,
+      true,
       null,
       null,
       null,
@@ -95,5 +95,5 @@
       null
     ]
   },
-  "hash": "8e70060797e3f012e079956138a090d2a0080d372dcc5ab82bbeb667eac93dd3"
+  "hash": "277242ab8c300aa41960dad0d80c9997814e7211cfb6e404d7657d250ea88a29"
 }

@@ -47,13 +47,13 @@ pub async fn list_audit(
                           WHEN 'assignment' THEN ri.title
                           WHEN 'module' THEN rm.title
                       END AS label
-               FROM events.audit_log l
-               LEFT JOIN auth.users a ON a.id = l.actor_id
-               LEFT JOIN auth.users ru ON l.resource_type = 'user' AND ru.id = l.resource_id
+               FROM events.audit_entries l
+               LEFT JOIN auth.people a ON a.id = l.actor_id
+               LEFT JOIN auth.people ru ON l.resource_type = 'user' AND ru.id = l.resource_id
                LEFT JOIN teaching.courses rc ON l.resource_type = 'course' AND rc.id = l.resource_id
-               LEFT JOIN org.groups rg ON l.resource_type = 'group' AND rg.id = l.resource_id
-               LEFT JOIN org.subgroups rs ON l.resource_type = 'subgroup' AND rs.id = l.resource_id
-               LEFT JOIN org.terms rt ON l.resource_type = 'term' AND rt.id = l.resource_id
+               LEFT JOIN org.group_list rg ON l.resource_type = 'group' AND rg.id = l.resource_id
+               LEFT JOIN org.subgroup_list rs ON l.resource_type = 'subgroup' AND rs.id = l.resource_id
+               LEFT JOIN org.term_list rt ON l.resource_type = 'term' AND rt.id = l.resource_id
                LEFT JOIN content.items ri
                       ON l.resource_type IN ('item', 'assignment') AND ri.id = l.resource_id
                LEFT JOIN content.modules rm ON l.resource_type = 'module' AND rm.id = l.resource_id

@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT c.id AS course_id, c.code, c.title, o.name AS owner_name,\n                  o.surname AS owner_surname, min(l.created_at) AS \"linked_on!\"\n           FROM teaching.course_groups l\n           JOIN teaching.courses c ON c.id = l.course_id\n           JOIN auth.users o ON o.id = c.owner_id\n           WHERE l.group_id = $1 AND c.kind = 'regular'\n           GROUP BY c.id, c.code, c.title, o.name, o.surname\n           ORDER BY c.code, c.title, c.id",
+  "query": "SELECT c.id AS course_id, c.code, c.title, o.name AS \"owner_name!\",\n                  o.surname AS \"owner_surname!\", min(l.created_at) AS \"linked_on!\"\n           FROM teaching.course_groups l\n           JOIN teaching.courses c ON c.id = l.course_id\n           JOIN auth.people o ON o.id = c.owner_id\n           WHERE l.group_id = $1 AND c.kind = 'regular'\n           GROUP BY c.id, c.code, c.title, o.name, o.surname\n           ORDER BY c.code, c.title, c.id",
   "describe": {
     "columns": [
       {
@@ -38,22 +38,22 @@
       },
       {
         "ordinal": 3,
-        "name": "owner_name",
+        "name": "owner_name!",
         "type_info": "Text",
         "origin": {
           "Table": {
-            "table": "auth.users",
+            "table": "auth.people",
             "name": "name"
           }
         }
       },
       {
         "ordinal": 4,
-        "name": "owner_surname",
+        "name": "owner_surname!",
         "type_info": "Text",
         "origin": {
           "Table": {
-            "table": "auth.users",
+            "table": "auth.people",
             "name": "surname"
           }
         }
@@ -74,10 +74,10 @@
       false,
       false,
       false,
-      false,
-      false,
+      true,
+      true,
       null
     ]
   },
-  "hash": "888cafd4f5a388ae5609e9991dcd4530e5e989e14c5d6d422b812af64b04eea2"
+  "hash": "de1e37e6b708ff2b610757731ba02193563cbb48462c7682ad0f0506c0e95124"
 }
