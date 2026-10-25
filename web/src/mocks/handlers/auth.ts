@@ -36,37 +36,37 @@ function newStudent(name: string, surname: string, email: string, password: stri
 }
 
 export const authHandlers = [
-  // Self-registration with a password. The answer is the same whether or not the address has an account (ADR-0017).
+  // Self-registration. The password is chosen when the address is verified (ADR-0067). The answer is the same whether or not the address has an account (ADR-0017).
   http.post(`${A}/auth/register`, async ({ request }) => {
     const b = (await request.json()) as Record<string, unknown>;
     const name = clean(b.name);
     const surname = clean(b.surname);
     const email = clean(b.email).toLowerCase();
-    const password = typeof b.password === "string" ? b.password : "";
     const errors = [
       ...(name ? [] : [{ field: "name", message: "Enter your first name" }]),
       ...(surname ? [] : [{ field: "surname", message: "Enter your last name" }]),
       ...(/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email) ? (email.endsWith(`@${ALLOWED_DOMAIN}`) ? [] : [{ field: "email", message: `Use your university email, ending in @${ALLOWED_DOMAIN}` }]) : [{ field: "email", message: "Enter a valid email address" }]),
-      ...(password.length >= 10 ? [] : [{ field: "password", message: "Use at least 10 characters" }]),
     ];
     if (errors.length) throw problem(422, "Validation failed", undefined, errors);
     const db = getDb();
     if (!db.users.some((u) => u.email === email)) {
       const t = token("verify");
       db.signups = db.signups.filter((s) => s.email !== email);
-      db.signups.push({ token: t, name, surname, email, password });
+      db.signups.push({ token: t, name, surname, email });
       send(email, "verify", `/verify-email?token=${t}`);
     }
     return HttpResponse.json({ sent: true }, { status: 202 });
   }),
   http.post(`${A}/auth/verify-email`, async ({ request }) => {
-    const b = (await request.json()) as { token?: string };
+    const b = (await request.json()) as { token?: string; password?: string };
     const db = getDb();
     const pending = db.signups.find((s) => s.token === b.token);
     if (!pending) throw problem(410, "Gone", "This link has been used or has expired");
+    // A missing or weak password leaves the link usable.
+    if ((b.password ?? "").length < 10) throw field("password", "Use at least 10 characters");
     db.signups = db.signups.filter((s) => s !== pending);
     db.mail = db.mail.filter((m) => !m.path.endsWith(pending.token));
-    if (!db.users.some((u) => u.email === pending.email)) newStudent(pending.name, pending.surname, pending.email, pending.password);
+    if (!db.users.some((u) => u.email === pending.email)) newStudent(pending.name, pending.surname, pending.email, b.password!);
     return new HttpResponse(null, { status: 204 });
   }),
 

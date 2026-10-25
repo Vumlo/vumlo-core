@@ -2,6 +2,7 @@
 
 Status: Accepted
 Supplements: ADR-0017, ADR-0003, ADR-0038, ADR-0045
+Amended by: ADR-0067 (decisions 2, 3 and 6: the password is chosen when the address is verified)
 
 ## Context
 ADR-0017 plans two account paths the server does not have: self-registration with a password and a

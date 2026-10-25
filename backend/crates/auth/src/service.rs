@@ -490,29 +490,25 @@ pub async fn logout(conn: &mut PgConnection, actor: &Actor) -> Result<(), AuthEr
 // Registration, verification and password reset (ADR-0046)
 // ---------------------------------------------------------------------------------------------
 
-/// A registration that passed every check and is hashed, ready for [`register`].
+/// A registration that passed every check, ready for [`register`].
 pub struct PreparedRegistration {
     new: NewUser,
-    password: HashedPassword,
 }
 
 /// What a registration is checked against: the configuration, not the request.
 pub struct RegistrationRules<'a> {
     pub allowed_domains: &'a [String],
-    pub password_min_length: usize,
-    pub institution_name: &'a str,
 }
 
-/// The slow, database-free half of a registration: checks the address's domain, the names and the
-/// password policy, then hashes. It always hashes, so the time does not depend on whether the
-/// address has an account.
+/// The slow, database-free half of a registration: checks the address's domain and the names. No
+/// password is taken: it is chosen when the address is verified (ADR-0067). A hash is still computed,
+/// and thrown away, so the time does not depend on whether the address has an account (ADR-0046).
 pub async fn prepare_registration(
     gate: &HashGate,
     rules: RegistrationRules<'_>,
     name: &str,
     surname: &str,
     email: &str,
-    password: String,
 ) -> Result<PreparedRegistration, AuthError> {
     let email = Email::parse(email)?;
     let name = PersonName::name(name)?;
@@ -525,15 +521,7 @@ pub async fn prepare_registration(
     {
         return Err(AuthError::EmailDomainNotAllowed);
     }
-    let policy = PasswordPolicy::new(
-        rules.password_min_length,
-        email.as_str(),
-        name.as_str(),
-        surname.as_str(),
-        rules.institution_name,
-    );
-    let password = Password::parse(password, &policy)?;
-    let password = hash_password_gated(gate, password.expose()).await?;
+    hash_password_gated(gate, TemporaryPassword::generate().expose()).await?;
     Ok(PreparedRegistration {
         new: NewUser {
             email,
@@ -541,21 +529,20 @@ pub async fn prepare_registration(
             surname,
             role: Role::Student,
         },
-        password,
     })
 }
 
-/// Creates the unverified account, or, for an unverified active student, replaces what the earlier
-/// registration chose; any other account is left alone. Emits the event that sends the link in all
-/// the first two cases and does nothing else, so the caller answers the same either way.
+/// Creates the unverified account, which has no password yet, or, for an unverified active student,
+/// replaces the names the earlier registration chose; any other account is left alone. Emits the event
+/// that sends the link in all the first two cases and does nothing else, so the caller answers the same
+/// either way.
 pub async fn register(
     conn: &mut PgConnection,
     prepared: PreparedRegistration,
 ) -> Result<(), AuthError> {
-    let PreparedRegistration { new, password } = prepared;
+    let PreparedRegistration { new } = prepared;
     let id = Uuid::now_v7();
     if let Some(user_id) = repo::insert_registered_user(conn, id, &new).await? {
-        repo::insert_password_identity(conn, user_id, password.as_str()).await?;
         events::emit(conn, Event::EmailVerificationRequested { user_id }).await?;
         return Ok(());
     }
@@ -567,7 +554,6 @@ pub async fn register(
         && !account.email_verified
     {
         repo::update_names(conn, account.id, new.name.as_str(), new.surname.as_str()).await?;
-        repo::upsert_password_hash(conn, account.id, password.as_str()).await?;
         repo::void_email_tokens(conn, account.id, TokenPurpose::Verify).await?;
         events::emit(
             conn,
@@ -580,16 +566,62 @@ pub async fn register(
     Ok(())
 }
 
-/// Uses the verification token up and marks its address verified.
+/// Whose link it is: what the password policy needs as context.
+pub struct LinkTarget {
+    email: String,
+    name: String,
+    surname: String,
+}
+
+/// Looks a verification token up without using it up. A missing, spent or expired token, or one of a
+/// disabled account, is [`AuthError::TokenInvalid`], and that is decided before the password is
+/// looked at.
+pub async fn check_verify_token(
+    conn: &mut PgConnection,
+    token: Option<&EmailToken>,
+) -> Result<LinkTarget, AuthError> {
+    check_token(conn, token, TokenPurpose::Verify).await
+}
+
+/// A password that passed the policy and is hashed, ready for [`verify_email`].
+pub struct PreparedVerification {
+    password: HashedPassword,
+}
+
+pub async fn prepare_verification(
+    gate: &HashGate,
+    target: LinkTarget,
+    password: String,
+    min_len: usize,
+    institution: &str,
+) -> Result<PreparedVerification, AuthError> {
+    let password = choose_password(gate, target, password, min_len, institution).await?;
+    Ok(PreparedVerification { password })
+}
+
+/// Uses the verification token up, sets the password and marks the address verified. The link proves
+/// the mailbox, and the password is the one chosen by whoever holds the link, not one sent while
+/// registering (ADR-0067). An address that is verified already is not for a verification link to
+/// change: its password is changed by a reset.
 pub async fn verify_email(
     conn: &mut PgConnection,
-    token: Option<EmailToken>,
+    token: Option<&EmailToken>,
+    prepared: PreparedVerification,
 ) -> Result<(), AuthError> {
     let token = token.ok_or(AuthError::TokenInvalid)?;
     let user_id = repo::consume_email_token(conn, &token.hash(), TokenPurpose::Verify)
         .await?
         .ok_or(AuthError::TokenInvalid)?;
-    repo::mark_email_verified(conn, user_id).await?;
+    let email = repo::find_user_shared(conn, user_id)
+        .await?
+        .ok_or(AuthError::TokenInvalid)?
+        .email;
+    let account = repo::lock_account_by_email(conn, &email)
+        .await?
+        .filter(|account| account.status == UserStatus::Active && !account.email_verified)
+        .ok_or(AuthError::TokenInvalid)?;
+    repo::upsert_password_hash(conn, account.id, prepared.password.as_str()).await?;
+    repo::mark_email_verified(conn, account.id).await?;
     Ok(())
 }
 
@@ -613,26 +645,27 @@ pub async fn request_password_reset(conn: &mut PgConnection, email: &str) -> Res
     Ok(())
 }
 
-/// Whose reset it is: what the password policy needs as context.
-pub struct ResetTarget {
-    email: String,
-    name: String,
-    surname: String,
-}
-
 /// Looks the reset token up without using it up. A missing, spent or expired token, or one of a
 /// disabled account, is [`AuthError::TokenInvalid`], and that is decided before the password is
 /// looked at.
 pub async fn check_reset_token(
     conn: &mut PgConnection,
     token: Option<&EmailToken>,
-) -> Result<ResetTarget, AuthError> {
+) -> Result<LinkTarget, AuthError> {
+    check_token(conn, token, TokenPurpose::Reset).await
+}
+
+async fn check_token(
+    conn: &mut PgConnection,
+    token: Option<&EmailToken>,
+    purpose: TokenPurpose,
+) -> Result<LinkTarget, AuthError> {
     let token = token.ok_or(AuthError::TokenInvalid)?;
-    let account = repo::find_token_account(conn, &token.hash(), TokenPurpose::Reset)
+    let account = repo::find_token_account(conn, &token.hash(), purpose)
         .await?
         .filter(|account| account.status == UserStatus::Active)
         .ok_or(AuthError::TokenInvalid)?;
-    Ok(ResetTarget {
+    Ok(LinkTarget {
         email: account.email,
         name: account.name,
         surname: account.surname,
@@ -646,11 +679,23 @@ pub struct PreparedReset {
 
 pub async fn prepare_password_reset(
     gate: &HashGate,
-    target: ResetTarget,
+    target: LinkTarget,
     new_password: String,
     min_len: usize,
     institution: &str,
 ) -> Result<PreparedReset, AuthError> {
+    let password = choose_password(gate, target, new_password, min_len, institution).await?;
+    Ok(PreparedReset { password })
+}
+
+/// Checks a password against the policy, with the owner's own data as context, and hashes it.
+async fn choose_password(
+    gate: &HashGate,
+    target: LinkTarget,
+    password: String,
+    min_len: usize,
+    institution: &str,
+) -> Result<HashedPassword, AuthError> {
     let policy = PasswordPolicy::new(
         min_len,
         &target.email,
@@ -658,9 +703,8 @@ pub async fn prepare_password_reset(
         &target.surname,
         institution,
     );
-    let password = Password::parse(new_password, &policy)?;
-    let password = hash_password_gated(gate, password.expose()).await?;
-    Ok(PreparedReset { password })
+    let password = Password::parse(password, &policy)?;
+    hash_password_gated(gate, password.expose()).await
 }
 
 /// Uses the token up, sets the password and revokes every session of the user. The link proved

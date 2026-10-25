@@ -138,10 +138,11 @@ fn throttle_mail(throttle: &MailThrottle, email: &str) -> Result<(), ApiError> {
     Ok(throttle.0.reserve(&ThrottleKey::new(email))?)
 }
 
-/// Creates an account for the address and mails a link that verifies it.
+/// Creates an account for the address and mails a link to verify it.
 ///
 /// The answer is the same for every address, so a page cannot tell who has an account (ADR-0046).
-/// The account cannot log in until the link is used. Off (`404`) without `[mail]`.
+/// The account has no password and cannot log in until the link is used and its owner chooses one
+/// (ADR-0067). Off (`404`) without `[mail]`.
 #[utoipa::path(
     post,
     path = "/auth/register",
@@ -151,8 +152,8 @@ fn throttle_mail(throttle: &MailThrottle, email: &str) -> Result<(), ApiError> {
         (status = 202, description = "Accepted; if the address can sign up, a mail is on its way"),
         (status = 404, description = "Self-registration is off: the server has no mail configured",
             body = ProblemDetails, content_type = "application/problem+json"),
-        (status = 422, description = "An address outside the allowed domains, or a password that \
-            breaks the policy", body = ProblemDetails, content_type = "application/problem+json"),
+        (status = 422, description = "An address outside the allowed domains, or a name that is not \
+            valid", body = ProblemDetails, content_type = "application/problem+json"),
         (status = 429, description = "Too many requests", body = ProblemDetails,
             content_type = "application/problem+json"),
     )
@@ -168,8 +169,6 @@ pub async fn register(
     throttle_mail(&throttle, &request.email)?;
     let rules = RegistrationRules {
         allowed_domains: &state.config.auth.allowed_domains,
-        password_min_length: state.config.auth.password_min_length,
-        institution_name: &state.config.institution.name,
     };
     let prepared = service::prepare_registration(
         &state.hashing,
@@ -177,29 +176,29 @@ pub async fn register(
         &request.name,
         &request.surname,
         &request.email,
-        request.password,
     )
-    .await
-    .map_err(|error| match error {
-        AuthError::Invalid(ModelError::Password(reasons)) => password_error("password", reasons),
-        other => other.into(),
-    })?;
+    .await?;
     let mut tx = state.db.begin().await.map_err(AuthError::from)?;
     service::register(&mut tx, prepared).await?;
     tx.commit().await.map_err(AuthError::from)?;
     Ok(StatusCode::ACCEPTED)
 }
 
-/// Verifies the address with the token from the mail. Does not sign anyone in.
+/// Verifies the address with the token from the mail and sets the password the owner chose.
+///
+/// Does not sign anyone in (ADR-0067). A spent or expired link is `410` and is decided before the
+/// password is looked at; a missing or weak password is `422` and leaves the link usable.
 #[utoipa::path(
     post,
     path = "/auth/verify-email",
     tag = "auth",
     request_body = VerifyEmailRequest,
     responses(
-        (status = 204, description = "The address is verified; the account can log in"),
+        (status = 204, description = "The address is verified and the password is set; the account can log in"),
         (status = 410, description = "The link is unknown, used or expired", body = ProblemDetails,
             content_type = "application/problem+json"),
+        (status = 422, description = "No password, or one that breaks the policy; `errors` explains why",
+            body = ProblemDetails, content_type = "application/problem+json"),
         (status = 429, description = "Too many requests", body = ProblemDetails,
             content_type = "application/problem+json"),
     )
@@ -208,8 +207,28 @@ pub async fn verify_email(
     State(state): State<AuthState>,
     ValidJson(request): ValidJson<VerifyEmailRequest>,
 ) -> Result<StatusCode, ApiError> {
+    let token = EmailToken::from_presented(&request.token);
+    let target = {
+        let mut conn = state.db.acquire().await.map_err(AuthError::from)?;
+        service::check_verify_token(&mut conn, token.as_ref()).await?
+    };
+    let password = request.password.ok_or_else(|| {
+        ApiError::invalid_field("password", "a password is needed to confirm the address")
+    })?;
+    let prepared = service::prepare_verification(
+        &state.hashing,
+        target,
+        password,
+        state.config.auth.password_min_length,
+        &state.config.institution.name,
+    )
+    .await
+    .map_err(|error| match error {
+        AuthError::Invalid(ModelError::Password(reasons)) => password_error("password", reasons),
+        other => other.into(),
+    })?;
     let mut tx = state.db.begin().await.map_err(AuthError::from)?;
-    service::verify_email(&mut tx, EmailToken::from_presented(&request.token)).await?;
+    service::verify_email(&mut tx, token.as_ref(), prepared).await?;
     tx.commit().await.map_err(AuthError::from)?;
     Ok(StatusCode::NO_CONTENT)
 }

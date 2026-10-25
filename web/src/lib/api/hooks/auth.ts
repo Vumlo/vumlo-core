@@ -5,9 +5,9 @@ import { clearQueries, invalidate, useMutation, useQuery } from "../../query";
 import type { User } from "../../session";
 import type { GoogleHandoff, GoogleStart, MockMail } from "../gaps";
 
-/** The server answers `202` with no body for every address (ADR-0046); `pnpm dev:mock` answers the same. */
+/** The server answers `202` with no body for every address (ADR-0046); `pnpm dev:mock` answers the same. The password is chosen later, on the page behind the link (ADR-0067). */
 export function useRegister() {
-  return useMutation(async (input: { name: string; surname: string; email: string; password: string }) => {
+  return useMutation(async (input: { name: string; surname: string; email: string }) => {
     await api.post("/auth/register", input);
     invalidate("/mock/outbox");
     return true as const;
@@ -15,8 +15,8 @@ export function useRegister() {
 }
 
 export function useVerifyEmail() {
-  return useMutation(async (token: string) => {
-    await api.post("/auth/verify-email", { token });
+  return useMutation(async (token: string, password: string) => {
+    await api.post("/auth/verify-email", { token, password });
     return true as const;
   });
 }
