@@ -626,9 +626,10 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Creates an account for the address and mails a link that verifies it.
+         * Creates an account for the address and mails a link to verify it.
          * @description The answer is the same for every address, so a page cannot tell who has an account (ADR-0046).
-         *     The account cannot log in until the link is used. Off (`404`) without `[mail]`.
+         *     The account has no password and cannot log in until the link is used and its owner chooses one
+         *     (ADR-0067). Off (`404`) without `[mail]`.
          */
         post: operations["register"];
         delete?: never;
@@ -646,7 +647,11 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Verifies the address with the token from the mail. Does not sign anyone in. */
+        /**
+         * Verifies the address with the token from the mail and sets the password the owner chose.
+         * @description Does not sign anyone in (ADR-0067). A spent or expired link is `410` and is decided before the
+         *     password is looked at; a missing or weak password is `422` and leaves the link usable.
+         */
         post: operations["verify_email"];
         delete?: never;
         options?: never;
@@ -3487,13 +3492,17 @@ export interface components {
         };
         /**
          * @description Self-registration (ADR-0046). The account is created as a `student` and cannot log in until the
-         *     address is verified.
+         *     address is verified and a password is chosen (ADR-0067).
          */
         RegisterRequest: {
             /** @description Its domain must be one the institution allows. */
             email: string;
             name: string;
-            password: string;
+            /**
+             * @description Ignored, and accepted only so that an older client keeps working: the password is chosen when the
+             *     address is verified (ADR-0067).
+             */
+            password?: string | null;
             surname: string;
         };
         RemoveMembersRequest: {
@@ -3901,8 +3910,13 @@ export interface components {
             /** Format: int64 */
             teacher: number;
         };
-        /** @description The token from the verification mail. */
+        /** @description The token from the verification mail and the password the owner of the address chooses (ADR-0067). */
         VerifyEmailRequest: {
+            /**
+             * @description The password of the account. It must meet the policy; without it the request is `422` and the
+             *     link stays usable.
+             */
+            password?: string | null;
             token: string;
         };
         VideoProps: {
@@ -5725,7 +5739,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["ProblemDetails"];
                 };
             };
-            /** @description An address outside the allowed domains, or a password that breaks the policy */
+            /** @description An address outside the allowed domains, or a name that is not valid */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -5758,7 +5772,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description The address is verified; the account can log in */
+            /** @description The address is verified and the password is set; the account can log in */
             204: {
                 headers: {
                     [name: string]: unknown;
@@ -5767,6 +5781,15 @@ export interface operations {
             };
             /** @description The link is unknown, used or expired */
             410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description No password, or one that breaks the policy; `errors` explains why */
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };

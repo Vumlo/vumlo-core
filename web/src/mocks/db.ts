@@ -55,7 +55,7 @@ export type Db = {
   institution: AdminInstitution;
   /** Mail the mock "sent" and the single-use tokens behind its links. */
   mail: MockMail[];
-  signups: { token: string; name: string; surname: string; email: string; password: string }[];
+  signups: { token: string; name: string; surname: string; email: string }[];
   resets: { token: string; user_id: string }[];
   formResponses: Record<string, { team: string; variant: string; members: string; repo: string; submitted_at: string; late: boolean }[]>;
   quizResults: Record<string, Record<string, { got: string; feedback: string | null }>>;

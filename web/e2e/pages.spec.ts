@@ -14,7 +14,6 @@ test.describe("accounts", () => {
     await page.getByLabel("First name").fill("Nina");
     await page.getByLabel("Last name").fill("Shevchenko");
     await page.getByLabel("University email").fill("nina@gmail.com");
-    await page.getByLabel("Password", { exact: true }).fill("a long unrelated phrase");
     await page.getByRole("button", { name: "Create account" }).click();
     await expect(page.getByText("ending in @northfield.edu")).toBeVisible();
 
@@ -24,6 +23,10 @@ test.describe("accounts", () => {
 
     // The account does not exist until the link is followed.
     await page.getByRole("link", { name: "Confirm the email address" }).click();
+    // The link proves the mailbox, and the person who follows it chooses the password (ADR-0067).
+    await page.getByLabel("New password", { exact: true }).fill("a long unrelated phrase");
+    await page.getByLabel("Repeat new password").fill("a long unrelated phrase");
+    await page.getByRole("button", { name: "Confirm and save the password" }).click();
     await expect(page.getByRole("heading", { name: "Email confirmed" })).toBeVisible();
     await page.getByRole("link", { name: "Sign in" }).click();
     await page.getByLabel("Email").fill("nina.shevchenko@northfield.edu");
@@ -33,9 +36,12 @@ test.describe("accounts", () => {
   });
 
   test("an email link works once", async ({ page }) => {
+    // The forms behind both links can only learn that a token is spent when they are submitted.
     await page.goto("/verify-email?token=nothing");
+    await page.getByLabel("New password", { exact: true }).fill("a long unrelated phrase");
+    await page.getByLabel("Repeat new password").fill("a long unrelated phrase");
+    await page.getByRole("button", { name: "Confirm and save the password" }).click();
     await expect(page.getByRole("heading", { name: "This link doesn't work" })).toBeVisible();
-    // The reset form can only learn that its token is spent when it is submitted.
     await page.goto("/reset-password?token=nothing");
     await page.getByLabel("New password", { exact: true }).fill("a long unrelated phrase");
     await page.getByLabel("Repeat new password").fill("a long unrelated phrase");

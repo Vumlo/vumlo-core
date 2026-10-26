@@ -110,13 +110,13 @@ fn text(
         (TokenPurpose::Verify, Language::En) => (
             "Confirm your email address",
             format!(
-                "Hello {name},\n\nTo finish creating your {institution} account, confirm your email address:\n\n{link}\n\nThe link works once and expires in 24 hours. If you did not sign up, ignore this message.\n"
+                "Hello {name},\n\nTo finish creating your {institution} account, confirm your email address and choose a password:\n\n{link}\n\nThe link works once and expires in 24 hours. If you did not sign up, ignore this message.\n"
             ),
         ),
         (TokenPurpose::Verify, Language::Uk) => (
             "Підтвердіть адресу електронної пошти",
             format!(
-                "Вітаємо, {name}!\n\nЩоб завершити створення облікового запису в «{institution}», підтвердьте адресу електронної пошти:\n\n{link}\n\nПосилання діє один раз і спливає за 24 години. Якщо ви не реєструвалися, проігноруйте цей лист.\n"
+                "Вітаємо, {name}!\n\nЩоб завершити створення облікового запису в «{institution}», підтвердьте адресу електронної пошти та оберіть пароль:\n\n{link}\n\nПосилання діє один раз і спливає за 24 години. Якщо ви не реєструвалися, проігноруйте цей лист.\n"
             ),
         ),
         (TokenPurpose::Reset, Language::En) => (

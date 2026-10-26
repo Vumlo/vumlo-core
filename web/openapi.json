@@ -2482,8 +2482,8 @@
         "tags": [
           "auth"
         ],
-        "summary": "Creates an account for the address and mails a link that verifies it.",
-        "description": "The answer is the same for every address, so a page cannot tell who has an account (ADR-0046).\nThe account cannot log in until the link is used. Off (`404`) without `[mail]`.",
+        "summary": "Creates an account for the address and mails a link to verify it.",
+        "description": "The answer is the same for every address, so a page cannot tell who has an account (ADR-0046).\nThe account has no password and cannot log in until the link is used and its owner chooses one\n(ADR-0067). Off (`404`) without `[mail]`.",
         "operationId": "register",
         "requestBody": {
           "content": {
@@ -2510,7 +2510,7 @@
             }
           },
           "422": {
-            "description": "An address outside the allowed domains, or a password that breaks the policy",
+            "description": "An address outside the allowed domains, or a name that is not valid",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -2537,7 +2537,8 @@
         "tags": [
           "auth"
         ],
-        "summary": "Verifies the address with the token from the mail. Does not sign anyone in.",
+        "summary": "Verifies the address with the token from the mail and sets the password the owner chose.",
+        "description": "Does not sign anyone in (ADR-0067). A spent or expired link is `410` and is decided before the\npassword is looked at; a missing or weak password is `422` and leaves the link usable.",
         "operationId": "verify_email",
         "requestBody": {
           "content": {
@@ -2551,10 +2552,20 @@
         },
         "responses": {
           "204": {
-            "description": "The address is verified; the account can log in"
+            "description": "The address is verified and the password is set; the account can log in"
           },
           "410": {
             "description": "The link is unknown, used or expired",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "No password, or one that breaks the policy; `errors` explains why",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -13340,12 +13351,11 @@
       },
       "RegisterRequest": {
         "type": "object",
-        "description": "Self-registration (ADR-0046). The account is created as a `student` and cannot log in until the\naddress is verified.",
+        "description": "Self-registration (ADR-0046). The account is created as a `student` and cannot log in until the\naddress is verified and a password is chosen (ADR-0067).",
         "required": [
           "name",
           "surname",
-          "email",
-          "password"
+          "email"
         ],
         "properties": {
           "email": {
@@ -13356,7 +13366,11 @@
             "type": "string"
           },
           "password": {
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Ignored, and accepted only so that an older client keeps working: the password is chosen when the\naddress is verified (ADR-0067)."
           },
           "surname": {
             "type": "string"
@@ -14516,11 +14530,18 @@
       },
       "VerifyEmailRequest": {
         "type": "object",
-        "description": "The token from the verification mail.",
+        "description": "The token from the verification mail and the password the owner of the address chooses (ADR-0067).",
         "required": [
           "token"
         ],
         "properties": {
+          "password": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The password of the account. It must meet the policy; without it the request is `422` and the\nlink stays usable."
+          },
           "token": {
             "type": "string"
           }

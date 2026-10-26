@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO auth.identities (id, user_id, provider, subject, password_hash)\n             SELECT $1, id, 'password', id::text, $2 FROM auth.users WHERE email = 'maya@lms.test'",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "738cff2f6aa0d2dfa31b2bbbfbffe7678d45c2db0a5945178310c2d52aaa5f4c"
+}

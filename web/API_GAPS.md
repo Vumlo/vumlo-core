@@ -9,10 +9,10 @@ Spec endpoints the UI uses as they are: `GET /institution`, `GET /admin/institut
 
 ## Sign-in extras
 - **Screens:** Sign in, Create an account, Confirm your email, Reset your password, Choose a new password, Google callback.
-- **Server:** done (ADR-0045 to ADR-0047). Registration and reset answer `202` with no body for every address; a password login on an unverified address is `403`; Google needs `[auth.google]` and the cookie `vumlo_oauth`, which the browser keeps between start and callback.
+- **Server:** done (ADR-0045 to ADR-0047). Registration and reset answer `202` with no body for every address; an account has no password until its address is verified and the owner chooses one on the page behind the link (ADR-0067), so a login before that is `401`; Google needs `[auth.google]` and the cookie `vumlo_oauth`, which the browser keeps between start and callback.
 - **Still mocked, on purpose:** `pnpm dev:mock` and the Playwright suite (`e2e/`) run against the in-browser mock, and they cover these screens. Delete the handlers in `src/mocks/handlers/auth.ts`, `MockMailbox` and `useMockOutbox` when the suite runs against the real server. The mock differs from the server in its rules (it wants 10 characters, the server 12 and a strength score) and in the `hint` the mock puts in the callback URL.
 - **What the mock does:**
-  - `POST /auth/register` (`name`, `surname`, `email`, `password`; 202; 422 for an address outside `northfield.edu`), `POST /auth/verify-email` (`token`; 410 when spent).
+  - `POST /auth/register` (`name`, `surname`, `email`; 202; 422 for an address outside `northfield.edu`), `POST /auth/verify-email` (`token`, `password`; 410 when spent, 422 without a password).
   - `POST /auth/password-reset` (`email`; 202), `POST /auth/password-reset/confirm` (`token`, `new_password`; 410 when spent).
   - `POST /auth/google/start` (`login_hint`) answers `{authorization_url}`; the page opens it. `POST /auth/google/callback` (`code`, `state`) opens the session. The mock skips Google's consent screen and signs in as the account named by `login_hint`.
   - `GET /mock/outbox`: only in the mock. The pages show a "Mock mailbox" box with the links a real mail would carry. The mock keeps its data in the page, so a full reload forgets pending sign-ups and reset links; follow the links without reloading.

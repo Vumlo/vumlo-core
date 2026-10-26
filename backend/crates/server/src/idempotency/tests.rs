@@ -76,3 +76,27 @@ fn only_an_answer_about_the_request_is_kept() {
         );
     }
 }
+
+#[test]
+fn an_answer_that_says_no_store_is_not_kept() {
+    for credential in [
+        "no-store",
+        "No-Store",
+        "private, no-store",
+        "no-store , max-age=0",
+    ] {
+        assert!(
+            carries_credential(&headers(&[("cache-control", credential)])),
+            "{credential}"
+        );
+    }
+    let two_headers = headers(&[("cache-control", "private"), ("cache-control", "no-store")]);
+    assert!(carries_credential(&two_headers));
+    for plain in ["private, no-cache", "max-age=0", "no-stored"] {
+        assert!(
+            !carries_credential(&headers(&[("cache-control", plain)])),
+            "{plain}"
+        );
+    }
+    assert!(!carries_credential(&headers(&[])));
+}

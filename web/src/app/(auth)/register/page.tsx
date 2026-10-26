@@ -3,8 +3,6 @@
 import Link from "next/link";
 import { useState, type FormEvent } from "react";
 import { MockMailbox } from "@/components/auth/MockMailbox";
-import { PasswordField } from "@/components/PasswordField";
-import { StrengthMeter } from "@/components/StrengthMeter";
 import { useRegister } from "@/lib/api/hooks/auth";
 import { useT } from "@/lib/i18n";
 import s from "../auth.module.css";
@@ -15,14 +13,13 @@ export default function RegisterPage() {
   const [name, setName] = useState("");
   const [surname, setSurname] = useState("");
   const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
   const [sentTo, setSentTo] = useState<string | null>(null);
   const err = (f: string) => register.error?.errors.find((x) => x.field === f)?.message;
 
   async function submit(e: FormEvent) {
     e.preventDefault();
     const address = email.trim();
-    if (await register.run({ name: name.trim(), surname: surname.trim(), email: address, password })) setSentTo(address);
+    if (await register.run({ name: name.trim(), surname: surname.trim(), email: address })) setSentTo(address);
   }
 
   if (sentTo) {
@@ -60,11 +57,6 @@ export default function RegisterPage() {
             <input id="email" className="input" type="email" autoComplete="username" value={email} onChange={(e) => setEmail(e.target.value)} aria-invalid={!!err("email")} style={{ minHeight: 46 }} />
             {err("email") && <p className="field-error">{err("email")}</p>}
           </div>
-          <div>
-            <PasswordField id="password" label={t("field.password")} value={password} onChange={setPassword} autoComplete="new-password" describedBy="strength" invalid={!!err("password")} error={err("password")} />
-            <StrengthMeter password={password} id="strength" />
-          </div>
-          <p className="hint">{t("register.hint")}</p>
           <button type="submit" className="btn btn-primary btn-lg" disabled={register.pending}>{t("register.submit")}</button>
         </form>
       </div>

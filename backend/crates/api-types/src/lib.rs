@@ -162,7 +162,7 @@ pub enum LoginResponse {
 }
 
 /// Self-registration (ADR-0046). The account is created as a `student` and cannot log in until the
-/// address is verified.
+/// address is verified and a password is chosen (ADR-0067).
 #[derive(Clone, Serialize, Deserialize, Validate, ToSchema)]
 pub struct RegisterRequest {
     #[garde(length(chars, min = 1, max = 100))]
@@ -172,8 +172,10 @@ pub struct RegisterRequest {
     /// Its domain must be one the institution allows.
     #[garde(length(min = 1, max = 254))]
     pub email: String,
-    #[garde(length(max = 1024))]
-    pub password: String,
+    /// Ignored, and accepted only so that an older client keeps working: the password is chosen when the
+    /// address is verified (ADR-0067).
+    #[garde(inner(length(max = 1024)))]
+    pub password: Option<String>,
 }
 
 impl fmt::Debug for RegisterRequest {
@@ -182,11 +184,15 @@ impl fmt::Debug for RegisterRequest {
     }
 }
 
-/// The token from the verification mail.
+/// The token from the verification mail and the password the owner of the address chooses (ADR-0067).
 #[derive(Clone, Serialize, Deserialize, Validate, ToSchema)]
 pub struct VerifyEmailRequest {
     #[garde(length(min = 1, max = 200))]
     pub token: String,
+    /// The password of the account. It must meet the policy; without it the request is `422` and the
+    /// link stays usable.
+    #[garde(inner(length(max = 1024)))]
+    pub password: Option<String>,
 }
 
 impl fmt::Debug for VerifyEmailRequest {

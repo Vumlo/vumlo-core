@@ -18,7 +18,7 @@ async fn deliver(state: &server::app::AppState) {
 }
 
 fn register_body(email: &str) -> serde_json::Value {
-    serde_json::json!({"name": "Maya", "surname": "Okafor", "email": email, "password": PASSWORD})
+    serde_json::json!({"name": "Maya", "surname": "Okafor", "email": email})
 }
 
 async fn login(http: &Http, email: &str, password: &str) -> common::Resp {
@@ -123,18 +123,36 @@ async fn a_new_address_gets_a_mail_and_can_log_in_only_after_the_link() {
                 .unwrap();
         assert!(processed);
 
-        // The right password still does not log in before the address is verified.
-        let early = login(&http, "maya@lms.test", PASSWORD).await;
-        early.problem(403);
-        let wrong = login(&http, "maya@lms.test", "wrong password").await;
-        assert_eq!(
-            wrong.status, 401,
-            "a wrong password learns nothing about verification"
+        // The account has no password until the link is used (ADR-0067), so nothing logs in before.
+        let identities = sqlx::query_scalar!(r#"SELECT count(*) AS "n!" FROM auth.identities"#)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(identities, 0);
+        assert_eq!(login(&http, "maya@lms.test", PASSWORD).await.status, 401);
+
+        // A link without a password, or with a weak one, is 422 and stays usable.
+        let missing = http
+            .post("/auth/verify-email")
+            .json(&serde_json::json!({"token": token}))
+            .send()
+            .await
+            .problem(422);
+        assert_eq!(missing.errors[0].field, "password");
+        let weak = http
+            .post("/auth/verify-email")
+            .json(&serde_json::json!({"token": token, "password": "password1234"}))
+            .send()
+            .await
+            .problem(422);
+        assert!(
+            !weak.errors.is_empty() && weak.errors.iter().all(|e| e.field == "password"),
+            "{weak:?}"
         );
 
         let verified = http
             .post("/auth/verify-email")
-            .json(&serde_json::json!({"token": token}))
+            .json(&serde_json::json!({"token": token, "password": PASSWORD}))
             .send()
             .await;
         assert_eq!(verified.status, 204);
@@ -142,10 +160,15 @@ async fn a_new_address_gets_a_mail_and_can_log_in_only_after_the_link() {
 
         // A link works once.
         http.post("/auth/verify-email")
-            .json(&serde_json::json!({"token": token}))
+            .json(&serde_json::json!({"token": token, "password": NEW_PASSWORD}))
             .send()
             .await
             .problem(410);
+        assert_eq!(
+            login(&http, "maya@lms.test", NEW_PASSWORD).await.status,
+            401,
+            "the second use changed nothing"
+        );
     })
     .await;
 }
@@ -247,20 +270,6 @@ async fn a_registration_is_checked_before_anything_is_created() {
             .problem(422);
         assert_eq!(foreign.errors[0].field, "email");
 
-        let mut weak = register_body("weak@lms.test");
-        weak["password"] = "password1234".into();
-        let weak = http
-            .post("/auth/register")
-            .json(&weak)
-            .send()
-            .await
-            .problem(422);
-        assert!(
-            weak.errors.iter().all(|e| e.field == "password"),
-            "{weak:?}"
-        );
-        assert!(!weak.errors.is_empty());
-
         let mut bad_name = register_body("name@lms.test");
         bad_name["name"] = "   ".into();
         let bad_name = http
@@ -312,21 +321,21 @@ async fn registration_and_reset_are_off_without_mail_and_no_domain_means_no_sign
 }
 
 #[tokio::test]
-async fn registering_again_replaces_the_password_and_voids_the_earlier_link() {
+async fn registering_again_voids_the_earlier_link_and_sets_no_password() {
     db_test(async |pool| {
         let mailbox = Mailbox::new();
         let (base, state) = spawn_app(pool.clone(), mailbox.settings()).await;
         let http = Http::new(&base);
 
-        // A stranger registers the victim's address with a password of their own.
-        let mut stranger = register_body("maya@lms.test");
-        stranger["password"] = "the stranger chose this one 55".into();
-        stranger["name"] = "Stranger".into();
-        http.post("/auth/register").json(&stranger).send().await;
+        // The address is registered with a password in the body, which is ignored.
+        let mut other = register_body("maya@lms.test");
+        other["password"] = "sent while registering 5555".into();
+        other["name"] = "Other".into();
+        http.post("/auth/register").json(&other).send().await;
         deliver(&state).await;
-        let stranger_link = Mailbox::token_in(&mailbox.messages()[0]);
+        let first_link = Mailbox::token_in(&mailbox.messages()[0]);
 
-        // The owner registers: the password and the name are theirs now, the first link is dead.
+        // The address is registered again: the name is the newest one and the first link is dead.
         http.post("/auth/register")
             .json(&register_body("maya@lms.test"))
             .send()
@@ -335,15 +344,15 @@ async fn registering_again_replaces_the_password_and_voids_the_earlier_link() {
         let messages = mailbox.messages();
         assert_eq!(messages.len(), 2);
         let owner_link = Mailbox::token_in(&messages[1]);
-        assert_ne!(owner_link, stranger_link);
+        assert_ne!(owner_link, first_link);
         http.post("/auth/verify-email")
-            .json(&serde_json::json!({"token": stranger_link}))
+            .json(&serde_json::json!({"token": first_link, "password": PASSWORD}))
             .send()
             .await
             .problem(410);
         assert_eq!(
             http.post("/auth/verify-email")
-                .json(&serde_json::json!({"token": owner_link}))
+                .json(&serde_json::json!({"token": owner_link, "password": PASSWORD}))
                 .send()
                 .await
                 .status,
@@ -351,7 +360,7 @@ async fn registering_again_replaces_the_password_and_voids_the_earlier_link() {
         );
         assert_eq!(login(&http, "maya@lms.test", PASSWORD).await.status, 200);
         assert_eq!(
-            login(&http, "maya@lms.test", "the stranger chose this one 55")
+            login(&http, "maya@lms.test", "sent while registering 5555")
                 .await
                 .status,
             401
@@ -361,6 +370,130 @@ async fn registering_again_replaces_the_password_and_voids_the_earlier_link() {
             .await
             .unwrap();
         assert_eq!(name, "Maya");
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn a_password_sent_with_a_later_registration_is_never_set() {
+    db_test(async |pool| {
+        let mailbox = Mailbox::new();
+        let (base, state) = spawn_app(pool.clone(), mailbox.settings()).await;
+        let http = Http::new(&base);
+
+        // The address is registered twice, the second time with a password in the body; the fresh
+        // link is opened and a password is chosen.
+        http.post("/auth/register")
+            .json(&register_body("maya@lms.test"))
+            .send()
+            .await;
+        deliver(&state).await;
+        let mut other = register_body("maya@lms.test");
+        other["password"] = "sent while registering 5555".into();
+        http.post("/auth/register").json(&other).send().await;
+        deliver(&state).await;
+        let messages = mailbox.messages();
+        assert_eq!(messages.len(), 2);
+        let link = Mailbox::token_in(&messages[1]);
+
+        let verified = http
+            .post("/auth/verify-email")
+            .json(&serde_json::json!({"token": link, "password": PASSWORD}))
+            .send()
+            .await;
+        assert_eq!(verified.status, 204);
+
+        assert_eq!(login(&http, "maya@lms.test", PASSWORD).await.status, 200);
+        assert_eq!(
+            login(&http, "maya@lms.test", "sent while registering 5555")
+                .await
+                .status,
+            401,
+            "the password sent while registering was never stored"
+        );
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn a_verification_link_does_not_change_the_password_of_a_verified_account() {
+    db_test(async |pool| {
+        let mailbox = Mailbox::new();
+        let (base, state) = spawn_app(pool.clone(), mailbox.settings()).await;
+        let http = Http::new(&base);
+        http.post("/auth/register")
+            .json(&register_body("maya@lms.test"))
+            .send()
+            .await;
+        deliver(&state).await;
+        let verify_link = Mailbox::token_in(&mailbox.messages()[0]);
+
+        // The address is verified another way: a reset link proves the mailbox too.
+        http.post("/auth/password-reset")
+            .json(&serde_json::json!({"email": "maya@lms.test"}))
+            .send()
+            .await;
+        deliver(&state).await;
+        let reset_link = Mailbox::token_in(mailbox.messages().last().unwrap());
+        let reset = http
+            .post("/auth/password-reset/confirm")
+            .json(&serde_json::json!({"token": reset_link, "new_password": NEW_PASSWORD}))
+            .send()
+            .await;
+        assert_eq!(reset.status, 204);
+
+        http.post("/auth/verify-email")
+            .json(&serde_json::json!({"token": verify_link, "password": PASSWORD}))
+            .send()
+            .await
+            .problem(410);
+        assert_eq!(
+            login(&http, "maya@lms.test", NEW_PASSWORD).await.status,
+            200
+        );
+        assert_eq!(login(&http, "maya@lms.test", PASSWORD).await.status, 401);
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn a_password_kept_from_before_is_replaced_when_the_address_is_verified() {
+    db_test(async |pool| {
+        let mailbox = Mailbox::new();
+        let (base, state) = spawn_app(pool.clone(), mailbox.settings()).await;
+        let http = Http::new(&base);
+        http.post("/auth/register")
+            .json(&register_body("maya@lms.test"))
+            .send()
+            .await;
+        // A row written before ADR-0067: an unverified account that holds a password somebody chose.
+        let legacy = auth::hash_password("sent while registering 5555")
+            .await
+            .unwrap();
+        sqlx::query!(
+            "INSERT INTO auth.identities (id, user_id, provider, subject, password_hash)
+             SELECT $1, id, 'password', id::text, $2 FROM auth.users WHERE email = 'maya@lms.test'",
+            uuid::Uuid::now_v7(),
+            legacy.as_str()
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        deliver(&state).await;
+        let token = Mailbox::token_in(&mailbox.messages()[0]);
+
+        http.post("/auth/verify-email")
+            .json(&serde_json::json!({"token": token, "password": PASSWORD}))
+            .send()
+            .await;
+
+        assert_eq!(login(&http, "maya@lms.test", PASSWORD).await.status, 200);
+        assert_eq!(
+            login(&http, "maya@lms.test", "sent while registering 5555")
+                .await
+                .status,
+            401
+        );
     })
     .await;
 }
@@ -392,12 +525,13 @@ async fn an_expired_or_malformed_verification_link_is_gone() {
         ] {
             let response = http
                 .post("/auth/verify-email")
-                .json(&serde_json::json!({"token": bad}))
+                .json(&serde_json::json!({"token": bad, "password": PASSWORD}))
                 .send()
                 .await;
             assert_eq!(response.status, 410, "{bad}");
         }
-        assert_eq!(login(&http, "maya@lms.test", PASSWORD).await.status, 403);
+        // Nothing was verified and no password was ever set.
+        assert_eq!(login(&http, "maya@lms.test", PASSWORD).await.status, 401);
     })
     .await;
 }
