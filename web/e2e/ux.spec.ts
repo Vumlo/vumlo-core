@@ -22,7 +22,7 @@ test("the grading queue opens the grade of the student it names", async ({ page 
   await expect(first).toBeVisible();
   const student = (await first.locator("span[role=cell]").first().locator("span").last().innerText()).trim();
   await first.getByRole("link", { name: "Grade", exact: true }).click();
-  await expect(page.locator("#drawer-h")).toHaveText(student);
+  await expect(page.locator("#student-h")).toHaveText(student);
 });
 
 test("publishing all draft grades asks first", async ({ page }) => {

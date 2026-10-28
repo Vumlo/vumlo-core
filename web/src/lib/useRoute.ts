@@ -12,7 +12,7 @@ export function useItemId() {
   return useSearchParams().get("item") ?? "";
 }
 
-/** The student whose grade is open in the gradebook, `&student=<user id>`; empty when none. */
+/** The student whose work is open in the grading workspace, `&student=<user id>`; empty when none. */
 export function useStudentId() {
   return useSearchParams().get("student") ?? "";
 }

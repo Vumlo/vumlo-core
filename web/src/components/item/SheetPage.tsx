@@ -28,11 +28,11 @@ import s from "./Item.module.css";
 
 const short = (t: string) => (t.length > 26 ? `${t.slice(0, 24).trimEnd()}…` : t);
 
-function quizQuestions(cfg: QuizConfig): Q[] {
+export function quizQuestions(cfg: QuizConfig): Q[] {
   return cfg.questions.map((q) => ({ id: q.id, kind: q.type, label: q.prompt, short: short(q.prompt), points: q.points, options: q.options }));
 }
 
-function formQuestions(cfg: FormConfig, answers: AnswerMap): Q[] {
+export function formQuestions(cfg: FormConfig, answers: AnswerMap): Q[] {
   return cfg.fields.map((f) => {
     const kind = f.type === "choice" ? (f.rules.multiple ? "multi" : "select") : f.type === "link" ? "url" : f.type;
     const mine = answers[f.id];

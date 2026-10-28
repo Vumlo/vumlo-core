@@ -1285,4 +1285,8 @@ export const en = {
   "course.publishQ": "Publish this course?",
   "course.publishLead": "The people on its roster will see it in their courses. Sections and items that you have not published stay hidden from students.",
   "course.publishConfirm": "Publish",
+  // grading workspace
+  "gw.back": "Back to grades",
+  "gw.submission": "Submission",
+  "gw.attempts": "Attempts",
 } as const;
