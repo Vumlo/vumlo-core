@@ -4,7 +4,7 @@ version = 4
 
 [[package]]
 name = "access"
-version = "0.2.2"
+version = "0.3.0"
 dependencies = [
  "axum",
  "chrono",
@@ -164,7 +164,7 @@ checksum = "1505bd5d3d116872e7271a6d4e16d81d0c8570876c8de68093a09ac269d8aac0"
 
 [[package]]
 name = "auth"
-version = "0.2.2"
+version = "0.3.0"
 dependencies = [
  "access",
  "api-types",
@@ -543,7 +543,7 @@ checksum = "1d07550c9036bf2ae0c684c4297d503f838287c83c53686d05370d0e139ae570"
 
 [[package]]
 name = "common"
-version = "0.2.2"
+version = "0.3.0"
 dependencies = [
  "api-types",
  "axum",
@@ -826,7 +826,7 @@ checksum = "be1e0bca6c3637f992fc1cc7cbc52a78c1ef6db076dbf1059c4323d6a2048376"
 
 [[package]]
 name = "db"
-version = "0.2.2"
+version = "0.3.0"
 dependencies = [
  "serde_json",
  "sqlx",
@@ -1095,7 +1095,7 @@ dependencies = [
 
 [[package]]
 name = "events"
-version = "0.2.2"
+version = "0.3.0"
 dependencies = [
  "access",
  "common",
@@ -1913,7 +1913,7 @@ dependencies = [
 
 [[package]]
 name = "learning"
-version = "0.2.2"
+version = "0.3.0"
 dependencies = [
  "access",
  "api-types",
@@ -2073,7 +2073,7 @@ dependencies = [
 
 [[package]]
 name = "module-api"
-version = "0.2.2"
+version = "0.3.0"
 dependencies = [
  "access",
  "anyhow",
@@ -2255,7 +2255,7 @@ dependencies = [
 
 [[package]]
 name = "org"
-version = "0.2.2"
+version = "0.3.0"
 dependencies = [
  "access",
  "api-types",
@@ -2457,7 +2457,7 @@ checksum = "f6b464fbc74e149a392436b17d523f769e057cb6877f6a5c4618bc6f11800548"
 
 [[package]]
 name = "plugins"
-version = "0.2.2"
+version = "0.3.0"
 dependencies = [
  "access",
  "api-types",
@@ -3253,7 +3253,7 @@ dependencies = [
 
 [[package]]
 name = "server"
-version = "0.2.2"
+version = "0.3.0"
 dependencies = [
  "access",
  "anyhow",
@@ -3715,7 +3715,7 @@ dependencies = [
 
 [[package]]
 name = "test-support"
-version = "0.2.2"
+version = "0.3.0"
 dependencies = [
  "db",
  "sqlx",
@@ -4265,7 +4265,7 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 
 [[package]]
 name = "vumlo-cli"
-version = "0.2.2"
+version = "0.3.0"
 dependencies = [
  "access",
  "anyhow",
@@ -4295,7 +4295,7 @@ dependencies = [
 
 [[package]]
 name = "vumlo-config"
-version = "0.2.2"
+version = "0.3.0"
 dependencies = [
  "api-types",
  "chrono-tz",
@@ -4307,7 +4307,7 @@ dependencies = [
 
 [[package]]
 name = "vumlo-module-dummy"
-version = "0.2.2"
+version = "0.3.0"
 dependencies = [
  "access",
  "anyhow",

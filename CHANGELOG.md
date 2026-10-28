@@ -10,6 +10,24 @@ must do, in order, besides getting the new release. See [RELEASING.md](RELEASING
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-28
+
+Plugins and optional modules, a redesigned web app, and a page for grading.
+
+### Upgrade notes
+
+- `config_version` is still **1**.
+- The newest core migration is `0035`. Take a backup, then run `vumlo db migrate` (`deploy/update.sh` does both). The
+  migrations rename the Postgres schema `identity` to `auth` (`0032`), add five read-only views (`0033`) and the schema
+  `plugins` (`0034`, `0035`). **A server older than this release cannot run against a migrated database**, and anything of
+  your own that reads the database directly (a report, a backup script that dumps `--schema=identity`) must say `auth`.
+- To install plugins set `VUMLO__PLUGINS__SECRET_KEY` (32 characters or more) in the environment; without it none can be
+  installed. Nothing else changes if you use none.
+- The web app has a new look and a new page for grading; there is nothing to configure. Run `vumlo-cli brand apply` and
+  rebuild the web image as always.
+- The web image no longer serves `mockServiceWorker.js` or `mock-plugin/`, and the build fails if the browser bundle carries
+  the mock API's sample data. They were for `npm run dev:mock` only.
+
 ### Added
 
 - **Plugins** ([ADR-0066](docs/decisions/0066-modules-and-plugins.md)): external HTTP services in any language that the core
@@ -26,9 +44,17 @@ must do, in order, besides getting the new release. See [RELEASING.md](RELEASING
   pages. The tab is on text assignments and on assignments that take no submission, not yet on quizzes and forms, and the desktop
   app shows none. `deploy/Caddyfile` has an optional `frame-src` line for the origins of your plugins.
 - **`GET /api/v1/meta`** lists the enabled optional modules and their versions.
+- **A page for grading** a student's work: a cell of the gradebook opens it (the drawer is gone). It shows the submission, a
+  rail of students with a mark for where each one stands, previous and next, a filter (to grade, drafts, all), and the grade
+  panel with points, a comment, save, publish and the history. "Save and next" moves on; so does "Publish", which is off
+  while there is nothing to publish. Enter in the points field saves and moves on. The confirmation is a toast, and a saved
+  draft can be put back with Undo (a published grade cannot: students have seen it).
+- **The gradebook can be filtered** by assignment, by status and by late work.
 
 ### Changed
 
+- **The web app is redesigned** in a new visual system, and the teacher's course screens are recomposed. Formulas are drawn
+  by KaTeX ([ADR-0068](docs/decisions/0068-formulas-are-drawn-by-katex.md)).
 - **Optional modules are a `Module` trait** ([ADR-0066](docs/decisions/0066-modules-and-plugins.md)): a manifest (id, version,
   `requires`, permissions, settings), migrations, and `register` for routes, event handlers and background jobs; they start in
   the order of their `requires`. Module routes moved to `/api/v1/modules/{id}/...` and sign in like the core's, with permissions
@@ -191,7 +217,8 @@ There is nothing to upgrade from; follow [docs/install.md](docs/install.md).
 - Any optional module, and an end-user CLI (ADR-0055).
 - Published container images: the images are built on your server from the archive.
 
-[Unreleased]: https://github.com/Vumlo/vumlo-core/compare/v0.2.2...HEAD
+[Unreleased]: https://github.com/Vumlo/vumlo-core/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/Vumlo/vumlo-core/compare/v0.2.2...v0.3.0
 [0.2.2]: https://github.com/Vumlo/vumlo-core/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/Vumlo/vumlo-core/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/Vumlo/vumlo-core/compare/v0.1.0...v0.2.0
