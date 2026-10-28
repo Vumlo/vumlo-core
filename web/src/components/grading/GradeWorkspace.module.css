@@ -8,7 +8,49 @@
 .back:focus-visible, .pane:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
 .title { font-size: 20px; font-weight: 600; }
 .student { font-size: 20px; font-weight: 400; color: var(--muted); }
-.body { flex: 1 1 0; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-5); }
+.body { flex: 1 1 0; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: var(--space-5); padding-bottom: var(--space-4); }
+.stepper { display: inline-flex; align-items: center; gap: var(--space-1); }
+.stepper .icon-btn:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+.stepper .icon-btn:disabled { opacity: 0.4; cursor: not-allowed; background: transparent; }
+.counter { min-width: 64px; text-align: center; font-size: 14px; font-variant-numeric: tabular-nums; color: var(--muted); }
+.pick { width: auto; min-height: 40px; max-width: 220px; }
+.empty { flex: none; display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-4); color: var(--muted); }
+.link { color: var(--accent-fg); font-weight: 500; text-decoration: underline; text-underline-offset: 3px; }
+.link:hover { color: var(--text); }
+.link:active { color: var(--muted); }
+.link:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; border-radius: var(--radius-field); }
+.rail { display: none; flex-direction: column; gap: var(--space-1); min-height: 0; overflow: auto; }
+.railItem { display: flex; align-items: center; gap: var(--space-3); min-height: 52px; padding: var(--space-2) var(--space-3); border-radius: var(--radius-inner); background: transparent; color: var(--text); text-align: left; transition: background-color var(--dur-micro) var(--ease-out); }
+.railItem:hover { background: var(--hover); }
+.railItem:active { background: var(--sunken); }
+.railItem:focus-visible { outline: 2px solid var(--ring); outline-offset: -2px; }
+.railItem[aria-current="true"] { background: var(--accent-soft); }
+.avatar { flex: none; display: flex; align-items: center; justify-content: center; width: 30px; height: 30px; border-radius: 50%; background: var(--hover); color: var(--muted); font-size: 12px; font-weight: 600; }
+.railText { display: flex; flex-direction: column; min-width: 0; }
+.railName { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
+.mark { font-size: 12px; color: var(--muted); }
+.mark[data-state="grade"] { color: var(--accent-fg); font-weight: 600; }
+.mark[data-state="draft"] { color: var(--accent-fg); }
+.mark[data-state="pub"] { color: var(--ok-fg); }
+.panel { align-self: start; max-height: 100%; min-height: 0; overflow: auto; padding: var(--space-5); display: flex; flex-direction: column; gap: var(--space-4); }
+.panelTitle { font-size: 16px; font-weight: 600; }
+.label { font-size: 14px; font-weight: 500; }
+.points { max-width: 120px; }
+.comment { min-height: 96px; }
+.actions { display: flex; flex-wrap: wrap; gap: var(--space-3); }
+.publishAll { padding-inline: 0; min-height: 40px; }
+.rule { padding-top: var(--space-4); border-top: 1px solid var(--border); }
+.summary { cursor: pointer; font-size: 14px; font-weight: 600; border-radius: var(--radius-field); }
+.summary:hover { color: var(--accent-fg); }
+.summary:active { color: var(--muted); }
+.summary:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+.hist { display: flex; flex-direction: column; gap: var(--space-2); margin-top: var(--space-3); font-size: 13px; }
+.hist li { display: flex; justify-content: space-between; gap: var(--space-2); }
+
+@media (min-width: 1100px) {
+  .body { grid-template-columns: 240px minmax(0, 1fr) 340px; }
+  .rail { display: flex; }
+}
 .pane { min-width: 0; overflow: auto; padding-bottom: var(--space-8); }
 .how { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-1) var(--space-3); margin-bottom: var(--space-3); font-size: 14px; }
 .late { color: var(--danger); font-weight: 500; }
@@ -19,5 +61,8 @@
 
 @media (max-width: 720px) {
   .page { height: auto; min-height: calc(100dvh - 57px); padding: var(--space-4) var(--space-4) 96px; }
+  .body { grid-template-columns: minmax(0, 1fr); }
   .pane { overflow: visible; }
+  .panel { max-height: none; align-self: stretch; overflow: visible; }
+  .pick { max-width: none; flex: 1 1 140px; }
 }
