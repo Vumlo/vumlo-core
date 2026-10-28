@@ -1,17 +1,20 @@
 import type { Page } from "@playwright/test";
 import { courseHref, editItemHref, itemHref } from "../src/lib/routes";
+// The people of the mock world are named in one place (src/mocks/identities.ts). A run against another server sets
+// E2E_STUDENT, E2E_TEACHER, E2E_ADMIN and E2E_PASSWORD (see playwright.config.ts).
+import { accounts as seeded, PASSWORD as seededPassword } from "../src/mocks/identities";
 
 /** Pages anyone can open without signing in. */
 export const publicRoutes = ["/login", "/register", "/forgot-password", "/reset-password", "/verify-email", "/download"];
 
 export type RoleName = "student" | "teacher" | "admin";
 
-export const PASSWORD = "correct horse";
+export const PASSWORD = process.env.E2E_PASSWORD ?? seededPassword;
 
 export const accounts: Record<RoleName, string> = {
-  student: "maya.okafor@northfield.edu",
-  teacher: "elena.voss@northfield.edu",
-  admin: "marta.kovalska@northfield.edu",
+  student: process.env.E2E_STUDENT ?? seeded.student,
+  teacher: process.env.E2E_TEACHER ?? seeded.teacher,
+  admin: process.env.E2E_ADMIN ?? seeded.admin,
 };
 
 /** Screens that do not depend on ids. */
