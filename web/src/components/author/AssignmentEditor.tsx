@@ -5,6 +5,7 @@ import { useMemo, useState } from "react";
 import { BlockEditor } from "@/components/doc/BlockEditor";
 import { typeLabel } from "@/lib/course";
 import { useEditorProfiles, usePublishItem, useUpdateItem } from "@/lib/api/hooks/content";
+import { errorText } from "@/lib/api/client";
 import { useAutosave } from "@/lib/autosave";
 import { bodyOf, type Document, type Feature, type Item } from "@/lib/api/types";
 import { AssignmentSettings } from "./AssignmentSettings";
@@ -31,18 +32,18 @@ export function AssignmentEditor({ item, courseId }: { item: Item; courseId: str
 
   return (
     <div className="container" style={{ paddingTop: 20 }}>
-      <AuthorBar courseId={courseId} itemId={item.id} title={title} chip={isDraft ? { text: t("le.draftChip"), tone: "draft" } : { text: t("cm.published"), tone: "ok" }} saved={auto.savedAt} pending={auto.pending} failed={auto.failed}>
+      <AuthorBar courseId={courseId} itemId={item.id} title={title} chip={isDraft ? { text: t("le.draftChip"), tone: "draft" } : { text: t("cm.published"), tone: "ok" }} saved={auto.savedAt} pending={auto.pending} failed={auto.failed} error={errorText(publish.error ?? update.error)}>
         <Link href={itemHref(courseId, item.id)} className="btn">{t("cm.preview")}</Link>
-        {isDraft && <button type="button" className="btn btn-primary" disabled={publish.pending} onClick={async () => { await auto.flush(); await publish.run(item.id); }}>{t("cm.publish")}</button>}
+        {isDraft && <button type="button" className="btn btn-primary" disabled={publish.pending} onClick={async () => { if (await auto.flush()) await publish.run(item.id); }}>{t("cm.publish")}</button>}
       </AuthorBar>
       <div className={s.shell}>
         <div className={s.canvas}>
           <div className={s.sheet}>
-            <p className="muted" style={{ fontSize: 14, marginBottom: 10 }}><strong style={{ color: "var(--asg-fg)" }}>{t("cm.assignment")}</strong> {typeLabel(item.assignment!.type)}</p>
+            <p className="muted" style={{ fontSize: 14, marginBottom: 12 }}><strong style={{ color: "var(--asg-text)" }}>{t("cm.assignment")}</strong> {typeLabel(item.assignment!.type)}</p>
             <label htmlFor="title" className="sr-only">{t("cm.title")}</label>
             <input id="title" className={s.titleInput} value={title} onChange={(e) => setTitle(e.target.value)} />
             <h2 style={{ fontSize: 16, fontWeight: 600, margin: "20px 0 8px" }}>{t("item.instructions")}</h2>
-            <div style={{ paddingLeft: 34 }}>
+            <div>
               <BlockEditor value={initial} onChange={setDoc} features={features} label={t("item.instructions")} mode="float" minHeight={260} />
             </div>
           </div>

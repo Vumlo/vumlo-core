@@ -111,15 +111,15 @@ function ImportCsv({ onClose }: { onClose: () => void }) {
     <Dialog title={t("ap.csv")} description={t("ap.csvLead")} onClose={onClose}
       actions={result ? <button type="button" className="btn btn-primary" onClick={onClose}>{t("common.done")}</button> : <><button type="button" className="btn" onClick={onClose}>{t("common.cancel")}</button><button type="button" className="btn btn-primary" disabled={busy || !text.trim()} onClick={run}>{t("ap.import")}</button></>}>
       {result ? (
-        <div className="stack" style={{ gap: 10 }}>
+        <div className="stack" style={{ gap: 12 }}>
           <p role="status">{t.plural("ap.added", result.ok.length)}</p>
           <ul style={{ fontSize: 14 }}>{result.ok.map((o) => <li key={o.name}>{o.name}: <code>{o.password}</code></li>)}</ul>
           {result.failed.length > 0 && <div role="alert" className="alert alert-danger"><ul>{result.failed.map((f) => <li key={f}>{f}</li>)}</ul></div>}
         </div>
       ) : (
         <>
-          <div className="field"><label htmlFor="csv">CSV</label><textarea id="csv" className="textarea" style={{ minHeight: 150, fontFamily: "var(--font-mono), monospace", fontSize: 13 }} placeholder="new.student@northfield.edu, Nina, Hrytsenko, student" value={text} onChange={(e) => setText(e.target.value)} /></div>
-          <label className="btn" style={{ marginTop: 10 }}>{t("ap.chooseFile")}<input type="file" accept=".csv,text/csv" className="sr-only" onChange={async (e) => { const file = e.target.files?.[0]; if (file) setText(await file.text()); }} /></label>
+          <div className="field"><label htmlFor="csv">CSV</label><textarea id="csv" className="textarea" style={{ minHeight: 150, fontFamily: "var(--font-mono), monospace", fontSize: 13 }} placeholder="new.student@example.edu, Nina, Hrytsenko, student" value={text} onChange={(e) => setText(e.target.value)} /></div>
+          <label className="btn" style={{ marginTop: 12 }}>{t("ap.chooseFile")}<input type="file" accept=".csv,text/csv" className="sr-only" onChange={async (e) => { const file = e.target.files?.[0]; if (file) setText(await file.text()); }} /></label>
         </>
       )}
     </Dialog>

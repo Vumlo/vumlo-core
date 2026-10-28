@@ -24,6 +24,7 @@ export function useLogout() {
   return useMutation(async () => {
     await api.post("/auth/logout");
     clearQueries();
+    return true as const;
   });
 }
 

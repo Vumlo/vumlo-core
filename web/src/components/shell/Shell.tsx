@@ -2,10 +2,12 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
 import { BrandMark } from "@/components/BrandMark";
 import { Icon } from "@/components/Icon";
 import { navFor } from "@/lib/nav";
+import { onSessionExpired } from "@/lib/api/client";
+import { invalidate, retryFailed } from "@/lib/query";
 import { fullName, useMe, type User } from "@/lib/session";
 import { useTheme } from "@/lib/theme";
 import { initials } from "@/lib/format";
@@ -22,6 +24,7 @@ const here = () => window.location.pathname + window.location.search;
 function AccountMenu({ user }: { user: User }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  const button = useRef<HTMLButtonElement>(null);
   const { signOut, dialog } = useSignOut();
   const t = useT();
   const { links: appLinks } = useAppOffer();
@@ -30,7 +33,10 @@ function AccountMenu({ user }: { user: User }) {
     if (!open) return;
     const close = (e: MouseEvent | KeyboardEvent) => {
       if (e instanceof KeyboardEvent) {
-        if (e.key === "Escape") setOpen(false);
+        if (e.key === "Escape") {
+          setOpen(false);
+          button.current?.focus();
+        }
       } else if (ref.current && !ref.current.contains(e.target as Node)) {
         setOpen(false);
       }
@@ -43,9 +49,23 @@ function AccountMenu({ user }: { user: User }) {
     };
   }, [open]);
 
+  // The menu opens with its first entry focused and the arrow keys move between entries.
+  useEffect(() => {
+    if (open) ref.current?.querySelector<HTMLElement>("[role=menuitem]")?.focus();
+  }, [open]);
+  function arrows(e: ReactKeyboardEvent<HTMLDivElement>) {
+    const items = [...e.currentTarget.querySelectorAll<HTMLElement>("[role=menuitem]")];
+    const at = items.indexOf(document.activeElement as HTMLElement);
+    const to = e.key === "ArrowDown" ? (at + 1) % items.length : e.key === "ArrowUp" ? (at - 1 + items.length) % items.length : e.key === "Home" ? 0 : e.key === "End" ? items.length - 1 : -1;
+    if (to < 0) return;
+    e.preventDefault();
+    items[to]?.focus();
+  }
+
   return (
     <div ref={ref} className={s.actions}>
       <button
+        ref={button}
         type="button"
         className={s.avatarBtn}
         aria-label={t("account.menu", { name: fullName(user) })}
@@ -56,7 +76,7 @@ function AccountMenu({ user }: { user: User }) {
         <span className="avatar">{initials(user.name, user.surname)}</span>
       </button>
       {open && (
-        <div role="menu" aria-label={t("account.label")} className={`popover ${s.menu}`}>
+        <div role="menu" aria-label={t("account.label")} className={`popover ${s.menu}`} onKeyDown={arrows}>
           <div className={s.menuHead}>
             <div className={s.menuName}>{fullName(user)}</div>
             <div className={s.menuMeta}>{user.email}</div>
@@ -100,6 +120,8 @@ export function Shell({ children }: { children: ReactNode }) {
   const institutionName = institution.data?.name ?? "Vumlo";
   const mustChange = me.data?.must_change_password === true;
 
+  // Any call that answers 401 asks `/me` again; when that says 401 too, the effect below goes to sign-in.
+  useEffect(() => onSessionExpired(() => invalidate("/me")), []);
   useEffect(() => {
     if (me.error?.status === 401) router.replace(`/login?next=${encodeURIComponent(here())}`);
     // A temporary password only opens the page that replaces it (ADR-0017).
@@ -107,7 +129,15 @@ export function Shell({ children }: { children: ReactNode }) {
   }, [me.error, mustChange, pathname, router]);
 
   if (!me.data || mustChange) {
-    return <div className="loading" role="status">{me.error && me.error.status !== 401 ? t("shell.accountFailed") : t("common.loading")}</div>;
+    if (me.error && me.error.status !== 401) {
+      return (
+        <div className="loading" role="alert">
+          <p>{t("shell.accountFailed")}</p>
+          <button type="button" className="btn btn-primary" style={{ marginTop: 12 }} onClick={retryFailed}>{t("error.retry")}</button>
+        </div>
+      );
+    }
+    return <div className="loading" role="status">{t("common.loading")}</div>;
   }
   const user = me.data;
   const nav = navFor(user.role);
@@ -133,10 +163,12 @@ export function Shell({ children }: { children: ReactNode }) {
           ))}
         </nav>
         <span className={s.spacer} />
-        <form role="search" onSubmit={search} className={`search ${s.search}`}>
-          <Icon name="search" size={17} />
-          <input type="search" name="q" aria-label={t("search.label")} placeholder={t("search.placeholder")} />
-        </form>
+        {pathname !== "/search" && (
+          <form role="search" onSubmit={search} className={`search ${s.search}`}>
+            <Icon name="search" size={17} />
+            <input type="search" name="q" aria-label={t("search.label")} placeholder={t("search.placeholder")} />
+          </form>
+        )}
         <div className={`${s.actions} ${s.desktopOnly}`}>
           <ThemeButton />
         </div>

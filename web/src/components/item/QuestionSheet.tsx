@@ -167,7 +167,7 @@ export function QuestionSheet({ questions, answers, onChange, readOnly, result, 
                 </div>
               ) : (
                 <div className={s.editor}>
-                  <BlockEditor value={isDoc(v) ? v : { v: 1, blocks: [] }} onChange={(d) => onChange(q.id, d)} features={LONG_FEATURES} label={q.label} mode="bar" minHeight={120} placeholder={t("asg.placeholder")} />
+                  <BlockEditor value={isDoc(v) ? v : { v: 1, blocks: [] }} onChange={(d) => onChange(q.id, d)} features={LONG_FEATURES} label={q.label} mode="float" minHeight={96} placeholder={t("asg.placeholder")} />
                 </div>
               )
             )}

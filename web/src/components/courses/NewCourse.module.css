@@ -1,3 +1,4 @@
+/* Hallmark · shape: app screen · genre: modern-minimal · theme: Ultraviolet (deal 1/3, seed learning-management-app-university-37b9·c1490edb·2026-10-28·r0) · redesign: full · tokens and the pre-emit critique are in styles/globals.css */
 .form { display: flex; flex-direction: column; gap: 20px; max-width: 720px; padding: 24px; }
 .start { display: flex; flex-direction: column; gap: 12px; margin: 0; padding: 0; border: 0; }
 .start legend { padding: 0; margin-bottom: 8px; }

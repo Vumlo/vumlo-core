@@ -1,14 +1,15 @@
 "use client";
 
 import Link from "next/link";
+import { useState } from "react";
 import { ItemTile } from "@/components/ItemTile";
 import { StatusPill } from "@/components/StatusPill";
 import { useCourseCards } from "@/lib/api/hooks/courses";
 import { useMyWork } from "@/lib/api/hooks/work";
 import type { MyWorkItem } from "@/lib/api/types";
-import { now } from "@/lib/clock";
+import { deviceNow, now } from "@/lib/clock";
 import { statusPill } from "@/lib/course";
-import { dayKey, dayLabel, dueLabel, fullDate, greeting, monthName, monthOf, parts, weekdayShort, shortDay, sinceLabel, timeOf } from "@/lib/format";
+import { dayKey, dayLabel, dueLabel, fullDate, greetingLine, monthName, monthOf, parts, weekdayShort, shortDay, sinceLabel, timeOf } from "@/lib/format";
 import type { User } from "@/lib/session";
 import { useT } from "@/lib/i18n";
 import { translate } from "@/lib/i18n/core";
@@ -27,16 +28,20 @@ export function StudentHome({ user }: { user: User }) {
   const work = useMyWork();
   const cards = useCourseCards();
   const today = now();
+  const [roll] = useState(() => Math.random());
 
   const defs: WidgetDef[] = (() => {
     const data = work.data;
     const courseOf = (id: string) => data?.courses.find((c) => c.id === id);
+    // Work that is still open or only just missed (two weeks) stays on the list, oldest first, so a student sees what they owe.
     const upcoming = (data?.items ?? [])
-      .filter((i) => i.due_at && new Date(i.due_at) >= today && ["not_started", "draft"].includes(i.status))
+      .filter((i) => i.due_at && new Date(i.due_at).getTime() >= today.getTime() - 14 * 86_400_000 && ["not_started", "draft"].includes(i.status))
       .sort((a, b) => a.due_at!.localeCompare(b.due_at!));
     const graded = (data?.items ?? []).filter((i) => i.status === "graded" && i.published_at).sort((a, b) => b.published_at!.localeCompare(a.published_at!));
     const draft = (data?.items ?? []).filter((i) => i.status === "draft" && i.draft_saved_at).sort((a, b) => b.draft_saved_at!.localeCompare(a.draft_saved_at!))[0];
     const tp = parts(today);
+    // How far along the two-week lane a deadline sits; past 1 it is further out than the lane shows.
+    const ahead = (due: string) => (new Date(due).getTime() - today.getTime()) / (14 * 86_400_000);
     const monthDue = (data?.items ?? []).filter((i) => i.due_at && parts(i.due_at).y === tp.y && parts(i.due_at).m === tp.m);
     const current = (cards.data ?? []).filter((c) => !c.term_ended && c.course.status === "published");
 
@@ -55,6 +60,9 @@ export function StudentHome({ user }: { user: User }) {
                     <span className={h.rowTitle}>{i.title}</span>
                     <span className={h.rowSub}>{courseOf(i.course_id)?.title}</span>
                   </span>
+                  <span aria-hidden="true" className={h.lane}>
+                    <span className={h.mark} data-over={ahead(i.due_at!) > 1} style={{ left: `${Math.max(0, Math.min(1, ahead(i.due_at!))) * 100}%` }} />
+                  </span>
                   <span className={h.rowSide}>
                     <span>{dueLabel(i.due_at!)}</span>
                     <StatusPill tone={pill.tone}>{pill.label}</StatusPill>
@@ -69,7 +77,7 @@ export function StudentHome({ user }: { user: User }) {
         id: "continue", title: t("home.s.continue"), desc: t("home.s.continueDesc"), sizes: ["1x1"],
         render: () => !data ? <Loading /> : !draft ? <p className={h.empty}>{t("home.noDrafts")}</p> : (
           <div className={h.pad}>
-            <div className="row" style={{ gap: 10, alignItems: "flex-start" }}>
+            <div className="row" style={{ gap: 12, alignItems: "flex-start" }}>
               <ItemTile kind="assignment" small />
               <div style={{ minWidth: 0 }}>
                 <p className={h.rowTitle} style={{ fontWeight: 600 }}>{draft.title}</p>
@@ -106,7 +114,12 @@ export function StudentHome({ user }: { user: User }) {
           const first = new Date(Date.UTC(tp.y, tp.m - 1, 1)).getUTCDay();
           const lead = (first + 6) % 7;
           const length = new Date(Date.UTC(tp.y, tp.m, 0)).getUTCDate();
-          const due = new Map(monthDue.map((i) => [parts(i.due_at!).d, i.title]));
+          // Two deadlines on one day are both named.
+          const due = new Map<number, string>();
+          for (const i of monthDue) {
+            const d = parts(i.due_at!).d;
+            due.set(d, due.has(d) ? `${due.get(d)}, ${i.title}` : i.title);
+          }
           const cells = [...Array.from({ length: lead }, () => 0), ...Array.from({ length }, (_, k) => k + 1)];
           while (cells.length % 7) cells.push(0);
           return (
@@ -156,7 +169,7 @@ export function StudentHome({ user }: { user: User }) {
                     {list.map((i) => (
                       <Link key={i.assignment_id} href={workHref(i)} className={h.weekEvent}>
                         <span className={h.rowTitle} style={{ fontSize: 12 }}>{i.title}</span>
-                        <span style={{ display: "block", color: "var(--asg-fg)" }}>{timeOf(i.due_at!)}</span>
+                        <span style={{ display: "block", color: "inherit" }}>{timeOf(i.due_at!)}</span>
                       </Link>
                     ))}
                     {list.length === 0 && <span className="muted" style={{ fontSize: 12 }}>{t("courses.nothingDue")}</span>}
@@ -180,7 +193,7 @@ export function StudentHome({ user }: { user: User }) {
           <div className="page-head">
             <div>
               <p className="eyebrow">{fullDate(today)}</p>
-              <h1 className="page-title">{greeting(today)}, {user.name}</h1>
+              <h1 className="page-title">{greetingLine(deviceNow(), user.name, roll)}</h1>
             </div>
             <span className="desktop-only">{button}</span>
           </div>

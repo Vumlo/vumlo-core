@@ -27,7 +27,6 @@ export function StudentCourseGrades({ courseId }: { courseId: string }) {
   const asg = tree.data ? tree.data.modules.flatMap((x) => [...x.submodules.flatMap((y) => y.items), ...x.items]).filter((i) => isAssignment(i) && i.assignment!.type !== "no_submission" && i.assignment!.max_points !== "0.00") : [];
   const gradedIds = new Set(g.map((x) => x.assignment_id));
   const open = asg.filter((i) => !gradedIds.has(i.id));
-  const [n = "", ...r] = (info.data?.owner_name ?? "").replace(/^Dr\. /, "").split(" ");
   const today = now();
 
   return (
@@ -41,23 +40,23 @@ export function StudentCourseGrades({ courseId }: { courseId: string }) {
               <div className={`card ${s.summary}`}>
                 <div>
                   <p className="muted" style={{ fontSize: 13 }}>{t("cg.fromGraded")}</p>
-                  <p style={{ marginTop: 2, whiteSpace: "nowrap" }}>
+                  <p style={{ marginTop: 4, whiteSpace: "nowrap" }}>
                     <span style={{ fontSize: 30, lineHeight: 1.1, fontWeight: 600 }}>{g.length ? sumPoints(g.map((x) => x.score ?? "0")) : "—"}</span>
                     <span className="muted" style={{ fontSize: 15 }}> / {g.length ? sumPoints(g.map((x) => x.max_points)) : "—"}</span>
                   </p>
                 </div>
                 <div>
                   <p className="muted" style={{ fontSize: 13 }}>{t("status.graded")}</p>
-                  <p style={{ marginTop: 2, fontSize: 17, fontWeight: 600 }}>{t("cg.gradedOf", { n: g.length, total: plural(g.length + open.length, "assignment") })}</p>
+                  <p style={{ marginTop: 4, fontSize: 17, fontWeight: 600 }}>{t("cg.gradedOf", { n: g.length, total: plural(g.length + open.length, "assignment") })}</p>
                 </div>
                 <div>
                   <p className="muted" style={{ fontSize: 13 }}>{t("cg.stillOpen")}</p>
-                  <p style={{ marginTop: 2, fontSize: 17, fontWeight: 600 }}>{t("cg.openPoints", { points: sumPoints(open.map((i) => i.assignment!.max_points)) })}</p>
+                  <p style={{ marginTop: 4, fontSize: 17, fontWeight: 600 }}>{t("cg.openPoints", { points: sumPoints(open.map((i) => i.assignment!.max_points)) })}</p>
                 </div>
                 <p className="muted" style={{ flex: "1 1 220px", fontSize: 13 }}>{t("cg.note")}</p>
               </div>
               {sections(tree.data).filter((sec) => sec.items.some(isAssignment)).map((sec) => (
-                <section key={sec.id} style={{ marginTop: 28 }}>
+                <section key={sec.id} style={{ marginTop: 32 }}>
                   <h2 className="section-title">{sec.title}</h2>
                   <div className="card card-list">
                     {sec.items.filter(isAssignment).map((i) => {
@@ -84,7 +83,7 @@ export function StudentCourseGrades({ courseId }: { courseId: string }) {
                           </Link>
                           {grade?.feedback && (
                             <div className={s.comment}>
-                              <span aria-hidden="true" className={s.avatar}>{initials(n, r.join(" "))}</span>
+                              <span aria-hidden="true" className={s.avatar}>{initials(info.data?.owner_name ?? "", info.data?.owner_surname ?? "")}</span>
                               <span><strong>{info.data?.owner_name}: </strong>{grade.feedback}</span>
                             </div>
                           )}

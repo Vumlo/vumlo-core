@@ -171,9 +171,21 @@ export function sinceLabel(iso: string) {
   return translate("date.dayAt", { day: dayLabel(iso), time: timeOf(iso) });
 }
 
-export function greeting(d: Date) {
-  const h = parts(d).hh;
-  return translate(h < 12 ? "greeting.morning" : h < 18 ? "greeting.afternoon" : "greeting.evening");
+const GREETINGS = {
+  night: ["greeting.night.1", "greeting.night.2", "greeting.night.3", "greeting.night.4", "greeting.night.5"],
+  morning: ["greeting.morning.1", "greeting.morning.2", "greeting.morning.3", "greeting.morning.4", "greeting.morning.5"],
+  afternoon: ["greeting.afternoon.1", "greeting.afternoon.2", "greeting.afternoon.3", "greeting.afternoon.4", "greeting.afternoon.5"],
+  evening: ["greeting.evening.1", "greeting.evening.2", "greeting.evening.3", "greeting.evening.4", "greeting.evening.5"],
+} as const;
+
+/**
+ * A greeting for the time of day, one of a few light ones. `roll` (0 up to 1) picks it, so the caller keeps it for a
+ * visit. The hour is the one on the viewer's device (pass `deviceNow()`), not the institution's: it is about their day.
+ */
+export function greetingLine(d: Date, name: string, roll: number) {
+  const h = d.getHours();
+  const pool = GREETINGS[h < 6 ? "night" : h < 12 ? "morning" : h < 18 ? "afternoon" : "evening"];
+  return translate(pool[Math.min(pool.length - 1, Math.floor(roll * pool.length))]!, { name });
 }
 
 export function initials(name: string, surname: string) {

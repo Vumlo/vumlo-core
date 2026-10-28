@@ -1,31 +1,67 @@
-.layout { display: flex; flex-wrap: wrap; gap: 28px; align-items: flex-start; margin-top: 24px; }
-.main { flex: 999 1 560px; min-width: 0; }
-.aside { flex: 1 1 260px; max-width: 290px; display: flex; flex-direction: column; gap: 16px; }
-.toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-bottom: 16px; }
-.toolbar p { flex: 1 1 280px; font-size: 14px; color: var(--muted); }
-.sections { display: flex; flex-direction: column; gap: 20px; }
-.section { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; box-shadow: var(--shadow); }
-.section[data-draft="true"] { border-style: dashed; border-color: var(--border-strong); }
-.section[data-over="true"] { border-color: var(--ring); }
-.sHead { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; min-height: 56px; padding: 6px 10px 6px 12px; border-bottom: 1px solid var(--border); }
-.sHead h2 { flex: 1 1 auto; font-size: 17px; font-weight: 600; min-width: 140px; }
-.handle { display: flex; color: var(--muted); cursor: grab; }
-.item { display: flex; align-items: center; gap: 12px; min-height: 64px; padding: 8px 10px 8px 12px; border-top: 1px solid var(--border); background: var(--surface); }
+/* Hallmark · shape: app screen · genre: modern-minimal · theme: Ultraviolet (deal 1/3, seed learning-management-app-university-37b9·c1490edb·2026-10-28·r0) · redesign: full · tokens and the pre-emit critique are in styles/globals.css */
+/* The page is a work list with a ledger beside it: the list on the left, what students see on the right. */
+.layout { display: grid; grid-template-columns: minmax(0, 1fr) 280px; gap: 32px; align-items: start; margin-top: 24px; }
+.main { grid-column: 1; grid-row: 1; min-width: 0; }
+.aside { grid-column: 2; grid-row: 1; display: flex; flex-direction: column; gap: 16px; position: sticky; top: 84px; }
+.hint { margin-bottom: 16px; font-size: 14px; color: var(--muted); }
+.sections { display: flex; flex-direction: column; gap: 32px; }
+.section[data-over="true"] { outline: 2px solid var(--ring); outline-offset: 4px; border-radius: var(--radius-card); }
+.sHead { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; min-height: 48px; padding: 0 4px 8px 0; }
+.sHead h2 { flex: 1 1 auto; min-width: 140px; font-size: 20px; font-weight: 500; letter-spacing: var(--tracking-display); text-wrap: balance; }
+.count { font-size: 13px; color: var(--muted); }
+.handle { display: flex; padding: 4px; color: var(--muted); cursor: grab; }
+.items { overflow: hidden; background: var(--surface); border-radius: var(--radius-card); box-shadow: var(--shadow); }
+.section[data-draft="true"] .items { box-shadow: inset 0 0 0 1.5px var(--border-strong); background: transparent; }
+.item { display: flex; align-items: center; gap: 12px; min-height: 60px; padding: 8px 12px; border-top: 1px solid var(--border); background: var(--surface); transition: background-color var(--dur-micro) var(--ease-out); }
 .item:first-of-type { border-top: 0; }
 .item[data-kind="assignment"] { background: var(--asg-row); }
+.item:hover { background: var(--hover); }
 .item[data-over="true"] { box-shadow: inset 0 2px 0 var(--ring); }
+.section[data-draft="true"] .item { background: transparent; }
+.section[data-draft="true"] .item:hover { background: var(--hover); }
 .itemMain { flex: 1 1 auto; min-width: 0; }
 .itemTitle { display: block; font-weight: 500; }
 .itemTitle[data-draft="true"] { color: var(--muted); }
 .itemMeta { display: block; font-size: 13px; color: var(--muted); }
-.add { display: flex; flex-wrap: wrap; gap: 8px; padding: 10px 12px; border-top: 1px solid var(--border); }
-.legend { display: flex; flex-direction: column; gap: 10px; font-size: 14px; }
-.legend span.line { display: flex; align-items: center; gap: 10px; }
-.glance { display: flex; flex-direction: column; gap: 8px; font-size: 14px; }
-.choice { display: flex; align-items: flex-start; gap: 12px; padding: 12px 14px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); cursor: pointer; text-align: left; width: 100%; color: var(--text); }
-.choice[aria-checked="true"] { border-color: var(--ring); background: var(--accent-soft); }
-.radio { flex: none; display: flex; align-items: center; justify-content: center; width: 20px; height: 20px; margin-top: 1px; border: 1.5px solid var(--border-strong); border-radius: 50%; }
+.live { font-size: 13px; color: var(--muted); }
+.add { display: flex; flex-wrap: wrap; gap: 8px; padding: 12px 0 0; }
+/* One tick per item: its state at a glance, in the section's own head. */
+.ticks { display: inline-flex; gap: 4px; align-items: center; }
+.ticks span { width: 6px; height: 16px; border-radius: 2px; background: var(--ok-fg); }
+.ticks span[data-s="edited"], .bar span[data-s="edited"], .key li[data-s="edited"]::before { background: var(--accent); }
+.ticks span[data-s="draft"] { background: transparent; box-shadow: inset 0 0 0 1.5px var(--border-strong); }
+/* The ledger: a bar split by state, then what each part means, then the two things a teacher does here. */
+.ledger { display: flex; flex-direction: column; gap: 16px; }
+.ledger .card-title { margin: 0; }
+.bar { display: flex; gap: 4px; height: 10px; }
+.bar span { min-width: 0; border-radius: var(--radius-pill); background: var(--ok-fg); }
+.bar span[data-s="draft"] { background: var(--border-strong); }
+.bar span[data-s="edited"] { background: var(--accent); }
+.key { display: flex; flex-direction: column; gap: 12px; font-size: 14px; }
+.key li { display: flex; flex-direction: column; padding-left: 16px; position: relative; }
+.key li::before { content: ""; position: absolute; left: 0; top: 7px; width: 8px; height: 8px; border-radius: 2px; background: var(--ok-fg); }
+.key li[data-s="draft"]::before { background: var(--border-strong); }
+.key li .muted { font-size: 13px; }
+.actions { display: flex; flex-direction: column; gap: 8px; padding-top: 16px; border-top: 1px solid var(--border); }
+@media (max-width: 960px) {
+  .layout { grid-template-columns: minmax(0, 1fr); gap: 24px; }
+  .main, .aside { grid-column: 1; }
+  .aside { grid-row: 1; position: static; }
+  .main { grid-row: 2; }
+}
+.choice { display: flex; align-items: flex-start; gap: 12px; padding: 12px 16px; border-radius: var(--radius-inner); background: var(--surface); cursor: pointer; text-align: left; width: 100%; color: var(--text); }
+.choice:focus-visible, .itemMain:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+.choice:active { background: var(--sunken); }
+.choice[aria-checked="true"] { outline: 2px solid var(--ring); outline-offset: -2px; background: var(--accent-soft); }
+.radio { flex: none; display: flex; align-items: center; justify-content: center; width: 20px; height: 20px; margin-top: 0px; border: 1.5px solid var(--border-strong); border-radius: 50%; }
 .choice[aria-checked="true"] .radio { border-color: var(--accent); }
 .dot { width: 10px; height: 10px; border-radius: 50%; background: transparent; }
 .choice[aria-checked="true"] .dot { background: var(--accent); }
-@media (max-width: 720px) { .aside { max-width: none; flex-basis: 100%; } }
+/* The type of a new assignment: four cards, two by two, one column on a phone. */
+.types { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.typeCard { align-items: flex-start; border: 1px solid var(--border); min-height: 72px; }
+.typeCard:hover { border-color: var(--border-strong); }
+.typeCard > svg { flex: none; margin-top: 2px; color: var(--muted); }
+.typeCard[aria-checked="true"] > svg { color: var(--accent); }
+
+@media (max-width: 720px) { .types { grid-template-columns: 1fr; } }

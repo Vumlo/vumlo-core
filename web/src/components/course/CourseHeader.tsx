@@ -49,10 +49,10 @@ export function CourseHeader({ courseId, subtitle }: { courseId: string; subtitl
     <>
       <nav aria-label={t("common.breadcrumb")} className="crumbs">
         <Link href="/courses">{t("nav.courses")}</Link>
-        <span aria-hidden="true" style={{ padding: "0 6px" }}>/</span>
+        <span aria-hidden="true" style={{ padding: "0 8px" }}>/</span>
         <span aria-current="page">{i?.code || course.data?.title || "…"}</span>
       </nav>
-      <h1 className="page-title" style={{ margin: "6px 0 4px" }}>
+      <h1 className="page-title" style={{ margin: "8px 0 4px" }}>
         {course.data?.title ?? " "}
         {draft && <>{" "}<StatusPill tone="plain">{t("common.draft")}</StatusPill></>}
       </h1>

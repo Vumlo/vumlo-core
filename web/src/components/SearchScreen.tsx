@@ -39,7 +39,10 @@ export function SearchScreen() {
   const q = (useSearchParams().get("q") ?? "").trim();
   const me = useMe();
   const results = useSearch(q);
-  const [filter, setFilter] = useState<Filter>("all");
+  // The kind filter belongs to one query: a new search starts at "All".
+  const [pick, setPick] = useState<{ for: string; filter: Filter }>({ for: q, filter: "all" });
+  const filter = pick.for === q ? pick.filter : "all";
+  const setFilter = (f: Filter) => setPick({ for: q, filter: f });
   const [draft, setDraft] = useState<{ for: string; value: string }>({ for: q, value: q });
   // The field follows the address (a search from the navbar), until the person types in it.
   const value = draft.for === q ? draft.value : q;
@@ -81,7 +84,7 @@ export function SearchScreen() {
               </button>
             ))}
           </div>
-          <p className="muted" role="status" style={{ margin: "0 2px 12px" }}>{t.plural("search.results", shown.length, { q })}</p>
+          <p className="muted" role="status" style={{ margin: "0 4px 12px" }}>{t.plural("search.results", shown.length, { q })}</p>
           {shown.length === 0 ? (
             <p className="empty">{t("search.none")}</p>
           ) : (

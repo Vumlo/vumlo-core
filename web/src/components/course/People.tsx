@@ -1,18 +1,23 @@
 "use client";
 
 import { useState } from "react";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { Dialog } from "@/components/Dialog";
 import { Icon } from "@/components/Icon";
-import { useCandidates, useCoursePeople, useGroupOptions, useLinkGroup, usePutMember, useRemoveMember, useUnlinkGroup } from "@/lib/api/hooks/courses";
+import { errorText } from "@/lib/api/client";
+import { useMenuDismiss } from "@/lib/useMenuDismiss";
+import { useCandidates, useContentTree, useCoursePeople, useGroupOptions, useItemMeta, useLinkGroup, usePutMember, useRemoveMember, useUnlinkGroup } from "@/lib/api/hooks/courses";
 import type { PersonRow } from "@/lib/api/types";
 import { linkedGroupName } from "@/lib/course";
 import { dayLong, initials, plural } from "@/lib/format";
 import { useMe } from "@/lib/session";
 import { CourseHeader } from "./CourseHeader";
+import { CourseOutline } from "./CourseOutline";
 import { useCourseAccess } from "./useCourseAccess";
 import { translate } from "@/lib/i18n/core";
 import { useT } from "@/lib/i18n";
 import s from "./People.module.css";
+import frame from "./Course.module.css";
 
 const roleLabel = (p: PersonRow) => translate(p.is_owner ? "people.ownerTeacher" : p.role === "assistant" ? "role.assistant" : "role.teacher");
 
@@ -22,6 +27,7 @@ function AddPeople({ courseId, onClose }: { courseId: string; onClose: () => voi
   const found = useCandidates(courseId, q);
   const put = usePutMember(courseId);
   const [role, setRole] = useState<"student" | "assistant" | "teacher">("student");
+  const [added, setAdded] = useState<string[]>([]);
   return (
     <Dialog title={t("people.add")} description={t("people.addLead")} onClose={onClose} actions={<button type="button" className="btn btn-primary" onClick={onClose}>{t("common.done")}</button>}>
       <div className="stack" style={{ gap: 12 }}>
@@ -43,7 +49,9 @@ function AddPeople({ courseId, onClose }: { courseId: string; onClose: () => voi
             <li key={c.user_id} className={s.found}>
               <span className={s.avatarSm}>{initials(c.name, c.surname)}</span>
               <span className="grow"><span style={{ display: "block", fontWeight: 500 }}>{c.name} {c.surname}</span><span className="muted" style={{ fontSize: 13 }}>{c.email}</span></span>
-              <button type="button" className="btn" onClick={() => void put.run(c.user_id, role)}>{t("people.addOne")}</button>
+              <button type="button" className="btn" disabled={added.includes(c.user_id) || put.pending} onClick={async () => { if (await put.run(c.user_id, role)) setAdded((a) => [...a, c.user_id]); }}>
+                {added.includes(c.user_id) ? t("people.added") : t("people.addOne")}
+              </button>
             </li>
           ))}
           {found.data?.length === 0 && <li className="muted" style={{ padding: 8, fontSize: 14 }}>{t("people.nobody")}</li>}
@@ -90,7 +98,27 @@ export function LinkGroup({ courseId, onClose }: { courseId: string; onClose: ()
   );
 }
 
+/**
+ * A student keeps the course outline on every tab, so the content does not move when the tab changes.
+ * The tree is the same whoever looks, so the header and its dialogs are not remounted when access resolves.
+ */
 export function People({ courseId }: { courseId: string }) {
+  const tree = useContentTree(courseId);
+  const meta = useItemMeta(courseId);
+  const { staff, loading } = useCourseAccess(courseId);
+  return (
+    <div className="container">
+      <div className={frame.frame}>
+        {!staff && !loading && tree.data && <CourseOutline courseId={courseId} tree={tree.data} meta={meta.data?.items ?? {}} />}
+        <div className={frame.main}>
+          <PeopleBody courseId={courseId} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function PeopleBody({ courseId }: { courseId: string }) {
   const t = useT();
   const me = useMe();
   const { staff } = useCourseAccess(courseId);
@@ -101,6 +129,9 @@ export function People({ courseId }: { courseId: string }) {
   const [q, setQ] = useState("");
   const [dialog, setDialog] = useState<null | "add" | "group">(null);
   const [menu, setMenu] = useState<string | null>(null);
+  useMenuDismiss(menu !== null, () => setMenu(null));
+  // Taking a person out, or unlinking a group (which takes all its students out), is confirmed first.
+  const [ask, setAsk] = useState<null | { kind: "remove"; id: string; name: string } | { kind: "unlink"; id: string; name: string }>(null);
 
   const match = (p: PersonRow) => `${p.name} ${p.surname} ${p.email ?? ""}`.toLowerCase().includes(q.trim().toLowerCase());
   const all = people.data?.people ?? [];
@@ -110,7 +141,7 @@ export function People({ courseId }: { courseId: string }) {
   const count = `${plural(all.filter((p) => p.role !== "student").length, "teaching", "teaching")}, ${plural(all.filter((p) => p.role === "student" && !p.former).length, "student")}${staff && all.some((p) => p.former) ? `, ${plural(all.filter((p) => p.former).length, "former student")}` : ""}`;
 
   return (
-    <div className="container">
+    <>
       <CourseHeader courseId={courseId} />
       <div className={s.bar}>
         <label className="search" style={{ flex: "0 1 280px", background: "var(--surface)" }}>
@@ -125,9 +156,10 @@ export function People({ courseId }: { courseId: string }) {
           </>
         )}
       </div>
-      {remove.error && <p role="alert" className="alert alert-danger" style={{ marginBottom: 16 }}>{remove.error.detail ?? remove.error.title}</p>}
+      {(remove.error ?? unlink.error ?? put.error) && <p role="alert" className="alert alert-danger" style={{ marginBottom: 16 }}>{errorText(remove.error ?? unlink.error ?? put.error)}</p>}
       {!people.data ? <p className="loading" role="status">{t("common.loading")}</p> : (
         <>
+          <div className={s.top} data-solo={!staff}>
           <section aria-labelledby="staff-h">
             <h2 id="staff-h" className="section-title">{t("people.teaching")}</h2>
             <div className="card card-list">
@@ -140,7 +172,7 @@ export function People({ courseId }: { courseId: string }) {
                   </span>
                   <span className={s.role}>{roleLabel(p)}</span>
                   {staff && !p.is_owner && (
-                    <span style={{ position: "relative" }}>
+                    <span data-menu style={{ position: "relative" }}>
                       <button type="button" className="icon-btn" style={{ width: 36, height: 36 }} aria-label={t("people.moreFor", { name: `${p.name} ${p.surname}` })} aria-haspopup="menu" aria-expanded={menu === p.user_id} onClick={() => setMenu(menu === p.user_id ? null : p.user_id)}>
                         <Icon name="more" size={18} strokeWidth={3.4} />
                       </button>
@@ -149,7 +181,7 @@ export function People({ courseId }: { courseId: string }) {
                           <button type="button" role="menuitem" className="menu-item" onClick={() => { void put.run(p.user_id, p.role === "assistant" ? "teacher" : "assistant"); setMenu(null); }}>
                             {t(p.role === "assistant" ? "people.makeTeacher" : "people.makeAssistant")}
                           </button>
-                          <button type="button" role="menuitem" className="menu-item" style={{ color: "var(--danger)" }} onClick={() => { void remove.run(p.user_id); setMenu(null); }}>{t("people.removeFromCourse")}</button>
+                          <button type="button" role="menuitem" className="menu-item" style={{ color: "var(--danger)" }} onClick={() => { setAsk({ kind: "remove", id: p.user_id, name: `${p.name} ${p.surname}` }); setMenu(null); }}>{t("people.removeFromCourse")}</button>
                         </div>
                       )}
                     </span>
@@ -161,25 +193,26 @@ export function People({ courseId }: { courseId: string }) {
           </section>
 
           {staff && (
-            <section aria-labelledby="groups-h" style={{ marginTop: 28 }}>
+            <section aria-labelledby="groups-h">
               <h2 id="groups-h" className="section-title" style={{ marginBottom: 4 }}>{t("people.linkedGroups")}</h2>
-              <p className="muted" style={{ margin: "0 2px 10px", fontSize: 14 }}>{t("people.linkedLead")}</p>
-              <div className={s.groups}>
+              <p className="muted" style={{ margin: "0 4px 12px", fontSize: 14 }}>{t("people.linkedLead")}</p>
+              <div className={`card card-list ${s.groups}`}>
                 {people.data.groups.map((g) => (
-                  <div key={g.link_id} className={`card ${s.group}`}>
+                  <div key={g.link_id} className={s.group}>
                     <span className="grow">
                       <span style={{ display: "block", fontWeight: 600 }}>{linkedGroupName(g)}</span>
                       <span className="muted" style={{ display: "block", fontSize: 13 }}>{plural(g.student_count, "student")}, {t("people.linkedOn", { day: dayLong(g.linked_at) })}</span>
                     </span>
-                    <button type="button" className="btn btn-quiet" style={{ color: "var(--danger)", minHeight: 36, fontSize: 13 }} onClick={() => void unlink.run(g.link_id)}>{t("people.unlink")}</button>
+                    <button type="button" className="btn btn-quiet" style={{ color: "var(--danger)", minHeight: 36, fontSize: 13 }} onClick={() => setAsk({ kind: "unlink", id: g.link_id, name: linkedGroupName(g) })}>{t("people.unlink")}</button>
                   </div>
                 ))}
                 {people.data.groups.length === 0 && <p className="muted" style={{ fontSize: 14 }}>{t("people.noGroup")}</p>}
               </div>
             </section>
           )}
+          </div>
 
-          <section aria-labelledby="students-h" style={{ marginTop: 28 }}>
+          <section aria-labelledby="students-h" style={{ marginTop: 40 }}>
             <h2 id="students-h" className="section-title">{t("people.students")}</h2>
             {!staff ? (
               <>
@@ -193,7 +226,7 @@ export function People({ courseId }: { courseId: string }) {
                     </div>
                   ))}
                 </div>
-                <p className="muted" style={{ margin: "12px 2px 0", fontSize: 13 }}>{t("people.privacy")}</p>
+                <p className="muted" style={{ margin: "12px 4px 0", fontSize: 13 }}>{t("people.privacy")}</p>
               </>
             ) : (
               <>
@@ -212,7 +245,7 @@ export function People({ courseId }: { courseId: string }) {
                         <span role="cell" className={s.c3}>{p.source === "group" ? t("people.group2", { name: p.group ?? "" }) : t("people.direct")}</span>
                         <span role="cell" className={s.c4}>
                           {p.source === "direct" ? (
-                            <button type="button" className="btn btn-quiet" style={{ color: "var(--danger)", minHeight: 34, fontSize: 13 }} onClick={() => void remove.run(p.user_id)}>{t("people.remove")}</button>
+                            <button type="button" className="btn btn-quiet" style={{ color: "var(--danger)", minHeight: 34, fontSize: 13 }} onClick={() => setAsk({ kind: "remove", id: p.user_id, name: `${p.name} ${p.surname}` })}>{t("people.remove")}</button>
                           ) : <span title={t("people.viaGroupHint")} className="muted" style={{ fontSize: 13 }}>{t("people.viaGroup")}</span>}
                         </span>
                       </div>
@@ -222,10 +255,10 @@ export function People({ courseId }: { courseId: string }) {
                 </div>
                 {former.length > 0 && (
                   <>
-                    <h3 style={{ margin: "24px 2px 4px", fontSize: 16, fontWeight: 600 }}>{t("people.former")}</h3>
-                    <p className="muted" style={{ margin: "0 2px 10px", fontSize: 14 }}>{t("people.formerLead")}</p>
+                    <h3 style={{ margin: "24px 4px 4px", fontSize: 16, fontWeight: 600 }}>{t("people.former")}</h3>
+                    <p className="muted" style={{ margin: "0 4px 12px", fontSize: 14 }}>{t("people.formerLead")}</p>
                     {former.map((p) => (
-                      <div key={p.user_id} className="card row" style={{ gap: 12, minHeight: 56, padding: "8px 18px" }}>
+                      <div key={p.user_id} className="card row" style={{ gap: 12, minHeight: 56, padding: "8px 20px" }}>
                         <span aria-hidden="true" className={s.avatarSm} style={{ width: 30, height: 30 }}>{initials(p.name, p.surname)}</span>
                         <span className="grow muted">{p.name} {p.surname}</span>
                         <span className="muted" style={{ fontSize: 13 }}>{t("people.left")}</span>
@@ -238,8 +271,20 @@ export function People({ courseId }: { courseId: string }) {
           </section>
         </>
       )}
+      {ask && (
+        <ConfirmDialog
+          title={t(ask.kind === "remove" ? "people.removeQ" : "people.unlinkQ", { name: ask.name })}
+          confirm={t(ask.kind === "remove" ? "people.remove" : "people.unlink")}
+          danger
+          pending={remove.pending || unlink.pending}
+          onClose={() => setAsk(null)}
+          onConfirm={async () => { await (ask.kind === "remove" ? remove.run(ask.id) : unlink.run(ask.id)); setAsk(null); }}
+        >
+          {t(ask.kind === "remove" ? "people.removeBody" : "people.unlinkBody")}
+        </ConfirmDialog>
+      )}
       {dialog === "add" && <AddPeople courseId={courseId} onClose={() => setDialog(null)} />}
       {dialog === "group" && <LinkGroup courseId={courseId} onClose={() => setDialog(null)} />}
-    </div>
+    </>
   );
 }

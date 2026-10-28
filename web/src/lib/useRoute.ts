@@ -12,6 +12,11 @@ export function useItemId() {
   return useSearchParams().get("item") ?? "";
 }
 
+/** The student whose work is open in the grading workspace, `&student=<user id>`; empty when none. */
+export function useStudentId() {
+  return useSearchParams().get("student") ?? "";
+}
+
 /** The plugin whose tab is open on an assignment, `&tab=<plugin id>`; empty for the assignment itself. */
 export function useItemTab() {
   return useSearchParams().get("tab") ?? "";

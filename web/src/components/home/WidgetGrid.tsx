@@ -202,7 +202,7 @@ export function WidgetGrid({ storageKey, defs, defaultOrder, customizeSlot }: { 
       {customizing && (
         <section aria-labelledby="more-h" className={s.more} style={{ marginTop: 32 }}>
           <h2 id="more-h">{t("home.moreWidgets")}</h2>
-          <p className="muted" style={{ margin: "0 2px 12px", fontSize: 14 }}>{t("home.moreLead")}</p>
+          <p className="muted" style={{ margin: "0 4px 12px", fontSize: 14 }}>{t("home.moreLead")}</p>
           {hidden.length > 0 ? (
             <div className={s.moreGrid}>
               {hidden.map((d) => (
@@ -211,13 +211,13 @@ export function WidgetGrid({ storageKey, defs, defaultOrder, customizeSlot }: { 
                     <span style={{ fontSize: 15, fontWeight: 600 }}>{d.title}</span>
                     <span className="muted" style={{ fontSize: 13 }}>{label(sizeOf(d))}</span>
                   </div>
-                  <p className="muted" style={{ fontSize: 13, margin: "0 0 10px" }}>{d.desc}</p>
+                  <p className="muted" style={{ fontSize: 13, margin: "0 0 12px" }}>{d.desc}</p>
                   <button type="button" className="btn btn-outline" style={{ marginTop: "auto" }} onClick={() => update({ ...layout, order: [...layout.order, d.id] })}>{t("home.addToHome")}</button>
                 </div>
               ))}
             </div>
           ) : (
-            <p style={{ margin: "0 2px", fontSize: 14 }}>{t("wg.allOn")}</p>
+            <p style={{ margin: "0 4px", fontSize: 14 }}>{t("wg.allOn")}</p>
           )}
         </section>
       )}

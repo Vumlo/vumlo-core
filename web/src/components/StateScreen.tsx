@@ -3,6 +3,7 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { useT } from "@/lib/i18n";
+import { retryFailed } from "@/lib/query";
 import s from "./StateScreen.module.css";
 
 /** A whole-page message: a missing page, a failed load, a crash. */
@@ -44,5 +45,10 @@ export function ErrorScreen({ reset }: { reset: () => void }) {
 /** A load that failed for a reason other than "not found": the network, or a server error. */
 export function LoadFailed({ title }: { title?: string }) {
   const t = useT();
-  return <p className="error-box" role="alert">{title ?? t("error.loadFailed")}</p>;
+  return (
+    <div className="error-box" role="alert">
+      <p>{title ?? t("error.loadFailed")}</p>
+      <button type="button" className="btn" style={{ marginTop: 12 }} onClick={retryFailed}>{t("error.retry")}</button>
+    </div>
+  );
 }

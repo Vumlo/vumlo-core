@@ -1,58 +1,65 @@
+/* Hallmark · shape: app screen · genre: modern-minimal · theme: Ultraviolet (deal 1/3, seed learning-management-app-university-37b9·c1490edb·2026-10-28·r0) · redesign: full · tokens and the pre-emit critique are in styles/globals.css */
 .frame { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 32px; }
 .frameFocus { display: block; }
-.main { flex: 999 1 600px; min-width: 0; }
-.kind { display: flex; align-items: center; gap: 8px; margin-top: 14px; }
-.kindIcon { display: flex; align-items: center; justify-content: center; width: 26px; height: 26px; border-radius: 7px; }
+.main { flex: 1 1 560px; min-width: 0; }
+.kind { display: flex; align-items: center; gap: 8px; margin-top: 16px; }
+.kindIcon { display: flex; align-items: center; justify-content: center; width: 26px; height: 26px; border-radius: var(--radius-field); }
 .kindIcon[data-kind="lecture"] { background: var(--lec-tile); color: var(--lec-fg); }
 .kindIcon[data-kind="assignment"] { background: var(--asg-tile); color: var(--asg-fg); }
 .kindLabel { font-size: 14px; font-weight: 600; }
 .kindLabel[data-kind="lecture"] { color: var(--lec-fg); }
-.kindLabel[data-kind="assignment"] { color: var(--asg-fg); }
-.title { margin: 8px 0 16px; font-size: 36px; line-height: 1.15; font-weight: 600; letter-spacing: -0.02em; }
-.bar { position: sticky; top: 72px; z-index: 4; display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; min-height: 60px; padding: 10px 12px 10px 16px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; box-shadow: var(--shadow); }
+.kindLabel[data-kind="assignment"] { color: var(--asg-text); }
+.title { margin: 8px 0 16px; font-size: 36px; line-height: 1.1; font-weight: 500; letter-spacing: var(--tracking-display); text-wrap: balance; }
+.bar { position: sticky; top: 80px; z-index: 4; display: flex; flex-wrap: wrap; align-items: center; gap: 12px 16px; min-height: 60px; padding: 12px 12px 12px 20px; background: var(--raised); border-radius: var(--radius-card); box-shadow: 0 0 0 12px var(--bg), var(--shadow); }
+.stack { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 12px; }
+.stack > .barText { flex: 1 1 calc(100% - 40px); min-width: 0; }
+.stack > :global(.btn) { flex: 1 1 100%; }
 .barText { flex: 1 1 280px; font-size: 15px; }
 .barStrong { font-weight: 600; }
 .score { white-space: nowrap; }
 .scoreNum { font-size: 20px; font-weight: 600; }
-.note { margin-top: 16px; padding: 14px 16px; border-radius: 12px; background: var(--danger-soft); font-size: 15px; }
+.note { margin-top: 16px; padding: 16px 16px; border-radius: var(--radius-card); background: var(--danger-soft); font-size: 15px; }
 .note strong { color: var(--danger); }
 .blocks { display: flex; flex-direction: column; gap: 32px; margin-top: 24px; }
-.h2 { margin: 0 0 10px; font-size: 18px; font-weight: 600; }
-.facts { margin: 20px 0 0; padding: 14px 0 0; border-top: 1px solid var(--border); display: flex; flex-direction: column; gap: 6px; font-size: 14px; color: var(--muted); }
-.answer { padding-top: 28px; border-top: 1px solid var(--border); }
+.h2 { margin: 0 0 12px; font-size: 18px; font-weight: 600; }
+.facts { margin: 20px 0 0; padding: 16px 0 0; border-top: 1px solid var(--border); display: flex; flex-direction: column; gap: 8px; font-size: 14px; color: var(--muted); }
+.answer { padding-top: 32px; border-top: 1px solid var(--border); }
 .answerFocus { padding-top: 0; border-top: 0; }
-.editor { border: 1px solid var(--ring); border-radius: 12px; background: var(--surface); box-shadow: 0 0 0 3px var(--accent-soft); }
-.saved { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); }
-.panel { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; box-shadow: var(--shadow); }
-.panelHead { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; padding: 14px 18px; border-bottom: 1px solid var(--border); }
-.panelBody { padding: 16px 18px 20px; font-size: 16px; line-height: 1.65; }
-.panelFoot { padding: 12px 18px; border-top: 1px solid var(--border); font-size: 13px; color: var(--muted); }
-.gradeTop { padding: 18px 20px; border-bottom: 1px solid var(--border); }
+/* The answer is a page, like the lecture editor: a sheet with the block gutter in its left padding, no toolbar box. */
+.editor { --gutter: 40px; padding: 24px 24px 24px 64px; border-radius: var(--radius-card); background: var(--surface); transition: box-shadow var(--dur-micro) var(--ease-out); }
+.editor:focus-within { box-shadow: inset 0 0 0 1px var(--border-strong); }
+@media (max-width: 720px) { .editor { --gutter: 0px; padding: 16px; } }
+.saved { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); }
+.panel { background: var(--surface); border-radius: var(--radius-card); box-shadow: var(--shadow); }
+.panelHead { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; padding: 16px 20px; border-bottom: 1px solid var(--border); }
+.panelBody { padding: 16px 20px 20px; font-size: 16px; line-height: 1.65; }
+.panelFoot { padding: 12px 20px; border-top: 1px solid var(--border); font-size: 13px; color: var(--muted); }
+.gradeTop { padding: 20px 20px; border-bottom: 1px solid var(--border); }
 .gradeNum { font-size: 40px; line-height: 1.1; font-weight: 600; letter-spacing: -0.02em; }
-.comment { padding: 18px 20px; }
+.comment { padding: 20px 20px; }
 .avatar { display: flex; align-items: center; justify-content: center; width: 30px; height: 30px; border-radius: 50%; background: var(--hover); color: var(--muted); font-size: 12px; font-weight: 600; }
 .details { border-top: 1px solid var(--border); }
 .details summary { display: flex; align-items: center; gap: 8px; min-height: 48px; padding: 0 20px; font-size: 14px; font-weight: 500; cursor: pointer; list-style: none; }
 .details summary::-webkit-details-marker { display: none; }
 .details[open] summary svg { transform: rotate(90deg); }
-.details > div { padding: 0 20px 18px; font-size: 15px; line-height: 1.6; }
+.details > div { padding: 0 20px 20px; font-size: 15px; line-height: 1.6; }
 .lecture { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 40px; }
 .article { flex: 999 1 520px; max-width: 680px; min-width: 0; }
 .byline { margin: 0 0 32px; padding-bottom: 24px; border-bottom: 1px solid var(--border); font-size: 14px; color: var(--muted); }
-.lectureTitle { margin: 10px 0 6px; font-size: 38px; line-height: 1.15; font-weight: 600; letter-spacing: -0.02em; }
+.lectureTitle { margin: 12px 0 8px; font-size: 38px; line-height: 1.15; font-weight: 600; letter-spacing: -0.02em; }
 .toc { flex: 1 1 160px; max-width: 180px; position: sticky; top: 84px; }
 .tocNav { display: flex; flex-direction: column; border-left: 1px solid var(--border); }
-.tocLink { display: block; margin-left: -1px; padding: 6px 0 6px 12px; border-left: 2px solid transparent; font-size: 13px; line-height: 1.35; color: var(--muted); }
+.tocLink { display: block; margin-left: -1px; padding: 8px 0 8px 12px; border-left: 2px solid transparent; font-size: 13px; line-height: 1.35; color: var(--muted); }
 .tocLink[aria-current="location"] { border-left-color: var(--accent); color: var(--text); font-weight: 600; }
 .pager { display: flex; flex-wrap: wrap; gap: 16px; margin-top: 40px; padding-top: 24px; border-top: 1px solid var(--border); }
-.pagerLink { flex: 1 1 240px; display: flex; flex-direction: column; gap: 2px; padding: 14px 16px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); }
-.pagerLink:hover { border-color: var(--border-strong); }
+.pagerLink { flex: 1 1 240px; display: flex; flex-direction: column; gap: 4px; padding: 16px 16px; border-radius: var(--radius-card); background: var(--surface); }
+.pagerLink:hover { background: var(--hover); }
 .pagerLink[data-kind="assignment"] { background: var(--asg-row); text-align: right; }
 .pagerSmall { font-size: 13px; color: var(--muted); }
-.pagerLink[data-kind="assignment"] .pagerSmall { color: var(--asg-fg); }
+.pagerLink[data-kind="assignment"] .pagerSmall { color: var(--asg-text); }
 .preview { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-bottom: 16px; }
 .pluginTabs { margin: 0 0 20px; }
 .pluginHeading { margin: 0 0 12px; font-size: 20px; }
-.pluginFrame { display: block; width: 100%; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); color-scheme: normal; }
+.pluginFrame { display: block; width: 100%; border-radius: var(--radius-card); background: var(--surface); color-scheme: normal; }
 @media (max-width: 960px) { .toc { display: none; } }
 @media (max-width: 720px) { .title, .lectureTitle { font-size: 28px; } .bar { top: 64px; } }

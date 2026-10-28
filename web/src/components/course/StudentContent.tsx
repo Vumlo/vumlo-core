@@ -83,7 +83,7 @@ export function StudentContent({ courseId }: { courseId: string }) {
                 {sections(tree.data).map((sec) => {
                   const groups = [
                     { label: t("search.filter.lecture"), swatch: "var(--lec-fg)", list: sec.items.filter((i) => !isAssignment(i)) },
-                    { label: t("search.filter.assignment"), swatch: "var(--asg-fg)", list: sec.items.filter(isAssignment) },
+                    { label: t("search.filter.assignment"), swatch: "var(--asg-text)", list: sec.items.filter(isAssignment) },
                   ].filter((g) => g.list.length > 0);
                   return (
                     <section key={sec.id} id={`sec-${sec.id}`} className={s.section}>
@@ -133,7 +133,7 @@ export function StudentContent({ courseId }: { courseId: string }) {
                         </div>
                       </div>
                       {upMeta?.draft_saved_at && (
-                        <p className="muted" style={{ margin: "14px 0 0", fontSize: 14 }}>
+                        <p className="muted" style={{ margin: "16px 0 0", fontSize: 14 }}>
                           {t("content.draftSaved", { when: sinceLabel(upMeta.draft_saved_at) })}
                           {upcoming.assignment!.on_deadline === "auto_submit" ? ` ${t("content.autoSubmit")}` : ""}
                         </p>

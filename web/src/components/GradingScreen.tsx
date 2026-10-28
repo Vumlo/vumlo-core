@@ -2,22 +2,31 @@
 
 import Link from "next/link";
 import { useState } from "react";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { ItemTile } from "@/components/ItemTile";
+import { errorText } from "@/lib/api/client";
 import { usePublishGrades } from "@/lib/api/hooks/assignments";
 import { useTeachingOverview } from "@/lib/api/hooks/work";
 import type { TeachingOverview } from "@/lib/api/types";
 import { dueLabel, initials, plural } from "@/lib/format";
 import { useT } from "@/lib/i18n";
 import s from "./GradingScreen.module.css";
-import { courseHref } from "@/lib/routes";
+import { courseHref, gradeHref } from "@/lib/routes";
 
+/** Publishing shows students their grades at once, so it is confirmed. */
 function PublishButton({ row }: { row: TeachingOverview["unpublished"][number] }) {
   const t = useT();
   const publish = usePublishGrades(row.assignment_id);
+  const [asking, setAsking] = useState(false);
   return (
     <>
-      <button type="button" className="btn btn-primary" disabled={publish.pending} onClick={() => void publish.run("all")}>{t("grading.publishN", { n: row.draft_count })}</button>
-      {publish.error && <span role="alert" className="hint" style={{ color: "var(--danger)" }}>{publish.error.detail ?? publish.error.title}</span>}
+      <button type="button" className="btn btn-primary" disabled={publish.pending} onClick={() => setAsking(true)}>{t("grading.publishN", { n: row.draft_count })}</button>
+      {publish.error && <span role="alert" className="hint" style={{ color: "var(--danger)" }}>{errorText(publish.error)}</span>}
+      {asking && (
+        <ConfirmDialog title={t("grading.confirmTitle", { title: row.assignment_title })} confirm={t("cm.publish")} pending={publish.pending} onClose={() => setAsking(false)} onConfirm={async () => { await publish.run("all"); setAsking(false); }}>
+          {t("grading.confirmBody", { n: plural(row.draft_count, "draft grade") })}
+        </ConfirmDialog>
+      )}
     </>
   );
 }
@@ -46,7 +55,7 @@ export function GradingScreen() {
       {!o.data ? <p className="loading" role="status">{t("common.loading")}</p> : (
         <>
           <section aria-labelledby="queue-h">
-            <div className="row" style={{ justifyContent: "space-between", margin: "0 2px 10px" }}>
+            <div className="row" style={{ justifyContent: "space-between", margin: "0 4px 12px" }}>
               <h2 id="queue-h" style={{ fontSize: 18, fontWeight: 600 }}>{t("grading.waiting")}<span className={s.count}>{queue.length}</span></h2>
               <span className="muted" style={{ fontSize: 13 }}>{t("grading.oldest")}</span>
             </div>
@@ -60,7 +69,7 @@ export function GradingScreen() {
                     <span role="cell" className={s.who}><span aria-hidden="true" className={s.avatar}>{initials(q.student_name, q.student_surname)}</span><span style={{ fontWeight: 500 }}>{q.student_name} {q.student_surname}</span></span>
                     <span role="cell"><span style={{ display: "block" }}>{q.assignment_title}</span><span className="muted" style={{ display: "block", fontSize: 13 }}>{q.course_code} {q.course_title}</span></span>
                     <span role="cell"><span style={{ display: "block", fontSize: 14 }}>{dueLabel(q.submitted_at)}</span><span className="muted" style={{ display: "block", fontSize: 13 }}>{q.max_attempts ? t("grading.attemptOf", { n: q.attempt, max: q.max_attempts }) : t("grading.attempt", { n: q.attempt })}</span></span>
-                    <span role="cell"><Link href={courseHref(q.course_id, "grades")} className="btn btn-outline" style={{ minHeight: 36 }}>{t("grading.grade")}</Link></span>
+                    <span role="cell"><Link href={gradeHref(q.course_id, q.assignment_id, q.student_id)} className="btn btn-outline" style={{ minHeight: 36 }}>{t("grading.grade")}</Link></span>
                   </div>
                 ))}
                 {queue.length === 0 && <p className="empty">{t("grading.nothing")}</p>}
@@ -68,8 +77,8 @@ export function GradingScreen() {
             </div>
           </section>
           <section aria-labelledby="drafts-h" style={{ marginTop: 32 }}>
-            <h2 id="drafts-h" style={{ fontSize: 18, fontWeight: 600, margin: "0 2px 4px" }}>{t("grading.notPublished")}<span className={s.count}>{draftTotal}</span></h2>
-            <p className="muted" style={{ margin: "0 2px 10px", fontSize: 14 }}>{t("grading.notPublishedLead")}</p>
+            <h2 id="drafts-h" style={{ fontSize: 18, fontWeight: 600, margin: "0 4px 4px" }}>{t("grading.notPublished")}<span className={s.count}>{draftTotal}</span></h2>
+            <p className="muted" style={{ margin: "0 4px 12px", fontSize: 14 }}>{t("grading.notPublishedLead")}</p>
             <div className="card">
               {drafts.map((d) => (
                 <div key={d.assignment_id} className={s.drafts}>

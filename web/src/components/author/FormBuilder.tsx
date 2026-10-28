@@ -7,6 +7,7 @@ import { Icon, type IconName } from "@/components/Icon";
 import { newId } from "@/components/doc/model";
 import { usePublishItem, useUpdateItem } from "@/lib/api/hooks/content";
 import { useFormResponses } from "@/lib/api/hooks/assignments";
+import { errorText } from "@/lib/api/client";
 import { useAutosave } from "@/lib/autosave";
 import type { FormConfig, FormField, FormFieldType } from "@/lib/api/gaps";
 import type { Item } from "@/lib/api/types";
@@ -87,11 +88,11 @@ export function FormBuilder({ item, courseId }: { item: Item; courseId: string }
 
   return (
     <div className="container" style={{ paddingTop: 20 }}>
-      <AuthorBar courseId={courseId} itemId={item.id} title={title} chip={isDraft ? { text: t("le.draftChip"), tone: "draft" } : { text: t("cm.published"), tone: "ok" }} saved={auto.savedAt} pending={auto.pending} failed={auto.failed}>
+      <AuthorBar courseId={courseId} itemId={item.id} title={title} chip={isDraft ? { text: t("le.draftChip"), tone: "draft" } : { text: t("cm.published"), tone: "ok" }} saved={auto.savedAt} pending={auto.pending} failed={auto.failed} error={errorText(publish.error ?? update.error)}>
         <Link href={itemHref(courseId, item.id)} className="btn">{t("cm.preview")}</Link>
-        {isDraft && <button type="button" className="btn btn-primary" disabled={publish.pending} onClick={async () => { await auto.flush(); await publish.run(item.id); }}>{t("fb.publish")}</button>}
+        {isDraft && <button type="button" className="btn btn-primary" disabled={publish.pending} onClick={async () => { if (await auto.flush()) await publish.run(item.id); }}>{t("fb.publish")}</button>}
       </AuthorBar>
-      <p className="muted" style={{ fontSize: 14, marginBottom: 8 }}><strong style={{ color: "var(--asg-fg)" }}>{t("cm.assignment")}</strong> {t("type.form")}{a.due_at ? `, ${t("search.due", { when: dueLabel(a.due_at) })}` : ""}{t("bar.notGraded")}</p>
+      <p className="muted" style={{ fontSize: 14, marginBottom: 8 }}><strong style={{ color: "var(--asg-text)" }}>{t("cm.assignment")}</strong> {t("type.form")}{a.due_at ? `, ${t("search.due", { when: dueLabel(a.due_at) })}` : ""}{t("bar.notGraded")}</p>
       <label htmlFor="ftitle" className="sr-only">{t("fb.formTitle")}</label>
       <input id="ftitle" className={s.titleInput} value={title} onChange={(e) => setTitle(e.target.value)} />
       <div role="tablist" aria-label={t("fb.views")} className={s.tabsRow}>
@@ -111,11 +112,11 @@ export function FormBuilder({ item, courseId }: { item: Item; courseId: string }
             {r && <p className="muted" style={{ fontSize: 13 }}>{teams > 0 ? `${t("fb.inTeam", { n: r.total_students - r.missing.length, total: r.total_students })} ` : ""}{t("fb.editNote")}</p>}
           </nav>
           <div className={s.canvas}>
-            <div className="card card-pad" style={{ marginBottom: 14 }}>
+            <div className="card card-pad" style={{ marginBottom: 16 }}>
               <label htmlFor="note" style={{ fontSize: 13, fontWeight: 600, color: "var(--muted)" }}>{t("fb.note")}</label>
-              <textarea id="note" className="textarea" style={{ minHeight: 70, marginTop: 6 }} value={cfg.note} onChange={(e) => setCfg((c) => ({ ...c, note: e.target.value }))} />
+              <textarea id="note" className="textarea" style={{ minHeight: 70, marginTop: 8 }} value={cfg.note} onChange={(e) => setCfg((c) => ({ ...c, note: e.target.value }))} />
             </div>
-            <div className="stack" style={{ gap: 14 }}>
+            <div className="stack" style={{ gap: 16 }}>
               {cfg.fields.map((x, i) => {
                 const selected = i === fi;
                 return (
@@ -129,7 +130,7 @@ export function FormBuilder({ item, courseId }: { item: Item; courseId: string }
                         <div className="field"><label htmlFor={`h-${x.id}`}>{t("fb.hint")}</label><input id={`h-${x.id}`} className="input" value={x.help} onChange={(e) => setF(i, (y) => ({ ...y, help: e.target.value }))} /></div>
                         {x.type === "choice" && (
                           <div>
-                            <div className="row" style={{ justifyContent: "space-between", fontSize: 13, fontWeight: 600, color: "var(--muted)", marginBottom: 6 }}><span>{t("qb.options")}</span><span>{t("fb.takenBy")}</span></div>
+                            <div className="row" style={{ justifyContent: "space-between", fontSize: 13, fontWeight: 600, color: "var(--muted)", marginBottom: 8 }}><span>{t("qb.options")}</span><span>{t("fb.takenBy")}</span></div>
                             <div role="group" aria-label={t("qb.options")} className="stack" style={{ gap: 8 }}>
                               {x.options.map((o, oi) => (
                                 <div key={o.id} className={s.optRow} style={{ background: o.taken_by ? "var(--sunken)" : undefined }}>
@@ -190,7 +191,7 @@ export function FormBuilder({ item, courseId }: { item: Item; courseId: string }
         </div>
       ) : (
         <>
-          <div className="row" style={{ gap: 12, flexWrap: "wrap", marginBottom: 14 }}>
+          <div className="row" style={{ gap: 12, flexWrap: "wrap", marginBottom: 16 }}>
             <p style={{ flex: "1 1 280px", fontSize: 14 }}>
               {r ? `${plural(teams, "team")}, ${t("fb.studentsOf", { n: r.total_students - r.missing.length, total: r.total_students })}${r.missing.length ? ` ${t.plural("fb.notInTeam", r.missing.length, { names: r.missing.join(", ") })}` : ""}` : t("common.loading")}
             </p>

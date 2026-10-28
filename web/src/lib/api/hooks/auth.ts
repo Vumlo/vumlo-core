@@ -1,15 +1,14 @@
 "use client";
 
 import { api } from "../client";
-import { clearQueries, invalidate, useMutation, useQuery } from "../../query";
+import { clearQueries, useMutation } from "../../query";
 import type { User } from "../../session";
-import type { GoogleHandoff, GoogleStart, MockMail } from "../gaps";
+import type { GoogleHandoff, GoogleStart } from "../gaps";
 
 /** The server answers `202` with no body for every address (ADR-0046); `pnpm dev:mock` answers the same. The password is chosen later, on the page behind the link (ADR-0067). */
 export function useRegister() {
   return useMutation(async (input: { name: string; surname: string; email: string }) => {
     await api.post("/auth/register", input);
-    invalidate("/mock/outbox");
     return true as const;
   });
 }
@@ -24,7 +23,6 @@ export function useVerifyEmail() {
 export function useRequestPasswordReset() {
   return useMutation(async (email: string) => {
     await api.post("/auth/password-reset", { email });
-    invalidate("/mock/outbox");
     return true as const;
   });
 }
@@ -48,9 +46,4 @@ export function useGoogleCallback() {
     clearQueries();
     return answer;
   });
-}
-
-/** Mock only: the mail the fake server "sent". There is no such endpoint on a real server. */
-export function useMockOutbox(enabled: boolean) {
-  return useQuery<{ items: MockMail[] }>(enabled ? "/mock/outbox" : null, () => api.get<{ items: MockMail[] }>("/mock/outbox"));
 }

@@ -1,20 +1,25 @@
+/* Hallmark · shape: app screen · genre: modern-minimal · theme: Ultraviolet (deal 1/3, seed learning-management-app-university-37b9·c1490edb·2026-10-28·r0) · redesign: full · tokens and the pre-emit critique are in styles/globals.css */
 .header {
   position: sticky; top: 0; z-index: 20;
-  display: flex; flex-wrap: wrap; align-items: center; gap: 8px 20px; min-height: 60px;
-  padding: 8px max(24px, calc((100% - 1160px) / 2));
-  background: var(--surface); border-bottom: 1px solid var(--border);
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px 20px; min-height: 68px;
+  padding: 12px max(24px, calc((100% - 1160px) / 2));
+  background: var(--bg);
 }
-.brand { display: flex; align-items: center; gap: 10px; }
+.brand { display: flex; align-items: center; gap: 12px; border-radius: var(--radius-pill); }
 .logo {
   display: flex; align-items: center; justify-content: center; flex: none; width: 32px; height: 32px;
-  border-radius: 8px; background: var(--accent); color: var(--accent-text); font-size: 16px; font-weight: 700;
+  border-radius: 50%; background: var(--accent); color: var(--accent-text); font-size: 16px; font-weight: 600;
 }
 .logoImg { flex: none; width: 32px; height: 32px; object-fit: contain; }
-.brandName { font-size: 15px; font-weight: 600; }
-.nav { display: flex; gap: 4px; }
-.navLink { display: flex; align-items: center; min-height: 40px; padding: 0 14px; border-radius: 8px; }
+.brandName { font-size: 16px; font-weight: 500; letter-spacing: -0.01em; }
+.nav { display: flex; gap: 4px; padding: 4px; border-radius: var(--radius-pill); background: var(--surface); }
+.navLink {
+  display: flex; align-items: center; min-height: 40px; padding: 0 16px; border-radius: var(--radius-pill); font-weight: 500;
+  transition: background-color var(--dur-micro) var(--ease-out), color var(--dur-micro) var(--ease-out);
+}
 .navLink:hover { background: var(--hover); }
-.navLink[aria-current="page"] { background: var(--accent-soft); color: var(--accent-fg); font-weight: 600; }
+.navLink:active { background: var(--sunken); }
+.navLink[aria-current="page"] { background: var(--accent); color: var(--accent-text); font-weight: 600; }
 .spacer { flex: 1 1 0; }
 .search { flex: 0 1 280px; }
 .actions { display: flex; align-items: center; gap: 4px; position: relative; }
@@ -22,32 +27,32 @@
   display: flex; align-items: center; justify-content: center; width: 44px; height: 44px; padding: 0;
   border: 0; border-radius: 50%; background: transparent;
 }
-.menu { top: 50px; right: 0; width: 260px; }
-.menuHead { padding: 10px 10px 8px; border-bottom: 1px solid var(--border); margin-bottom: 6px; }
-.menuName { font-weight: 600; }
+.menu { top: 52px; right: 0; width: 280px; }
+.menuHead { padding: 12px 12px 8px; border-bottom: 1px solid var(--border); margin-bottom: 8px; }
+.menuName { font-weight: 500; }
 .menuMeta { font-size: 13px; color: var(--muted); }
-.main { min-height: calc(100vh - 61px); }
+.main { min-height: calc(100vh - 69px); }
 .tabs { display: none; }
 .phoneOnly { display: none; }
 
 @media (max-width: 720px) {
   .header { flex-wrap: nowrap; gap: 8px; min-height: 56px; padding: 0 8px 0 16px; }
   .nav, .search, .desktopOnly { display: none; }
-  .logo { width: 28px; height: 28px; border-radius: 7px; font-size: 14px; }
+  .logo { width: 28px; height: 28px; font-size: 14px; }
   .logoImg { width: 28px; height: 28px; }
   .phoneOnly { display: flex; }
   .main { min-height: calc(100vh - 57px); padding-bottom: 0; }
   .tabs {
-    position: fixed; left: 0; right: 0; bottom: 0; z-index: 20; display: flex; padding: 6px 4px 18px;
-    background: var(--surface); border-top: 1px solid var(--border);
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 20; display: flex; padding: 8px 4px 20px;
+    background: var(--surface);
   }
   .tab {
     flex: 1 1 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
     min-height: 52px; color: var(--muted); font-size: 12px; font-weight: 500;
   }
-  .tabIcon { display: flex; align-items: center; justify-content: center; width: 56px; height: 28px; border-radius: 14px; }
-  .tab[aria-current="page"] { color: var(--accent-fg); font-weight: 600; }
-  .tab[aria-current="page"] .tabIcon { background: var(--accent-soft); }
+  .tabIcon { display: flex; align-items: center; justify-content: center; width: 56px; height: 32px; border-radius: var(--radius-pill); transition: background-color var(--dur-micro) var(--ease-out); }
+  .tab[aria-current="page"] { color: var(--text); font-weight: 600; }
+  .tab[aria-current="page"] .tabIcon { background: var(--accent); color: var(--accent-text); }
 }
 
 /* The desktop app's connection and queue, above the screen (ADR-0060). */

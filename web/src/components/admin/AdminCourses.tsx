@@ -96,7 +96,7 @@ export function AdminCourses() {
         <Dialog title={t("ac.changeTitle", { code: dialog.code })} description={t("ac.changeLead", { title: dialog.title, owner: `${dialog.owner_name} ${dialog.owner_surname}` })} onClose={() => setDialog(null)}
           actions={<><button type="button" className="btn" onClick={() => setDialog(null)}>{t("common.cancel")}</button><button type="button" className="btn btn-primary" disabled={!owner || change.pending} onClick={async () => { if (await change.run(dialog.course_id, owner)) setDialog(null); }}>{t("ac.changeOwner")}</button></>}>
           <div className="field"><label htmlFor="own">{t("cs.newOwner")}</label><select id="own" className="select" value={owner} onChange={(e) => setOwner(e.target.value)}><option value="">{t("cs.chooseTeacher")}</option>{candidates.filter((u) => u.id !== dialog.owner_id && u.status === "active").map((u) => <option key={u.id} value={u.id}>{u.name} {u.surname}</option>)}</select></div>
-          {change.error && <p role="alert" className="alert alert-danger" style={{ marginTop: 10 }}>{change.error.errors[0]?.message ?? change.error.detail ?? change.error.title}</p>}
+          {change.error && <p role="alert" className="alert alert-danger" style={{ marginTop: 12 }}>{change.error.errors[0]?.message ?? change.error.detail ?? change.error.title}</p>}
         </Dialog>
       )}
     </>

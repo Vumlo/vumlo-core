@@ -46,8 +46,8 @@ export function AdminAudit() {
         const p = parts(d.items[0]!.at);
         const label = `${relativeCap(d.items[0]!.at) === t("date.today.cap") ? `${t("date.today.cap")}, ` : ""}${weekdayShort(p.wd)} ${dayLabel(d.items[0]!.at)}`;
         return (
-          <section key={d.key} aria-label={label} style={{ marginBottom: 22 }}>
-            <h2 style={{ fontSize: 16, fontWeight: 600, margin: "0 2px 8px" }}>{label}</h2>
+          <section key={d.key} aria-label={label} style={{ marginBottom: 24 }}>
+            <h2 style={{ fontSize: 16, fontWeight: 600, margin: "0 4px 8px" }}>{label}</h2>
             <ol className="card" style={{ overflow: "hidden" }}>
               {d.items.map((e) => (
                 <li key={e.id} className={s.ev}>

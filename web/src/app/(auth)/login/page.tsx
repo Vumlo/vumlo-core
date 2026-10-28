@@ -11,9 +11,8 @@ import { onGoogleOutcome, startGoogleInApp } from "@/lib/offline";
 import { clearQueries } from "@/lib/query";
 import { useT } from "@/lib/i18n";
 import { landingPath, rememberTemporaryPassword, useLogin } from "@/lib/session";
+import { demo } from "@/mocks/demoLogin";
 import s from "../auth.module.css";
-
-const mocked = process.env.NEXT_PUBLIC_API_MOCKING === "enabled";
 
 function LoginForm() {
   const t = useT();
@@ -22,8 +21,9 @@ function LoginForm() {
   const next = params.get("next");
   const login = useLogin();
   const google = useGoogleStart();
-  const [email, setEmail] = useState(mocked ? "maya.okafor@northfield.edu" : "");
-  const [password, setPassword] = useState(mocked ? "correct horse" : "");
+  // Filled in only under `pnpm dev:mock`; a real build starts empty (see src/mocks/demoLogin.ts).
+  const [email, setEmail] = useState(demo.email);
+  const [password, setPassword] = useState(demo.password);
   // In the desktop app Google's page opens in the browser and the sign-in ends here, by the app's `google` event.
   const [waiting, setWaiting] = useState(false);
   const [appError, setAppError] = useState(false);
@@ -70,7 +70,7 @@ function LoginForm() {
         <p className={s.lead}>{t("login.lead")}</p>
         {failed && (
           <div role="alert" className="alert alert-danger" style={{ marginBottom: 20 }}>
-            <Icon name="info" size={18} style={{ flex: "none", marginTop: 1 }} />
+            <Icon name="info" size={18} style={{ flex: "none", marginTop: 0 }} />
             {/* 403 after the form was sent: the password was right but the address is not verified (ADR-0046). */}
             <span>{login.error?.status === 403 ? t("login.notVerified") : login.error?.detail && login.error.status === 0 ? login.error.detail : t("login.failed")}</span>
           </div>

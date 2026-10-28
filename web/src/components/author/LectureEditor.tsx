@@ -8,6 +8,7 @@ import { blockMenu, type InsertKind } from "@/components/doc/model";
 import { Icon } from "@/components/Icon";
 import { useEditorProfiles, usePublishItem, usePublishRevision, useItemRevision, useUpdateItem } from "@/lib/api/hooks/content";
 import { useCourseInfo } from "@/lib/api/hooks/courses";
+import { errorText } from "@/lib/api/client";
 import { useAutosave } from "@/lib/autosave";
 import { dayLong, timeOf } from "@/lib/format";
 import { bodyOf, type Document, type Feature, type Item } from "@/lib/api/types";
@@ -50,7 +51,7 @@ export function LectureEditor({ item, courseId }: { item: Item; courseId: string
   const chip = isDraft ? { text: t("le.draftChip"), tone: "draft" as const } : changed ? { text: t("le.unpublishedChip"), tone: "accent" as const } : { text: t("cm.published"), tone: "ok" as const };
 
   async function publish() {
-    await auto.flush();
+    if (!(await auto.flush())) return;
     if (isDraft) await publishItem.run(item.id);
     else await publishRevision.run();
   }
@@ -59,27 +60,27 @@ export function LectureEditor({ item, courseId }: { item: Item; courseId: string
 
   return (
     <div className="container" style={{ paddingTop: 20 }}>
-      <AuthorBar courseId={courseId} itemId={item.id} title={title} chip={chip} saved={auto.savedAt} pending={auto.pending} failed={auto.failed}>
+      <AuthorBar courseId={courseId} itemId={item.id} title={title} chip={chip} saved={auto.savedAt} pending={auto.pending} failed={auto.failed} error={errorText(publishItem.error ?? publishRevision.error ?? update.error)}>
         <Link href={itemHref(courseId, item.id)} className="btn">{t("cm.preview")}</Link>
         <button type="button" className="btn btn-primary" disabled={!canPublish || publishItem.pending || publishRevision.pending} onClick={publish}>{isDraft ? t("cm.publish") : t("le.publishChanges")}</button>
       </AuthorBar>
-      {!isDraft && chip.tone === "accent" && lastPublished && <p className="muted" style={{ margin: "-4px 2px 16px", fontSize: 14 }}>{t("le.seeOld", { day: dayLong(lastPublished) })}</p>}
+      {!isDraft && chip.tone === "accent" && lastPublished && <p className="muted" style={{ margin: "-4px 4px 16px", fontSize: 14 }}>{t("le.seeOld", { day: dayLong(lastPublished) })}</p>}
       <div className={s.shell}>
         <div className={s.canvas}>
           <div className={s.sheet}>
-            <div className="row" style={{ gap: 8, marginBottom: 10 }}>
+            <div className="row" style={{ gap: 8, marginBottom: 12 }}>
               <span aria-hidden="true" style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 26, height: 26, borderRadius: 7, background: "var(--lec-tile)", color: "var(--lec-fg)" }}><Icon name="lecture" size={15} strokeWidth={2} /></span>
               <span style={{ fontSize: 14, fontWeight: 600, color: "var(--lec-fg)" }}>{t("row.lecture")}</span>
               <span className="muted" style={{ fontSize: 14 }}>{t("le.about", { n: minutes })}</span>
             </div>
             <label htmlFor="title" className="sr-only">{t("cm.title")}</label>
             <input id="title" className={s.titleInput} value={title} onChange={(e) => setTitle(e.target.value)} aria-invalid={!title.trim()} />
-            {!title.trim() && <p className="hint" style={{ color: "var(--danger)", marginTop: 6 }}>{t("le.needsTitle")}</p>}
-            <div style={{ marginTop: 16, paddingLeft: 34 }}>
+            {!title.trim() && <p className="hint" style={{ color: "var(--danger)", marginTop: 8 }}>{t("le.needsTitle")}</p>}
+            <div style={{ marginTop: 16 }}>
               <BlockEditor handle={handle} value={initial} onChange={setDoc} features={features} label={t("le.content")} mode="float" minHeight={420} onState={setState} />
             </div>
           </div>
-          <p className="muted" style={{ margin: "12px 2px 0", fontSize: 13 }}>{t("le.images")}</p>
+          <p className="muted" style={{ margin: "12px 4px 0", fontSize: 13 }}>{t("le.images")}</p>
         </div>
 
         <aside aria-label={t("le.panel")} className={`card ${s.panel}`}>

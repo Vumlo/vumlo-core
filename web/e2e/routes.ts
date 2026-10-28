@@ -1,17 +1,20 @@
 import type { Page } from "@playwright/test";
-import { courseHref, editItemHref, itemHref } from "../src/lib/routes";
+import { courseHref, editItemHref, gradeHref, itemHref } from "../src/lib/routes";
+// The people of the mock world are named in one place (src/mocks/identities.ts). A run against another server sets
+// E2E_STUDENT, E2E_TEACHER, E2E_ADMIN and E2E_PASSWORD (see playwright.config.ts).
+import { accounts as seeded, PASSWORD as seededPassword } from "../src/mocks/identities";
 
 /** Pages anyone can open without signing in. */
 export const publicRoutes = ["/login", "/register", "/forgot-password", "/reset-password", "/verify-email", "/download"];
 
 export type RoleName = "student" | "teacher" | "admin";
 
-export const PASSWORD = "correct horse";
+export const PASSWORD = process.env.E2E_PASSWORD ?? seededPassword;
 
 export const accounts: Record<RoleName, string> = {
-  student: "maya.okafor@northfield.edu",
-  teacher: "elena.voss@northfield.edu",
-  admin: "marta.kovalska@northfield.edu",
+  student: process.env.E2E_STUDENT ?? seeded.student,
+  teacher: process.env.E2E_TEACHER ?? seeded.teacher,
+  admin: process.env.E2E_ADMIN ?? seeded.admin,
 };
 
 /** Screens that do not depend on ids. */
@@ -58,6 +61,7 @@ export async function courseRoutes(page: Page, role: RoleName): Promise<string[]
         routes.push(itemHref(id, it.id));
         // The tab of the mock plugin "words" (ADR-0066) is on every assignment.
         if (it.kind === "assignment") routes.push(itemHref(id, it.id, "words"));
+        if (it.kind === "assignment" && role !== "student") routes.push(gradeHref(id, it.id));
         if (role !== "student") routes.push(editItemHref(id, it.id));
       }
     }

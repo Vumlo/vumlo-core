@@ -57,7 +57,7 @@ export function NoSubmissionPage({ item, courseId, staff }: { item: Item; course
             {!grade && !staff && (
               <section aria-labelledby="next-h" className="card card-pad">
                 <h2 id="next-h" style={{ fontSize: 17, fontWeight: 600 }}>{t("ns.nothingTitle")}</h2>
-                <p className="muted" style={{ margin: "6px 0 14px", fontSize: 15 }}>
+                <p className="muted" style={{ margin: "8px 0 16px", fontSize: 15 }}>
                   {t("ns.nothingLead", { owner })}
                 </p>
                 <Link href="/calendar" className="btn btn-outline"><Icon name="calendar" size={16} />{t("ns.seeCalendar")}</Link>
@@ -70,10 +70,10 @@ export function NoSubmissionPage({ item, courseId, staff }: { item: Item; course
                     <h2 id="grade-h" style={{ fontSize: 16, fontWeight: 600 }}>{t("item.grade")}</h2>
                     <span className="muted" style={{ fontSize: 13 }}>{t("item.publishedOn", { day: dayLong(grade.published_at) })}</span>
                   </div>
-                  <p style={{ marginTop: 6, whiteSpace: "nowrap" }}><span className={s.gradeNum}>{grade.score}</span><span className="muted" style={{ fontSize: 17 }}> / {a.max_points}</span></p>
+                  <p style={{ marginTop: 8, whiteSpace: "nowrap" }}><span className={s.gradeNum}>{grade.score}</span><span className="muted" style={{ fontSize: 17 }}> / {a.max_points}</span></p>
                 </div>
                 {grade.feedback && (
-                  <div className={s.comment} style={{ display: "flex", gap: 10 }}>
+                  <div className={s.comment} style={{ display: "flex", gap: 12 }}>
                     <span aria-hidden="true" className={s.avatar} style={{ flex: "none" }}>{initials(info.data?.owner_name ?? "", info.data?.owner_surname ?? "")}</span>
                     <p style={{ fontSize: 15, lineHeight: 1.6 }}><strong>{owner}: </strong>{grade.feedback}</p>
                   </div>

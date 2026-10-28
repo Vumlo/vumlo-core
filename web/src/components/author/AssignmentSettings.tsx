@@ -40,7 +40,7 @@ export function AssignmentSettings({ item, courseId, pointsLocked }: { item: Ite
   }
 
   return (
-    <div className="stack" style={{ gap: 14 }}>
+    <div className="stack" style={{ gap: 16 }}>
       {!pointsLocked && (
         <div className="field">
           <label htmlFor="as-points">{t("cm.points")}</label>

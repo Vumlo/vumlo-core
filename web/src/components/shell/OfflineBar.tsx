@@ -110,7 +110,7 @@ export function OfflineBar({ role }: { role: string }) {
             <span>{t.plural("offline.failed", failures)}</span>
             <button type="button" className="btn btn-quiet" aria-expanded={open} onClick={() => setOpen(!open)}>{open ? t("offline.hide") : t("offline.review")}</button>
           </div>
-          {open && <ul style={{ listStyle: "none", padding: 0, margin: "10px 0 0", display: "grid", gap: 8 }}>{failed.map((item) => <Failed key={item.id} item={item} />)}</ul>}
+          {open && <ul style={{ listStyle: "none", padding: 0, margin: "12px 0 0", display: "grid", gap: 8 }}>{failed.map((item) => <Failed key={item.id} item={item} />)}</ul>}
         </div>
       )}
     </div>
