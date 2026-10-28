@@ -1,5 +1,5 @@
 import type { Page } from "@playwright/test";
-import { courseHref, editItemHref, itemHref } from "../src/lib/routes";
+import { courseHref, editItemHref, gradeHref, itemHref } from "../src/lib/routes";
 // The people of the mock world are named in one place (src/mocks/identities.ts). A run against another server sets
 // E2E_STUDENT, E2E_TEACHER, E2E_ADMIN and E2E_PASSWORD (see playwright.config.ts).
 import { accounts as seeded, PASSWORD as seededPassword } from "../src/mocks/identities";
@@ -61,6 +61,7 @@ export async function courseRoutes(page: Page, role: RoleName): Promise<string[]
         routes.push(itemHref(id, it.id));
         // The tab of the mock plugin "words" (ADR-0066) is on every assignment.
         if (it.kind === "assignment") routes.push(itemHref(id, it.id, "words"));
+        if (it.kind === "assignment" && role !== "student") routes.push(gradeHref(id, it.id));
         if (role !== "student") routes.push(editItemHref(id, it.id));
       }
     }

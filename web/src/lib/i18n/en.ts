@@ -607,8 +607,6 @@ export const en = {
   "gb.submittedAt": "Submitted {day} at {time}",
   "gb.late": "late",
   "gb.onTime": "on time",
-  "gb.hide": "Hide submission",
-  "gb.open": "Open submission",
   "gb.answers.one": "Answers to {n} question.",
   "gb.answers.other": "Answers to {n} questions.",
   "gb.nothing": "Nothing was submitted.",

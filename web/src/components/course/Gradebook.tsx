@@ -1,129 +1,26 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState, type MutableRefObject } from "react";
+import { useRouter } from "next/navigation";
+import { useMemo, useState } from "react";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
-import { BlockRenderer } from "@/components/doc/BlockRenderer";
 import { Icon } from "@/components/Icon";
 import { errorText } from "@/lib/api/client";
 import { useContentTree, useCoursePeople } from "@/lib/api/hooks/courses";
-import { useCourseSubmissions, useGradebook, useGradeHistory, usePublishAllDrafts, useSaveGrade, useStudentAttempts, usePublishGrades } from "@/lib/api/hooks/assignments";
-import type { Document, GradeHistoryEntry, GradebookCell, GradebookColumn, GradebookRow } from "@/lib/api/types";
+import { useCourseSubmissions, useGradebook, usePublishAllDrafts } from "@/lib/api/hooks/assignments";
+import type { GradebookColumn, GradebookRow } from "@/lib/api/types";
 import { now } from "@/lib/clock";
 import { allItems } from "@/lib/course";
-import { dayLabel, dueLabel, initials, plural, sinceLabel, weekdayDate, timeOf } from "@/lib/format";
-import { validScore } from "@/lib/points";
+import { dayLabel, dueLabel, initials, plural } from "@/lib/format";
+import { cellState } from "@/lib/grading";
 import { CourseHeader } from "./CourseHeader";
 import { useT } from "@/lib/i18n";
 import s from "./Gradebook.module.css";
-import { itemHref } from "@/lib/routes";
-import { useItemId, useStudentId } from "@/lib/useRoute";
-
-/** One recorded change as a line: the server sends the action and the values, the screen words them. */
-function historyLine(h: GradeHistoryEntry, t: ReturnType<typeof useT>): string {
-  const what =
-    h.action === "publish"
-      ? h.score ? t("gb.hPublished", { score: h.score }) : h.feedback ? t("gb.hPublishedFeedback") : t("gb.hWithdrawn")
-      : h.score ? t("gb.hDraft", { score: h.score }) : h.feedback ? t("gb.hDraftFeedback") : t("gb.hCleared");
-  return h.actor ? `${what}, ${h.actor.name} ${h.actor.surname}` : what;
-}
-
-type Sel = { studentId: string; assignmentId: string };
-type CellState = "pub" | "draft" | "grade" | "none";
-
-/** `dirty` tells the gradebook whether the drawer holds points or a comment that were not saved. */
-function Drawer({ sel, row, col, cell, toGrade, dirty, onClose }: { sel: Sel; row: GradebookRow; col: GradebookColumn; cell: GradebookCell | undefined; toGrade: boolean; dirty: MutableRefObject<boolean>; onClose: () => void }) {
-  const t = useT();
-  const save = useSaveGrade(sel.assignmentId);
-  const publish = usePublishGrades(sel.assignmentId);
-  const attempts = useStudentAttempts(sel.assignmentId, sel.studentId);
-  const history = useGradeHistory(sel.assignmentId, sel.studentId);
-  const [points, setPoints] = useState(cell?.draft_score ?? cell?.published_score ?? "");
-  const [comment, setComment] = useState(cell?.draft_feedback ?? cell?.published_feedback ?? "");
-  // What the server has: the fields differ from it until a save succeeds.
-  const [stored, setStored] = useState({ points, comment });
-  const [done, setDone] = useState<"draft" | "published" | null>(null);
-  const [open, setOpen] = useState(false);
-  const [touched, setTouched] = useState(false);
-  useEffect(() => {
-    dirty.current = points !== stored.points || comment !== stored.comment;
-    return () => { dirty.current = false; };
-  }, [dirty, points, comment, stored]);
-  const latest = attempts.data?.[0];
-  const invalid = points !== "" && !validScore(points, col.max_points);
-  const former = !!row.former;
-  const content = latest?.content as Document | { answers: Record<string, unknown> } | undefined;
-
-  async function saveDraft() {
-    setTouched(true);
-    if (invalid) return false;
-    if (!(await save.run(sel.studentId, points.trim() === "" ? null : points.trim(), comment))) return false;
-    setStored({ points, comment });
-    setDone("draft");
-    return true;
-  }
-  async function saveAndPublish() {
-    if (!(await saveDraft())) return;
-    if (await publish.run([sel.studentId])) setDone("published");
-  }
-  const err = save.error ?? publish.error;
-
-  return (
-    <aside aria-labelledby="drawer-h" className={`card ${s.drawer}`}>
-      <div className="row" style={{ alignItems: "flex-start", justifyContent: "space-between", gap: 8 }}>
-        <div>
-          <p className="muted" style={{ fontSize: 13 }}>{col.title}</p>
-          <h2 id="drawer-h" style={{ fontSize: 19, fontWeight: 600 }}>{row.name} {row.surname}</h2>
-        </div>
-        <button type="button" className="icon-btn" aria-label={t("common.close")} onClick={onClose}><Icon name="close" size={18} strokeWidth={2} /></button>
-      </div>
-      {latest ? (
-        <div>
-          <p style={{ fontSize: 14 }}>{t("gb.submittedAt", { day: weekdayDate(latest.submitted_at), time: timeOf(latest.submitted_at) })}</p>
-          <p className="muted" style={{ fontSize: 13 }}>{t("grading.attempt", { n: latest.attempt })}{latest.is_late ? `, ${t("gb.late")}` : `, ${t("gb.onTime")}`}</p>
-          <button type="button" className="btn btn-quiet" style={{ padding: 0, minHeight: 36 }} aria-expanded={open} onClick={() => setOpen((o) => !o)}>{open ? t("gb.hide") : t("gb.open")}</button>
-          {open && (
-            <div className={s.submission}>
-              {content && "blocks" in content ? <BlockRenderer doc={content} size={14} /> : <p>{t.plural("gb.answers", Object.keys((content as { answers?: object } | undefined)?.answers ?? {}).length)}</p>}
-            </div>
-          )}
-        </div>
-      ) : <p className="muted" style={{ fontSize: 14 }}>{toGrade ? "" : t("gb.nothing")}</p>}
-      <div className="stack" style={{ gap: 12 }}>
-        <label htmlFor="points" style={{ fontSize: 14, fontWeight: 500 }}>{t("cm.points")}</label>
-        <div className="row" style={{ gap: 12 }}>
-          <input id="points" className="input" style={{ maxWidth: 120 }} inputMode="decimal" value={points} disabled={former} aria-invalid={touched && invalid} onChange={(e) => { setPoints(e.target.value); setTouched(false); setDone(null); }} />
-          <span className="muted" style={{ fontSize: 14 }}>{t("gb.outOf", { max: col.max_points })}</span>
-        </div>
-        {touched && invalid && <p role="alert" className="hint" style={{ color: "var(--danger)" }}>{t("gb.invalid", { max: col.max_points })}</p>}
-        <label htmlFor="comment" style={{ fontSize: 14, fontWeight: 500 }}>{t("gb.commentFor", { name: row.name })}</label>
-        <textarea id="comment" className="textarea" style={{ minHeight: 80 }} value={comment} disabled={former} onChange={(e) => { setComment(e.target.value); setDone(null); }} />
-        {err && <p role="alert" className="alert alert-danger">{errorText(err)}</p>}
-        {done && <p role="status" className="alert alert-ok">{done === "draft" ? t("gb.savedDraft") : t("gb.publishedTo", { name: row.name })}</p>}
-        {former ? <p className="muted" style={{ fontSize: 13 }}>{t("gb.left", { name: row.name })}</p> : (
-          <>
-            <div className="row" style={{ gap: 12, flexWrap: "wrap" }}>
-              <button type="button" className="btn" onClick={() => void saveDraft()} disabled={save.pending}>{t("gb.saveDraft")}</button>
-              <button type="button" className="btn btn-primary" onClick={() => void saveAndPublish()} disabled={save.pending || publish.pending}>{t("cm.publish")}</button>
-            </div>
-            <p className="muted" style={{ fontSize: 13 }}>{t("gb.sees", { name: row.name })}</p>
-          </>
-        )}
-      </div>
-      <div>
-        <h3 style={{ fontSize: 14, fontWeight: 600, marginBottom: 8 }}>{t("gb.history")}</h3>
-        <ol className={s.hist}>
-          {(history.data ?? []).map((h) => <li key={h.id}><span>{historyLine(h, t)}</span><span className="muted">{sinceLabel(h.at)}</span></li>)}
-          {history.data?.length === 0 && <li className="muted">{t("gb.noChanges")}</li>}
-        </ol>
-        <p className="muted" style={{ marginTop: 8, fontSize: 12 }}>{t("gb.recorded")}</p>
-      </div>
-    </aside>
-  );
-}
+import { gradeHref, itemHref } from "@/lib/routes";
 
 export function Gradebook({ courseId }: { courseId: string }) {
   const t = useT();
+  const router = useRouter();
   const book = useGradebook(courseId);
   const tree = useContentTree(courseId);
   const people = useCoursePeople(courseId);
@@ -133,30 +30,15 @@ export function Gradebook({ courseId }: { courseId: string }) {
   const publishAll = usePublishAllDrafts();
   const [q, setQ] = useState("");
   const [group, setGroup] = useState("all");
-  // The grading queue opens a grade by address: `&item=<assignment>&student=<user>`.
-  const linkedItem = useItemId();
-  const linkedStudent = useStudentId();
-  const [sel, setSel] = useState<Sel | null>(linkedItem && linkedStudent ? { studentId: linkedStudent, assignmentId: linkedItem } : null);
-  const dirty = useRef(false);
-  // Moving to another grade, or closing, while points or a comment are unsaved asks first.
-  const [leaving, setLeaving] = useState<{ to: Sel | null } | null>(null);
   const [asking, setAsking] = useState(false);
-  function choose(to: Sel | null) {
-    if (dirty.current && (to?.studentId !== sel?.studentId || to?.assignmentId !== sel?.assignmentId)) setLeaving({ to });
-    else setSel(to);
-  }
 
   const items = tree.data ? allItems(tree.data) : [];
   const groupOf = useMemo(() => new Map((people.data?.people ?? []).map((p) => [p.user_id, p.group ?? t("people.direct")])), [people.data, t]);
   const groups = [...new Set((people.data?.people ?? []).filter((p) => p.role === "student" && !p.former).map((p) => p.group ?? t("people.direct")))];
 
-  const state = (row: GradebookRow, col: GradebookColumn): { st: CellState; cell?: GradebookCell } => {
+  const state = (row: GradebookRow, col: GradebookColumn) => {
     const cell = row.cells.find((c) => c.assignment_id === col.assignment_id);
-    if (cell && cell.has_unpublished_changes && cell.draft_score !== null && cell.draft_score !== undefined) return { st: "draft", cell };
-    if (cell?.published_score) return { st: "pub", cell };
-    const sub = subs.data?.[col.assignment_id]?.find((x) => x.student_id === row.user_id);
-    if (sub?.status === "submitted" && !(cell && cell.draft_score)) return { st: "grade", cell };
-    return { st: "none", cell };
+    return { st: cellState(cell, subs.data?.[col.assignment_id]?.find((x) => x.student_id === row.user_id)), cell };
   };
 
   const rows = (book.data?.items ?? []).filter((r) => `${r.name} ${r.surname}`.toLowerCase().includes(q.trim().toLowerCase()) && (group === "all" || groupOf.get(r.user_id) === group));
@@ -177,9 +59,6 @@ export function Gradebook({ courseId }: { courseId: string }) {
     if (due && new Date(due) < now()) return { text: t("gb.closedAll", { day: dayLabel(due) }), tone: "muted" };
     return { text: due ? t("bar.due", { when: dueLabel(due) }) : t("due.none"), tone: "muted" };
   };
-
-  const selRow = sel && book.data?.items.find((r) => r.user_id === sel.studentId);
-  const selCol = sel && book.data?.columns.find((c) => c.assignment_id === sel.assignmentId);
 
   return (
     <div className="container">
@@ -207,11 +86,6 @@ export function Gradebook({ courseId }: { courseId: string }) {
       {asking && (
         <ConfirmDialog title={t("gb.confirmTitle")} confirm={t("cm.publish")} pending={publishAll.pending} onClose={() => setAsking(false)} onConfirm={async () => { await publishAll.run(draftCols.map((c) => c.assignment_id)); setAsking(false); }}>
           {t("gb.confirmBody", { n: plural(draftCount, "draft") })}
-        </ConfirmDialog>
-      )}
-      {leaving && (
-        <ConfirmDialog title={t("gb.discardTitle")} confirm={t("gb.discard")} danger onClose={() => setLeaving(null)} onConfirm={() => { dirty.current = false; setSel(leaving.to); setLeaving(null); }}>
-          {t("gb.discardBody")}
         </ConfirmDialog>
       )}
       {!book.data ? <p className="loading" role="status">{t("common.loading")}</p> : (
@@ -243,10 +117,9 @@ export function Gradebook({ courseId }: { courseId: string }) {
                   {cols.map((c) => {
                     const { st, cell } = state(r, c);
                     const label = `${r.name} ${r.surname}, ${c.title}, ${st === "pub" ? t("gb.aPub", { score: cell?.published_score ?? "" }) : st === "draft" ? t("gb.aDraft", { score: cell?.draft_score ?? "" }) : st === "grade" ? t("gb.aGrade") : t("gb.aNone")}${r.former ? `, ${t("gb.aLocked")}` : ""}`;
-                    const selected = sel?.studentId === r.user_id && sel.assignmentId === c.assignment_id;
-                    return (
+                                    return (
                       <div key={c.assignment_id} role="gridcell" className={s.cell}>
-                        <button type="button" className={s.cellBtn} aria-label={label} aria-pressed={selected} onClick={() => choose({ studentId: r.user_id, assignmentId: c.assignment_id })}>
+                        <button type="button" className={s.cellBtn} aria-label={label} onClick={() => router.push(gradeHref(courseId, c.assignment_id, r.user_id))}>
                           {st === "pub" && <span className={s.pub}>{cell?.published_score}</span>}
                           {st === "draft" && <span className={s.draft}>{cell?.draft_score}</span>}
                           {st === "grade" && <><span className={s.dot} /><span style={{ fontSize: 13 }}>{t("gb.toGrade")}</span></>}
@@ -260,9 +133,6 @@ export function Gradebook({ courseId }: { courseId: string }) {
               {rows.length === 0 && <p className="empty">{t("people.noStudents")}</p>}
             </div>
           </div>
-          {sel && selRow && selCol && (
-            <Drawer key={`${sel.studentId}:${sel.assignmentId}`} sel={sel} row={selRow} col={selCol} cell={selRow.cells.find((c) => c.assignment_id === sel.assignmentId)} toGrade={state(selRow, selCol).st === "grade"} dirty={dirty} onClose={() => choose(null)} />
-          )}
         </div>
       )}
     </div>

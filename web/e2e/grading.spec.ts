@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { accounts, PASSWORD, type RoleName } from "./routes";
-import { gradeHref } from "../src/lib/routes";
+import { courseHref, gradeHref } from "../src/lib/routes";
 
 async function signIn(page: Page, role: RoleName) {
   await page.goto("/login");
@@ -219,4 +219,24 @@ test("an empty list says so and still shows the student named in the address", a
   await expect(page.getByText("Nothing left to grade.")).toBeVisible();
   await expect(page.locator("#student-h")).toHaveText("Ivan Petrenko");
   await expect(page.getByRole("link", { name: "Back to the gradebook" })).toBeVisible();
+});
+
+test("a gradebook cell opens the workspace for that cell", async ({ page }) => {
+  await signIn(page, "teacher");
+  const m = await mergeSort(page);
+  await page.goto(courseHref(m.course, "grades"));
+  await page.getByRole("button", { name: /^Omar Haddad, Merge sort implementation/ }).click();
+  await expect(page).toHaveURL(/\/course\/grade\?/);
+  expect(url(page).get("item")).toBe(m.item);
+  expect(url(page).get("student")).toBe(m.rows.find((r) => r.name === "Omar Haddad")!.id);
+  await expect(page.locator("#student-h")).toHaveText("Omar Haddad");
+});
+
+test("a former student's cell opens the workspace read-only", async ({ page }) => {
+  await signIn(page, "teacher");
+  const m = await mergeSort(page);
+  await page.goto(courseHref(m.course, "grades"));
+  await page.getByRole("button", { name: /^Tomas Novak, Merge sort implementation/ }).click();
+  await expect(page.locator("#student-h")).toHaveText("Tomas Novak");
+  await expect(page.getByRole("button", { name: "Save draft" })).toHaveCount(0);
 });

@@ -638,8 +638,6 @@ export const uk: Record<Keys, string> & Extra = {
   "gb.submittedAt": "Здано: {day} о {time}",
   "gb.late": "із запізненням",
   "gb.onTime": "вчасно",
-  "gb.hide": "Сховати роботу",
-  "gb.open": "Відкрити роботу",
   "gb.answers.one": "Відповіді на {n} питання.",
   "gb.answers.other": "Відповіді на {n} питання.",
   "gb.answers.few": "Відповіді на {n} питання.",
