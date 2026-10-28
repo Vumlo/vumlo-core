@@ -61,7 +61,7 @@
 
 @media (max-width: 720px) {
   .page { height: auto; min-height: calc(100dvh - 57px); padding: var(--space-4) var(--space-4) 96px; }
-  .body { grid-template-columns: minmax(0, 1fr); }
+  .body { grid-template-columns: minmax(0, 1fr); flex: none; }
   .pane { overflow: visible; }
   .panel { max-height: none; align-self: stretch; overflow: visible; }
   .pick { max-width: none; flex: 1 1 140px; }
