@@ -153,10 +153,6 @@ export const en = {
   "password.hide": "Hide",
   "password.showLabel": "Show password",
   "password.hideLabel": "Hide password",
-  "mock.mailbox": "Mock mailbox (dev:mock only)",
-  "mock.noMail": "No mail for this address.",
-  "mock.verifyLink": "Confirm the email address",
-  "mock.resetLink": "Choose a new password",
 
   // not found, errors
   "notFound.title": "We can't find that page",
