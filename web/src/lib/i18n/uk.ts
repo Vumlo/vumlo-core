@@ -676,6 +676,14 @@ export const uk: Record<Keys, string> & Extra = {
   "gb.aNone": "без оцінки",
   "gb.aLocked": "заблоковано",
   "gb.toGrade": "До оцінювання",
+  "gb.filterAssignment": "Завдання",
+  "gb.allAssignments": "Усі завдання",
+  "gb.filterStatus": "Стан",
+  "gb.statusAll": "Усі",
+  "gb.statusDraft": "Чернетки",
+  "gb.statusPublished": "Опубліковані",
+  "gb.statusNone": "Нічого не здано",
+  "gb.lateOnly": "Лише із запізненням",
 
   // item pages: lecture, in class, assignment
   "item.yourTeacher": "ваш викладач",

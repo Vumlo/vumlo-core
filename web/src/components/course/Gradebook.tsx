@@ -12,7 +12,7 @@ import type { GradebookColumn, GradebookRow } from "@/lib/api/types";
 import { now } from "@/lib/clock";
 import { allItems } from "@/lib/course";
 import { dayLabel, dueLabel, initials, plural } from "@/lib/format";
-import { cellState } from "@/lib/grading";
+import { cellState, matchesStatus, type StatusFilter } from "@/lib/grading";
 import { CourseHeader } from "./CourseHeader";
 import { useT } from "@/lib/i18n";
 import s from "./Gradebook.module.css";
@@ -30,6 +30,9 @@ export function Gradebook({ courseId }: { courseId: string }) {
   const publishAll = usePublishAllDrafts();
   const [q, setQ] = useState("");
   const [group, setGroup] = useState("all");
+  const [pick, setPick] = useState("all");
+  const [status, setStatus] = useState<StatusFilter>("all");
+  const [lateOnly, setLateOnly] = useState(false);
   const [asking, setAsking] = useState(false);
 
   const items = tree.data ? allItems(tree.data) : [];
@@ -38,10 +41,13 @@ export function Gradebook({ courseId }: { courseId: string }) {
 
   const state = (row: GradebookRow, col: GradebookColumn) => {
     const cell = row.cells.find((c) => c.assignment_id === col.assignment_id);
-    return { st: cellState(cell, subs.data?.[col.assignment_id]?.find((x) => x.student_id === row.user_id)), cell };
+    const sub = subs.data?.[col.assignment_id]?.find((x) => x.student_id === row.user_id);
+    return { st: cellState(cell, sub), cell, late: !!sub?.latest?.is_late };
   };
 
-  const rows = (book.data?.items ?? []).filter((r) => `${r.name} ${r.surname}`.toLowerCase().includes(q.trim().toLowerCase()) && (group === "all" || groupOf.get(r.user_id) === group));
+  const visibleCols = pick === "all" ? cols : cols.filter((c) => c.assignment_id === pick);
+  const rows = (book.data?.items ?? []).filter((r) => `${r.name} ${r.surname}`.toLowerCase().includes(q.trim().toLowerCase()) && (group === "all" || groupOf.get(r.user_id) === group)
+    && matchesStatus(visibleCols.map((c) => { const { st, late } = state(r, c); return { state: st, late }; }), { status, late: lateOnly }));
   const draftCols = (book.data?.columns ?? []).filter((c) => (book.data?.items ?? []).some((r) => !r.former && r.cells.some((x) => x.assignment_id === c.assignment_id && x.has_unpublished_changes && x.draft_score !== null)));
   const draftCount = (book.data?.items ?? []).filter((r) => !r.former).reduce((a, r) => a + r.cells.filter((x) => x.has_unpublished_changes && x.draft_score !== null).length, 0);
 
@@ -72,6 +78,18 @@ export function Gradebook({ courseId }: { courseId: string }) {
           <option value="all">{t("gb.allStudents")}</option>
           {groups.map((g) => <option key={g} value={g}>{g}</option>)}
         </select>
+        <select aria-label={t("gb.filterAssignment")} className="select" style={{ width: "auto", minHeight: 40 }} value={pick} onChange={(e) => setPick(e.target.value)}>
+          <option value="all">{t("gb.allAssignments")}</option>
+          {cols.map((c) => <option key={c.assignment_id} value={c.assignment_id}>{c.title}</option>)}
+        </select>
+        <select aria-label={t("gb.filterStatus")} className="select" style={{ width: "auto", minHeight: 40 }} value={status} onChange={(e) => setStatus(e.target.value as StatusFilter)}>
+          <option value="all">{t("gb.statusAll")}</option>
+          <option value="grade">{t("gb.toGrade")}</option>
+          <option value="draft">{t("gb.statusDraft")}</option>
+          <option value="pub">{t("gb.statusPublished")}</option>
+          <option value="none">{t("gb.statusNone")}</option>
+        </select>
+        <label className="check"><input type="checkbox" checked={lateOnly} onChange={(e) => setLateOnly(e.target.checked)} />{t("gb.lateOnly")}</label>
         <span style={{ flex: "1 1 auto" }} />
         <div className={s.legend}>
           <span><strong style={{ color: "var(--text)" }}>18.50</strong> {t("gb.legendPub")}</span>
@@ -94,7 +112,7 @@ export function Gradebook({ courseId }: { courseId: string }) {
             <div role="grid" aria-label={t("nav.grades")} className={s.grid}>
               <div role="row" className={`${s.row} ${s.head}`}>
                 <div role="columnheader" className={s.name} style={{ fontSize: 13, fontWeight: 500, color: "var(--muted)" }}>{t("grading.student")}</div>
-                {cols.map((c) => {
+                {visibleCols.map((c) => {
                   const n = note(c);
                   return (
                     <div key={c.assignment_id} role="columnheader" className={s.col}>
@@ -114,10 +132,10 @@ export function Gradebook({ courseId }: { courseId: string }) {
                       {r.former && <span className="muted" style={{ display: "block", fontSize: 12 }}>{t("gb.leftLocked")}</span>}
                     </span>
                   </div>
-                  {cols.map((c) => {
+                  {visibleCols.map((c) => {
                     const { st, cell } = state(r, c);
                     const label = `${r.name} ${r.surname}, ${c.title}, ${st === "pub" ? t("gb.aPub", { score: cell?.published_score ?? "" }) : st === "draft" ? t("gb.aDraft", { score: cell?.draft_score ?? "" }) : st === "grade" ? t("gb.aGrade") : t("gb.aNone")}${r.former ? `, ${t("gb.aLocked")}` : ""}`;
-                                    return (
+                    return (
                       <div key={c.assignment_id} role="gridcell" className={s.cell}>
                         <button type="button" className={s.cellBtn} aria-label={label} onClick={() => router.push(gradeHref(courseId, c.assignment_id, r.user_id))}>
                           {st === "pub" && <span className={s.pub}>{cell?.published_score}</span>}

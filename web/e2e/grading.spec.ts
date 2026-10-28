@@ -240,3 +240,48 @@ test("a former student's cell opens the workspace read-only", async ({ page }) =
   await expect(page.locator("#student-h")).toHaveText("Tomas Novak");
   await expect(page.getByRole("button", { name: "Save draft" })).toHaveCount(0);
 });
+
+async function openGradebook(page: Page) {
+  await signIn(page, "teacher");
+  const course = await firstCourse(page);
+  await page.goto(courseHref(course, "grades"));
+  await expect(page.getByRole("columnheader", { name: /Merge sort implementation/ })).toBeVisible();
+}
+
+const studentRows = (page: Page) => page.getByRole("row").filter({ has: page.getByRole("rowheader") });
+
+test("the assignment filter shows one column", async ({ page }) => {
+  await openGradebook(page);
+  expect(await page.getByRole("columnheader").count()).toBeGreaterThan(2);
+  await page.getByLabel("Assignment", { exact: true }).selectOption({ label: "Merge sort implementation" });
+  await expect(page.getByRole("columnheader")).toHaveCount(2);
+  await expect(page.getByRole("columnheader", { name: /Merge sort implementation/ })).toBeVisible();
+});
+
+test("the status filter keeps only matching rows", async ({ page }) => {
+  await openGradebook(page);
+  await page.getByLabel("Assignment", { exact: true }).selectOption({ label: "Merge sort implementation" });
+  await page.getByLabel("Status", { exact: true }).selectOption({ label: "To grade" });
+  await expect(studentRows(page)).toHaveCount(1);
+  await expect(studentRows(page).getByRole("rowheader")).toContainText("Ivan Petrenko");
+  await expect(studentRows(page).getByRole("button")).toHaveAccessibleName(/to grade/i);
+});
+
+test("filters that match nobody say so", async ({ page }) => {
+  await openGradebook(page);
+  await page.getByLabel("Assignment", { exact: true }).selectOption({ label: "Sorting quiz" });
+  await page.getByLabel("Status", { exact: true }).selectOption({ label: "Published" });
+  await expect(page.getByText("No students match.")).toBeVisible();
+  await expect(studentRows(page)).toHaveCount(0);
+});
+
+test("late only hides rows that handed nothing in late", async ({ page }) => {
+  await openGradebook(page);
+  const before = await studentRows(page).count();
+  expect(before).toBeGreaterThan(1);
+  await page.getByLabel("Late only").check();
+  // The mock holds no late attempt, so nobody is left; the unit tests of matchesStatus cover the late rule itself.
+  await expect(page.getByText("No students match.")).toBeVisible();
+  await page.getByLabel("Late only").uncheck();
+  await expect(studentRows(page)).toHaveCount(before);
+});

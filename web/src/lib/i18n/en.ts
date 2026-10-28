@@ -643,6 +643,14 @@ export const en = {
   "gb.aNone": "no grade",
   "gb.aLocked": "locked",
   "gb.toGrade": "To grade",
+  "gb.filterAssignment": "Assignment",
+  "gb.allAssignments": "All assignments",
+  "gb.filterStatus": "Status",
+  "gb.statusAll": "All",
+  "gb.statusDraft": "Drafts",
+  "gb.statusPublished": "Published",
+  "gb.statusNone": "Nothing submitted",
+  "gb.lateOnly": "Late only",
 
   // item pages: lecture, in class, assignment
   "item.yourTeacher": "your teacher",

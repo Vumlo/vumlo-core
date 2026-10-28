@@ -65,7 +65,7 @@ export function useGradebook(courseId: string | null) {
   });
 }
 
-/** The recorded changes of one grade, newest first (ADR-0049). The drawer shows the latest ones. */
+/** The recorded changes of one grade, newest first (ADR-0049). The grading workspace shows the latest ones. */
 export function useGradeHistory(assignmentId: string | null, studentId: string | null) {
   const path = `/assignments/${assignmentId}/grades/${studentId}/history?limit=20`;
   return useQuery<GradeHistoryEntry[]>(assignmentId && studentId ? path : null, async () => (await api.get<{ items: GradeHistoryEntry[] }>(path)).items);
