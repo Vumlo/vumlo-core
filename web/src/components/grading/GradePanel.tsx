@@ -98,7 +98,7 @@ export function GradePanel({ assignmentId, row, col, cell, former, drafts, dirty
         <button type="button" className={`btn btn-quiet ${s.publishAll}`} disabled={drafts === 0 || publish.pending} onClick={() => setAsking(true)}>{t("grading.publishN", { n: plural(drafts, "draft") })}</button>
       </div>
       {asking && (
-        <ConfirmDialog title={t("grading.confirmTitle", { title: col.title })} confirm={t("cm.publish")} pending={publish.pending} onClose={() => setAsking(false)} onConfirm={async () => { if (await publish.run("all")) setAsking(false); }}>
+        <ConfirmDialog title={t("grading.confirmTitle", { title: col.title })} confirm={t("cm.publish")} pending={publish.pending} error={publish.error ? errorText(publish.error) : undefined} onClose={() => setAsking(false)} onConfirm={async () => { if (await publish.run("all")) setAsking(false); }}>
           {t("grading.confirmBody", { n: plural(drafts, "draft grade") })}
         </ConfirmDialog>
       )}

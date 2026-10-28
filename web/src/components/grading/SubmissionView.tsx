@@ -15,7 +15,7 @@ import s from "./GradeWorkspace.module.css";
 const isDoc = (v: unknown): v is Document => !!v && typeof v === "object" && !Array.isArray(v) && "blocks" in v;
 
 /** What one student handed in, read-only: a text as a document, a quiz or a form as its questions with the answers. */
-export function SubmissionView({ item, attempts }: { item: Item; attempts: Attempt[]; studentName: string }) {
+export function SubmissionView({ item, attempts }: { item: Item; attempts: Attempt[] }) {
   const t = useT();
   const newestFirst = [...attempts].sort((a, b) => b.attempt - a.attempt);
   const [picked, setPicked] = useState<number | null>(null);

@@ -7,7 +7,9 @@
 .back:active { background: var(--sunken); }
 .back:focus-visible, .pane:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
 .title { font-size: 20px; font-weight: 600; }
-.student { font-size: 20px; font-weight: 400; color: var(--muted); }
+.student { font-size: 20px; font-weight: 400; color: var(--muted); border-radius: var(--radius-field); }
+.student:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+.course { margin-left: var(--space-3); font-weight: 400; color: var(--muted); }
 .body { flex: 1 1 0; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: var(--space-5); padding-bottom: var(--space-4); }
 .stepper { display: inline-flex; align-items: center; gap: var(--space-1); }
 .stepper .icon-btn:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
@@ -28,7 +30,9 @@
 .avatar { flex: none; display: flex; align-items: center; justify-content: center; width: 30px; height: 30px; border-radius: 50%; background: var(--hover); color: var(--muted); font-size: 12px; font-weight: 600; }
 .railText { display: flex; flex-direction: column; min-width: 0; }
 .railName { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
+.marks { display: flex; gap: var(--space-2); }
 .mark { font-size: 12px; color: var(--muted); }
+.lateMark { font-size: 12px; font-weight: 500; color: var(--danger); }
 .mark[data-state="grade"] { color: var(--accent-fg); font-weight: 600; }
 .mark[data-state="draft"] { color: var(--accent-fg); }
 .mark[data-state="pub"] { color: var(--ok-fg); }
@@ -57,7 +61,6 @@
 .work { padding: var(--space-5); }
 .scores { margin-bottom: var(--space-4); font-size: 14px; }
 .attempts { margin-top: 0; margin-bottom: var(--space-4); }
-.attempts button:disabled { color: var(--muted); cursor: default; }
 
 @media (max-width: 720px) {
   .page { height: auto; min-height: calc(100dvh - 57px); padding: var(--space-4) var(--space-4) 96px; }

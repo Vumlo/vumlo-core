@@ -634,14 +634,9 @@ export const uk: Record<Keys, string> & Extra = {
   "cm.deleteItemLead": "Чернетки студентів для нього також видаляються. Завдання з оцінками видалити не можна.",
 
   // gradebook
-  "common.close": "Закрити",
   "gb.submittedAt": "Здано: {day} о {time}",
   "gb.late": "із запізненням",
   "gb.onTime": "вчасно",
-  "gb.answers.one": "Відповіді на {n} питання.",
-  "gb.answers.other": "Відповіді на {n} питання.",
-  "gb.answers.few": "Відповіді на {n} питання.",
-  "gb.answers.many": "Відповіді на {n} питань.",
   "gb.nothing": "Нічого не здано.",
   "gb.outOf": "з {max}",
   "gb.invalid": "Введіть число від 0 до {max} з не більше ніж двома знаками після коми.",

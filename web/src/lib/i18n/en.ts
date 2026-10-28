@@ -603,12 +603,9 @@ export const en = {
   "cm.deleteItemLead": "Students' drafts for it are deleted too. An assignment with grades can't be deleted.",
 
   // gradebook
-  "common.close": "Close",
   "gb.submittedAt": "Submitted {day} at {time}",
   "gb.late": "late",
   "gb.onTime": "on time",
-  "gb.answers.one": "Answers to {n} question.",
-  "gb.answers.other": "Answers to {n} questions.",
   "gb.nothing": "Nothing was submitted.",
   "gb.outOf": "out of {max}",
   "gb.invalid": "Use a number from 0 to {max} with at most two decimals.",

@@ -46,7 +46,9 @@ export function Gradebook({ courseId }: { courseId: string }) {
   };
 
   const visibleCols = pick === "all" ? cols : cols.filter((c) => c.assignment_id === pick);
+  // A former student cannot be graded, so a status other than "all" leaves them out, as the counts above do.
   const rows = (book.data?.items ?? []).filter((r) => `${r.name} ${r.surname}`.toLowerCase().includes(q.trim().toLowerCase()) && (group === "all" || groupOf.get(r.user_id) === group)
+    && (status === "all" || !r.former)
     && matchesStatus(visibleCols.map((c) => { const { st, late } = state(r, c); return { state: st, late }; }), { status, late: lateOnly }));
   const draftCols = (book.data?.columns ?? []).filter((c) => (book.data?.items ?? []).some((r) => !r.former && r.cells.some((x) => x.assignment_id === c.assignment_id && x.has_unpublished_changes && x.draft_score !== null)));
   const draftCount = (book.data?.items ?? []).filter((r) => !r.former).reduce((a, r) => a + r.cells.filter((x) => x.has_unpublished_changes && x.draft_score !== null).length, 0);

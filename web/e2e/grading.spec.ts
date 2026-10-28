@@ -285,3 +285,231 @@ test("late only hides rows that handed nothing in late", async ({ page }) => {
   await page.getByLabel("Late only").uncheck();
   await expect(studentRows(page)).toHaveCount(before);
 });
+
+type Fake = { id: string; name: string; surname: string; late?: boolean };
+
+/**
+ * Makes the submissions lists (what staff see of who handed in) say that these people handed in work, some of it late.
+ * The mock world has no late attempt and no former student with ungraded work, and the lists are all the screens read.
+ */
+async function fakeSubmissions(page: Page, rows: Fake[]) {
+  await page.addInitScript((fake) => {
+    const real = window.fetch.bind(window);
+    window.fetch = async (input, init) => {
+      const res = await real(input, init);
+      const href = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      if (!/\/assignments\/[^/]+\/submissions$/.test(new URL(href, location.href).pathname)) return res;
+      const body = await res.clone().json();
+      for (const f of fake) {
+        const latest = { id: `fake-${f.id}`, attempt: 1, submitted_at: "2026-10-16T10:00:00.000Z", is_late: !!f.late };
+        const row = body.items.find((r: { student_id: string }) => r.student_id === f.id);
+        if (row) Object.assign(row, { status: "submitted", latest });
+        else body.items.push({ student_id: f.id, name: f.name, surname: f.surname, status: "submitted", former: true, latest });
+      }
+      return new Response(JSON.stringify(body), { status: res.status, headers: res.headers });
+    };
+  }, rows);
+}
+
+const person = (m: Mock, name: string, extra: Partial<Fake> = {}): Fake => {
+  const r = m.rows.find((x) => x.name === name)!;
+  const [first = "", ...rest] = name.split(" ");
+  return { id: r.id, name: first, surname: rest.join(" "), ...extra };
+};
+
+test("an assignment that is graded by hand opens on all students", async ({ page }) => {
+  await signIn(page, "teacher");
+  const m = await mergeSort(page);
+  const byHand = await page.evaluate(async (id) => {
+    const book = await (await fetch(`/api/v1/courses/${id}/gradebook`)).json();
+    return book.columns.find((c: { title: string }) => c.title === "Presentation: complexity in the wild").assignment_id as string;
+  }, m.course);
+  await page.goto(gradeHref(m.course, byHand, m.rows[0]!.id));
+  await expect(page.getByLabel("Show", { exact: true })).toHaveValue("all");
+  await expect(page.getByText("Nothing left to grade.")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Next student" })).toBeEnabled();
+});
+
+test("a former student with ungraded work is not in the to-grade list", async ({ page }) => {
+  await signIn(page, "teacher");
+  const m = await mergeSort(page);
+  await fakeSubmissions(page, [person(m, "Tomas Novak")]);
+  await page.goto(gradeHref(m.course, m.item, m.rows.find((r) => r.name === "Ivan Petrenko")!.id));
+  const rail = page.getByRole("navigation", { name: "Students" });
+  await expect(rail.getByRole("button")).toHaveCount(1);
+  await expect(page.getByText("1 of 1", { exact: true })).toBeVisible();
+  await page.getByLabel("Show", { exact: true }).selectOption({ label: "All" });
+  await expect(rail.getByRole("button", { name: /Tomas Novak/ })).toBeVisible();
+});
+
+test("the gradebook status filter leaves former students out", async ({ page }) => {
+  await signIn(page, "teacher");
+  const m = await mergeSort(page);
+  await fakeSubmissions(page, [person(m, "Tomas Novak")]);
+  await page.goto(courseHref(m.course, "grades"));
+  await expect(page.getByRole("columnheader", { name: /Merge sort implementation/ })).toBeVisible();
+  await page.getByLabel("Assignment", { exact: true }).selectOption({ label: "Merge sort implementation" });
+  await expect(studentRows(page).getByRole("rowheader").filter({ hasText: "Tomas Novak" })).toHaveCount(1);
+  await page.getByLabel("Status", { exact: true }).selectOption({ label: "To grade" });
+  await expect(studentRows(page)).toHaveCount(1);
+  await expect(studentRows(page).getByRole("rowheader")).toContainText("Ivan Petrenko");
+});
+
+test("save and next at the end of the list wraps to the first student left", async ({ page }) => {
+  await signIn(page, "teacher");
+  const m = await mergeSort(page);
+  await page.goto(gradeHref(m.course, m.item, m.rows.find((r) => r.name === "Aiko Tanaka")!.id));
+  await page.getByLabel("Show", { exact: true }).selectOption({ label: "Drafts" });
+  await expect(page.getByText("4 of 4", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Save and next" }).click();
+  await expect(page.locator("#student-h")).toHaveText("Omar Haddad");
+  expect(url(page).get("student")).toBe(m.rows.find((r) => r.name === "Omar Haddad")!.id);
+});
+
+test("save and next stays when nobody else is left in the list", async ({ page }) => {
+  await signIn(page, "teacher");
+  const m = await mergeSort(page);
+  await page.goto(gradeHref(m.course, m.item, m.rows.find((r) => r.name === "Ivan Petrenko")!.id));
+  await page.getByLabel("Points", { exact: true }).fill("15");
+  await page.getByRole("button", { name: "Save and next" }).click();
+  await expect(page.getByRole("status").filter({ hasText: "Draft saved." })).toBeVisible();
+  await expect(page.locator("#student-h")).toHaveText("Ivan Petrenko");
+});
+
+test("save and next with to-grade skips a student who is graded meanwhile", async ({ page }) => {
+  await signIn(page, "teacher");
+  const m = await mergeSort(page);
+  await fakeSubmissions(page, [person(m, "Lena Hoffmann"), person(m, "Maya Okafor")]);
+  const id = (name: string) => m.rows.find((r) => r.name === name)!.id;
+  await page.goto(gradeHref(m.course, m.item, id("Maya Okafor")));
+  await page.getByLabel("Points", { exact: true }).fill("10");
+  await page.getByRole("button", { name: "Save draft" }).click();
+  await expect(page.getByRole("status").filter({ hasText: "Draft saved." })).toBeVisible();
+  // Maya is graded now, so the list is Lena and Ivan; from Lena the next one is Ivan, not Maya.
+  await page.getByLabel("Student", { exact: true }).selectOption({ label: "Lena Hoffmann" });
+  await expect(page.locator("#student-h")).toHaveText("Lena Hoffmann");
+  await expect(page.getByText("1 of 2", { exact: true })).toBeVisible();
+  await page.getByLabel("Points", { exact: true }).fill("14");
+  await page.getByRole("button", { name: "Save and next" }).click();
+  await expect(page.locator("#student-h")).toHaveText("Ivan Petrenko");
+  expect(url(page).get("student")).toBe(id("Ivan Petrenko"));
+});
+
+test("focus moves to the student's name after a move, and the counter is announced", async ({ page }) => {
+  await signIn(page, "teacher");
+  const m = await mergeSort(page);
+  await page.goto(gradeHref(m.course, m.item, m.rows[0]!.id));
+  await page.getByLabel("Show", { exact: true }).selectOption({ label: "All" });
+  await expect(page.locator("#student-h")).not.toBeFocused();
+  await expect(page.getByRole("status").filter({ hasText: "1 of 8" })).toBeVisible();
+  await page.getByLabel("Points", { exact: true }).fill("20");
+  await page.getByRole("button", { name: "Save and next" }).click();
+  await expect(page.locator("#student-h")).toHaveText(m.rows[1]!.name);
+  await expect(page.locator("#student-h")).toBeFocused();
+  await expect(page.getByRole("status").filter({ hasText: "2 of 8" })).toBeVisible();
+});
+
+test("the rail marks late work", async ({ page }) => {
+  await signIn(page, "teacher");
+  const m = await mergeSort(page);
+  await fakeSubmissions(page, [person(m, "Ivan Petrenko", { late: true })]);
+  await page.goto(gradeHref(m.course, m.item, m.rows.find((r) => r.name === "Ivan Petrenko")!.id));
+  const rail = page.getByRole("navigation", { name: "Students" });
+  await expect(rail.getByRole("button", { name: /Ivan Petrenko/ })).toContainText("late");
+  await page.getByLabel("Show", { exact: true }).selectOption({ label: "Drafts" });
+  await expect(rail.getByRole("button", { name: /Omar Haddad/ })).not.toContainText("late");
+});
+
+test("the top bar names the course", async ({ page }) => {
+  await signIn(page, "teacher");
+  const m = await mergeSort(page);
+  const title = await page.evaluate(async (id) => (await (await fetch(`/api/v1/courses/${id}`)).json()).title as string, m.course);
+  await page.goto(gradeHref(m.course, m.item, m.rows[0]!.id));
+  await expect(page.getByRole("heading", { level: 1 })).toContainText("Merge sort implementation");
+  await expect(page.getByRole("heading", { level: 1 })).toContainText(title);
+});
+
+test("a student cannot open the workspace", async ({ page }) => {
+  await signIn(page, "student");
+  const course = await firstCourse(page);
+  const item = await page.evaluate(async (id) => {
+    const tree = await (await fetch(`/api/v1/courses/${id}/content`)).json();
+    const items = tree.modules.flatMap((x: { items: { id: string; kind: string }[] }) => x.items);
+    return items.find((i: { kind: string }) => i.kind === "assignment").id as string;
+  }, course);
+  await page.goto(gradeHref(course, item, "00000000-0000-0000-0000-000000000001"));
+  await expect(page.getByRole("heading", { name: "We can't find that page" })).toBeVisible();
+  await expect(page.locator("#student-h")).toHaveCount(0);
+});
+
+test("leaving with unsaved points asks first, by the back link, the rail and the picker", async ({ page }) => {
+  await signIn(page, "teacher");
+  const m = await mergeSort(page);
+  await page.goto(gradeHref(m.course, m.item, m.rows[0]!.id));
+  await page.getByLabel("Show", { exact: true }).selectOption({ label: "All" });
+  const here = await page.locator("#student-h").innerText();
+  const points = page.getByLabel("Points", { exact: true });
+  const dialog = page.getByRole("dialog");
+  await points.fill("11");
+
+  await page.getByRole("link", { name: "Back to grades" }).click();
+  await expect(dialog).toContainText("Discard unsaved changes?");
+  await dialog.getByRole("button", { name: "Cancel" }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(page).toHaveURL(/\/course\/grade\?/);
+
+  const rail = page.getByRole("navigation", { name: "Students" });
+  await rail.getByRole("button", { name: /Daniel Kovalenko/ }).click();
+  await expect(dialog).toContainText("Discard unsaved changes?");
+  await dialog.getByRole("button", { name: "Cancel" }).click();
+  await expect(page.locator("#student-h")).toHaveText(here);
+
+  await page.getByLabel("Student", { exact: true }).selectOption({ label: "Sofia Marchetti" });
+  await expect(dialog).toContainText("Discard unsaved changes?");
+  await dialog.getByRole("button", { name: "Cancel" }).click();
+  await expect(page.locator("#student-h")).toHaveText(here);
+  await expect(page.getByLabel("Student", { exact: true })).toHaveValue(m.rows.find((r) => r.name === here)!.id);
+
+  // Each one goes through once the person agrees.
+  await rail.getByRole("button", { name: /Daniel Kovalenko/ }).click();
+  await dialog.getByRole("button", { name: "Discard" }).click();
+  await expect(page.locator("#student-h")).toHaveText("Daniel Kovalenko");
+  await points.fill("11");
+  await page.getByLabel("Student", { exact: true }).selectOption({ label: "Sofia Marchetti" });
+  await dialog.getByRole("button", { name: "Discard" }).click();
+  await expect(page.locator("#student-h")).toHaveText("Sofia Marchetti");
+  await points.fill("11");
+  await page.getByRole("link", { name: "Back to grades" }).click();
+  await dialog.getByRole("button", { name: "Discard" }).click();
+  await expect(page).toHaveURL(/\/course\/grades\?/);
+});
+
+test("closing the tab with unsaved points asks the browser to confirm", async ({ page }) => {
+  await signIn(page, "teacher");
+  const m = await mergeSort(page);
+  await page.goto(gradeHref(m.course, m.item, m.rows[0]!.id));
+  // A synthetic event: the browser shows its prompt only after a real key press, but it asks when the event is cancelled.
+  const cancelled = () => page.evaluate(() => { const e = new Event("beforeunload", { cancelable: true }); window.dispatchEvent(e); return e.defaultPrevented; });
+  await expect(page.getByLabel("Points", { exact: true })).toBeVisible();
+  expect(await cancelled()).toBe(false);
+  await page.getByLabel("Points", { exact: true }).fill("11");
+  expect(await cancelled()).toBe(true);
+});
+
+test("a failed publish of all drafts says so inside the dialog", async ({ page }) => {
+  await signIn(page, "teacher");
+  const m = await mergeSort(page);
+  await page.addInitScript(() => {
+    const real = window.fetch.bind(window);
+    window.fetch = async (input, init) => {
+      const href = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      if (!href.endsWith("/grades/publish")) return real(input, init);
+      return new Response(JSON.stringify({ type: "about:blank", title: "Publishing failed", status: 500, detail: "The grades could not be published." }), { status: 500, headers: { "Content-Type": "application/problem+json" } });
+    };
+  });
+  await page.goto(gradeHref(m.course, m.item, m.rows[0]!.id));
+  await page.getByRole("button", { name: /^Publish 4 drafts/ }).click();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByRole("button", { name: "Publish", exact: true }).click();
+  await expect(dialog.getByRole("alert")).toBeVisible();
+});
