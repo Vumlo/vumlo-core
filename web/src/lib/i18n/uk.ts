@@ -164,10 +164,6 @@ export const uk: Record<Keys, string> & Extra = {
   "password.hide": "Сховати",
   "password.showLabel": "Показати пароль",
   "password.hideLabel": "Сховати пароль",
-  "mock.mailbox": "Тестова скринька (лише dev:mock)",
-  "mock.noMail": "Для цієї адреси листів немає.",
-  "mock.verifyLink": "Підтвердити адресу пошти",
-  "mock.resetLink": "Вибрати новий пароль",
 
   // not found, errors
   "notFound.title": "Ми не знайшли цю сторінку",

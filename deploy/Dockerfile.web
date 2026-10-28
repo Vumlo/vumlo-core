@@ -15,6 +15,10 @@ COPY .vumlo/generated ./.vumlo/generated
 ARG VUMLO_API_ORIGIN=http://core:8080
 ENV VUMLO_API_ORIGIN=${VUMLO_API_ORIGIN}
 RUN cd web && npm run build
+# The mock API is for `dev:mock` only: its service worker and sample plugin page are not served, and the build fails
+# if the browser bundle carries a sample account, the sample password or the worker.
+RUN cd web && rm -f public/mockServiceWorker.js && rm -rf public/mock-plugin \
+    && ! grep -rIlE "northfield\.edu|correct horse|setupWorker" .next/static
 
 FROM node:24-slim
 ENV NODE_ENV=production
