@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useState, type FormEvent } from "react";
-import { MockMailbox } from "@/components/auth/MockMailbox";
+import { MockMailbox } from "@/mocks/MockMailbox";
 import { useRequestPasswordReset } from "@/lib/api/hooks/auth";
 import { useT } from "@/lib/i18n";
 import s from "../auth.module.css";

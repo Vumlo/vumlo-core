@@ -13,8 +13,11 @@ import { useItemTab } from "@/lib/useRoute";
 import { PluginFrame } from "./PluginFrame";
 import { PluginTabs } from "./PluginTabs";
 
-/** Outline on the left, the item on the right. `focus` hides the outline (focus mode of the answer editor). */
-export function ItemFrame({ courseId, itemId, children, focus = false }: { courseId: string; itemId: string; children: (ctx: { crumbs: ReactNode }) => ReactNode; focus?: boolean }) {
+/**
+ * Outline on the left, the item on the right. `focus` hides the outline and the plugin tabs (focus mode of the answer
+ * editor); `keepOutline` keeps the outline in a focused page, so a quiz still shows the course around it.
+ */
+export function ItemFrame({ courseId, itemId, children, focus = false, keepOutline = false }: { courseId: string; itemId: string; children: (ctx: { crumbs: ReactNode }) => ReactNode; focus?: boolean; keepOutline?: boolean }) {
   const t = useT();
   const tree = useContentTree(courseId);
   const meta = useItemMeta(courseId);
@@ -29,14 +32,14 @@ export function ItemFrame({ courseId, itemId, children, focus = false }: { cours
   const crumbs = (
     <nav aria-label={t("common.breadcrumb")} className="crumbs">
       <Link href={courseHref(courseId)}>{info.data?.code ?? t("search.kind.course")}</Link>
-      <span aria-hidden="true" style={{ padding: "0 6px" }}>/</span>
+      <span aria-hidden="true" style={{ padding: "0 8px" }}>/</span>
       <Link href={`${courseHref(courseId)}#sec-${found?.module.id ?? ""}`}>{found?.module.title ?? "…"}</Link>
     </nav>
   );
   return (
     <div className="container" style={{ paddingTop: 24 }}>
-      <div className={focus ? s.frameFocus : s.frame}>
-        {!focus && tree.data && <CourseOutline courseId={courseId} tree={tree.data} meta={meta.data?.items ?? {}} code={info.data?.code} title={course.data?.title} currentItemId={itemId} />}
+      <div className={focus && !keepOutline ? s.frameFocus : s.frame}>
+        {(!focus || keepOutline) && tree.data && <CourseOutline courseId={courseId} tree={tree.data} meta={meta.data?.items ?? {}} code={info.data?.code} title={course.data?.title} currentItemId={itemId} />}
         <div className={s.main} style={focus ? { maxWidth: "none" } : undefined}>
           {tabs.length === 0 ? (
             children({ crumbs })

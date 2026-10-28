@@ -12,6 +12,18 @@ export class ApiError extends Error {
   }
 }
 
+/** Text for an error box: the first field message, else the detail, else the title. */
+export const errorText = (e: ApiError | undefined): string | undefined => e && (e.errors[0]?.message ?? e.detail ?? e.title);
+
+let sessionExpired: (() => void) | undefined;
+/** The shell listens: a 401 on any call but sign-in means the session ended, and `/me` is asked again to confirm it. */
+export function onSessionExpired(listener: () => void) {
+  sessionExpired = listener;
+  return () => {
+    if (sessionExpired === listener) sessionExpired = undefined;
+  };
+}
+
 type Method = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 
 /** True inside the desktop app (ADR-0056). There the requests are made by Rust, with the token it keeps. */
@@ -56,6 +68,7 @@ async function request<T>(method: Method, path: string, body?: unknown, options?
   if (res.status === 204) return undefined as T;
   if (res.queued && res.json === undefined) return { queued: true } as T;
   if (res.status < 200 || res.status > 299) {
+    if (res.status === 401 && !path.startsWith("/auth/") && path !== "/me") sessionExpired?.();
     const p = (res.json ?? {}) as { title?: string; detail?: string; errors?: FieldError[] };
     throw new ApiError(res.status, p.title ?? res.statusText, p.detail, p.errors ?? []);
   }

@@ -26,7 +26,9 @@ export function StudentCourses() {
     return { current: cur, past: terms.map((name) => ({ term: name, items: old.filter((c) => (c.term_name ?? t("courses.earlier")) === name) })) };
   }, [cards.data, q, t]);
   const pastCount = past.reduce((a, g) => a + g.items.length, 0);
-  const term = current[0]?.term_name;
+  // One heading for the term only when every current course is in it.
+  const terms = new Set(current.map((c) => c.term_name));
+  const term = terms.size === 1 ? current[0]?.term_name : undefined;
 
   return (
     <div className="container">
@@ -76,7 +78,7 @@ export function StudentCourses() {
         <>
           {past.length === 0 && <p className="empty">{t("courses.nonePast")}</p>}
           {past.map((g) => (
-            <section key={g.term} style={{ marginBottom: 28 }}>
+            <section key={g.term} style={{ marginBottom: 32 }}>
               <h2 className="section-title">{g.term}</h2>
               <div className="card card-list">
                 {g.items.map((c) => (
@@ -93,7 +95,7 @@ export function StudentCourses() {
               </div>
             </section>
           ))}
-          <p className="muted" style={{ margin: "0 2px", fontSize: 14 }}>{t("courses.pastNote")}</p>
+          <p className="muted" style={{ margin: "0 4px", fontSize: 14 }}>{t("courses.pastNote")}</p>
         </>
       )}
     </div>

@@ -1,41 +1,56 @@
-.row { display: flex; align-items: center; gap: 12px; min-height: 62px; padding: 8px 16px; border-top: 1px solid var(--border); }
+/* Hallmark · shape: app screen · genre: modern-minimal · theme: Ultraviolet (deal 1/3, seed learning-management-app-university-37b9·c1490edb·2026-10-28·r0) · redesign: full · tokens and the pre-emit critique are in styles/globals.css */
+.row { display: flex; align-items: center; gap: 12px; min-height: 64px; padding: 8px 20px; border-top: 1px solid var(--border); transition: background-color var(--dur-micro) var(--ease-out); }
 .row:hover { background: var(--hover); }
-.rowMain { flex: 1 1 auto; min-width: 0; }
+.row:active { background: var(--sunken); }
+.rowMain { flex: 0 1 220px; min-width: 0; }
 .rowTitle { display: block; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 15px; font-weight: 500; }
 .rowSub { display: block; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 13px; color: var(--muted); }
-.rowSide { flex: none; display: flex; flex-direction: column; align-items: flex-end; gap: 3px; font-size: 13px; }
-.pad { box-sizing: border-box; height: 100%; display: flex; flex-direction: column; gap: 8px; padding: 0 16px 16px; }
-.grade { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; padding: 11px 16px; border-top: 1px solid var(--border); }
+.rowSide { flex: none; display: flex; flex-direction: column; align-items: flex-end; gap: 4px; font-size: 13px; }
+/* One lane per deadline: a hairline two weeks long, today at its left end, the due time as a violet mark. */
+.lane { position: relative; flex: 1 1 120px; min-width: 0; height: 24px; }
+.lane::before { content: ""; position: absolute; left: 0; right: 0; top: 50%; height: 1px; background: var(--border-strong); }
+.lane::after { content: ""; position: absolute; left: 0; top: 4px; width: 2px; height: 16px; border-radius: 1px; background: var(--text); }
+.mark { position: absolute; top: 4px; width: 16px; height: 16px; margin-left: -8px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 4px var(--surface); }
+.mark[data-over="true"] { border-radius: 4px; }
+.pad { box-sizing: border-box; height: 100%; display: flex; flex-direction: column; gap: 8px; padding: 0 20px 20px; }
+.grade { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 12px 20px; border-top: 1px solid var(--border); transition: background-color var(--dur-micro) var(--ease-out); }
 .grade:hover { background: var(--hover); }
+.grade:active { background: var(--sunken); }
 .score { flex: none; white-space: nowrap; }
-.scoreNum { font-size: 17px; font-weight: 600; }
-.scoreMax { font-size: 12px; color: var(--muted); }
-.month { padding: 0 12px 10px; }
+.scoreNum { font-size: 20px; font-weight: 300; letter-spacing: -0.02em; }
+.scoreMax { font-size: 13px; color: var(--muted); }
+.month { box-sizing: border-box; height: 100%; display: flex; flex-direction: column; padding: 0 16px 16px; }
 .weekdays, .cells { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); }
-.weekdays { font-size: 11px; color: var(--muted); text-align: center; }
-.cells { row-gap: 2px; margin-top: 4px; }
-.cell { display: flex; align-items: center; justify-content: center; height: 20px; }
-.day { display: flex; align-items: center; justify-content: center; min-width: 22px; height: 20px; border-radius: 10px; font-size: 12px; }
+.weekdays { font-size: 13px; color: var(--muted); text-align: center; }
+.cells { flex: 1 1 auto; min-height: 0; grid-auto-rows: minmax(22px, 1fr); row-gap: 0; margin-top: 8px; }
+.cell { display: flex; align-items: center; justify-content: center; }
+.day { display: flex; align-items: center; justify-content: center; min-width: 22px; height: 22px; border-radius: var(--radius-pill); font-size: 13px; }
 .day[data-kind="today"] { background: var(--accent); color: var(--accent-text); font-weight: 600; }
-.day[data-kind="due"] { background: var(--asg-tile); color: var(--asg-fg); font-weight: 600; }
-.day[data-past="true"] { color: var(--muted); }
-.courses { box-sizing: border-box; height: 100%; display: grid; grid-auto-rows: 1fr; gap: 12px; padding: 0 16px 16px; }
-.course { display: flex; flex-direction: column; gap: 2px; min-width: 0; padding: 12px 14px; border: 1px solid var(--border); border-radius: 10px; background: var(--sunken); }
-.course:hover { border-color: var(--border-strong); }
-.code { align-self: flex-start; padding: 1px 7px; border-radius: 5px; background: var(--hover); color: var(--muted); font-size: 12px; font-weight: 500; }
-.week { box-sizing: border-box; height: 100%; display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 8px; padding: 0 16px 16px; }
-.weekDay { display: flex; flex-direction: column; gap: 6px; min-width: 0; padding: 8px; border-radius: 8px; background: var(--sunken); }
+.day[data-kind="due"] { background: var(--accent-soft); color: var(--accent-fg); font-weight: 600; }
+.day[data-past="true"]:not([data-kind]) { color: var(--muted); }
+/* Course tiles sit flat in the widget and part on hairlines: a card holds no card. */
+.courses { box-sizing: border-box; height: 100%; display: grid; grid-auto-rows: 1fr; gap: 0; margin-left: -1px; }
+.course { display: flex; flex-direction: column; gap: 4px; min-width: 0; padding: 12px 20px; border-top: 1px solid var(--border); border-left: 1px solid var(--border); transition: background-color var(--dur-micro) var(--ease-out); }
+.course:hover { background: var(--hover); }
+.code { align-self: flex-start; padding: 0 8px; border-radius: var(--radius-pill); background: var(--accent-soft); color: var(--accent-fg); font-size: 13px; font-weight: 500; }
+.week { box-sizing: border-box; height: 100%; display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 0; margin-left: -1px; border-top: 1px solid var(--border); }
+.weekDay { display: flex; flex-direction: column; gap: 8px; min-width: 0; padding: 8px 12px; border-left: 1px solid var(--border); }
 .weekDay[data-today="true"] { background: var(--accent-soft); }
-.weekEvent { display: block; min-width: 0; padding: 4px 6px; border-radius: 6px; background: var(--asg-tile); font-size: 12px; line-height: 1.3; }
-.empty { padding: 4px 16px 16px; font-size: 14px; color: var(--muted); }
-.queue { display: flex; align-items: center; gap: 12px; min-height: 52px; padding: 6px 16px; border-top: 1px solid var(--border); }
+.weekEvent { display: block; min-width: 0; padding: 4px 8px; border-radius: var(--radius-field); background: var(--asg-tile); color: var(--asg-fg); font-size: 13px; line-height: 1.3; }
+.empty { padding: 4px 20px 20px; font-size: 14px; color: var(--muted); }
+.queue { display: flex; align-items: center; gap: 12px; min-height: 52px; padding: 8px 20px; border-top: 1px solid var(--border); transition: background-color var(--dur-micro) var(--ease-out); }
 .queue:hover { background: var(--hover); }
-.initials { flex: none; display: flex; align-items: center; justify-content: center; width: 30px; height: 30px; border-radius: 50%; background: var(--hover); color: var(--muted); font-size: 12px; font-weight: 600; }
-.big { font-size: 22px; font-weight: 600; letter-spacing: -0.01em; }
-.deadline { display: block; padding: 9px 16px; border-top: 1px solid var(--border); }
+.initials { flex: none; display: flex; align-items: center; justify-content: center; width: 32px; height: 32px; border-radius: 50%; background: var(--sunken); color: var(--muted); font-size: 13px; font-weight: 600; }
+.big { font-size: 24px; font-weight: 300; letter-spacing: -0.02em; }
+.deadline { display: block; padding: 8px 20px; border-top: 1px solid var(--border); transition: background-color var(--dur-micro) var(--ease-out); }
 .deadline:hover { background: var(--hover); }
-.deadWhen { display: block; font-size: 12px; font-weight: 600; color: var(--asg-fg); }
+.deadWhen { display: block; font-size: 13px; font-weight: 600; color: var(--accent-fg); }
+@media (max-width: 960px) {
+  .lane { display: none; }
+}
 @media (max-width: 720px) {
   .week { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .rowSide { font-size: 12px; }
+  .rowSide { font-size: 13px; }
+  .courses { grid-template-columns: 1fr !important; }
+  .course { border-left: 0; }
 }

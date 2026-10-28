@@ -22,13 +22,13 @@ function AddStudents({ groupId, onClose }: { groupId: string; onClose: () => voi
     <Dialog title={t("ag.addStudents")} description={t("ag.addLead")} onClose={onClose}
       actions={<><button type="button" className="btn" onClick={onClose}>{t("common.cancel")}</button><button type="button" className="btn btn-primary" disabled={picked.length === 0 || add.pending} onClick={async () => { if (await add.run(picked)) onClose(); }}>{t("ag.addN", { n: picked.length || "" })}</button></>}>
       <div className="field"><label htmlFor="sq">{t("people.nameOrEmail")}</label><input id="sq" className="input" value={q} onChange={(e) => setQ(e.target.value)} /></div>
-      <ul style={{ marginTop: 10, maxHeight: 260, overflow: "auto" }} aria-label={t("ag.canAdd")}>
+      <ul style={{ marginTop: 12, maxHeight: 260, overflow: "auto" }} aria-label={t("ag.canAdd")}>
         {list.map((u) => (
           <li key={u.id}><label className="check"><input type="checkbox" checked={picked.includes(u.id)} onChange={() => setPicked((p) => (p.includes(u.id) ? p.filter((x) => x !== u.id) : [...p, u.id]))} /><span>{u.name} {u.surname} <span className="muted" style={{ fontSize: 13 }}>{u.email}</span></span></label></li>
         ))}
         {list.length === 0 && <li className="muted" style={{ fontSize: 14 }}>{t("ag.nobody")}</li>}
       </ul>
-      {add.error && <p role="alert" className="alert alert-danger" style={{ marginTop: 10 }}>{add.error.detail ?? add.error.title}</p>}
+      {add.error && <p role="alert" className="alert alert-danger" style={{ marginTop: 12 }}>{add.error.detail ?? add.error.title}</p>}
     </Dialog>
   );
 }
@@ -90,7 +90,7 @@ export function AdminGroups() {
           <div className={s.groupMain}>
             {current && o && (
               <section aria-labelledby="gm-h" className={`card ${s.section}`}>
-                <div className="row" style={{ gap: 12, flexWrap: "wrap", marginBottom: 14 }}>
+                <div className="row" style={{ gap: 12, flexWrap: "wrap", marginBottom: 16 }}>
                   <div style={{ flex: "1 1 220px" }}><h2 id="gm-h" style={{ fontSize: 20, fontWeight: 600 }}>{current.name}</h2><p className="muted" style={{ fontSize: 14 }}>{plural(o.student_count, "student")}, {t("ag.linkedTo", { n: plural(o.course_count, "course") })}</p></div>
                   <button type="button" className="btn" onClick={() => setDialog("add")}>{t("ag.addStudents")}</button>
                   <button type="button" className="btn" onClick={() => setDialog("replace")}>{t("ag.replace")}</button>
@@ -116,15 +116,15 @@ export function AdminGroups() {
                   </table>
                   {o.members.length === 0 && <p className="empty">{t("ag.empty")}</p>}
                 </div>
-                <p className="muted" style={{ marginTop: 10, fontSize: 13 }}>{t("ag.showing", { n: o.members.length, total: o.student_count })}</p>
+                <p className="muted" style={{ marginTop: 12, fontSize: 13 }}>{t("ag.showing", { n: o.members.length, total: o.student_count })}</p>
               </section>
             )}
             {o && (
               <section aria-labelledby="gl-h" className={`card ${s.section}`}>
                 <h2 id="gl-h" style={{ fontSize: 17, fontWeight: 600 }}>{t("ag.linkedCourses")}</h2>
-                <p className="muted" style={{ margin: "4px 0 10px", fontSize: 14 }}>{t("ag.linkedLead")}</p>
+                <p className="muted" style={{ margin: "4px 0 12px", fontSize: 14 }}>{t("ag.linkedLead")}</p>
                 <ul>
-                  {o.linked_courses.map((c) => <li key={c.course_id} style={{ padding: "10px 0", borderTop: "1px solid var(--border)" }}><span style={{ display: "block", fontWeight: 500 }}>{c.code} {c.title}</span><span className="muted" style={{ fontSize: 13 }}>{c.owner_name} {c.owner_surname}, {t("people.linkedOn", { day: dayLong(c.linked_on) })}</span></li>)}
+                  {o.linked_courses.map((c) => <li key={c.course_id} style={{ padding: "12px 0", borderTop: "1px solid var(--border)" }}><span style={{ display: "block", fontWeight: 500 }}>{c.code} {c.title}</span><span className="muted" style={{ fontSize: 13 }}>{c.owner_name} {c.owner_surname}, {t("people.linkedOn", { day: dayLong(c.linked_on) })}</span></li>)}
                   {o.linked_courses.length === 0 && <li className="muted" style={{ fontSize: 14 }}>{t("ag.noCourse")}</li>}
                 </ul>
               </section>

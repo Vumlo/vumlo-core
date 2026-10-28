@@ -1,12 +1,13 @@
 "use client";
 
 import Link from "next/link";
+import { useState } from "react";
 import { useCourseCards } from "@/lib/api/hooks/courses";
 import { useTeachingOverview } from "@/lib/api/hooks/work";
-import { now } from "@/lib/clock";
+import { deviceNow, now } from "@/lib/clock";
 import { useT } from "@/lib/i18n";
 import { todoText } from "@/lib/course";
-import { daysFromToday, dueLabel, fullDate, greeting, initials, plural, shortDay } from "@/lib/format";
+import { daysFromToday, dueLabel, fullDate, greetingLine, initials, plural, shortDay } from "@/lib/format";
 import type { User } from "@/lib/session";
 import { translate } from "@/lib/i18n/core";
 import { WidgetGrid, type WidgetDef } from "./WidgetGrid";
@@ -24,6 +25,7 @@ export function TeacherHome({ user }: { user: User }) {
   const overview = useTeachingOverview();
   const cards = useCourseCards();
   const today = now();
+  const [roll] = useState(() => Math.random());
 
   const defs: WidgetDef[] = (() => {
     const o = overview.data;
@@ -123,7 +125,7 @@ export function TeacherHome({ user }: { user: User }) {
           <div className="page-head">
             <div>
               <p className="eyebrow">{fullDate(today)}</p>
-              <h1 className="page-title">{greeting(today)}, {user.name}</h1>
+              <h1 className="page-title">{greetingLine(deviceNow(), user.name, roll)}</h1>
             </div>
             <span className="desktop-only">{button}</span>
           </div>

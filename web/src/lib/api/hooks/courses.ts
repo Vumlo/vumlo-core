@@ -168,6 +168,7 @@ export function useUnlinkGroup(courseId: string) {
   return useMutation(async (linkId: string) => {
     await api.delete(`/courses/${courseId}/groups/${linkId}`);
     changed(courseId);
+    return true as const;
   });
 }
 

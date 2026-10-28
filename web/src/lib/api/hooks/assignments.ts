@@ -109,9 +109,13 @@ export function useCourseSubmissions(courseId: string | null, assignmentIds: str
 export function usePublishAllDrafts() {
   return useMutation(async (assignmentIds: string[]) => {
     let published = 0;
-    for (const id of assignmentIds) published += (await api.post<{ published: number }>(`/assignments/${id}/grades/publish`, { students: "all" })).published;
-    invalidate("/courses/");
-    invalidate("/me/");
+    try {
+      for (const id of assignmentIds) published += (await api.post<{ published: number }>(`/assignments/${id}/grades/publish`, { students: "all" })).published;
+    } finally {
+      // Also when one assignment failed: the ones before it are published, and the screen must show that.
+      invalidate("/courses/");
+      invalidate("/me/");
+    }
     return published;
   });
 }

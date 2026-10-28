@@ -14,7 +14,7 @@ export function Switch({ checked, onChange, label }: { checked: boolean; onChang
 }
 
 /** Breadcrumb, status chip, save state and the main actions of an authoring screen. */
-export function AuthorBar({ courseId, itemId, title, chip, saved, pending, failed, children }: {
+export function AuthorBar({ courseId, itemId, title, chip, saved, pending, failed, error, children }: {
   courseId: string;
   itemId: string;
   title: string;
@@ -22,6 +22,8 @@ export function AuthorBar({ courseId, itemId, title, chip, saved, pending, faile
   saved: string | null;
   pending: boolean;
   failed: boolean;
+  /** Why a save or a publish failed, shown under the bar. */
+  error?: string | null;
   children?: ReactNode;
 }) {
   const t = useT();
@@ -29,17 +31,20 @@ export function AuthorBar({ courseId, itemId, title, chip, saved, pending, faile
   const tree = useContentTree(courseId);
   const found = tree.data ? findItem(tree.data, itemId) : undefined;
   return (
+    <>
     <div className={s.top}>
       <nav aria-label={t("common.breadcrumb")} className={`crumbs ${s.crumbs}`}>
         <Link href={courseHref(courseId)}>{info.data?.code ?? t("search.kind.course")}</Link>
-        <span aria-hidden="true" style={{ padding: "0 6px" }}>/</span>
+        <span aria-hidden="true" style={{ padding: "0 8px" }}>/</span>
         <Link href={courseHref(courseId)}>{found?.module.title ?? "…"}</Link>
-        <span aria-hidden="true" style={{ padding: "0 6px" }}>/</span>
+        <span aria-hidden="true" style={{ padding: "0 8px" }}>/</span>
         <span aria-current="page">{title || t("ab.untitled")}</span>
       </nav>
       <span className={s.chip} data-tone={chip.tone}>{chip.text}</span>
       <span role="status" className={s.saved} style={failed ? { color: "var(--danger)" } : undefined}>{failed ? t("ab.failed") : pending ? t("asg.saving") : saved ? t("ab.saved", { time: timeOf(saved) }) : t("ab.allSaved")}</span>
       {children}
     </div>
+    {error && <p role="alert" className="alert alert-danger" style={{ marginBottom: 16 }}>{error}</p>}
+    </>
   );
 }

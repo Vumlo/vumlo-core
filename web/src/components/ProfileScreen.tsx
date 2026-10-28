@@ -4,6 +4,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import { Icon, type IconName } from "@/components/Icon";
 import { PasswordField } from "@/components/PasswordField";
 import { StrengthMeter } from "@/components/StrengthMeter";
+import { errorText } from "@/lib/api/client";
 import { useRevokeSessions, useSessions } from "@/lib/api/hooks/me";
 import { useInstitution } from "@/lib/api/hooks/institution";
 import { LANGUAGES, useLanguage, useT, type Language } from "@/lib/i18n";
@@ -122,6 +123,7 @@ export function ProfileScreen() {
               <button type="button" className="btn btn-outline" disabled={others.length === 0 || revoke.pending} onClick={() => void revoke.run(others.map((x) => x.id))}>{t("profile.signOutOthers")}</button>
             </div>
             <p className={s.lead}>{t("profile.sessionsLead")}</p>
+            {revoke.error && <p role="alert" className="alert alert-danger" style={{ marginBottom: 12 }}>{errorText(revoke.error)}</p>}
             <div>
               {(sessions.data ?? []).map((x) => {
                 const k = KIND[x.kind] ?? KIND.web!;

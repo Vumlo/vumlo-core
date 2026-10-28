@@ -17,14 +17,16 @@ type Props = {
   sentence?: ReactNode;
   /** True for work that carries no points ("not graded"). */
   ungraded?: boolean;
+  /** Stacks the parts for a side column instead of a sticky strip under the title. */
+  stacked?: boolean;
   children?: ReactNode;
 };
 
 /** The sticky strip under the title: deadline, points, state and the main action. */
-export function DueBar({ due, open, points, pill, danger, sentence, ungraded, children }: Props) {
+export function DueBar({ due, open, points, pill, danger, sentence, ungraded, stacked, children }: Props) {
   const t = useT();
   return (
-    <div className={s.bar}>
+    <div className={stacked ? s.stack : s.bar}>
       <Icon name="clock" size={20} strokeWidth={1.9} style={{ flex: "none", color: danger ? "var(--danger)" : "var(--text)" }} />
       <p className={s.barText}>
         {sentence ?? (

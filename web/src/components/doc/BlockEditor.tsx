@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode, type Ref } from "react";
+import { useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode, type Ref } from "react";
 import { Icon } from "@/components/Icon";
 import { useT } from "@/lib/i18n";
 import type { Block, CodeLanguage, Document, Feature } from "@/lib/api/types";
@@ -137,7 +137,8 @@ export function BlockEditor({ value, onChange, features, label, mode, minHeight 
   const [blocks, setBlocks] = useState<Block[]>(() => (value.blocks.length ? value.blocks : [textBlock("paragraph")]));
   const [revs, setRevs] = useState<Record<string, number>>({});
   const [activeId, setActiveId] = useState<string | null>(null);
-  const [slash, setSlash] = useState<{ id: string; filter: string; index: number } | null>(null);
+  // `bare`: the menu was opened with the "+" of the gutter, so what is typed filters it without a leading "/".
+  const [slash, setSlash] = useState<{ id: string; filter: string; index: number; bare?: boolean } | null>(null);
   const [float, setFloat] = useState<{ left: number; top: number } | null>(null);
   const [pop, setPop] = useState<null | "link" | "math">(null);
   const [popValue, setPopValue] = useState("");
@@ -177,6 +178,41 @@ export function BlockEditor({ value, onChange, features, label, mode, minHeight 
 
   const indexOf = (id: string) => blocksRef.current.findIndex((b) => b.id === id);
   const patch = (id: string, fn: (b: Block) => Block, to?: Focus, bump?: string[]) => commit(blocksRef.current.map((b) => (b.id === id ? fn(b) : b)), to, bump);
+
+  /** Moves the caret out of a block: to its neighbour, or into a new empty paragraph after the last block. */
+  function leave(id: string, dir: 1 | -1) {
+    const list = blocksRef.current;
+    const target = list[list.findIndex((x) => x.id === id) + dir];
+    if (target) {
+      focus.current = { id: target.id, at: dir === 1 ? "start" : "end" };
+      setBlocks((x) => x.slice());
+    } else if (dir === 1) {
+      const fresh = textBlock("paragraph");
+      commit([...list, fresh], { id: fresh.id, at: "start" });
+    }
+  }
+
+  /** A click below the last block goes on writing there, as in a page: after a code block it opens a new paragraph. */
+  function onAreaMouseDown(e: ReactMouseEvent<HTMLDivElement>) {
+    if (e.target !== e.currentTarget) return;
+    const tail = blocksRef.current[blocksRef.current.length - 1];
+    if (!tail) return;
+    e.preventDefault();
+    if (isTextBlock(tail)) {
+      focus.current = { id: tail.id, at: "end" };
+      setBlocks((x) => x.slice());
+    } else {
+      leave(tail.id, 1);
+    }
+  }
+
+  /** The keys that leave a code, diagram or formula field at its edge, so the caret is never stuck in a card. */
+  function edgeKeys(id: string, e: ReactKeyboardEvent<HTMLInputElement | HTMLTextAreaElement>) {
+    const el = e.currentTarget;
+    const multi = el instanceof HTMLTextAreaElement;
+    if (e.key === "ArrowDown" && (!multi || (el.selectionStart === el.value.length && el.selectionEnd === el.value.length))) { e.preventDefault(); leave(id, 1); }
+    else if (e.key === "ArrowUp" && (!multi || el.selectionEnd === 0)) { e.preventDefault(); leave(id, -1); }
+  }
 
   const state = useMemo<EditorState>(() => {
     const b = blocks.find((x) => x.id === activeId);
@@ -324,12 +360,17 @@ export function BlockEditor({ value, onChange, features, label, mode, minHeight 
     const text = (el.textContent ?? "").replace(/ /g, " ").replace(/​/g, "");
     if (b.type === "paragraph") {
       for (const [re, kind, feature] of SHORTCUTS) {
-        if (re.test(text) && has(feature)) { el.textContent = ""; turnInto(kind, id); if (kind === "divider") { /* the divider replaced the block */ } return; }
+        // The model still holds the typed marker ("-"): clear it, or turnInto keeps it as the item's text.
+        if (re.test(text) && has(feature)) { patch(id, (x) => ({ ...x, content: [] }) as Block); turnInto(kind, id); return; }
       }
     }
-    if (text.startsWith("/") && !/\s/.test(text) && textOf(b.content) !== text.slice(1)) {
-      setSlash({ id, filter: text.slice(1).toLowerCase(), index: 0 });
-    } else if (slash?.id === id && !text.startsWith("/")) {
+    if (slash?.id === id && slash.bare && !text.startsWith("/")) {
+      const filter = text.trim().toLowerCase();
+      if (slash.filter !== filter) setSlash({ ...slash, filter, index: 0 });
+    } else if (text.startsWith("/") && !/\s/.test(text)) {
+      const filter = text.slice(1).toLowerCase();
+      if (slash?.id !== id || slash.filter !== filter) setSlash({ id, filter, index: 0 });
+    } else if (slash?.id === id) {
       setSlash(null);
     }
     commit(blocksRef.current.map((x) => (x.id === id ? ({ ...x, content: htmlToInline(el) } as Block) : x)));
@@ -340,6 +381,20 @@ export function BlockEditor({ value, onChange, features, label, mode, minHeight 
     return blockMenu().map((g) => ({ ...g, items: g.items.filter((it) => has(it.feature) && (it.name.toLowerCase().includes(slash.filter) || it.kind.includes(slash.filter))) })).filter((g) => g.items.length > 0);
   }, [slash, has]);
   const flatSlash = slashItems.flatMap((g) => g.items);
+
+  // The menu opens upward when there is no room below its block, as one near the bottom of the screen would be cut off.
+  useLayoutEffect(() => {
+    const menu = root.current?.querySelector<HTMLElement>('[role="listbox"]');
+    if (!menu?.parentElement) return;
+    menu.style.top = "100%";
+    menu.style.bottom = "auto";
+    const room = menu.getBoundingClientRect();
+    const block = menu.parentElement.getBoundingClientRect();
+    if (room.bottom > window.innerHeight - 8 && block.top - 8 > room.height) {
+      menu.style.top = "auto";
+      menu.style.bottom = "100%";
+    }
+  }, [slash?.id, slash?.filter, flatSlash.length]);
 
   function pickSlash(kind: InsertKind) {
     if (!slash) return;
@@ -354,7 +409,8 @@ export function BlockEditor({ value, onChange, features, label, mode, minHeight 
     const b = blocksRef.current.find((x) => x.id === id);
     if (!b || !isTextBlock(b)) return;
     const mod = e.metaKey || e.ctrlKey;
-    if (slash && slash.id === id) {
+    // With no match the menu is not shown, and the keys act on the text as usual.
+    if (slash && slash.id === id && flatSlash.length > 0) {
       if (e.key === "ArrowDown") { e.preventDefault(); setSlash({ ...slash, index: (slash.index + 1) % Math.max(1, flatSlash.length) }); return; }
       if (e.key === "ArrowUp") { e.preventDefault(); setSlash({ ...slash, index: (slash.index - 1 + flatSlash.length) % Math.max(1, flatSlash.length) }); return; }
       if (e.key === "Enter") { e.preventDefault(); const it = flatSlash[slash.index]; if (it) pickSlash(it.kind); return; }
@@ -446,7 +502,7 @@ export function BlockEditor({ value, onChange, features, label, mode, minHeight 
   );
 
   const popInput = pop && (
-    <form className="row" style={{ gap: 6 }} onSubmit={(e) => { e.preventDefault(); applyPop(); }}>
+    <form className="row" style={{ gap: 8 }} onSubmit={(e) => { e.preventDefault(); applyPop(); }}>
       <input className={s.floatInput} autoFocus aria-label={pop === "link" ? t("be.linkAddress") : t("be.formulaLatex")} placeholder={pop === "link" ? "https://" : t("be.latexExample")} value={popValue} onChange={(e) => setPopValue(e.target.value)} onKeyDown={(e) => { if (e.key === "Escape") setPop(null); }} />
       <button type="submit" className="btn btn-primary" style={{ minHeight: 34 }}>{t("be.apply")}</button>
       <button type="button" className="btn" style={{ minHeight: 34 }} onClick={() => setPop(null)}>{t("common.cancel")}</button>
@@ -454,7 +510,7 @@ export function BlockEditor({ value, onChange, features, label, mode, minHeight 
   );
 
   return (
-    <div ref={root} role="group" aria-label={label} className={s.wrap} onMouseDown={(e) => { if (!(e.target as HTMLElement).closest("[data-gutter-menu]")) setGutterMenu(null); }}>
+    <div ref={root} role="group" aria-label={label} className={s.wrap} data-mode={mode} onMouseDown={(e) => { if (!(e.target as HTMLElement).closest("[data-gutter-menu]")) setGutterMenu(null); }}>
       {bar && (
         <div role="toolbar" aria-label={t("be.formatting")} className={s.bar}>
           {pop ? popInput : (
@@ -483,13 +539,13 @@ export function BlockEditor({ value, onChange, features, label, mode, minHeight 
         </div>
       )}
 
-      <div className={s.area} style={{ minHeight }}>
+      <div className={s.area} style={{ minHeight }} onMouseDown={onAreaMouseDown}>
         {blocks.map((b, i) => {
           const rev = revs[b.id] ?? 0;
           const active = activeId === b.id;
           const gutter = !bar && (
             <div className={s.gutter} data-gutter-menu>
-              <button type="button" className={s.gbtn} aria-label={t("be.addBlock")} onClick={() => { setActiveId(b.id); const made = makeBlock("paragraph"); const copy = blocksRef.current.slice(); copy.splice(i + 1, 0, made); commit(copy, { id: made.id, at: "start" }); setSlash({ id: made.id, filter: "", index: 0 }); }}>
+              <button type="button" className={s.gbtn} aria-label={t("be.addBlock")} onClick={() => { setActiveId(b.id); const made = makeBlock("paragraph"); const copy = blocksRef.current.slice(); copy.splice(i + 1, 0, made); commit(copy, { id: made.id, at: "start" }); setSlash({ id: made.id, filter: "", index: 0, bare: true }); }}>
                 <Icon name="plus" size={16} strokeWidth={2} />
               </button>
               <button type="button" className={s.gbtn} aria-label={t("be.moveBlock")} aria-haspopup="menu" aria-expanded={gutterMenu === b.id} onClick={() => { setActiveId(b.id); setGutterMenu(gutterMenu === b.id ? null : b.id); }}>
@@ -554,7 +610,7 @@ export function BlockEditor({ value, onChange, features, label, mode, minHeight 
                         </select>
                       </label>
                     </div>
-                    <textarea className={s.code} aria-label={t("blk.code")} spellCheck={false} value={b.props.source} onChange={(e) => patch(b.id, (x) => (x.type === "code" ? { ...x, props: { ...x.props, source: e.target.value } } : x))} />
+                    <textarea className={s.code} aria-label={t("blk.code")} spellCheck={false} onKeyDown={(e) => edgeKeys(b.id, e)} value={b.props.source} onChange={(e) => patch(b.id, (x) => (x.type === "code" ? { ...x, props: { ...x.props, source: e.target.value } } : x))} />
                   </div>
                 )}
                 {b.type === "math" && (
@@ -562,7 +618,7 @@ export function BlockEditor({ value, onChange, features, label, mode, minHeight 
                     <div className={s.cardHead}><span>{t("be.formulaTitle")}</span><span>{t("be.pressEnter")}</span></div>
                     <div className={s.mathBody}>
                       <label className="sr-only" htmlFor={`m-${b.id}`}>{t("be.latexSource")}</label>
-                      <input id={`m-${b.id}`} className={s.mathInput} value={b.props.source} placeholder="T(n) = 2T\left(\frac{n}{2}\right) + n" onChange={(e) => patch(b.id, (x) => (x.type === "math" ? { ...x, props: { source: e.target.value } } : x))} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); const n = blocksRef.current[blocksRef.current.findIndex((x) => x.id === b.id) + 1]; if (n) { focus.current = { id: n.id, at: "start" }; setBlocks((x) => x.slice()); } } }} />
+                      <input id={`m-${b.id}`} className={s.mathInput} value={b.props.source} placeholder="T(n) = 2T\left(\frac{n}{2}\right) + n" onChange={(e) => patch(b.id, (x) => (x.type === "math" ? { ...x, props: { source: e.target.value } } : x))} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); leave(b.id, 1); } else edgeKeys(b.id, e); }} />
                       <div className={s.preview}>{b.props.source ? <Formula source={b.props.source} /> : <span className="muted" style={{ fontSize: 14 }}>{t("be.previewHere")}</span>}</div>
                     </div>
                   </div>
@@ -570,7 +626,7 @@ export function BlockEditor({ value, onChange, features, label, mode, minHeight 
                 {b.type === "mermaid" && (
                   <div className={s.card} data-active={active}>
                     <div className={s.cardHead}><span>{t("be.diagramTitle")}</span></div>
-                    <textarea className={s.code} aria-label={t("be.diagramSource")} spellCheck={false} value={b.props.source} onChange={(e) => patch(b.id, (x) => (x.type === "mermaid" ? { ...x, props: { source: e.target.value } } : x))} />
+                    <textarea className={s.code} aria-label={t("be.diagramSource")} spellCheck={false} onKeyDown={(e) => edgeKeys(b.id, e)} value={b.props.source} onChange={(e) => patch(b.id, (x) => (x.type === "mermaid" ? { ...x, props: { source: e.target.value } } : x))} />
                   </div>
                 )}
                 {b.type === "video" && (

@@ -147,19 +147,19 @@ export function CalendarScreen() {
           </div>
           <aside aria-labelledby="day-h" className={`card card-pad ${s.aside}`}>
             <h2 id="day-h" style={{ fontSize: 17, fontWeight: 600 }}>{dayTitle(selected)}</h2>
-            <p className="muted" style={{ fontSize: 14, marginBottom: 10 }}>{relativeCap(selIso)}</p>
+            <p className="muted" style={{ fontSize: 14, marginBottom: 12 }}>{relativeCap(selIso)}</p>
             {selEvents.length > 0 ? selEvents.map((e) => {
               const p = e.status ? statusPill(e.status) : null;
               return (
                 <Link key={e.id} href={e.href} className={s.dayItem}>
-                  <span className="row" style={{ gap: 6, fontSize: 13, fontWeight: 600, color: "var(--asg-fg)" }}><Icon name="assignment" size={14} strokeWidth={2} />{t("calendar.dueAt", { time: timeOf(e.at) })}</span>
-                  <span style={{ display: "block", fontWeight: 500, marginTop: 2 }}>{e.title}</span>
-                  <span className="muted" style={{ display: "block", fontSize: 13, marginBottom: 6 }}>{e.courseTitle}</span>
+                  <span className="row" style={{ gap: 8, fontSize: 13, fontWeight: 600, color: "var(--asg-text)" }}><Icon name="assignment" size={14} strokeWidth={2} />{t("calendar.dueAt", { time: timeOf(e.at) })}</span>
+                  <span style={{ display: "block", fontWeight: 500, marginTop: 4 }}>{e.title}</span>
+                  <span className="muted" style={{ display: "block", fontSize: 13, marginBottom: 8 }}>{e.courseTitle}</span>
                   {p && <StatusPill tone={p.tone}>{p.label}</StatusPill>}
                 </Link>
               );
             }) : <p style={{ fontSize: 14 }}>{t("calendar.nothingDay")}</p>}
-            <p className="muted" style={{ marginTop: 14, fontSize: 13 }}>{t("calendar.note")}</p>
+            <p className="muted" style={{ marginTop: 16, fontSize: 13 }}>{t("calendar.note")}</p>
           </aside>
         </div>
       )}

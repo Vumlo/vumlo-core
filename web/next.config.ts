@@ -23,9 +23,17 @@ const config: NextConfig = {
   // `next dev` would otherwise write its own block into web/AGENTS.md.
   agentRules: false,
   devIndicators: false,
-  // The mock API (msw) is for `pnpm dev:mock` only; without the flag its code is not in the bundle.
+  // The mock API (msw) and everything that only makes sense next to it (the sample sign-in, the fake inbox) are for
+  // `pnpm dev:mock` only; without the flag each of those imports is an empty stand-in, so no build carries them.
   turbopack: {
-    resolveAlias: process.env.NEXT_PUBLIC_API_MOCKING === "enabled" ? {} : { "@/mocks/StartWorker": "./src/mocks/NoWorker.tsx" },
+    resolveAlias:
+      process.env.NEXT_PUBLIC_API_MOCKING === "enabled"
+        ? {}
+        : {
+            "@/mocks/StartWorker": "./src/mocks/NoWorker.tsx",
+            "@/mocks/demoLogin": "./src/mocks/noDemoLogin.ts",
+            "@/mocks/MockMailbox": "./src/mocks/NoMailbox.tsx",
+          },
   },
   ...(desktop ? { output: "export" } : withServer),
 };

@@ -73,14 +73,14 @@ export function StudentGrades() {
                       </Link>
                     );
                   })}
-                  {rows.length === 0 && <p className="muted" style={{ padding: "16px 18px", fontSize: 14 }}>{t("grades.noneHere")}</p>}
+                  {rows.length === 0 && <p className="muted" style={{ padding: "16px 20px", fontSize: 14 }}>{t("grades.noneHere")}</p>}
                 </div>
               </section>
             );
           })}
         </div>
       )}
-      <p className="muted" style={{ margin: "16px 2px 0", fontSize: 13 }}>{t("grades.note")}</p>
+      <p className="muted" style={{ margin: "16px 4px 0", fontSize: 13 }}>{t("grades.note")}</p>
     </div>
   );
 }

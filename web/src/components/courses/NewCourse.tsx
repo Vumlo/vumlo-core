@@ -77,10 +77,10 @@ export function NewCourse() {
     <div className="container">
       <nav aria-label={t("common.breadcrumb")} className="crumbs">
         <Link href="/courses">{t("nav.courses")}</Link>
-        <span aria-hidden="true" style={{ padding: "0 6px" }}>/</span>
+        <span aria-hidden="true" style={{ padding: "0 8px" }}>/</span>
         <span aria-current="page">{t("newCourse.title")}</span>
       </nav>
-      <h1 className="page-title" style={{ margin: "6px 0 4px" }}>{t("newCourse.title")}</h1>
+      <h1 className="page-title" style={{ margin: "8px 0 4px" }}>{t("newCourse.title")}</h1>
       <p className="muted" style={{ marginBottom: 24 }}>{t("newCourse.lead")}</p>
 
       <form className={`card ${s.form}`} onSubmit={submit} noValidate>

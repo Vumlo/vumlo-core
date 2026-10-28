@@ -65,7 +65,7 @@ export function TeacherCourses() {
       </div>
 
       {!cards.data ? <p className="loading" role="status">{t("common.loading")}</p> : list.length === 0 ? <p className="empty">{tab === "teaching" ? t("courses.noneTeaching") : t("courses.noneArchived")}</p> : byTerm.map((term) => (
-        <section key={term} style={{ marginBottom: 28 }}>
+        <section key={term} style={{ marginBottom: 32 }}>
           <h2 className="section-title">{term}</h2>
           <div className={s.grid}>
             {list.filter((c) => (c.term_name ?? t("courses.noTerm")) === term).map((c) => (
@@ -102,7 +102,7 @@ export function TeacherCourses() {
 
       <section aria-labelledby="tpl-h" style={{ marginTop: 8 }}>
         <h2 id="tpl-h" className="section-title">{t("courses.templates")}</h2>
-        <p className="muted" style={{ margin: "0 2px 10px", fontSize: 14 }}>{t("courses.templatesLead")}</p>
+        <p className="muted" style={{ margin: "0 4px 12px", fontSize: 14 }}>{t("courses.templatesLead")}</p>
         <div className="card card-list">
           {(templates.data ?? []).map((tp) => (
             <div key={tp.course.id} className={s.tpl}>
@@ -132,7 +132,7 @@ export function TeacherCourses() {
             </>
           }
         >
-          <div className="stack" style={{ gap: 14 }}>
+          <div className="stack" style={{ gap: 16 }}>
             <div className="field">
               <label htmlFor="course-title">{t("newCourse.name")}</label>
               <input id="course-title" className="input" value={title} onChange={(e) => setTitle(e.target.value)} aria-invalid={!!error} />

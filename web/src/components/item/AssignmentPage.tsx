@@ -2,9 +2,11 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { BlockEditor } from "@/components/doc/BlockEditor";
-import { BlockRenderer } from "@/components/doc/BlockRenderer";
+import { BlockRenderer, plainText } from "@/components/doc/BlockRenderer";
 import { emptyDoc } from "@/components/doc/model";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { Icon } from "@/components/Icon";
+import { errorText } from "@/lib/api/client";
 import { useEditorProfiles } from "@/lib/api/hooks/content";
 import { useCourseInfo } from "@/lib/api/hooks/courses";
 import { useMySubmission, useSaveDraft, useSubmitDraft } from "@/lib/api/hooks/assignments";
@@ -18,6 +20,8 @@ import { DueBar } from "./DueBar";
 import { ItemFrame, PreviewBanner } from "./ItemFrame";
 import { useT } from "@/lib/i18n";
 import { useQueued } from "@/lib/offline";
+import { useTick } from "@/lib/useTick";
+import { useUnloadGuard } from "@/lib/useUnloadGuard";
 import s from "./Item.module.css";
 
 const STUDENT_FEATURES: Feature[] = ["text_styles", "links", "lists", "code", "math"];
@@ -39,8 +43,11 @@ export function AssignmentPage({ item, courseId, staff }: { item: Item; courseId
   const [savedAt, setSavedAt] = useState<string | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const unsaved = useRef<(() => void) | null>(null);
+  const [asking, setAsking] = useState<string[] | null>(null);
   const features = profiles.data?.profiles.find((p) => p.name === "student")?.features ?? STUDENT_FEATURES;
 
+  // The deadline can pass while the page is open.
+  useTick();
   const dl = deadline(a);
   const attempts = sub.data?.attempts ?? [];
   const latest = attempts[0];
@@ -56,7 +63,8 @@ export function AssignmentPage({ item, courseId, staff }: { item: Item; courseId
   const flush = useCallback(async (next: Document) => {
     const saved = await save.run(next);
     if (saved) setSavedAt(saved.updated_at);
-  }, [save]);
+    return !!saved;
+  }, [save.run]);
   const onChange = useCallback((next: Document) => {
     setDoc(next);
     if (timer.current) clearTimeout(timer.current);
@@ -65,6 +73,13 @@ export function AssignmentPage({ item, courseId, staff }: { item: Item; courseId
   }, [flush]);
   // Leaving the page does not drop what was typed in the last moment: it is sent as the page goes.
   useEffect(() => () => { if (timer.current) clearTimeout(timer.current); unsaved.current?.(); }, []);
+  // A save that failed is tried again; the last version that was stored is kept meanwhile.
+  useEffect(() => {
+    if (!save.error || !doc) return;
+    const retry = setTimeout(() => void flush(doc), 5000);
+    return () => clearTimeout(retry);
+  }, [save.error, doc, flush]);
+  useUnloadGuard(() => unsaved.current !== null || save.pending || !!save.error);
 
   async function start() {
     await save.run(emptyDoc());
@@ -72,10 +87,20 @@ export function AssignmentPage({ item, courseId, staff }: { item: Item; courseId
   async function resubmit() {
     await save.run(latest ? (latest.content as unknown as Document) : emptyDoc());
   }
+  // Sending cannot be undone, so an empty answer or the last attempt is confirmed first.
+  function review() {
+    const warnings: string[] = [];
+    if (plainText(doc ?? (draft?.content as Document | undefined) ?? emptyDoc()).trim() === "") warnings.push(t("sub.empty"));
+    if (attemptsLeft === 1) warnings.push(t("sub.last"));
+    if (warnings.length > 0) setAsking(warnings);
+    else void send();
+  }
   async function send() {
+    setAsking(null);
     if (timer.current) clearTimeout(timer.current);
     unsaved.current = null;
-    if (doc) await flush(doc);
+    // The server keeps the last stored draft: when the newest words did not reach it, nothing is sent.
+    if (doc && !(await flush(doc))) return;
     const ok = await submit.run();
     if (ok) { setFocus(false); setDoc(null); setSavedAt(null); }
   }
@@ -83,16 +108,20 @@ export function AssignmentPage({ item, courseId, staff }: { item: Item; courseId
   const initial = useMemo(() => (draft?.content as Document | undefined) ?? emptyDoc(), [draft?.content]);
   const editorKey = `${attempts.length}`;
   const stamp = savedAt ?? draft?.updated_at;
-  const savedText = save.pending ? t("asg.saving") : stamp ? t("asg.savedAt", { time: timeOf(stamp) }) : t("asg.notSaved");
+  const locked = !staff && !loading && (view === "draft" || view === "focus") && !dl.open;
+  const problem = submit.error ?? (view === "draft" || view === "focus" ? undefined : save.error);
+  const savedText = save.error ? t("asg.saveFailed") : save.pending ? t("asg.saving") : stamp ? t("asg.savedAt", { time: timeOf(stamp) }) : t("asg.notSaved");
 
-  const pill = {
+  const pills = {
     "not-started": { label: t("status.notStarted"), tone: "plain" as const },
     draft: { label: stamp ? t("asg.pillSaved", { time: timeOf(stamp) }) : t("common.draft"), tone: "accent" as const },
     focus: { label: stamp ? t("asg.pillSaved", { time: timeOf(stamp) }) : t("common.draft"), tone: "accent" as const },
     submitted: { label: a.max_attempts ? t("asg.submittedOf", { n: latest?.attempt ?? 1, max: a.max_attempts }) : t("asg.submittedN", { n: latest?.attempt ?? 1 }), tone: "ok" as const },
     graded: { label: t("status.graded"), tone: "ok" as const },
     closed: { label: t("status.notSubmitted"), tone: "danger" as const },
-  }[view];
+  };
+  // Until the submission is known, "Not started" or "Not submitted" would be a guess.
+  const pill = loading ? { label: t("common.loading"), tone: "plain" as const } : pills[view];
 
   const instructions = (
     <section aria-labelledby="instr-h">
@@ -120,17 +149,22 @@ export function AssignmentPage({ item, courseId, staff }: { item: Item; courseId
           </div>
           <h1 className={s.title}>{item.title}</h1>
 
-          <DueBar due={a.due_at ?? null} open={dl.open && view !== "graded"} points={a.max_points} pill={pill} danger={view === "closed"}>
-            {view === "not-started" && canEdit && <button type="button" className="btn btn-primary" onClick={start} disabled={save.pending}>{t("asg.start")}</button>}
-            {(view === "draft" || view === "focus") && <button type="button" className="btn btn-primary" onClick={send} disabled={submit.pending || save.pending || waiting}>{t("asg.submit")}</button>}
+          <DueBar due={a.due_at ?? null} open={dl.open && view !== "graded"} points={a.max_points} pill={pill} danger={!loading && (view === "closed" || locked)}>
+            {!loading && view === "not-started" && canEdit && <button type="button" className="btn btn-primary" onClick={start} disabled={save.pending}>{t("asg.start")}</button>}
+            {(view === "draft" || view === "focus") && !locked && <button type="button" className="btn btn-submit" onClick={review} disabled={submit.pending || save.pending || waiting}><Icon name="check" size={16} strokeWidth={2.4} />{t("asg.submit")}</button>}
             {view === "graded" && grade && (
               <span className={s.score}><span className={s.scoreNum}>{grade.score}</span><span className="muted" style={{ fontSize: 14 }}> / {a.max_points}</span></span>
             )}
           </DueBar>
           {waiting && <p role="status" className="alert alert-info" style={{ marginTop: 12 }}>{t("offline.queuedNote")}</p>}
-          {submit.error && <p role="alert" className="alert alert-danger" style={{ marginTop: 12 }}>{submit.error.detail ?? submit.error.title}</p>}
+          {problem && <p role="alert" className="alert alert-danger" style={{ marginTop: 12 }}>{errorText(problem)}</p>}
+          {asking && (
+            <ConfirmDialog title={t("sub.title")} confirm={t("asg.submit")} onClose={() => setAsking(null)} onConfirm={() => void send()}>
+              {asking.join(" ")}
+            </ConfirmDialog>
+          )}
 
-          {view === "closed" && (
+          {!loading && (view === "closed" || locked) && (
             <div role="status" className={s.note}>
               <strong>{t("asg.closedTitle")}</strong> {t("asg.closedLead", { owner: ownerName(info.data) ?? t("item.yourTeacher") })}
             </div>
@@ -149,29 +183,31 @@ export function AssignmentPage({ item, courseId, staff }: { item: Item; courseId
                     </button>
                   )}
                   <section aria-labelledby="answer-h">
-                    <div className="row" style={{ alignItems: "baseline", justifyContent: "space-between", gap: 12, marginBottom: 10 }}>
+                    <div className="row" style={{ alignItems: "baseline", justifyContent: "space-between", gap: 12, marginBottom: 12 }}>
                       <h2 id="answer-h" className={s.h2} style={{ margin: 0 }}>{t("asg.yourAnswer")}</h2>
-                      <span role="status" className={s.saved}><Icon name="check" size={14} strokeWidth={2.2} />{savedText}</span>
+                      <span className="row" style={{ gap: 12 }}>
+                        <span role="status" className={s.saved} style={save.error ? { color: "var(--danger)" } : undefined}><Icon name={save.error ? "info" : "check"} size={14} strokeWidth={2.2} />{savedText}</span>
+                        <button type="button" className="btn btn-quiet" style={{ minHeight: 36, color: "var(--muted)", fontSize: 13, padding: "0 12px" }} aria-label={view === "focus" ? t("asg.exitFocusLabel") : t("asg.focusLabel")} onClick={() => setFocus(view !== "focus")}>
+                          <Icon name={view === "focus" ? "focusExit" : "focus"} size={16} strokeWidth={2} />
+                          {view === "focus" ? t("asg.exitFocus") : t("asg.focus")}
+                        </button>
+                      </span>
                     </div>
-                    <div className={s.editor}>
-                      <BlockEditor
-                        key={editorKey}
-                        value={initial}
-                        onChange={onChange}
-                        features={features}
-                        label={t("asg.yourAnswer")}
-                        mode="bar"
-                        minHeight={view === "focus" ? 560 : 360}
-                        placeholder={t("asg.placeholder")}
-                        toolbarRight={
-                          <button type="button" className="btn btn-quiet" style={{ minHeight: 34, color: "var(--muted)", fontSize: 13, padding: "0 10px" }} aria-label={view === "focus" ? t("asg.exitFocusLabel") : t("asg.focusLabel")} onClick={() => setFocus(view !== "focus")}>
-                            <Icon name={view === "focus" ? "focusExit" : "focus"} size={16} strokeWidth={2} />
-                            {view === "focus" ? t("asg.exitFocus") : t("asg.focus")}
-                          </button>
-                        }
-                      />
-                    </div>
-                    <p className="muted" style={{ margin: "12px 2px 0", fontSize: 14 }}>
+                    {locked ? <BlockRenderer doc={initial} size={16} /> : (
+                      <div className={s.editor}>
+                        <BlockEditor
+                          key={editorKey}
+                          value={initial}
+                          onChange={onChange}
+                          features={features}
+                          label={t("asg.yourAnswer")}
+                          mode="float"
+                          minHeight={view === "focus" ? 560 : 320}
+                          placeholder={t("asg.placeholder")}
+                        />
+                      </div>
+                    )}
+                    <p className="muted" style={{ margin: "12px 4px 0", fontSize: 14 }}>
                       {t("asg.savedAsYouType")} {a.max_attempts ? t("asg.usesOf", { n: attempts.length + 1, max: a.max_attempts }) : t("asg.uses", { n: attempts.length + 1 })}
                     </p>
                   </section>
@@ -203,11 +239,11 @@ export function AssignmentPage({ item, courseId, staff }: { item: Item; courseId
                       <h2 id="grade-h" style={{ fontSize: 16, fontWeight: 600 }}>{t("item.grade")}</h2>
                       <span className="muted" style={{ fontSize: 13 }}>{t("item.publishedOn", { day: dayLong(grade.published_at) })}</span>
                     </div>
-                    <p style={{ marginTop: 6, whiteSpace: "nowrap" }}><span className={s.gradeNum}>{grade.score}</span><span className="muted" style={{ fontSize: 17 }}> / {a.max_points}</span></p>
+                    <p style={{ marginTop: 8, whiteSpace: "nowrap" }}><span className={s.gradeNum}>{grade.score}</span><span className="muted" style={{ fontSize: 17 }}> / {a.max_points}</span></p>
                   </div>
                   {grade.feedback && (
                     <div className={s.comment}>
-                      <div className="row" style={{ gap: 10, marginBottom: 10 }}>
+                      <div className="row" style={{ gap: 12, marginBottom: 12 }}>
                         <span aria-hidden="true" className={s.avatar}>{initials(info.data?.owner_name ?? "", info.data?.owner_surname ?? "")}</span>
                         <div>
                           <p style={{ fontSize: 14, fontWeight: 600 }}>{ownerName(info.data)}</p>

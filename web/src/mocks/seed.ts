@@ -3,8 +3,9 @@ import type { FormConfig, QuizConfig } from "@/lib/api/gaps";
 import { bullet, code, doc, heading, math, numbered, para, quote, table, video } from "./docs";
 import { at, auditRow, NOW_ISO, uid, type Db, type DbCourse, type DbItem, type DbMember, type DbSubmission, type DbUser } from "./db";
 
-export const PASSWORD = "correct horse";
-export const TEMP_PASSWORD = "temporary password";
+import { DOMAIN, PASSWORD, TEMP_PASSWORD } from "./identities";
+
+export { PASSWORD };
 
 const STUDENTS_305 = [
   ["Kateryna", "Shevchuk"], ["Mark", "Levin"], ["Anna", "Bondarenko"], ["Taras", "Melnyk"], ["Yulia", "Savchenko"],
@@ -16,7 +17,7 @@ const STUDENTS_305 = [
 
 /** Builds the whole mock world. Called once when the worker starts. */
 export function createSeed(): Db {
-  const email = (n: string, s: string) => `${n}.${s}`.toLowerCase().replace(/[^a-z.]/g, "") + "@northfield.edu";
+  const email = (n: string, s: string) => `${n}.${s}`.toLowerCase().replace(/[^a-z.]/g, "") + `@${DOMAIN}`;
 
   // ---- people ----
   const users: DbUser[] = [];
@@ -417,12 +418,12 @@ export function createSeed(): Db {
 
   const institution = {
     name: "Northfield University", short_name: "Northfield", language: "en" as const, time_zone: "Europe/Kyiv", grading_scale: "hundred" as const,
-    mode: "university" as const, allowed_domains: ["northfield.edu"],
+    mode: "university" as const, allowed_domains: [DOMAIN],
     // The institution has published its desktop app (ADR-0064): the home page shows the notice and the page exists.
     app_downloads: [
-      { platform: "windows" as const, url: "https://downloads.northfield.edu/northfield-setup.exe" },
-      { platform: "macos_arm" as const, url: "https://downloads.northfield.edu/northfield-arm64.dmg" },
-      { platform: "linux_deb" as const, url: "https://downloads.northfield.edu/northfield.deb" },
+      { platform: "windows" as const, url: `https://downloads.${DOMAIN}/northfield-setup.exe` },
+      { platform: "macos_arm" as const, url: `https://downloads.${DOMAIN}/northfield-arm64.dmg` },
+      { platform: "linux_deb" as const, url: `https://downloads.${DOMAIN}/northfield.deb` },
     ],
   };
 

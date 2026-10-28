@@ -35,7 +35,7 @@ export function AdminAppDownloads({ current }: { current: AppDownload[] }) {
   return (
     <section aria-labelledby="ap-h" className={`card ${s.section}`}>
       <h2 id="ap-h" style={{ fontSize: 18, fontWeight: 600 }}>{t("ai.appTitle")}</h2>
-      <p className="muted" style={{ margin: "4px 0 14px", fontSize: 14 }}>{t("ai.appLead")}</p>
+      <p className="muted" style={{ margin: "4px 0 16px", fontSize: 14 }}>{t("ai.appLead")}</p>
       <form className={app.fields} onSubmit={submit}>
         {PLATFORMS.map(({ platform, label }) => (
           <div className="field" key={platform}>

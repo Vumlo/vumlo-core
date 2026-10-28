@@ -1,11 +1,12 @@
 import { http, HttpResponse } from "msw";
 import { MOCK_NOW } from "@/lib/clock";
 import { getDb, uid, type DbUser } from "../db";
+import { accounts, DOMAIN } from "../identities";
 import { problem, publicUser, SESSION_KEY } from "../logic";
 
 const A = "/api/v1";
 /** The mock institution only accepts addresses from this domain (ADR-0003). */
-const ALLOWED_DOMAIN = "northfield.edu";
+const ALLOWED_DOMAIN = DOMAIN;
 
 const field = (f: string, message: string) => problem(422, "Validation failed", undefined, [{ field: f, message }]);
 const clean = (v: unknown) => (typeof v === "string" ? v.trim() : "");
@@ -111,7 +112,7 @@ export const authHandlers = [
     if (b.code === "mock-app") return HttpResponse.json({ handoff: "mock-handoff" }, { headers: { "Cache-Control": "no-store" } });
     if (b.code !== "mock") throw problem(401, "Unauthorized");
     const db = getDb();
-    const email = clean(b.hint).toLowerCase() || "maya.okafor@northfield.edu";
+    const email = clean(b.hint).toLowerCase() || accounts.student;
     let u = db.users.find((x) => x.email === email);
     if (u && u.status !== "active") throw problem(403, "Forbidden", "This account is disabled");
     if (!u) {

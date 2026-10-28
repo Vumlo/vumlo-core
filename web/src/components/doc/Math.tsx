@@ -1,89 +1,28 @@
-import type { ReactNode } from "react";
+"use client";
 
-/**
- * A small LaTeX subset for formulas in lessons: letters, digits, \frac, ^ and _, \left/\right,
- * \log and friends, a few symbols. Anything else is shown as typed. A full renderer needs its own ADR (ADR-0042).
- */
-const SYMBOLS: Record<string, string> = {
-  cdot: "·", times: "×", le: "≤", leq: "≤", ge: "≥", geq: "≥", neq: "≠", approx: "≈", infty: "∞", sum: "∑", prod: "∏",
-  pi: "π", alpha: "α", beta: "β", theta: "θ", lambda: "λ", mu: "μ", sigma: "σ", Theta: "Θ", Omega: "Ω", to: "→", pm: "±", in: "∈",
-};
-const OPERATORS = new Set(["log", "ln", "lg", "sin", "cos", "tan", "max", "min", "lim", "exp"]);
+import { useEffect, useMemo, useState } from "react";
+import "katex/dist/katex.min.css";
 
-type Cursor = { s: string; i: number };
+type Katex = typeof import("katex").default;
 
-function group(c: Cursor): string {
-  if (c.s[c.i] !== "{") return c.s[c.i++] ?? "";
-  let depth = 0;
-  const start = c.i + 1;
-  while (c.i < c.s.length) {
-    if (c.s[c.i] === "{") depth++;
-    if (c.s[c.i] === "}") depth--;
-    c.i++;
-    if (depth === 0) break;
-  }
-  return c.s.slice(start, c.i - 1);
-}
+let loading: Promise<Katex> | null = null;
+/** The library is fetched with the first formula, so a page without one does not carry it (ADR-0068). */
+const load = () => (loading ??= import("katex").then((m) => m.default));
 
-function parse(src: string, key = "m"): ReactNode[] {
-  const c: Cursor = { s: src, i: 0 };
-  const out: ReactNode[] = [];
-  let n = 0;
-  const k = () => `${key}${n++}`;
-  const attach = (kind: "sup" | "sub", arg: string) => {
-    const el = kind === "sup" ? <sup key={k()}>{parse(arg, `${key}${n}`)}</sup> : <sub key={k()}>{parse(arg, `${key}${n}`)}</sub>;
-    out.push(el);
-  };
-  while (c.i < c.s.length) {
-    const ch = c.s[c.i]!;
-    if (ch === "\\") {
-      c.i++;
-      let name = "";
-      while (/[a-zA-Z]/.test(c.s[c.i] ?? "")) name += c.s[c.i++];
-      if (!name) { out.push(c.s[c.i++] ?? ""); continue; }
-      if (name === "frac") {
-        const a = group(c);
-        const b = group(c);
-        out.push(
-          <span key={k()} className="frac">
-            <span className="frac-n">{parse(a, `${key}${n}a`)}</span>
-            <span>{parse(b, `${key}${n}b`)}</span>
-          </span>,
-        );
-      } else if (name === "left" || name === "right") {
-        out.push(c.s[c.i++] ?? "");
-      } else if (name === "sqrt") {
-        out.push(<span key={k()}>√<span style={{ borderTop: "1px solid currentColor" }}>{parse(group(c), `${key}${n}r`)}</span></span>);
-      } else if (OPERATORS.has(name)) {
-        out.push(<span key={k()} style={{ fontStyle: "normal" }}>{" "}{name}{" "}</span>);
-      } else if (SYMBOLS[name]) {
-        out.push(<span key={k()}>{SYMBOLS[name]}</span>);
-      } else {
-        out.push(`\\${name}`);
-      }
-    } else if (ch === "^") {
-      c.i++;
-      attach("sup", group(c));
-    } else if (ch === "_") {
-      c.i++;
-      attach("sub", group(c));
-    } else if (ch === "{" || ch === "}") {
-      c.i++;
-    } else if (/[a-zA-Z]/.test(ch)) {
-      out.push(<i key={k()}>{ch}</i>);
-      c.i++;
-    } else {
-      out.push(ch);
-      c.i++;
-    }
-  }
-  return out;
-}
-
+/** A formula in LaTeX, drawn by KaTeX. Until the library is there, and when the source cannot be read, the source is shown. */
 export function Formula({ source, block = false }: { source: string; block?: boolean }) {
-  return (
-    <span role="math" aria-label={source} className={block ? "math math-block" : "math"}>
-      {parse(source)}
-    </span>
+  const [katex, setKatex] = useState<Katex | null>(null);
+  useEffect(() => {
+    let live = true;
+    void load().then((k) => live && setKatex(() => k));
+    return () => { live = false; };
+  }, []);
+  const html = useMemo(
+    () => katex?.renderToString(source, { displayMode: block, throwOnError: false, errorColor: "var(--danger)", trust: false }) ?? null,
+    [katex, source, block],
   );
+  const className = block ? "math math-block" : "math";
+  return html === null
+    ? <span className={className}>{source}</span>
+    : <span className={className} dangerouslySetInnerHTML={{ __html: html }} />;
 }

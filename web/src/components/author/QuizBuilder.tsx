@@ -5,6 +5,7 @@ import { useMemo, useState } from "react";
 import { Icon } from "@/components/Icon";
 import { newId } from "@/components/doc/model";
 import { usePublishItem, useUpdateItem } from "@/lib/api/hooks/content";
+import { errorText } from "@/lib/api/client";
 import { useAutosave } from "@/lib/autosave";
 import type { QuizConfig, QuizQuestion, QuizQuestionType } from "@/lib/api/gaps";
 import type { Item } from "@/lib/api/types";
@@ -66,9 +67,9 @@ export function QuizBuilder({ item, courseId }: { item: Item; courseId: string }
 
   return (
     <div className="container" style={{ paddingTop: 20 }}>
-      <AuthorBar courseId={courseId} itemId={item.id} title={title} chip={isDraft ? { text: t("le.draftChip"), tone: "draft" } : { text: t("cm.published"), tone: "ok" }} saved={auto.savedAt} pending={auto.pending} failed={auto.failed}>
+      <AuthorBar courseId={courseId} itemId={item.id} title={title} chip={isDraft ? { text: t("le.draftChip"), tone: "draft" } : { text: t("cm.published"), tone: "ok" }} saved={auto.savedAt} pending={auto.pending} failed={auto.failed} error={errorText(publish.error ?? update.error)}>
         <Link href={itemHref(courseId, item.id)} className="btn">{t("cm.preview")}</Link>
-        {isDraft && <button type="button" className="btn btn-primary" disabled={publish.pending} onClick={async () => { await auto.flush(); await publish.run(item.id); }}>{t("qb.publish")}</button>}
+        {isDraft && <button type="button" className="btn btn-primary" disabled={publish.pending} onClick={async () => { if (await auto.flush()) await publish.run(item.id); }}>{t("qb.publish")}</button>}
       </AuthorBar>
       <div className={s.shell}>
         <nav aria-label={t("sheet.questions")} className={`card ${s.qnav}`}>
@@ -83,14 +84,14 @@ export function QuizBuilder({ item, courseId }: { item: Item; courseId: string }
             ))}
           </ol>
           <button type="button" className="btn btn-block" onClick={() => add("single")}><Icon name="plus" size={15} strokeWidth={2.2} />{t("qb.addQuestion")}</button>
-          <p className="muted" style={{ marginTop: 10, fontSize: 13 }}>{t("qb.addsUp", { n: total })}</p>
+          <p className="muted" style={{ marginTop: 12, fontSize: 13 }}>{t("qb.addsUp", { n: total })}</p>
         </nav>
 
         <div className={s.canvas}>
-          <p className="muted" style={{ fontSize: 14, marginBottom: 8 }}><strong style={{ color: "var(--asg-fg)" }}>{t("cm.assignment")}</strong> {t("type.quiz")}{a.due_at ? `, ${t("search.due", { when: dueLabel(a.due_at) })}` : ""}, {t("row.points", { points: total })}</p>
+          <p className="muted" style={{ fontSize: 14, marginBottom: 8 }}><strong style={{ color: "var(--asg-text)" }}>{t("cm.assignment")}</strong> {t("type.quiz")}{a.due_at ? `, ${t("search.due", { when: dueLabel(a.due_at) })}` : ""}, {t("row.points", { points: total })}</p>
           <label htmlFor="qtitle" className="sr-only">{t("qb.quizTitle")}</label>
           <input id="qtitle" className={s.titleInput} value={title} onChange={(e) => setTitle(e.target.value)} />
-          <div className="stack" style={{ gap: 14, marginTop: 16 }}>
+          <div className="stack" style={{ gap: 16, marginTop: 16 }}>
             {cfg.questions.map((x, i) => {
               const selected = i === qi;
               const choice = x.type === "single" || x.type === "multi";
@@ -130,7 +131,7 @@ export function QuizBuilder({ item, courseId }: { item: Item; courseId: string }
                         </div>
                       )}
                       {x.type === "number" && (
-                        <div className="row" style={{ gap: 14, flexWrap: "wrap" }}>
+                        <div className="row" style={{ gap: 16, flexWrap: "wrap" }}>
                           <div className="field"><label htmlFor={`ans-${x.id}`}>{t("sheet.correct")}</label><input id={`ans-${x.id}`} className="input" style={{ maxWidth: 160 }} inputMode="decimal" value={x.answer ?? ""} onChange={(e) => setQ(i, (y) => ({ ...y, answer: e.target.value }))} /></div>
                           <div className="field"><label htmlFor={`tol-${x.id}`}>{t("qb.within")}</label><input id={`tol-${x.id}`} className="input" style={{ maxWidth: 120 }} inputMode="decimal" value={x.tolerance ?? "0"} onChange={(e) => setQ(i, (y) => ({ ...y, tolerance: e.target.value }))} /></div>
                         </div>
@@ -173,7 +174,7 @@ export function QuizBuilder({ item, courseId }: { item: Item; courseId: string }
               </div>
               {q.type === "multi" && (
                 <fieldset style={{ border: 0, padding: 0, margin: 0 }}>
-                  <legend style={{ fontSize: 14, fontWeight: 500, marginBottom: 6 }}>{t("qb.scoring")}</legend>
+                  <legend style={{ fontSize: 14, fontWeight: 500, marginBottom: 8 }}>{t("qb.scoring")}</legend>
                   <label className="check" style={{ alignItems: "flex-start" }}><input type="radio" name="scoring" checked={!q.partial_credit} onChange={() => setQ(qi, (y) => ({ ...y, partial_credit: false }))} /><span><span style={{ display: "block" }}>{t("qb.allOrNothing")}</span><span className="muted" style={{ fontSize: 13 }}>{t("qb.allOrNothingHint")}</span></span></label>
                   <label className="check" style={{ alignItems: "flex-start" }}><input type="radio" name="scoring" checked={!!q.partial_credit} onChange={() => setQ(qi, (y) => ({ ...y, partial_credit: true }))} /><span><span style={{ display: "block" }}>{t("qb.partialTitle")}</span><span className="muted" style={{ fontSize: 13 }}>{t("qb.partialHint")}</span></span></label>
                 </fieldset>
