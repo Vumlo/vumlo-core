@@ -1,4 +1,5 @@
 import type { GradebookCell, SubmissionRow } from "./api/types";
+import { toCents } from "./points";
 
 export type CellState = "pub" | "draft" | "grade" | "none";
 export type StatusFilter = "all" | CellState;
@@ -30,5 +31,17 @@ export function neighbour(order: string[], visible: ReadonlySet<string>, current
     const id = order[i];
     if (id !== undefined && visible.has(id)) return id;
   }
+  return null;
+}
+
+/**
+ * What the server's score of one quiz question lets staff conclude about the options the student picked, when the
+ * attempt carries no answer key: a full score means every pick is right, and a zero on a single-choice question
+ * means its one pick is wrong. Anything else (a partial score, a zero on a multiple-choice question) cannot be
+ * decided from the score alone, so it returns null and the caller shows the score without marking the options.
+ */
+export function autoResult(kind: string, picks: string[], got: string, points: string): { correct: string[] } | null {
+  if (toCents(got) === toCents(points)) return { correct: picks };
+  if (kind === "single" && toCents(got) === 0) return { correct: [] };
   return null;
 }

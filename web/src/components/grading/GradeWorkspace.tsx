@@ -30,7 +30,7 @@ export function GradeWorkspace({ courseId, assignmentId, studentId }: { courseId
   const attempts = useStudentAttempts(known ? assignmentId : null, chosen);
 
   if (loading) return <p className="loading" role="status">{t("common.loading")}</p>;
-  if (!staff) return <NotFoundScreen />;
+  if (!staff || !assignmentId) return <NotFoundScreen />;
   if (item.error) return missing(item.error.status) ? <NotFoundScreen /> : <LoadFailed />;
   if (item.data && !item.data.assignment) return <NotFoundScreen />;
   if (book.error || subs.error) return <LoadFailed />;

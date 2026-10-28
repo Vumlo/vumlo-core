@@ -13,6 +13,7 @@
 .how { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-1) var(--space-3); margin-bottom: var(--space-3); font-size: 14px; }
 .late { color: var(--danger); font-weight: 500; }
 .work { padding: var(--space-5); }
+.scores { margin-bottom: var(--space-4); font-size: 14px; }
 .attempts { margin-top: 0; margin-bottom: var(--space-4); }
 .attempts button:disabled { color: var(--muted); cursor: default; }
 

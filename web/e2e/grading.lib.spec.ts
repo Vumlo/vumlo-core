@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 import type { GradebookCell, SubmissionRow } from "../src/lib/api/types";
-import { cellState, inWorkspaceFilter, matchesStatus, neighbour, type CellState } from "../src/lib/grading";
+import { autoResult, cellState, inWorkspaceFilter, matchesStatus, neighbour, type CellState } from "../src/lib/grading";
 
 const cell = (c: Record<string, unknown>) => c as unknown as GradebookCell;
 const sub = (s: Record<string, unknown>) => s as unknown as SubmissionRow;
@@ -66,5 +66,25 @@ test.describe("neighbour", () => {
   });
   test("an unknown current is null", () => {
     expect(neighbour(order, visible, "zz", 1)).toBeNull();
+  });
+});
+
+test.describe("autoResult", () => {
+  test("a full score makes every pick right", () => {
+    expect(autoResult("multi", ["a", "b"], "2.00", "2.00")).toEqual({ correct: ["a", "b"] });
+  });
+  test("a zero on a single-choice question marks its pick wrong", () => {
+    expect(autoResult("single", ["a"], "0.00", "1.00")).toEqual({ correct: [] });
+  });
+  test("a partial score on a multiple-choice question is no verdict", () => {
+    expect(autoResult("multi", ["a", "b"], "1.00", "2.00")).toBeNull();
+  });
+  test("a zero on a multiple-choice question is no verdict", () => {
+    expect(autoResult("multi", ["a"], "0.00", "2.00")).toBeNull();
+  });
+  test("0 and 0.00 are the same amount", () => {
+    expect(autoResult("single", ["a"], "0", "0.00")).toEqual({ correct: ["a"] });
+    expect(autoResult("single", ["a"], "2", "2.00")).toEqual({ correct: ["a"] });
+    expect(autoResult("single", ["a"], "0", "1.00")).toEqual({ correct: [] });
   });
 });

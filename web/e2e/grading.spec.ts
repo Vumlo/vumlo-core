@@ -59,3 +59,10 @@ test("an unknown assignment is not found", async ({ page }) => {
   await page.goto(gradeHref(course, "00000000-0000-0000-0000-000000000000"));
   await expect(page.getByRole("heading", { name: "We can't find that page" })).toBeVisible();
 });
+
+test("an address without an assignment is not found", async ({ page }) => {
+  await signIn(page, "teacher");
+  const course = await firstCourse(page);
+  await page.goto(`/course/grade?id=${course}`);
+  await expect(page.getByRole("heading", { name: "We can't find that page" })).toBeVisible();
+});

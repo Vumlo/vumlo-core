@@ -9,7 +9,7 @@ import { answersFromWire } from "@/lib/api/sheetWire";
 import type { Attempt, Document, Item } from "@/lib/api/types";
 import { weekdayDate, timeOf } from "@/lib/format";
 import { useT } from "@/lib/i18n";
-import { toCents } from "@/lib/points";
+import { autoResult } from "@/lib/grading";
 import s from "./GradeWorkspace.module.css";
 
 const isDoc = (v: unknown): v is Document => !!v && typeof v === "object" && !Array.isArray(v) && "blocks" in v;
@@ -42,6 +42,7 @@ export function SubmissionView({ item, attempts }: { item: Item; attempts: Attem
 }
 
 function Body({ item, attempt }: { item: Item; attempt: Attempt }) {
+  const t = useT();
   const a = item.assignment;
   const type = a?.type;
   if (!a || (type !== "quiz" && type !== "form")) {
@@ -54,27 +55,38 @@ function Body({ item, attempt }: { item: Item; attempt: Attempt }) {
   // A long answer stays the document the student wrote, so that the teacher reads it formatted.
   for (const q of questions) if (q.kind === "long" && isDoc(raw[q.id])) answers[q.id] = raw[q.id] as Answer;
 
-  // Staff see the score of each question the server scored; the key itself is not part of the attempt.
+  // Staff see the score of each question the server scored. The attempt has no answer key, so the options are
+  // marked only where the score settles it (autoResult); any other score is listed as text.
   const scores = (attempt.auto_scores ?? undefined) as Record<string, string> | undefined;
-  const result: Record<string, QResult> | undefined = scores && Object.fromEntries(
-    questions.flatMap((q) => {
-      const got = scores[q.id];
-      if (got === undefined || q.points === undefined) return [];
-      const picked = answers[q.id];
-      const chosen = Array.isArray(picked) ? picked : typeof picked === "string" ? [picked] : [];
-      // The options of a fully scored question are all right; a partly scored one has no key to show, so none is marked.
-      return [[q.id, { got, points: q.points, correct: toCents(got) === toCents(q.points) ? chosen : [], answer: null, feedback: null }] as const];
-    }),
-  );
+  const result: Record<string, QResult> = {};
+  const unmarked: { id: string; label: string; got: string; points: string }[] = [];
+  for (const q of questions) {
+    const got = scores?.[q.id];
+    if (got === undefined || q.points === undefined) continue;
+    const picked = answers[q.id];
+    const verdict = autoResult(q.kind, Array.isArray(picked) ? picked : typeof picked === "string" && picked ? [picked] : [], got, q.points);
+    if (verdict) result[q.id] = { got, points: q.points, correct: verdict.correct, answer: null, feedback: null };
+    else unmarked.push({ id: q.id, label: q.label, got, points: q.points });
+  }
 
   return (
-    <QuestionSheet
-      questions={questions}
-      answers={answers}
-      onChange={() => undefined}
-      readOnly
-      result={result}
-      mode={type}
-    />
+    <>
+      {unmarked.length > 0 && (
+        <div className={`card ${s.work} ${s.scores}`}>
+          <p className="muted">{t("grading.auto")}</p>
+          <ul>
+            {unmarked.map((u) => <li key={u.id}>{u.label}: {u.got} / {u.points}</li>)}
+          </ul>
+        </div>
+      )}
+      <QuestionSheet
+        questions={questions}
+        answers={answers}
+        onChange={() => undefined}
+        readOnly
+        result={result}
+        mode={type}
+      />
+    </>
   );
 }
