@@ -177,6 +177,53 @@ test("leaving with unsaved points asks first", async ({ page }) => {
   await expect(page.locator("#student-h")).not.toHaveText(here);
 });
 
+test("publishing is off while there is nothing to publish", async ({ page }) => {
+  await signIn(page, "teacher");
+  const m = await mergeSort(page);
+  const target = m.rows.find((r) => r.status === "not_submitted" && !r.former)!;
+  await page.goto(gradeHref(m.course, m.item, target.id));
+  await expect(page.getByRole("button", { name: "Publish", exact: true })).toBeDisabled();
+  await page.getByLabel("Points", { exact: true }).fill("5");
+  await expect(page.getByRole("button", { name: "Publish", exact: true })).toBeEnabled();
+});
+
+test("enter in the points field saves and moves to the next student", async ({ page }) => {
+  await signIn(page, "teacher");
+  const m = await mergeSort(page);
+  await page.goto(gradeHref(m.course, m.item, m.rows[0]!.id));
+  await page.getByLabel("Show", { exact: true }).selectOption({ label: "All" });
+  await page.getByLabel("Points", { exact: true }).fill("9");
+  await page.getByLabel("Points", { exact: true }).press("Enter");
+  await expect(page.locator("#student-h")).toHaveText(m.rows[1]!.name);
+});
+
+test("undo on the toast puts a saved draft back", async ({ page }) => {
+  await signIn(page, "teacher");
+  const m = await mergeSort(page);
+  const target = m.rows.find((r) => r.status === "not_submitted" && !r.former)!;
+  await page.goto(gradeHref(m.course, m.item, target.id));
+  await page.getByLabel("Show", { exact: true }).selectOption({ label: "All" });
+  const points = page.getByLabel("Points", { exact: true });
+  await points.fill("14");
+  await page.getByRole("button", { name: "Save and next" }).click();
+  await expect(page.locator("#student-h")).not.toHaveText(target.name);
+  await page.getByRole("status").getByRole("button", { name: "Undo" }).click();
+  await expect(page.locator("#student-h")).toHaveText(target.name);
+  await expect(points).toHaveValue("");
+  await expect(page.getByRole("button", { name: "Undo" })).toHaveCount(0);
+});
+
+test("a published grade has no undo", async ({ page }) => {
+  await signIn(page, "teacher");
+  const m = await mergeSort(page);
+  const target = m.rows.find((r) => r.status === "not_submitted" && !r.former)!;
+  await page.goto(gradeHref(m.course, m.item, target.id));
+  await page.getByLabel("Points", { exact: true }).fill("13");
+  await page.getByRole("button", { name: "Publish", exact: true }).click();
+  await expect(page.getByRole("status").filter({ hasText: "Published to" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Undo" })).toHaveCount(0);
+});
+
 test("a saved draft becomes published", async ({ page }) => {
   await signIn(page, "teacher");
   const m = await mergeSort(page);
@@ -186,7 +233,12 @@ test("a saved draft becomes published", async ({ page }) => {
   await page.getByRole("button", { name: "Save draft" }).click();
   await expect(page.getByRole("status").filter({ hasText: "Draft saved." })).toBeVisible();
   await page.getByRole("button", { name: "Publish", exact: true }).click();
-  await expect(page.getByRole("status").filter({ hasText: `Published to ${target.name.split(" ")[0]}.` })).toBeVisible();
+  // Publishing moves on to the next student, as "Save and next" does.
+  await expect(page.locator("#student-h")).not.toHaveText(target.name);
+  // The confirmation outlives the move, as a toast naming who was published to.
+  const toast = page.getByRole("status").filter({ hasText: `Published to ${target.name.split(" ")[0]}.` });
+  await expect(toast).toContainText(target.name);
+  await expect(toast).toHaveCount(0, { timeout: 10_000 });
   await page.getByRole("link", { name: "Back to grades" }).click();
   await expect(page.getByRole("button", { name: new RegExp(`^${target.name}, Merge sort implementation, published 12`) })).toBeVisible();
 });
@@ -395,17 +447,17 @@ test("save and next with to-grade skips a student who is graded meanwhile", asyn
   expect(url(page).get("student")).toBe(id("Ivan Petrenko"));
 });
 
-test("focus moves to the student's name after a move, and the counter is announced", async ({ page }) => {
+test("focus moves to the points field after a move, and the counter is announced", async ({ page }) => {
   await signIn(page, "teacher");
   const m = await mergeSort(page);
   await page.goto(gradeHref(m.course, m.item, m.rows[0]!.id));
   await page.getByLabel("Show", { exact: true }).selectOption({ label: "All" });
-  await expect(page.locator("#student-h")).not.toBeFocused();
+  await expect(page.getByLabel("Points", { exact: true })).not.toBeFocused();
   await expect(page.getByRole("status").filter({ hasText: "1 of 8" })).toBeVisible();
   await page.getByLabel("Points", { exact: true }).fill("20");
   await page.getByRole("button", { name: "Save and next" }).click();
   await expect(page.locator("#student-h")).toHaveText(m.rows[1]!.name);
-  await expect(page.locator("#student-h")).toBeFocused();
+  await expect(page.getByLabel("Points", { exact: true })).toBeFocused();
   await expect(page.getByRole("status").filter({ hasText: "2 of 8" })).toBeVisible();
 });
 

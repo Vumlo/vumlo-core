@@ -23,7 +23,7 @@ function historyLine(h: GradeHistoryEntry, t: ReturnType<typeof useT>): string {
  * Points, comment and the buttons for one student. `dirty` tells the page whether the fields hold points or a comment
  * that were not saved; `drafts` is how many draft grades the assignment holds, for "publish them all".
  */
-export function GradePanel({ assignmentId, row, col, cell, former, drafts, dirty, onSavedDraft }: {
+export function GradePanel({ assignmentId, row, col, cell, former, drafts, dirty, onSaved }: {
   assignmentId: string;
   row: GradebookRow;
   col: GradebookColumn;
@@ -31,7 +31,8 @@ export function GradePanel({ assignmentId, row, col, cell, former, drafts, dirty
   former: boolean;
   drafts: number;
   dirty: MutableRefObject<boolean>;
-  onSavedDraft: () => void;
+  /** Tells the page what was saved; `advance` asks it to move on to the next student, `before` is what the server held before a draft was saved (so it can be put back). */
+  onSaved: (kind: "draft" | "published", advance: boolean, before?: { points: string; comment: string }) => void;
 }) {
   const t = useT();
   const save = useSaveGrade(assignmentId);
@@ -41,7 +42,6 @@ export function GradePanel({ assignmentId, row, col, cell, former, drafts, dirty
   const [comment, setComment] = useState(cell?.draft_feedback ?? cell?.published_feedback ?? "");
   // What the server has: the fields differ from it until a save succeeds.
   const [stored, setStored] = useState({ points, comment });
-  const [done, setDone] = useState<"draft" | "published" | null>(null);
   const [asking, setAsking] = useState(false);
   const [touched, setTouched] = useState(false);
   useEffect(() => {
@@ -52,48 +52,56 @@ export function GradePanel({ assignmentId, row, col, cell, former, drafts, dirty
 
   async function saveDraft() {
     setTouched(true);
-    if (invalid) return false;
+    if (invalid) {
+      document.getElementById("points")?.focus();
+      return false;
+    }
     if (!(await save.run(row.user_id, points.trim() === "" ? null : points.trim(), comment))) return false;
     // The page moves on right after this; the effect above has not run yet, so clear the flag here.
     dirty.current = false;
     setStored({ points, comment });
-    setDone("draft");
     return true;
   }
+  async function saveOnly() {
+    const before = stored;
+    if (await saveDraft()) onSaved("draft", false, before);
+  }
   async function saveAndNext() {
-    if (await saveDraft()) onSavedDraft();
+    const before = stored;
+    if (await saveDraft()) onSaved("draft", true, before);
   }
   async function saveAndPublish() {
     if (!(await saveDraft())) return;
-    if (await publish.run([row.user_id])) setDone("published");
+    if (await publish.run([row.user_id])) onSaved("published", true);
   }
+  // Publishing nothing would hide a grade that was never given; it is for a grade or a comment, or to withdraw one.
+  const blank = points.trim() === "" && comment.trim() === "" && !cell?.published_score && !cell?.published_feedback;
   const err = save.error ?? publish.error;
 
   return (
     <aside aria-labelledby="panel-h" className={`card ${s.panel}`}>
       <h3 id="panel-h" className={s.panelTitle}>{t("gw.panel")}</h3>
-      <div className="stack" style={{ gap: "var(--space-3)" }}>
+      <form className="stack" style={{ gap: "var(--space-3)" }} onSubmit={(e) => { e.preventDefault(); void saveAndNext(); }}>
         <label htmlFor="points" className={s.label}>{t("cm.points")}</label>
         <div className="row" style={{ gap: "var(--space-3)" }}>
-          <input id="points" className={`input ${s.points}`} inputMode="decimal" value={points} disabled={former} aria-invalid={touched && invalid} onChange={(e) => { setPoints(e.target.value); setTouched(false); setDone(null); }} />
+          <input id="points" className={`input ${s.points}`} inputMode="decimal" value={points} disabled={former} aria-invalid={touched && invalid} aria-describedby="student-h" onChange={(e) => { setPoints(e.target.value); setTouched(false); }} />
           <span className="muted" style={{ fontSize: 14 }}>{t("gb.outOf", { max: col.max_points })}</span>
         </div>
-        {touched && invalid && <p role="alert" className="hint" style={{ color: "var(--danger)" }}>{t("gb.invalid", { max: col.max_points })}</p>}
         <label htmlFor="comment" className={s.label}>{t("gb.commentFor", { name: row.name })}</label>
-        <textarea id="comment" className={`textarea ${s.comment}`} value={comment} disabled={former} onChange={(e) => { setComment(e.target.value); setDone(null); }} />
+        <textarea id="comment" className={`textarea ${s.comment}`} value={comment} disabled={former} onChange={(e) => { setComment(e.target.value); }} />
         {err && <p role="alert" className="alert alert-danger">{errorText(err)}</p>}
-        {done && <p role="status" className="alert alert-ok">{done === "draft" ? t("gb.savedDraft") : t("gb.publishedTo", { name: row.name })}</p>}
         {former ? <p className="muted" style={{ fontSize: 13 }}>{t("gb.left", { name: row.name })}</p> : (
           <>
             <div className={s.actions}>
-              <button type="button" className="btn btn-primary" onClick={() => void saveAndNext()} disabled={save.pending}>{t("gw.saveNext")}</button>
-              <button type="button" className="btn" onClick={() => void saveDraft()} disabled={save.pending}>{t("gb.saveDraft")}</button>
-              <button type="button" className="btn" onClick={() => void saveAndPublish()} disabled={save.pending || publish.pending}>{t("cm.publish")}</button>
+              <button type="submit" className="btn btn-primary" disabled={save.pending}>{t("gw.saveNext")}</button>
+              <button type="button" className="btn" onClick={() => void saveOnly()} disabled={save.pending}>{t("gb.saveDraft")}</button>
+              <button type="button" className="btn" onClick={() => void saveAndPublish()} disabled={blank || save.pending || publish.pending}>{t("cm.publish")}</button>
             </div>
+            {touched && invalid && <p role="alert" className="hint" style={{ color: "var(--danger)" }}>{t("gb.invalid", { max: col.max_points })}</p>}
             <p className="muted" style={{ fontSize: 13 }}>{t("gb.sees", { name: row.name })}</p>
           </>
         )}
-      </div>
+      </form>
       <div className={s.rule}>
         <button type="button" className={`btn btn-quiet ${s.publishAll}`} disabled={drafts === 0 || publish.pending} onClick={() => setAsking(true)}>{t("grading.publishN", { n: plural(drafts, "draft") })}</button>
       </div>

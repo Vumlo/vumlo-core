@@ -7,11 +7,12 @@ import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { Icon } from "@/components/Icon";
 import { useCourseAccess } from "@/components/course/useCourseAccess";
 import { LoadFailed, NotFoundScreen } from "@/components/StateScreen";
-import { useGradebook, useStudentAttempts, useSubmissions } from "@/lib/api/hooks/assignments";
+import { useGradebook, useSaveGrade, useStudentAttempts, useSubmissions } from "@/lib/api/hooks/assignments";
 import { useCourse, useItem } from "@/lib/api/hooks/courses";
 import { cellState, inWorkspaceFilter, neighbour, type WorkspaceFilter } from "@/lib/grading";
 import { useT } from "@/lib/i18n";
 import { courseHref, gradeHref } from "@/lib/routes";
+import { errorText } from "@/lib/api/client";
 import { useUnloadGuard } from "@/lib/useUnloadGuard";
 import { GradePanel } from "./GradePanel";
 import { StudentRail } from "./StudentRail";
@@ -29,6 +30,15 @@ export function GradeWorkspace({ courseId, assignmentId, studentId }: { courseId
   // Whether the panel holds points or a comment that were not saved; moving away then asks first.
   const dirty = useRef(false);
   useUnloadGuard(() => dirty.current);
+  // What the last save did, shown as a toast here because the panel is replaced when the page moves to another student.
+  const [notice, setNotice] = useState<{ id: number; kind: "draft" | "published"; who: string; name: string; undo?: { studentId: string; points: string; comment: string } } | null>(null);
+  // Putting a draft back is a save of the values it had; a published grade has no way back (students have seen it).
+  const undoSave = useSaveGrade(assignmentId);
+  useEffect(() => {
+    if (!notice) return;
+    const timer = setTimeout(() => setNotice(null), notice.undo ? 7000 : 4500);
+    return () => clearTimeout(timer);
+  }, [notice]);
   const [leaving, setLeaving] = useState<{ href: string; replace: boolean } | null>(null);
   const { staff, loading } = useCourseAccess(courseId);
   const item = useItem(staff && assignmentId ? assignmentId : null);
@@ -44,10 +54,11 @@ export function GradeWorkspace({ courseId, assignmentId, studentId }: { courseId
   const sub = subs.data?.find((r) => r.student_id === chosen);
   const known = row ?? sub;
   const attempts = useStudentAttempts(known ? assignmentId : null, chosen);
-  // After a move to another student the focus goes to their name, so that a screen reader reads it out.
+  // After a move to another student the focus goes to the points field (their name when the work cannot be graded); the field is described by the name, so that a screen reader reads it out.
   const seen = useRef(chosen);
   useEffect(() => {
-    if (seen.current && seen.current !== chosen) document.getElementById("student-h")?.focus();
+    const points = document.getElementById("points") as HTMLInputElement | null;
+    if (seen.current && seen.current !== chosen) (points && !points.disabled ? points : document.getElementById("student-h"))?.focus();
     seen.current = chosen;
   }, [chosen]);
 
@@ -70,6 +81,7 @@ export function GradeWorkspace({ courseId, assignmentId, studentId }: { courseId
   const place = shown.findIndex((r) => r.user_id === chosen);
   const prev = neighbour(order, visible, chosen, -1);
   const next = neighbour(order, visible, chosen, 1);
+  const fullName = (id: string | null) => { const r = rows.find((x) => x.user_id === id); return r ? `${r.name} ${r.surname}` : ""; };
   const drafts = rows.filter((r) => !r.former && states.get(r.user_id) === "draft").length;
   const col = book.data.columns.find((c) => c.assignment_id === assignmentId);
   // Past the last student of the list the next one is the first student left in it.
@@ -81,6 +93,16 @@ export function GradeWorkspace({ courseId, assignmentId, studentId }: { courseId
     const href = gradeHref(courseId, assignmentId, id);
     if (dirty.current) setLeaving({ href, replace: true });
     else router.replace(href);
+  }
+  function saved(kind: "draft" | "published", advance: boolean, before?: { points: string; comment: string }) {
+    setNotice({ id: Date.now(), kind, who: known!.name, name, undo: kind === "draft" && before ? { studentId: chosen, ...before } : undefined });
+    if (advance) pick(next ?? wrap);
+  }
+  async function undo() {
+    const u = notice?.undo;
+    if (!u || !(await undoSave.run(u.studentId, u.points.trim() === "" ? null : u.points.trim(), u.comment))) return;
+    setNotice(null);
+    pick(u.studentId);
   }
   function back(e: MouseEvent) {
     if (!dirty.current) return;
@@ -95,18 +117,30 @@ export function GradeWorkspace({ courseId, assignmentId, studentId }: { courseId
         <h1 className={s.title}>{item.data.title}{course.data && <span className={s.course}>{course.data.title}</span>}</h1>
         <h2 id="student-h" tabIndex={-1} className={s.student}>{name}</h2>
         <div className={s.stepper}>
-          <button type="button" className="icon-btn" aria-label={t("gw.prev")} disabled={!prev} onClick={() => pick(prev)}><Icon name="chevronLeft" size={18} strokeWidth={2} /></button>
+          <button type="button" className={`btn btn-outline ${s.step}`} aria-label={prev ? `${t("gw.prev")}: ${fullName(prev)}` : t("gw.prev")} disabled={!prev} onClick={() => pick(prev)}>
+            <Icon name="chevronLeft" size={18} strokeWidth={2} />
+            <span className={s.stepText}><span className={s.stepHint}>{t("gw.prevShort")}</span><span className={s.stepName}>{prev ? fullName(prev) : t("gw.noOne")}</span></span>
+          </button>
           <span role="status" className={s.counter}>{t("gw.counter", { n: place >= 0 ? place + 1 : "–", total: shown.length })}</span>
-          <button type="button" className="icon-btn" aria-label={t("gw.next")} disabled={!next} onClick={() => pick(next)}><Icon name="chevronRight" size={18} strokeWidth={2} /></button>
+          <button type="button" className={`btn btn-outline ${s.step}`} aria-label={next ? `${t("gw.next")}: ${fullName(next)}` : t("gw.next")} disabled={!next} onClick={() => pick(next)}>
+            <span className={s.stepText}><span className={s.stepHint}>{t("gw.nextShort")}</span><span className={s.stepName}>{next ? fullName(next) : t("gw.noOne")}</span></span>
+            <Icon name="chevronRight" size={18} strokeWidth={2} />
+          </button>
         </div>
-        <select aria-label={t("gw.student")} className={`select ${s.pick}`} value={chosen} onChange={(e) => pick(e.target.value)}>
-          {rows.map((r) => <option key={r.user_id} value={r.user_id}>{r.name} {r.surname}</option>)}
-        </select>
-        <select aria-label={t("gw.show")} className={`select ${s.pick}`} value={filter} onChange={(e) => setPicked(e.target.value as WorkspaceFilter)}>
-          <option value="grade">{t("gw.fGrade")}</option>
-          <option value="draft">{t("gw.fDraft")}</option>
-          <option value="all">{t("gw.fAll")}</option>
-        </select>
+        <div className={s.field}>
+          <label htmlFor="gw-student">{t("gw.student")}</label>
+          <select id="gw-student" className={`select ${s.pick}`} value={chosen} onChange={(e) => pick(e.target.value)}>
+            {rows.map((r) => <option key={r.user_id} value={r.user_id}>{r.name} {r.surname}</option>)}
+          </select>
+        </div>
+        <div className={s.field}>
+          <label htmlFor="gw-show">{t("gw.show")}</label>
+          <select id="gw-show" className={`select ${s.pick}`} value={filter} onChange={(e) => setPicked(e.target.value as WorkspaceFilter)}>
+            <option value="grade">{t("gw.fGrade")}</option>
+            <option value="draft">{t("gw.fDraft")}</option>
+            <option value="all">{t("gw.fAll")}</option>
+          </select>
+        </div>
       </div>
       {shown.length === 0 && (
         <p className={s.empty} role="status">
@@ -114,13 +148,25 @@ export function GradeWorkspace({ courseId, assignmentId, studentId }: { courseId
           <Link href={courseHref(courseId, "grades")} className={s.link} onClick={back}>{t("gw.toGradebook")}</Link>
         </p>
       )}
-      <div className={s.body}>
+      <div className={s.body} data-rail={shown.length > 0}>
         <StudentRail rows={shown} states={states} late={late} selected={chosen} onPick={pick} />
         <div role="region" aria-label={t("gw.submission")} className={s.pane} tabIndex={0}>
           {attempts.error ? <LoadFailed /> : !attempts.data ? <p className="loading" role="status">{t("common.loading")}</p> : <SubmissionView key={chosen} item={item.data} attempts={attempts.data} />}
         </div>
         {row && col && (
-          <GradePanel key={chosen} assignmentId={assignmentId} row={row} col={col} cell={row.cells.find((c) => c.assignment_id === assignmentId)} former={!!row.former} drafts={drafts} dirty={dirty} onSavedDraft={() => pick(next ?? wrap)} />
+          <GradePanel key={chosen} assignmentId={assignmentId} row={row} col={col} cell={row.cells.find((c) => c.assignment_id === assignmentId)} former={!!row.former} drafts={drafts} dirty={dirty} onSaved={saved} />
+        )}
+      </div>
+      <div role="status" aria-live="polite" className={s.toasts}>
+        {notice && (
+          <div key={notice.id} className={s.toast}>
+            <span aria-hidden="true" className={s.toastIcon}><Icon name="check" size={16} strokeWidth={2.5} /></span>
+            <span className={s.toastText}>
+              <span className={s.toastTitle}>{notice.kind === "draft" ? t("gb.savedDraft") : t("gb.publishedTo", { name: notice.who })}</span>
+              <span className={s.toastName}>{undoSave.error ? errorText(undoSave.error) : notice.name}</span>
+            </span>
+            {notice.undo && <button type="button" className={`btn btn-quiet ${s.undo}`} disabled={undoSave.pending} onClick={() => void undo()}>{t("gw.undo")}</button>}
+          </div>
         )}
       </div>
       {leaving && (

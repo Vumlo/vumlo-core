@@ -10,6 +10,7 @@ import s from "./GradeWorkspace.module.css";
 export function StudentRail({ rows, states, late, selected, onPick }: { rows: GradebookRow[]; states: Map<string, CellState>; late: ReadonlySet<string>; selected: string; onPick: (studentId: string) => void }) {
   const t = useT();
   const mark = { grade: t("gb.toGrade"), draft: t("gw.mDraft"), pub: t("gw.mPub"), none: t("gw.mNone") } satisfies Record<CellState, string>;
+  if (rows.length === 0) return null;
   return (
     <nav aria-label={t("gw.rail")} className={s.rail}>
       {rows.map((r) => {
