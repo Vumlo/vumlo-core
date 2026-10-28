@@ -1,9 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type MutableRefObject } from "react";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { BlockRenderer } from "@/components/doc/BlockRenderer";
 import { Icon } from "@/components/Icon";
+import { errorText } from "@/lib/api/client";
 import { useContentTree, useCoursePeople } from "@/lib/api/hooks/courses";
 import { useCourseSubmissions, useGradebook, useGradeHistory, usePublishAllDrafts, useSaveGrade, useStudentAttempts, usePublishGrades } from "@/lib/api/hooks/assignments";
 import type { Document, GradeHistoryEntry, GradebookCell, GradebookColumn, GradebookRow } from "@/lib/api/types";
@@ -15,6 +17,7 @@ import { CourseHeader } from "./CourseHeader";
 import { useT } from "@/lib/i18n";
 import s from "./Gradebook.module.css";
 import { itemHref } from "@/lib/routes";
+import { useItemId, useStudentId } from "@/lib/useRoute";
 
 /** One recorded change as a line: the server sends the action and the values, the screen words them. */
 function historyLine(h: GradeHistoryEntry, t: ReturnType<typeof useT>): string {
@@ -28,7 +31,8 @@ function historyLine(h: GradeHistoryEntry, t: ReturnType<typeof useT>): string {
 type Sel = { studentId: string; assignmentId: string };
 type CellState = "pub" | "draft" | "grade" | "none";
 
-function Drawer({ sel, row, col, cell, toGrade, onClose }: { sel: Sel; row: GradebookRow; col: GradebookColumn; cell: GradebookCell | undefined; toGrade: boolean; onClose: () => void }) {
+/** `dirty` tells the gradebook whether the drawer holds points or a comment that were not saved. */
+function Drawer({ sel, row, col, cell, toGrade, dirty, onClose }: { sel: Sel; row: GradebookRow; col: GradebookColumn; cell: GradebookCell | undefined; toGrade: boolean; dirty: MutableRefObject<boolean>; onClose: () => void }) {
   const t = useT();
   const save = useSaveGrade(sel.assignmentId);
   const publish = usePublishGrades(sel.assignmentId);
@@ -36,8 +40,15 @@ function Drawer({ sel, row, col, cell, toGrade, onClose }: { sel: Sel; row: Grad
   const history = useGradeHistory(sel.assignmentId, sel.studentId);
   const [points, setPoints] = useState(cell?.draft_score ?? cell?.published_score ?? "");
   const [comment, setComment] = useState(cell?.draft_feedback ?? cell?.published_feedback ?? "");
+  // What the server has: the fields differ from it until a save succeeds.
+  const [stored, setStored] = useState({ points, comment });
+  const [done, setDone] = useState<"draft" | "published" | null>(null);
   const [open, setOpen] = useState(false);
   const [touched, setTouched] = useState(false);
+  useEffect(() => {
+    dirty.current = points !== stored.points || comment !== stored.comment;
+    return () => { dirty.current = false; };
+  }, [dirty, points, comment, stored]);
   const latest = attempts.data?.[0];
   const invalid = points !== "" && !validScore(points, col.max_points);
   const former = !!row.former;
@@ -46,11 +57,14 @@ function Drawer({ sel, row, col, cell, toGrade, onClose }: { sel: Sel; row: Grad
   async function saveDraft() {
     setTouched(true);
     if (invalid) return false;
-    return !!(await save.run(sel.studentId, points.trim() === "" ? null : points.trim(), comment));
+    if (!(await save.run(sel.studentId, points.trim() === "" ? null : points.trim(), comment))) return false;
+    setStored({ points, comment });
+    setDone("draft");
+    return true;
   }
   async function saveAndPublish() {
     if (!(await saveDraft())) return;
-    await publish.run([sel.studentId]);
+    if (await publish.run([sel.studentId])) setDone("published");
   }
   const err = save.error ?? publish.error;
 
@@ -75,19 +89,20 @@ function Drawer({ sel, row, col, cell, toGrade, onClose }: { sel: Sel; row: Grad
           )}
         </div>
       ) : <p className="muted" style={{ fontSize: 14 }}>{toGrade ? "" : t("gb.nothing")}</p>}
-      <div className="stack" style={{ gap: 10 }}>
+      <div className="stack" style={{ gap: 12 }}>
         <label htmlFor="points" style={{ fontSize: 14, fontWeight: 500 }}>{t("cm.points")}</label>
-        <div className="row" style={{ gap: 10 }}>
-          <input id="points" className="input" style={{ maxWidth: 120 }} inputMode="decimal" value={points} disabled={former} aria-invalid={touched && invalid} onChange={(e) => { setPoints(e.target.value); setTouched(false); }} />
+        <div className="row" style={{ gap: 12 }}>
+          <input id="points" className="input" style={{ maxWidth: 120 }} inputMode="decimal" value={points} disabled={former} aria-invalid={touched && invalid} onChange={(e) => { setPoints(e.target.value); setTouched(false); setDone(null); }} />
           <span className="muted" style={{ fontSize: 14 }}>{t("gb.outOf", { max: col.max_points })}</span>
         </div>
         {touched && invalid && <p role="alert" className="hint" style={{ color: "var(--danger)" }}>{t("gb.invalid", { max: col.max_points })}</p>}
         <label htmlFor="comment" style={{ fontSize: 14, fontWeight: 500 }}>{t("gb.commentFor", { name: row.name })}</label>
-        <textarea id="comment" className="textarea" style={{ minHeight: 80 }} value={comment} disabled={former} onChange={(e) => setComment(e.target.value)} />
-        {err && <p role="alert" className="alert alert-danger">{err.errors[0]?.message ?? err.detail ?? err.title}</p>}
+        <textarea id="comment" className="textarea" style={{ minHeight: 80 }} value={comment} disabled={former} onChange={(e) => { setComment(e.target.value); setDone(null); }} />
+        {err && <p role="alert" className="alert alert-danger">{errorText(err)}</p>}
+        {done && <p role="status" className="alert alert-ok">{done === "draft" ? t("gb.savedDraft") : t("gb.publishedTo", { name: row.name })}</p>}
         {former ? <p className="muted" style={{ fontSize: 13 }}>{t("gb.left", { name: row.name })}</p> : (
           <>
-            <div className="row" style={{ gap: 10, flexWrap: "wrap" }}>
+            <div className="row" style={{ gap: 12, flexWrap: "wrap" }}>
               <button type="button" className="btn" onClick={() => void saveDraft()} disabled={save.pending}>{t("gb.saveDraft")}</button>
               <button type="button" className="btn btn-primary" onClick={() => void saveAndPublish()} disabled={save.pending || publish.pending}>{t("cm.publish")}</button>
             </div>
@@ -96,7 +111,7 @@ function Drawer({ sel, row, col, cell, toGrade, onClose }: { sel: Sel; row: Grad
         )}
       </div>
       <div>
-        <h3 style={{ fontSize: 14, fontWeight: 600, marginBottom: 6 }}>{t("gb.history")}</h3>
+        <h3 style={{ fontSize: 14, fontWeight: 600, marginBottom: 8 }}>{t("gb.history")}</h3>
         <ol className={s.hist}>
           {(history.data ?? []).map((h) => <li key={h.id}><span>{historyLine(h, t)}</span><span className="muted">{sinceLabel(h.at)}</span></li>)}
           {history.data?.length === 0 && <li className="muted">{t("gb.noChanges")}</li>}
@@ -118,7 +133,18 @@ export function Gradebook({ courseId }: { courseId: string }) {
   const publishAll = usePublishAllDrafts();
   const [q, setQ] = useState("");
   const [group, setGroup] = useState("all");
-  const [sel, setSel] = useState<Sel | null>(null);
+  // The grading queue opens a grade by address: `&item=<assignment>&student=<user>`.
+  const linkedItem = useItemId();
+  const linkedStudent = useStudentId();
+  const [sel, setSel] = useState<Sel | null>(linkedItem && linkedStudent ? { studentId: linkedStudent, assignmentId: linkedItem } : null);
+  const dirty = useRef(false);
+  // Moving to another grade, or closing, while points or a comment are unsaved asks first.
+  const [leaving, setLeaving] = useState<{ to: Sel | null } | null>(null);
+  const [asking, setAsking] = useState(false);
+  function choose(to: Sel | null) {
+    if (dirty.current && (to?.studentId !== sel?.studentId || to?.assignmentId !== sel?.assignmentId)) setLeaving({ to });
+    else setSel(to);
+  }
 
   const items = tree.data ? allItems(tree.data) : [];
   const groupOf = useMemo(() => new Map((people.data?.people ?? []).map((p) => [p.user_id, p.group ?? t("people.direct")])), [people.data, t]);
@@ -165,19 +191,29 @@ export function Gradebook({ courseId }: { courseId: string }) {
         </label>
         <select aria-label={t("people.group")} className="select" style={{ width: "auto", minHeight: 40 }} value={group} onChange={(e) => setGroup(e.target.value)}>
           <option value="all">{t("gb.allStudents")}</option>
-          {groups.map((g) => <option key={g} value={g}>{g.startsWith("CS-") ? t("people.group2", { name: g }) : g}</option>)}
+          {groups.map((g) => <option key={g} value={g}>{g}</option>)}
         </select>
         <span style={{ flex: "1 1 auto" }} />
-        <button type="button" className="btn btn-primary" disabled={draftCount === 0 || publishAll.pending} onClick={() => void publishAll.run(draftCols.map((c) => c.assignment_id))}>
+        <div className={s.legend}>
+          <span><strong style={{ color: "var(--text)" }}>18.50</strong> {t("gb.legendPub")}</span>
+          <span><span className={s.draft}>22.50</span> {t("gb.legendDraft")}</span>
+          <span><span className={s.dot} /> {t("gb.legendSub")}</span>
+        </div>
+        <button type="button" className="btn btn-primary" disabled={draftCount === 0 || publishAll.pending} onClick={() => setAsking(true)}>
           {t("gb.publishDrafts", { n: plural(draftCount, "draft") })}
         </button>
       </div>
-      {publishAll.error && <p role="alert" className="alert alert-danger" style={{ marginBottom: 12 }}>{publishAll.error.detail ?? publishAll.error.title}</p>}
-      <div className={s.legend}>
-        <span><strong style={{ color: "var(--text)" }}>18.50</strong> {t("gb.legendPub")}</span>
-        <span><span className={s.draft}>22.50</span> {t("gb.legendDraft")}</span>
-        <span><span className={s.dot} /> {t("gb.legendSub")}</span>
-      </div>
+      {publishAll.error && <p role="alert" className="alert alert-danger" style={{ marginBottom: 12 }}>{errorText(publishAll.error)}</p>}
+      {asking && (
+        <ConfirmDialog title={t("gb.confirmTitle")} confirm={t("cm.publish")} pending={publishAll.pending} onClose={() => setAsking(false)} onConfirm={async () => { await publishAll.run(draftCols.map((c) => c.assignment_id)); setAsking(false); }}>
+          {t("gb.confirmBody", { n: plural(draftCount, "draft") })}
+        </ConfirmDialog>
+      )}
+      {leaving && (
+        <ConfirmDialog title={t("gb.discardTitle")} confirm={t("gb.discard")} danger onClose={() => setLeaving(null)} onConfirm={() => { dirty.current = false; setSel(leaving.to); setLeaving(null); }}>
+          {t("gb.discardBody")}
+        </ConfirmDialog>
+      )}
       {!book.data ? <p className="loading" role="status">{t("common.loading")}</p> : (
         <div className={s.body}>
           <div className={`card ${s.gridWrap}`}>
@@ -190,7 +226,7 @@ export function Gradebook({ courseId }: { courseId: string }) {
                     <div key={c.assignment_id} role="columnheader" className={s.col}>
                       <Link href={itemHref(courseId, c.assignment_id)}>{c.title}</Link>
                       <span className={s.colMeta}>{t("gb.colOut", { max: c.max_points })}</span>
-                      <span className={s.colNote} style={{ color: n.tone === "accent" ? "var(--accent-fg)" : undefined }}>{n.text}</span>
+                      <span className={s.colNote} data-tone={n.tone}>{n.text}</span>
                     </div>
                   );
                 })}
@@ -210,11 +246,11 @@ export function Gradebook({ courseId }: { courseId: string }) {
                     const selected = sel?.studentId === r.user_id && sel.assignmentId === c.assignment_id;
                     return (
                       <div key={c.assignment_id} role="gridcell" className={s.cell}>
-                        <button type="button" className={s.cellBtn} aria-label={label} aria-pressed={selected} onClick={() => setSel({ studentId: r.user_id, assignmentId: c.assignment_id })}>
+                        <button type="button" className={s.cellBtn} aria-label={label} aria-pressed={selected} onClick={() => choose({ studentId: r.user_id, assignmentId: c.assignment_id })}>
                           {st === "pub" && <span className={s.pub}>{cell?.published_score}</span>}
                           {st === "draft" && <span className={s.draft}>{cell?.draft_score}</span>}
                           {st === "grade" && <><span className={s.dot} /><span style={{ fontSize: 13 }}>{t("gb.toGrade")}</span></>}
-                          {st === "none" && <span aria-hidden="true" className="muted">—</span>}
+                          {st === "none" && <span aria-hidden="true" className={s.none} />}
                         </button>
                       </div>
                     );
@@ -225,7 +261,7 @@ export function Gradebook({ courseId }: { courseId: string }) {
             </div>
           </div>
           {sel && selRow && selCol && (
-            <Drawer key={`${sel.studentId}:${sel.assignmentId}`} sel={sel} row={selRow} col={selCol} cell={selRow.cells.find((c) => c.assignment_id === sel.assignmentId)} toGrade={state(selRow, selCol).st === "grade"} onClose={() => setSel(null)} />
+            <Drawer key={`${sel.studentId}:${sel.assignmentId}`} sel={sel} row={selRow} col={selCol} cell={selRow.cells.find((c) => c.assignment_id === sel.assignmentId)} toGrade={state(selRow, selCol).st === "grade"} dirty={dirty} onClose={() => choose(null)} />
           )}
         </div>
       )}

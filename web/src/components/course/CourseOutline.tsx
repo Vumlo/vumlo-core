@@ -17,10 +17,12 @@ type Props = {
   code?: string;
   title?: string;
   currentItemId?: string;
+  /** Staff see the structure only: progress and to-do marks are a student's. */
+  staff?: boolean;
 };
 
 /** The left column of course pages: sections with their progress and every item. Items use the lecture/assignment icon colours. */
-export function CourseOutline({ courseId, tree, meta, code, title, currentItemId }: Props) {
+export function CourseOutline({ courseId, tree, meta, code, title, currentItemId, staff }: Props) {
   const t = useT();
   const secs = sections(tree);
   const hasCurrent = (ids: { id: string }[]) => ids.some((i) => i.id === currentItemId);
@@ -47,12 +49,12 @@ export function CourseOutline({ courseId, tree, meta, code, title, currentItemId
               <button type="button" className={s.sectionBtn} aria-expanded={expanded} onClick={() => setOpen((o) => ({ ...o, [sec.id]: !expanded }))}>
                 <Icon name={expanded ? "chevronDown" : "chevronRight"} size={16} style={{ color: "var(--muted)", flex: "none" }} strokeWidth={2} />
                 <span className={s.sectionTitle}>{sec.title}</span>
-                {asg.length > 0 && <span className={s.progress}>{done}/{asg.length}</span>}
+                {!staff && asg.length > 0 && <span className={s.progress}>{done}/{asg.length}</span>}
               </button>
               {expanded &&
                 sec.items.map((i) => {
                   const k = kindOf(i);
-                  const mark = k === "assignment" ? outlineMark(meta[i.id]) : null;
+                  const mark = !staff && k === "assignment" ? outlineMark(meta[i.id]) : null;
                   return (
                     <Link
                       key={i.id}

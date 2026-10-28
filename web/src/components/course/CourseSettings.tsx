@@ -43,6 +43,8 @@ export function CourseSettings({ courseId }: { courseId: string }) {
   const [saved, setSaved] = useState(false);
   const [dialog, setDialog] = useState<null | "group" | "owner" | "archive" | "delete" | "template">(null);
   const [newOwner, setNewOwner] = useState("");
+  // Unlinking a group takes all its students out of the course, so it is confirmed.
+  const [unlinking, setUnlinking] = useState<{ id: string; name: string } | null>(null);
 
   useEffect(() => {
     const els = NAV.map(([id]) => document.getElementById(id)).filter((e): e is HTMLElement => !!e);
@@ -86,7 +88,7 @@ export function CourseSettings({ courseId }: { courseId: string }) {
           {NAV.map(([id, label]) => <a key={id} href={`#${id}`} aria-current={active === id} onClick={() => setActive(id)}>{t(label)}</a>)}
         </nav>
         <div className={s.main}>
-          <section id="general" aria-labelledby="general-h" className={`card ${s.section}`}>
+          <section id="general" aria-labelledby="general-h" className={s.section}>
             <h2 id="general-h">{t("cs.general")}</h2>
             <p className={s.lead}>{t("cs.generalLead")}</p>
             <div className={s.fields}>
@@ -112,13 +114,13 @@ export function CourseSettings({ courseId }: { courseId: string }) {
                 {fieldError("description") && <p className="hint" style={{ color: "var(--danger)" }}>{fieldError("description")}</p>}
               </div>
             </div>
-            <div className="row" style={{ gap: 14, marginTop: 18, flexWrap: "wrap" }}>
+            <div className="row" style={{ gap: 16, marginTop: 20, flexWrap: "wrap" }}>
               <button type="button" className="btn btn-primary" disabled={!dirty || updateCourse.pending || updateInfo.pending} onClick={save}>{t("cs.save")}</button>
               <span role="status" className="muted" style={{ fontSize: 14 }}>{saved ? t("cs.saved") : t("cs.lastSaved", { day: dayLabel(i.updated_at) })}</span>
             </div>
           </section>
 
-          <section id="grading" aria-labelledby="grading-h" className={`card ${s.section}`}>
+          <section id="grading" aria-labelledby="grading-h" className={s.section}>
             <h2 id="grading-h">{t("cs.grading")}</h2>
             <p className={s.lead}>{t("cs.gradingLead")}</p>
             <dl className={s.dl}>
@@ -129,7 +131,7 @@ export function CourseSettings({ courseId }: { courseId: string }) {
             <p className="muted" style={{ marginTop: 16, fontSize: 14 }}>{t("cs.scaleNote")}</p>
           </section>
 
-          <section id="groups" aria-labelledby="groups-h" className={`card ${s.section}`}>
+          <section id="groups" aria-labelledby="groups-h" className={s.section}>
             <div className="row" style={{ justifyContent: "space-between", alignItems: "flex-start", gap: 16, flexWrap: "wrap" }}>
               <div><h2 id="groups-h">{t("cs.groups")}</h2><p className={s.lead}>{t("cs.groupsLead")}</p></div>
               <button type="button" className="btn btn-outline" onClick={() => setDialog("group")}><Icon name="plus" size={15} strokeWidth={2.2} />{t("people.linkGroup")}</button>
@@ -138,14 +140,14 @@ export function CourseSettings({ courseId }: { courseId: string }) {
               {groups.map((g) => (
                 <li key={g.link_id} className={s.li}>
                   <span className="grow"><span style={{ display: "block", fontWeight: 500 }}>{linkedGroupName(g)}</span><span className="muted" style={{ display: "block", fontSize: 13 }}>{plural(g.student_count, "student")}, {t("people.linkedOn", { day: dayLong(g.linked_at) })}</span></span>
-                  <button type="button" className="btn btn-quiet" style={{ color: "var(--danger)" }} onClick={() => void unlink.run(g.link_id)}>{t("people.unlink")}</button>
+                  <button type="button" className="btn btn-quiet" style={{ color: "var(--danger)" }} onClick={() => setUnlinking({ id: g.link_id, name: linkedGroupName(g) })}>{t("people.unlink")}</button>
                 </li>
               ))}
               {groups.length === 0 && <li className="muted" style={{ fontSize: 14 }}>{t("people.noGroup")}</li>}
             </ul>
           </section>
 
-          <section id="team" aria-labelledby="team-h" className={`card ${s.section}`}>
+          <section id="team" aria-labelledby="team-h" className={s.section}>
             <h2 id="team-h">{t("cs.owner")}</h2>
             <p className={s.lead}>{t("cs.ownerLead")} <Link href={courseHref(courseId, "people")} style={{ color: "var(--accent-fg)" }}>{t("cs.peopleTab")}</Link>.</p>
             {owner && (
@@ -158,18 +160,18 @@ export function CourseSettings({ courseId }: { courseId: string }) {
             <p className="muted" style={{ fontSize: 14 }}>{t("cs.transferNote")}</p>
           </section>
 
-          <section id="template" aria-labelledby="template-h" className={`card ${s.section}`}>
+          <section id="template" aria-labelledby="template-h" className={s.section}>
             <div className="row" style={{ justifyContent: "space-between", alignItems: "flex-start", gap: 16, flexWrap: "wrap" }}>
               <div><h2 id="template-h">{t("cs.reuse")}</h2><p className={s.lead}>{t("cs.reuseLead")}</p></div>
               <button type="button" className="btn btn-outline" onClick={() => { makeTemplate.reset(); setDialog("template"); }}>{t("cs.makeTemplate")}</button>
             </div>
             <div className={s.copy}>
-              <div><p style={{ fontWeight: 600, marginBottom: 2 }}>{t("cs.copied")}</p><p className="muted">{plural(tree.data?.modules.length ?? 0, "section")}, {plural(items.filter((x) => !isAssignment(x)).length, "lecture")}, {plural(items.filter(isAssignment).length, "assignment")}, {t("cs.copiedMore")}</p></div>
-              <div><p style={{ fontWeight: 600, marginBottom: 2 }}>{t("cs.notCopied")}</p><p className="muted">{t("cs.notCopiedList")}</p></div>
+              <div><p style={{ fontWeight: 600, marginBottom: 4 }}>{t("cs.copied")}</p><p className="muted">{plural(tree.data?.modules.length ?? 0, "section")}, {plural(items.filter((x) => !isAssignment(x)).length, "lecture")}, {plural(items.filter(isAssignment).length, "assignment")}, {t("cs.copiedMore")}</p></div>
+              <div><p style={{ fontWeight: 600, marginBottom: 4 }}>{t("cs.notCopied")}</p><p className="muted">{t("cs.notCopiedList")}</p></div>
             </div>
           </section>
 
-          <section id="archive" aria-labelledby="archive-h" className={`card ${s.section}`}>
+          <section id="archive" aria-labelledby="archive-h" className={`card ${s.section} ${s.zone}`}>
             <h2 id="archive-h" style={{ marginBottom: 12 }}>{t("cs.archive")}</h2>
             <div className={s.danger}>
               <div style={{ flex: "1 1 320px" }}>
@@ -189,6 +191,11 @@ export function CourseSettings({ courseId }: { courseId: string }) {
         </div>
       </div>
 
+      {unlinking && (
+        <ConfirmDialog title={t("people.unlinkQ", { name: unlinking.name })} confirm={t("people.unlink")} danger pending={unlink.pending} error={unlink.error?.detail} onClose={() => { setUnlinking(null); unlink.reset(); }} onConfirm={async () => { if (await unlink.run(unlinking.id)) setUnlinking(null); }}>
+          {t("people.unlinkBody")}
+        </ConfirmDialog>
+      )}
       {dialog === "group" && <LinkGroup courseId={courseId} onClose={close} />}
       {dialog === "owner" && (
         <Dialog title={t("cs.transfer")} description={t("cs.transferLead")} onClose={close}
