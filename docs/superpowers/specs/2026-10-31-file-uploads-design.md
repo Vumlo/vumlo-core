@@ -58,9 +58,11 @@ path separators and control characters and limited to 200 characters before inse
 
 ### 3.2 API (public surface of `files/mod.rs`)
 
-- `put(storage, stream, max_size) -> StoredBlob { key, size, sha256 }`: streams into the backend,
-  counts bytes, aborts and deletes the partial object above `max_size`. Called **before** `begin`.
-- `insert(conn, StoredBlob, meta) -> File`: writes the metadata row inside the caller's transaction.
+- `put(storage, id, data, max_size) -> Stored { id, size, sha256, head }`: takes the whole body
+  (the route reads it with a `max_size` cap, so an oversized upload is refused before anything is
+  stored). Streaming an upload needs a stream crate, which ADR-0014 does not list; the ceiling is
+  up to 50 MiB of memory per concurrent upload. Download is streamed. Called **before** `begin`.
+- `insert(conn, &Stored, uploaded_by, name, mime) -> File`: writes the metadata row inside the caller's transaction.
 - `get(conn, id) -> File` and `open(storage, &File) -> ByteStream`.
 - `delete(conn, storage, id)`.
 - `candidates(conn, older_than) -> Vec<Uuid>`: files created before the cutoff. It cannot know
