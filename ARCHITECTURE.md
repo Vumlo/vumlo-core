@@ -77,7 +77,7 @@ docs/decisions/
 
 ## Crates and modules
 
-Each layer is a crate, and a crate may depend only on the ones below it ([ADR-0065](docs/decisions/0065-layered-crates.md)): `server` → `learning` → `org` → `auth` → `events` → `access` → `common`. Cargo enforces the direction; nothing below can name something above. Two more layers sit beside `learning`, both below `server` and `vumlo-cli` and neither visible to the chain ([ADR-0066](docs/decisions/0066-modules-and-plugins.md)): `plugins` (installs, delivery of events to external plugins, the plugin API) and the optional `modules/*` (built on `module-api`, which depends only on `common`, `access` and `events`). A module is mounted at `/api/v1/modules/{id}`, owns the schema `mod_<id>`, and is listed by `GET /api/v1/meta`; a plugin is an external HTTP service the core does not trust.
+Each layer is a crate, and a crate may depend only on the ones below it ([ADR-0065](docs/decisions/0065-layered-crates.md)): `server` → `learning` → `org` → `auth` → `files` → `events` → `access` → `common`. Cargo enforces the direction; nothing below can name something above. Two more layers sit beside `learning`, both below `server` and `vumlo-cli` and neither visible to the chain ([ADR-0066](docs/decisions/0066-modules-and-plugins.md)): `plugins` (installs, delivery of events to external plugins, the plugin API) and the optional `modules/*` (built on `module-api`, which depends only on `common`, `access` and `events`). A module is mounted at `/api/v1/modules/{id}`, owns the schema `mod_<id>`, and is listed by `GET /api/v1/meta`; a plugin is an external HTTP service the core does not trust.
 
 | Crate      | Module / owns (Postgres schema)  | Responsibility |
 |------------|----------------------------------|----------------|
@@ -88,11 +88,11 @@ Each layer is a crate, and a crate may depend only on the ones below it ([ADR-00
 | `learning` | `assessment.*`                   | submissions (drafts and attempts), lateness, the submission window (ADR-0035); the scoring of quizzes at submit, the result of a quiz and the responses to a form (ADR-0050, ADR-0051) |
 | `learning` | `gradebook.*`                    | grades (draft/published), grade history, publishing, gradebook view, my grades |
 | `learning` | — (flows, no tables)             | what needs several modules: a person with their groups and courses and the change of a user (`people`), the overview of a group (`groups`), the term statistics (`reports`), the audit log read model (`audit`) |
+| `files`    | `files.*`                        | the row that describes a stored file and the storage backend (local disk, S3 planned) with `put`, `insert`, `get`, `read`, `delete` and the orphan candidates (ADR-0069); no routes yet |
 | `events`   | `events.*`                       | audit log and outbox table with `events::emit`, and the outbox worker with its handler registry (ADR-0045) (built); webhooks and scheduled jobs (planned); the view `events.audit_entries` |
 | `access`   | — (no tables)                    | `Actor`, and `authorize(&Actor, Action)` — the only place permissions are checked |
 | `common`   | — (no tables)                    | `Role`, `ApiError`, pagination |
 | `server`   | `idempotency.*`                  | the composition root: the router, the application state, the middleware, the worker |
-| —          | `files.*`                        | uploads, storage backends (planned) |
 
 Rules ([ADR-0001](docs/decisions/0001-modular-monolith.md), [ADR-0065](docs/decisions/0065-layered-crates.md)):
 
@@ -216,8 +216,9 @@ gradebook                                          -- ADR-0028
                    score?, feedback?                   -- the values after the action; append-only (a trigger refuses UPDATE; only the purge deletes)
                    -- built (ADR-0050): actor_id is null exactly for auto_score (CHECK); grades.draft_updated_by is null for a draft the server wrote
 
-files
-  files            id, owner_id, storage_key, mime, size, created_at
+files                                              -- built (ADR-0069), written by the crate `files` only
+  files            id, uploaded_by (no foreign key: `files` is below `auth`), name, mime, size (> 0 by CHECK), sha256, created_at
+                   -- the storage key is derived from the id (`ab/cd/<id>`), never from the name
 
 plugins                                            -- built (ADR-0066), written by the crate `plugins` only
   plugin_installs  id, plugin_id (unique slug), version, base_url, api = '1', subscribes[], requested_scopes[],
@@ -448,6 +449,7 @@ Examples: in a school, the template "Algebra 7" becomes courses "Algebra 7-A" an
 
 ## Known limits
 
+- **`files::put` buffers the whole file.** Up to `files.max_size` (50 MiB) of memory per concurrent upload, because streaming a body needs a stream crate that ADR-0014 does not list. Downloads stream. `db backup` (`pg_dump`) does not include the files directory or bucket (ADR-0069).
 - **Rights are checked before the row lock.** `gradebook` and `content` authorize first and lock the assignment row after, so a role taken away in the same instant can still write one grade. There is no course-level lock.
 - **`on_deadline = auto_submit` does nothing yet.** It is stored and validated; a draft at the deadline is kept until the worker exists (task 013b, ADR-0035).
 - **A student's `GET /items/{id}` still returns the whole `config`.** For `text` that is the editor features only; a type with an answer key needs the student view of ADR-0023 first.

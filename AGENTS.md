@@ -33,13 +33,14 @@ Each layer is a crate, and a crate depends only on the ones below it. Cargo enfo
       -> learning   teaching, content, assessment, gradebook, and the flows that need several of them
       -> org        terms, groups, subgroups, the installation record
       -> auth       users, sessions, sign-in, account value types, the mailer
+      -> files      stored bytes and their description: the files table and the storage backend (ADR-0069)
       -> events     audit writes, the outbox and its worker
       -> access     Actor and authorize
       -> common     Role, ApiError, pagination, text_enum!
 
 `db` (migrations, the installation record, the CLI's audit row) is a crate beside the chain.
 `test-support` is the test database harness and a dev-dependency only. Modules in the code:
-`auth`, `org`, `teaching`, `content`, `assessment`, `gradebook`, `events`, `access`, and `files` (planned).
+`auth`, `files`, `org`, `teaching`, `content`, `assessment`, `gradebook`, `events`, `access`.
 
     backend/crates/server/src/
       main.rs      CLI entry: serve | worker | migrate | create-admin | create-user (import-users: planned)
