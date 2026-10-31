@@ -1717,9 +1717,9 @@ export interface paths {
          *     `file` item must not carry an `assignment` object.
          *
          *     `kind: assignment` requires an `assignment` object `{type, config?, max_points, is_bonus?}`
-         *     (ADR-0021); a `text` item must not carry one. `type` is `text`, `no_submission`, `quiz` or `form`; the
+         *     (ADR-0021); a `text` item must not carry one. `type` is `text`, `no_submission`, `quiz`, `form` or `file`; the
          *     `config` of a `quiz` is its questions and must add up to `max_points` (ADR-0050), that of a `form` its
-         *     fields (ADR-0051), and the others take an empty one (a `text` assignment may narrow its editor).
+         *     fields (ADR-0051), that of a `file` `{max_files?, accept?}` (ADR-0069), and the others take an empty one (a `text` assignment may narrow its editor).
          *     `max_points` is a decimal string such as `"20"` or `"7.5"`; a JSON number is rejected. The
          *     grading scale limits the points (ADR-0022): at most 12 per assignment on `twelve`, at most
          *     100 in total over the regular (not bonus) assignments of the course on `hundred`.
@@ -2064,7 +2064,8 @@ export interface components {
             class_on?: string | null;
             /**
              * @description Settings of the type; an empty object for `no_submission`, the editor narrowing for `text`,
-             *     the questions for a `quiz` (ADR-0050) and the fields for a `form` (ADR-0051). A student
+             *     the questions for a `quiz` (ADR-0050), the fields for a `form` (ADR-0051) and
+             *     `{max_files?, accept?}` for a `file` (ADR-0069). A student
              *     never receives the answer key of a quiz. A form's fields carry the read-only facts
              *     `has_answers` and, on the options of an exclusive field, `taken` and `taken_by`.
              */
@@ -2090,7 +2091,7 @@ export interface components {
             /** @description A decimal string with exactly two decimals, e.g. `"20.00"`. */
             max_points: string;
             on_deadline?: components["schemas"]["OnDeadline"] | null;
-            /** @description The assignment type: `text`, `no_submission`, `quiz` or `form`. It cannot change. */
+            /** @description The assignment type: `text`, `no_submission`, `quiz`, `form` or `file`. It cannot change. */
             type: string;
         };
         /** @description What the course tree shows of an assignment: everything but `config`. */
@@ -3156,7 +3157,8 @@ export interface components {
             class_on?: string | null;
             /**
              * @description Settings of the type, a JSON object. Defaults to `{}`; `no_submission` has none, a `quiz`
-             *     needs its questions (ADR-0050) and a `form` its fields (ADR-0051).
+             *     needs its questions (ADR-0050), a `form` its fields (ADR-0051) and a `file`
+             *     takes `{max_files?: 1..=20, accept?: [".pdf", ...]}` (ADR-0069).
              */
             config?: Record<string, never> | null;
             /**
@@ -3185,7 +3187,7 @@ export interface components {
             max_points?: string;
             /** @description `keep_draft` or `auto_submit` (the latter takes effect with the background worker). */
             on_deadline?: string | null;
-            /** @description The assignment type: `text`, `no_submission`, `quiz` or `form`. */
+            /** @description The assignment type: `text`, `no_submission`, `quiz`, `form` or `file`. */
             type?: string;
         };
         /**
@@ -3483,7 +3485,10 @@ export interface components {
             assignment_id: string;
             /** Format: int32 */
             attempt: number;
-            /** @description A block document for a `text` assignment, `{"answers": {...}}` for a quiz or a form. */
+            /**
+             * @description A block document for a `text` assignment, `{"answers": {...}}` for a quiz or a form,
+             *     `{"files": [...], "comment"?}` for a file.
+             */
             content: Record<string, never>;
             /**
              * Format: uuid

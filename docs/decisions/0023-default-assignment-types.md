@@ -38,3 +38,6 @@ ADR-0008 made assignment types extensible and named the v1 built-ins: `file`, `t
 - Adding a type is one enum variant, one implementation of the trait and one ADR for its JSON.
 - The `form` and `quiz` builders are frontend features over `config`; the API has no quiz-specific entities.
 - Order of work: `no_submission` before the gradebook; submissions together with `text`; `file` after the `files` module; `form`; `quiz` after submissions and the gradebook.
+
+## Built by ADR-0069 (assignment type `file`)
+- `file` exists as `BuiltinType::File`. Config `{"max_files"?: 1..=20 (default 5), "accept"?: [".pdf", ...]}`: `accept` has at most 30 lowercase extensions, each a dot and 2 to 16 letters or digits, no duplicates; any other key is refused. Content `{"files": [file_id, ...], "comment"?: block document (profile `student`)}`. A draft may hold no file or up to `max_files`, none twice; a submit needs at least one. Graded by hand. The extension of each file is checked against `accept` (case-insensitive, last extension) by the assessment service, which resolves the file names.

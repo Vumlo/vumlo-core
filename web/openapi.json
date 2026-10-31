@@ -7420,7 +7420,7 @@
           "content"
         ],
         "summary": "Creates a draft `text` item, assignment or `file` item as the last item of a module or sub-module.",
-        "description": "`body` is a JSON object that is stored and returned as is; an array or a string is rejected.\nFor an assignment it holds the instructions. `kind` is optional: without it the item is an\nassignment when an `assignment` object is sent and a `text` item otherwise.\n\nA `file` item has the body `{file_id?, description?}` (`description` is a document). It starts\nwithout a file: upload one with `POST /files?for=item:{id}` and name it with\n`PATCH /items/{id}`. `file_id` must be a file the caller uploaded that nothing uses yet. A\n`file` item must not carry an `assignment` object.\n\n`kind: assignment` requires an `assignment` object `{type, config?, max_points, is_bonus?}`\n(ADR-0021); a `text` item must not carry one. `type` is `text`, `no_submission`, `quiz` or `form`; the\n`config` of a `quiz` is its questions and must add up to `max_points` (ADR-0050), that of a `form` its\nfields (ADR-0051), and the others take an empty one (a `text` assignment may narrow its editor).\n`max_points` is a decimal string such as `\"20\"` or `\"7.5\"`; a JSON number is rejected. The\ngrading scale limits the points (ADR-0022): at most 12 per assignment on `twelve`, at most\n100 in total over the regular (not bonus) assignments of the course on `hundred`.",
+        "description": "`body` is a JSON object that is stored and returned as is; an array or a string is rejected.\nFor an assignment it holds the instructions. `kind` is optional: without it the item is an\nassignment when an `assignment` object is sent and a `text` item otherwise.\n\nA `file` item has the body `{file_id?, description?}` (`description` is a document). It starts\nwithout a file: upload one with `POST /files?for=item:{id}` and name it with\n`PATCH /items/{id}`. `file_id` must be a file the caller uploaded that nothing uses yet. A\n`file` item must not carry an `assignment` object.\n\n`kind: assignment` requires an `assignment` object `{type, config?, max_points, is_bonus?}`\n(ADR-0021); a `text` item must not carry one. `type` is `text`, `no_submission`, `quiz`, `form` or `file`; the\n`config` of a `quiz` is its questions and must add up to `max_points` (ADR-0050), that of a `form` its\nfields (ADR-0051), that of a `file` `{max_files?, accept?}` (ADR-0069), and the others take an empty one (a `text` assignment may narrow its editor).\n`max_points` is a decimal string such as `\"20\"` or `\"7.5\"`; a JSON number is rejected. The\ngrading scale limits the points (ADR-0022): at most 12 per assignment on `twelve`, at most\n100 in total over the regular (not bonus) assignments of the course on `hundred`.",
         "operationId": "create_item",
         "parameters": [
           {
@@ -9172,7 +9172,7 @@
           },
           "config": {
             "type": "object",
-            "description": "Settings of the type; an empty object for `no_submission`, the editor narrowing for `text`,\nthe questions for a `quiz` (ADR-0050) and the fields for a `form` (ADR-0051). A student\nnever receives the answer key of a quiz. A form's fields carry the read-only facts\n`has_answers` and, on the options of an exclusive field, `taken` and `taken_by`."
+            "description": "Settings of the type; an empty object for `no_submission`, the editor narrowing for `text`,\nthe questions for a `quiz` (ADR-0050), the fields for a `form` (ADR-0051) and\n`{max_files?, accept?}` for a `file` (ADR-0069). A student\nnever receives the answer key of a quiz. A form's fields carry the read-only facts\n`has_answers` and, on the options of an exclusive field, `taken` and `taken_by`."
           },
           "due_at": {
             "type": [
@@ -9219,7 +9219,7 @@
           },
           "type": {
             "type": "string",
-            "description": "The assignment type: `text`, `no_submission`, `quiz` or `form`. It cannot change."
+            "description": "The assignment type: `text`, `no_submission`, `quiz`, `form` or `file`. It cannot change."
           }
         }
       },
@@ -12366,7 +12366,7 @@
               "object",
               "null"
             ],
-            "description": "Settings of the type, a JSON object. Defaults to `{}`; `no_submission` has none, a `quiz`\nneeds its questions (ADR-0050) and a `form` its fields (ADR-0051)."
+            "description": "Settings of the type, a JSON object. Defaults to `{}`; `no_submission` has none, a `quiz`\nneeds its questions (ADR-0050), a `form` its fields (ADR-0051) and a `file`\ntakes `{max_files?: 1..=20, accept?: [\".pdf\", ...]}` (ADR-0069)."
           },
           "due_at": {
             "type": [
@@ -12409,7 +12409,7 @@
           },
           "type": {
             "type": "string",
-            "description": "The assignment type: `text`, `no_submission`, `quiz` or `form`."
+            "description": "The assignment type: `text`, `no_submission`, `quiz`, `form` or `file`."
           }
         }
       },
@@ -13395,7 +13395,7 @@
           },
           "content": {
             "type": "object",
-            "description": "A block document for a `text` assignment, `{\"answers\": {...}}` for a quiz or a form."
+            "description": "A block document for a `text` assignment, `{\"answers\": {...}}` for a quiz or a form,\n`{\"files\": [...], \"comment\"?}` for a file."
           },
           "id": {
             "type": "string",

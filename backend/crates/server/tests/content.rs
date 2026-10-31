@@ -2406,7 +2406,7 @@ async fn unknown_types_and_config_fields_are_422() {
         let with =
             |assignment: Value| json!({"kind": "assignment", "title": "T", "assignment": assignment});
 
-        for bad in ["file", "", "Text", "No_Submission", "quiz-xyz"] {
+        for bad in ["", "Text", "No_Submission", "File", "quiz-xyz"] {
             let response = post(
                 &w.http,
                 &w.owner.token,
@@ -2446,6 +2446,42 @@ async fn unknown_types_and_config_fields_are_422() {
         )
         .await
         .problem(422);
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn a_file_assignment_takes_max_files_and_accept() {
+    db_test(async |pool| {
+        let w = world(pool).await;
+        let m = module(&w, "M", None).await;
+        let path = format!("/modules/{m}/items");
+        let request = |config: Value| {
+            json!({"kind": "assignment", "title": "Report", "assignment":
+                {"type": "file", "max_points": "10", "config": config}})
+        };
+
+        let config = json!({"max_files": 3, "accept": [".pdf", ".docx"]});
+        let made = created(&post(&w.http, &w.owner.token, &path, request(config.clone())).await);
+        assert_eq!(made["assignment"]["type"], "file");
+        assert_eq!(made["assignment"]["config"], config);
+        let defaults = created(&post(&w.http, &w.owner.token, &path, request(json!({}))).await);
+        assert_eq!(defaults["assignment"]["config"], json!({}));
+
+        for (bad, field) in [
+            (json!({"max_files": 21}), "assignment.config"),
+            (json!({"accept": ["PDF"]}), "assignment.config"),
+            (json!({"colour": 1}), "assignment.config"),
+        ] {
+            let response = post(&w.http, &w.owner.token, &path, request(bad)).await;
+            assert_eq!(error_fields(&response), [field]);
+        }
+        // A patch of the config follows the same rule.
+        let id = id_of(&made);
+        let response = patch_item(&w, id, json!({"config": {"max_files": 0}})).await;
+        assert_eq!(error_fields(&response), ["config"]);
+        let patched = ok(&patch_item(&w, id, json!({"config": {"max_files": 2}})).await);
+        assert_eq!(patched["assignment"]["config"], json!({"max_files": 2}));
     })
     .await;
 }

@@ -10,7 +10,7 @@ use sqlx::types::Decimal;
 use uuid::Uuid;
 
 use super::document::{DocumentErrors, EffectiveProfiles, validate_document_within};
-use super::types::{AutoGrade, Claims, Stage, ValidContent, form, quiz};
+use super::types::{AutoGrade, Claims, Stage, ValidContent, file, form, quiz};
 use crate::points;
 use access::{CourseAccess, Release};
 use common::text_enum;
@@ -24,7 +24,7 @@ pub enum ModelError {
     Title,
     #[error("must be a number above 0 and at most 9999.99, with at most two decimals")]
     MaxPoints,
-    #[error("unknown assignment type; available: text, no_submission, quiz, form")]
+    #[error("unknown assignment type; available: text, no_submission, quiz, form, file")]
     AssignmentType,
     #[error("{0}")]
     Config(String),
@@ -182,12 +182,15 @@ pub enum BuiltinType {
     Quiz,
     /// Fields the student fills in, graded by hand (ADR-0051).
     Form,
+    /// Files the student uploads, graded by hand (ADR-0069).
+    File,
 }
 text_enum!(BuiltinType {
     Text => "text",
     NoSubmission => "no_submission",
     Quiz => "quiz",
     Form => "form",
+    File => "file",
 });
 
 impl BuiltinType {
@@ -280,13 +283,14 @@ impl AssignmentType for BuiltinType {
             },
             Self::Quiz => quiz::validate_config(config, profiles),
             Self::Form => form::validate_config(config),
+            Self::File => file::validate_config(config),
         }
     }
 
     fn points_total(&self, config: &Map<String, Value>) -> Option<Decimal> {
         match self {
             Self::Quiz => quiz::points_total(config),
-            Self::Text | Self::NoSubmission | Self::Form => None,
+            Self::Text | Self::NoSubmission | Self::Form | Self::File => None,
         }
     }
 
@@ -298,7 +302,7 @@ impl AssignmentType for BuiltinType {
 
     fn takes_submissions(&self) -> bool {
         match self {
-            Self::Text | Self::Quiz | Self::Form => true,
+            Self::Text | Self::Quiz | Self::Form | Self::File => true,
             Self::NoSubmission => false,
         }
     }
@@ -324,13 +328,14 @@ impl AssignmentType for BuiltinType {
             Self::NoSubmission => Err(DocumentErrors::one("", "this type takes no submissions")),
             Self::Quiz => quiz::validate_submission(config, content, stage, profiles),
             Self::Form => form::validate_submission(config, content, stage),
+            Self::File => file::validate_submission(config, content, stage, profiles),
         }
     }
 
     fn student_config(&self, config: &Map<String, Value>) -> Map<String, Value> {
         match self {
             Self::Quiz => quiz::student_config(config),
-            Self::Text | Self::NoSubmission | Self::Form => config.clone(),
+            Self::Text | Self::NoSubmission | Self::Form | Self::File => config.clone(),
         }
     }
 
@@ -338,7 +343,7 @@ impl AssignmentType for BuiltinType {
         match self {
             Self::Quiz => quiz::structure(config),
             Self::Form => form::structure(config),
-            Self::Text | Self::NoSubmission => None,
+            Self::Text | Self::NoSubmission | Self::File => None,
         }
     }
 
@@ -349,13 +354,14 @@ impl AssignmentType for BuiltinType {
     ) -> Option<AutoGrade> {
         match self {
             Self::Quiz => quiz::auto_grade(config, content),
-            Self::Text | Self::NoSubmission | Self::Form => None,
+            Self::Text | Self::NoSubmission | Self::Form | Self::File => None,
         }
     }
 
     fn claims(&self, config: &Map<String, Value>, content: &Map<String, Value>) -> Claims {
         match self {
             Self::Form => form::claims(config, content),
+            Self::File => file::claims(config, content),
             Self::Text | Self::NoSubmission | Self::Quiz => Claims::default(),
         }
     }

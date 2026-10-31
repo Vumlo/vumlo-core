@@ -583,9 +583,9 @@ async fn publish_module(
 /// `file` item must not carry an `assignment` object.
 ///
 /// `kind: assignment` requires an `assignment` object `{type, config?, max_points, is_bonus?}`
-/// (ADR-0021); a `text` item must not carry one. `type` is `text`, `no_submission`, `quiz` or `form`; the
+/// (ADR-0021); a `text` item must not carry one. `type` is `text`, `no_submission`, `quiz`, `form` or `file`; the
 /// `config` of a `quiz` is its questions and must add up to `max_points` (ADR-0050), that of a `form` its
-/// fields (ADR-0051), and the others take an empty one (a `text` assignment may narrow its editor).
+/// fields (ADR-0051), that of a `file` `{max_files?, accept?}` (ADR-0069), and the others take an empty one (a `text` assignment may narrow its editor).
 /// `max_points` is a decimal string such as `"20"` or `"7.5"`; a JSON number is rejected. The
 /// grading scale limits the points (ADR-0022): at most 12 per assignment on `twelve`, at most
 /// 100 in total over the regular (not bonus) assignments of the course on `hundred`.

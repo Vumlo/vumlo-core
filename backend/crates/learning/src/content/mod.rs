@@ -27,6 +27,7 @@ pub use service::{
     publish_module, publish_revision, reorder_items, reorder_modules, search, update_item,
     update_module,
 };
+pub use types::file::{accepts as file_accepts, check_names as check_file_names};
 pub use types::form::Holders;
 pub use types::quiz::ResultQuestion;
 pub use types::quiz::result_questions as quiz_result_questions;
