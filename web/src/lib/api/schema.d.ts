@@ -1181,6 +1181,58 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/files": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Stores the raw body as a file for an item or an assignment and returns its description. The
+         *     file stays unreferenced (and is swept after 24 hours) until a document or a submission names it.
+         * @description The caller is authorized **before** the body is read: `for=item:{id}` needs the right to edit
+         *     the item (an archived course is `409`), `for=assignment:{id}` the right to submit work. The
+         *     content type is found from the bytes, not from the header, and only the six inline types of
+         *     ADR-0069 ever keep a type that a browser would show; the name is cleaned (no path, at most 200
+         *     characters). The body may be as large as `files.max_size` (`413` above it); an empty body is
+         *     `422`. This route is outside the 2 MiB body limit and the idempotency layer.
+         */
+        post: operations["upload"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/files/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The bytes of a file, streamed. Allowed if any item or submission that names the file lets the
+         *     caller read it, or, while nothing names it, to the uploader; every other case is `404`, never
+         *     `403` (ADR-0069).
+         * @description Only `application/pdf`, `image/png`, `image/jpeg`, `image/gif`, `image/webp` and `text/plain`
+         *     are `inline`; everything else, SVG included, is an `attachment`. Every response has
+         *     `X-Content-Type-Options: nosniff` and `Content-Security-Policy: sandbox`. The `ETag` is the
+         *     SHA-256 of the bytes and `If-None-Match` gives `304`. One `Range: bytes=a-b` (or `a-`, `-n`) is
+         *     served as `206`; a start past the end is `416`; any other form of the header is ignored.
+         */
+        get: operations["download"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/groups": {
         parameters: {
             query?: never;
@@ -2523,6 +2575,20 @@ export interface components {
         FieldError: {
             field: string;
             message: string;
+        };
+        /** @description A stored file, as a document or a submission names it by `id`. */
+        FileRefDto: {
+            /** Format: uuid */
+            id: string;
+            /** @description The content type found from the bytes, not the one the client claimed. */
+            mime: string;
+            /** @description The cleaned file name: no path, at most 200 characters. */
+            name: string;
+            /**
+             * Format: int64
+             * @description Bytes.
+             */
+            size: number;
         };
         /** @description The answers of one student to a form: their latest attempt (ADR-0051 point 7). */
         FormResponseRow: {
@@ -7435,6 +7501,159 @@ export interface operations {
             };
             /** @description Not logged in */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    upload: {
+        parameters: {
+            query: {
+                /**
+                 * @description Whom the file is for: `item:{id}` (needs `EditContent`) or `assignment:{id}` (needs
+                 *     `SubmitWork`). The item or assignment must exist.
+                 */
+                for: string;
+                /** @description The file name as the client has it. It is cleaned before it is stored. */
+                name: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description The raw bytes of the file */
+        requestBody: {
+            content: {
+                "application/octet-stream": number[];
+            };
+        };
+        responses: {
+            /** @description The file is stored */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FileRefDto"];
+                };
+            };
+            /** @description Not logged in */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The caller may see the item or assignment but may not add files to it */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description No such item or assignment, or not visible to the caller */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The course is archived */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The file is larger than `files.max_size` */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description `for` is not valid, or the body is empty */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    download: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description File id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The bytes */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/octet-stream": number[];
+                };
+            };
+            /** @description The requested range of the bytes */
+            206: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/octet-stream": number[];
+                };
+            };
+            /** @description `If-None-Match` names the current `ETag` */
+            304: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not logged in */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description No such file, or not readable by the caller */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The range starts past the end of the file */
+            416: {
                 headers: {
                     [name: string]: unknown;
                 };

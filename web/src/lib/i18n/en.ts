@@ -1309,4 +1309,11 @@ export const en = {
   "gw.toGradebook": "Back to the gradebook",
   "gw.saveNext": "Save and next",
   "gw.panel": "Grade",
+  "files.open": "Open",
+  "files.download": "Download",
+  "files.tooLarge": "This file is too large.",
+  "files.typeNotAllowed": "This kind of file cannot be uploaded.",
+  "files.uploadFailed": "The file could not be uploaded. Try again.",
+  "files.opened": "{name} opened",
+  "files.savedToDownloads": "{name} saved to Downloads",
 } as const;

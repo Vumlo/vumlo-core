@@ -59,6 +59,9 @@ export type Db = {
   resets: { token: string; user_id: string }[];
   formResponses: Record<string, { team: string; variant: string; members: string; repo: string; submitted_at: string; late: boolean }[]>;
   quizResults: Record<string, Record<string, { got: string; feedback: string | null }>>;
+  /** Uploaded files (`POST /files`) and the largest one the mock takes, as the server's `files.max_size`. */
+  files: Map<string, { name: string; mime: string; bytes: ArrayBuffer }>;
+  fileMax: number;
 };
 
 export const NOW_ISO = MOCK_NOW.toISOString();

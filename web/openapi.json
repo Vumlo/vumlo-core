@@ -6,7 +6,7 @@
     "license": {
       "name": ""
     },
-    "version": "0.2.2"
+    "version": "0.3.0"
   },
   "paths": {
     "/api/v1/admin/audit": {
@@ -4959,6 +4959,227 @@
           },
           "401": {
             "description": "Not logged in",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          },
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/files": {
+      "post": {
+        "tags": [
+          "files"
+        ],
+        "summary": "Stores the raw body as a file for an item or an assignment and returns its description. The\nfile stays unreferenced (and is swept after 24 hours) until a document or a submission names it.",
+        "description": "The caller is authorized **before** the body is read: `for=item:{id}` needs the right to edit\nthe item (an archived course is `409`), `for=assignment:{id}` the right to submit work. The\ncontent type is found from the bytes, not from the header, and only the six inline types of\nADR-0069 ever keep a type that a browser would show; the name is cleaned (no path, at most 200\ncharacters). The body may be as large as `files.max_size` (`413` above it); an empty body is\n`422`. This route is outside the 2 MiB body limit and the idempotency layer.",
+        "operationId": "upload",
+        "parameters": [
+          {
+            "name": "for",
+            "in": "query",
+            "description": "Whom the file is for: `item:{id}` (needs `EditContent`) or `assignment:{id}` (needs\n`SubmitWork`). The item or assignment must exist.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "name",
+            "in": "query",
+            "description": "The file name as the client has it. It is cleaned before it is stored.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "description": "The raw bytes of the file",
+          "content": {
+            "application/octet-stream": {
+              "schema": {
+                "type": "array",
+                "items": {
+                  "type": "integer",
+                  "format": "int32",
+                  "minimum": 0
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "The file is stored",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileRefDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not logged in",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller may see the item or assignment but may not add files to it",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such item or assignment, or not visible to the caller",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The course is archived",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "The file is larger than `files.max_size`",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "`for` is not valid, or the body is empty",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          },
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/files/{id}": {
+      "get": {
+        "tags": [
+          "files"
+        ],
+        "summary": "The bytes of a file, streamed. Allowed if any item or submission that names the file lets the\ncaller read it, or, while nothing names it, to the uploader; every other case is `404`, never\n`403` (ADR-0069).",
+        "description": "Only `application/pdf`, `image/png`, `image/jpeg`, `image/gif`, `image/webp` and `text/plain`\nare `inline`; everything else, SVG included, is an `attachment`. Every response has\n`X-Content-Type-Options: nosniff` and `Content-Security-Policy: sandbox`. The `ETag` is the\nSHA-256 of the bytes and `If-None-Match` gives `304`. One `Range: bytes=a-b` (or `a-`, `-n`) is\nserved as `206`; a start past the end is `416`; any other form of the header is ignored.",
+        "operationId": "download",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "File id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The bytes",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "integer",
+                    "format": "int32",
+                    "minimum": 0
+                  }
+                }
+              }
+            }
+          },
+          "206": {
+            "description": "The requested range of the bytes",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "integer",
+                    "format": "int32",
+                    "minimum": 0
+                  }
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "`If-None-Match` names the current `ETag`"
+          },
+          "401": {
+            "description": "Not logged in",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such file, or not readable by the caller",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "416": {
+            "description": "The range starts past the end of the file",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -10598,6 +10819,35 @@
           },
           "message": {
             "type": "string"
+          }
+        }
+      },
+      "FileRefDto": {
+        "type": "object",
+        "description": "A stored file, as a document or a submission names it by `id`.",
+        "required": [
+          "id",
+          "name",
+          "mime",
+          "size"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "mime": {
+            "type": "string",
+            "description": "The content type found from the bytes, not the one the client claimed."
+          },
+          "name": {
+            "type": "string",
+            "description": "The cleaned file name: no path, at most 200 characters."
+          },
+          "size": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Bytes."
           }
         }
       },

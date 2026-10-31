@@ -13,6 +13,7 @@ import { useTheme } from "@/lib/theme";
 import { initials } from "@/lib/format";
 import { useInstitution } from "@/lib/api/hooks/institution";
 import { useAppOffer } from "@/lib/downloads";
+import { Notice } from "./Notice";
 import { OfflineBar } from "./OfflineBar";
 import { useSignOut } from "./useSignOut";
 import { useT } from "@/lib/i18n";
@@ -180,6 +181,7 @@ export function Shell({ children }: { children: ReactNode }) {
         <AccountMenu user={user} />
       </header>
       <OfflineBar role={user.role} />
+      <Notice />
       <main className={s.main}>{children}</main>
       <nav aria-label={t("shell.main")} className={s.tabs}>
         {nav.map((n) => (

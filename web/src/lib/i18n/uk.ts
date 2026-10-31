@@ -1360,4 +1360,11 @@ export const uk: Record<Keys, string> & Extra = {
   "gw.toGradebook": "Назад до журналу оцінок",
   "gw.saveNext": "Зберегти й далі",
   "gw.panel": "Оцінка",
+  "files.open": "Відкрити",
+  "files.download": "Завантажити",
+  "files.tooLarge": "Цей файл завеликий.",
+  "files.typeNotAllowed": "Файл такого типу завантажити не можна.",
+  "files.uploadFailed": "Не вдалося завантажити файл. Спробуйте ще раз.",
+  "files.opened": "{name} відкрито",
+  "files.savedToDownloads": "{name} збережено в «Завантаження»",
 };

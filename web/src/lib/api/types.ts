@@ -3,6 +3,8 @@ import type { components } from "./schema";
 type S = components["schemas"];
 
 export type User = S["User"];
+/** A stored file as a document or a submission names it (`POST /files`). */
+export type FileRef = S["FileRefDto"];
 export type Role = S["Role"];
 export type Course = S["Course"];
 export type CourseRole = S["CourseRole"];

@@ -429,6 +429,6 @@ export function createSeed(): Db {
 
   return {
     users, terms, groups, subgroups, groupMembers, courses, members, links, modules, items, submissions, grades, sessions, audit, institution,
-    mail: [], signups: [], resets: [], formResponses: {}, quizResults,
+    mail: [], signups: [], resets: [], formResponses: {}, quizResults, files: new Map(), fileMax: 52428800,
   };
 }
