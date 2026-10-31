@@ -292,7 +292,7 @@ export function createSeed(): Db {
   };
   items.push(fileItem);
   // A file assignment: at most three files, a few types. The e2e specs of the file assignment hand in to it.
-  assignment(cs201, mProject, "report", "Lab report (files)", { type: "file", points: "10.00", due: "2026-11-20 23:59", attempts: 2, late: false, config: { max_files: 3, accept: [".pdf", ".docx", ".png"] },
+  const aReport = assignment(cs201, mProject, "report", "Lab report (files)", { type: "file", points: "10.00", due: "2026-11-20 23:59", attempts: 2, late: false, config: { max_files: 3, accept: [".pdf", ".docx", ".png"] },
     body: doc(para("Hand in your lab report as a PDF or a Word file, with the figures as PNG images.")) });
   void lQuick; void lWhy; void lBig;
 
@@ -389,6 +389,36 @@ export function createSeed(): Db {
   draft(aProject, maya, "2026-10-16 14:32", { answers: { f1: "Merge Conflict", f2: "v7", f3: [maya, daniel, sofia], f4: "https://github.com/merge-conflict/route-planner", f5: "" } });
   submit(aProject, ivan, "2026-10-16 22:10", { answers: { f1: "Byte Me", f2: "v1", f3: [ivan], f4: "https://github.com/ipetrenko/spellcheck", f5: "" } });
   submit(aProject, aiko, "2026-10-16 18:45", { answers: { f1: "Off by One", f2: "v4", f3: [aiko, lena], f4: "https://gitlab.com/offbyone/social-graph", f5: "" } });
+  // Work handed in to the file assignment, for the grade-mode preview: Daniel's first attempt (a PDF, an image, a text and a
+  // comment) and his second (a Word file, slides, an SVG), and Sofia's long log, which is longer than the 1 MiB the preview reads.
+  const put = (name: string, mime: string, body: string | Uint8Array): string => {
+    const bytes = typeof body === "string" ? new TextEncoder().encode(body) : body;
+    const id = uid(`file:seed:${name}`);
+    files.set(id, { name, mime, bytes: bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer });
+    return id;
+  };
+  const PNG = Uint8Array.from(atob("iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAIAAABvFaqvAAAEL0lEQVR42g3MoQ5FYACAUc2mSESSYtNoNkGj2RTFRJIgaH+0CZJpJikm6uqn67LuAe49D3AkSUKR0CRMCVvCkwgkIolUIpeoJBoJIdFLjBKLxCZxSJwSl8Qt8Ui8Ep+EJMkoMpqMKWPLeDKBTCSTyuQylUwjI2R6mVFmkdlkDplT5pK5ZR6ZV+aT/5GKoqKpmCq2iqcSqEQqqUquUqk0KkKlVxlVFpVN5VA5VS6VW+VReVU+9R/pKDqajqlj63g6gU6kk+rkOpVOoyN0ep1RZ9HZdA6dU+fSuXUenVfn0/+RgWKgGZgGtoFnEBhEBqlBblAZNAbCoDcYDRaDzeAwOA0ug9vgMXgNPuMfWSgWmoVpYVt4FoFFZJFa5BaVRWMhLHqL0WKx2CwOi9PisrgtHovX4rP+kYPioDmYDraD5xA4RA6pQ+5QOTQOwqF3GB0Wh83hcDgdLofb4XF4HT7nH7koLpqL6WK7eC6BS+SSuuQulUvjIlx6l9FlcdlcDpfT5XK5XR6X1+Vz/5GP4qP5mD62j+cT+EQ+qU/uU/k0PsKn9xl9Fp/N5/A5fS6f2+fxeX0+/x+FKCFaiBlih3ghQUgUkobkIVVIEyJC+pAxZAnZQo6QM+QKuUOekDfkC/9RjBKjxZgxdowXE8REMWlMHlPFNDEipo8ZY5aYLeaIOWOumDvmiXljvvgfJSgJWoKZYCd4CUFClJAm5AlVQpMgEvqEMWFJ2BKOhDPhSrgTnoQ34Uv+UYaSoWWYGXaGlxFkRBlpRp5RZTQZIqPPGDOWjC3jyDgzrow748l4M77sHxUoBVqBWWAXeAVBQVSQFuQFVUFTIAr6grFgKdgKjoKz4Cq4C56Ct+Ar/lGJUqKVmCV2iVcSlEQlaUleUpU0JaKkLxlLlpKt5Cg5S66Su+QpeUu+8h/VKDVajVlj13g1QU1Uk9bkNVVNUyNq+pqxZqnZao6as+aquWuemrfmq/9Ri9KitZgtdovXErRELWlL3lK1NC2ipW8ZW5aWreVoOVuulrvlaXlbvvYfCRSBJjAFtsATBIJIkApyQSVoBELQC0bBItgEh+AUXIJb8AhewSf+UYfSoXWYHXaH1xF0RB1pR95RdTQdoqPvGDuWjq3j6Dg7ro674+l4O77uHw0oA9qAOWAPeAPBQDSQDuQD1UAzIAb6gXFgGdgGjoFz4Bq4B56Bd+Ab/tGEMqFNmBP2hDcRTEQT6UQ+UU00E2Kinxgnlolt4pg4J66Je+KZeCe+6R/NKDPajDljz3gzwUw0k87kM9VMMyNm+plxZpnZZo6Zc+aauWeemXfmm//RirKirZgr9oq3EqxEK+lKvlKtNCtipV8ZV5aVbeVYOVeulXvlWXlXvvUf7Sg72o65Y+94O8FOtJPu5DvVTrMjdvqdcWfZ2XaOnXPn2rl3np1359v5AXFhlZ7DZ1ruAAAAAElFTkSuQmCC"), (c) => c.charCodeAt(0));
+  const zip = (label: string) => new TextEncoder().encode(`PK\x03\x04 ${label}`);
+  const WORD = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+  const SLIDES = "application/vnd.openxmlformats-officedocument.presentationml.presentation";
+  let log = "";
+  for (let i = 1; log.length < 1.5 * 1024 * 1024; i++) log += `line ${i}: sensor reading nominal\n`;
+  submit(aReport, daniel, "2026-10-18 20:00", {
+    files: [
+      put("report.pdf", "application/pdf", "%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj\n3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 200 200]>>endobj\ntrailer<</Root 1 0 R>>\n%%EOF\n"),
+      put("figure.png", "image/png", PNG),
+      put("results.txt", "text/plain", "trial 1: 9.81 m/s^2\ntrial 2: 9.79 m/s^2\ntrial 3: 9.83 m/s^2\n"),
+    ],
+    comment: doc(para("The figures are in the PNG, the raw numbers in results.txt.")),
+  });
+  submit(aReport, daniel, "2026-10-19 09:15", {
+    files: [
+      put("appendix.docx", WORD, zip("appendix")),
+      put("slides.pptx", SLIDES, zip("slides")),
+      put("diagram.svg", "image/svg+xml", '<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40"><circle cx="20" cy="20" r="18"/></svg>'),
+    ],
+  }, 2);
+  submit(aReport, sofia, "2026-10-18 21:30", { files: [put("long-log.txt", "text/plain", log)] });
   // CS 215
   submit(aLab1, maya, "2026-09-24 20:00", answerDoc("SELECT statements.")); publish(aLab1, maya, "28.00", "2026-09-28 10:00");
   submit(aLab2, maya, "2026-10-08 10:00", answerDoc("Joins.")); publish(aLab2, maya, "27.00", "2026-10-08 18:00");

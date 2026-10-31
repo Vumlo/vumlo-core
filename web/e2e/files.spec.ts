@@ -1,5 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
+import { readFileSync } from "node:fs";
 import { accounts, PASSWORD } from "./routes";
+import { gradeHref } from "../src/lib/routes";
 
 // Uploading and opening files (spec 9.1). No screen uses them yet, so the mock build puts the two functions on
 // `window.__vumloFiles` (src/mocks/StartWorker.tsx; a real build has no such object).
@@ -581,4 +583,170 @@ test("teacher_sets_max_files_and_accept_in_settings", async ({ page }) => {
   await page.getByRole("button", { name: "Save settings" }).click();
   await expect.poll(() => patches.length).toBe(2);
   expect(patches.at(-1)!.config).toEqual({ max_files: 2 });
+});
+
+// ---- grade mode: the teacher looks at the files a student handed in (spec 9.3) ----
+// The mock holds three submissions of the seeded file assignment: Daniel's attempt 1 (report.pdf, figure.png,
+// results.txt and a comment), Daniel's attempt 2 (appendix.docx, slides.pptx, diagram.svg) and Sofia's long-log.txt (1.5 MiB).
+
+// Whether a PDF is shown in an <iframe> (see PDF_IFRAME_PREVIEW in FilePreview.tsx) or as the Open card; the specs follow it.
+const PDF_IFRAME = /PDF_IFRAME_PREVIEW = true/.test(readFileSync(new URL("../src/components/grading/FilePreview.tsx", import.meta.url), "utf8"));
+const MIB = 1_048_576;
+
+/** Signs in as the teacher and opens the grading workspace on `student`'s submission of the file assignment. */
+async function gradeFiles(page: Page, student: "Daniel" | "Sofia", init?: string) {
+  if (init) await page.addInitScript(init);
+  await signInAs(page, "teacher");
+  const ids = await report(page);
+  const id = await page.evaluate(async (args) => {
+    const rows = (await (await fetch(`/api/v1/assignments/${args.item}/submissions?limit=100`)).json()) as { items: { name: string; student_id: string }[] };
+    return rows.items.find((r) => r.name === args.student)!.student_id;
+  }, { item: ids.item, student });
+  await page.goto(gradeHref(ids.course, ids.item, id));
+  const region = page.getByRole("region", { name: "Submission" });
+  await expect(region.getByRole("list", { name: "Files" })).toBeVisible();
+  return region;
+}
+
+const fileButton = (region: ReturnType<Page["getByRole"]>, name: string) => region.getByRole("list", { name: "Files" }).getByRole("button", { name });
+const preview = (region: ReturnType<Page["getByRole"]>, name: string) => region.getByRole("region", { name: `Preview of ${name}` });
+
+/** Daniel's older attempt, which holds the PDF, the image and the text. */
+async function firstAttempt(page: Page) {
+  const region = await gradeFiles(page, "Daniel");
+  await region.getByRole("tab", { name: "Attempt 1" }).click();
+  await expect(fileButton(region, "report.pdf")).toBeVisible();
+  return region;
+}
+
+test("teacher_previews_a_pdf_per_the_step0_decision", async ({ page }) => {
+  const region = await firstAttempt(page);
+  const shown = preview(region, "report.pdf");
+  if (PDF_IFRAME) {
+    await expect(shown.locator("iframe")).toHaveAttribute("src", /^\/api\/v1\/files\/[0-9a-f-]+$/);
+    await expect(shown.locator("iframe")).toHaveAttribute("title", "report.pdf");
+    await expect(shown.getByRole("button", { name: "Open in new tab" })).toHaveCount(0);
+  } else {
+    // The sandbox policy the server sends keeps Chrome from drawing a PDF in a frame: the card opens it in a tab.
+    await expect(shown.locator("iframe")).toHaveCount(0);
+    await expect(shown.getByRole("group", { name: "File" })).toContainText("report.pdf");
+    const [popup] = await Promise.all([page.waitForEvent("popup"), shown.getByRole("button", { name: "Open in new tab" }).click()]);
+    await popup.close();
+  }
+});
+
+test("teacher_previews_an_image", async ({ page }) => {
+  const region = await firstAttempt(page);
+  await fileButton(region, "figure.png").click();
+  const img = preview(region, "figure.png").getByRole("img", { name: "figure.png" });
+  await expect(img).toBeVisible();
+  await expect.poll(() => img.evaluate((el) => (el as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
+  await expect(img).toHaveAttribute("src", /^\/api\/v1\/files\/[0-9a-f-]+$/);
+});
+
+test("teacher_previews_text_up_to_1_mib_and_sees_a_truncation_note_beyond", async ({ page }) => {
+  const small = await firstAttempt(page);
+  await fileButton(small, "results.txt").click();
+  await expect(preview(small, "results.txt").locator("pre")).toContainText("trial 1: 9.81");
+  await expect(preview(small, "results.txt").getByText("Showing only the first 1 MiB")).toHaveCount(0);
+  // Another student's 1.5 MiB log: the first MiB is shown and the note says the rest is not.
+  const big = await gradeFiles(page, "Sofia");
+  const pre = preview(big, "long-log.txt").locator("pre");
+  await expect(pre).toContainText("line 1");
+  await expect(preview(big, "long-log.txt").getByText("Showing only the first 1 MiB")).toBeVisible();
+  expect(await pre.evaluate((el) => el.textContent!.length)).toBe(MIB);
+});
+
+test("teacher_sees_an_open_card_for_a_pptx", async ({ page }) => {
+  const region = await gradeFiles(page, "Daniel");
+  await fileButton(region, "slides.pptx").click();
+  const shown = preview(region, "slides.pptx");
+  await expect(shown.getByRole("group", { name: "File" })).toContainText("slides.pptx");
+  await expect(shown.locator("iframe, img, pre")).toHaveCount(0);
+  const [download] = await Promise.all([page.waitForEvent("download"), shown.getByRole("button", { name: "Open", exact: true }).click()]);
+  expect(download.suggestedFilename()).toBe("slides.pptx");
+});
+
+// Tauri's window, enough for the grading page: the API commands go to the mock, and `open_file` is recorded.
+const desktopOn = (userAgent: string) => `
+  Object.defineProperty(navigator, "userAgent", { get: () => ${JSON.stringify(userAgent)} });
+  window.__calls = [];
+  window.__TAURI_EVENT_PLUGIN_INTERNALS__ = { unregisterListener() {} };
+  window.__TAURI_INTERNALS__ = {
+    transformCallback: () => 1,
+    unregisterCallback() {},
+    convertFileSrc: (id) => "/api/v1/files/" + id,
+    async invoke(cmd, args) {
+      window.__calls.push({ cmd, args });
+      if (cmd === "api") {
+        const res = await fetch("/api/v1" + args.path, { method: args.method, headers: args.body ? { "content-type": "application/json" } : undefined, body: args.body ? JSON.stringify(args.body) : undefined });
+        const text = res.status === 204 ? "" : await res.text();
+        let body = text ? JSON.parse(text) : null;
+        if (args.path === "/auth/login" && res.ok && body && body.user) body = body.user;
+        return { status: res.status, body, from_cache: false, cached_at: null, queued: false };
+      }
+      if (cmd === "sync_state") return { online: true, pending: 0, failed: 0, paused: false, last_ok: Date.now(), sent: 0, queued: [] };
+      if (cmd === "outbox_list") return [];
+      if (cmd === "open_file") return "opened";
+      return null;
+    },
+  };
+`;
+const LINUX = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/605.1.15 (KHTML, like Gecko)";
+const MAC = "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) AppleWebKit/605.1.15 (KHTML, like Gecko)";
+
+test("desktop_linux_shows_an_open_card_for_a_pdf", async ({ page }) => {
+  const region = await gradeFiles(page, "Daniel", desktopOn(LINUX));
+  await region.getByRole("tab", { name: "Attempt 1" }).click();
+  const shown = preview(region, "report.pdf");
+  // WebKitGTK cannot draw a PDF; the card hands it to the system's program.
+  await expect(shown.getByRole("group", { name: "File" })).toContainText("report.pdf");
+  await expect(shown.locator("iframe")).toHaveCount(0);
+  await shown.getByRole("button", { name: "Open", exact: true }).click();
+  const calls = await page.evaluate(() => (window as unknown as { __calls: { cmd: string }[] }).__calls);
+  expect(calls.filter((c) => c.cmd === "open_file")).toHaveLength(1);
+});
+
+test("desktop_on_another_system_previews_a_pdf_when_the_iframe_is_enabled", async ({ page }) => {
+  test.skip(!PDF_IFRAME, "PDF_IFRAME_PREVIEW is off: every PDF is an Open card");
+  const region = await gradeFiles(page, "Daniel", desktopOn(MAC));
+  await region.getByRole("tab", { name: "Attempt 1" }).click();
+  await expect(preview(region, "report.pdf").locator("iframe")).toHaveAttribute("src", /\/api\/v1\/files\//);
+});
+
+test("switching_attempt_tabs_switches_the_file_list", async ({ page }) => {
+  const region = await gradeFiles(page, "Daniel");
+  // The newest attempt is shown first.
+  const list = region.getByRole("list", { name: "Files" });
+  await expect(list).toContainText("appendix.docx");
+  await expect(list).toContainText("slides.pptx");
+  await expect(list).not.toContainText("report.pdf");
+  await region.getByRole("tab", { name: "Attempt 1" }).click();
+  await expect(list).toContainText("report.pdf");
+  await expect(list).toContainText("results.txt");
+  await expect(list).not.toContainText("slides.pptx");
+  await region.getByRole("tab", { name: "Attempt 2" }).click();
+  await expect(list).toContainText("slides.pptx");
+  await expect(list).not.toContainText("results.txt");
+});
+
+test("comment_is_shown_under_the_files", async ({ page }) => {
+  const region = await firstAttempt(page);
+  const comment = region.getByText("The figures are in the PNG");
+  await expect(comment).toBeVisible();
+  const list = (await region.getByRole("list", { name: "Files" }).boundingBox())!;
+  const note = (await comment.boundingBox())!;
+  expect(note.y).toBeGreaterThan(list.y + list.height - 1);
+  // The newer attempt has no comment.
+  await region.getByRole("tab", { name: "Attempt 2" }).click();
+  await expect(comment).toHaveCount(0);
+});
+
+test("svg_is_never_previewed_inline", async ({ page }) => {
+  const region = await gradeFiles(page, "Daniel");
+  await fileButton(region, "diagram.svg").click();
+  const shown = preview(region, "diagram.svg");
+  await expect(shown.getByRole("group", { name: "File" })).toContainText("diagram.svg");
+  await expect(shown.locator("img, iframe, object, embed, pre")).toHaveCount(0);
+  await expect(shown.getByRole("button", { name: "Open", exact: true })).toBeVisible();
 });

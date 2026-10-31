@@ -10,6 +10,7 @@ import type { Attempt, Document, Item } from "@/lib/api/types";
 import { weekdayDate, timeOf } from "@/lib/format";
 import { useT } from "@/lib/i18n";
 import { autoResult } from "@/lib/grading";
+import { FilePreview } from "./FilePreview";
 import s from "./GradeWorkspace.module.css";
 
 const isDoc = (v: unknown): v is Document => !!v && typeof v === "object" && !Array.isArray(v) && "blocks" in v;
@@ -45,6 +46,7 @@ function Body({ item, attempt }: { item: Item; attempt: Attempt }) {
   const t = useT();
   const a = item.assignment;
   const type = a?.type;
+  if (type === "file") return <FilePreview key={attempt.id} content={attempt.content} title={item.title} />;
   if (!a || (type !== "quiz" && type !== "form")) {
     return isDoc(attempt.content) ? <div className={`card ${s.work}`}><BlockRenderer doc={attempt.content} size={15} /></div> : null;
   }
