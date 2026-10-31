@@ -573,3 +573,65 @@ async fn the_staff_reads_leave_a_student_with_only_a_draft_without_an_attempt() 
     })
     .await;
 }
+
+async fn submission_file_rows(f: &Fixture) -> Vec<Uuid> {
+    sqlx::query_scalar!(
+        "SELECT file_id FROM assessment.submission_files sf
+         JOIN assessment.submissions s ON s.id = sf.submission_id
+         WHERE s.assignment_id = $1",
+        f.assignment
+    )
+    .fetch_all(&f.pool)
+    .await
+    .unwrap()
+}
+
+#[tokio::test]
+async fn submission_files_follow_the_draft_into_the_attempt_and_go_with_a_discarded_draft() {
+    db_test(async |pool| {
+        let f = fixture(pool, SubmissionSettings::default()).await;
+        let (a, b) = (Uuid::now_v7(), Uuid::now_v7());
+        f.save("DRAFT", at(9, 0)).await.unwrap();
+        let mut conn = f.pool.acquire().await.unwrap();
+        let draft = sqlx::query_scalar!(
+            "SELECT id FROM assessment.submissions WHERE assignment_id = $1",
+            f.assignment
+        )
+        .fetch_one(&f.pool)
+        .await
+        .unwrap();
+        // A repeated id is stored once, and a second call replaces the first.
+        repo::replace_submission_files(&mut conn, draft, &[a, a])
+            .await
+            .unwrap();
+        assert_eq!(submission_file_rows(&f).await, [a]);
+        repo::replace_submission_files(&mut conn, draft, &[b])
+            .await
+            .unwrap();
+        assert_eq!(submission_file_rows(&f).await, [b]);
+
+        // The draft row becomes the attempt in place: its files stay with it.
+        let attempt = f.submit(at(9, 30)).await.unwrap();
+        assert_eq!(attempt.id, draft);
+        assert_eq!(submission_file_rows(&f).await, [b]);
+
+        // A discarded draft takes its files along.
+        f.save("NEXT", at(9, 40)).await.unwrap();
+        let next = sqlx::query_scalar!(
+            "SELECT id FROM assessment.submissions WHERE assignment_id = $1 AND status = 'draft'",
+            f.assignment
+        )
+        .fetch_one(&f.pool)
+        .await
+        .unwrap();
+        repo::replace_submission_files(&mut conn, next, &[a])
+            .await
+            .unwrap();
+        assert_eq!(submission_file_rows(&f).await.len(), 2);
+        discard_draft(&mut conn, &f.student, f.assignment)
+            .await
+            .unwrap();
+        assert_eq!(submission_file_rows(&f).await, [b]);
+    })
+    .await;
+}

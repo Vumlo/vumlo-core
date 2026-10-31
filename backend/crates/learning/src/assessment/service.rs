@@ -500,6 +500,54 @@ pub async fn ensure_reportable(
         .ok_or(AssessmentError::SubmissionNotFound)
 }
 
+/// May the actor submit work to the assignment (`SubmitWork`)? An assignment they may not see is
+/// `AssignmentNotFound`; an archived course is `Forbidden(Archived)`. For the upload of a file that
+/// the submission will name.
+pub async fn authorize_submit(
+    conn: &mut PgConnection,
+    actor: &Actor,
+    assignment_id: Uuid,
+) -> Result<(), AssessmentError> {
+    let opened = open(conn, actor, assignment_id).await?;
+    access::authorize(actor, Action::SubmitWork(opened.access))?;
+    Ok(())
+}
+
+/// May the actor read the files of submission `submission_id` (ADR-0069)? Its author may, draft
+/// or attempt (`ViewOwnSubmission`); staff may read a submitted attempt (`ViewSubmissions`), never
+/// a draft. Anything else is `false`, never an error.
+pub async fn may_read_submission_files(
+    conn: &mut PgConnection,
+    actor: &Actor,
+    submission_id: Uuid,
+) -> Result<bool, AssessmentError> {
+    let Some((assignment_id, author)) = repo::assignment_and_author(conn, submission_id).await?
+    else {
+        return Ok(false);
+    };
+    if author == actor.user_id() {
+        let opened = match open(conn, actor, assignment_id).await {
+            Ok(opened) => opened,
+            Err(AssessmentError::AssignmentNotFound) => return Ok(false),
+            Err(other) => return Err(other),
+        };
+        match access::authorize(actor, Action::ViewOwnSubmission(opened.access)) {
+            Ok(()) => return Ok(true),
+            Err(AccessError::Denied) => {}
+            Err(other) => return Err(other.into()),
+        }
+    }
+    match authorize_view_submission(conn, actor, submission_id).await {
+        Ok(()) => Ok(true),
+        Err(
+            AssessmentError::SubmissionNotFound
+            | AssessmentError::AssignmentNotFound
+            | AssessmentError::Forbidden(AccessError::Denied),
+        ) => Ok(false),
+        Err(other) => Err(other),
+    }
+}
+
 /// May `actor` see the submitted attempt `submission_id` the way staff do (`ViewSubmissions` in its
 /// course)? Anything they may not see, a draft included, is `404`. The caller then reads whatever
 /// else hangs on the attempt, such as the reports of plugins.

@@ -18,3 +18,7 @@ pub use service::{
     put_member, regular_courses_per_term, remove_member, restore_exclusion, student_courses,
     transfer_ownership, unlink_group, update_course, user_course_facts,
 };
+
+// Archives a course for the tests of `learning::files`.
+#[cfg(test)]
+pub use service::archive_course;

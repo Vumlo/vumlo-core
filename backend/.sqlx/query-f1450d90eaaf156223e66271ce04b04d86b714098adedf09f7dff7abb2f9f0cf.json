@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO assessment.submission_files (submission_id, file_id)\n         SELECT $1, file_id FROM unnest($2::uuid[]) AS file_id\n         ON CONFLICT DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "UuidArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "f1450d90eaaf156223e66271ce04b04d86b714098adedf09f7dff7abb2f9f0cf"
+}

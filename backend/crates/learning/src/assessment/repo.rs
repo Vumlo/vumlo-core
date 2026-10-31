@@ -569,3 +569,48 @@ pub async fn purge_course(conn: &mut PgConnection, course_id: Uuid) -> Result<u6
     .await?;
     Ok(result.rows_affected())
 }
+
+/// Makes `ids` exactly the files the draft or the attempt names (ADR-0069). The caller is the
+/// service that writes the content, in the same transaction.
+// The first caller, the draft save, arrives with a later task; the tests of `learning::files` use
+// it through `assessment::replace_submission_files` meanwhile.
+#[cfg_attr(
+    not(test),
+    expect(dead_code, reason = "called by the draft save of a later task")
+)]
+pub async fn replace_submission_files(
+    conn: &mut PgConnection,
+    submission_id: Uuid,
+    ids: &[Uuid],
+) -> Result<(), sqlx::Error> {
+    sqlx::query!(
+        "DELETE FROM assessment.submission_files WHERE submission_id = $1",
+        submission_id
+    )
+    .execute(&mut *conn)
+    .await?;
+    sqlx::query!(
+        "INSERT INTO assessment.submission_files (submission_id, file_id)
+         SELECT $1, file_id FROM unnest($2::uuid[]) AS file_id
+         ON CONFLICT DO NOTHING",
+        submission_id,
+        ids
+    )
+    .execute(conn)
+    .await?;
+    Ok(())
+}
+
+/// The assignment and the author of a submission, draft or attempt.
+pub async fn assignment_and_author(
+    conn: &mut PgConnection,
+    submission_id: Uuid,
+) -> Result<Option<(Uuid, Uuid)>, sqlx::Error> {
+    let row = sqlx::query!(
+        "SELECT assignment_id, student_id FROM assessment.submissions WHERE id = $1",
+        submission_id
+    )
+    .fetch_optional(conn)
+    .await?;
+    Ok(row.map(|row| (row.assignment_id, row.student_id)))
+}

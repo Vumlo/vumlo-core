@@ -1,0 +1,10 @@
+//! Who may upload, read and use a file (ADR-0069). The bytes and their description live in the
+//! `files` crate below; the references that say which item or submission uses a file live in
+//! `content` and `assessment`. This module is the flow that reads both: it owns no schema.
+
+mod model;
+mod repo;
+mod service;
+
+pub use model::{Owner, UsageOwner};
+pub use service::{FileError, authorize_upload, ensure_usable, open_for_read};

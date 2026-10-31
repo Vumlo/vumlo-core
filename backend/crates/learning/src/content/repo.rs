@@ -1292,6 +1292,40 @@ pub async fn regular_points(
     .await
 }
 
+/// Makes `ids` exactly the files the working (`published = false`) or the published copy of the
+/// item names (ADR-0069). The caller is the service that writes the body, in the same transaction.
+// The first caller, the item write, arrives with the next tasks; the tests of `learning::files`
+// use it through `content::replace_item_files` meanwhile.
+#[cfg_attr(
+    not(test),
+    expect(dead_code, reason = "called by the item writes of a later task")
+)]
+pub async fn replace_item_files(
+    conn: &mut PgConnection,
+    item_id: Uuid,
+    published: bool,
+    ids: &[Uuid],
+) -> Result<(), sqlx::Error> {
+    sqlx::query!(
+        "DELETE FROM content.item_files WHERE item_id = $1 AND published = $2",
+        item_id,
+        published
+    )
+    .execute(&mut *conn)
+    .await?;
+    sqlx::query!(
+        "INSERT INTO content.item_files (item_id, file_id, published)
+         SELECT $1, file_id, $2 FROM unnest($3::uuid[]) AS file_id
+         ON CONFLICT DO NOTHING",
+        item_id,
+        published,
+        ids
+    )
+    .execute(conn)
+    .await?;
+    Ok(())
+}
+
 /// How many sessions of this database wait for an advisory lock. Tests poll it to know that a
 /// writer is blocked behind another one, instead of sleeping and hoping.
 ///

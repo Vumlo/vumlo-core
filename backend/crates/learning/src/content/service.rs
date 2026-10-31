@@ -258,6 +258,34 @@ async fn manage_item(
     Ok(row)
 }
 
+/// May the actor change the item (`EditContent`)? An item they may not see is `ItemNotFound`; an
+/// archived course is `Forbidden(Archived)`. For the upload of a file that the item will name.
+pub async fn authorize_edit_item(
+    conn: &mut PgConnection,
+    actor: &Actor,
+    item_id: Uuid,
+) -> Result<(), ContentError> {
+    manage_item(conn, actor, item_id).await.map(|_| ())
+}
+
+/// May the actor read the files the published copy (`published`) or the working copy of the item
+/// names (ADR-0069)? The published copy follows `ViewContent`, so a student gets nothing from a
+/// draft, a scheduled item or an unpublished module; the working copy needs `ManageContent`.
+/// An item the actor may not see is `false`, never an error.
+pub async fn may_read_item_files(
+    conn: &mut PgConnection,
+    actor: &Actor,
+    item_id: Uuid,
+    published: bool,
+) -> Result<bool, ContentError> {
+    let access = match open_item(conn, actor, item_id).await {
+        Ok((_, access)) => access,
+        Err(ContentError::ItemNotFound) => return Ok(false),
+        Err(other) => return Err(other),
+    };
+    Ok(published || access::authorize(actor, Action::ManageContent(access)).is_ok())
+}
+
 /// The course access of an actor who wants to change the course's content.
 async fn manage_course(
     conn: &mut PgConnection,
