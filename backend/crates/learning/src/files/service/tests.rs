@@ -522,6 +522,30 @@ async fn ensure_usable_accepts_file_already_on_this_owner() {
 }
 
 #[tokio::test]
+async fn a_file_also_held_by_another_owner_is_still_usable_by_an_owner_that_holds_it() {
+    db_test(async |pool| {
+        let f = fixture(pool).await;
+        let id = file(&f.pool, &f.owner).await;
+        item_names(&f.pool, f.lesson, false, id).await;
+        item_names(&f.pool, f.assignment, false, id).await;
+        // Each of the two holders may keep naming the file, though the other one holds it too.
+        usable(&f, &f.owner, UsageOwner::Item(f.lesson), &[id])
+            .await
+            .unwrap();
+        usable(&f, &f.owner, UsageOwner::Item(f.assignment), &[id])
+            .await
+            .unwrap();
+        // An owner that does not hold it still cannot borrow it, even as the uploader.
+        let stranger_submission = UsageOwner::Submission(Uuid::now_v7());
+        let error = usable(&f, &f.owner, stranger_submission, &[id])
+            .await
+            .unwrap_err();
+        assert!(matches!(error, FileError::Unusable { id: bad } if bad == id));
+    })
+    .await;
+}
+
+#[tokio::test]
 async fn ensure_usable_rejects_file_of_another_owner_and_unknown_id() {
     db_test(async |pool| {
         let f = fixture(pool).await;

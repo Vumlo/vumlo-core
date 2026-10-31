@@ -1430,7 +1430,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Publishes a `text` item or an assignment. Idempotent; never changes `publish_at`. */
+        /**
+         * Publishes an item. Idempotent; never changes `publish_at`. A `file` item without a file is
+         *     refused (`409`).
+         */
         post: operations["publish_item"];
         delete?: never;
         options?: never;
@@ -1466,8 +1469,8 @@ export interface paths {
         put?: never;
         /**
          * Gives students the working title and body of a published item (ADR-0049).
-         * @description A draft has nothing to publish a revision of: publish the item (`409`). Not in an archived
-         *     course.
+         * @description A draft has nothing to publish a revision of: publish the item (`409`). A `file` item whose
+         *     working body names no file cannot be published either (`409`). Not in an archived course.
          */
         post: operations["publish_revision"];
         delete?: never;
@@ -1703,9 +1706,15 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Creates a draft `text` item or assignment as the last item of a module or sub-module.
+         * Creates a draft `text` item, assignment or `file` item as the last item of a module or sub-module.
          * @description `body` is a JSON object that is stored and returned as is; an array or a string is rejected.
-         *     For an assignment it holds the instructions.
+         *     For an assignment it holds the instructions. `kind` is optional: without it the item is an
+         *     assignment when an `assignment` object is sent and a `text` item otherwise.
+         *
+         *     A `file` item has the body `{file_id?, description?}` (`description` is a document). It starts
+         *     without a file: upload one with `POST /files?for=item:{id}` and name it with
+         *     `PATCH /items/{id}`. `file_id` must be a file the caller uploaded that nothing uses yet. A
+         *     `file` item must not carry an `assignment` object.
          *
          *     `kind: assignment` requires an `assignment` object `{type, config?, max_points, is_bonus?}`
          *     (ADR-0021); a `text` item must not carry one. `type` is `text`, `no_submission`, `quiz` or `form`; the
@@ -1751,7 +1760,8 @@ export interface paths {
         /**
          * Publishes a module. `cascade` is required and has no default (ADR-0010).
          * @description With `cascade: false` only this module is published. With `cascade: true` its sub-modules and
-         *     every draft item below it are published too, in the same transaction. Idempotent. Never
+         *     every draft item below it are published too, in the same transaction; a `file` item without a
+         *     file below it refuses the whole publish (`409`). Idempotent. Never
          *     changes `publish_at`: a module scheduled for later stays hidden from students until then.
          */
         post: operations["publish_module"];
@@ -2470,7 +2480,7 @@ export interface components {
         CreateItemRequest: {
             assignment?: components["schemas"]["NewAssignment"] | null;
             body?: components["schemas"]["Document"] | null;
-            kind: components["schemas"]["ItemKind"];
+            kind?: components["schemas"]["ItemKind"] | null;
             title: string;
         };
         CreateModuleRequest: {
@@ -2845,12 +2855,16 @@ export interface components {
          */
         InstitutionMode: "school" | "university";
         /**
-         * @description A `text` item or an assignment. `body` is a JSON object the server stores without interpreting it;
-         *     for an assignment it holds the instructions.
+         * @description A `text` item, an assignment or a `file` item. `body` is a JSON object; for an assignment it holds
+         *     the instructions, for a `file` item `{file_id?, description?}`: the uploaded file (absent while
+         *     the item is a draft without one) and a document that describes it.
          */
         Item: {
             assignment?: components["schemas"]["Assignment"] | null;
-            /** @description A block document (ADR-0025). The server returns the stored body as is. */
+            /**
+             * @description A block document (ADR-0025) for a `text` item and an assignment, `{file_id?, description?}`
+             *     for a `file` item. The server returns the stored body as is.
+             */
             body: components["schemas"]["Document"];
             /** Format: uuid */
             course_id: string;
@@ -2871,7 +2885,7 @@ export interface components {
             updated_at: string;
         };
         /** @enum {string} */
-        ItemKind: "text" | "assignment";
+        ItemKind: "text" | "assignment" | "file";
         /**
          * @description The facts of one item that the course tree does not carry. Only the facts that apply to the
          *     item and to the caller are present.
@@ -8639,6 +8653,15 @@ export interface operations {
                     "application/problem+json": components["schemas"]["ProblemDetails"];
                 };
             };
+            /** @description A `file` item whose body names no file */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
         };
     };
     get_revision: {
@@ -8739,7 +8762,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["ProblemDetails"];
                 };
             };
-            /** @description The item is a draft, or the course is archived */
+            /** @description The item is a draft, the course is archived, or a `file` item has no file */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -9290,7 +9313,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["ProblemDetails"];
                 };
             };
-            /** @description Invalid title, a body that is not a JSON object, a missing or unexpected `assignment` object, an unknown type or config field, invalid points, or points the grading scale does not allow */
+            /** @description Invalid title, a body that is not a JSON object (or, for a `file` item, not `{file_id?, description?}` with a usable `file_id`), a missing or unexpected `assignment` object, an unknown type or config field, invalid points, or points the grading scale does not allow */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -9416,6 +9439,15 @@ export interface operations {
             };
             /** @description No such module, or not visible to the caller */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description With `cascade`, a `file` item below the module has no file */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

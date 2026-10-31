@@ -146,7 +146,8 @@ pub async fn open_for_read(
 }
 
 /// May a document or submission of `owner` name each of `ids`? Yes if the file already belongs to
-/// this owner, or the actor uploaded it and nothing references it yet. Anything else, an unknown id
+/// this owner (whoever else holds it too, as after copying a course), or the actor uploaded it and
+/// nothing references it yet. Anything else, an unknown id
 /// included, is `Unusable`: a user cannot borrow the file id of someone else's work. The caller has
 /// authorized the write itself.
 pub async fn ensure_usable(
@@ -173,7 +174,7 @@ pub async fn ensure_usable(
         let usable = if holders.is_empty() {
             file.uploaded_by == actor.user_id()
         } else {
-            holders.iter().all(|holder| holder == owner)
+            holders.contains(owner)
         };
         if !usable {
             return Err(FileError::Unusable { id });

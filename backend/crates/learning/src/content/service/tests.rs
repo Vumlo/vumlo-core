@@ -422,3 +422,47 @@ async fn item_files_are_replaced_per_copy_and_go_with_the_item_and_its_module() 
     })
     .await;
 }
+
+fn body_of(value: Value) -> Map<String, Value> {
+    match value {
+        Value::Object(map) => map,
+        other => panic!("not an object: {other}"),
+    }
+}
+
+#[test]
+fn a_file_item_references_the_file_its_body_names() {
+    let file = Uuid::now_v7();
+    let body = body_of(json!({"file_id": file.to_string(), "description": {"v": 1}}));
+    assert_eq!(referenced_file_ids(ItemKind::File, &body), [file]);
+}
+
+#[test]
+fn a_file_item_without_a_usable_file_id_references_nothing() {
+    for body in [
+        json!({}),
+        json!({"description": {"v": 1}}),
+        json!({"file_id": "not-a-uuid"}),
+        json!({"file_id": 7}),
+        json!({"file_id": null}),
+    ] {
+        assert_eq!(
+            referenced_file_ids(ItemKind::File, &body_of(body.clone())),
+            Vec::<Uuid>::new(),
+            "{body}"
+        );
+    }
+}
+
+#[test]
+fn other_kinds_reference_no_files_yet() {
+    let body = body_of(json!({"file_id": Uuid::now_v7().to_string()}));
+    assert_eq!(
+        referenced_file_ids(ItemKind::Text, &body),
+        Vec::<Uuid>::new()
+    );
+    assert_eq!(
+        referenced_file_ids(ItemKind::Assignment, &body),
+        Vec::<Uuid>::new()
+    );
+}

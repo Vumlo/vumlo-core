@@ -67,8 +67,9 @@ text_enum!(ItemStatus { Draft => "draft", Published => "published" });
 pub enum ItemKind {
     Text,
     Assignment,
+    File,
 }
-text_enum!(ItemKind { Text => "text", Assignment => "assignment" });
+text_enum!(ItemKind { Text => "text", Assignment => "assignment", File => "file" });
 
 /// The most points one assignment can be worth (`numeric(6,2)`, ADR-0021).
 const MAX_POINTS_LIMIT: Decimal = Decimal::from_parts(999_999, 0, 0, false, 2);
@@ -589,8 +590,9 @@ impl Module {
     }
 }
 
-/// A `text` item or an assignment. `body` is a block document (ADR-0025) as stored; for an
-/// assignment it is the description.
+/// A `text` item, an assignment or a `file` item. `body` is a block document (ADR-0025) as stored;
+/// for an assignment it is the description. For a `file` item it is `{file_id?, description?}`
+/// (ADR-0024): the uploaded file and a document that describes it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Item {
     pub id: Uuid,

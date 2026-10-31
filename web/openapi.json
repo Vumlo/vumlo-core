@@ -6509,7 +6509,7 @@
         "tags": [
           "content"
         ],
-        "summary": "Publishes a `text` item or an assignment. Idempotent; never changes `publish_at`.",
+        "summary": "Publishes an item. Idempotent; never changes `publish_at`. A `file` item without a file is\nrefused (`409`).",
         "operationId": "publish_item",
         "parameters": [
           {
@@ -6556,6 +6556,16 @@
           },
           "404": {
             "description": "No such item, or not visible to the caller",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A `file` item whose body names no file",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -6652,7 +6662,7 @@
           "content"
         ],
         "summary": "Gives students the working title and body of a published item (ADR-0049).",
-        "description": "A draft has nothing to publish a revision of: publish the item (`409`). Not in an archived\ncourse.",
+        "description": "A draft has nothing to publish a revision of: publish the item (`409`). A `file` item whose\nworking body names no file cannot be published either (`409`). Not in an archived course.",
         "operationId": "publish_revision",
         "parameters": [
           {
@@ -6708,7 +6718,7 @@
             }
           },
           "409": {
-            "description": "The item is a draft, or the course is archived",
+            "description": "The item is a draft, the course is archived, or a `file` item has no file",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -7409,8 +7419,8 @@
         "tags": [
           "content"
         ],
-        "summary": "Creates a draft `text` item or assignment as the last item of a module or sub-module.",
-        "description": "`body` is a JSON object that is stored and returned as is; an array or a string is rejected.\nFor an assignment it holds the instructions.\n\n`kind: assignment` requires an `assignment` object `{type, config?, max_points, is_bonus?}`\n(ADR-0021); a `text` item must not carry one. `type` is `text`, `no_submission`, `quiz` or `form`; the\n`config` of a `quiz` is its questions and must add up to `max_points` (ADR-0050), that of a `form` its\nfields (ADR-0051), and the others take an empty one (a `text` assignment may narrow its editor).\n`max_points` is a decimal string such as `\"20\"` or `\"7.5\"`; a JSON number is rejected. The\ngrading scale limits the points (ADR-0022): at most 12 per assignment on `twelve`, at most\n100 in total over the regular (not bonus) assignments of the course on `hundred`.",
+        "summary": "Creates a draft `text` item, assignment or `file` item as the last item of a module or sub-module.",
+        "description": "`body` is a JSON object that is stored and returned as is; an array or a string is rejected.\nFor an assignment it holds the instructions. `kind` is optional: without it the item is an\nassignment when an `assignment` object is sent and a `text` item otherwise.\n\nA `file` item has the body `{file_id?, description?}` (`description` is a document). It starts\nwithout a file: upload one with `POST /files?for=item:{id}` and name it with\n`PATCH /items/{id}`. `file_id` must be a file the caller uploaded that nothing uses yet. A\n`file` item must not carry an `assignment` object.\n\n`kind: assignment` requires an `assignment` object `{type, config?, max_points, is_bonus?}`\n(ADR-0021); a `text` item must not carry one. `type` is `text`, `no_submission`, `quiz` or `form`; the\n`config` of a `quiz` is its questions and must add up to `max_points` (ADR-0050), that of a `form` its\nfields (ADR-0051), and the others take an empty one (a `text` assignment may narrow its editor).\n`max_points` is a decimal string such as `\"20\"` or `\"7.5\"`; a JSON number is rejected. The\ngrading scale limits the points (ADR-0022): at most 12 per assignment on `twelve`, at most\n100 in total over the regular (not bonus) assignments of the course on `hundred`.",
         "operationId": "create_item",
         "parameters": [
           {
@@ -7486,7 +7496,7 @@
             }
           },
           "422": {
-            "description": "Invalid title, a body that is not a JSON object, a missing or unexpected `assignment` object, an unknown type or config field, invalid points, or points the grading scale does not allow",
+            "description": "Invalid title, a body that is not a JSON object (or, for a `file` item, not `{file_id?, description?}` with a usable `file_id`), a missing or unexpected `assignment` object, an unknown type or config field, invalid points, or points the grading scale does not allow",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -7606,7 +7616,7 @@
           "content"
         ],
         "summary": "Publishes a module. `cascade` is required and has no default (ADR-0010).",
-        "description": "With `cascade: false` only this module is published. With `cascade: true` its sub-modules and\nevery draft item below it are published too, in the same transaction. Idempotent. Never\nchanges `publish_at`: a module scheduled for later stays hidden from students until then.",
+        "description": "With `cascade: false` only this module is published. With `cascade: true` its sub-modules and\nevery draft item below it are published too, in the same transaction; a `file` item without a\nfile below it refuses the whole publish (`409`). Idempotent. Never\nchanges `publish_at`: a module scheduled for later stays hidden from students until then.",
         "operationId": "publish_module",
         "parameters": [
           {
@@ -7663,6 +7673,16 @@
           },
           "404": {
             "description": "No such module, or not visible to the caller",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "With `cascade`, a `file` item below the module has no file",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -10476,7 +10496,6 @@
       "CreateItemRequest": {
         "type": "object",
         "required": [
-          "kind",
           "title"
         ],
         "properties": {
@@ -10484,7 +10503,7 @@
             "oneOf": [
               {
                 "$ref": "#/components/schemas/NewAssignment",
-                "description": "Required for `kind: assignment`, not allowed for `kind: text`."
+                "description": "Required for `kind: assignment`, not allowed for the other kinds."
               },
               {
                 "type": "null"
@@ -10495,7 +10514,7 @@
             "oneOf": [
               {
                 "$ref": "#/components/schemas/Document",
-                "description": "A block document (ADR-0025). Defaults to the empty document. For an assignment it is the\ndescription. It is read as a JSON value so that a rejection can name the path."
+                "description": "A block document (ADR-0025). Defaults to the empty document. For an assignment it is the\ndescription. For a `file` item it is `{file_id?, description?}` and defaults to `{}`: the file\nis uploaded (`POST /files?for=item:{id}`) once the item exists and named with\n`PATCH /items/{id}`. It is read as a JSON value so that a rejection can name the path."
               },
               {
                 "type": "null"
@@ -10503,7 +10522,15 @@
             ]
           },
           "kind": {
-            "$ref": "#/components/schemas/ItemKind"
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ItemKind",
+                "description": "`text`, `assignment` or `file`. Omit it to get `assignment` when an `assignment` object is\nsent and `text` otherwise."
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "title": {
             "type": "string"
@@ -11560,7 +11587,7 @@
       },
       "Item": {
         "type": "object",
-        "description": "A `text` item or an assignment. `body` is a JSON object the server stores without interpreting it;\nfor an assignment it holds the instructions.",
+        "description": "A `text` item, an assignment or a `file` item. `body` is a JSON object; for an assignment it holds\nthe instructions, for a `file` item `{file_id?, description?}`: the uploaded file (absent while\nthe item is a draft without one) and a document that describes it.",
         "required": [
           "id",
           "module_id",
@@ -11587,7 +11614,7 @@
           },
           "body": {
             "$ref": "#/components/schemas/Document",
-            "description": "A block document (ADR-0025). The server returns the stored body as is."
+            "description": "A block document (ADR-0025) for a `text` item and an assignment, `{file_id?, description?}`\nfor a `file` item. The server returns the stored body as is."
           },
           "course_id": {
             "type": "string",
@@ -11635,7 +11662,8 @@
         "type": "string",
         "enum": [
           "text",
-          "assignment"
+          "assignment",
+          "file"
         ]
       },
       "ItemMeta": {
@@ -14474,7 +14502,7 @@
             "oneOf": [
               {
                 "$ref": "#/components/schemas/Document",
-                "description": "A block document that replaces the body. Omit (or send `null`) to keep it."
+                "description": "A block document that replaces the body (`{file_id?, description?}` for a `file` item). Omit\n(or send `null`) to keep it."
               },
               {
                 "type": "null"

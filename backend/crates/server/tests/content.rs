@@ -470,9 +470,9 @@ async fn titles_and_kinds_are_validated() {
         )
         .await
         .problem(422);
-        post(&w.http, &w.owner.token, &items, json!({"title": "T"}))
-            .await
-            .problem(422);
+        // `kind` is optional since the file kind (ADR-0024): without it the item is a text item
+        // (see `kind_absent_is_still_inferred_for_old_clients`).
+        created(&post(&w.http, &w.owner.token, &items, json!({"title": "T"})).await);
         patch(
             &w.http,
             &w.owner.token,
@@ -2997,7 +2997,7 @@ async fn the_assignment_schemas_are_in_the_openapi_document() {
         assert!(schemas["ItemSummary"]["properties"]["assignment"].is_object());
         assert_eq!(
             schemas["ItemKind"]["enum"],
-            json!(["text", "assignment"]),
+            json!(["text", "assignment", "file"]),
             "`lesson` is no longer an item kind (ADR-0024)"
         );
     })
@@ -4094,6 +4094,580 @@ async fn the_database_refuses_settings_that_break_the_rules() {
         assert_eq!(
             settings_of(&item_json(&w, text).await["assignment"])["max_attempts"],
             2
+        );
+    })
+    .await;
+}
+
+// =============================================================================================
+// The `file` item kind (ADR-0024, ADR-0069)
+// =============================================================================================
+
+const PDF: &[u8] = b"%PDF-1.4\n1 0 obj\n<<>>\nendobj\n";
+const OTHER_PDF: &[u8] = b"%PDF-1.4\n2 0 obj\n<<>>\nendobj\n";
+
+async fn file_item(w: &World, module: Uuid, title: &str) -> Uuid {
+    let response = post(
+        &w.http,
+        &w.owner.token,
+        &format!("/modules/{module}/items"),
+        json!({"kind": "file", "title": title}),
+    )
+    .await;
+    id_of(&created(&response))
+}
+
+/// Uploads `bytes` for the item as `token` and answers the new file's id.
+async fn upload_for(w: &World, token: &str, item: Uuid, bytes: &[u8]) -> Uuid {
+    let response = w
+        .http
+        .post(&format!("/files?for=item:{item}&name=a.pdf"))
+        .bearer(token)
+        .header("content-type", "application/pdf")
+        .body(bytes.to_vec())
+        .send()
+        .await;
+    assert_eq!(
+        response.status,
+        201,
+        "{}",
+        String::from_utf8_lossy(&response.body)
+    );
+    id_of(&response.json())
+}
+
+async fn set_file(w: &World, item: Uuid, file: Uuid) -> Resp {
+    patch(
+        &w.http,
+        &w.owner.token,
+        &format!("/items/{item}"),
+        json!({"body": {"file_id": file}}),
+    )
+    .await
+}
+
+async fn file_status(w: &World, token: &str, file: Uuid) -> u16 {
+    get(&w.http, token, &format!("/files/{file}")).await.status
+}
+
+async fn item_status(w: &World, token: &str, item: Uuid) -> u16 {
+    get(&w.http, token, &format!("/items/{item}")).await.status
+}
+
+/// The `file_id`s of the item's rows, `(file, published)`, in a stable order.
+async fn reference_rows(pool: &PgPool, item: Uuid) -> Vec<(Uuid, bool)> {
+    sqlx::query!(
+        "SELECT file_id, published FROM content.item_files WHERE item_id = $1
+         ORDER BY published, file_id",
+        item
+    )
+    .fetch_all(pool)
+    .await
+    .unwrap()
+    .into_iter()
+    .map(|row| (row.file_id, row.published))
+    .collect()
+}
+
+/// A published module with a file item that has `file`.
+async fn published_file_item(w: &World) -> (Uuid, Uuid, Uuid) {
+    let module = module(w, "Files", None).await;
+    let item = file_item(w, module, "Syllabus").await;
+    let file = upload_for(w, &w.owner.token, item, PDF).await;
+    ok(&set_file(w, item, file).await);
+    publish_module(w, module, false).await;
+    publish_item(w, item).await;
+    (module, item, file)
+}
+
+#[tokio::test]
+async fn teacher_creates_a_file_item_with_an_uploaded_file() {
+    db_test(async |pool| {
+        let w = world(pool).await;
+        let module = module(&w, "Files", None).await;
+        let created_item = created(
+            &post(
+                &w.http,
+                &w.owner.token,
+                &format!("/modules/{module}/items"),
+                json!({"kind": "file", "title": "Syllabus"}),
+            )
+            .await,
+        );
+        assert_eq!(created_item["kind"], "file");
+        assert_eq!(created_item["status"], "draft");
+        assert_eq!(created_item["body"], json!({}), "no file yet");
+        let item = id_of(&created_item);
+        assert_eq!(reference_rows(&w.pool, item).await, []);
+
+        let file = upload_for(&w, &w.owner.token, item, PDF).await;
+        let description = doc(json!([paragraph("p", "Read before week 2")]));
+        let updated = ok(&patch(
+            &w.http,
+            &w.owner.token,
+            &format!("/items/{item}"),
+            json!({"body": {"file_id": file, "description": description}}),
+        )
+        .await);
+        assert_eq!(updated["body"]["file_id"], json!(file));
+        assert_eq!(updated["body"]["description"], description);
+        assert_eq!(reference_rows(&w.pool, item).await, [(file, false)]);
+        assert_eq!(file_status(&w, &w.owner.token, file).await, 200);
+
+        let tree = tree(&w, &w.owner.token).await;
+        assert_eq!(top(&tree, "Files")["items"][0]["kind"], "file");
+        // A file item carries no assignment part.
+        assert!(updated.get("assignment").is_none());
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn file_item_with_someone_elses_file_is_422() {
+    db_test(async |pool| {
+        let w = world(pool).await;
+        let module = module(&w, "Files", None).await;
+        let mine = file_item(&w, module, "Mine").await;
+
+        // The stranger's own course, item and upload.
+        let course = create_course(&w.http, &w.stranger.token, "Other").await;
+        let their_module = id_of(&created(
+            &post(
+                &w.http,
+                &w.stranger.token,
+                &format!("/courses/{course}/modules"),
+                json!({"title": "M"}),
+            )
+            .await,
+        ));
+        let theirs = id_of(&created(
+            &post(
+                &w.http,
+                &w.stranger.token,
+                &format!("/modules/{their_module}/items"),
+                json!({"kind": "file", "title": "Theirs"}),
+            )
+            .await,
+        ));
+        let unreferenced = upload_for(&w, &w.stranger.token, theirs, PDF).await;
+        let held = upload_for(&w, &w.stranger.token, theirs, OTHER_PDF).await;
+        ok(&patch(
+            &w.http,
+            &w.stranger.token,
+            &format!("/items/{theirs}"),
+            json!({"body": {"file_id": held}}),
+        )
+        .await);
+
+        for (what, file) in [
+            ("an unreferenced upload of another user", unreferenced),
+            ("a file held by another user's item", held),
+            ("an unknown id", Uuid::now_v7()),
+        ] {
+            let response = set_file(&w, mine, file).await;
+            assert_eq!(
+                error_fields(&response),
+                ["body.file_id"],
+                "{what}: {}",
+                String::from_utf8_lossy(&response.body)
+            );
+        }
+        // Creating with that file fails the same way, and nothing was stored.
+        let response = post(
+            &w.http,
+            &w.owner.token,
+            &format!("/modules/{module}/items"),
+            json!({"kind": "file", "title": "X", "body": {"file_id": held}}),
+        )
+        .await;
+        assert_eq!(error_fields(&response), ["body.file_id"]);
+        let tree = tree(&w, &w.owner.token).await;
+        assert_eq!(top(&tree, "Files")["items"].as_array().unwrap().len(), 1);
+        assert_eq!(reference_rows(&w.pool, mine).await, []);
+        assert_eq!(file_status(&w, &w.owner.token, held).await, 404);
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn file_item_description_must_be_a_valid_full_profile_document() {
+    db_test(async |pool| {
+        let w = world(pool).await;
+        let module = module(&w, "Files", None).await;
+        let item = file_item(&w, module, "Syllabus").await;
+        let file = upload_for(&w, &w.owner.token, item, PDF).await;
+        let path = format!("/items/{item}");
+
+        let bad_heading = json!({"id": "h", "type": "heading", "props": {"level": 9},
+            "content": [{"type": "text", "text": "Hi"}]});
+        for description in [json!("text"), json!({"a": 1}), doc(json!([bad_heading]))] {
+            let response = patch(
+                &w.http,
+                &w.owner.token,
+                &path,
+                json!({"body": {"file_id": file, "description": description}}),
+            )
+            .await;
+            let fields = error_fields(&response);
+            assert!(
+                fields.iter().all(|f| f.starts_with("body.description")),
+                "{fields:?}"
+            );
+        }
+        // Unknown keys, a body that is not an object and a file_id that is not a uuid.
+        for (body, field) in [
+            (json!({"file_id": file, "extra": 1}), "body.extra"),
+            (json!([1]), "body"),
+            (json!({"file_id": "nope"}), "body.file_id"),
+            (json!({"file_id": 7}), "body.file_id"),
+        ] {
+            let response = patch(&w.http, &w.owner.token, &path, json!({"body": body})).await;
+            assert_eq!(error_fields(&response), [field], "{body}");
+        }
+        // Nothing was stored; a valid description is.
+        assert_eq!(item_json(&w, item).await["body"], json!({}));
+        let good = doc(json!([paragraph("p", "Fine")]));
+        let stored = ok(&patch(
+            &w.http,
+            &w.owner.token,
+            &path,
+            json!({"body": {"description": good}}),
+        )
+        .await);
+        assert_eq!(stored["body"]["description"], good);
+        assert!(stored["body"].get("file_id").is_none());
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn student_cannot_open_a_draft_file_item_or_its_file() {
+    db_test(async |pool| {
+        let w = world(pool).await;
+        let module = module(&w, "Files", None).await;
+        let item = file_item(&w, module, "Syllabus").await;
+        let file = upload_for(&w, &w.owner.token, item, PDF).await;
+        ok(&set_file(&w, item, file).await);
+        assert_eq!(item_status(&w, &w.student.token, item).await, 404);
+        assert_eq!(file_status(&w, &w.student.token, file).await, 404);
+        // Even a published module does not open a draft item.
+        publish_module(&w, module, false).await;
+        assert_eq!(item_status(&w, &w.student.token, item).await, 404);
+        assert_eq!(file_status(&w, &w.student.token, file).await, 404);
+        assert_eq!(file_status(&w, &w.owner.token, file).await, 200);
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn publishing_makes_the_file_readable_by_students_only_after_publish_at() {
+    db_test(async |pool| {
+        let w = world(pool).await;
+        let module = module(&w, "Files", None).await;
+        publish_module(&w, module, false).await;
+        let item = file_item(&w, module, "Syllabus").await;
+        let file = upload_for(&w, &w.owner.token, item, PDF).await;
+        ok(&set_file(&w, item, file).await);
+        schedule_item(&w, item, FUTURE).await;
+        publish_item(&w, item).await;
+        assert_eq!(
+            reference_rows(&w.pool, item).await,
+            [(file, false), (file, true)]
+        );
+
+        // Published but scheduled for later: not yet.
+        assert_eq!(item_status(&w, &w.student.token, item).await, 404);
+        assert_eq!(file_status(&w, &w.student.token, file).await, 404);
+        assert_eq!(file_status(&w, &w.owner.token, file).await, 200);
+
+        schedule_item(&w, item, PAST).await;
+        let seen = ok(&get(&w.http, &w.student.token, &format!("/items/{item}")).await);
+        assert_eq!(seen["body"]["file_id"], json!(file));
+        let download = get(&w.http, &w.student.token, &format!("/files/{file}")).await;
+        assert_eq!(download.status, 200);
+        assert_eq!(download.body, PDF);
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn replacing_the_file_removes_the_old_reference() {
+    db_test(async |pool| {
+        let w = world(pool).await;
+        let (_, item, old) = published_file_item(&w).await;
+        let new = upload_for(&w, &w.owner.token, item, OTHER_PDF).await;
+        ok(&set_file(&w, item, new).await);
+        // The published copy still names the old file until the item is published again.
+        assert_eq!(
+            reference_rows(&w.pool, item).await,
+            [(new, false), (old, true)]
+        );
+        assert_eq!(file_status(&w, &w.student.token, old).await, 200);
+        assert_eq!(file_status(&w, &w.student.token, new).await, 404);
+
+        ok(&post(
+            &w.http,
+            &w.owner.token,
+            &format!("/items/{item}/revision/publish"),
+            json!(null),
+        )
+        .await);
+        assert_eq!(
+            reference_rows(&w.pool, item).await,
+            [(new, false), (new, true)]
+        );
+        let old_rows = sqlx::query_scalar!(
+            r#"SELECT count(*) AS "n!" FROM content.item_files WHERE file_id = $1"#,
+            old
+        )
+        .fetch_one(&w.pool)
+        .await
+        .unwrap();
+        assert_eq!(old_rows, 0, "the old id left the table");
+        assert_eq!(file_status(&w, &w.student.token, old).await, 404);
+        // Nothing names it now: only the uploader still reads it, until the sweep deletes it.
+        assert_eq!(file_status(&w, &w.assistant.token, old).await, 404);
+        assert_eq!(file_status(&w, &w.owner.token, old).await, 200);
+        assert_eq!(file_status(&w, &w.student.token, new).await, 200);
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn kind_absent_is_still_inferred_for_old_clients() {
+    db_test(async |pool| {
+        let w = world(pool).await;
+        let module = module(&w, "M", None).await;
+        let path = format!("/modules/{module}/items");
+        let text = created(&post(&w.http, &w.owner.token, &path, json!({"title": "T"})).await);
+        assert_eq!(text["kind"], "text");
+        let assignment = created(
+            &post(
+                &w.http,
+                &w.owner.token,
+                &path,
+                json!({"title": "A", "assignment": {"type": "text", "max_points": "10"}}),
+            )
+            .await,
+        );
+        assert_eq!(assignment["kind"], "assignment");
+        // An explicit kind still has to agree with the payload.
+        let file_with_assignment = post(
+            &w.http,
+            &w.owner.token,
+            &path,
+            json!({"kind": "file", "title": "F",
+                   "assignment": {"type": "text", "max_points": "10"}}),
+        )
+        .await;
+        assert_eq!(error_fields(&file_with_assignment), ["assignment"]);
+        let assignment_without = post(
+            &w.http,
+            &w.owner.token,
+            &path,
+            json!({"kind": "assignment", "title": "A"}),
+        )
+        .await;
+        assert_eq!(error_fields(&assignment_without), ["assignment"]);
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn a_file_item_without_a_file_cannot_be_published() {
+    db_test(async |pool| {
+        let w = world(pool).await;
+        let module = module(&w, "Files", None).await;
+        publish_module(&w, module, false).await;
+        let item = file_item(&w, module, "Empty").await;
+        let response = post(
+            &w.http,
+            &w.owner.token,
+            &format!("/items/{item}/publish"),
+            json!(null),
+        )
+        .await;
+        assert_eq!(response.status, 409);
+        assert_eq!(
+            response.problem(409).detail.as_deref(),
+            Some("a file item needs a file before it is published")
+        );
+        assert_eq!(item_json(&w, item).await["status"], "draft");
+        assert_eq!(reference_rows(&w.pool, item).await, []);
+        // A description alone is not a file.
+        ok(&patch(
+            &w.http,
+            &w.owner.token,
+            &format!("/items/{item}"),
+            json!({"body": {"description": doc(json!([paragraph("p", "x")]))}}),
+        )
+        .await);
+        post(
+            &w.http,
+            &w.owner.token,
+            &format!("/items/{item}/publish"),
+            json!(null),
+        )
+        .await
+        .problem(409);
+        // With a file it goes through.
+        let file = upload_for(&w, &w.owner.token, item, PDF).await;
+        ok(&set_file(&w, item, file).await);
+        assert_eq!(publish_item(&w, item).await["status"], "published");
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn a_published_file_item_cannot_publish_a_revision_that_drops_its_file() {
+    db_test(async |pool| {
+        let w = world(pool).await;
+        let (_, item, file) = published_file_item(&w).await;
+        // Dropping `file_id` from the working copy is allowed; publishing that is not.
+        ok(&patch(
+            &w.http,
+            &w.owner.token,
+            &format!("/items/{item}"),
+            json!({"body": {"description": doc(json!([]))}}),
+        )
+        .await);
+        let response = post(
+            &w.http,
+            &w.owner.token,
+            &format!("/items/{item}/revision/publish"),
+            json!(null),
+        )
+        .await;
+        response.problem(409);
+        assert_eq!(reference_rows(&w.pool, item).await, [(file, true)]);
+        let seen = ok(&get(&w.http, &w.student.token, &format!("/items/{item}")).await);
+        assert_eq!(seen["body"]["file_id"], json!(file));
+        assert_eq!(file_status(&w, &w.student.token, file).await, 200);
+    })
+    .await;
+}
+
+/// `publish_module` with `cascade` publishes every draft item below the module, so a file item
+/// without a file refuses the whole publish: nothing below it becomes visible either.
+#[tokio::test]
+async fn publishing_a_module_with_a_fileless_file_item_is_refused_or_skips_it() {
+    db_test(async |pool| {
+        let w = world(pool).await;
+        let parent = module(&w, "Files", None).await;
+        let sub = module(&w, "Sub", Some(parent)).await;
+        let text = item(&w, parent, "Notes").await;
+        let empty = file_item(&w, sub, "Empty").await;
+        let path = format!("/modules/{parent}/publish");
+
+        let response = post(&w.http, &w.owner.token, &path, json!({"cascade": true})).await;
+        assert_eq!(response.status, 409);
+        assert_eq!(item_json(&w, empty).await["status"], "draft");
+        assert_eq!(
+            item_json(&w, text).await["status"],
+            "draft",
+            "all or nothing"
+        );
+        let tree = tree(&w, &w.owner.token).await;
+        assert_eq!(top(&tree, "Files")["status"], "draft");
+
+        // Without the cascade no item is touched, so it is allowed.
+        publish_module(&w, parent, false).await;
+        // Give the item its file and the cascade goes through, with the reference rows.
+        let file = upload_for(&w, &w.owner.token, empty, PDF).await;
+        ok(&set_file(&w, empty, file).await);
+        publish_module(&w, parent, true).await;
+        assert_eq!(item_json(&w, empty).await["status"], "published");
+        assert_eq!(
+            reference_rows(&w.pool, empty).await,
+            [(file, false), (file, true)]
+        );
+        assert_eq!(file_status(&w, &w.student.token, file).await, 200);
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn student_cannot_read_the_file_before_the_item_is_published_but_staff_can() {
+    db_test(async |pool| {
+        let w = world(pool).await;
+        let module = module(&w, "Files", None).await;
+        publish_module(&w, module, false).await;
+        let item = file_item(&w, module, "Syllabus").await;
+        let file = upload_for(&w, &w.owner.token, item, PDF).await;
+        ok(&set_file(&w, item, file).await);
+
+        assert_eq!(file_status(&w, &w.student.token, file).await, 404);
+        assert_eq!(file_status(&w, &w.stranger.token, file).await, 404);
+        assert_eq!(file_status(&w, &w.owner.token, file).await, 200);
+        assert_eq!(file_status(&w, &w.assistant.token, file).await, 200);
+
+        publish_item(&w, item).await;
+        assert_eq!(file_status(&w, &w.student.token, file).await, 200);
+        assert_eq!(file_status(&w, &w.stranger.token, file).await, 404);
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn student_reads_the_published_file_after_publish_even_if_the_working_copy_changed_file() {
+    db_test(async |pool| {
+        let w = world(pool).await;
+        let (_, item, a) = published_file_item(&w).await;
+        let b = upload_for(&w, &w.owner.token, item, OTHER_PDF).await;
+        ok(&set_file(&w, item, b).await);
+
+        assert_eq!(file_status(&w, &w.student.token, a).await, 200);
+        assert_eq!(file_status(&w, &w.student.token, b).await, 404);
+        assert_eq!(file_status(&w, &w.owner.token, a).await, 200);
+        assert_eq!(file_status(&w, &w.owner.token, b).await, 200);
+        // The student's item still names A.
+        let seen = ok(&get(&w.http, &w.student.token, &format!("/items/{item}")).await);
+        assert_eq!(seen["body"]["file_id"], json!(a));
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn a_copied_course_keeps_the_file_of_a_file_item_and_the_copy_can_publish_it() {
+    db_test(async |pool| {
+        let w = world(pool).await;
+        let (_, item, file) = published_file_item(&w).await;
+        let template = id_of(&created(
+            &post(
+                &w.http,
+                &w.owner.token,
+                &format!("/courses/{}/template", w.course),
+                json!({}),
+            )
+            .await,
+        ));
+        let copied_tree = ok(&get(
+            &w.http,
+            &w.owner.token,
+            &format!("/courses/{template}/content"),
+        )
+        .await);
+        let copy = id_of(&top(&copied_tree, "Files")["items"][0]);
+        assert_ne!(copy, item);
+        assert_eq!(reference_rows(&w.pool, copy).await, [(file, false)]);
+        // The original is untouched, and the file now has two holders.
+        assert_eq!(
+            reference_rows(&w.pool, item).await,
+            [(file, false), (file, true)]
+        );
+        // The copy's editor may keep naming the shared file and publish it.
+        ok(&set_file(&w, copy, file).await);
+        let published = ok(&post(
+            &w.http,
+            &w.owner.token,
+            &format!("/items/{copy}/publish"),
+            json!(null),
+        )
+        .await);
+        assert_eq!(published["status"], "published");
+        assert_eq!(
+            reference_rows(&w.pool, copy).await,
+            [(file, false), (file, true)]
         );
     })
     .await;

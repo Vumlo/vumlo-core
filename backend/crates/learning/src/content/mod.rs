@@ -21,10 +21,11 @@ pub use model::{
 pub use routes::router;
 pub use service::{
     ContentError, CourseSummary, ItemRules, OpenError, authorize_edit_item, copy_course_content,
-    course_summary, create_item, create_module, delete_item, delete_module, editor_profiles,
-    get_item, get_revision, get_tree, item_meta, lock_assignment_shared, lock_course_assignments,
-    may_read_item_files, my_work, open_assignment, publish_item, publish_module, publish_revision,
-    reorder_items, reorder_modules, search, update_item, update_module,
+    course_summary, create_file_item, create_item, create_module, delete_item, delete_module,
+    editor_profiles, get_item, get_revision, get_tree, item_meta, lock_assignment_shared,
+    lock_course_assignments, may_read_item_files, my_work, open_assignment, publish_item,
+    publish_module, publish_revision, reorder_items, reorder_modules, search, update_item,
+    update_module,
 };
 pub use types::form::Holders;
 pub use types::quiz::ResultQuestion;
