@@ -12,7 +12,9 @@ use serde_json::Value;
 
 use crate::modules::{self, ModuleSpec};
 use crate::schema;
-use crate::settings::{MIN_PLUGIN_KEY_CHARS, SUPPORTED_CONFIG_VERSION, Settings};
+use crate::settings::{
+    FileBackend, FilesSettings, MIN_PLUGIN_KEY_CHARS, SUPPORTED_CONFIG_VERSION, Settings,
+};
 
 /// Every problem found, not only the first.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -294,6 +296,7 @@ fn validate(settings: &mut Settings) -> Vec<String> {
             "plugins.secret_key must be at least {MIN_PLUGIN_KEY_CHARS} characters"
         ));
     }
+    errors.extend(files_problems(&settings.files));
     let auth = &settings.auth;
     if !(8..=128).contains(&auth.password_min_length) {
         errors.push("auth.password_min_length must be between 8 and 128".to_owned());
@@ -370,6 +373,46 @@ fn validate(settings: &mut Settings) -> Vec<String> {
             "database.url is not set: put {} in the environment",
             schema::env_name("database.url")
         ));
+    }
+    errors
+}
+
+fn files_problems(files: &FilesSettings) -> Vec<String> {
+    let mut errors = Vec::new();
+    if files.max_size == 0 {
+        errors.push("files.max_size must be at least 1".to_owned());
+    }
+    if files.storage != FileBackend::S3 {
+        return errors;
+    }
+    let Some(s3) = &files.s3 else {
+        errors.push(
+            "files.storage is \"s3\": add a [files.s3] section with bucket and region".to_owned(),
+        );
+        return errors;
+    };
+    for (key, value) in [("bucket", &s3.bucket), ("region", &s3.region)] {
+        if value.trim().is_empty() {
+            errors.push(format!("files.s3.{key} must not be empty"));
+        }
+    }
+    if let Some(Err(why)) = s3
+        .endpoint
+        .as_deref()
+        .map(|e| modules::check_endpoint(e, false))
+    {
+        errors.push(format!("files.s3.endpoint {why}"));
+    }
+    for (key, secret) in [
+        ("files.s3.access_key", &s3.access_key),
+        ("files.s3.secret_key", &s3.secret_key),
+    ] {
+        if secret.expose().is_empty() {
+            errors.push(format!(
+                "{key} is not set: put {} in the environment",
+                schema::env_name(key)
+            ));
+        }
     }
     errors
 }

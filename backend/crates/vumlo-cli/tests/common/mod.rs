@@ -186,7 +186,9 @@ pub fn settings_for(url: &str, config: &str) -> Settings {
 }
 
 /// Starts the real server on a random port against `pool`; returns its base URL.
-pub async fn spawn_server(pool: &PgPool, settings: Settings) -> String {
+pub async fn spawn_server(pool: &PgPool, mut settings: Settings) -> String {
+    // The loader leaves `files` at `<base_dir>/files`: keep the test run out of the source tree.
+    settings.files.path = Some(std::env::temp_dir().join("vumlo-test-files"));
     let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
     let addr = listener.local_addr().expect("address");
     let state = server::app::AppState::new(pool.clone(), settings).expect("app state");

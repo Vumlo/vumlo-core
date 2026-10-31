@@ -29,6 +29,7 @@ a file named `.env` that only its owner can read:
 | PostgreSQL connection | `DATABASE_URL` |
 | Google sign-in client secret | `VUMLO__AUTH__GOOGLE__CLIENT_SECRET` |
 | SMTP password | `VUMLO__MAIL__TRANSPORT__PASSWORD` |
+| S3 access key and secret key (only with `files.storage = "s3"`; ADR-0069) | `VUMLO__FILES__S3__ACCESS_KEY`, `VUMLO__FILES__S3__SECRET_KEY` |
 | Plugin key (32 characters or more; ADR-0066) | `VUMLO__PLUGINS__SECRET_KEY` |
 
 Precedence, lowest first: the defaults, `vumlo.toml`, `VUMLO__SECTION__KEY` environment variables,

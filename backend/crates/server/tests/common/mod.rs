@@ -9,8 +9,8 @@ use server::app::{self, AppState};
 use sqlx::PgPool;
 use tokio::net::TcpListener;
 use vumlo_config::{
-    AuthSettings, CliSettings, DatabaseSettings, DesktopSettings, EditorSettings, GradingScale,
-    InstitutionMode, InstitutionSettings, Language, LogFormat, LogSettings, Modules,
+    AuthSettings, CliSettings, DatabaseSettings, DesktopSettings, EditorSettings, FilesSettings,
+    GradingScale, InstitutionMode, InstitutionSettings, Language, LogFormat, LogSettings, Modules,
     PluginsSettings, Secret, ServerSettings, Settings, WebSettings,
 };
 
@@ -75,6 +75,11 @@ pub fn test_settings() -> Settings {
             logo: None,
         },
         editor: EditorSettings::default(),
+        // One directory for the whole test run: a file is stored under its own random id.
+        files: FilesSettings {
+            path: Some(std::env::temp_dir().join("vumlo-test-files")),
+            ..FilesSettings::default()
+        },
         mail: None,
         plugins: PluginsSettings::default(),
         modules: std::collections::BTreeMap::new(),

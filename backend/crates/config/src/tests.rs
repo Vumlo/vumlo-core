@@ -870,6 +870,98 @@ fn the_example_file_loads_as_it_is() {
     );
 }
 
+// --- files --------------------------------------------------------------------------------
+
+const S3_FILE: &str =
+    "\n[files]\nstorage = \"s3\"\n[files.s3]\nbucket = \"vumlo\"\nregion = \"eu-north-1\"\n";
+const S3_ENV: [(&str, &str); 2] = [
+    ("VUMLO__FILES__S3__ACCESS_KEY", "sentinel-access"),
+    ("VUMLO__FILES__S3__SECRET_KEY", "sentinel-secret"),
+];
+
+#[test]
+fn defaults_to_local_storage_and_50_mib() {
+    let files = build(VALID, &[]).unwrap().files;
+    assert_eq!(files.storage, FileBackend::Local);
+    assert_eq!(files.max_size, 52_428_800);
+    assert!(files.path.is_none() && files.s3.is_none());
+}
+
+#[test]
+fn relative_path_resolves_against_base_dir() {
+    let base = std::path::Path::new("/srv/vumlo");
+    let mut files = build(VALID, &[]).unwrap().files;
+    assert_eq!(files.local_dir(base), base.join("files"));
+    files.path = Some("data/uploads".into());
+    assert_eq!(files.local_dir(base), base.join("data/uploads"));
+    files.path = Some("/var/uploads".into());
+    assert_eq!(files.local_dir(base), std::path::Path::new("/var/uploads"));
+}
+
+#[test]
+fn files_values_come_from_the_file_and_the_environment() {
+    let toml = format!("{VALID}\n[files]\npath = \"uploads\"\nmax_size = 1000\n");
+    let files = build(&toml, &[("VUMLO__FILES__MAX_SIZE", "2000")])
+        .unwrap()
+        .files;
+    assert_eq!(
+        (files.path.unwrap(), files.max_size),
+        ("uploads".into(), 2000)
+    );
+}
+
+#[test]
+fn s3_credentials_in_the_file_are_refused() {
+    let toml = format!("{VALID}{S3_FILE}access_key = \"a\"\nsecret_key = \"b\"\n");
+    let e = build(&toml, &[]).unwrap_err().to_string();
+    assert!(e.contains("VUMLO__FILES__S3__ACCESS_KEY"), "{e}");
+    assert!(e.contains("VUMLO__FILES__S3__SECRET_KEY"), "{e}");
+}
+
+#[test]
+fn s3_credentials_come_from_the_environment_and_are_never_shown() {
+    let s = build(&format!("{VALID}{S3_FILE}"), &S3_ENV).unwrap();
+    let s3 = s.files.s3.as_ref().unwrap();
+    assert_eq!(s.files.storage, FileBackend::S3);
+    assert_eq!(
+        (s3.access_key.expose(), s3.secret_key.expose()),
+        ("sentinel-access", "sentinel-secret")
+    );
+    for shown in [format!("{s:?}"), serde_json::to_string(&s).unwrap()] {
+        assert!(!shown.contains("sentinel"), "{shown}");
+    }
+}
+
+#[test]
+fn s3_storage_needs_its_section_and_both_credentials() {
+    let e = build(&format!("{VALID}\n[files]\nstorage = \"s3\"\n"), &[])
+        .unwrap_err()
+        .to_string();
+    assert!(e.contains("[files.s3]"), "{e}");
+    let e = build(&format!("{VALID}{S3_FILE}"), &[])
+        .unwrap_err()
+        .to_string();
+    assert!(e.contains("VUMLO__FILES__S3__ACCESS_KEY"), "{e}");
+    assert!(e.contains("VUMLO__FILES__S3__SECRET_KEY"), "{e}");
+}
+
+#[test]
+fn a_custom_s3_endpoint_must_be_https() {
+    let https = format!("{VALID}{S3_FILE}endpoint = \"https://minio.example.edu\"\n");
+    assert!(build(&https, &S3_ENV).is_ok());
+    let http = https.replace("https://", "http://");
+    let e = build(&http, &S3_ENV).unwrap_err().to_string();
+    assert!(e.contains("files.s3.endpoint"), "{e}");
+}
+
+#[test]
+fn a_file_size_limit_of_zero_is_refused() {
+    let e = build(&format!("{VALID}\n[files]\nmax_size = 0\n"), &[])
+        .unwrap_err()
+        .to_string();
+    assert!(e.contains("files.max_size"), "{e}");
+}
+
 // --- the env file -------------------------------------------------------------------------
 
 #[test]

@@ -13,6 +13,7 @@ sqlx.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
 uuid.workspace = true
+vumlo-config.workspace = true
 
 [dev-dependencies]
 test-support.workspace = true

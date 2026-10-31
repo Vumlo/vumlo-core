@@ -68,6 +68,9 @@ pub struct Settings {
     #[serde(default)]
     #[schemars(extend("x-visibility" = "private"))]
     pub mail: Option<MailSettings>,
+    /// Where uploaded files are kept and how large one may be (ADR-0069).
+    #[serde(default)]
+    pub files: FilesSettings,
     /// Plugins, the external services of ADR-0066. Only the key that signs their events.
     #[serde(default)]
     #[schemars(extend("x-visibility" = "private"))]
@@ -495,6 +498,73 @@ pub enum SmtpTls {
     /// No encryption: a local test server such as Mailpit.
     #[serde(rename = "none")]
     Off,
+}
+
+/// The `[files]` section (ADR-0069). Plain data: the server builds the storage when it starts.
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
+#[serde(default, deny_unknown_fields)]
+pub struct FilesSettings {
+    /// Where the bytes live.
+    #[schemars(extend("x-visibility" = "public"))]
+    pub storage: FileBackend,
+    /// The directory of the `local` storage, relative to the config file. Default: `files`.
+    #[schemars(extend("x-visibility" = "private"))]
+    pub path: Option<std::path::PathBuf>,
+    /// The largest file, in bytes. Default: 50 MiB. A reverse proxy must allow bodies this large.
+    #[schemars(extend("x-visibility" = "public"))]
+    pub max_size: u64,
+    /// Required when `storage = "s3"`.
+    #[schemars(extend("x-visibility" = "private"))]
+    pub s3: Option<S3Settings>,
+}
+
+impl Default for FilesSettings {
+    fn default() -> Self {
+        Self {
+            storage: FileBackend::Local,
+            path: None,
+            max_size: 52_428_800,
+            s3: None,
+        }
+    }
+}
+
+impl FilesSettings {
+    /// The directory of the `local` storage: `path`, else `files`, both against `base_dir`.
+    pub fn local_dir(&self, base_dir: &std::path::Path) -> std::path::PathBuf {
+        base_dir.join(
+            self.path
+                .as_deref()
+                .unwrap_or(std::path::Path::new("files")),
+        )
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize, Serialize, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum FileBackend {
+    /// A directory on the server's disk.
+    #[default]
+    Local,
+    /// An S3-compatible bucket.
+    S3,
+}
+
+/// The `[files.s3]` section.
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct S3Settings {
+    /// An S3-compatible service other than AWS, as an `https://` URL. Absent: AWS.
+    #[serde(default)]
+    pub endpoint: Option<String>,
+    pub bucket: String,
+    pub region: String,
+    /// Secret: `VUMLO__FILES__S3__ACCESS_KEY`.
+    #[serde(default)]
+    pub access_key: Secret,
+    /// Secret: `VUMLO__FILES__S3__SECRET_KEY`.
+    #[serde(default)]
+    pub secret_key: Secret,
 }
 
 /// What the document editor may offer (ADR-0025, ADR-0027). Plain data: `AppState::new` applies

@@ -8,7 +8,7 @@ use schemars::JsonSchema;
 use serde::Serialize;
 
 use crate::modules::ModuleStatus;
-use crate::settings::{GradingScale, Language, Settings};
+use crate::settings::{FileBackend, GradingScale, Language, Settings};
 
 #[derive(Debug, Clone, Serialize, JsonSchema)]
 pub struct ClientConfig {
@@ -38,6 +38,14 @@ pub struct ClientDesktop {
 pub struct PublicConfig {
     pub server: PublicServer,
     pub institution: PublicInstitution,
+    pub files: PublicFiles,
+}
+
+#[derive(Debug, Clone, Serialize, JsonSchema)]
+pub struct PublicFiles {
+    pub storage: FileBackend,
+    /// The largest file, in bytes.
+    pub max_size: u64,
 }
 
 #[derive(Debug, Clone, Serialize, JsonSchema)]
@@ -71,6 +79,10 @@ impl ClientConfig {
                     language: institution.language,
                     time_zone: institution.time_zone.name().to_owned(),
                     grading_scale: institution.grading_scale,
+                },
+                files: PublicFiles {
+                    storage: settings.files.storage,
+                    max_size: settings.files.max_size,
                 },
             },
             modules: settings.module_state.statuses(),

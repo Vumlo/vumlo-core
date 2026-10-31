@@ -1233,6 +1233,7 @@ dependencies = [
  "tokio",
  "tracing",
  "uuid",
+ "vumlo-config",
 ]
 
 [[package]]
@@ -2120,6 +2121,7 @@ dependencies = [
  "chrono",
  "common",
  "events",
+ "files",
  "org",
  "serde",
  "serde_json",
@@ -3658,6 +3660,7 @@ dependencies = [
  "common",
  "db",
  "events",
+ "files",
  "learning",
  "module-api",
  "openidconnect",

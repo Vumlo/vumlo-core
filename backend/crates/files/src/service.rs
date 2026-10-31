@@ -18,6 +18,8 @@ pub enum FilesError {
     Empty,
     #[error("the file is larger than the allowed size")]
     TooLarge,
+    #[error("files.s3.endpoint {0}")]
+    Config(String),
     #[error(transparent)]
     Storage(#[from] object_store::Error),
     #[error(transparent)]

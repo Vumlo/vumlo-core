@@ -30,6 +30,7 @@ clap.workspace = true
 common.workspace = true
 db.workspace = true
 events.workspace = true
+files.workspace = true
 learning.workspace = true
 module-api.workspace = true
 org.workspace = true

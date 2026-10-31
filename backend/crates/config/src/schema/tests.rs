@@ -6,12 +6,14 @@ fn every_key_is_marked_public_private_or_secret() {
 }
 
 #[test]
-fn the_public_keys_are_the_institution_profile_and_the_origin() {
+fn the_public_keys_are_the_institution_profile_the_origin_and_the_file_limits() {
     let mut public = public_paths();
     public.sort_unstable();
     assert_eq!(
         public,
         [
+            "files.max_size",
+            "files.storage",
             "institution.grading_scale",
             "institution.language",
             "institution.name",
@@ -23,13 +25,15 @@ fn the_public_keys_are_the_institution_profile_and_the_origin() {
 }
 
 #[test]
-fn the_secret_keys_are_the_database_url_google_the_smtp_password_and_the_plugin_key() {
+fn the_secret_keys_are_the_database_url_google_the_smtp_password_the_s3_keys_and_the_plugin_key() {
     let secrets: Vec<_> = secret_paths().into_iter().collect();
     assert_eq!(
         secrets,
         [
             "auth.google.client_secret",
             "database.url",
+            "files.s3.access_key",
+            "files.s3.secret_key",
             "mail.transport.password",
             "plugins.secret_key",
         ]

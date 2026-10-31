@@ -3,7 +3,7 @@
 # Check it with `vumlo-cli config check`.
 #
 # Secrets never go in this file. They come from the environment (or the env file named by
-# [cli].env_file): DATABASE_URL, VUMLO__AUTH__GOOGLE__CLIENT_SECRET, VUMLO__MAIL__TRANSPORT__PASSWORD.
+# [cli].env_file): DATABASE_URL, VUMLO__AUTH__GOOGLE__CLIENT_SECRET, VUMLO__MAIL__TRANSPORT__PASSWORD, VUMLO__FILES__S3__ACCESS_KEY, VUMLO__FILES__S3__SECRET_KEY.
 # A secret written here stops the server and `vumlo-cli config check`.
 #
 # Changing the file means: restart the server. Changing [institution] or [modules] also means
@@ -77,6 +77,19 @@ max_concurrent_hashes = 8          # password hashes and checks at once, ~19 MiB
 # For development, write every message to a file instead:
 # kind = "file"
 # dir = "/tmp/vumlo-mail"
+
+# Uploaded files (ADR-0069). The database backup does not contain them: back up the directory or the
+# bucket too. A reverse proxy in front of the server must allow bodies of max_size.
+[files]
+storage = "local"      # "local" | "s3"
+# path = "files"       # the directory of the local storage, relative to this file; default "files"
+max_size = 52428800    # bytes; the largest file (50 MiB)
+# [files.s3]           # required when storage = "s3"
+# endpoint = "https://s3.example.edu"   # an S3-compatible service other than AWS; https only
+# bucket = "vumlo-files"
+# region = "eu-north-1"
+# The access key and the secret key are VUMLO__FILES__S3__ACCESS_KEY and VUMLO__FILES__S3__SECRET_KEY
+# in the environment, not keys here.
 
 [institution]
 name = "Vumlo"

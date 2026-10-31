@@ -114,6 +114,10 @@ pub enum StateError {
     Mail(#[from] MailError),
     #[error(transparent)]
     Google(#[from] auth::GoogleSetupError),
+    #[error("files.storage is \"s3\": add a [files.s3] section with bucket, region and the keys")]
+    FilesS3Missing,
+    #[error("cannot open the file storage: {0}")]
+    Files(#[from] files::FilesError),
     #[error("the optional modules cannot be started: {0}")]
     Modules(#[from] module_api::OrderError),
 }
@@ -136,6 +140,15 @@ impl AppState {
             .as_ref()
             .map(|google| auth::Google::new(google).map(Arc::new))
             .transpose()?;
+        let storage = match (&config.files.storage, &config.files.s3) {
+            (vumlo_config::FileBackend::Local, _) => {
+                files::Storage::local(&config.files.local_dir(&config.base_dir))?
+            }
+            (vumlo_config::FileBackend::S3, Some(s3)) => {
+                files::Storage::s3(s3, s3.access_key.expose(), s3.secret_key.expose())?
+            }
+            (vumlo_config::FileBackend::S3, None) => return Err(StateError::FilesS3Missing),
+        };
         let modules = Arc::new(crate::modules::ordered()?);
         let config = Arc::new(config);
         Ok(Self {
@@ -154,6 +167,8 @@ impl AppState {
                 db: db.clone(),
                 config: config.clone(),
                 editor: Arc::new(editor),
+                files: storage,
+                max_file_bytes: config.files.max_size,
             },
             plugins: PluginsState::new(db.clone(), &config),
             db,
