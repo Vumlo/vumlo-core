@@ -909,3 +909,73 @@ async fn the_app_works_against_a_real_server_and_its_store_outlives_a_restart() 
     assert_eq!(out.status, 204);
     std::fs::remove_dir_all(&dir).unwrap();
 }
+
+// --- bytes ------------------------------------------------------------------------------------------
+
+#[tokio::test]
+async fn a_raw_request_carries_the_token_the_bytes_and_the_type() {
+    let rig = rig().await;
+    rig.token.set("T0KEN").unwrap();
+    rig.mock.answer(200, json!({"id": "f1"}));
+    let reply = rig
+        .core
+        .request_raw(
+            "POST",
+            "/files?for=item%3Ax&name=a.pdf",
+            &[("content-type", "application/pdf")],
+            Some(b"%PDF-1".to_vec()),
+        )
+        .await
+        .unwrap();
+    assert_eq!(reply.status, 200);
+    assert_eq!(reply.body, br#"{"id":"f1"}"#);
+    let sent = &rig.mock.seen()[0];
+    assert_eq!(sent.method, "POST");
+    assert_eq!(sent.path, "/files?for=item%3Ax&name=a.pdf");
+    assert_eq!(sent.header("authorization"), Some("Bearer T0KEN"));
+    assert_eq!(sent.header("content-type"), Some("application/pdf"));
+    assert_eq!(sent.body, "%PDF-1");
+}
+
+#[tokio::test]
+async fn a_raw_request_hands_back_the_headers_and_the_status_of_the_server() {
+    let rig = rig().await;
+    rig.mock.answer_with(
+        206,
+        vec![("content-range", "bytes 0-2/10".to_owned())],
+        json!("abc"),
+    );
+    let reply = rig
+        .core
+        .request_raw("GET", "/files/f1", &[("range", "bytes=0-2")], None)
+        .await
+        .unwrap();
+    assert_eq!(reply.status, 206);
+    assert_eq!(reply.header("Content-Range"), Some("bytes 0-2/10"));
+    assert_eq!(rig.mock.seen()[0].header("range"), Some("bytes=0-2"));
+}
+
+#[tokio::test]
+async fn a_raw_request_reaches_only_the_files() {
+    let rig = rig().await;
+    for bad in [
+        "/me",
+        "/files/../me",
+        "files",
+        "//x/files",
+        "/filesystem",
+        "/auth/login",
+    ] {
+        assert!(
+            rig.core.request_raw("GET", bad, &[], None).await.is_err(),
+            "{bad}"
+        );
+    }
+    assert!(
+        rig.core
+            .request_raw("DELETE", "/files/f1", &[], None)
+            .await
+            .is_err()
+    );
+    assert!(rig.mock.seen().is_empty());
+}

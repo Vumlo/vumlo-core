@@ -46,3 +46,21 @@ It is meant to stay small, and every one of these is an operating-system integra
   it carries the app identifier.
 - Unsigned builds can be blocked from opening links or notifying by the operating system's own rules; the
   release docs say what to expect (ADR on release, later).
+
+## Amended by ADR-0069: files
+The window may ask for two more commands and one URL scheme, all of them ordinary app code in `desktop/src/files.rs`:
+
+- `upload_file`: the bytes of a file are the raw body of the call, and the target (`item:<id>` or
+  `assignment:<id>`) and the name are headers. Rust sends them to `POST /files` with the token and answers with the
+  stored file, or with `"<status>: <detail>"`.
+- `open_file(id)`: Rust downloads the file, saves it in the system's Downloads folder under a name that never
+  replaces a file (`name (1).pdf`), and answers `opened`, `revealed` or `saved_only`. The program of the system is
+  started only for an **allowlist** of extensions (documents, images, audio, video, archives), judged by the last
+  extension of the name, and never for a name that ends in a dot or a space. Everything else, and every program or
+  script, is only shown in its folder.
+- The scheme `vumlo-file` (`vumlo-file://localhost/<id>`, or `http://vumlo-file.localhost/<id>` on Windows and
+  Android) serves one stored file, by an id and nothing else, with the token that only Rust has. It forwards `Range`
+  and answers only to the app's own page (CORS). The CSP names it in `connect-src`, `img-src` and `frame-src`.
+
+The window still has **no** `fs`, `shell` or `opener` permission, and `capabilities/default.json` is unchanged:
+the opener runs inside `open_file`, with a path that Rust chose.

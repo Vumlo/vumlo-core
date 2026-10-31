@@ -98,6 +98,31 @@ struct Wire {
     text: String,
 }
 
+/// The answer to a request made with bytes (`Core::request_raw`): nothing is read as text or kept.
+#[derive(Debug)]
+pub struct RawReply {
+    pub status: u16,
+    pub headers: Vec<(String, String)>,
+    pub body: Vec<u8>,
+}
+
+impl RawReply {
+    pub fn header(&self, name: &str) -> Option<&str> {
+        self.headers
+            .iter()
+            .find(|(n, _)| n.eq_ignore_ascii_case(name))
+            .map(|(_, v)| v.as_str())
+    }
+}
+
+/// The paths of the bytes door: the files, and nothing else of the API.
+fn files_path(path: &str) -> bool {
+    valid_path(path)
+        && path
+            .strip_prefix("/files")
+            .is_some_and(|rest| rest.is_empty() || rest.starts_with(['/', '?']))
+}
+
 pub struct Core {
     store: Store,
     http: reqwest::Client,
@@ -279,6 +304,57 @@ impl Core {
                     .await
             }
         }
+    }
+
+    /// The door for bytes: a file goes up (`POST /files`) or comes down (`GET /files/{id}`). The token is added
+    /// here, so the window never has it; nothing is cached or queued. Only `/files` paths are accepted.
+    pub async fn request_raw(
+        &self,
+        method: &str,
+        path: &str,
+        headers: &[(&str, &str)],
+        body: Option<Vec<u8>>,
+    ) -> Result<RawReply, String> {
+        if !files_path(path) {
+            return Err(format!("refused path {path}"));
+        }
+        let method = match method {
+            "GET" => reqwest::Method::GET,
+            "POST" => reqwest::Method::POST,
+            _ => return Err(format!("refused method {method}")),
+        };
+        let mut builder = self
+            .http
+            .request(method, format!("{}{path}", self.api_url))
+            // A file is up to the server's limit (50 MiB by default): more time than a page of JSON.
+            .timeout(Duration::from_secs(600));
+        if let Some(token) = self.token.get() {
+            builder = builder.bearer_auth(token);
+        }
+        for (name, value) in headers {
+            builder = builder.header(*name, *value);
+        }
+        if let Some(body) = body {
+            builder = builder.body(body);
+        }
+        let response = builder
+            .send()
+            .await
+            .inspect_err(|_| self.set_online(false))
+            .map_err(|e| e.to_string())?;
+        self.set_online(true);
+        let status = response.status().as_u16();
+        let headers = response
+            .headers()
+            .iter()
+            .filter_map(|(n, v)| Some((n.as_str().to_owned(), v.to_str().ok()?.to_owned())))
+            .collect();
+        let body = response.bytes().await.map_err(|e| e.to_string())?.to_vec();
+        Ok(RawReply {
+            status,
+            headers,
+            body,
+        })
     }
 
     async fn send(
