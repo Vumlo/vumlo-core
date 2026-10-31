@@ -102,3 +102,4 @@ What gets easier, what gets harder, what we must remember.
 | 0065 | [Layered crates: dependencies point only downward, enforced by Cargo](0065-layered-crates.md) |
 | 0066 | [Modules and plugins: a Module trait, the schema `mod_<id>`, and out-of-process plugins the core does not trust](0066-modules-and-plugins.md) |
 | 0068 | [Formulas are drawn by KaTeX](0068-formulas-are-drawn-by-katex.md) |
+| 0069 | [File storage: the `files` crate, raw-byte upload, and owner-authorized download](0069-file-storage.md) |
