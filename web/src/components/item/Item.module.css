@@ -6,7 +6,9 @@
 .kindIcon { display: flex; align-items: center; justify-content: center; width: 26px; height: 26px; border-radius: var(--radius-field); }
 .kindIcon[data-kind="lecture"] { background: var(--lec-tile); color: var(--lec-fg); }
 .kindIcon[data-kind="assignment"] { background: var(--asg-tile); color: var(--asg-fg); }
+.kindIcon[data-kind="file"] { background: var(--file-tile); color: var(--file-fg); }
 .kindLabel { font-size: 14px; font-weight: 600; }
+.kindLabel[data-kind="file"] { color: var(--file-fg); }
 .kindLabel[data-kind="lecture"] { color: var(--lec-fg); }
 .kindLabel[data-kind="assignment"] { color: var(--asg-text); }
 .title { margin: 8px 0 16px; font-size: 36px; line-height: 1.1; font-weight: 500; letter-spacing: var(--tracking-display); text-wrap: balance; }
@@ -63,3 +65,10 @@
 .pluginFrame { display: block; width: 100%; border-radius: var(--radius-card); background: var(--surface); color-scheme: normal; }
 @media (max-width: 960px) { .toc { display: none; } }
 @media (max-width: 720px) { .title, .lectureTitle { font-size: 28px; } .bar { top: 64px; } }
+
+.fileCard { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 16px; margin-top: 24px; padding: 16px 20px; border-radius: var(--radius-card); background: var(--surface); box-shadow: var(--shadow); }
+.fileIcon { flex: none; display: flex; align-items: center; justify-content: center; width: 44px; height: 44px; border-radius: var(--radius-inner); background: var(--file-tile); color: var(--file-fg); }
+.fileMain { flex: 1 1 200px; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.fileName { font-size: 16px; font-weight: 600; overflow-wrap: anywhere; }
+.fileMeta { font-size: 13px; color: var(--muted); }
+.fileActions { display: flex; flex-wrap: wrap; gap: 8px; }

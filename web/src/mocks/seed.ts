@@ -19,6 +19,8 @@ const STUDENTS_305 = [
 export function createSeed(): Db {
   const email = (n: string, s: string) => `${n}.${s}`.toLowerCase().replace(/[^a-z.]/g, "") + `@${DOMAIN}`;
 
+  const files: Db["files"] = new Map();
+
   // ---- people ----
   const users: DbUser[] = [];
   const person = (key: string, name: string, surname: string, role: DbUser["role"], extra: Partial<DbUser> = {}): string => {
@@ -279,6 +281,16 @@ export function createSeed(): Db {
   lecture(cs201, mGraphs, "graph2", "Storing graphs", doc(para("Adjacency lists and adjacency matrices.")), "draft", { read_minutes: 14 });
   const aProject = assignment(cs201, mProject, "project", "Course project: team and repository", { type: "form", points: "0.00", due: "2026-10-25 23:59", attempts: null, config: projectForm as unknown as Record<string, unknown>,
     body: doc(para("Dr. Voss uses these details to set up the project reviews. Fill in every required field, then submit.")) });
+  // A file item with a small PDF: what the teacher wrote about it, and the file itself.
+  const syllabus = new TextEncoder().encode("%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj\n3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 200 200]>>endobj\ntrailer<</Root 1 0 R>>\n%%EOF\n");
+  const syllabusId = uid("file:seed:syllabus");
+  files.set(syllabusId, { name: "syllabus.pdf", mime: "application/pdf", bytes: syllabus.buffer.slice(syllabus.byteOffset, syllabus.byteOffset + syllabus.byteLength) as ArrayBuffer });
+  const fileItem: DbItem = {
+    ...baseItem(cs201, mProject, "syllabus", "Course syllabus", doc(), "published"), kind: "file",
+    body: { file_id: syllabusId, description: doc(para("Read this before the first lab.")) } as unknown as Item["body"],
+    last_published_at: at("2026-10-12 10:00"), unpublished_changes: false,
+  };
+  items.push(fileItem);
   void lQuick; void lWhy; void lBig;
 
   // CS 215
@@ -429,6 +441,6 @@ export function createSeed(): Db {
 
   return {
     users, terms, groups, subgroups, groupMembers, courses, members, links, modules, items, submissions, grades, sessions, audit, institution,
-    mail: [], signups: [], resets: [], formResponses: {}, quizResults, files: new Map(), fileMax: 52428800,
+    mail: [], signups: [], resets: [], formResponses: {}, quizResults, files, fileMax: 52428800,
   };
 }

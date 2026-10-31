@@ -30,15 +30,23 @@ export const fileHandlers = [
     db.files.set(fileId, { name, mime, bytes });
     return HttpResponse.json({ id: fileId, name, mime, size: bytes.byteLength }, { status: 201 });
   }),
-  http.get(`${A}/files/:id`, ({ params }) => {
+  http.get(`${A}/files/:id`, ({ request, params }) => {
     requireUser();
     const file = getDb().files.get(String(params.id));
     if (!file) throw notFound();
     const inline = INLINE.has(file.mime);
-    return new HttpResponse(file.bytes, {
+    // One `bytes=a-b` or `bytes=a-` range, as the server serves it: a screen reads a file's size from `Content-Range`.
+    const range = /^bytes=(\d+)-(\d*)$/.exec(request.headers.get("range") ?? "");
+    const size = file.bytes.byteLength;
+    const first = range ? Number(range[1]) : 0;
+    const last = range ? Math.min(range[2] ? Number(range[2]) : size - 1, size - 1) : size - 1;
+    if (range && first >= size) return new HttpResponse(null, { status: 416, headers: { "Content-Range": `bytes */${size}` } });
+    return new HttpResponse(range ? file.bytes.slice(first, last + 1) : file.bytes, {
+      status: range ? 206 : 200,
       headers: {
+        ...(range ? { "Content-Range": `bytes ${first}-${last}/${size}` } : {}),
         "Content-Type": file.mime,
-        "Content-Disposition": `${inline ? "inline" : "attachment"}; filename*=UTF-8''${encodeURIComponent(file.name)}`,
+        "Content-Disposition": `${inline ? "inline" : "attachment"}; filename="${file.name.replace(/[^\x20-\x7e]|["\\;%]/g, "_")}"; filename*=UTF-8''${encodeURIComponent(file.name)}`,
         "X-Content-Type-Options": "nosniff",
         "Content-Security-Policy": "sandbox",
         ETag: `"${params.id}"`,

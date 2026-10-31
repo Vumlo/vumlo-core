@@ -97,3 +97,16 @@ export function bodyOf(item: Pick<Item, "body">): Document {
   const body = item.body as Partial<Document> | undefined;
   return { v: 1, blocks: Array.isArray(body?.blocks) ? body.blocks : [] };
 }
+
+/**
+ * The body of a `file` item: the stored file (absent while the item has none) and a document about it. The generated
+ * `Item.body` types every body as a document (a typing gap of the server), so the one cast is here.
+ */
+export type FileItemBody = { file_id?: string; description?: Document };
+export const fileBodyOf = (item: Pick<Item, "body">): FileItemBody => item.body as unknown as FileItemBody;
+
+/** What `PATCH /items/{id}` takes for a file item. No file is the absence of `file_id` (the server refuses `null`). */
+export function fileBodyToWire(fileId: string | null, description: Document): Document {
+  const body: FileItemBody = { ...(fileId ? { file_id: fileId } : {}), ...(description.blocks.length > 0 ? { description } : {}) };
+  return body as unknown as Document;
+}

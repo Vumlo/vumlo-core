@@ -97,5 +97,11 @@ Spec endpoints the UI uses as they are: `GET /institution`, `GET /admin/institut
 - **Screens:** Admin, Institution.
 - **Missing:** storing and serving a logo; it needs the `files` module. The accent is set in `vumlo.toml` and shown in the preview only; the site keeps its tested accent because the design does not say how a chosen accent gets a dark-theme match.
 
+## File item: the file's name, type and size
+- **Screens:** the page of a `file` item, the editor of a `file` item.
+- **Missing:** the body of a `file` item names its file by `file_id` only, and no endpoint or field gives the file's name, type or size.
+- **Used instead:** `fileInfo` in `src/lib/files.ts` reads them from the headers of `GET /files/{id}` with `Range: bytes=0-0` (`Content-Disposition`, `Content-Range`, `Content-Type`), cached by `useFileInfo`. In the desktop app the page cannot read `Content-Disposition` (the scheme exposes only `Content-Range, Content-Length, Content-Type`), so the card shows the item's title as the name.
+- **Mocked:** `GET /files/{id}` in `src/mocks/handlers/files.ts` answers a range as the server does.
+
 ## Not API gaps, kept in the browser
 Theme, language, and the layout of the home widgets are saved in `localStorage`, as the design says.

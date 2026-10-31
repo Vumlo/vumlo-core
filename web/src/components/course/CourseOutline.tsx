@@ -63,7 +63,7 @@ export function CourseOutline({ courseId, tree, meta, code, title, currentItemId
                       className={s.item}
                       aria-current={i.id === currentItemId ? "page" : undefined}
                     >
-                      <Icon name={k} size={15} strokeWidth={2} className={k === "lecture" ? s.iconLecture : s.iconAssignment} />
+                      <Icon name={k} size={15} strokeWidth={2} className={k === "lecture" ? s.iconLecture : k === "file" ? s.iconFile : s.iconAssignment} />
                       <span className={s.itemTitle}>{i.title}</span>
                       {mark && <span className={s.mark} data-tone={mark.tone}>{mark.text}</span>}
                     </Link>

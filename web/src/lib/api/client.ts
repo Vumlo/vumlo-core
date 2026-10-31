@@ -128,6 +128,14 @@ export async function readText(url: string, maxBytes: number): Promise<string> {
   return new TextDecoder().decode(all.subarray(0, maxBytes));
 }
 
+/** The headers of the first byte of a file, which is how a file's name, type and size are read (no endpoint tells them). */
+export async function readHeaders(url: string): Promise<Headers> {
+  const res = await fetch(url, { credentials: "same-origin", headers: { Range: "bytes=0-0" } });
+  void res.body?.cancel();
+  if (!res.ok) throw new ApiError(res.status, res.statusText);
+  return res.headers;
+}
+
 export const api = {
   get: <T>(path: string) => request<T>("GET", path),
   post: <T>(path: string, body?: unknown, options?: Options) => request<T>("POST", path, body ?? {}, options),

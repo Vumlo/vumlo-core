@@ -197,3 +197,171 @@ test("desktop_upload_sends_the_bytes_as_the_body_and_the_rest_as_headers", async
   );
   expect(status).toBe(413);
 });
+
+// ---- the `file` item kind: lesson material (spec 7, 9.3) ----
+
+async function signInAs(page: Page, role: "student" | "teacher") {
+  await page.goto("/login");
+  await page.getByLabel("Email").fill(accounts[role]);
+  await page.getByLabel("Password", { exact: true }).fill(PASSWORD);
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  await expect(page.getByRole("navigation", { name: "Main" }).first()).toBeVisible();
+}
+
+const SYLLABUS = "Course syllabus";
+const pdf = (name: string) => ({ name, mimeType: "application/pdf", buffer: Buffer.from("%PDF-1.4\n% a file for the specs\n%%EOF\n") });
+
+/** The id of the course and of the seeded file item (titled "Course syllabus"), from the API. */
+async function syllabus(page: Page): Promise<{ course: string; item: string }> {
+  return page.evaluate(async (title) => {
+    const courses = (await (await fetch("/api/v1/me/courses?limit=100")).json()) as { items: { id: string }[] };
+    for (const c of courses.items) {
+      const tree = (await (await fetch(`/api/v1/courses/${c.id}/content`)).json()) as { modules: { items: { id: string; title: string }[] }[] };
+      const hit = tree.modules.flatMap((m) => m.items).find((i) => i.title === title);
+      if (hit) return { course: c.id, item: hit.id };
+    }
+    throw new Error("the seeded file item is missing");
+  }, SYLLABUS);
+}
+
+/** The bodies of the requests the page sends with `method` to a path that matches `path`. */
+function watchBodies(page: Page, method: string, path: RegExp): Record<string, unknown>[] {
+  const bodies: Record<string, unknown>[] = [];
+  page.on("request", (r) => {
+    if (r.method() === method && path.test(new URL(r.url()).pathname)) bodies.push(JSON.parse(r.postData() ?? "{}") as Record<string, unknown>);
+  });
+  return bodies;
+}
+
+async function newFileItem(page: Page, title: string) {
+  await page.goto(`/course?id=${(await syllabus(page)).course}`);
+  await page.getByRole("button", { name: "File", exact: true }).first().click();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByLabel("Title").fill(title);
+  await dialog.getByRole("button", { name: "Create and edit" }).click();
+  await page.waitForURL(/\/course\/item\/edit/);
+}
+
+test("teacher_adds_a_pdf_as_lesson_material", async ({ page }) => {
+  await signInAs(page, "teacher");
+  await page.waitForFunction(() => "__vumloFiles" in window);
+  const created = watchBodies(page, "POST", /\/modules\/[^/]+\/items$/);
+  const sent = watchUploads(page);
+  const patches = watchBodies(page, "PATCH", /\/items\/[^/]+$/);
+  await newFileItem(page, "Lab handout");
+  expect(created).toEqual([expect.objectContaining({ kind: "file", title: "Lab handout" })]);
+  // A file item cannot be published before it has a file; the page says so and does not offer the click.
+  const publish = page.getByRole("button", { name: "Publish", exact: true });
+  await expect(publish).toBeDisabled();
+  await expect(page.getByText("Add a file before you publish.")).toBeVisible();
+  await page.locator('input[type="file"]').setInputFiles(pdf("handout.pdf"));
+  await expect(page.getByText("handout.pdf")).toBeVisible();
+  await expect(publish).toBeEnabled();
+  // The upload goes to the item that exists, then the body names it.
+  const item = new URL(page.url()).searchParams.get("item")!;
+  expect(sent).toHaveLength(1);
+  expect(sent[0]!.url.searchParams.get("for")).toBe(`item:${item}`);
+  await publish.click();
+  await expect(page.locator("[data-tone]", { hasText: "Published" }).first()).toBeVisible();
+  const last = patches.at(-1)!;
+  expect((last.body as { file_id?: string }).file_id).toMatch(/^[0-9a-f-]+$/);
+  const stored = await page.evaluate(async (id) => (await (await fetch(`/api/v1/items/${id}`)).json()) as { status: string; body: { file_id?: string } }, item);
+  expect(stored.status).toBe("published");
+  expect(stored.body.file_id).toBe((last.body as { file_id: string }).file_id);
+});
+
+test("student_sees_the_file_row_and_opens_it", async ({ page }) => {
+  await signInAs(page, "student");
+  await page.goto(`/course?id=${(await syllabus(page)).course}`);
+  // The outline on the left names it too; the row is the one in the list.
+  const row = page.locator("a[class*=rowLecture]").filter({ hasText: SYLLABUS });
+  await expect(row).toBeVisible();
+  // The file has a tile of its own, not the lecture's or the assignment's.
+  await expect(row.locator(".tile-file")).toBeVisible();
+  await expect(row).toContainText("File");
+  await row.click();
+  await expect(page.getByRole("heading", { name: SYLLABUS, level: 1 })).toBeVisible();
+  await page.evaluate(() => {
+    const open = window.open.bind(window);
+    const calls: unknown[][] = [];
+    Object.assign(window, { __opened: calls });
+    window.open = (...args: Parameters<typeof window.open>) => (calls.push(args), open(...args));
+  });
+  await Promise.all([page.waitForEvent("popup"), page.getByRole("button", { name: "Open", exact: true }).click()]);
+  const [url, target] = (await page.evaluate(() => (window as unknown as { __opened: string[][] }).__opened))[0]!;
+  expect(url).toMatch(/^\/api\/v1\/files\/[0-9a-f-]+$/);
+  expect(target).toBe("_blank");
+});
+
+test("file_item_page_shows_description_and_open_card", async ({ page }) => {
+  await signInAs(page, "student");
+  const { course, item } = await syllabus(page);
+  await page.goto(`/course/item?id=${course}&item=${item}`);
+  await expect(page.getByText("Read this before the first lab.")).toBeVisible();
+  const card = page.getByRole("group", { name: "File" });
+  await expect(card).toContainText("syllabus.pdf");
+  await expect(card).toContainText(/\d+ (B|KB)/);
+  await expect(card).toContainText("Opens in a new tab");
+  await expect(card.getByRole("button", { name: "Open", exact: true })).toBeVisible();
+  // No editing for a student.
+  await expect(page.getByRole("link", { name: "Edit" })).toHaveCount(0);
+});
+
+test("replacing_the_file_updates_the_card", async ({ page }) => {
+  await signInAs(page, "teacher");
+  const { course, item } = await syllabus(page);
+  await page.goto(`/course/item/edit?id=${course}&item=${item}`);
+  const card = page.getByRole("group", { name: "File" });
+  await expect(card).toContainText("syllabus.pdf");
+  await page.locator('input[type="file"]').setInputFiles(pdf("syllabus-v2.pdf"));
+  await expect(card).toContainText("syllabus-v2.pdf");
+  await expect(card).not.toContainText("syllabus.pdf");
+  // The page of the item shows the new file once the change is saved.
+  await expect(page.getByRole("status").filter({ hasText: /^Saved/ })).toBeVisible();
+  await page.getByRole("link", { name: "Preview as student" }).click();
+  await expect(page.getByRole("group", { name: "File" })).toContainText("syllabus-v2.pdf");
+});
+
+test("publishing_a_file_item_without_a_file_shows_the_server_message", async ({ page }) => {
+  await signInAs(page, "teacher");
+  await newFileItem(page, "Empty handout");
+  await page.goBack();
+  await page.getByRole("button", { name: "More actions for Empty handout" }).click();
+  await page.getByRole("menuitem", { name: "Publish" }).click();
+  await expect(page.getByRole("alert").filter({ hasText: "a file item needs a file before it is published" })).toBeVisible();
+});
+
+test("removing_the_file_omits_file_id_from_the_patch", async ({ page }) => {
+  await signInAs(page, "teacher");
+  const { course, item } = await syllabus(page);
+  await page.goto(`/course/item/edit?id=${course}&item=${item}`);
+  await expect(page.getByRole("group", { name: "File" })).toContainText("syllabus.pdf");
+  const patches = watchBodies(page, "PATCH", /\/items\/[^/]+$/);
+  await page.getByRole("button", { name: "Remove", exact: true }).click();
+  await expect(page.getByRole("group", { name: "File" })).toHaveCount(0);
+  await expect.poll(() => patches.length).toBeGreaterThan(0);
+  const body = patches.at(-1)!.body as Record<string, unknown>;
+  expect("file_id" in body).toBe(false);
+  // What the teacher wrote about the file stays.
+  expect(JSON.stringify(body.description)).toContain("Read this before the first lab.");
+});
+
+test("a_save_naming_a_swept_upload_asks_to_upload_the_file_again", async ({ page }) => {
+  await signInAs(page, "teacher");
+  await newFileItem(page, "Swept handout");
+  // The server sweeps an upload nobody named for 24 hours and then refuses a body that names it.
+  await page.evaluate(() => {
+    const real = window.fetch.bind(window);
+    window.fetch = async (input, init) => {
+      if (init?.method === "PATCH" && /\/api\/v1\/items\//.test(String(input))) {
+        const problem = { title: "Unprocessable", status: 422, errors: [{ field: "body.file_id", message: "the file cannot be used here" }] };
+        return new Response(JSON.stringify(problem), { status: 422, headers: { "Content-Type": "application/problem+json" } });
+      }
+      return real(input, init);
+    };
+  });
+  await page.locator('input[type="file"]').setInputFiles(pdf("old.pdf"));
+  await expect(page.getByRole("alert").filter({ hasText: "Upload it again." })).toBeVisible();
+  // The form stays usable: another file can be chosen.
+  await expect(page.getByRole("button", { name: "Replace", exact: true })).toBeEnabled();
+});

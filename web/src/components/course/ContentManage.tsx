@@ -14,7 +14,7 @@ import { useCreateItem, useCreateModule, useDeleteItem, useDeleteModule, usePubl
 import type { ItemMeta } from "@/lib/api/types";
 import type { ContentModule, ContentSubModule, ItemSummary } from "@/lib/api/types";
 import { now } from "@/lib/clock";
-import { allItems, dueShort, isAssignment, typeLabel } from "@/lib/course";
+import { allItems, dueShort, isAssignment, kindOf, typeLabel } from "@/lib/course";
 import { plural } from "@/lib/format";
 import { wholePoints } from "@/lib/points";
 import { CourseHeader } from "./CourseHeader";
@@ -34,7 +34,7 @@ type Dlg =
   | { kind: "publish"; sec: Sec }
   | { kind: "delete-section"; sec: Sec }
   | { kind: "delete-item"; item: ItemSummary }
-  | { kind: "new-item"; sec: Sec; type: "lecture" | "assignment" };
+  | { kind: "new-item"; sec: Sec; type: "lecture" | "assignment" | "file" };
 
 const ASSIGNMENT_TYPES = ["text", "quiz", "form", "no_submission"] as const;
 const TYPE_ICON: Record<(typeof ASSIGNMENT_TYPES)[number], IconName> = { text: "text", quiz: "quiz", form: "form", no_submission: "inClass" };
@@ -49,6 +49,7 @@ function starterConfig(type: string, points: string): Record<string, unknown> | 
 }
 
 function itemMeta(i: ItemSummary, m: ItemMeta | undefined): string {
+  if (kindOf(i) === "file") return translate("row.file");
   if (!isAssignment(i)) return `${translate("row.lecture")}${m?.read_minutes ? `, ${translate("row.readMinutes", { n: m.read_minutes })}` : ""}`;
   const a = i.assignment!;
   const when = dueShort(a.due_at ?? null, m?.class_on, now());
@@ -119,6 +120,8 @@ export function ContentManage({ courseId }: { courseId: string }) {
     if (dlg.type === "assignment" && pointsBad) { document.getElementById("item-points")?.focus(); return; }
     const made = await createItem.run(dlg.sec.id, dlg.type === "lecture"
       ? { kind: "text", title: text }
+      : dlg.type === "file"
+      ? { kind: "file", title: text }
       : { kind: "assignment", title: text, assignment: { type, max_points: points || "10", config: starterConfig(type, points || "10") } });
     if (made) { close(); router.push(editItemHref(courseId, made.id)); }
   }
@@ -208,7 +211,7 @@ export function ContentManage({ courseId }: { courseId: string }) {
                       </div>
                       <div className={s.items}>
                         {sec.items.map((i) => {
-                          const k = isAssignment(i) ? "assignment" : "lecture";
+                          const k = kindOf(i);
                           return (
                             <div key={i.id} className={s.item} data-kind={k} data-over={drag?.kind === "item" && over === i.id}
                               onDragOver={(e) => { if (drag?.kind === "item" && drag.parent === sec.id) { e.preventDefault(); e.stopPropagation(); setOver(i.id); } }}
@@ -240,6 +243,7 @@ export function ContentManage({ courseId }: { courseId: string }) {
                       <div className={s.add}>
                         <button type="button" className="btn" style={{ minHeight: 36 }} onClick={() => open({ kind: "new-item", sec, type: "lecture" })}><Icon name="plus" size={15} strokeWidth={2.2} />{t("row.lecture")}</button>
                         <button type="button" className="btn" style={{ minHeight: 36 }} onClick={() => open({ kind: "new-item", sec, type: "assignment" })}><Icon name="plus" size={15} strokeWidth={2.2} />{t("cm.assignment")}</button>
+                        <button type="button" className="btn" style={{ minHeight: 36 }} onClick={() => open({ kind: "new-item", sec, type: "file" })}><Icon name="plus" size={15} strokeWidth={2.2} />{t("row.file")}</button>
                       </div>
                     </section>
                   ))}
@@ -283,12 +287,12 @@ export function ContentManage({ courseId }: { courseId: string }) {
         </Dialog>
       )}
       {dlg?.kind === "new-item" && (
-        <Dialog title={dlg.type === "lecture" ? t("cm.addLecture") : t("cm.addAssignment")} description={t("cm.startsDraft", { title: dlg.sec.title })} onClose={close}
+        <Dialog title={dlg.type === "lecture" ? t("cm.addLecture") : dlg.type === "file" ? t("cm.addFile") : t("cm.addAssignment")} description={t("cm.startsDraft", { title: dlg.sec.title })} onClose={close}
           actions={<><button type="button" className="btn" onClick={close}>{t("common.cancel")}</button><button type="button" className="btn btn-primary" onClick={saveItem} disabled={createItem.pending}>{t("cm.createEdit")}</button></>}>
           <div className="stack" style={{ gap: 20 }}>
             <div className="field">
               <label htmlFor="item-title">{t("cm.title")}</label>
-              <input id="item-title" className="input" value={text} placeholder={t(dlg.type === "lecture" ? "cm.lecturePlaceholder" : `cm.titlePlaceholder.${type}` as MessageKey)} onChange={(e) => setText(e.target.value)} onBlur={() => text.length > 0 && setTried(true)}
+              <input id="item-title" className="input" value={text} placeholder={t(dlg.type === "lecture" ? "cm.lecturePlaceholder" : dlg.type === "file" ? "cm.filePlaceholder" : `cm.titlePlaceholder.${type}` as MessageKey)} onChange={(e) => setText(e.target.value)} onBlur={() => text.length > 0 && setTried(true)}
                 onKeyDown={(e) => { if (e.key === "Enter" && !createItem.pending) void saveItem(); }} aria-invalid={(tried && titleBlank) || !!titleError(createItem.error)} aria-describedby="item-title-err" />
               <p id="item-title-err" role="alert" className="hint" style={{ color: "var(--danger)", minHeight: 18 }}>{tried && titleBlank ? t("cm.titleRequired") : titleError(createItem.error)}</p>
             </div>

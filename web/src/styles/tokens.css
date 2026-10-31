@@ -21,6 +21,8 @@
   --asg-fg: oklch(95% 0.02 300);
   --asg-row: oklch(93.5% 0.024 300);
   --asg-text: oklch(28% 0.03 300);
+  --file-tile: oklch(88% 0.06 200);
+  --file-fg: oklch(38% 0.09 205);
   --ok-soft: oklch(89% 0.07 160);
   --ok-fg: oklch(36% 0.1 160);
   --danger: oklch(48% 0.2 27);
@@ -74,6 +76,8 @@
   --asg-fg: oklch(95% 0.02 300);
   --asg-row: oklch(31% 0.032 290);
   --asg-text: oklch(88% 0.04 300);
+  --file-tile: oklch(38% 0.06 205);
+  --file-fg: oklch(84% 0.09 200);
   --ok-soft: oklch(36% 0.07 160);
   --ok-fg: oklch(82% 0.13 160);
   --danger: oklch(74% 0.16 22);

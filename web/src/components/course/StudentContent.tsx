@@ -9,7 +9,7 @@ import { useMyGrades } from "@/lib/api/hooks/work";
 import type { ItemMeta } from "@/lib/api/types";
 import type { ItemSummary } from "@/lib/api/types";
 import { now } from "@/lib/clock";
-import { allItems, dueShort, isAssignment, sections, statusPill, typeLabel } from "@/lib/course";
+import { allItems, dueShort, isAssignment, kindOf, sections, statusPill, typeLabel } from "@/lib/course";
 import { dayLabel, dueSentence, relative, sinceLabel } from "@/lib/format";
 import { wholePoints } from "@/lib/points";
 import { CourseHeader } from "./CourseHeader";
@@ -82,7 +82,8 @@ export function StudentContent({ courseId }: { courseId: string }) {
                 {tree.data.modules.length === 0 && <p className="empty">{t("content.nothingYet")}</p>}
                 {sections(tree.data).map((sec) => {
                   const groups = [
-                    { label: t("search.filter.lecture"), swatch: "var(--lec-fg)", list: sec.items.filter((i) => !isAssignment(i)) },
+                    { label: t("search.filter.lecture"), swatch: "var(--lec-fg)", list: sec.items.filter((i) => kindOf(i) === "lecture") },
+                    { label: t("search.filter.file"), swatch: "var(--file-fg)", list: sec.items.filter((i) => kindOf(i) === "file") },
                     { label: t("search.filter.assignment"), swatch: "var(--asg-text)", list: sec.items.filter(isAssignment) },
                   ].filter((g) => g.list.length > 0);
                   return (
@@ -102,10 +103,10 @@ export function StudentContent({ courseId }: { courseId: string }) {
                                   <AssignmentRow key={i.id} courseId={courseId} item={i} meta={m[i.id]} />
                                 ) : (
                                   <Link key={i.id} href={itemHref(courseId, i.id)} className={s.rowLecture}>
-                                    <ItemTile kind="lecture" />
+                                    <ItemTile kind={kindOf(i)} />
                                     <span className={s.rowMain}>
                                       <span className={s.rowTitle}>{i.title}</span>
-                                      <span className={s.rowMeta}>{t("row.lecture")}{m[i.id]?.read_minutes ? `, ${t("row.readMinutes", { n: m[i.id]!.read_minutes! })}` : ""}</span>
+                                      <span className={s.rowMeta}>{kindOf(i) === "file" ? t("row.file") : t("row.lecture")}{m[i.id]?.read_minutes ? `, ${t("row.readMinutes", { n: m[i.id]!.read_minutes! })}` : ""}</span>
                                     </span>
                                     <Icon name="chevronRight" size={16} strokeWidth={2} style={{ color: "var(--muted)", flex: "none" }} />
                                   </Link>
