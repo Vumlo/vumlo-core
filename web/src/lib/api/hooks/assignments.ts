@@ -4,6 +4,7 @@ import { api, type Queued } from "../client";
 import { invalidate, useMutation, useQuery } from "../../query";
 import type { AnswerMap, FormConfig, FormResponses, QuizConfig, QuizResult } from "../gaps";
 import { formResponsesFromWire, quizResultFromWire } from "../sheetWire";
+import type { FileContent } from "../../fileAssignment";
 import type { Attempt, Document, GradeHistoryEntry, GradebookPage, MySubmission, SubmissionRow } from "../types";
 import { fetchAll } from "./util";
 
@@ -11,8 +12,8 @@ export function useMySubmission(assignmentId: string | null) {
   return useQuery<MySubmission>(assignmentId ? `/assignments/${assignmentId}/submission` : null, () => api.get<MySubmission>(`/assignments/${assignmentId}/submission`));
 }
 
-/** Quizzes and forms store their answers in the draft's `content` as `{answers}` (API_GAPS.md, "Quiz and form types"). */
-export type DraftContent = Document | { answers: AnswerMap };
+/** Quizzes and forms store their answers in the draft's `content` as `{answers}` (API_GAPS.md, "Quiz and form types"); a file assignment as `{files, comment?}`. */
+export type DraftContent = Document | { answers: AnswerMap } | FileContent;
 
 /** `queue`: offline on the desktop the write waits for a connection. A quiz passes false: it needs one (ADR-0060). */
 export function useSaveDraft(assignmentId: string, queue = true) {

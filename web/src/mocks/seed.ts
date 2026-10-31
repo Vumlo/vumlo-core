@@ -291,6 +291,9 @@ export function createSeed(): Db {
     last_published_at: at("2026-10-12 10:00"), unpublished_changes: false,
   };
   items.push(fileItem);
+  // A file assignment: at most three files, a few types. The e2e specs of the file assignment hand in to it.
+  assignment(cs201, mProject, "report", "Lab report (files)", { type: "file", points: "10.00", due: "2026-11-20 23:59", attempts: 2, late: false, config: { max_files: 3, accept: [".pdf", ".docx", ".png"] },
+    body: doc(para("Hand in your lab report as a PDF or a Word file, with the figures as PNG images.")) });
   void lQuick; void lWhy; void lBig;
 
   // CS 215

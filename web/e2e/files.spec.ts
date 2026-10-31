@@ -365,3 +365,220 @@ test("a_save_naming_a_swept_upload_asks_to_upload_the_file_again", async ({ page
   // The form stays usable: another file can be chosen.
   await expect(page.getByRole("button", { name: "Replace", exact: true })).toBeEnabled();
 });
+
+// ---- the `file` assignment type: a student hands in files (spec 8, 9.3) ----
+
+const REPORT = "Lab report (files)";
+const doc = (name: string, size = 64) => ({ name, mimeType: name.endsWith(".pdf") ? "application/pdf" : "application/octet-stream", buffer: Buffer.alloc(size, 7) });
+
+/** The id of the course and of the seeded file assignment (max 3 files; .pdf, .docx and .png), from the API. */
+async function report(page: Page): Promise<{ course: string; item: string }> {
+  return page.evaluate(async (title) => {
+    const courses = (await (await fetch("/api/v1/me/courses?limit=100")).json()) as { items: { id: string }[] };
+    for (const c of courses.items) {
+      const tree = (await (await fetch(`/api/v1/courses/${c.id}/content`)).json()) as { modules: { items: { id: string; title: string }[] }[] };
+      const hit = tree.modules.flatMap((m) => m.items).find((i) => i.title === title);
+      if (hit) return { course: c.id, item: hit.id };
+    }
+    throw new Error("the seeded file assignment is missing");
+  }, REPORT);
+}
+
+async function openReport(page: Page, role: "student" | "teacher" = "student") {
+  await signInAs(page, role);
+  await page.waitForFunction(() => "__vumloFiles" in window);
+  const ids = await report(page);
+  await page.goto(`/course/item?id=${ids.course}&item=${ids.item}`);
+  await expect(page.getByRole("heading", { name: REPORT, level: 1 })).toBeVisible();
+  return ids;
+}
+
+const picker = (page: Page) => page.locator('input[type="file"]');
+const submitButton = (page: Page) => page.getByRole("button", { name: "Submit files", exact: true });
+const filesList = (page: Page) => page.getByRole("list", { name: "Your files" });
+
+test("student_drops_two_files_and_submits", async ({ page }) => {
+  await openReport(page);
+  const sent = watchUploads(page);
+  const saved = watchBodies(page, "PUT", /\/submission\/draft$/);
+  const submitted: string[] = [];
+  page.on("request", (r) => r.method() === "POST" && /\/submission\/submit$/.test(r.url()) && submitted.push(r.url()));
+  // The accept attribute comes from the assignment's config.
+  await expect(picker(page)).toHaveAttribute("accept", ".pdf,.docx,.png");
+  await expect(picker(page)).toHaveAttribute("multiple", "");
+  // A drop carries the same files as the picker; the specs use the picker (headless drag and drop is not reliable).
+  await picker(page).setInputFiles([doc("report.pdf"), doc("data.docx", 2048)]);
+  await expect(filesList(page).getByRole("listitem")).toHaveCount(2);
+  await expect(filesList(page)).toContainText("report.pdf");
+  await expect(filesList(page)).toContainText("data.docx");
+  await expect(filesList(page)).toContainText("2 KB");
+  expect(sent.map((s) => s.url.searchParams.get("name")).sort()).toEqual(["data.docx", "report.pdf"]);
+  const assignment = new URL(page.url()).searchParams.get("item")!;
+  expect(sent.every((s) => s.url.searchParams.get("for") === `assignment:${assignment}`)).toBe(true);
+  await expect.poll(() => saved.length).toBeGreaterThan(0);
+  expect((saved.at(-1)!.content as { files: string[] }).files).toHaveLength(2);
+  await expect(submitButton(page)).toBeEnabled();
+  await submitButton(page).click();
+  await expect(page.getByText(/^Submitted, attempt 1/).first()).toBeVisible();
+  expect(submitted).toHaveLength(1);
+});
+
+test("student_removes_a_file_before_submitting", async ({ page }) => {
+  await openReport(page);
+  const saved = watchBodies(page, "PUT", /\/submission\/draft$/);
+  await picker(page).setInputFiles([doc("a.pdf"), doc("b.pdf")]);
+  await expect(filesList(page).getByRole("listitem")).toHaveCount(2);
+  await expect.poll(() => (saved.at(-1)?.content as { files: string[] } | undefined)?.files.length).toBe(2);
+  await page.getByRole("button", { name: "Remove a.pdf" }).click();
+  await expect(filesList(page).getByRole("listitem")).toHaveCount(1);
+  await expect(filesList(page)).not.toContainText("a.pdf");
+  await expect.poll(() => (saved.at(-1)?.content as { files: string[] }).files.length).toBe(1);
+  // The kept file is the one that is sent.
+  await submitButton(page).click();
+  const stored = await page.evaluate(async () => {
+    const id = new URL(location.href).searchParams.get("item");
+    return (await (await fetch(`/api/v1/assignments/${id}/submission`)).json()) as { attempts: { content: { files: string[] } }[] };
+  });
+  expect(stored.attempts[0]!.content.files).toHaveLength(1);
+});
+
+test("student_sees_an_error_for_a_type_outside_accept", async ({ page }) => {
+  await openReport(page);
+  const sent = watchUploads(page);
+  await picker(page).setInputFiles([doc("run.exe"), doc("fine.pdf")]);
+  await expect(page.getByRole("alert").filter({ hasText: "run.exe is not a type this assignment takes. Accepted: .pdf, .docx, .png." })).toBeVisible();
+  // The message comes before any upload; the file that fits is still taken.
+  await expect(filesList(page)).toContainText("fine.pdf");
+  await expect(filesList(page)).not.toContainText("run.exe");
+  expect(sent.map((s) => s.url.searchParams.get("name"))).toEqual(["fine.pdf"]);
+  // The case of an extension does not matter.
+  await picker(page).setInputFiles([doc("SCAN.PNG")]);
+  await expect(filesList(page)).toContainText("SCAN.PNG");
+});
+
+test("student_cannot_add_more_than_max_files", async ({ page }) => {
+  await openReport(page);
+  const sent = watchUploads(page);
+  await picker(page).setInputFiles([doc("1.pdf"), doc("2.pdf"), doc("3.pdf")]);
+  await expect(filesList(page).getByRole("listitem")).toHaveCount(3);
+  await expect.poll(() => sent.length).toBe(3);
+  await expect(page.getByText("Uploading…")).toHaveCount(0);
+  await picker(page).setInputFiles([doc("4.pdf")]);
+  await expect(page.getByRole("alert").filter({ hasText: "You can hand in at most 3 files" })).toBeVisible();
+  expect(sent).toHaveLength(3);
+  await expect(filesList(page).getByRole("listitem")).toHaveCount(3);
+  // Two files with one name are two files.
+  await page.getByRole("button", { name: "Remove 3.pdf" }).click();
+  await picker(page).setInputFiles([doc("1.pdf")]);
+  await expect(filesList(page).getByRole("listitem")).toHaveCount(3);
+});
+
+test("submit_is_disabled_with_no_files", async ({ page }) => {
+  await openReport(page);
+  await expect(submitButton(page)).toBeDisabled();
+  await expect(page.getByText("Add at least one file to submit.")).toBeVisible();
+  await picker(page).setInputFiles([doc("a.pdf")]);
+  await expect(submitButton(page)).toBeEnabled();
+  await page.getByRole("button", { name: "Remove a.pdf" }).click();
+  await expect(submitButton(page)).toBeDisabled();
+});
+
+test("draft_autosave_sends_files_and_omits_an_empty_comment", async ({ page }) => {
+  await openReport(page);
+  const saved = watchBodies(page, "PUT", /\/submission\/draft$/);
+  await picker(page).setInputFiles([doc("a.pdf")]);
+  await expect.poll(() => saved.length).toBeGreaterThan(0);
+  const id = await page.evaluate(async () => {
+    const item = new URL(location.href).searchParams.get("item");
+    return ((await (await fetch(`/api/v1/assignments/${item}/submission`)).json()) as { draft: { content: { files: string[] } } }).draft.content.files[0]!;
+  });
+  expect(saved.at(-1)).toEqual({ content: { files: [id] } });
+  // A comment is sent once there is one.
+  await page.getByRole("group", { name: "Comment, optional" }).getByRole("textbox").first().click();
+  await page.keyboard.type("Sorry it is late");
+  await expect.poll(() => JSON.stringify(saved.at(-1))).toContain("Sorry it is late");
+  const last = saved.at(-1)!.content as { files: string[]; comment: { v: number } };
+  expect(last.files).toEqual([id]);
+  expect(last.comment.v).toBe(1);
+});
+
+test("a_swept_upload_shows_the_reupload_message_and_the_form_stays_usable", async ({ page }) => {
+  await openReport(page);
+  // The server sweeps an upload nobody named for 24 hours and then refuses a draft that names it (once here).
+  await page.evaluate(() => {
+    const real = window.fetch.bind(window);
+    let refused = false;
+    window.fetch = async (input, init) => {
+      if (!refused && init?.method === "PUT" && /\/submission\/draft$/.test(String(input))) {
+        refused = true;
+        const problem = { title: "Unprocessable", status: 422, errors: [{ field: "files[0]", message: "the file cannot be used here" }] };
+        return new Response(JSON.stringify(problem), { status: 422, headers: { "Content-Type": "application/problem+json" } });
+      }
+      return real(input, init);
+    };
+  });
+  await picker(page).setInputFiles([doc("old.pdf")]);
+  await expect(page.getByRole("alert").filter({ hasText: "Upload it again." })).toBeVisible();
+  // The file that cannot be used is dropped from the list, and the form takes another one.
+  await expect(page.getByText("old.pdf")).toHaveCount(0);
+  await picker(page).setInputFiles([doc("new.pdf")]);
+  await expect(filesList(page)).toContainText("new.pdf");
+  await expect(submitButton(page)).toBeEnabled();
+});
+
+test("submitted_attempts_list_their_files_with_open_buttons", async ({ page }) => {
+  await openReport(page);
+  await picker(page).setInputFiles([doc("report.pdf"), doc("notes.docx")]);
+  await expect(filesList(page).getByRole("listitem")).toHaveCount(2);
+  await submitButton(page).click();
+  const attempt = page.getByRole("region", { name: "Attempt 1" });
+  await expect(attempt).toContainText("report.pdf");
+  await expect(attempt).toContainText("notes.docx");
+  await page.evaluate(() => {
+    const open = window.open.bind(window);
+    const calls: unknown[][] = [];
+    Object.assign(window, { __opened: calls });
+    window.open = (...args: Parameters<typeof window.open>) => (calls.push(args), open(...args));
+  });
+  await Promise.all([page.waitForEvent("popup"), attempt.getByRole("button", { name: "Open report.pdf" }).click()]);
+  const [url] = (await page.evaluate(() => (window as unknown as { __opened: string[][] }).__opened))[0]!;
+  expect(url).toMatch(/^\/api\/v1\/files\/[0-9a-f-]+$/);
+  const [download] = await Promise.all([page.waitForEvent("download"), attempt.getByRole("button", { name: "Open notes.docx" }).click()]);
+  expect(download.suggestedFilename()).toBe("notes.docx");
+  // A new attempt starts with no files: the old ones do not carry over.
+  await page.getByRole("button", { name: "Edit and resubmit" }).click();
+  await expect(filesList(page).getByRole("listitem")).toHaveCount(0);
+  await expect(submitButton(page)).toBeDisabled();
+});
+
+test("teacher_sets_max_files_and_accept_in_settings", async ({ page }) => {
+  const { course, item } = await openReport(page, "teacher");
+  await page.goto(`/course/item/edit?id=${course}&item=${item}`);
+  const patches = watchBodies(page, "PATCH", /\/items\/[^/]+$/);
+  const max = page.getByLabel("Most files per attempt");
+  const accept = page.getByLabel("Accepted file types");
+  await expect(max).toHaveValue("3");
+  await expect(accept).toHaveValue(".pdf, .docx, .png");
+  // The rules of the server are checked while typing, and nothing is sent until they hold.
+  await max.fill("21");
+  await expect(page.getByText("Enter a whole number from 1 to 20.")).toBeVisible();
+  await accept.fill("pdf, .exe!, .PDF");
+  await expect(page.getByText(".exe! is not a file type")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Save settings" })).toBeDisabled();
+  await max.fill("2");
+  // A missing dot is added and capitals are lowered; a type listed twice is refused.
+  await accept.fill("PDF, docx, .pdf");
+  await expect(page.getByText(".pdf is listed twice.")).toBeVisible();
+  await accept.fill("PDF, docx");
+  await page.getByRole("button", { name: "Save settings" }).click();
+  await expect(page.getByRole("status").filter({ hasText: "Saved" })).toBeVisible();
+  const body = patches.at(-1)!;
+  expect(body.config).toEqual({ max_files: 2, accept: [".pdf", ".docx"] });
+  const stored = await page.evaluate(async (id) => (await (await fetch(`/api/v1/items/${id}`)).json()) as { assignment: { config: unknown } }, item);
+  expect(stored.assignment.config).toEqual({ max_files: 2, accept: [".pdf", ".docx"] });
+  // No restriction is an empty list left out of the config.
+  await accept.fill("");
+  await page.getByRole("button", { name: "Save settings" }).click();
+  await expect.poll(() => patches.length).toBe(2);
+  expect(patches.at(-1)!.config).toEqual({ max_files: 2 });
+});

@@ -36,8 +36,8 @@ type Dlg =
   | { kind: "delete-item"; item: ItemSummary }
   | { kind: "new-item"; sec: Sec; type: "lecture" | "assignment" | "file" };
 
-const ASSIGNMENT_TYPES = ["text", "quiz", "form", "no_submission"] as const;
-const TYPE_ICON: Record<(typeof ASSIGNMENT_TYPES)[number], IconName> = { text: "text", quiz: "quiz", form: "form", no_submission: "inClass" };
+const ASSIGNMENT_TYPES = ["text", "quiz", "form", "file", "no_submission"] as const;
+const TYPE_ICON: Record<(typeof ASSIGNMENT_TYPES)[number], IconName> = { text: "text", file: "file", quiz: "quiz", form: "form", no_submission: "inClass" };
 
 /** The server wants a quiz to have a question and a form a field from the start (ADR-0050, ADR-0051). */
 function starterConfig(type: string, points: string): Record<string, unknown> | undefined {

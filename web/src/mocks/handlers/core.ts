@@ -8,7 +8,7 @@ import { isoToLocal, localToIso } from "@/lib/format";
 import type { CourseInfo, CoursePeople, Item, ServerItemMeta, TemplateSummary } from "@/lib/api/types";
 import { at, auditRow, getDb, institutionPublic, uid, type DbCourse, type DbItem } from "../db";
 import {
-  activeStudents, canView, contentTree, courseById, decimal, dueIn, flatItems, forbidden, formOf, fullName, gradeOf, hasUnpublishedChanges, isPublished,
+  activeStudents, canView, contentTree, courseById, decimal, dueIn, fileSettings, flatItems, forbidden, formOf, fullName, gradeOf, hasUnpublishedChanges, isPublished,
   isStaff, itemById, itemVisibleToStudent, memberOf, moduleOf, notFound, ownerOf, paged, problem, publicUser, quizOf, requireStaff, requireUser, requireView,
   SESSION_KEY, sessionUser, studentConfig, submissionOf, teacherName, termEnded, termName, userById, workItem, workStatus,
 } from "../logic";
@@ -475,7 +475,10 @@ export const coreHandlers = [
     }
     if (item.assignment) {
       const a = item.assignment;
-      if (b.config) a.config = configFromWire(a.type, b.config as Record<string, unknown>);
+      if (b.config) {
+        if (a.type === "file") fileSettings(b.config as Record<string, unknown>);
+        a.config = configFromWire(a.type, b.config as Record<string, unknown>);
+      }
       if (b.max_points !== undefined) a.max_points = decimal(b.max_points, "max_points");
       if ("due_at" in b) { a.due_at = (b.due_at as string | null) ?? null; if (!a.due_at) { a.on_deadline = null; a.accept_late = null; a.late_until = null; } }
       if ("on_deadline" in b) a.on_deadline = b.on_deadline as typeof a.on_deadline;
@@ -583,6 +586,7 @@ export const coreHandlers = [
     const id = uid(`item:new:${db.items.length}:${title}`);
     const sibs = db.items.filter((i) => i.module_id === m.id);
     const a = b.assignment;
+    if (b.kind === "assignment" && a?.type === "file") fileSettings((a.config as Record<string, unknown>) ?? {});
     const item: DbItem = {
       id, module_id: m.id, course_id: m.course_id, position: sibs.length + 1, kind: b.kind, title, body: (b.body ?? (b.kind === "file" ? {} : { v: 1, blocks: [] })) as Item["body"], status: "draft", publish_at: null,
       created_at: MOCK_NOW.toISOString(), updated_at: MOCK_NOW.toISOString(), last_published_at: null, unpublished_changes: false,

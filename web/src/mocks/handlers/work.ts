@@ -7,7 +7,7 @@ import type { MyWork, SearchHit, TeachingOverview } from "@/lib/api/types";
 import { answersFromWire, answersToWire } from "@/lib/api/sheetWire";
 import { getDb, uid, type DbSubmission } from "../db";
 import {
-  activeStudents, autoScore, canView, courseById, decimal, dueIn, flatItems, forbidden, formOf, fullName, gradeOf, hasUnpublishedChanges, isPublished, isStaff,
+  activeStudents, autoScore, canView, checkFileContent, courseById, decimal, dueIn, flatItems, forbidden, formOf, fullName, gradeOf, hasUnpublishedChanges, isPublished, isStaff,
   itemById, itemVisibleToStudent, memberOf, notFound, paged, problem, quizOf, requireStaff, requireUser, requireView, scoreQuestion, submissionOf, userById, workItem,
 } from "../logic";
 import { courseInfo } from "./core";
@@ -157,7 +157,8 @@ export const workHandlers = [
     const db = getDb();
     let s = sub;
     if (!s) { s = { assignment_id: item.id, student_id: user.id, draft: null, attempts: [] }; db.submissions.push(s); }
-    s.draft = { content: uiContent(item, b.content), updated_at: MOCK_NOW.toISOString() };
+    const content = a.type === "file" ? checkFileContent(item, user.id, b.content, false) : uiContent(item, b.content);
+    s.draft = { content, updated_at: MOCK_NOW.toISOString() };
     return HttpResponse.json({ ...s.draft, content: wireContent(item, s.draft.content) });
   }),
   http.delete(`${A}/assignments/:id/submission/draft`, ({ params }) => {
@@ -174,6 +175,7 @@ export const workHandlers = [
     const a = item.assignment!;
     if (dueIn(item).closed) throw problem(409, "Conflict", "This assignment is closed");
     if (a.max_attempts != null && s.attempts.length >= a.max_attempts) throw problem(409, "Conflict", "You have used all attempts");
+    if (a.type === "file") checkFileContent(item, user.id, s.draft.content, true);
     if (a.type === "form") {
       const answers = (s.draft.content as { answers?: Record<string, string | string[]> }).answers ?? {};
       const missing = formOf(item).fields.filter((f) => f.required && (!answers[f.id] || (Array.isArray(answers[f.id]) && (answers[f.id] as string[]).length === 0)));

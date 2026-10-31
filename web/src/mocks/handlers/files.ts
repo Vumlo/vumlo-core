@@ -1,6 +1,6 @@
 import { http, HttpResponse } from "msw";
 import { getDb, uid } from "../db";
-import { canView, courseById, itemById, notFound, problem, requireStaff, requireUser } from "../logic";
+import { canView, courseById, dueIn, itemById, notFound, problem, requireStaff, requireUser } from "../logic";
 
 const A = "/api/v1";
 
@@ -19,6 +19,8 @@ export const fileHandlers = [
     const course = courseById(item.course_id);
     if (kind === "item") requireStaff(course.id, user);
     else if (!item.assignment || !canView(user, course)) throw notFound();
+    // Nothing is stored for work that can no longer be handed in.
+    if (kind === "assignment" && dueIn(item).closed) throw problem(409, "Conflict", "This assignment is closed");
     const name = (url.searchParams.get("name") ?? "").split(/[\\/]/).pop()?.trim().slice(0, 200) ?? "";
     if (!name) throw problem(422, "Unprocessable", undefined, [{ field: "name", message: "the file needs a name" }]);
     const bytes = await request.arrayBuffer();
@@ -27,7 +29,7 @@ export const fileHandlers = [
     if (bytes.byteLength > db.fileMax) throw problem(413, "Payload Too Large");
     const mime = request.headers.get("content-type") || "application/octet-stream";
     const fileId = uid(`file:${count++}:${name}`);
-    db.files.set(fileId, { name, mime, bytes });
+    db.files.set(fileId, { name, mime, bytes, ...(kind === "assignment" ? { owner: user.id, target: `assignment:${item.id}` } : {}) });
     return HttpResponse.json({ id: fileId, name, mime, size: bytes.byteLength }, { status: 201 });
   }),
   http.get(`${A}/files/:id`, ({ request, params }) => {

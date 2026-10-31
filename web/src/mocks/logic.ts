@@ -257,3 +257,51 @@ export function decimal(input: unknown, field: string, max?: string): string {
   if (max && toCents(s) > toCents(max)) throw problem(422, "Validation failed", undefined, [{ field, message: `The score can be at most ${max}` }]);
   return fromCents(toCents(s));
 }
+
+// ---- the `file` assignment type: the server's rules for its config and its content (content/types/file.rs) ----
+
+const bad = (field: string, message: string) => problem(422, "Unprocessable", undefined, [{ field, message }]);
+
+/** The config of a `file` assignment as the server reads it: only `max_files` (1 to 20, default 5) and `accept`. */
+export function fileSettings(config: Record<string, unknown>): { max: number; accept: string[] } {
+  for (const key of Object.keys(config)) if (key !== "max_files" && key !== "accept") throw bad("config", `unknown field \`${key}\`: the file type has only \`max_files\` and \`accept\``);
+  const max = "max_files" in config ? config.max_files : 5;
+  if (typeof max !== "number" || !Number.isInteger(max) || max < 1 || max > 20) throw bad("config", "`max_files` must be a whole number from 1 to 20");
+  const accept = "accept" in config ? config.accept : [];
+  if (!Array.isArray(accept)) throw bad("config", "`accept` must be a list of extensions");
+  if (accept.length > 30) throw bad("config", "`accept` has at most 30 entries");
+  accept.forEach((entry, i) => {
+    if (typeof entry !== "string" || !/^\.[a-z0-9]{2,16}$/.test(entry)) throw bad("config", `\`accept[${i}]\` must be a dot and 2 to 16 lowercase letters or digits, like \`.pdf\``);
+    if (accept.indexOf(entry) !== i) throw bad("config", `\`accept[${i}]\` is listed twice`);
+  });
+  return { max, accept: accept as string[] };
+}
+
+/**
+ * What the server refuses in the content of a `file` draft (or attempt, with `submit`): other keys, too many or repeated files,
+ * a file that is not this student's upload for this assignment, a name outside `accept`, and, on submit, no file at all.
+ */
+export function checkFileContent(item: DbItem, userId: string, content: unknown, submit: boolean): { files: string[]; comment?: unknown } {
+  const { max, accept } = fileSettings(item.assignment!.config);
+  if (typeof content !== "object" || content === null || Array.isArray(content)) throw bad("", "must be an object");
+  const c = content as Record<string, unknown>;
+  if (Object.keys(c).some((k) => k !== "files" && k !== "comment")) throw bad("", "has only `files` and `comment`");
+  const files = "files" in c ? c.files : [];
+  if (!Array.isArray(files)) throw bad("files", "must be a list of file ids");
+  const errors: { field: string; message: string }[] = [];
+  if (files.length > max) errors.push({ field: "files", message: "has more files than the assignment takes" });
+  const stored = getDb().files;
+  files.forEach((id, i) => {
+    const file = typeof id === "string" ? stored.get(id) : undefined;
+    if (typeof id !== "string") errors.push({ field: `files[${i}]`, message: "must be a file id" });
+    else if (files.indexOf(id) !== i) errors.push({ field: `files[${i}]`, message: "is listed twice" });
+    else if (!file || file.owner !== userId || file.target !== `assignment:${item.id}`) errors.push({ field: `files[${i}]`, message: "the file cannot be used here" });
+    else if (accept.length > 0 && !accept.some((e) => file.name.toLowerCase().endsWith(e))) errors.push({ field: `files[${i}]`, message: "is not a file type this assignment takes" });
+  });
+  if (errors.length) throw problem(422, "Unprocessable", undefined, errors);
+  if (submit && files.length === 0) throw bad("files", "add at least one file before you submit");
+  // A comment with nothing in it is not kept.
+  const comment = c.comment as { blocks?: { type?: string; content?: { text?: string }[] }[] } | undefined;
+  const blank = !comment || (comment.blocks ?? []).every((b) => b.type === "paragraph" && (b.content ?? []).every((r) => !(r.text ?? "").trim()));
+  return { files: files as string[], ...(blank ? {} : { comment }) };
+}
