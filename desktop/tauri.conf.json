@@ -9,5 +9,5 @@
     "security": { "csp": "default-src 'self'; connect-src 'self' ipc: http://ipc.localhost vumlo-file: http://vumlo-file.localhost; img-src 'self' data: vumlo-file: http://vumlo-file.localhost; style-src 'self' 'unsafe-inline'; font-src 'self' data:; frame-src vumlo-file: http://vumlo-file.localhost https://www.youtube-nocookie.com https://player.vimeo.com; object-src 'none'; base-uri 'none'; form-action 'none'", "devCsp": null }
   },
   "plugins": { "deep-link": { "desktop": { "schemes": ["vumlo"] } } },
-  "bundle": { "active": true, "targets": "all", "icon": ["icons/icon.png"] }
+  "bundle": { "active": true, "targets": "all", "icon": ["icons/icon.png"], "macOS": { "infoPlist": "Info.plist" } }
 }

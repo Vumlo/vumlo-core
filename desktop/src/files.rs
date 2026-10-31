@@ -16,14 +16,15 @@ use tauri::http::{self, HeaderName, HeaderValue, Method, StatusCode};
 use tauri::ipc::{InvokeBody, Request};
 use tauri::{AppHandle, Manager, Runtime, State, UriSchemeContext, UriSchemeResponder};
 
-use crate::core::Core;
+use crate::core::{Core, RawReply};
 
 /// The extensions the system may be asked to open. A list of what is known to be harmless, not of what is
 /// known to be dangerous: whatever is not here (every program, script and shortcut) is only shown in its folder.
-const OPENABLE: [&str; 28] = [
+/// Archives are not here on purpose: the system would unpack one, and what it unpacks carries no mark of where it
+/// came from. They are shown in their folder.
+const OPENABLE: [&str; 24] = [
     "pdf", "doc", "docx", "odt", "rtf", "txt", "md", "ppt", "pptx", "odp", "xls", "xlsx", "ods",
-    "csv", "png", "jpg", "jpeg", "gif", "webp", "mp3", "wav", "mp4", "webm", "mov", "zip", "7z",
-    "tar", "gz",
+    "csv", "png", "jpg", "jpeg", "gif", "webp", "mp3", "wav", "mp4", "webm", "mov",
 ];
 
 /// Whether the system may open a file of this name. Only the last extension counts (`report.pdf.exe` is an
@@ -38,6 +39,11 @@ fn hidden_mark(c: char) -> bool {
     c.is_control()
         || matches!(c, '\u{61c}' | '\u{200e}' | '\u{200f}' | '\u{202a}'..='\u{202e}' | '\u{2066}'..='\u{2069}')
 }
+
+/// A saved name is at most this many bytes (file systems count bytes: 255 on most, and a Cyrillic letter is two)...
+const NAME_BYTES: usize = 200;
+/// ...counter included: room for ` (999)`.
+const COUNTER_BYTES: usize = 6;
 
 /// A name that is safe to create in the Downloads folder: no folder part, no control or direction marks, none of
 /// the characters Windows refuses, and never empty.
@@ -55,8 +61,26 @@ pub fn safe_name(raw: &str) -> String {
     if cleaned.is_empty() || cleaned.chars().all(|c| c == '.') {
         "file".to_owned()
     } else {
-        cleaned.to_owned()
+        fit(cleaned)
     }
+}
+
+/// The name cut to the room a saved name has, at a character and before its extension (an extension of more
+/// than 32 bytes is not one to keep).
+fn fit(name: &str) -> String {
+    let room = NAME_BYTES - COUNTER_BYTES;
+    if name.len() <= room {
+        return name.to_owned();
+    }
+    let (stem, ext) = match name.rsplit_once('.') {
+        Some((stem, ext)) if !stem.is_empty() && ext.len() < 32 => (stem, &name[stem.len()..]),
+        _ => (name, ""),
+    };
+    let mut end = (room - ext.len()).min(stem.len());
+    while !stem.is_char_boundary(end) {
+        end -= 1;
+    }
+    format!("{}{ext}", stem[..end].trim_end())
 }
 
 /// `dir/name`, or `dir/stem (1).ext`, `dir/stem (2).ext` ... for the first that does not exist.
@@ -84,6 +108,9 @@ pub fn save_new(dir: &Path, name: &str, bytes: &[u8]) -> std::io::Result<PathBuf
         match OpenOptions::new().write(true).create_new(true).open(&path) {
             Ok(mut file) => {
                 file.write_all(bytes)?;
+                drop(file);
+                #[cfg(windows)]
+                mark_downloaded(&path);
                 return Ok(path);
             }
             Err(e) if e.kind() == ErrorKind::AlreadyExists => {}
@@ -116,7 +143,8 @@ pub fn vumlo_file_id(path: &str) -> Option<&str> {
 fn percent_encode(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
     for b in text.bytes() {
-        if b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.' | b'~') {
+        // The dot is encoded too: `..` in a path is refused by `core::valid_path`, and the server decodes `%2E`.
+        if b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'~') {
             out.push(char::from(b));
         } else {
             out.push_str(&format!("%{b:02X}"));
@@ -177,6 +205,69 @@ pub fn disposition_name(header: &str) -> Option<String> {
     param("filename").map(|value| value.trim_matches('"').to_owned())
 }
 
+/// The media type the window sent in `x-vumlo-mime`, without parameters, if it is a well-formed `type/subtype`
+/// (tokens of RFC 9110); otherwise `application/octet-stream`. The server finds the real type from the bytes anyway.
+pub fn upload_mime(raw: Option<&str>) -> String {
+    let token = |part: &str| {
+        !part.is_empty()
+            && part
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || b"!#$&-^_.+".contains(&b))
+    };
+    raw.and_then(|raw| raw.split(';').next())
+        .map(str::trim)
+        .filter(|essence| essence.len() <= 255)
+        .filter(|essence| {
+            essence
+                .split_once('/')
+                .is_some_and(|(a, b)| token(a) && token(b))
+        })
+        .map_or_else(|| "application/octet-stream".to_owned(), str::to_owned)
+}
+
+/// The stream Windows reads (`<file>:Zone.Identifier`) to know a file came from the internet: it warns before
+/// the file is run and does not trust what is unpacked from it. Zone 3 is the Internet.
+// Only a Windows build writes it; the content is the same everywhere and is tested everywhere.
+#[cfg_attr(not(windows), allow(dead_code))]
+pub fn zone_identifier() -> &'static str {
+    "[ZoneTransfer]\r\nZoneId=3\r\n"
+}
+
+/// Marks a saved file as downloaded. A failure is only a warning: the person has the file, and the warning has
+/// no file name (it is the person's).
+#[cfg(windows)]
+fn mark_downloaded(path: &Path) {
+    let mut stream = path.as_os_str().to_owned();
+    stream.push(":Zone.Identifier");
+    if let Err(error) = std::fs::write(PathBuf::from(stream), zone_identifier()) {
+        eprintln!(
+            "warning: could not mark a saved file as downloaded ({:?})",
+            error.kind()
+        );
+    }
+}
+
+/// The headers of a stored file that the scheme passes on as the server sent them, and nothing else the server
+/// said. The server's policy (`Content-Security-Policy: sandbox`) is its own; none is made up here. `nosniff` is
+/// always there, from the server or from us.
+pub fn file_headers(reply: &RawReply) -> Vec<(&'static str, &str)> {
+    let mut headers: Vec<_> = [
+        "content-type",
+        "content-range",
+        "content-disposition",
+        "accept-ranges",
+        "content-security-policy",
+        "x-content-type-options",
+    ]
+    .into_iter()
+    .filter_map(|name| Some((name, reply.header(name)?)))
+    .collect();
+    if reply.header("x-content-type-options").is_none() {
+        headers.push(("x-content-type-options", "nosniff"));
+    }
+    headers
+}
+
 /// `"<status>: <detail>"` for an answer that is not a success. The window reads the status from it.
 pub fn error_text(status: u16, body: &[u8]) -> String {
     let problem: Value = serde_json::from_slice(body).unwrap_or(Value::Null);
@@ -220,7 +311,7 @@ pub enum OpenOutcome {
 // --- the commands -------------------------------------------------------------------------------------
 
 /// Uploads a file. The bytes are the raw body of the call (Tauri's binary IPC) and the arguments are headers:
-/// `x-vumlo-target` (`item:<id>` or `assignment:<id>`), `x-vumlo-name` (percent-encoded) and `content-type`.
+/// `x-vumlo-target` (`item:<id>` or `assignment:<id>`), `x-vumlo-name` (percent-encoded) and `x-vumlo-mime`.
 /// Answers with the stored `FileRef`, or with `"<status>: <detail>"`.
 #[tauri::command]
 pub async fn upload_file(
@@ -235,13 +326,14 @@ pub async fn upload_file(
         header("x-vumlo-target").unwrap_or_default(),
         header("x-vumlo-name").unwrap_or_default(),
     )?;
-    let mime = header("content-type").unwrap_or("application/octet-stream");
+    // Not `content-type`: Tauri's IPC script sets that one itself, so the type travels in a header of ours.
+    let mime = upload_mime(header("x-vumlo-mime"));
     // ponytail: the bytes are copied once more to hand them to the HTTP client; stream them when an ADR adds a stream crate
     let reply = core
         .request_raw(
             "POST",
             &path,
-            &[("content-type", mime)],
+            &[("content-type", &mime)],
             Some(bytes.clone()),
         )
         .await?;
@@ -361,17 +453,10 @@ async fn serve_one(
     let Ok(reply) = reply else {
         return answer(502, &cors, Vec::new());
     };
+    // The server's own `nosniff` (or ours, in `file_headers`) replaces the one the refusals carry.
     let mut headers = cors;
-    for name in [
-        "content-type",
-        "content-range",
-        "content-disposition",
-        "accept-ranges",
-    ] {
-        if let Some(value) = reply.header(name) {
-            headers.push((name, value));
-        }
-    }
+    headers.retain(|(name, _)| *name != "x-content-type-options");
+    headers.extend(file_headers(&reply));
     let length = reply.body.len().to_string();
     headers.push(("content-length", &length));
     let mut response = answer(reply.status, &headers, Vec::new());

@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- macOS puts its quarantine mark on every file this app creates (the saved files of ADR-0069), so Gatekeeper checks them before they are opened. -->
+	<key>LSFileQuarantineEnabled</key>
+	<true/>
+</dict>
+</plist>
