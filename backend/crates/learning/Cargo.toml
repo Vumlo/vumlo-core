@@ -19,6 +19,7 @@ serde.workspace = true
 serde_json.workspace = true
 sqlx.workspace = true
 thiserror.workspace = true
+tokio.workspace = true
 tracing.workspace = true
 utoipa.workspace = true
 utoipa-axum.workspace = true
@@ -29,8 +30,8 @@ vumlo-config.workspace = true
 access = { workspace = true, features = ["testing"] }
 auth = { workspace = true, features = ["testing"] }
 org = { workspace = true, features = ["testing"] }
+object_store.workspace = true
 test-support.workspace = true
-tokio.workspace = true
 
 [lints]
 workspace = true

@@ -2122,6 +2122,7 @@ dependencies = [
  "common",
  "events",
  "files",
+ "object_store",
  "org",
  "serde",
  "serde_json",

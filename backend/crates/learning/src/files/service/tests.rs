@@ -1,6 +1,6 @@
 //! The owners (items, submissions) are real rows made through the services; the references between
 //! them and the files are written through the repo functions of `content` and `assessment`.
-use std::sync::LazyLock;
+use std::sync::{Arc, LazyLock};
 
 use chrono::{Duration, Utc};
 use serde_json::{Map, Value, json};
@@ -11,11 +11,13 @@ use super::*;
 use crate::content::{
     Assignment, BuiltinType, ContentTitle, EffectiveProfiles, ItemPatch, ItemRules, MaxPoints,
 };
+use crate::files::sweep;
 use crate::teaching::{self, CourseTitle};
 use access::CourseRole;
 use auth::{self, Email, NewUser, PersonName};
 use common::Role;
-use files::Stored;
+use files::{Storage, Stored};
+use object_store::memory::InMemory;
 use vumlo_config::GradingScale;
 
 static PROFILES: LazyLock<EffectiveProfiles> = LazyLock::new(EffectiveProfiles::unrestricted);
@@ -603,6 +605,169 @@ async fn upload_to_an_archived_course_is_a_conflict() {
             let error = authorize_upload(&mut conn, actor, &owner).await;
             assert!(matches!(error, Err(FileError::Conflict(_))), "{error:?}");
         }
+    })
+    .await;
+}
+
+fn memory() -> Storage {
+    Storage::from_store(Arc::new(InMemory::new()))
+}
+
+/// A file with bytes in `storage` and a row, uploaded by `uploader`, referenced by nobody.
+async fn stored_file(
+    pool: &PgPool,
+    storage: &Storage,
+    uploader: &Actor,
+    data: &'static [u8],
+) -> Uuid {
+    let id = Uuid::now_v7();
+    let stored = files::put(storage, id, data, 1024).await.unwrap();
+    let mut conn = pool.acquire().await.unwrap();
+    files::insert(
+        &mut conn,
+        &stored,
+        uploader.user_id(),
+        "a.txt",
+        "text/plain",
+    )
+    .await
+    .unwrap();
+    id
+}
+
+/// Whether the row and the object of `id` are both still there.
+async fn kept(pool: &PgPool, storage: &Storage, id: Uuid) -> bool {
+    let mut conn = pool.acquire().await.unwrap();
+    let Some(file) = files::get(&mut conn, id).await.unwrap() else {
+        return false;
+    };
+    files::read(storage, &file, None).await.is_ok()
+}
+
+/// Whether neither the row nor the object of `id` is left.
+async fn gone(pool: &PgPool, storage: &Storage, id: Uuid) -> bool {
+    let mut conn = pool.acquire().await.unwrap();
+    let row = files::get(&mut conn, id).await.unwrap();
+    let object = files::read(
+        storage,
+        &files::File {
+            id,
+            uploaded_by: Uuid::nil(),
+            name: String::new(),
+            mime: String::new(),
+            size: 0,
+            sha256: String::new(),
+            created_at: Utc::now(),
+        },
+        None,
+    )
+    .await;
+    row.is_none() && object.is_err()
+}
+
+#[tokio::test]
+async fn sweep_deletes_unreferenced_files_older_than_24h() {
+    db_test(async |pool| {
+        let f = fixture(pool).await;
+        let storage = memory();
+        let id = stored_file(&f.pool, &storage, &f.owner, b"abc").await;
+        let later = Utc::now() + Duration::hours(25);
+        assert_eq!(sweep(&f.pool, &storage, later).await.unwrap(), 1);
+        assert!(gone(&f.pool, &storage, id).await);
+        assert_eq!(sweep(&f.pool, &storage, later).await.unwrap(), 0);
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn sweep_keeps_unreferenced_files_younger_than_24h() {
+    db_test(async |pool| {
+        let f = fixture(pool).await;
+        let storage = memory();
+        let id = stored_file(&f.pool, &storage, &f.owner, b"abc").await;
+        let almost = Utc::now() + Duration::hours(23);
+        assert_eq!(sweep(&f.pool, &storage, almost).await.unwrap(), 0);
+        assert!(kept(&f.pool, &storage, id).await);
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn sweep_keeps_a_file_referenced_by_an_item_working_or_published_row() {
+    db_test(async |pool| {
+        let f = fixture(pool).await;
+        let storage = memory();
+        let working = stored_file(&f.pool, &storage, &f.owner, b"w").await;
+        let published = stored_file(&f.pool, &storage, &f.owner, b"p").await;
+        let orphan = stored_file(&f.pool, &storage, &f.owner, b"o").await;
+        item_names(&f.pool, f.lesson, false, working).await;
+        item_names(&f.pool, f.lesson, true, published).await;
+        let later = Utc::now() + Duration::hours(25);
+        assert_eq!(sweep(&f.pool, &storage, later).await.unwrap(), 1);
+        assert!(kept(&f.pool, &storage, working).await);
+        assert!(kept(&f.pool, &storage, published).await);
+        assert!(gone(&f.pool, &storage, orphan).await);
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn sweep_keeps_a_file_referenced_by_a_submission() {
+    db_test(async |pool| {
+        let f = fixture(pool).await;
+        let storage = memory();
+        let id = stored_file(&f.pool, &storage, &f.student, b"abc").await;
+        draft_naming(&f, id).await;
+        let later = Utc::now() + Duration::hours(25);
+        assert_eq!(sweep(&f.pool, &storage, later).await.unwrap(), 0);
+        assert!(kept(&f.pool, &storage, id).await);
+        submit(&f).await;
+        assert_eq!(sweep(&f.pool, &storage, later).await.unwrap(), 0);
+        assert!(kept(&f.pool, &storage, id).await);
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn a_file_removed_from_every_reference_is_swept_after_24h() {
+    db_test(async |pool| {
+        let f = fixture(pool).await;
+        let storage = memory();
+        let on_item = stored_file(&f.pool, &storage, &f.owner, b"i").await;
+        let on_draft = stored_file(&f.pool, &storage, &f.student, b"d").await;
+        item_names(&f.pool, f.lesson, false, on_item).await;
+        let submission = draft_naming(&f, on_draft).await;
+        let later = Utc::now() + Duration::hours(25);
+        assert_eq!(sweep(&f.pool, &storage, later).await.unwrap(), 0);
+
+        let mut conn = f.pool.acquire().await.unwrap();
+        content::replace_item_files(&mut conn, f.lesson, false, &[])
+            .await
+            .unwrap();
+        assessment::replace_submission_files(&mut conn, submission, &[])
+            .await
+            .unwrap();
+        drop(conn);
+        assert_eq!(sweep(&f.pool, &storage, later).await.unwrap(), 2);
+        assert!(gone(&f.pool, &storage, on_item).await);
+        assert!(gone(&f.pool, &storage, on_draft).await);
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn the_same_bytes_uploaded_twice_make_two_files_and_the_unused_one_is_swept() {
+    db_test(async |pool| {
+        let f = fixture(pool).await;
+        let storage = memory();
+        let first = stored_file(&f.pool, &storage, &f.student, b"same").await;
+        let second = stored_file(&f.pool, &storage, &f.student, b"same").await;
+        assert_ne!(first, second);
+        draft_naming(&f, second).await;
+        let later = Utc::now() + Duration::hours(25);
+        assert_eq!(sweep(&f.pool, &storage, later).await.unwrap(), 1);
+        assert!(gone(&f.pool, &storage, first).await);
+        assert!(kept(&f.pool, &storage, second).await);
     })
     .await;
 }

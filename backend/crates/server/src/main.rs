@@ -97,6 +97,7 @@ async fn run(cli: Cli) -> anyhow::Result<()> {
             tracing::info!(modules = ?started, plugins = deliverer.is_some(), "worker running");
             tokio::select! {
                 () = events::run_worker(state.db.clone(), state.event_handlers()) => {}
+                () = learning::files::run_sweeper(state.db.clone(), state.learning.files.clone()) => {}
                 () = run_plugin_delivery(deliverer, state.db.clone()) => {}
                 () = shutdown => {}
             }
@@ -107,6 +108,10 @@ async fn run(cli: Cli) -> anyhow::Result<()> {
             prepare_database(&state.db, &state.config).await?;
             if !no_worker {
                 tokio::spawn(events::run_worker(state.db.clone(), state.event_handlers()));
+                tokio::spawn(learning::files::run_sweeper(
+                    state.db.clone(),
+                    state.learning.files.clone(),
+                ));
                 let started = modules::spawn_workers(&state);
                 let deliverer = state
                     .plugin_deliverer()

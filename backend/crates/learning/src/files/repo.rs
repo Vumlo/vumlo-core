@@ -38,3 +38,15 @@ pub async fn submission_references(
     .fetch_all(conn)
     .await
 }
+
+/// Whether any item or submission names the file.
+pub async fn is_referenced(conn: &mut PgConnection, file_id: Uuid) -> Result<bool, sqlx::Error> {
+    let referenced = sqlx::query_scalar!(
+        r#"SELECT EXISTS (SELECT 1 FROM content.item_files WHERE file_id = $1)
+               OR EXISTS (SELECT 1 FROM assessment.submission_files WHERE file_id = $1) AS "referenced!""#,
+        file_id
+    )
+    .fetch_one(conn)
+    .await?;
+    Ok(referenced)
+}

@@ -6,7 +6,9 @@ mod model;
 mod repo;
 mod routes;
 mod service;
+mod sweep;
 
 pub use model::{Owner, UsageOwner};
 pub use routes::router;
 pub use service::{FileError, authorize_upload, ensure_usable, open_for_read, register_upload};
+pub use sweep::{run_sweeper, sweep};
