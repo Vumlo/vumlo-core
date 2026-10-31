@@ -93,12 +93,14 @@ export async function requestRaw<T>(method: "POST", path: string, body: Blob | A
   if (url.pathname !== "/files") throw new Error(`${method} ${url.pathname} has no raw form in the desktop app`);
   const { invoke } = await import("@tauri-apps/api/core");
   const bytes = new Uint8Array(body instanceof Blob ? await body.arrayBuffer() : body);
-  const target = url.searchParams.get("for");
-  const name = url.searchParams.get("name");
+  const target = url.searchParams.get("for") ?? "";
+  const name = url.searchParams.get("name") ?? "";
   const mime = headers["Content-Type"] ?? "application/octet-stream";
-  // The command answers with the FileRef, or fails with the server's message as a string.
-  return invoke<T>("upload_file", { target, name, mime, bytes }).catch((e: unknown) => {
-    throw new ApiError(0, "upload", typeof e === "string" ? e : undefined);
+  // The bytes are the raw body of the call and the rest travels in headers (Tauri's binary IPC). The command answers
+  // with the FileRef, or fails with "<status>: <detail>", the server's refusal.
+  return invoke<T>("upload_file", bytes, { headers: { "x-vumlo-target": target, "x-vumlo-name": encodeURIComponent(name), "content-type": mime } }).catch((e: unknown) => {
+    const refused = typeof e === "string" ? /^(\d{3}): ([\s\S]*)$/.exec(e) : null;
+    throw refused ? new ApiError(Number(refused[1]), "upload", refused[2] || undefined) : new ApiError(0, "upload", typeof e === "string" ? e : undefined);
   });
 }
 

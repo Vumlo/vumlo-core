@@ -163,3 +163,37 @@ test("desktop_read_file_text_fetches_that_url", async ({ page }) => {
   expect(text).toBe("0123");
   expect(await page.evaluate(() => (window as unknown as { __requested: unknown }).__requested)).toEqual([{ url: `http://vumlo-file.localhost/${ID}`, range: "bytes=0-3" }]);
 });
+
+test("desktop_upload_sends_the_bytes_as_the_body_and_the_rest_as_headers", async ({ page }) => {
+  await signIn(page);
+  const item = await anItem(page);
+  await page.evaluate(() => {
+    const calls: { cmd: string; args: unknown; options: unknown }[] = [];
+    Object.assign(window, {
+      __calls: calls,
+      __TAURI_INTERNALS__: {
+        async invoke(cmd: string, args: unknown, options: unknown) {
+          calls.push({ cmd, args, options });
+          if ((args as Uint8Array).length === 3) throw "413: too big";
+          return { id: "0198f3a0-7b1c-7d2e-8f3a-5b6c7d8e9f01", name: "a & b.pdf", mime: "application/pdf", size: 5 };
+        },
+      },
+    });
+  });
+  const ref = await page.evaluate((id) => window.__vumloFiles.uploadFile(new File([new Uint8Array(5).fill(7)], "a & b.pdf", { type: "application/pdf" }), { item: id }), item);
+  expect(ref).toMatchObject({ name: "a & b.pdf", size: 5 });
+  const calls = await page.evaluate(() => (window as unknown as { __calls: { cmd: string; args: number[]; options: unknown }[] }).__calls.map((c) => ({ ...c, args: Array.from(c.args as unknown as Uint8Array) })));
+  expect(calls).toEqual([
+    {
+      cmd: "upload_file",
+      args: [7, 7, 7, 7, 7],
+      options: { headers: { "x-vumlo-target": `item:${item}`, "x-vumlo-name": encodeURIComponent("a & b.pdf"), "content-type": "application/pdf" } },
+    },
+  ]);
+  // The command's "<status>: <detail>" refusal becomes an ApiError of that status.
+  const status = await page.evaluate(
+    (id) => window.__vumloFiles.uploadFile(new File([new Uint8Array(3)], "c.pdf", { type: "application/pdf" }), { item: id }).then(() => 0, (e: { status: number }) => e.status),
+    item,
+  );
+  expect(status).toBe(413);
+});
