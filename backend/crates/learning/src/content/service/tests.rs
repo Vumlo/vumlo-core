@@ -434,7 +434,7 @@ fn body_of(value: Value) -> Map<String, Value> {
 fn a_file_item_references_the_file_its_body_names() {
     let file = Uuid::now_v7();
     let body = body_of(json!({"file_id": file.to_string(), "description": {"v": 1}}));
-    assert_eq!(referenced_file_ids(ItemKind::File, &body), [file]);
+    assert_eq!(referenced_file_ids(ItemKind::File, &body, None), [file]);
 }
 
 #[test]
@@ -447,7 +447,7 @@ fn a_file_item_without_a_usable_file_id_references_nothing() {
         json!({"file_id": null}),
     ] {
         assert_eq!(
-            referenced_file_ids(ItemKind::File, &body_of(body.clone())),
+            referenced_file_ids(ItemKind::File, &body_of(body.clone()), None),
             Vec::<Uuid>::new(),
             "{body}"
         );
@@ -455,14 +455,53 @@ fn a_file_item_without_a_usable_file_id_references_nothing() {
 }
 
 #[test]
-fn other_kinds_reference_no_files_yet() {
-    let body = body_of(json!({"file_id": Uuid::now_v7().to_string()}));
-    assert_eq!(
-        referenced_file_ids(ItemKind::Text, &body),
-        Vec::<Uuid>::new()
+fn text_and_assignment_bodies_reference_the_files_their_blocks_name() {
+    let (image, file) = (Uuid::now_v7(), Uuid::now_v7());
+    let body = body_of(json!({"v": 1, "attachments": [], "blocks": [
+        {"id": "a", "type": "image", "props": {"file_id": image.to_string()}},
+        {"id": "b", "type": "file", "props": {"file_id": file.to_string()}},
+        {"id": "c", "type": "image", "props": {"file_id": image.to_string()}},
+    ]}));
+    for kind in [ItemKind::Text, ItemKind::Assignment] {
+        assert_eq!(referenced_file_ids(kind, &body, None), [image, file]);
+    }
+    // A stray `file_id` key is not a block.
+    let stray = body_of(json!({"file_id": Uuid::now_v7().to_string()}));
+    assert!(referenced_file_ids(ItemKind::Text, &stray, None).is_empty());
+}
+
+#[test]
+fn a_file_items_description_blocks_count_and_a_quiz_config_adds_its_images() {
+    let (own, described, in_prompt) = (Uuid::now_v7(), Uuid::now_v7(), Uuid::now_v7());
+    let body = body_of(
+        json!({"file_id": own.to_string(), "description": {"v": 1, "blocks": [
+        {"id": "a", "type": "image", "props": {"file_id": described.to_string()}}]}}),
     );
     assert_eq!(
-        referenced_file_ids(ItemKind::Assignment, &body),
-        Vec::<Uuid>::new()
+        referenced_file_ids(ItemKind::File, &body, None),
+        [own, described]
+    );
+
+    let config = body_of(json!({"v": 1, "questions": [{
+        "id": "q1", "type": "long_text", "points": "1",
+        "prompt": {"v": 1, "blocks": [
+            {"id": "a", "type": "image", "props": {"file_id": in_prompt.to_string()}}]}}]}));
+    let text = body_of(json!({"v": 1, "blocks": []}));
+    assert_eq!(
+        referenced_file_ids(
+            ItemKind::Assignment,
+            &text,
+            Some((BuiltinType::Quiz, &config))
+        ),
+        [in_prompt]
+    );
+    // The other types hold no document in their config.
+    assert!(
+        referenced_file_ids(
+            ItemKind::Assignment,
+            &text,
+            Some((BuiltinType::Form, &config))
+        )
+        .is_empty()
     );
 }

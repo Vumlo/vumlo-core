@@ -73,8 +73,8 @@ impl From<ContentError> for ApiError {
                 detail: "the request has invalid fields".to_owned(),
                 errors: errors.into_field_errors("body.description"),
             },
-            ContentError::FileUnusable { id } => {
-                Self::invalid_field("body.file_id", format!("the file {id} cannot be used here"))
+            ContentError::FileUnusable { id, field } => {
+                Self::invalid_field(&field, format!("the file {id} cannot be used here"))
             }
             ContentError::FileMissing => {
                 Self::Conflict("a file item needs a file before it is published")

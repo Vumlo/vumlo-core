@@ -2237,6 +2237,16 @@ export interface components {
             props: components["schemas"]["VideoProps"];
             /** @enum {string} */
             type: "video";
+        } | {
+            id: string;
+            props: components["schemas"]["ImageProps"];
+            /** @enum {string} */
+            type: "image";
+        } | {
+            id: string;
+            props: components["schemas"]["FileProps"];
+            /** @enum {string} */
+            type: "file";
         };
         /** @description Someone who could be added to the course. */
         Candidate: {
@@ -2583,11 +2593,18 @@ export interface components {
          * @description What a place of the editor can offer. A profile is a set of features (ADR-0025).
          * @enum {string}
          */
-        Feature: "headings" | "text_styles" | "links" | "lists" | "quote" | "divider" | "table" | "code" | "math" | "mermaid" | "video";
+        Feature: "headings" | "text_styles" | "links" | "lists" | "quote" | "divider" | "table" | "code" | "math" | "mermaid" | "video" | "image" | "file";
         /** @description One rejected field of a `422` response. */
         FieldError: {
             field: string;
             message: string;
+        };
+        FileProps: {
+            /**
+             * Format: uuid
+             * @description A file uploaded for the owner of this document; the server checks that it may be used.
+             */
+            file_id: string;
         };
         /** @description A stored file, as a document or a submission names it by `id`. */
         FileRefDto: {
@@ -2822,6 +2839,17 @@ export interface components {
          * @enum {string}
          */
         HitStatus: "draft" | "published";
+        ImageProps: {
+            /** @description At most 300 characters of plain text. */
+            alt?: string | null;
+            /** @description At most 300 characters of plain text. */
+            caption?: string | null;
+            /**
+             * Format: uuid
+             * @description A file uploaded for the owner of this document; the server checks that it may be used.
+             */
+            file_id: string;
+        };
         /** @description A run of inline content. */
         Inline: (components["schemas"]["TextRun"] & {
             /** @enum {string} */

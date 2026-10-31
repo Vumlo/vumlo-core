@@ -3,7 +3,7 @@
 use std::sync::{Arc, LazyLock};
 
 use chrono::{Duration, Utc};
-use serde_json::{Map, Value, json};
+use serde_json::{Map, json};
 use sqlx::PgPool;
 use test_support::db_test;
 
@@ -27,12 +27,6 @@ fn rules() -> ItemRules<'static> {
         scale: GradingScale::Hundred,
         profiles: &PROFILES,
     }
-}
-
-fn essay() -> Value {
-    json!({"v": 1, "attachments": [], "blocks": [
-        {"id": "p", "type": "paragraph", "content": [{"type": "text", "text": "My answer"}]}
-    ]})
 }
 
 struct Fixture {
@@ -206,24 +200,22 @@ async fn submission_of(pool: &PgPool, assignment: Uuid, student: &Actor) -> Uuid
     .unwrap()
 }
 
-/// The student saves a draft, which names `file`.
+/// The student saves a draft whose one block is an image of `file`.
 async fn draft_naming(f: &Fixture, file: Uuid) -> Uuid {
     let mut conn = f.pool.acquire().await.unwrap();
+    let document = json!({"v": 1, "attachments": [], "blocks": [
+        {"id": "i", "type": "image", "props": {"file_id": file}}]});
     assessment::save_draft(
         &mut conn,
         &f.student,
         f.assignment,
-        &essay(),
+        &document,
         &PROFILES,
         Utc::now(),
     )
     .await
     .unwrap();
-    let submission = submission_of(&f.pool, f.assignment, &f.student).await;
-    assessment::replace_submission_files(&mut conn, submission, &[file])
-        .await
-        .unwrap();
-    submission
+    submission_of(&f.pool, f.assignment, &f.student).await
 }
 
 async fn submit(f: &Fixture) {

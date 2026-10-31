@@ -128,6 +128,6 @@ logo = "brand/logo.png"
 # Providers a video block may name. An empty list switches video off.
 video_providers = ["youtube", "vimeo"]
 # Narrow a profile (full, question, option, student) to the listed features. Features:
-# headings, text_styles, links, lists, quote, divider, table, code, math, mermaid, video.
+# headings, text_styles, links, lists, quote, divider, table, code, math, mermaid, video, image, file.
 # [editor.profiles.student]
 # features = ["text_styles", "links", "lists", "code", "math"]

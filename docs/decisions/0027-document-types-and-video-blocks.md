@@ -24,3 +24,6 @@ Option: (a) any document under the `option` profile; (b) **exactly one block**.
 - Clients get real types for documents from the generated OpenAPI.
 - A `link` item's `embed` (ADR-0024) shows a video inline only when its url is a recognizable `youtube` or `vimeo` link of a provider that `editor.video_providers` lists.
 - A document with a video block never holds a URL that the server or the browser could be tricked into loading from user input.
+
+## Built by ADR-0069 (images)
+- The `option` profile may now hold an `image` block as its one block (and still a paragraph, a code block or a math block). The `image` and `file` blocks, their profiles and limits are described in ADR-0025 under "Built by ADR-0069".

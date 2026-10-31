@@ -32,7 +32,10 @@ fn sample() -> Value {
             {"id": "i", "type": "code", "props": {"language": "rust", "source": "fn main() {}"}},
             {"id": "j", "type": "math", "props": {"source": "E=mc^2"}},
             {"id": "k", "type": "mermaid", "props": {"source": "graph TD; A-->B"}},
-            {"id": "l", "type": "video", "props": {"provider": "youtube", "video_id": "dQw4w9WgXcQ"}}
+            {"id": "l", "type": "video", "props": {"provider": "youtube", "video_id": "dQw4w9WgXcQ"}},
+            {"id": "m", "type": "image", "props": {"file_id": "0198a000-0000-7000-8000-00000000000a", "alt": "A", "caption": "B"}},
+            {"id": "n", "type": "image", "props": {"file_id": "0198a000-0000-7000-8000-00000000000a"}},
+            {"id": "o", "type": "file", "props": {"file_id": "0198a000-0000-7000-8000-00000000000b"}}
         ],
         "attachments": []
     })
@@ -42,7 +45,7 @@ fn sample() -> Value {
 fn a_document_with_every_block_and_inline_kind_round_trips() {
     let value = sample();
     let document: Document = serde_json::from_value(value.clone()).unwrap();
-    assert_eq!(document.blocks.len(), 11);
+    assert_eq!(document.blocks.len(), 14);
     assert_eq!(serde_json::to_value(&document).unwrap(), value);
 }
 
@@ -128,7 +131,7 @@ fn as_str_and_from_name_agree_with_serde() {
         ProfileName::from_name,
     );
     assert_eq!(CodeLanguage::ALL.len(), 21);
-    assert_eq!(Feature::ALL.len(), 11);
+    assert_eq!(Feature::ALL.len(), 13);
 }
 
 #[test]

@@ -7,8 +7,9 @@ mod text;
 
 use std::collections::BTreeSet;
 
-use api_types::{Document, DocumentLimits, Feature, FieldError, ProfileName};
+use api_types::{Block, Document, DocumentLimits, Feature, FieldError, ProfileName};
 use serde_json::{Map, Value};
+use uuid::Uuid;
 
 pub(crate) use parse::valid_href;
 pub use profile::{EditorConfigError, EffectiveProfiles};
@@ -25,6 +26,8 @@ pub const MAX_CODE_BYTES: usize = 64 * 1024;
 pub const MAX_FORMULA_BYTES: usize = 16 * 1024;
 pub const MAX_HREF_CHARS: usize = 2048;
 pub const MAX_ID_CHARS: usize = 64;
+/// The alt text and the caption of an image.
+pub const MAX_IMAGE_TEXT_CHARS: usize = 300;
 /// More problems than this are not reported.
 pub const MAX_ERRORS: usize = 20;
 
@@ -105,10 +108,10 @@ impl ValidDocument {
         Self { document, body }
     }
 
-    /// True when the document holds no text (ADR-0035): an empty draft may be saved, but never
-    /// submitted.
+    /// True when the document holds no text, image or file (ADR-0035): an empty draft may be
+    /// saved, but never submitted.
     pub fn is_blank(&self) -> bool {
-        plain_text(&self.document).trim().is_empty()
+        plain_text(&self.document).trim().is_empty() && file_ids(&self.document).is_empty()
     }
 
     pub fn as_document(&self) -> &Document {
@@ -119,6 +122,50 @@ impl ValidDocument {
     pub fn as_body(&self) -> &Map<String, Value> {
         &self.body
     }
+}
+
+/// The files the image and file blocks of a document name, each with the path of its `file_id`
+/// in the document (`blocks[2].children[0].props.file_id`), in document order. A file named twice
+/// appears twice.
+pub fn file_refs(document: &Document) -> Vec<(Uuid, String)> {
+    fn walk(blocks: &[Block], path: &str, out: &mut Vec<(Uuid, String)>) {
+        for (index, block) in blocks.iter().enumerate() {
+            let here = format!("{path}[{index}]");
+            if let Block::Image { props, .. } = block {
+                out.push((props.file_id, format!("{here}.props.file_id")));
+            } else if let Block::File { props, .. } = block {
+                out.push((props.file_id, format!("{here}.props.file_id")));
+            }
+            walk(block.children(), &format!("{here}.children"), out);
+        }
+    }
+    let mut out = Vec::new();
+    walk(&document.blocks, "blocks", &mut out);
+    out
+}
+
+/// The ids of the files a document names, in document order, each once (ADR-0069).
+pub fn file_ids(document: &Document) -> Vec<Uuid> {
+    distinct_ids(&file_refs(document))
+}
+
+/// The ids of `refs`, each once, in order.
+pub fn distinct_ids(refs: &[(Uuid, String)]) -> Vec<Uuid> {
+    let mut ids: Vec<Uuid> = Vec::new();
+    for (id, _) in refs {
+        if !ids.contains(id) {
+            ids.push(*id);
+        }
+    }
+    ids
+}
+
+/// [`file_refs`] of a stored document. A value that is not a document names no file: what was
+/// stored passed the validator when it was written.
+pub fn file_refs_of(value: &Value) -> Vec<(Uuid, String)> {
+    serde_json::from_value::<Document>(value.clone())
+        .map(|document| file_refs(&document))
+        .unwrap_or_default()
 }
 
 /// Parses `value` into a [`Document`] and checks it against `profile` as narrowed by `profiles`.

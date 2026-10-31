@@ -4,11 +4,11 @@
 //! profile is the code profile cut down by `editor.profiles.<name>.features`, and every profile
 //! loses `video` when `editor.video_providers` is empty.
 //!
-//! Later tasks add to the code profiles (ADR-0025):
+//! `image` is in every profile and `file` in `full` and `student` (ADR-0069). Later tasks add to
+//! the code profiles (ADR-0025):
 //!
 //! | feature      | full | question | option | student |
 //! |--------------|:----:|:--------:|:------:|:-------:|
-//! | image        |  ✓   |    ✓     |   ✓    |    ✓    |
 //! | attachments  |  ✓   |          |        |    ✓    |
 //! | html         | ✓ (only with `editor.html`) | | |  |
 
@@ -54,12 +54,14 @@ fn index(name: ProfileName) -> usize {
 fn code_profile(name: ProfileName) -> EffectiveProfile {
     let all = || Feature::ALL.iter().copied();
     let features = match name {
-        ProfileName::Full | ProfileName::Question => all().collect(),
+        ProfileName::Full => all().collect(),
+        ProfileName::Question => all().filter(|f| *f != Feature::File).collect(),
         ProfileName::Option => [
             Feature::TextStyles,
             Feature::Links,
             Feature::Math,
             Feature::Code,
+            Feature::Image,
         ]
         .into(),
         ProfileName::Student => all().filter(|f| *f != Feature::Video).collect(),
@@ -257,6 +259,12 @@ impl Check<'_> {
             }
             Block::Mermaid { .. } => {
                 self.needs(Feature::Mermaid, path);
+            }
+            Block::Image { .. } => {
+                self.needs(Feature::Image, path);
+            }
+            Block::File { .. } => {
+                self.needs(Feature::File, path);
             }
             Block::Video { props, .. } => {
                 if self.needs(Feature::Video, path) && !self.providers.contains(&props.provider) {

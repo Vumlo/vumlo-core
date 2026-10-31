@@ -23,7 +23,7 @@ use super::model::{
 use super::repo;
 use crate::content::{
     self, Assignment, AssignmentType, AutoGrade, BuiltinType, DocumentErrors, EffectiveProfiles,
-    OpenError, OpenedAssignment, Stage,
+    OpenError, OpenedAssignment, Stage, distinct_ids,
 };
 use crate::files::{FileError, UsageOwner, ensure_usable};
 use crate::gradebook::{self, GradebookError};
@@ -182,9 +182,7 @@ pub async fn save_draft(
     let files = check_files(conn, actor, &assignment, valid.as_body(), id).await?;
     let draft =
         repo::upsert_draft(conn, id, assignment_id, actor.user_id(), valid.as_body()).await?;
-    if assignment.assignment_type == BuiltinType::File {
-        repo::replace_submission_files(conn, draft.id, &files).await?;
-    }
+    repo::replace_submission_files(conn, draft.id, &files).await?;
     Ok(draft)
 }
 
@@ -281,9 +279,7 @@ pub async fn submit(
     let scores = auto.as_ref().map(AutoGrade::scores_json);
     let attempt =
         repo::submit_draft(conn, draft.id, last + 1, now, is_late, scores.as_ref()).await?;
-    if assignment.assignment_type == BuiltinType::File {
-        repo::replace_submission_files(conn, attempt.id, &files).await?;
-    }
+    repo::replace_submission_files(conn, attempt.id, &files).await?;
     if let Some(auto) = auto.filter(|auto| auto.complete) {
         gradebook::save_auto_grade(conn, assignment_id, student_id, auto.total).await?;
     }
@@ -350,11 +346,14 @@ async fn check_claims(
     Ok(())
 }
 
-/// The files a `file` submission names, once each is judged: it exists, its name is one the
-/// assignment takes, and the submitter may use it for the row `submission_id` (ADR-0069). The
-/// type itself is pure and sees only ids, so the names come from here. Other types name none.
-/// An id that is not a file is refused like one the submitter may not use, so an id says nothing
-/// about files of other people.
+/// The files a submission names, once each is judged: the submitter may use it for the row
+/// `submission_id` (ADR-0069), and for a `file` hand-in the name of each listed file is one the
+/// assignment takes. The files are the listed ones of a `file` hand-in plus the images and files
+/// that documents in the content name (a text answer, a long-text quiz answer, a comment).
+///
+/// Ownership is judged first, so a file of someone else and an unknown id give one message, and
+/// the extension rule never tells whether a foreign id exists. An id that is not a file is refused
+/// like one the submitter may not use.
 async fn check_files(
     conn: &mut PgConnection,
     actor: &Actor,
@@ -362,44 +361,46 @@ async fn check_files(
     body: &Map<String, Value>,
     submission_id: Uuid,
 ) -> Result<Vec<Uuid>, AssessmentError> {
-    if assignment.assignment_type != BuiltinType::File {
-        return Ok(Vec::new());
-    }
-    let ids = assignment
-        .assignment_type
-        .claims(&assignment.config, body)
-        .files;
-    let mut names = BTreeMap::new();
-    for (index, &id) in ids.iter().enumerate() {
-        let file = ::files::get(conn, id)
-            .await
-            .map_err(|error| match error {
-                ::files::FilesError::Db(error) => AssessmentError::Db(error),
-                _ => unusable(index),
-            })?
-            .ok_or_else(|| unusable(index))?;
-        names.insert(id, file.name);
-    }
-    content::check_file_names(&assignment.config, body, &names)
-        .map_err(AssessmentError::Document)?;
+    let refs = assignment.assignment_type.submission_file_refs(body);
+    let ids = distinct_ids(&refs);
     ensure_usable(conn, actor, &UsageOwner::Submission(submission_id), &ids)
         .await
         .map_err(|error| match error {
-            FileError::Unusable { id } => unusable(ids.iter().position(|&n| n == id).unwrap_or(0)),
+            FileError::Unusable { id } => unusable(
+                refs.iter()
+                    .find(|(file, _)| *file == id)
+                    .map_or("files", |(_, path)| path),
+            ),
             FileError::Db(error) | FileError::Files(::files::FilesError::Db(error)) => {
                 AssessmentError::Db(error)
             }
             // Deny by default: `ensure_usable` has no other way to fail.
-            _ => unusable(0),
+            _ => unusable("files"),
         })?;
+    if assignment.assignment_type == BuiltinType::File {
+        let listed = assignment
+            .assignment_type
+            .claims(&assignment.config, body)
+            .files;
+        let mut names = BTreeMap::new();
+        for (index, &id) in listed.iter().enumerate() {
+            let file = ::files::get(conn, id)
+                .await
+                .map_err(|error| match error {
+                    ::files::FilesError::Db(error) => AssessmentError::Db(error),
+                    _ => unusable(&format!("files[{index}]")),
+                })?
+                .ok_or_else(|| unusable(&format!("files[{index}]")))?;
+            names.insert(id, file.name);
+        }
+        content::check_file_names(&assignment.config, body, &names)
+            .map_err(AssessmentError::Document)?;
+    }
     Ok(ids)
 }
 
-fn unusable(index: usize) -> AssessmentError {
-    AssessmentError::Document(DocumentErrors::one(
-        &format!("files[{index}]"),
-        "is not a file you can use here",
-    ))
+fn unusable(path: &str) -> AssessmentError {
+    AssessmentError::Document(DocumentErrors::one(path, "is not a file you can use here"))
 }
 
 /// The facts a form's config shows besides what was configured: which fields have answers and who

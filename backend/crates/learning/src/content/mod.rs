@@ -9,8 +9,8 @@ mod service;
 mod types;
 
 pub use document::{
-    DocumentError, DocumentErrors, EditorConfigError, EffectiveProfiles, limits, plain_text,
-    validate_document, validate_document_within,
+    DocumentError, DocumentErrors, EditorConfigError, EffectiveProfiles, distinct_ids, limits,
+    plain_text, validate_document, validate_document_within,
 };
 pub use model::{
     Assignment, AssignmentSummary, AssignmentType, BuiltinType, ContentModule, ContentSubModule,
