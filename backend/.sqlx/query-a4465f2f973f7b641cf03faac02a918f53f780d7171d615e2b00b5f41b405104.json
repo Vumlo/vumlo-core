@@ -1,10 +1,21 @@
 {
   "db_name": "PostgreSQL",
-  "query": "INSERT INTO assessment.submissions (id, assignment_id, student_id, status, content)\n           VALUES ($1, $2, $3, 'draft', $4)\n           ON CONFLICT (assignment_id, student_id) WHERE status = 'draft'\n           DO UPDATE SET content = EXCLUDED.content, updated_at = now()\n           RETURNING content AS \"content: Body\", updated_at",
+  "query": "INSERT INTO assessment.submissions (id, assignment_id, student_id, status, content)\n           VALUES ($1, $2, $3, 'draft', $4)\n           ON CONFLICT (assignment_id, student_id) WHERE status = 'draft'\n           DO UPDATE SET content = EXCLUDED.content, updated_at = now()\n           RETURNING id, content AS \"content: Body\", updated_at",
   "describe": {
     "columns": [
       {
         "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "assessment.submissions",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
         "name": "content: Body",
         "type_info": "Jsonb",
         "origin": {
@@ -15,7 +26,7 @@
         }
       },
       {
-        "ordinal": 1,
+        "ordinal": 2,
         "name": "updated_at",
         "type_info": "Timestamptz",
         "origin": {
@@ -36,8 +47,9 @@
     },
     "nullable": [
       false,
+      false,
       false
     ]
   },
-  "hash": "72a182bbac5f9dc88371fa0eaab42ef90ef12384c7982bfa1811bc04d478881b"
+  "hash": "a4465f2f973f7b641cf03faac02a918f53f780d7171d615e2b00b5f41b405104"
 }

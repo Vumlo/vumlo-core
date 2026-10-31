@@ -9,6 +9,8 @@
 //! `assessment` calls no other module's Rust code except the read-only functions that every module
 //! uses to open and lock an assignment (ADR-0030, ADR-0035).
 
+use std::collections::BTreeMap;
+
 use chrono::{DateTime, Utc};
 use serde_json::{Map, Value};
 use sqlx::PgConnection;
@@ -23,6 +25,7 @@ use crate::content::{
     self, Assignment, AssignmentType, AutoGrade, BuiltinType, DocumentErrors, EffectiveProfiles,
     OpenError, OpenedAssignment, Stage,
 };
+use crate::files::{FileError, UsageOwner, ensure_usable};
 use crate::gradebook::{self, GradebookError};
 use crate::teaching::TeachingError;
 use access::Actor;
@@ -128,6 +131,19 @@ async fn lock(conn: &mut PgConnection, assignment_id: Uuid) -> Result<Assignment
         .ok_or(AssessmentError::AssignmentNotFound)
 }
 
+/// Whether the student, who has made `last` attempts, may make another.
+fn within_attempts(assignment: &Assignment, last: i32) -> Result<(), AssessmentError> {
+    if assignment
+        .settings
+        .max_attempts
+        .is_some_and(|max| last >= max)
+    {
+        Err(AssessmentError::AttemptLimit)
+    } else {
+        Ok(())
+    }
+}
+
 /// Whether a save or a submit is taken at `now`, and whether it is late.
 fn open_window(assignment: &Assignment, now: DateTime<Utc>) -> Result<bool, AssessmentError> {
     match Window::at(&assignment.settings, now) {
@@ -158,7 +174,18 @@ pub async fn save_draft(
         .assignment_type
         .validate_submission(&assignment.config, content, Stage::Draft, profiles)
         .map_err(AssessmentError::Document)?;
-    Ok(repo::upsert_draft(conn, assignment_id, actor.user_id(), valid.as_body()).await?)
+    // The row is locked, so the id the files are checked against is the one the write keeps.
+    let id = match repo::lock_draft(conn, assignment_id, actor.user_id()).await? {
+        Some(draft) => draft.id,
+        None => Uuid::now_v7(),
+    };
+    let files = check_files(conn, actor, &assignment, valid.as_body(), id).await?;
+    let draft =
+        repo::upsert_draft(conn, id, assignment_id, actor.user_id(), valid.as_body()).await?;
+    if assignment.assignment_type == BuiltinType::File {
+        repo::replace_submission_files(conn, draft.id, &files).await?;
+    }
+    Ok(draft)
 }
 
 /// The caller's own work: the draft and a page of attempts, newest first.
@@ -224,13 +251,7 @@ pub async fn submit(
         .await?
         .ok_or(AssessmentError::NoDraft)?;
     let last = repo::last_attempt_number(conn, assignment_id, student_id).await?;
-    if assignment
-        .settings
-        .max_attempts
-        .is_some_and(|max| last >= max)
-    {
-        return Err(AssessmentError::AttemptLimit);
-    }
+    within_attempts(&assignment, last)?;
     // The draft is judged again against the profile and the features as they are now.
     let valid = assignment
         .assignment_type
@@ -253,12 +274,16 @@ pub async fn submit(
         valid.as_body(),
     )
     .await?;
+    let files = check_files(conn, actor, &assignment, valid.as_body(), draft.id).await?;
     let auto = assignment
         .assignment_type
         .auto_grade(&assignment.config, valid.as_body());
     let scores = auto.as_ref().map(AutoGrade::scores_json);
     let attempt =
         repo::submit_draft(conn, draft.id, last + 1, now, is_late, scores.as_ref()).await?;
+    if assignment.assignment_type == BuiltinType::File {
+        repo::replace_submission_files(conn, attempt.id, &files).await?;
+    }
     if let Some(auto) = auto.filter(|auto| auto.complete) {
         gradebook::save_auto_grade(conn, assignment_id, student_id, auto.total).await?;
     }
@@ -323,6 +348,58 @@ async fn check_claims(
         }
     }
     Ok(())
+}
+
+/// The files a `file` submission names, once each is judged: it exists, its name is one the
+/// assignment takes, and the submitter may use it for the row `submission_id` (ADR-0069). The
+/// type itself is pure and sees only ids, so the names come from here. Other types name none.
+/// An id that is not a file is refused like one the submitter may not use, so an id says nothing
+/// about files of other people.
+async fn check_files(
+    conn: &mut PgConnection,
+    actor: &Actor,
+    assignment: &Assignment,
+    body: &Map<String, Value>,
+    submission_id: Uuid,
+) -> Result<Vec<Uuid>, AssessmentError> {
+    if assignment.assignment_type != BuiltinType::File {
+        return Ok(Vec::new());
+    }
+    let ids = assignment
+        .assignment_type
+        .claims(&assignment.config, body)
+        .files;
+    let mut names = BTreeMap::new();
+    for (index, &id) in ids.iter().enumerate() {
+        let file = ::files::get(conn, id)
+            .await
+            .map_err(|error| match error {
+                ::files::FilesError::Db(error) => AssessmentError::Db(error),
+                _ => unusable(index),
+            })?
+            .ok_or_else(|| unusable(index))?;
+        names.insert(id, file.name);
+    }
+    content::check_file_names(&assignment.config, body, &names)
+        .map_err(AssessmentError::Document)?;
+    ensure_usable(conn, actor, &UsageOwner::Submission(submission_id), &ids)
+        .await
+        .map_err(|error| match error {
+            FileError::Unusable { id } => unusable(ids.iter().position(|&n| n == id).unwrap_or(0)),
+            FileError::Db(error) | FileError::Files(::files::FilesError::Db(error)) => {
+                AssessmentError::Db(error)
+            }
+            // Deny by default: `ensure_usable` has no other way to fail.
+            _ => unusable(0),
+        })?;
+    Ok(ids)
+}
+
+fn unusable(index: usize) -> AssessmentError {
+    AssessmentError::Document(DocumentErrors::one(
+        &format!("files[{index}]"),
+        "is not a file you can use here",
+    ))
 }
 
 /// The facts a form's config shows besides what was configured: which fields have answers and who
@@ -500,17 +577,24 @@ pub async fn ensure_reportable(
         .ok_or(AssessmentError::SubmissionNotFound)
 }
 
-/// May the actor submit work to the assignment (`SubmitWork`)? An assignment they may not see is
-/// `AssignmentNotFound`; an archived course is `Forbidden(Archived)`. For the upload of a file that
-/// the submission will name.
+/// May the actor save work to the assignment at `now` (`SubmitWork`)? An assignment they may not
+/// see is `AssignmentNotFound`; an archived course is `Forbidden(Archived)`. After that the answer
+/// is the one a save would give, plus the attempt limit, which a save does not look at but after
+/// which nothing can be submitted: a type that takes no submissions, a closed window and the
+/// limit are conflicts. For the upload of a file that the submission will name.
 pub async fn authorize_submit(
     conn: &mut PgConnection,
     actor: &Actor,
     assignment_id: Uuid,
+    now: DateTime<Utc>,
 ) -> Result<(), AssessmentError> {
     let opened = open(conn, actor, assignment_id).await?;
     access::authorize(actor, Action::SubmitWork(opened.access))?;
-    Ok(())
+    require_submissions(&opened)?;
+    let assignment = lock(conn, assignment_id).await?;
+    open_window(&assignment, now)?;
+    let last = repo::last_attempt_number(conn, assignment_id, actor.user_id()).await?;
+    within_attempts(&assignment, last)
 }
 
 /// May the actor read the files of submission `submission_id` (ADR-0069)? Its author may, draft

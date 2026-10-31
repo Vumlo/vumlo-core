@@ -584,18 +584,20 @@ async fn upload_is_authorized_by_the_owner() {
         let mut conn = f.pool.acquire().await.unwrap();
         let item = Owner::Item(f.lesson);
         let assignment = Owner::Assignment(f.assignment);
-        authorize_upload(&mut conn, &f.owner, &item).await.unwrap();
-        authorize_upload(&mut conn, &f.student, &assignment)
+        authorize_upload(&mut conn, &f.owner, &item, Utc::now())
+            .await
+            .unwrap();
+        authorize_upload(&mut conn, &f.student, &assignment, Utc::now())
             .await
             .unwrap();
         // A student may see the lesson but not change it.
-        let error = authorize_upload(&mut conn, &f.student, &item).await;
+        let error = authorize_upload(&mut conn, &f.student, &item, Utc::now()).await;
         assert!(matches!(
             error,
             Err(FileError::Forbidden(AccessError::Denied))
         ));
         // Staff do not submit work.
-        let error = authorize_upload(&mut conn, &f.owner, &assignment).await;
+        let error = authorize_upload(&mut conn, &f.owner, &assignment, Utc::now()).await;
         assert!(matches!(
             error,
             Err(FileError::Forbidden(AccessError::Denied))
@@ -607,7 +609,7 @@ async fn upload_is_authorized_by_the_owner() {
             (&f.owner, Owner::Item(Uuid::now_v7())),
             (&f.student, Owner::Assignment(Uuid::now_v7())),
         ] {
-            let error = authorize_upload(&mut conn, actor, &owner).await;
+            let error = authorize_upload(&mut conn, actor, &owner, Utc::now()).await;
             assert!(matches!(error, Err(FileError::NotFound)), "{owner:?}");
         }
     })
@@ -626,7 +628,7 @@ async fn upload_to_an_archived_course_is_a_conflict() {
             (&f.owner, Owner::Item(f.lesson)),
             (&f.student, Owner::Assignment(f.assignment)),
         ] {
-            let error = authorize_upload(&mut conn, actor, &owner).await;
+            let error = authorize_upload(&mut conn, actor, &owner, Utc::now()).await;
             assert!(matches!(error, Err(FileError::Conflict(_))), "{error:?}");
         }
     })
