@@ -123,7 +123,15 @@ fn is_text(head: &[u8]) -> bool {
 /// at most 200 characters with the extension kept. Never empty, never `.` or `..`.
 pub fn clean_name(raw: &str) -> String {
     let last = raw.rsplit(['/', '\\']).next().unwrap_or("");
-    let cleaned: String = last.chars().filter(|c| !c.is_control()).collect();
+    // Bidi marks and overrides (category Cf) would let `fdp.exe` render as `exe.pdf`. U+200C and
+    // U+200D stay: Persian, Indic scripts and emoji sequences need them.
+    let cleaned: String = last
+        .chars()
+        .filter(|c| {
+            !c.is_control()
+                && !matches!(c, '\u{061C}' | '\u{200E}' | '\u{200F}' | '\u{202A}'..='\u{202E}' | '\u{2066}'..='\u{2069}')
+        })
+        .collect();
     let name = cleaned.trim();
     if matches!(name, "" | "." | "..") {
         return "file".to_owned();

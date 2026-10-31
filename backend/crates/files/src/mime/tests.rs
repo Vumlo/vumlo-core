@@ -160,3 +160,19 @@ fn clean_name_never_returns_empty() {
         assert_eq!(clean_name(raw), "file", "{raw:?}");
     }
 }
+
+#[test]
+fn clean_name_strips_bidi_override_characters() {
+    assert_eq!(clean_name("report\u{202E}fdp.exe"), "reportfdp.exe");
+    assert_eq!(
+        clean_name("\u{202A}a\u{202B}b\u{202C}c\u{202D}d\u{202E}.pdf"),
+        "abcd.pdf"
+    );
+    assert_eq!(
+        clean_name("\u{2066}a\u{2067}b\u{2068}c\u{2069}\u{200E}d\u{200F}\u{061C}.pdf"),
+        "abcd.pdf"
+    );
+    // Joiners are part of Persian, Indic and emoji text and stay.
+    assert_eq!(clean_name("می\u{200C}خواهم.pdf"), "می\u{200C}خواهم.pdf");
+    assert_eq!(clean_name("a\u{200D}b.pdf"), "a\u{200D}b.pdf");
+}
