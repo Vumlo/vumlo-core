@@ -187,7 +187,7 @@ test("desktop_upload_sends_the_bytes_as_the_body_and_the_rest_as_headers", async
     {
       cmd: "upload_file",
       args: [7, 7, 7, 7, 7],
-      options: { headers: { "x-vumlo-target": `item:${item}`, "x-vumlo-name": encodeURIComponent("a & b.pdf"), "content-type": "application/pdf" } },
+      options: { headers: { "x-vumlo-target": `item:${item}`, "x-vumlo-name": encodeURIComponent("a & b.pdf"), "x-vumlo-mime": "application/pdf" } },
     },
   ]);
   // The command's "<status>: <detail>" refusal becomes an ApiError of that status.

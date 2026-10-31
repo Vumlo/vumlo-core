@@ -96,9 +96,10 @@ export async function requestRaw<T>(method: "POST", path: string, body: Blob | A
   const target = url.searchParams.get("for") ?? "";
   const name = url.searchParams.get("name") ?? "";
   const mime = headers["Content-Type"] ?? "application/octet-stream";
-  // The bytes are the raw body of the call and the rest travels in headers (Tauri's binary IPC). The command answers
+  // The bytes are the raw body of the call and the rest travels in headers (Tauri's binary IPC, which sets `Content-Type`
+  // itself, so the file's type has a header of its own). The command answers
   // with the FileRef, or fails with "<status>: <detail>", the server's refusal.
-  return invoke<T>("upload_file", bytes, { headers: { "x-vumlo-target": target, "x-vumlo-name": encodeURIComponent(name), "content-type": mime } }).catch((e: unknown) => {
+  return invoke<T>("upload_file", bytes, { headers: { "x-vumlo-target": target, "x-vumlo-name": encodeURIComponent(name), "x-vumlo-mime": mime } }).catch((e: unknown) => {
     const refused = typeof e === "string" ? /^(\d{3}): ([\s\S]*)$/.exec(e) : null;
     throw refused ? new ApiError(Number(refused[1]), "upload", refused[2] || undefined) : new ApiError(0, "upload", typeof e === "string" ? e : undefined);
   });
