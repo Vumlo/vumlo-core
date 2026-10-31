@@ -962,6 +962,25 @@ fn a_file_size_limit_of_zero_is_refused() {
     assert!(e.contains("files.max_size"), "{e}");
 }
 
+#[test]
+fn max_size_above_one_gib_is_refused() {
+    let e = build(&format!("{VALID}\n[files]\nmax_size = 1073741825\n"), &[])
+        .unwrap_err()
+        .to_string();
+    assert!(
+        e.contains("files.max_size") && e.contains("1073741824"),
+        "{e}"
+    );
+}
+
+#[test]
+fn max_size_of_exactly_one_gib_is_accepted() {
+    let files = build(&format!("{VALID}\n[files]\nmax_size = 1073741824\n"), &[])
+        .unwrap()
+        .files;
+    assert_eq!(files.max_size, 1_073_741_824);
+}
+
 // --- the env file -------------------------------------------------------------------------
 
 #[test]

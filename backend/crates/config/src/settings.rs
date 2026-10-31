@@ -510,7 +510,7 @@ pub struct FilesSettings {
     /// The directory of the `local` storage, relative to the config file. Default: `files`.
     #[schemars(extend("x-visibility" = "private"))]
     pub path: Option<std::path::PathBuf>,
-    /// The largest file, in bytes. Default: 50 MiB. A reverse proxy must allow bodies this large.
+    /// The largest file, in bytes, 1 to 1 GiB. Default: 50 MiB. A reverse proxy must allow bodies this large.
     #[schemars(extend("x-visibility" = "public"))]
     pub max_size: u64,
     /// Required when `storage = "s3"`.

@@ -83,7 +83,7 @@ max_concurrent_hashes = 8          # password hashes and checks at once, ~19 MiB
 [files]
 storage = "local"      # "local" | "s3"
 # path = "files"       # the directory of the local storage, relative to this file; default "files"
-max_size = 52428800    # bytes; the largest file (50 MiB)
+max_size = 52428800    # bytes, 1 to 1073741824; the largest file (50 MiB)
 # [files.s3]           # required when storage = "s3"
 # endpoint = "https://s3.example.edu"   # an S3-compatible service other than AWS; https only
 # bucket = "vumlo-files"

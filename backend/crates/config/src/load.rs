@@ -377,10 +377,15 @@ fn validate(settings: &mut Settings) -> Vec<String> {
     errors
 }
 
+/// Uploads are buffered in memory, so the cap is bounded; also far below 2^53 for the browser.
+const MAX_FILE_SIZE: u64 = 1_073_741_824;
+
 fn files_problems(files: &FilesSettings) -> Vec<String> {
     let mut errors = Vec::new();
-    if files.max_size == 0 {
-        errors.push("files.max_size must be at least 1".to_owned());
+    if !(1..=MAX_FILE_SIZE).contains(&files.max_size) {
+        errors.push(format!(
+            "files.max_size must be between 1 and {MAX_FILE_SIZE}"
+        ));
     }
     if files.storage != FileBackend::S3 {
         return errors;
