@@ -257,6 +257,11 @@ impl Req {
         )
     }
 
+    /// A raw body (an uploaded file).
+    pub fn body(self, bytes: Vec<u8>) -> Self {
+        Self(self.0.body(bytes))
+    }
+
     pub async fn send(self) -> Resp {
         let response = self.0.send().await.expect("request");
         Resp {

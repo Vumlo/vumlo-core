@@ -4,7 +4,9 @@
 
 mod model;
 mod repo;
+mod routes;
 mod service;
 
 pub use model::{Owner, UsageOwner};
-pub use service::{FileError, authorize_upload, ensure_usable, open_for_read};
+pub use routes::router;
+pub use service::{FileError, authorize_upload, ensure_usable, open_for_read, register_upload};

@@ -43,6 +43,8 @@ use vumlo_config::Settings;
 /// Shorter than the request timeout, so an unreachable database surfaces as 503, not 408.
 const DB_ACQUIRE_TIMEOUT: Duration = Duration::from_secs(5);
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
+/// An upload or a download of a file up to `files.max_size` over a slow link.
+const FILE_REQUEST_TIMEOUT: Duration = Duration::from_secs(600);
 /// Room for a 1 MiB document (ADR-0025) and the rest of the request around it.
 pub(crate) const MAX_BODY_BYTES: usize = 2 * 1024 * 1024;
 
@@ -277,7 +279,22 @@ pub fn router(state: AppState) -> Result<Router, SetupError> {
                 .merge(plugins::router()),
         )
         .split_for_parts();
-    let (router, openapi) = mount_modules(&state, router, openapi);
+    let (router, mut openapi) = mount_modules(&state, router, openapi);
+    // The files routes carry whole files, so they get their own limits and skip the layers that
+    // buffer a body (idempotency, conditional); they are merged in below, after those layers.
+    let (files_router, files_doc) = OpenApiRouter::<AppState>::new()
+        .nest("/api/v1", learning::files::router())
+        .split_for_parts();
+    openapi.merge(files_doc);
+    let files_router = files_router
+        .with_state(state.clone())
+        .layer(RequestBodyLimitLayer::new(
+            usize::try_from(state.learning.max_file_bytes).unwrap_or(usize::MAX),
+        ))
+        .layer(TimeoutLayer::with_status_code(
+            StatusCode::REQUEST_TIMEOUT,
+            FILE_REQUEST_TIMEOUT,
+        ));
     let spec = openapi.clone();
     let config = state.config.clone();
     let idempotency = state.clone();
@@ -300,6 +317,7 @@ pub fn router(state: AppState) -> Result<Router, SetupError> {
             StatusCode::REQUEST_TIMEOUT,
             REQUEST_TIMEOUT,
         ))
+        .merge(files_router)
         .layer(
             TraceLayer::new_for_http()
                 .make_span_with(|request: &axum::http::Request<_>| {

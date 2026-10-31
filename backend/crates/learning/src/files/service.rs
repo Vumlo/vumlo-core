@@ -4,7 +4,7 @@
 //! A file the actor may not read does not exist as far as they can tell: an unknown id, a file of
 //! a draft item, of someone else's submission and of nobody all give `NotFound` (ADR-0069).
 
-use files::{File, FilesError};
+use files::{File, FilesError, Stored};
 use sqlx::PgConnection;
 use uuid::Uuid;
 
@@ -93,6 +93,21 @@ pub async fn authorize_upload(
         }
     }
     Ok(())
+}
+
+/// Describes the bytes `files::put` stored, for `owner`. It authorizes again: the check before
+/// the body was read may be minutes old. The file stays unreferenced until a document or
+/// submission names it.
+pub async fn register_upload(
+    conn: &mut PgConnection,
+    actor: &Actor,
+    owner: &Owner,
+    stored: &Stored,
+    name: &str,
+    mime: &str,
+) -> Result<File, FileError> {
+    authorize_upload(conn, actor, owner).await?;
+    Ok(files::insert(conn, stored, actor.user_id(), name, mime).await?)
 }
 
 /// The file, if the actor may read it: if **any** row that references it grants access (an item's
