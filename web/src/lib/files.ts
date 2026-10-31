@@ -1,3 +1,4 @@
+import { convertFileSrc } from "@tauri-apps/api/core";
 import { ApiError, isDesktop, readText, requestRaw } from "@/lib/api/client";
 import type { FileRef } from "@/lib/api/types";
 import { clientConfig } from "@/lib/clientConfig";
@@ -9,8 +10,11 @@ export type { FileRef };
 /** What a file is for: an item of a course (a teacher's material) or an assignment (a student's work). */
 export type FileTarget = { item: string } | { assignment: string };
 
-/** Where `<img>` and `<iframe>` get a stored file from: the API in a browser, the app's own scheme on the desktop. */
-export const fileUrl = (id: string): string => (isDesktop() ? `vumlo-file://${id}` : `/api/v1/files/${id}`);
+/**
+ * Where `<img>` and `<iframe>` get a stored file from: the API in a browser, the app's `vumlo-file` protocol on the
+ * desktop. Tauri writes that address (it differs between Windows and the other systems); the id is the path.
+ */
+export const fileUrl = (id: string): string => (isDesktop() ? convertFileSrc(id, "vumlo-file") : `/api/v1/files/${encodeURIComponent(id)}`);
 
 /** Stores a file for `target`. A file over the institution's limit fails here, before any byte is sent. */
 export async function uploadFile(file: File, target: FileTarget): Promise<FileRef> {

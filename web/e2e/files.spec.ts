@@ -9,6 +9,8 @@ declare global {
       uploadFile(file: File, target: { item: string } | { assignment: string }): Promise<{ id: string; name: string; mime: string; size: number }>;
       openFile(ref: { id: string; name: string; mime: string; size: number }): Promise<void>;
       setMaxSize(bytes: number): void;
+      fileUrl(id: string): string;
+      readFileText(id: string, maxBytes: number): Promise<string>;
     };
   }
 }
@@ -126,4 +128,38 @@ test("upload_over_the_limit_shows_the_too_large_message", async ({ page }) => {
   );
   expect(sent).toHaveLength(1);
   expect(message).toBe("This file is too large.");
+});
+
+// The desktop window loads files through a custom protocol; Tauri alone knows its address form (it differs between
+// Windows and the other systems), so the stand-in's `convertFileSrc` has a form of its own that no literal matches.
+const ID = "0198f3a0-7b1c-7d2e-8f3a-5b6c7d8e9f01";
+const fakeConvert = (path: string, protocol: string) => `http://${protocol}.localhost/${path}`;
+async function asDesktop(page: Page) {
+  await page.evaluate((src) => {
+    const convert = new Function("return " + src)() as (p: string, q: string) => string;
+    Object.assign(window, { __TAURI_INTERNALS__: { convertFileSrc: convert, invoke: async () => null } });
+  }, fakeConvert.toString());
+}
+
+test("desktop_file_url_uses_the_tauri_custom_protocol_form", async ({ page }) => {
+  await signIn(page);
+  await asDesktop(page);
+  expect(await page.evaluate((id) => window.__vumloFiles.fileUrl(id), ID)).toBe(`http://vumlo-file.localhost/${ID}`);
+});
+
+test("desktop_read_file_text_fetches_that_url", async ({ page }) => {
+  await signIn(page);
+  // The mock's service worker sees every request of the page, so the protocol's answer is faked at `fetch` itself.
+  await page.evaluate(() => {
+    const requested: { url: string; range: string | null }[] = [];
+    Object.assign(window, { __requested: requested });
+    window.fetch = async (input, init) => {
+      requested.push({ url: String(input), range: new Headers(init?.headers).get("range") });
+      return new Response("0123456789", { headers: { "Content-Type": "text/plain" } });
+    };
+  });
+  await asDesktop(page);
+  const text = await page.evaluate((id) => window.__vumloFiles.readFileText(id, 4), ID);
+  expect(text).toBe("0123");
+  expect(await page.evaluate(() => (window as unknown as { __requested: unknown }).__requested)).toEqual([{ url: `http://vumlo-file.localhost/${ID}`, range: "bytes=0-3" }]);
 });
