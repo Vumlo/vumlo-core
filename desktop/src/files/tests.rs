@@ -370,3 +370,27 @@ fn a_saved_file_is_marked_as_coming_from_the_internet() {
     // Windows reads this stream (`<file>:Zone.Identifier`) to warn before it runs or unpacks the file; 3 = Internet.
     assert_eq!(zone_identifier(), "[ZoneTransfer]\r\nZoneId=3\r\n");
 }
+
+/// The page reads the name of a file from `Content-Disposition`, so a cross-origin `fetch` must be allowed to.
+#[tokio::test]
+async fn the_page_may_read_the_content_disposition_of_a_file() {
+    let request = http::Request::builder()
+        .method("GET")
+        .uri(format!("vumlo-file://localhost/{ID}"))
+        .header("origin", "tauri://localhost")
+        .body(Vec::new())
+        .unwrap();
+    // No core is running: the refusal carries the same CORS headers as an answer.
+    let response = serve_one(None, &request).await;
+    let exposed = response.headers()["access-control-expose-headers"]
+        .to_str()
+        .unwrap();
+    for name in [
+        "Content-Range",
+        "Content-Length",
+        "Content-Type",
+        "Content-Disposition",
+    ] {
+        assert!(exposed.contains(name), "{name} in {exposed}");
+    }
+}

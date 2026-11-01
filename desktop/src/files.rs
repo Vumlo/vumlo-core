@@ -383,7 +383,7 @@ pub async fn open_file(
 
 // --- the `vumlo-file` scheme ----------------------------------------------------------------------------
 
-const EXPOSED: &str = "Content-Range, Content-Length, Content-Type";
+const EXPOSED: &str = "Content-Range, Content-Length, Content-Type, Content-Disposition";
 
 fn answer(status: u16, headers: &[(&str, &str)], body: Vec<u8>) -> http::Response<Vec<u8>> {
     let mut response = http::Response::new(body);
