@@ -567,6 +567,11 @@ test("teacher_sets_max_files_and_accept_in_settings", async ({ page }) => {
   const max = page.getByLabel("Most files per attempt");
   const other = page.getByLabel("Other types");
   const type = (name: string) => page.getByRole("checkbox", { name, exact: true });
+  // A chip hides its checkbox under the label, and the sticky header may cover a chip near the top: centre it, then click the label's box.
+  const flip = async (name: string, on: boolean) => {
+    await type(name).evaluate((el) => el.scrollIntoView({ block: "center" }));
+    await type(name).setChecked(on, { force: true });
+  };
   await expect(max).toHaveValue("3");
   // The stored types show as checked entries of the menu; the field holds only what the menu has not got.
   for (const name of [".pdf", ".docx", ".png"]) await expect(type(name)).toBeChecked();
@@ -588,10 +593,12 @@ test("teacher_sets_max_files_and_accept_in_settings", async ({ page }) => {
   await expect(type(".tsv")).toBeChecked();
   await type("Spreadsheets").uncheck();
   await expect(type(".tsv")).not.toBeChecked();
-  // A chip hides its checkbox under the label, so these clicks are forced to land on the label.
-  await type(".png").uncheck({ force: true });
-  await type(".jpg").check({ force: true });
-  await type(".h").check({ force: true });
+  await flip(".png", false);
+  await flip(".jpg", true);
+  // Groups with no pick start folded; open one to reach its chips.
+  await expect(type(".h")).toHaveCount(0);
+  await page.getByRole("button", { name: "Show or hide Code and data" }).click();
+  await flip(".h", true);
   // Wait for the PATCH the click sends before reading anything: "Saved" and the stored item only follow its answer.
   const saveSettings = async () => {
     const [res] = await Promise.all([
@@ -609,7 +616,7 @@ test("teacher_sets_max_files_and_accept_in_settings", async ({ page }) => {
   const stored = await page.evaluate(async (id) => (await (await fetch(`/api/v1/items/${id}`)).json()) as { assignment: { config: unknown } }, item);
   expect(stored.assignment.config).toEqual({ max_files: 2, accept: PATCH_FIRST.config.accept });
   // No restriction is an empty list left out of the config.
-  for (const name of [".pdf", ".docx", ".jpg", ".h"]) await type(name).uncheck({ force: true });
+  for (const name of [".pdf", ".docx", ".jpg", ".h"]) await flip(name, false);
   await other.fill("");
   const second = await saveSettings();
   expect(second).toEqual({ ...PATCH_FIRST, config: { max_files: 2 } });

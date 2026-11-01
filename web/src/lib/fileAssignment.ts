@@ -36,13 +36,13 @@ export function acceptsName(accept: string[], name: string): boolean {
 
 /** The menu of the assignment settings: kinds of file with the extensions each chip stands for (`.jpg` also means `.jpeg`). */
 export const ACCEPT_GROUPS: { title: MessageKey; types: { label: string; exts: string[] }[] }[] = [
-  { title: "as.acceptGroup.documents", types: [".pdf", ".docx", ".doc", ".odt", ".rtf", ".txt"].map(one) },
+  { title: "as.acceptGroup.documents", types: [".pdf", ".docx", ".doc", ".odt", ".rtf", ".txt", ".md"].map(one) },
   { title: "as.acceptGroup.sheets", types: [".xlsx", ".xls", ".ods", ".csv", ".tsv"].map(one) },
   { title: "as.acceptGroup.slides", types: [".pptx", ".ppt", ".odp"].map(one) },
   { title: "as.acceptGroup.images", types: [{ label: ".jpg", exts: [".jpg", ".jpeg"] }, ...[".png", ".gif", ".webp", ".heic", ".svg"].map(one)] },
   { title: "as.acceptGroup.audio", types: [".mp3", ".wav", ".m4a", ".ogg"].map(one) },
   { title: "as.acceptGroup.video", types: [".mp4", ".mov", ".webm"].map(one) },
-  { title: "as.acceptGroup.code", types: [".py", ".js", ".java", ".c", ".h", ".cpp", ".hpp", ".html", ".css", ".sql", ".json", ".md", ".ipynb"].map(one) },
+  { title: "as.acceptGroup.code", types: [".py", ".js", ".java", ".c", ".h", ".cpp", ".hpp", ".html", ".css", ".sql", ".json", ".ipynb"].map(one) },
   { title: "as.acceptGroup.archives", types: [".zip"].map(one) },
 ];
 function one(ext: string) {

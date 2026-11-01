@@ -1377,6 +1377,7 @@ export const en = {
   "as.maxFilesError": "Enter a whole number from 1 to 20.",
   "as.accept": "Accepted file types",
   "as.acceptHint": "Pick the types students may hand in. Leave all unchecked to take any file.",
+  "as.acceptToggle": "Show or hide {group}",
   "as.acceptOther": "Other types",
   "as.acceptOtherHint": "Separate with commas, like .tex, .dwg.",
   "as.acceptGroup.documents": "Documents",
