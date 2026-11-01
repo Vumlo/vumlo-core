@@ -10,10 +10,17 @@ must do, in order, besides getting the new release. See [RELEASING.md](RELEASING
 
 ## [Unreleased]
 
-- File assignments: the accepted types are picked from a menu of groups, with a field for other types. `accept` entries may be one character long (`.c`, `.h`) (ADR-0023, amended).
-- **Branding.** The logo is always Vumlo's: `institution.logo` is removed (ADR-0054, amended).
+## [0.4.1] - 2026-11-01
 
-**Upgrade notes.** Delete `logo = ...` from the `[institution]` section of `vumlo.toml`, or `config check` stops with "institution.logo: unknown key". Then `./vumlo brand apply` and rebuild.
+Branding, and a menu for the file types of a file assignment.
+
+- File assignments: the accepted types are picked from a menu of groups, with a field for other types. `accept` entries may be one character long (`.c`, `.h`) (ADR-0023, amended).
+- **Branding.** The logo is always Vumlo's: the favicon, the app icons, the navbar and the sign-in page. `institution.logo` is removed (ADR-0054, amended), and `resvg` with it.
+- The name of the app is "Vumlo | Short name" on the web and "Vumlo Short name" on the desktop (the installers cannot have a `|` in their name).
+- The title of a browser tab says where you are: "Lab report · Course · Vumlo | Short name".
+- The sign-in page has Google's logo on its button and a proper language icon.
+
+**Upgrade notes.** This release removes a configuration key, which a patch release should not. If your `vumlo.toml` has `logo = ...` in `[institution]`, delete that line: `config check` and the server stop with "institution.logo: unknown key". Then run `./vumlo brand apply` and rebuild the images. No migrations, no new `config_version`.
 
 ## [0.4.0] - 2026-11-01
 
@@ -273,7 +280,8 @@ There is nothing to upgrade from; follow [docs/install.md](docs/install.md).
 - Any optional module, and an end-user CLI (ADR-0055).
 - Published container images: the images are built on your server from the archive.
 
-[Unreleased]: https://github.com/Vumlo/vumlo-core/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/Vumlo/vumlo-core/compare/v0.4.1...HEAD
+[0.4.1]: https://github.com/Vumlo/vumlo-core/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/Vumlo/vumlo-core/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/Vumlo/vumlo-core/compare/v0.2.2...v0.3.0
 [0.2.2]: https://github.com/Vumlo/vumlo-core/compare/v0.2.1...v0.2.2
