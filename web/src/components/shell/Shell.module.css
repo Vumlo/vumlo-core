@@ -6,10 +6,6 @@
   background: var(--bg);
 }
 .brand { display: flex; align-items: center; gap: 12px; border-radius: var(--radius-pill); }
-.logo {
-  display: flex; align-items: center; justify-content: center; flex: none; width: 32px; height: 32px;
-  border-radius: 50%; background: var(--accent); color: var(--accent-text); font-size: 16px; font-weight: 600;
-}
 .logoImg { flex: none; width: 32px; height: 32px; object-fit: contain; }
 .brandName { font-size: 16px; font-weight: 500; letter-spacing: -0.01em; }
 .nav { display: flex; gap: 4px; padding: 4px; border-radius: var(--radius-pill); background: var(--surface); }
@@ -38,7 +34,6 @@
 @media (max-width: 720px) {
   .header { flex-wrap: nowrap; gap: 8px; min-height: 56px; padding: 0 8px 0 16px; }
   .nav, .search, .desktopOnly { display: none; }
-  .logo { width: 28px; height: 28px; font-size: 14px; }
   .logoImg { width: 28px; height: 28px; }
   .phoneOnly { display: flex; }
   .main { min-height: calc(100vh - 57px); padding-bottom: 0; }
