@@ -549,11 +549,16 @@ test("submitted_attempts_list_their_files_with_open_buttons", async ({ page }) =
   expect(url).toMatch(/^\/api\/v1\/files\/[0-9a-f-]+$/);
   const [download] = await Promise.all([page.waitForEvent("download"), attempt.getByRole("button", { name: "Open notes.docx" }).click()]);
   expect(download.suggestedFilename()).toBe("notes.docx");
-  // A new attempt starts with no files: the old ones do not carry over.
+  // A new attempt starts from the last one: the student's own files carry over and can be handed in again.
+  const saved = watchBodies(page, "PUT", /\/submission\/draft$/);
   await page.getByRole("button", { name: "Edit and resubmit" }).click();
-  await expect(filesList(page).getByRole("listitem")).toHaveCount(0);
-  await expect(submitButton(page)).toBeDisabled();
+  await expect(filesList(page).getByRole("listitem")).toHaveCount(2);
+  await expect(filesList(page)).toContainText("report.pdf");
+  await expect(submitButton(page)).toBeEnabled();
+  expect((saved.at(-1)!.content as { files: string[] }).files).toHaveLength(2);
 });
+
+const PATCH_FIRST = { accept_late: false, config: { max_files: 2, accept: [".pdf", ".docx"] }, due_at: expect.any(String) as unknown, late_until: null, max_attempts: 2, max_points: "10.00", on_deadline: "auto_submit" };
 
 test("teacher_sets_max_files_and_accept_in_settings", async ({ page }) => {
   const { course, item } = await openReport(page, "teacher");
@@ -574,17 +579,106 @@ test("teacher_sets_max_files_and_accept_in_settings", async ({ page }) => {
   await accept.fill("PDF, docx, .pdf");
   await expect(page.getByText(".pdf is listed twice.")).toBeVisible();
   await accept.fill("PDF, docx");
-  await page.getByRole("button", { name: "Save settings" }).click();
-  await expect(page.getByRole("status").filter({ hasText: "Saved" })).toBeVisible();
-  const body = patches.at(-1)!;
-  expect(body.config).toEqual({ max_files: 2, accept: [".pdf", ".docx"] });
+  // Wait for the PATCH the click sends before reading anything: "Saved" and the stored item only follow its answer.
+  const saveSettings = async () => {
+    const [res] = await Promise.all([
+      page.waitForResponse((r) => r.request().method() === "PATCH" && /\/items\/[^/]+$/.test(new URL(r.url()).pathname)),
+      page.getByRole("button", { name: "Save settings" }).click(),
+    ]);
+    expect(res.ok()).toBe(true);
+    return JSON.parse(res.request().postData() ?? "{}") as Record<string, unknown>;
+  };
+  const first = await saveSettings();
+  // Exactly "Saved.": the editor's own "All changes saved" is a second status that shows up now and then.
+  await expect(page.getByRole("status").filter({ hasText: /^Saved\.$/ })).toBeVisible();
+  expect(first).toEqual(PATCH_FIRST);
+  expect(patches).toEqual([first]);
   const stored = await page.evaluate(async (id) => (await (await fetch(`/api/v1/items/${id}`)).json()) as { assignment: { config: unknown } }, item);
   expect(stored.assignment.config).toEqual({ max_files: 2, accept: [".pdf", ".docx"] });
   // No restriction is an empty list left out of the config.
   await accept.fill("");
-  await page.getByRole("button", { name: "Save settings" }).click();
-  await expect.poll(() => patches.length).toBe(2);
-  expect(patches.at(-1)!.config).toEqual({ max_files: 2 });
+  const second = await saveSettings();
+  expect(second).toEqual({ ...PATCH_FIRST, config: { max_files: 2 } });
+  expect(patches).toEqual([first, second]);
+});
+
+// ---- resubmitting a text assignment keeps the student's pictures and files (ADR-0069) ----
+
+const PNG_BYTES = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64");
+
+type Blk = Record<string, unknown>;
+
+/**
+ * Signs in as the student, uploads a picture and a file for "Merge sort implementation", stores `build(imageId, fileId)` as the
+ * first attempt, opens the page and presses "Edit and resubmit". Returns what the page then saved and the ids it was built from.
+ */
+async function resubmitWith(page: Page, build: (image: string, file: string) => Blk[]) {
+  await signInAs(page, "student");
+  await page.waitForFunction(() => "__vumloFiles" in window);
+  // A full page load starts the mock afresh, so the first attempt is made inside a page that has not read the assignment yet.
+  await page.goto("/");
+  await expect(page.getByRole("navigation", { name: "Main" }).first()).toBeVisible();
+  await page.waitForFunction(() => "__vumloFiles" in window);
+  const where = await page.evaluate(async () => {
+    const courses = (await (await fetch("/api/v1/me/courses?limit=100")).json()) as { items: { id: string }[] };
+    for (const c of courses.items) {
+      const tree = (await (await fetch(`/api/v1/courses/${c.id}/content`)).json()) as { modules: { items: { id: string; title: string }[]; submodules: { items: { id: string; title: string }[] }[] }[] };
+      const hit = tree.modules.flatMap((m) => [...m.items, ...m.submodules.flatMap((x) => x.items)]).find((i) => i.title === "Merge sort implementation");
+      if (hit) return { course: c.id, item: hit.id };
+    }
+    throw new Error("the seeded text assignment is missing");
+  });
+  const first = await page.evaluate(async (args) => {
+    const target = { assignment: args.item };
+    const image = await window.__vumloFiles.uploadFile(new File([new Uint8Array(args.png)], "diagram.png", { type: "image/png" }), target);
+    const file = await window.__vumloFiles.uploadFile(new File([new Uint8Array(32).fill(7)], "notes.pdf", { type: "application/pdf" }), target);
+    return { image: image.id, file: file.id };
+  }, { item: where.item, png: Array.from(PNG_BYTES) });
+  const blocks = build(first.image, first.file);
+  await page.evaluate(async (args) => {
+    const content = { v: 1, blocks: args.blocks };
+    const put = await fetch(`/api/v1/assignments/${args.item}/submission/draft`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ content }) });
+    if (!put.ok) throw new Error(`draft: ${put.status}`);
+    const sent = await fetch(`/api/v1/assignments/${args.item}/submission/submit`, { method: "POST" });
+    if (!sent.ok) throw new Error(`submit: ${sent.status}`);
+  }, { item: where.item, blocks });
+  // Walk to the assignment inside the app, so it reads the stored attempt.
+  await page.getByRole("navigation", { name: "Main" }).first().getByRole("link", { name: "Courses" }).click();
+  await page.getByRole("link", { name: /Algorithms and Data Structures/ }).first().click();
+  await page.getByRole("link", { name: /^Merge sort implementation/ }).first().click();
+  const [res] = await Promise.all([
+    page.waitForResponse((r) => r.request().method() === "PUT" && /\/submission\/draft$/.test(new URL(r.url()).pathname)),
+    page.getByRole("button", { name: "Edit and resubmit" }).click(),
+  ]);
+  return { blocks, status: res.status(), sent: (JSON.parse(res.request().postData() ?? "{}") as { content: { blocks: Blk[] } }).content.blocks };
+}
+
+const para = (text: string): Blk => ({ id: "p1", type: "paragraph", content: [{ type: "text", text }] });
+const noRefusal = (page: Page) => expect(page.getByText("cannot be used here")).toHaveCount(0);
+
+test("resubmitting_keeps_the_images_and_files_of_the_previous_attempt", async ({ page }) => {
+  const run = await resubmitWith(page, (image, file) => [
+    para("My answer"),
+    { id: "i1", type: "image", props: { file_id: image, alt: "A diagram" } },
+    { id: "f1", type: "file", props: { file_id: file } },
+  ]);
+  // The new draft is stored with the same blocks, and the server (the mock) accepts the student's own earlier files.
+  expect(run.status).toBe(200);
+  expect(run.sent).toEqual(run.blocks);
+  await expect(page.getByRole("group", { name: "Your answer" })).toBeVisible();
+  await expect(page.locator("[data-kind-block=image]")).toHaveCount(1);
+  await expect(page.locator("[data-kind-block=file]")).toHaveCount(1);
+  await noRefusal(page);
+});
+
+test("a_nested_image_survives_a_resubmit", async ({ page }) => {
+  const run = await resubmitWith(page, (image, file) => [
+    { id: "l1", type: "bulleted_list_item", content: [{ type: "text", text: "A point" }], children: [{ id: "i1", type: "image", props: { file_id: image } }] },
+    { id: "q1", type: "quote", content: [{ type: "text", text: "A quote" }], children: [{ id: "f1", type: "file", props: { file_id: file } }] },
+  ]);
+  expect(run.status).toBe(200);
+  expect(run.sent).toEqual(run.blocks);
+  await noRefusal(page);
 });
 
 // ---- grade mode: the teacher looks at the files a student handed in (spec 9.3) ----
@@ -622,13 +716,23 @@ async function firstAttempt(page: Page) {
   return region;
 }
 
-test("teacher_previews_a_pdf_per_the_step0_decision", async ({ page }) => {
-  // The decision (Task 14, STEP 0): while the server sends `Content-Security-Policy: sandbox` with a PDF, a PDF is an Open card.
+test("teacher_previews_a_pdf_in_an_iframe", async ({ page }) => {
+  // The server serves a PDF without `Content-Security-Policy: sandbox`, so the frame is the default; the link is the fallback for a blank frame.
   const region = await firstAttempt(page);
   const shown = preview(region, "report.pdf");
-  await expect(shown.locator("iframe")).toHaveCount(0);
-  await expect(shown.getByRole("group", { name: "File" })).toContainText("report.pdf");
-  const [popup] = await Promise.all([page.waitForEvent("popup"), shown.getByRole("button", { name: "Open in new tab" }).click()]);
+  const frame = shown.locator("iframe");
+  await expect(frame).toHaveAttribute("src", /^\/api\/v1\/files\/[0-9a-f-]+$/);
+  await expect(frame).toHaveAttribute("title", "report.pdf");
+  await expect(frame).toHaveAttribute("referrerpolicy", "no-referrer");
+  await expect(frame).toBeVisible();
+  expect((await frame.boundingBox())!.height).toBeGreaterThanOrEqual(480);
+  // The mock sends what the server does: no sandbox policy with a PDF, one with everything else.
+  const csp = await page.evaluate(async (src) => (await fetch(src)).headers.get("content-security-policy"), (await frame.getAttribute("src"))!);
+  expect(csp).toBeNull();
+  // No card and no button: the file is the frame; one small link is the fallback for a blank frame.
+  await expect(shown.getByRole("group", { name: "File" })).toHaveCount(0);
+  await expect(shown.getByRole("button")).toHaveCount(0);
+  const [popup] = await Promise.all([page.waitForEvent("popup"), shown.getByRole("link", { name: "Open in new tab" }).click()]);
   await popup.close();
 });
 
@@ -641,13 +745,15 @@ async function withPdfIframe(page: Page, init?: string) {
   return region;
 }
 
-test("teacher_previews_a_pdf_in_an_iframe_when_enabled", async ({ page }) => {
-  const region = await withPdfIframe(page);
-  const frame = preview(region, "report.pdf").locator("iframe");
-  await expect(frame).toHaveAttribute("src", /^\/api\/v1\/files\/[0-9a-f-]+$/);
-  await expect(frame).toHaveAttribute("title", "report.pdf");
-  await expect(frame).toHaveAttribute("referrerpolicy", "no-referrer");
-  await expect(preview(region, "report.pdf").getByRole("button", { name: "Open in new tab" })).toHaveCount(0);
+test("with_the_iframe_preview_off_a_pdf_is_an_open_card", async ({ page }) => {
+  const region = await gradeFiles(page, "Daniel");
+  await page.waitForFunction(() => "setPdfIframe" in window.__vumloFiles);
+  await page.evaluate(() => window.__vumloFiles.setPdfIframe(false));
+  await region.getByRole("tab", { name: "Attempt 1" }).click();
+  const shown = preview(region, "report.pdf");
+  await expect(shown.locator("iframe")).toHaveCount(0);
+  await expect(shown.getByRole("group", { name: "File" })).toContainText("report.pdf");
+  await expect(shown.getByRole("button", { name: "Open in new tab" })).toBeVisible();
 });
 
 test("teacher_previews_an_image", async ({ page }) => {
@@ -657,6 +763,7 @@ test("teacher_previews_an_image", async ({ page }) => {
   await expect(img).toBeVisible();
   await expect.poll(() => img.evaluate((el) => (el as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
   await expect(img).toHaveAttribute("src", /^\/api\/v1\/files\/[0-9a-f-]+$/);
+  expect(await page.evaluate(async (src) => (await fetch(src)).headers.get("content-security-policy"), (await img.getAttribute("src"))!)).toBe("sandbox");
 });
 
 test("teacher_previews_text_up_to_1_mib_and_sees_a_truncation_note_beyond", async ({ page }) => {
@@ -760,7 +867,10 @@ test("desktop_linux_shows_an_open_card_for_a_pdf", async ({ page }) => {
 
 test("desktop_on_another_system_previews_a_pdf_when_the_iframe_is_enabled", async ({ page }) => {
   const region = await withPdfIframe(page, desktopOn(MAC));
-  await expect(preview(region, "report.pdf").locator("iframe")).toHaveAttribute("src", /\/api\/v1\/files\//);
+  const shown = preview(region, "report.pdf");
+  await expect(shown.locator("iframe")).toHaveAttribute("src", /\/api\/v1\/files\//);
+  await expect(shown.getByRole("group", { name: "File" })).toHaveCount(0);
+  await expect(shown.getByRole("button")).toHaveCount(0);
 });
 
 test("switching_attempt_tabs_switches_the_file_list", async ({ page }) => {
