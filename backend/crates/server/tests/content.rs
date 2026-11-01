@@ -4594,7 +4594,7 @@ async fn a_published_file_item_cannot_publish_a_revision_that_drops_its_file() {
 /// `publish_module` with `cascade` publishes every draft item below the module, so a file item
 /// without a file refuses the whole publish: nothing below it becomes visible either.
 #[tokio::test]
-async fn publishing_a_module_with_a_fileless_file_item_is_refused_or_skips_it() {
+async fn a_cascade_publish_needs_every_file_item_to_have_its_file() {
     db_test(async |pool| {
         let w = world(pool).await;
         let parent = module(&w, "Files", None).await;

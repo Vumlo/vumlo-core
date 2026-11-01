@@ -95,7 +95,7 @@ pub fn accepts(accept: &[String], file_name: &str) -> bool {
     if accept.is_empty() {
         return true;
     }
-    let lower = file_name.to_lowercase();
+    let lower = file_name.to_ascii_lowercase();
     match lower.rsplit_once('.') {
         Some((_, ext)) if !ext.is_empty() => accept
             .iter()

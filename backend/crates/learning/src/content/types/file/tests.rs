@@ -155,6 +155,15 @@ fn accept_is_case_insensitive_for_the_file_name() {
 }
 
 #[test]
+fn only_ascii_letters_are_folded_in_an_extension() {
+    // U+212A KELVIN SIGN lower-cases to an ASCII `k`; it is not a `k` in a file name.
+    let accept = vec![".kml".to_owned()];
+    assert!(accepts(&accept, "map.kml"));
+    assert!(accepts(&accept, "map.KML"));
+    assert!(!accepts(&accept, "map.\u{212A}ml"));
+}
+
+#[test]
 fn duplicate_file_ids_are_rejected() {
     let dup = json!({"files": [id(1), id(2), id(1)]});
     assert_eq!(paths(&json!({}), dup, Stage::Draft), ["files[2]"]);
