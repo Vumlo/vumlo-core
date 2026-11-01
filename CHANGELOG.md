@@ -10,6 +10,8 @@ must do, in order, besides getting the new release. See [RELEASING.md](RELEASING
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-11-01
+
 File uploads (ADR-0069).
 
 ### Added
@@ -266,7 +268,8 @@ There is nothing to upgrade from; follow [docs/install.md](docs/install.md).
 - Any optional module, and an end-user CLI (ADR-0055).
 - Published container images: the images are built on your server from the archive.
 
-[Unreleased]: https://github.com/Vumlo/vumlo-core/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/Vumlo/vumlo-core/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/Vumlo/vumlo-core/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/Vumlo/vumlo-core/compare/v0.2.2...v0.3.0
 [0.2.2]: https://github.com/Vumlo/vumlo-core/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/Vumlo/vumlo-core/compare/v0.2.0...v0.2.1
