@@ -248,8 +248,8 @@ fn mark_downloaded(path: &Path) {
 }
 
 /// The headers of a stored file that the scheme passes on as the server sent them, and nothing else the server
-/// said. The server's policy (`Content-Security-Policy: sandbox`) is its own; none is made up here. `nosniff` is
-/// always there, from the server or from us.
+/// said. The server's `Content-Security-Policy` is forwarded exactly as sent (a PDF has none, everything else
+/// `sandbox`); none is made up here. `nosniff` is always there, from the server or from us.
 pub fn file_headers(reply: &RawReply) -> Vec<(&'static str, &str)> {
     let mut headers: Vec<_> = [
         "content-type",

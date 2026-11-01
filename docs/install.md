@@ -323,7 +323,9 @@ max_size = 52428800    # bytes, 1 to 1073741824 (1 GiB); the largest file, defau
   - **systemd.** `vumlo-core.service` and `vumlo-worker.service` set `StateDirectory=vumlo` (systemd creates
     `/var/lib/vumlo`, owned by `vumlo` and writable despite `ProtectSystem=strict`) and
     `VUMLO__FILES__PATH=/var/lib/vumlo/files`. Back up `/var/lib/vumlo/files`. To keep the files elsewhere,
-    change both the variable and add the directory to `ReadWritePaths=` in both units.
+    point `VUMLO__FILES__PATH` (or `files.path`) at the new directory and make that directory writable for
+    both units, for example with `ReadWritePaths=<dir>` in a drop-in, because `ProtectSystem=strict` leaves
+    everything else read-only.
   - **Docker.** The `core` and `worker` services mount the named volume `files-data` at
     `/var/lib/vumlo/files` and set `VUMLO__FILES__PATH` to it; the image creates the directory for uid
     10001, so the volume starts out writable. The volume survives `docker compose down` (not
@@ -350,8 +352,8 @@ max_size = 52428800    # bytes, 1 to 1073741824 (1 GiB); the largest file, defau
 - **Orphans.** A file that was uploaded but that no item and no submission names (an abandoned upload, a
   file removed from a document) is deleted after 24 hours. The sweep runs every hour in the worker, and in
   `serve` unless `--no-worker`. Nothing else deletes files: a deleted course takes its references, and the
-  sweep takes the files once nothing names them. An upload whose row could not be saved (for example because the submission window closed while the
-  file was on its way) removes its own object at once.
+  sweep takes the files once nothing names them. An upload whose row could not be saved (for example
+  because the submission window closed while the file was on its way) removes its own object at once.
 
 ## Optional modules
 
