@@ -76,9 +76,9 @@ binary. Edit the two files:
   file starts with `[auth] cookie_secure = false`, which is only for a trial over plain HTTP: delete
   that line for anything real.
 
-The release ships a **placeholder** brand: the name "Vumlo" and the logo `brand/logo.png`. Replace
-`brand/logo.png` with your institution's logo (PNG, JPEG, WebP or SVG; an SVG must have its text
-converted to paths), or keep your file elsewhere and set `institution.logo` to its path.
+The release ships with the name "Vumlo". Set `institution.name` and `institution.short_name` to your
+institution's: the web app and the desktop app are then called "Vumlo | Short name". The logo is
+always Vumlo's (`brand/logo.png`); it is not configurable.
 
 ### 3. Build and start
 
@@ -109,7 +109,7 @@ on `127.0.0.1:8080`; for a real domain with TLS put Caddy in front of both (`dep
 app is built into its own image; that is expected for this path, and it warns about `node` for the same
 reason.
 
-To change the configuration or the logo later: edit `vumlo.toml` or the file, `./vumlo config check`,
+To change the configuration later: edit `vumlo.toml`, `./vumlo config check`,
 `./vumlo brand apply`, then `docker compose up -d --build` (the web image is rebuilt from the new
 `.vumlo/generated`).
 
@@ -119,7 +119,7 @@ Read the **Upgrade notes** of every release between yours and the new one in `CH
 
 ```sh
 sha256sum --check --ignore-missing SHA256SUMS && tar xzf vumlo-0.2.0-source.tar.gz
-cp -a vumlo-0.1.0/vumlo.toml vumlo-0.1.0/.env vumlo-0.1.0/brand vumlo-0.2.0/   # your files, and the logo
+cp -a vumlo-0.1.0/vumlo.toml vumlo-0.1.0/.env vumlo-0.1.0/brand vumlo-0.2.0/   # your files
 cp -a vumlo-0.1.0/backups vumlo-0.2.0/ 2>/dev/null || true
 cd vumlo-0.2.0
 ./vumlo config check            # a new config_version or key is listed here
@@ -384,7 +384,7 @@ run `brand apply` and rebuild the web app.
 | `config show [--public]` | the effective configuration, secrets redacted |
 | `modules list [--json]` | the core modules and the optional ones with their state |
 | `module <name> ...` | the subcommands a module brings, while it is on |
-| `brand apply [--dry-run]` | regenerates `.vumlo/generated/` from the configuration and the logo |
+| `brand apply [--dry-run]` | regenerates `.vumlo/generated/` from the configuration |
 | `build web [--dry-run]` | `brand apply`, then the web build |
 | `db status` | what is applied and pending; non-zero if the schema is newer than the binary |
 | `db backup [--output FILE]` | a `pg_dump` of the database, read back with `pg_restore`; never overwrites |

@@ -170,7 +170,7 @@ enum PluginCommand {
 #[derive(Subcommand)]
 enum BrandCommand {
     /// Regenerate `.vumlo/generated/` from the configuration: client-config.json and its types,
-    /// the manifest, the favicon and the app icons from `institution.logo`. Starts from scratch
+    /// the manifest, the Vumlo logo, the favicon and the app icons. Starts from scratch
     /// every time. Then rebuild the web app and restart.
     Apply {
         /// Say what would be written, write nothing.
@@ -303,7 +303,7 @@ async fn run(cli: Cli) -> anyhow::Result<bool> {
                 dry_run,
             } => plugin_cmd::remove(&options, &plugin_id, yes, dry_run).await?,
         },
-        Command::Brand(BrandCommand::Apply { dry_run }) => brand::apply(&options, dry_run).await?,
+        Command::Brand(BrandCommand::Apply { dry_run }) => brand::apply(&options, dry_run)?,
         Command::Build(BuildCommand::Web { dry_run }) => build_web::run(&options, dry_run).await?,
         Command::Seed { demo, yes, dry_run } => {
             if !demo {

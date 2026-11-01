@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Proves that a release archive works, by following docs/install.md (the Docker path) in a clean
-# directory: verify the checksum, unpack, init, configure, replace the placeholder logo, config
+# directory: verify the checksum, unpack, init, configure, config
 # check, brand apply, build, migrate, create an administrator, start, doctor, and ask the API and
 # the web app. Everything it creates is removed at the end.
 #
@@ -50,22 +50,20 @@ done
 node --check desktop/scripts/build.mjs
 node --check desktop/scripts/config.mjs
 
-step "2. configure (init, .env, vumlo.toml, logo)"
+step "2. configure (init, .env, vumlo.toml)"
 ./vumlo init
 cp deploy/env.example .env && chmod 600 .env
 db_password="$(openssl rand -hex 16)"
 sed -i "s/change-me/$db_password/g" .env
 grep -q '^name = "Vumlo"' vumlo.toml          # the placeholder name
-printf '%s\n' '<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"><rect width="64" height="64" fill="#b00020"/></svg>' >brand/own-logo.svg
-sed -i 's#^logo = "brand/logo.png"#logo = "brand/own-logo.svg"#' vumlo.toml
 sed -i 's/^name = "Vumlo"/name = "Verification University"/' vumlo.toml
 
 step "3. config check, brand apply"
 ./vumlo config check
 ./vumlo brand apply
 grep -q 'Verification University' .vumlo/generated/client-config.json
-[ ! -e .vumlo/generated/logo.png ]   # the placeholder is not what was generated
-[ "$(cat .vumlo/generated/logo.svg)" = "$(cat brand/own-logo.svg)" ]
+cmp .vumlo/generated/logo.png brand/logo.png   # the logo is always Vumlo's
+[ -s .vumlo/generated/favicon.ico ]
 
 step "4. build"
 ./vumlo version

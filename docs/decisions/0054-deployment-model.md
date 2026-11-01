@@ -171,3 +171,11 @@ pushed the decision:
 - The web build and `typecheck` need `brand apply` first; `dev` and `dev:mock` use a stand-in.
 - The Rust-rendered SVG ignores text. A logo exported with text as text renders without it.
 - Not decided here: how a module's routes authenticate (ADR-0055), and any real module.
+
+## Amendment 2026-11-01: one logo, Vumlo's
+- **Decision.** Every installation shows the Vumlo logo (`brand/logo.png`, compiled into `vumlo-cli`): the favicon, the web manifest icons, the apple touch icon, the logo in the web app and the icons of the desktop installers. `institution.logo` is **removed**: a configuration that sets it stops with "institution.logo: unknown key (the logo is gone; every installation uses the Vumlo logo)". `client-config.json` has no `logo` member; the web app reads `/brand/logo.png`. `brand apply` always writes the logo and all icons, and no longer fetches a URL, reads a file named by the configuration or renders an SVG.
+- **Name.** The app is called "Vumlo | {short_name}" (just "Vumlo" when the short name is Vumlo itself): the web manifest `name` and the title of every browser tab; the desktop app is "Vumlo {short_name}" because `|` cannot be in the name of an installer or a macOS bundle.
+- **Dependencies (amends ADR-0014).** `resvg` is removed; nothing renders an SVG any more.
+- **Reason.** The product is Vumlo; an installation says whose it is by its name, not by replacing the brand.
+- **Supersedes** item 11 above (`institution.logo` is new) and the parts of items 6 and 12 about a configured or SVG logo.
+

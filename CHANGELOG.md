@@ -10,6 +10,11 @@ must do, in order, besides getting the new release. See [RELEASING.md](RELEASING
 
 ## [Unreleased]
 
+- File assignments: the accepted types are picked from a menu of groups, with a field for other types. `accept` entries may be one character long (`.c`, `.h`) (ADR-0023, amended).
+- **Branding.** The logo is always Vumlo's: `institution.logo` is removed (ADR-0054, amended).
+
+**Upgrade notes.** Delete `logo = ...` from the `[institution]` section of `vumlo.toml`, or `config check` stops with "institution.logo: unknown key". Then `./vumlo brand apply` and rebuild.
+
 ## [0.4.0] - 2026-11-01
 
 File uploads (ADR-0069).

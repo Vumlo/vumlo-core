@@ -72,7 +72,6 @@ pub fn test_settings() -> Settings {
             time_zone: chrono_tz::UTC,
             mode: InstitutionMode::University,
             grading_scale: GradingScale::Hundred,
-            logo: None,
         },
         editor: EditorSettings::default(),
         // One directory for the whole test run: a file is stored under its own random id.
