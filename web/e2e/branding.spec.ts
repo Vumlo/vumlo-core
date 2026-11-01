@@ -51,7 +51,7 @@ test("the favicon and the logo are Vumlo's", async ({ page }) => {
   const icons = await page.evaluate(() => [...document.querySelectorAll("link[rel~=icon],link[rel=apple-touch-icon]")].map((l) => l.getAttribute("href")));
   expect(icons).toEqual(["/brand/favicon.ico", "/brand/icon-192.png", "/brand/apple-touch-icon.png"]);
   for (const href of icons) expect((await page.request.get(href as string)).ok(), `${href} is served`).toBe(true);
-  const logo = page.locator("img[src='/brand/logo.png']").first();
+  const logo = page.locator("img[src='/vumlo-mark.png']").first();
   await expect(logo).toBeVisible();
   expect(await logo.evaluate((img: HTMLImageElement) => img.naturalWidth)).toBeGreaterThan(0);
 });

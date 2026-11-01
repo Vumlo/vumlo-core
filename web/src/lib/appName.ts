@@ -6,5 +6,8 @@ export function appNameOf(shortName: string): string {
   return short.toLowerCase() === "vumlo" ? "Vumlo" : `Vumlo | ${short}`;
 }
 
+/** The short name of the institution, or null when it is Vumlo itself. */
+export const orgName: string | null = appNameOf(clientConfig.public.institution.short_name) === "Vumlo" ? null : clientConfig.public.institution.short_name.trim();
+
 /** From client-config.json, so it is the same in the page's own HTML and after it has loaded. */
 export const appName = appNameOf(clientConfig.public.institution.short_name);

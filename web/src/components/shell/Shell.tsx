@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
-import { BrandMark } from "@/components/BrandMark";
+import { BrandLockup } from "@/components/BrandMark";
 import { appName } from "@/lib/appName";
 import { Icon } from "@/components/Icon";
 import { navFor } from "@/lib/nav";
@@ -150,9 +150,8 @@ export function Shell({ children }: { children: ReactNode }) {
   return (
     <>
       <header className={s.header}>
-        <Link href="/" className={s.brand}>
-          <BrandMark className={s.logoImg} />
-          <span className={s.brandName}>{appName}</span>
+        <Link href="/" className={s.brand} aria-label={appName}>
+          <BrandLockup />
         </Link>
         <nav aria-label={t("shell.main")} className={s.nav}>
           {nav.map((n) => (
