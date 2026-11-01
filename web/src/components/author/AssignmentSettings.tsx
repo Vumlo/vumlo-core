@@ -4,9 +4,10 @@ import { useState } from "react";
 import { useT } from "@/lib/i18n";
 import { useUpdateItem } from "@/lib/api/hooks/content";
 import { useItemMeta } from "@/lib/api/hooks/courses";
-import { acceptProblem, fileConfigOf, parseAccept, validMaxFiles } from "@/lib/fileAssignment";
+import { acceptProblem, fileConfigOf, parseAccept, splitAccept, validMaxFiles } from "@/lib/fileAssignment";
 import { isoToLocal, localToIso } from "@/lib/format";
 import type { Item } from "@/lib/api/types";
+import { AcceptPicker } from "./AcceptPicker";
 import { Switch } from "./AuthorBar";
 
 /** Points, deadline, attempts and late rules of an assignment (ADR-0021, ADR-0035). Saved with its own button. */
@@ -26,9 +27,12 @@ export function AssignmentSettings({ item, courseId, pointsLocked }: { item: Ite
   const [onDeadline, setOnDeadline] = useState<string>(a.on_deadline ?? "keep_draft");
   const file = fileConfigOf(a.config);
   const [maxFiles, setMaxFiles] = useState(String(file.max_files));
-  const [acceptText, setAcceptText] = useState(file.accept.join(", "));
-  const accept = parseAccept(acceptText);
-  const acceptBad = acceptProblem(accept);
+  const [menu, setMenu] = useState(() => splitAccept(file.accept).menu);
+  const [acceptText, setAcceptText] = useState(() => splitAccept(file.accept).other.join(", "));
+  const other = parseAccept(acceptText);
+  // The menu comes first; a type typed by hand that the menu already has is not listed twice.
+  const accept = [...menu, ...other.filter((e) => !menu.includes(e))];
+  const acceptBad = acceptProblem(other) ?? (accept.length > 30 ? acceptProblem(accept) : null);
   const maxBad = !validMaxFiles(maxFiles);
   const classOn = meta.data?.items[item.id]?.class_on;
   const [classDay, setClassDay] = useState<string | null>(null);
@@ -111,10 +115,15 @@ export function AssignmentSettings({ item, courseId, pointsLocked }: { item: Ite
             <p id="as-maxfiles-hint" className="hint" style={maxBad ? { color: "var(--danger)" } : undefined}>{maxBad ? t("as.maxFilesError") : t("as.maxFilesHint")}</p>
           </div>
           <div className="field">
-            <label htmlFor="as-accept">{t("as.accept")}</label>
-            <input id="as-accept" className="input" placeholder=".pdf, .docx" value={acceptText} onChange={(e) => { setAcceptText(e.target.value); setSaved(false); }} aria-invalid={!!acceptBad || !!err("config")} aria-describedby="as-accept-hint" />
+            <span className="label" id="as-accept-label">{t("as.accept")}</span>
+            <p className="hint">{t("as.acceptHint")}</p>
+            <AcceptPicker value={menu} onChange={(next) => { setMenu(next); setSaved(false); }} />
+          </div>
+          <div className="field">
+            <label htmlFor="as-accept">{t("as.acceptOther")}</label>
+            <input id="as-accept" className="input" placeholder=".tex, .dwg" value={acceptText} onChange={(e) => { setAcceptText(e.target.value); setSaved(false); }} aria-invalid={!!acceptBad || !!err("config")} aria-describedby="as-accept-hint" />
             <p id="as-accept-hint" className="hint" style={acceptBad || err("config") ? { color: "var(--danger)" } : undefined}>
-              {acceptBad ? (acceptBad.kind === "many" ? t("as.acceptMany") : t(acceptBad.kind === "bad" ? "as.acceptBad" : "as.acceptTwice", { entry: acceptBad.entry })) : err("config") ?? t("as.acceptHint")}
+              {acceptBad ? (acceptBad.kind === "many" ? t("as.acceptMany") : t(acceptBad.kind === "bad" ? "as.acceptBad" : "as.acceptTwice", { entry: acceptBad.entry })) : err("config") ?? t("as.acceptOtherHint")}
             </p>
           </div>
         </>

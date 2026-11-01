@@ -310,7 +310,7 @@ export function fileSettings(config: Record<string, unknown>): { max: number; ac
   if (!Array.isArray(accept)) throw bad("config", "`accept` must be a list of extensions");
   if (accept.length > 30) throw bad("config", "`accept` has at most 30 entries");
   accept.forEach((entry, i) => {
-    if (typeof entry !== "string" || !/^\.[a-z0-9]{2,16}$/.test(entry)) throw bad("config", `\`accept[${i}]\` must be a dot and 2 to 16 lowercase letters or digits, like \`.pdf\``);
+    if (typeof entry !== "string" || !/^\.[a-z0-9]{1,16}$/.test(entry)) throw bad("config", `\`accept[${i}]\` must be a dot and 1 to 16 lowercase letters or digits, like \`.pdf\``);
     if (accept.indexOf(entry) !== i) throw bad("config", `\`accept[${i}]\` is listed twice`);
   });
   return { max, accept: accept as string[] };
