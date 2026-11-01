@@ -18,7 +18,7 @@ env:
   # Where vumlo-core is: "vendor/vumlo-core" in a repository that vendors a release (as vumlo-ucu does), "." in a
   # fork of vumlo-core itself.
   CORE_DIR: vendor/vumlo-core
-  # Your configuration, from the root of the repository. Its logo and `.vumlo/generated` are read from beside it.
+  # Your configuration, from the root of the repository. Its `.vumlo/generated` is read from beside it.
   CONFIG: vumlo.toml
 
 jobs:

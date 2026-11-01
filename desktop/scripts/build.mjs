@@ -61,15 +61,9 @@ rmSync(gen, { recursive: true, force: true });
 mkdirSync(gen, { recursive: true });
 
 const tauri = join(dirname(createRequire(import.meta.url).resolve("@tauri-apps/cli/package.json")), "tauri.js");
-const logo = join(generated, "icon-1024.png");
-const hasLogo = existsSync(logo);
-if (hasLogo) {
-  run("making the installer icons from the logo", process.execPath, [tauri, "icon", logo, "--output", join(gen, "icons")], { cwd: desktop });
-} else {
-  console.warn("desktop: warning: institution.logo is not set, so the app has the placeholder icon of Vumlo. Set it and run `vumlo-cli brand apply`.");
-}
+run("making the installer icons from the Vumlo logo", process.execPath, [tauri, "icon", join(generated, "icon-1024.png"), "--output", join(gen, "icons")], { cwd: desktop });
 
-const config = tauriConfigFor(client, { frontendDist: join(web, "out"), iconDir: hasLogo ? "gen/icons" : "icons", desktopTemplate: join(desktop, "desktop-template.desktop") });
+const config = tauriConfigFor(client, { frontendDist: join(web, "out"), iconDir: "gen/icons", desktopTemplate: join(desktop, "desktop-template.desktop") });
 writeFileSync(join(gen, "tauri.conf.json"), JSON.stringify(config, null, 2) + "\n");
 
 run(`building ${config.productName} ${config.version} (${config.identifier}, ${client.desktop.url_scheme}://)`, process.execPath, [tauri, "build", "--config", join(gen, "tauri.conf.json"), ...tauriArgs], {

@@ -39,7 +39,8 @@ test("the configuration for the installer carries the institution's names, schem
   assert.equal(config.version, "0.2.0");
   assert.equal(config.build.frontendDist, "/src/web/out");
   assert.equal(config.mainBinaryName, "vumlo-ucu", "one program name per institution");
-  assert.equal(config.productName, "UCU", "the app is called by the short name");
+  assert.equal(config.productName, "Vumlo UCU", "the app is called Vumlo and the short name");
+  assert.equal(config.app.windows[0].title, "Vumlo UCU", "and so is its window");
   assert.equal(config.bundle.publisher, "Український католицький університет");
   assert.equal(config.bundle.linux.deb.desktopTemplate, "/src/desktop/desktop-template.desktop");
   assert.equal(config.bundle.category, "Education");
@@ -65,9 +66,10 @@ test("an installer is named after the scheme, not the institution's name", () =>
   assert.equal(installerNameFor("Other_0.2.1_amd64.deb", name, "vumlo-ucu"), null);
 });
 
-test("the app is called by the short name, unless a Debian package cannot be named so", () => {
-  assert.equal(appNameOf({ name: "Український католицький університет", short_name: "UCU" }, "vumlo-ucu"), "UCU");
-  assert.equal(appNameOf({ name: "Northfield University", short_name: "Northfield" }, "vumlo-northfield"), "Northfield");
+test("the app is called Vumlo and the short name, unless a Debian package cannot be named so", () => {
+  assert.equal(appNameOf({ name: "Український католицький університет", short_name: "UCU" }, "vumlo-ucu"), "Vumlo UCU");
+  assert.equal(appNameOf({ name: "Northfield University", short_name: "Northfield" }, "vumlo-northfield"), "Vumlo Northfield");
+  assert.equal(appNameOf({ name: "Vumlo", short_name: "Vumlo" }, "vumlo"), "Vumlo");
   assert.equal(appNameOf({ name: "Український католицький університет", short_name: "УКУ" }, "vumlo-uku"), "vumlo-uku");
   assert.equal(appNameOf({ name: "Український католицький університет", short_name: "Український католицький університет" }, "vumlo-ucu"), "vumlo-ucu");
   assert.equal(appNameOf({ name: "Test", short_name: "!" }, "vumlo"), "vumlo");
