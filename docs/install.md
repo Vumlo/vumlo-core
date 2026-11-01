@@ -29,6 +29,7 @@ a file named `.env` that only its owner can read:
 | PostgreSQL connection | `DATABASE_URL` |
 | Google sign-in client secret | `VUMLO__AUTH__GOOGLE__CLIENT_SECRET` |
 | SMTP password | `VUMLO__MAIL__TRANSPORT__PASSWORD` |
+| S3 access key and secret key (only with `files.storage = "s3"`; ADR-0069) | `VUMLO__FILES__S3__ACCESS_KEY`, `VUMLO__FILES__S3__SECRET_KEY` |
 | Plugin key (32 characters or more; ADR-0066) | `VUMLO__PLUGINS__SECRET_KEY` |
 
 Precedence, lowest first: the defaults, `vumlo.toml`, `VUMLO__SECTION__KEY` environment variables,
@@ -262,6 +263,8 @@ connection from `DATABASE_URL`, so the password never appears in the process lis
 readable by its owner only, and reads the dump back with `pg_restore --list` before it says it worked.
 It never overwrites a file.
 
+The dump holds the database only. **Uploaded files are not in it**: back up the files directory or the bucket separately and restore the two together (see [Uploaded files](#uploaded-files)).
+
 Restore it into a scratch database and look at it with the CLI, without touching production. The dump
 is readable by its owner only, so it is piped in (`postgres` cannot open the file itself):
 
@@ -294,6 +297,63 @@ again, or restore the backup. For Docker the same script is `deploy/update.sh --
 
 `doctor` fails when the CLI, the server and the web app are not the same release, so a half-finished
 upgrade does not go unnoticed.
+
+## Uploaded files
+
+Teachers attach files to content and students hand in files (ADR-0069). The bytes are not in PostgreSQL;
+they are kept by the `[files]` section of `vumlo.toml`:
+
+```toml
+[files]
+storage = "local"      # "local" (a directory on the server) or "s3"
+path = "files"         # local only: relative to the directory of vumlo.toml; default "files"
+max_size = 52428800    # bytes, 1 to 1073741824 (1 GiB); the largest file, default 50 MiB
+
+# [files.s3]           # required when storage = "s3"
+# endpoint = "https://s3.example.edu"   # an S3-compatible service other than AWS; https only
+# bucket = "vumlo-files"
+# region = "eu-north-1"
+```
+
+- **Local storage.** The server creates the directory when it starts, so the user that runs `serve` and
+  `worker` must be able to write there, and both read the same directory. The default, `files` beside
+  `vumlo.toml`, would be under `/etc/vumlo` (systemd, read-only under `ProtectSystem=strict`) or in the
+  read-only configuration mount (Docker), so the shipped files override it with the environment variable
+  `VUMLO__FILES__PATH`, which takes precedence over `files.path` in `vumlo.toml`:
+  - **systemd.** `vumlo-core.service` and `vumlo-worker.service` set `StateDirectory=vumlo` (systemd creates
+    `/var/lib/vumlo`, owned by `vumlo` and writable despite `ProtectSystem=strict`) and
+    `VUMLO__FILES__PATH=/var/lib/vumlo/files`. Back up `/var/lib/vumlo/files`. To keep the files elsewhere,
+    point `VUMLO__FILES__PATH` (or `files.path`) at the new directory and make that directory writable for
+    both units, for example with `ReadWritePaths=<dir>` in a drop-in, because `ProtectSystem=strict` leaves
+    everything else read-only.
+  - **Docker.** The `core` and `worker` services mount the named volume `files-data` at
+    `/var/lib/vumlo/files` and set `VUMLO__FILES__PATH` to it; the image creates the directory for uid
+    10001, so the volume starts out writable. The volume survives `docker compose down` (not
+    `down --volumes`).
+  - **Without the shipped files** (a development run), the default is `files` beside `vumlo.toml`; it is
+    ignored by git. `serve` and `worker` refuse to start if the directory cannot be created.
+- **S3.** `storage = "s3"` with the `[files.s3]` section. The keys are secrets and only come from the
+  environment: `VUMLO__FILES__S3__ACCESS_KEY` and `VUMLO__FILES__S3__SECRET_KEY`. `config check` names
+  what is missing.
+- **Size.** A file is read into memory before it is stored, so the server needs `max_size` of memory for each
+  upload in progress; keep the value as low as your files allow. A larger file is refused with `413`.
+- **Reverse proxy.** The proxy in front of the API must let a request body of `max_size` through. The Caddyfile
+  of this release sets no limit (`request_body` is off by default in Caddy) and sends `/api/*` straight to the
+  API, so it needs no change. With nginx, set `client_max_body_size` to at least `max_size` (the default is
+  1 MB); other proxies have a similar setting.
+  The web app's own `/api/v1` forward is the path of `npm run dev` and also the production path of the Docker
+  setup without Caddy; it was not tested with large bodies.
+- **Backups.** `db backup` is a `pg_dump` and does **not** contain the files. Back up the directory (or the
+  bucket) on its own schedule, and restore it together with the database taken at about the same time: a
+  database restored without its files makes the download fail with a logged `500` (the row is there, the
+  object is not), and objects without their rows are never reachable and nothing deletes them (the
+  sweep walks rows, not the directory or the bucket). `deploy/update.sh` backs up the database
+  only.
+- **Orphans.** A file that was uploaded but that no item and no submission names (an abandoned upload, a
+  file removed from a document) is deleted after 24 hours. The sweep runs every hour in the worker, and in
+  `serve` unless `--no-worker`. Nothing else deletes files: a deleted course takes its references, and the
+  sweep takes the files once nothing names them. An upload whose row could not be saved (for example
+  because the submission window closed while the file was on its way) removes its own object at once.
 
 ## Optional modules
 

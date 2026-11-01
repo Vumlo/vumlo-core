@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useT } from "@/lib/i18n";
 import { useUpdateItem } from "@/lib/api/hooks/content";
 import { useItemMeta } from "@/lib/api/hooks/courses";
+import { acceptProblem, fileConfigOf, parseAccept, validMaxFiles } from "@/lib/fileAssignment";
 import { isoToLocal, localToIso } from "@/lib/format";
 import type { Item } from "@/lib/api/types";
 import { Switch } from "./AuthorBar";
@@ -15,6 +16,7 @@ export function AssignmentSettings({ item, courseId, pointsLocked }: { item: Ite
   const meta = useItemMeta(courseId);
   const update = useUpdateItem(courseId);
   const noSubmission = a.type === "no_submission";
+  const isFile = a.type === "file";
   const [points, setPoints] = useState(a.max_points);
   const [hasDue, setHasDue] = useState(!!a.due_at);
   const [due, setDue] = useState(a.due_at ? isoToLocal(a.due_at) : "");
@@ -22,6 +24,12 @@ export function AssignmentSettings({ item, courseId, pointsLocked }: { item: Ite
   const [late, setLate] = useState(!!a.accept_late);
   const [lateUntil, setLateUntil] = useState(a.late_until ? isoToLocal(a.late_until) : "");
   const [onDeadline, setOnDeadline] = useState<string>(a.on_deadline ?? "keep_draft");
+  const file = fileConfigOf(a.config);
+  const [maxFiles, setMaxFiles] = useState(String(file.max_files));
+  const [acceptText, setAcceptText] = useState(file.accept.join(", "));
+  const accept = parseAccept(acceptText);
+  const acceptBad = acceptProblem(accept);
+  const maxBad = !validMaxFiles(maxFiles);
   const classOn = meta.data?.items[item.id]?.class_on;
   const [classDay, setClassDay] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
@@ -35,6 +43,7 @@ export function AssignmentSettings({ item, courseId, pointsLocked }: { item: Ite
       else Object.assign(patch, { due_at: null, on_deadline: null, accept_late: null, late_until: null });
       Object.assign(patch, { max_attempts: attempts.trim() === "" ? null : Number(attempts) });
     }
+    if (isFile) patch.config = { max_files: Number(maxFiles), ...(accept.length > 0 ? { accept } : {}) };
     if (noSubmission && classDay !== null) patch.class_on = classDay || null;
     if (await update.run(item.id, patch)) setSaved(true);
   }
@@ -94,9 +103,25 @@ export function AssignmentSettings({ item, courseId, pointsLocked }: { item: Ite
           </div>
         </>
       )}
+      {isFile && (
+        <>
+          <div className="field">
+            <label htmlFor="as-maxfiles">{t("as.maxFiles")}</label>
+            <input id="as-maxfiles" className="input" style={{ maxWidth: 160 }} inputMode="numeric" value={maxFiles} onChange={(e) => { setMaxFiles(e.target.value); setSaved(false); }} aria-invalid={maxBad} aria-describedby="as-maxfiles-hint" />
+            <p id="as-maxfiles-hint" className="hint" style={maxBad ? { color: "var(--danger)" } : undefined}>{maxBad ? t("as.maxFilesError") : t("as.maxFilesHint")}</p>
+          </div>
+          <div className="field">
+            <label htmlFor="as-accept">{t("as.accept")}</label>
+            <input id="as-accept" className="input" placeholder=".pdf, .docx" value={acceptText} onChange={(e) => { setAcceptText(e.target.value); setSaved(false); }} aria-invalid={!!acceptBad || !!err("config")} aria-describedby="as-accept-hint" />
+            <p id="as-accept-hint" className="hint" style={acceptBad || err("config") ? { color: "var(--danger)" } : undefined}>
+              {acceptBad ? (acceptBad.kind === "many" ? t("as.acceptMany") : t(acceptBad.kind === "bad" ? "as.acceptBad" : "as.acceptTwice", { entry: acceptBad.entry })) : err("config") ?? t("as.acceptHint")}
+            </p>
+          </div>
+        </>
+      )}
       {update.error && !update.error.errors.length && <p role="alert" className="alert alert-danger">{update.error.detail ?? update.error.title}</p>}
       <div className="row" style={{ gap: 12 }}>
-        <button type="button" className="btn btn-primary" onClick={save} disabled={update.pending}>{t("as.save")}</button>
+        <button type="button" className="btn btn-primary" onClick={save} disabled={update.pending || (isFile && (maxBad || !!acceptBad))}>{t("as.save")}</button>
         <span role="status" className="muted" style={{ fontSize: 14 }}>{saved ? t("cs.saved") : ""}</span>
       </div>
     </div>

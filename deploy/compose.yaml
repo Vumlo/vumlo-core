@@ -17,7 +17,7 @@ x-backend: &backend
       VUMLO_FEATURES: ${VUMLO_FEATURES:-}
   # Named after the release: an image built from another release, still on this machine, is never
   # taken for this one (it would run the old CLI against the new configuration).
-  image: vumlo-backend:${VUMLO_VERSION:-0.3.0}
+  image: vumlo-backend:${VUMLO_VERSION:-0.4.0}
 
 services:
   postgres:
@@ -63,11 +63,14 @@ services:
     environment:
       VUMLO_CONFIG: /etc/vumlo/vumlo.toml
       VUMLO__SERVER__BIND_ADDR: 0.0.0.0:8080
+      # Uploaded files (ADR-0069). Overrides `files.path` of vumlo.toml; core and worker share the volume.
+      VUMLO__FILES__PATH: /var/lib/vumlo/files
     # On the host's loopback only, for a reverse proxy (deploy/Caddyfile routes /api/* here).
     ports:
       - "127.0.0.1:8080:8080"
     volumes:
       - ../vumlo.toml:/etc/vumlo/vumlo.toml:ro
+      - files-data:/var/lib/vumlo/files
     depends_on:
       postgres:
         condition: service_healthy
@@ -81,8 +84,10 @@ services:
     env_file: ../.env
     environment:
       VUMLO_CONFIG: /etc/vumlo/vumlo.toml
+      VUMLO__FILES__PATH: /var/lib/vumlo/files
     volumes:
       - ../vumlo.toml:/etc/vumlo/vumlo.toml:ro
+      - files-data:/var/lib/vumlo/files
     depends_on:
       postgres:
         condition: service_healthy
@@ -98,7 +103,7 @@ services:
       dockerfile: deploy/Dockerfile.web
       args:
         VUMLO_API_ORIGIN: http://core:8080
-    image: vumlo-web:${VUMLO_VERSION:-0.3.0}
+    image: vumlo-web:${VUMLO_VERSION:-0.4.0}
     ports:
       - "127.0.0.1:3000:3000"
     depends_on:
@@ -107,3 +112,4 @@ services:
 
 volumes:
   postgres-data:
+  files-data:

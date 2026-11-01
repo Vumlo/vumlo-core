@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO content.item_files (item_id, file_id, published)\n         SELECT $1, file_id, $2 FROM unnest($3::uuid[]) AS file_id\n         ON CONFLICT DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Bool",
+        "UuidArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "a1f3c9c077bea4a85068438b454103ba49d0e106b25c8c1c72aa59055647e12d"
+}

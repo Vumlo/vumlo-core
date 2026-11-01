@@ -331,22 +331,28 @@ pub async fn publish_draft_submodules(
     Ok(result.rows_affected())
 }
 
-/// Publishes the draft items of a module and of its sub-modules.
+/// Publishes the draft items of a module and of its sub-modules and answers them as published.
 pub async fn publish_draft_items_below(
     conn: &mut PgConnection,
     module_id: Uuid,
-) -> Result<u64, sqlx::Error> {
-    let result = sqlx::query!(
-        "UPDATE content.items
-         SET status = 'published', published_title = title, published_body = body,
-             last_published_at = now(), updated_at = now()
-         WHERE status = 'draft'
-           AND (module_id = $1 OR module_id IN (SELECT id FROM content.modules WHERE parent_id = $1))",
+) -> Result<Vec<Item>, sqlx::Error> {
+    let raws = sqlx::query_as!(
+        RawItem,
+        r#"UPDATE content.items
+           SET status = 'published', published_title = title, published_body = body,
+               last_published_at = now(), updated_at = now()
+           WHERE status = 'draft'
+             AND (module_id = $1
+                  OR module_id IN (SELECT id FROM content.modules WHERE parent_id = $1))
+           RETURNING id, module_id, course_id, position, kind AS "kind: ItemKind", title,
+                     body AS "body: Body", status AS "status: ItemStatus", publish_at,
+                     published_title, published_body AS "published_body?: Body",
+                     last_published_at, created_at, updated_at"#,
         module_id
     )
-    .execute(conn)
+    .fetch_all(conn)
     .await?;
-    Ok(result.rows_affected())
+    Ok(raws.into_iter().map(Item::from).collect())
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -937,7 +943,14 @@ pub async fn copy_course(conn: &mut PgConnection, from: Uuid, to: Uuid) -> Resul
              FROM content.items i
              JOIN item_map im ON im.old_id = i.id
              JOIN module_map mm ON mm.old_id = i.module_id
-             RETURNING id)
+             RETURNING id),
+         new_files AS (
+             INSERT INTO content.item_files (item_id, file_id, published)
+             SELECT im.new_id, f.file_id, false
+             FROM content.item_files f
+             JOIN item_map im ON im.old_id = f.item_id
+             WHERE NOT f.published
+             RETURNING item_id)
          INSERT INTO content.assignments (item_id, type, config, max_points, is_bonus, max_attempts)
          SELECT im.new_id, a.type, a.config, a.max_points, a.is_bonus, a.max_attempts
          FROM content.assignments a
@@ -1290,6 +1303,34 @@ pub async fn regular_points(
     )
     .fetch_one(conn)
     .await
+}
+
+/// Makes `ids` exactly the files the working (`published = false`) or the published copy of the
+/// item names (ADR-0069). The caller is the service that writes the body, in the same transaction.
+pub async fn replace_item_files(
+    conn: &mut PgConnection,
+    item_id: Uuid,
+    published: bool,
+    ids: &[Uuid],
+) -> Result<(), sqlx::Error> {
+    sqlx::query!(
+        "DELETE FROM content.item_files WHERE item_id = $1 AND published = $2",
+        item_id,
+        published
+    )
+    .execute(&mut *conn)
+    .await?;
+    sqlx::query!(
+        "INSERT INTO content.item_files (item_id, file_id, published)
+         SELECT $1, file_id, $2 FROM unnest($3::uuid[]) AS file_id
+         ON CONFLICT DO NOTHING",
+        item_id,
+        published,
+        ids
+    )
+    .execute(conn)
+    .await?;
+    Ok(())
 }
 
 /// How many sessions of this database wait for an advisory lock. Tests poll it to know that a

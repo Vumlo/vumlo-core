@@ -8,7 +8,9 @@ mod schema;
 mod settings;
 mod ts;
 
-pub use client::{ClientConfig, PublicConfig, PublicInstitution, PublicServer, api_url};
+pub use client::{
+    ClientConfig, PublicConfig, PublicFiles, PublicInstitution, PublicServer, api_url,
+};
 pub use load::{
     Error, FileSource, Loaded, Options, Sources, find_file, load, load_process, parse_env_file,
     parse_overrides,

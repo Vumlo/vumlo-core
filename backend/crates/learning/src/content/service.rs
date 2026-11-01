@@ -9,13 +9,14 @@ use std::collections::{HashMap, HashSet};
 
 use api_types::ProfileName;
 use chrono::{DateTime, Utc};
-use serde_json::{Value, json};
+use serde_json::{Map, Value, json};
 use sqlx::PgConnection;
 use sqlx::types::Decimal;
 use uuid::Uuid;
 
 use super::document::{
-    DocumentErrors, EffectiveProfiles, ValidDocument, plain_text, validate_document,
+    DocumentErrors, EffectiveProfiles, FileRef, ValidDocument, distinct_ids, file_refs_under,
+    plain_text, validate_document,
 };
 use super::model::{
     Assignment, AssignmentType, BuiltinType, ContentModule, ContentSubModule, ContentTitle, Hit,
@@ -25,6 +26,7 @@ use super::model::{
 use super::repo::{self, ItemRow, ModuleRow};
 use super::types::form;
 use crate::assessment::{self, AssessmentError};
+use crate::files::{self as file_service, FileError, UsageOwner};
 use crate::gradebook::{self, GradebookError};
 use crate::teaching::{self, TeachingError};
 use access::Actor;
@@ -59,6 +61,30 @@ pub enum ContentError {
         field: &'static str,
         message: String,
     },
+    /// The body of a `file` item is not `{file_id?, description?}` (ADR-0024).
+    #[error("{message}")]
+    FileBody {
+        field: String,
+        message: &'static str,
+    },
+    /// The `description` of a `file` item is not a valid document of the profile `full`.
+    #[error("the description is not a valid document")]
+    FileDescription(DocumentErrors),
+    /// The file does not exist, or belongs to someone else's work (ADR-0069).
+    #[error("the file {id} cannot be used here")]
+    FileUnusable { id: Uuid, field: String },
+    /// An `image` block names a file that is not a PNG, JPEG, GIF or WebP (ADR-0069).
+    #[error("an image block needs a PNG, JPEG, GIF or WebP file")]
+    NotAnImage { field: String },
+    /// A document that was stored cannot be read by the parser that validated it: a fault of the
+    /// server, never of the request.
+    #[error("a stored document cannot be read")]
+    StoredDocument,
+    /// Publishing a `file` item whose published body would name no file.
+    #[error("a file item needs a file before it is published")]
+    FileMissing,
+    #[error(transparent)]
+    Files(Box<FileError>),
     /// No such module, or the actor may not see it.
     #[error("module not found")]
     ModuleNotFound,
@@ -256,6 +282,34 @@ async fn manage_item(
     let (row, access) = open_item(conn, actor, id).await?;
     access::authorize(actor, Action::EditContent(access))?;
     Ok(row)
+}
+
+/// May the actor change the item (`EditContent`)? An item they may not see is `ItemNotFound`; an
+/// archived course is `Forbidden(Archived)`. For the upload of a file that the item will name.
+pub async fn authorize_edit_item(
+    conn: &mut PgConnection,
+    actor: &Actor,
+    item_id: Uuid,
+) -> Result<(), ContentError> {
+    manage_item(conn, actor, item_id).await.map(|_| ())
+}
+
+/// May the actor read the files the published copy (`published`) or the working copy of the item
+/// names (ADR-0069)? The published copy follows `ViewContent`, so a student gets nothing from a
+/// draft, a scheduled item or an unpublished module; the working copy needs `ManageContent`.
+/// An item the actor may not see is `false`, never an error.
+pub async fn may_read_item_files(
+    conn: &mut PgConnection,
+    actor: &Actor,
+    item_id: Uuid,
+    published: bool,
+) -> Result<bool, ContentError> {
+    let access = match open_item(conn, actor, item_id).await {
+        Ok((_, access)) => access,
+        Err(ContentError::ItemNotFound) => return Ok(false),
+        Err(other) => return Err(other),
+    };
+    Ok(published || access::authorize(actor, Action::ManageContent(access)).is_ok())
 }
 
 /// The course access of an actor who wants to change the course's content.
@@ -653,7 +707,10 @@ pub async fn publish_module(
     if cascade {
         let submodules = repo::publish_draft_submodules(conn, id).await?;
         let items = repo::publish_draft_items_below(conn, id).await?;
-        changed |= submodules + items > 0;
+        for item in &items {
+            sync_published_files(conn, item).await?;
+        }
+        changed |= submodules + items.len() as u64 > 0;
     }
     if changed {
         audit(
@@ -691,6 +748,216 @@ fn document(
         .map_err(ContentError::Document)
 }
 
+/// The keys the body of a `file` item may have.
+const FILE_BODY_KEYS: [&str; 2] = ["file_id", "description"];
+
+/// Validates the body of a `file` item: an object with at most `file_id` (a uuid) and
+/// `description` (a document of profile `full`). The file itself is checked by [`usable_files`].
+fn file_body(
+    body: &Value,
+    profiles: &EffectiveProfiles,
+) -> Result<Map<String, Value>, ContentError> {
+    let Value::Object(given) = body else {
+        return Err(ContentError::FileBody {
+            field: "body".to_owned(),
+            message: "the body of a file item must be an object",
+        });
+    };
+    if let Some(unknown) = given
+        .keys()
+        .find(|key| !FILE_BODY_KEYS.contains(&key.as_str()))
+    {
+        return Err(ContentError::FileBody {
+            field: format!("body.{unknown}"),
+            message: "only `file_id` and `description` are allowed",
+        });
+    }
+    let mut stored = Map::new();
+    if let Some(file_id) = given.get("file_id") {
+        let id = file_id.as_str().and_then(|text| text.parse::<Uuid>().ok());
+        let Some(id) = id else {
+            return Err(ContentError::FileBody {
+                field: "body.file_id".to_owned(),
+                message: "must be the id of an uploaded file",
+            });
+        };
+        stored.insert("file_id".to_owned(), Value::String(id.to_string()));
+    }
+    if let Some(description) = given.get("description") {
+        let valid = validate_document(description, ProfileName::Full, profiles)
+            .map_err(ContentError::FileDescription)?;
+        stored.insert(
+            "description".to_owned(),
+            Value::Object(valid.as_body().clone()),
+        );
+    }
+    Ok(stored)
+}
+
+/// The body to store for an item of `kind`, validated as that kind needs. `None` when there is no
+/// body to write.
+fn validated_body(
+    kind: ItemKind,
+    body: Option<&Value>,
+    profiles: &EffectiveProfiles,
+) -> Result<Option<Map<String, Value>>, ContentError> {
+    match kind {
+        ItemKind::File => body.map(|value| file_body(value, profiles)).transpose(),
+        ItemKind::Text | ItemKind::Assignment => {
+            Ok(document(body, profiles)?.map(|valid| valid.as_body().clone()))
+        }
+    }
+}
+
+/// The file a `file` item's body names.
+fn file_id_of(body: &Map<String, Value>) -> Option<Uuid> {
+    body.get("file_id")?.as_str()?.parse().ok()
+}
+
+/// Every file an item of `kind` names: in its `body` (fields start with `body.`) and, for an
+/// assignment, in the documents of its `config` (fields start with `config_field`). The `file`
+/// item's own file and the blocks of its description both count (ADR-0069). The documents are read
+/// with the validator's parser; one it cannot read is an error, never "no files".
+fn item_file_refs(
+    kind: ItemKind,
+    body: &Map<String, Value>,
+    config: Option<(BuiltinType, &Map<String, Value>)>,
+    config_field: &str,
+) -> Result<Vec<FileRef>, ContentError> {
+    let stored = |errors: DocumentErrors| {
+        let found = errors.iter().next().map(|e| (e.path.clone(), e.message));
+        tracing::error!(?found, "content: a stored document cannot be read");
+        ContentError::StoredDocument
+    };
+    let mut refs = Vec::new();
+    match kind {
+        ItemKind::File => {
+            if let Some(id) = file_id_of(body) {
+                refs.push(FileRef {
+                    id,
+                    path: "body.file_id".to_owned(),
+                    image: false,
+                });
+            }
+            if let Some(description) = body.get("description") {
+                refs.extend(file_refs_under("body.description", description).map_err(stored)?);
+            }
+        }
+        ItemKind::Text | ItemKind::Assignment => {
+            refs.extend(file_refs_under("body", &Value::Object(body.clone())).map_err(stored)?)
+        }
+    }
+    if let Some((assignment_type, config)) = config {
+        refs.extend(
+            assignment_type
+                .config_file_refs(config)?
+                .into_iter()
+                .map(|file| FileRef {
+                    path: format!("{config_field}.{}", file.path),
+                    ..file
+                }),
+        );
+    }
+    Ok(refs)
+}
+
+/// The ids of the files an item names: what `content.item_files` holds for it (ADR-0069). Every
+/// rewrite of those rows goes through this function.
+fn referenced_file_ids(
+    kind: ItemKind,
+    body: &Map<String, Value>,
+    config: Option<(BuiltinType, &Map<String, Value>)>,
+) -> Result<Vec<Uuid>, ContentError> {
+    Ok(distinct_ids(&item_file_refs(kind, body, config, "config")?))
+}
+
+/// May the item `owner` name each of `refs` (ADR-0069)? Done before the write. A refusal names
+/// the field of the first file that cannot be used, or of the first image block whose file is not
+/// a PNG, JPEG, GIF or WebP.
+async fn usable_files(
+    conn: &mut PgConnection,
+    actor: &Actor,
+    owner: Uuid,
+    refs: &[FileRef],
+) -> Result<(), ContentError> {
+    match file_service::ensure_usable(conn, actor, &UsageOwner::Item(owner), &distinct_ids(refs))
+        .await
+    {
+        Ok(()) => {}
+        Err(FileError::Unusable { id }) => {
+            let field = refs
+                .iter()
+                .find(|file| file.id == id)
+                .map_or_else(|| "body".to_owned(), |file| file.path.clone());
+            return Err(ContentError::FileUnusable { id, field });
+        }
+        Err(other) => return Err(ContentError::Files(Box::new(other))),
+    }
+    let images: Vec<FileRef> = refs.iter().filter(|file| file.image).cloned().collect();
+    match file_service::first_non_image(conn, &distinct_ids(&images)).await {
+        Ok(None) => Ok(()),
+        Ok(Some(id)) => {
+            let field = images
+                .iter()
+                .find(|file| file.id == id)
+                .map_or_else(|| "body".to_owned(), |file| file.path.clone());
+            Err(ContentError::NotAnImage { field })
+        }
+        Err(other) => Err(ContentError::Files(Box::new(other))),
+    }
+}
+
+/// The assignment type and config of `item`, loaded when the item does not carry them.
+async fn type_and_config(
+    conn: &mut PgConnection,
+    item: &Item,
+) -> Result<Option<(BuiltinType, Map<String, Value>)>, ContentError> {
+    if item.kind != ItemKind::Assignment {
+        return Ok(None);
+    }
+    let assignment = match &item.assignment {
+        Some(assignment) => Some(assignment.clone()),
+        None => repo::find_assignment(conn, item.id).await?,
+    };
+    Ok(assignment.map(|a| (a.assignment_type, a.config)))
+}
+
+/// Makes `content.item_files` name exactly what the item's working body and config name.
+async fn sync_working_files(conn: &mut PgConnection, item: &Item) -> Result<(), ContentError> {
+    let config = type_and_config(conn, item).await?;
+    let ids = referenced_file_ids(
+        item.kind,
+        &item.body,
+        config.as_ref().map(|(kind, config)| (*kind, config)),
+    )?;
+    repo::replace_item_files(conn, item.id, false, &ids).await?;
+    Ok(())
+}
+
+/// Makes the published rows of `content.item_files` name exactly what the published body names,
+/// for an item that was just published. A `file` item whose published body names no file is
+/// refused: the error rolls back the caller's transaction, so nothing becomes visible. Checking
+/// the body that was written, not the one read before, leaves no gap for a concurrent edit.
+///
+/// The config of an assignment has no published copy: students read it as it is, so its images
+/// are published with the item (and [`update_item`] rewrites these rows when the config changes).
+async fn sync_published_files(conn: &mut PgConnection, item: &Item) -> Result<(), ContentError> {
+    let Some(slot) = &item.published else {
+        return Ok(());
+    };
+    if item.kind == ItemKind::File && file_id_of(&slot.body).is_none() {
+        return Err(ContentError::FileMissing);
+    }
+    let config = type_and_config(conn, item).await?;
+    let ids = referenced_file_ids(
+        item.kind,
+        &slot.body,
+        config.as_ref().map(|(kind, config)| (*kind, config)),
+    )?;
+    repo::replace_item_files(conn, item.id, true, &ids).await?;
+    Ok(())
+}
+
 /// Creates a draft item as the last of the module, which may be a top-level module or a
 /// sub-module. An `assignment` makes it an item of kind `assignment`; without one it is a `text` item.
 pub async fn create_item(
@@ -698,6 +965,52 @@ pub async fn create_item(
     actor: &Actor,
     rules: ItemRules<'_>,
     module_id: Uuid,
+    title: ContentTitle,
+    body: Option<Value>,
+    assignment: Option<Assignment>,
+) -> Result<Item, ContentError> {
+    let kind = if assignment.is_some() {
+        ItemKind::Assignment
+    } else {
+        ItemKind::Text
+    };
+    create(conn, actor, rules, module_id, kind, title, body, assignment).await
+}
+
+/// Creates a draft item of kind `file` as the last of the module. Its body is
+/// `{file_id?, description?}`; the file is uploaded after the item exists, so a new one usually has
+/// none yet (ADR-0024).
+pub async fn create_file_item(
+    conn: &mut PgConnection,
+    actor: &Actor,
+    rules: ItemRules<'_>,
+    module_id: Uuid,
+    title: ContentTitle,
+    body: Option<Value>,
+) -> Result<Item, ContentError> {
+    create(
+        conn,
+        actor,
+        rules,
+        module_id,
+        ItemKind::File,
+        title,
+        body,
+        None,
+    )
+    .await
+}
+
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the two public creators differ only in the kind they pass"
+)]
+async fn create(
+    conn: &mut PgConnection,
+    actor: &Actor,
+    rules: ItemRules<'_>,
+    module_id: Uuid,
+    kind: ItemKind,
     title: ContentTitle,
     body: Option<Value>,
     mut assignment: Option<Assignment>,
@@ -710,7 +1023,7 @@ pub async fn create_item(
         kind.validate_config(&assignment.config, rules.profiles)?;
         check_points_total(kind, &assignment.config, assignment.max_points)?;
     }
-    let body = document(body.as_ref(), rules.profiles)?;
+    let body = validated_body(kind, body.as_ref(), rules.profiles)?;
     if let Some(assignment) = &assignment {
         check_points(
             conn,
@@ -723,24 +1036,24 @@ pub async fn create_item(
         )
         .await?;
     }
-    let kind = if assignment.is_some() {
-        ItemKind::Assignment
-    } else {
-        ItemKind::Text
-    };
-    let mut item = repo::insert_item(
-        conn,
-        Uuid::now_v7(),
-        module_id,
-        course_id,
+    let id = Uuid::now_v7();
+    let body = body.unwrap_or_else(|| match kind {
+        ItemKind::File => Map::new(),
+        ItemKind::Text | ItemKind::Assignment => ValidDocument::empty().as_body().clone(),
+    });
+    let refs = item_file_refs(
         kind,
-        title.as_str(),
-        body.unwrap_or_else(ValidDocument::empty).as_body(),
-    )
-    .await?;
+        &body,
+        assignment.as_ref().map(|a| (a.assignment_type, &a.config)),
+        "assignment.config",
+    )?;
+    usable_files(conn, actor, id, &refs).await?;
+    let mut item =
+        repo::insert_item(conn, id, module_id, course_id, kind, title.as_str(), &body).await?;
     if let Some(assignment) = &assignment {
         item.assignment = Some(repo::insert_assignment(conn, item.id, assignment).await?);
     }
+    sync_working_files(conn, &item).await?;
     audit(
         conn,
         actor,
@@ -822,6 +1135,7 @@ pub async fn publish_revision(
     let item = repo::publish_revision(conn, id)
         .await?
         .ok_or(ContentError::ItemNotFound)?;
+    sync_published_files(conn, &item).await?;
     audit(
         conn,
         actor,
@@ -1063,7 +1377,7 @@ pub async fn search(
                 item.title_match,
                 Hit {
                     kind: match item.kind {
-                        ItemKind::Text => HitKind::Lecture,
+                        ItemKind::Text | ItemKind::File => HitKind::Lecture,
                         ItemKind::Assignment => HitKind::Assignment,
                     },
                     id: item.id,
@@ -1190,7 +1504,11 @@ pub async fn update_item(
     if let (Some(config), Some(assignment)) = (&mut patch.config, &row.item.assignment) {
         assignment.assignment_type.strip_computed(config);
     }
-    let body = document(patch.body.as_ref(), rules.profiles)?;
+    let body = validated_body(row.item.kind, patch.body.as_ref(), rules.profiles)?;
+    if let Some(body) = &body {
+        let refs = item_file_refs(row.item.kind, body, None, "config")?;
+        usable_files(conn, actor, id, &refs).await?;
+    }
     let mut settings = None;
     if is_assignment && patch.touches_assignment() {
         let points_change = patch.max_points.is_some() || patch.is_bonus.is_some();
@@ -1224,6 +1542,15 @@ pub async fn update_item(
             let config = patch.config.as_ref().unwrap_or(&current.config);
             if patch.config.is_some() {
                 kind.validate_config(config, rules.profiles)?;
+                let refs = kind
+                    .config_file_refs(config)?
+                    .into_iter()
+                    .map(|file| FileRef {
+                        path: format!("config.{}", file.path),
+                        ..file
+                    })
+                    .collect::<Vec<_>>();
+                usable_files(conn, actor, id, &refs).await?;
             }
             check_points_total(kind, config, patch.max_points.unwrap_or(current.max_points))?;
             // The structure is frozen once work was submitted (ADR-0023); the assignment row is
@@ -1270,7 +1597,7 @@ pub async fn update_item(
         conn,
         id,
         patch.title.as_ref().map(ContentTitle::as_str),
-        body.as_ref().map(ValidDocument::as_body),
+        body.as_ref(),
         patch.publish_at.is_some(),
         patch.publish_at.flatten(),
     )
@@ -1295,6 +1622,13 @@ pub async fn update_item(
     } else {
         None
     };
+    if body.is_some() || patch.config.is_some() {
+        sync_working_files(conn, &item).await?;
+    }
+    if patch.config.is_some() && item.published.is_some() {
+        // Students read the config as it is, so a published item's images follow it at once.
+        sync_published_files(conn, &item).await?;
+    }
     audit(
         conn,
         actor,
@@ -1374,6 +1708,7 @@ pub async fn publish_item(
     let row = manage_item(conn, actor, id).await?;
     match repo::publish_item(conn, id).await? {
         Some(item) => {
+            sync_published_files(conn, &item).await?;
             let item = with_assignment(conn, item).await?;
             audit(
                 conn,

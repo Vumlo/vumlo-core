@@ -132,17 +132,18 @@ fn max_points_display_has_exactly_two_decimals() {
 }
 
 #[test]
-fn the_type_enum_parses_the_four_builtin_types_and_nothing_else() {
+fn the_type_enum_parses_the_five_builtin_types_and_nothing_else() {
     for (text, kind) in [
         ("text", BuiltinType::Text),
         ("no_submission", BuiltinType::NoSubmission),
         ("quiz", BuiltinType::Quiz),
         ("form", BuiltinType::Form),
+        ("file", BuiltinType::File),
     ] {
         assert_eq!(BuiltinType::parse(text), Ok(kind));
         assert_eq!(kind.as_str(), text);
     }
-    for bad in ["file", "", "Text", "Quiz", "No_Submission", "no-submission"] {
+    for bad in ["File", "", "Text", "Quiz", "No_Submission", "no-submission"] {
         assert_eq!(
             BuiltinType::parse(bad),
             Err(ModelError::AssignmentType),
@@ -150,10 +151,9 @@ fn the_type_enum_parses_the_four_builtin_types_and_nothing_else() {
         );
     }
     let message = ModelError::AssignmentType.to_string();
-    for name in ["text", "no_submission", "quiz", "form"] {
+    for name in ["text", "no_submission", "quiz", "form", "file"] {
         assert!(message.contains(name), "{message}");
     }
-    assert!(!message.contains("file"));
 }
 
 #[test]

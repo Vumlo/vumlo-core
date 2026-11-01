@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM content.item_files WHERE item_id = $1 AND published = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Bool"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "e9dc2dfcac8b503a9bb6b8ff59450726f647886e9f74a4a5495772b05ed5548a"
+}

@@ -11,7 +11,7 @@ import { useMySubmission, useQuizResult, useSaveDraft, useSubmitDraft } from "@/
 import { useMyGrades } from "@/lib/api/hooks/work";
 import type { Answer, AnswerMap, FormConfig, QuizConfig } from "@/lib/api/gaps";
 import { answersFromWire, answersToWire } from "@/lib/api/sheetWire";
-import { bodyOf, type Item } from "@/lib/api/types";
+import { bodyOf, type Document, type Item } from "@/lib/api/types";
 import { deadline } from "@/lib/assignment";
 import { ownerName } from "@/lib/course";
 import { initials, timeOf } from "@/lib/format";
@@ -47,6 +47,7 @@ export function formQuestions(cfg: FormConfig, answers: AnswerMap): Q[] {
 export function SheetPage({ item, courseId, staff, mode }: { item: Item; courseId: string; staff: boolean; mode: "quiz" | "form" }) {
   const t = useT();
   const a = item.assignment!;
+  const target = useMemo(() => ({ assignment: item.id }), [item.id]);
   const me = useMe();
   const info = useCourseInfo(courseId);
   const people = useCoursePeople(courseId);
@@ -129,7 +130,9 @@ export function SheetPage({ item, courseId, staff, mode }: { item: Item; courseI
     if (ok) { setLocal(null); setSavedAt(null); }
   }
   async function edit() {
-    await save.run({ answers: answersToWire(mode, a.config, latest ? answersOf(latest.content) : {}) });
+    // The new draft starts from the last attempt, pictures and files included: the server lets it name the student's own earlier files.
+    const before = latest ? answersOf(latest.content) : {};
+    await save.run({ answers: answersToWire(mode, a.config, before) });
     setLocal(null);
   }
   // Server errors show until the student edits that field.
@@ -235,6 +238,8 @@ export function SheetPage({ item, courseId, staff, mode }: { item: Item; courseI
                   ownerInitials={initials(info.data?.owner_name ?? "", info.data?.owner_surname ?? "")}
                   ownerName={owner}
                   mode={mode}
+                  uploadTarget={target}
+                  blockErrors={[...(save.error?.errors ?? []), ...(submit.error?.errors ?? [])]}
                 />
                 {editable && (
                   <div className={`card ${qs.foot}`}>

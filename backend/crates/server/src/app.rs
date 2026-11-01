@@ -43,6 +43,8 @@ use vumlo_config::Settings;
 /// Shorter than the request timeout, so an unreachable database surfaces as 503, not 408.
 const DB_ACQUIRE_TIMEOUT: Duration = Duration::from_secs(5);
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
+/// An upload or a download of a file up to `files.max_size` over a slow link.
+const FILE_REQUEST_TIMEOUT: Duration = Duration::from_secs(600);
 /// Room for a 1 MiB document (ADR-0025) and the rest of the request around it.
 pub(crate) const MAX_BODY_BYTES: usize = 2 * 1024 * 1024;
 
@@ -114,6 +116,10 @@ pub enum StateError {
     Mail(#[from] MailError),
     #[error(transparent)]
     Google(#[from] auth::GoogleSetupError),
+    #[error("files.storage is \"s3\": add a [files.s3] section with bucket, region and the keys")]
+    FilesS3Missing,
+    #[error("cannot open the file storage: {0}")]
+    Files(#[from] files::FilesError),
     #[error("the optional modules cannot be started: {0}")]
     Modules(#[from] module_api::OrderError),
 }
@@ -136,6 +142,15 @@ impl AppState {
             .as_ref()
             .map(|google| auth::Google::new(google).map(Arc::new))
             .transpose()?;
+        let storage = match (&config.files.storage, &config.files.s3) {
+            (vumlo_config::FileBackend::Local, _) => {
+                files::Storage::local(&config.files.local_dir(&config.base_dir))?
+            }
+            (vumlo_config::FileBackend::S3, Some(s3)) => {
+                files::Storage::s3(s3, s3.access_key.expose(), s3.secret_key.expose())?
+            }
+            (vumlo_config::FileBackend::S3, None) => return Err(StateError::FilesS3Missing),
+        };
         let modules = Arc::new(crate::modules::ordered()?);
         let config = Arc::new(config);
         Ok(Self {
@@ -154,6 +169,8 @@ impl AppState {
                 db: db.clone(),
                 config: config.clone(),
                 editor: Arc::new(editor),
+                files: storage,
+                max_file_bytes: config.files.max_size,
             },
             plugins: PluginsState::new(db.clone(), &config),
             db,
@@ -262,7 +279,22 @@ pub fn router(state: AppState) -> Result<Router, SetupError> {
                 .merge(plugins::router()),
         )
         .split_for_parts();
-    let (router, openapi) = mount_modules(&state, router, openapi);
+    let (router, mut openapi) = mount_modules(&state, router, openapi);
+    // The files routes carry whole files, so they get their own limits and skip the layers that
+    // buffer a body (idempotency, conditional); they are merged in below, after those layers.
+    let (files_router, files_doc) = OpenApiRouter::<AppState>::new()
+        .nest("/api/v1", learning::files::router())
+        .split_for_parts();
+    openapi.merge(files_doc);
+    let files_router = files_router
+        .with_state(state.clone())
+        .layer(RequestBodyLimitLayer::new(
+            usize::try_from(state.learning.max_file_bytes).unwrap_or(usize::MAX),
+        ))
+        .layer(TimeoutLayer::with_status_code(
+            StatusCode::REQUEST_TIMEOUT,
+            FILE_REQUEST_TIMEOUT,
+        ));
     let spec = openapi.clone();
     let config = state.config.clone();
     let idempotency = state.clone();
@@ -285,6 +317,7 @@ pub fn router(state: AppState) -> Result<Router, SetupError> {
             StatusCode::REQUEST_TIMEOUT,
             REQUEST_TIMEOUT,
         ))
+        .merge(files_router)
         .layer(
             TraceLayer::new_for_http()
                 .make_span_with(|request: &axum::http::Request<_>| {

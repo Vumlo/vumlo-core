@@ -48,47 +48,53 @@ const UNITS: &[Unit] = &[
         layer: 2,
     },
     Unit {
+        name: "files",
+        dir: "files/src",
+        schema: Some("files"),
+        layer: 3,
+    },
+    Unit {
         name: "auth",
         dir: "auth/src",
         schema: Some("auth"),
-        layer: 3,
+        layer: 4,
     },
     Unit {
         name: "org",
         dir: "org/src",
         schema: Some("org"),
-        layer: 4,
+        layer: 5,
     },
     Unit {
         name: "teaching",
         dir: "learning/src/teaching",
         schema: Some("teaching"),
-        layer: 5,
+        layer: 6,
     },
     Unit {
         name: "content",
         dir: "learning/src/content",
         schema: Some("content"),
-        layer: 5,
+        layer: 6,
     },
     Unit {
         name: "assessment",
         dir: "learning/src/assessment",
         schema: Some("assessment"),
-        layer: 5,
+        layer: 6,
     },
     Unit {
         name: "gradebook",
         dir: "learning/src/gradebook",
         schema: Some("gradebook"),
-        layer: 5,
+        layer: 6,
     },
     // The flows above those four (a person with their courses, the audit report, ...): no schema.
     Unit {
         name: "learning",
         dir: "learning/src",
         schema: None,
-        layer: 5,
+        layer: 6,
     },
     // The plugins (ADR-0066) sit on `learning` and write only the schema `plugins`. They read the
     // submissions of `assessment` through its public functions, never its tables.
@@ -96,14 +102,14 @@ const UNITS: &[Unit] = &[
         name: "plugins",
         dir: "plugins/src",
         schema: Some("plugins"),
-        layer: 6,
+        layer: 7,
     },
     // The composition root and the middleware that has a table of its own.
     Unit {
         name: "server",
         dir: "server/src",
         schema: Some("idempotency"),
-        layer: 7,
+        layer: 8,
     },
 ];
 
@@ -128,7 +134,7 @@ const OWNED: &[(&str, &str)] = &[
 ];
 
 /// Schemas that belong to no unit of the code (an empty one that migrations still create).
-const OTHER_SCHEMAS: &[&str] = &["files"];
+const OTHER_SCHEMAS: &[&str] = &[];
 
 /// (schema of the view, table of another schema it may read). Each is an interface an ADR
 /// declared; anything else a view reads from another schema fails the test.

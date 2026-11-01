@@ -7,8 +7,9 @@ mod text;
 
 use std::collections::BTreeSet;
 
-use api_types::{Document, DocumentLimits, Feature, FieldError, ProfileName};
+use api_types::{Block, Document, DocumentLimits, Feature, FieldError, ProfileName};
 use serde_json::{Map, Value};
+use uuid::Uuid;
 
 pub(crate) use parse::valid_href;
 pub use profile::{EditorConfigError, EffectiveProfiles};
@@ -25,6 +26,8 @@ pub const MAX_CODE_BYTES: usize = 64 * 1024;
 pub const MAX_FORMULA_BYTES: usize = 16 * 1024;
 pub const MAX_HREF_CHARS: usize = 2048;
 pub const MAX_ID_CHARS: usize = 64;
+/// The alt text and the caption of an image.
+pub const MAX_IMAGE_TEXT_CHARS: usize = 300;
 /// More problems than this are not reported.
 pub const MAX_ERRORS: usize = 20;
 
@@ -105,10 +108,10 @@ impl ValidDocument {
         Self { document, body }
     }
 
-    /// True when the document holds no text (ADR-0035): an empty draft may be saved, but never
-    /// submitted.
+    /// True when the document holds no text, image or file (ADR-0035): an empty draft may be
+    /// saved, but never submitted.
     pub fn is_blank(&self) -> bool {
-        plain_text(&self.document).trim().is_empty()
+        plain_text(&self.document).trim().is_empty() && file_ids(&self.document).is_empty()
     }
 
     pub fn as_document(&self) -> &Document {
@@ -119,6 +122,95 @@ impl ValidDocument {
     pub fn as_body(&self) -> &Map<String, Value> {
         &self.body
     }
+}
+
+/// A file a document names: its id, the path of its `file_id` in the document
+/// (`blocks[2].children[0].props.file_id`) and whether an `image` block (and not a `file` block)
+/// names it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FileRef {
+    pub id: Uuid,
+    pub path: String,
+    pub image: bool,
+}
+
+/// The files the image and file blocks of a document name, in document order. A file named twice
+/// appears twice.
+pub fn file_refs(document: &Document) -> Vec<FileRef> {
+    fn walk(blocks: &[Block], path: &str, out: &mut Vec<FileRef>) {
+        for (index, block) in blocks.iter().enumerate() {
+            let here = format!("{path}[{index}]");
+            let named = match block {
+                Block::Image { props, .. } => Some((props.file_id, true)),
+                Block::File { props, .. } => Some((props.file_id, false)),
+                _ => None,
+            };
+            if let Some((id, image)) = named {
+                out.push(FileRef {
+                    id,
+                    path: format!("{here}.props.file_id"),
+                    image,
+                });
+            }
+            walk(block.children(), &format!("{here}.children"), out);
+        }
+    }
+    let mut out = Vec::new();
+    walk(&document.blocks, "blocks", &mut out);
+    out
+}
+
+/// The ids of the files a document names, in document order, each once (ADR-0069).
+pub fn file_ids(document: &Document) -> Vec<Uuid> {
+    distinct_ids(&file_refs(document))
+}
+
+/// The ids of `refs`, each once, in order.
+pub fn distinct_ids(refs: &[FileRef]) -> Vec<Uuid> {
+    let mut ids: Vec<Uuid> = Vec::new();
+    for file in refs {
+        if !ids.contains(&file.id) {
+            ids.push(file.id);
+        }
+    }
+    ids
+}
+
+/// [`file_refs`] of a stored or submitted document found at `prefix` (a path such as
+/// `answers.q1`, empty for the document itself), read by the validator's own parser so that the
+/// two can never disagree about what the document holds. The paths of the references and of the
+/// errors start with `prefix`. A value the parser refuses is an error, never "no files": a
+/// reference that is skipped would be stored unchecked and unrecorded.
+pub fn file_refs_under(prefix: &str, value: &Value) -> Result<Vec<FileRef>, DocumentErrors> {
+    let join = |path: &str| match (prefix.is_empty(), path.is_empty()) {
+        (true, _) => path.to_owned(),
+        (false, true) => prefix.to_owned(),
+        (false, false) => format!("{prefix}.{path}"),
+    };
+    let (document, errors) = parse::parse_document(value);
+    match document {
+        Some(document) if errors.is_empty() => Ok(file_refs(&document)
+            .into_iter()
+            .map(|file| FileRef {
+                path: join(&file.path),
+                ..file
+            })
+            .collect()),
+        _ => Err(DocumentErrors::of(
+            errors
+                .into_iter()
+                .map(|error| DocumentError {
+                    path: join(&error.path),
+                    message: error.message,
+                })
+                .collect(),
+        )),
+    }
+}
+
+/// [`file_refs_under`] the document itself.
+pub fn file_refs_of(value: &Value) -> Result<Vec<FileRef>, DocumentErrors> {
+    file_refs_under("", value)
 }
 
 /// Parses `value` into a [`Document`] and checks it against `profile` as narrowed by `profiles`.

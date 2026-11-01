@@ -9,8 +9,10 @@ use sqlx::postgres::{PgTypeInfo, PgValueRef};
 use sqlx::types::Decimal;
 use uuid::Uuid;
 
-use super::document::{DocumentErrors, EffectiveProfiles, validate_document_within};
-use super::types::{AutoGrade, Claims, Stage, ValidContent, form, quiz};
+use super::document::{
+    DocumentErrors, EffectiveProfiles, FileRef, file_refs_of, validate_document_within,
+};
+use super::types::{AutoGrade, Claims, Stage, ValidContent, file, form, quiz};
 use crate::points;
 use access::{CourseAccess, Release};
 use common::text_enum;
@@ -24,7 +26,7 @@ pub enum ModelError {
     Title,
     #[error("must be a number above 0 and at most 9999.99, with at most two decimals")]
     MaxPoints,
-    #[error("unknown assignment type; available: text, no_submission, quiz, form")]
+    #[error("unknown assignment type; available: text, no_submission, quiz, form, file")]
     AssignmentType,
     #[error("{0}")]
     Config(String),
@@ -67,8 +69,9 @@ text_enum!(ItemStatus { Draft => "draft", Published => "published" });
 pub enum ItemKind {
     Text,
     Assignment,
+    File,
 }
-text_enum!(ItemKind { Text => "text", Assignment => "assignment" });
+text_enum!(ItemKind { Text => "text", Assignment => "assignment", File => "file" });
 
 /// The most points one assignment can be worth (`numeric(6,2)`, ADR-0021).
 const MAX_POINTS_LIMIT: Decimal = Decimal::from_parts(999_999, 0, 0, false, 2);
@@ -181,18 +184,48 @@ pub enum BuiltinType {
     Quiz,
     /// Fields the student fills in, graded by hand (ADR-0051).
     Form,
+    /// Files the student uploads, graded by hand (ADR-0069).
+    File,
 }
 text_enum!(BuiltinType {
     Text => "text",
     NoSubmission => "no_submission",
     Quiz => "quiz",
     Form => "form",
+    File => "file",
 });
 
 impl BuiltinType {
     /// An unknown or not-yet-built type is an error that does not repeat the input.
     pub fn parse(raw: &str) -> Result<Self, ModelError> {
         raw.parse().map_err(|_| ModelError::AssignmentType)
+    }
+
+    /// The files the documents of a `config` name (the questions of a quiz), each with its path in
+    /// the config. The other types hold no document in their config (ADR-0069).
+    pub fn config_file_refs(
+        &self,
+        config: &Map<String, Value>,
+    ) -> Result<Vec<FileRef>, ModelError> {
+        match self {
+            Self::Quiz => quiz::file_refs(config),
+            Self::Text | Self::NoSubmission | Self::Form | Self::File => Ok(Vec::new()),
+        }
+    }
+
+    /// Every file a stored `content` names, each with its path in the content: a text answer, the
+    /// long-text answers of a quiz, and the files and comment of a file hand-in. A form holds no
+    /// document (ADR-0069).
+    pub fn submission_file_refs(
+        &self,
+        content: &Map<String, Value>,
+    ) -> Result<Vec<FileRef>, DocumentErrors> {
+        match self {
+            Self::Text => file_refs_of(&Value::Object(content.clone())),
+            Self::Quiz => quiz::answer_file_refs(content),
+            Self::File => file::submission_file_refs(content),
+            Self::NoSubmission | Self::Form => Ok(Vec::new()),
+        }
     }
 }
 
@@ -279,13 +312,14 @@ impl AssignmentType for BuiltinType {
             },
             Self::Quiz => quiz::validate_config(config, profiles),
             Self::Form => form::validate_config(config),
+            Self::File => file::validate_config(config),
         }
     }
 
     fn points_total(&self, config: &Map<String, Value>) -> Option<Decimal> {
         match self {
             Self::Quiz => quiz::points_total(config),
-            Self::Text | Self::NoSubmission | Self::Form => None,
+            Self::Text | Self::NoSubmission | Self::Form | Self::File => None,
         }
     }
 
@@ -297,7 +331,7 @@ impl AssignmentType for BuiltinType {
 
     fn takes_submissions(&self) -> bool {
         match self {
-            Self::Text | Self::Quiz | Self::Form => true,
+            Self::Text | Self::Quiz | Self::Form | Self::File => true,
             Self::NoSubmission => false,
         }
     }
@@ -323,13 +357,14 @@ impl AssignmentType for BuiltinType {
             Self::NoSubmission => Err(DocumentErrors::one("", "this type takes no submissions")),
             Self::Quiz => quiz::validate_submission(config, content, stage, profiles),
             Self::Form => form::validate_submission(config, content, stage),
+            Self::File => file::validate_submission(config, content, stage, profiles),
         }
     }
 
     fn student_config(&self, config: &Map<String, Value>) -> Map<String, Value> {
         match self {
             Self::Quiz => quiz::student_config(config),
-            Self::Text | Self::NoSubmission | Self::Form => config.clone(),
+            Self::Text | Self::NoSubmission | Self::Form | Self::File => config.clone(),
         }
     }
 
@@ -337,7 +372,7 @@ impl AssignmentType for BuiltinType {
         match self {
             Self::Quiz => quiz::structure(config),
             Self::Form => form::structure(config),
-            Self::Text | Self::NoSubmission => None,
+            Self::Text | Self::NoSubmission | Self::File => None,
         }
     }
 
@@ -348,13 +383,14 @@ impl AssignmentType for BuiltinType {
     ) -> Option<AutoGrade> {
         match self {
             Self::Quiz => quiz::auto_grade(config, content),
-            Self::Text | Self::NoSubmission | Self::Form => None,
+            Self::Text | Self::NoSubmission | Self::Form | Self::File => None,
         }
     }
 
     fn claims(&self, config: &Map<String, Value>, content: &Map<String, Value>) -> Claims {
         match self {
             Self::Form => form::claims(config, content),
+            Self::File => file::claims(config, content),
             Self::Text | Self::NoSubmission | Self::Quiz => Claims::default(),
         }
     }
@@ -589,8 +625,9 @@ impl Module {
     }
 }
 
-/// A `text` item or an assignment. `body` is a block document (ADR-0025) as stored; for an
-/// assignment it is the description.
+/// A `text` item, an assignment or a `file` item. `body` is a block document (ADR-0025) as stored;
+/// for an assignment it is the description. For a `file` item it is `{file_id?, description?}`
+/// (ADR-0024): the uploaded file and a document that describes it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Item {
     pub id: Uuid,

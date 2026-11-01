@@ -1,6 +1,7 @@
 //! Request and response types of the submissions (ADR-0011, ADR-0035, ADR-0050, ADR-0051). A
 //! submission's `content` is a block document (ADR-0025) of the `student` profile for a `text`
-//! assignment and `{"answers": {...}}` for a `quiz` or a `form`.
+//! assignment, `{"answers": {...}}` for a `quiz` or a `form` and `{"files": [...], "comment"?}` for a
+//! `file` (ADR-0069).
 
 use chrono::{DateTime, Utc};
 use garde::Validate;

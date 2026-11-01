@@ -361,3 +361,184 @@ async fn a_patch_that_looked_like_no_change_is_checked_again_after_the_wait() {
     })
     .await;
 }
+
+async fn item_file_rows(pool: &sqlx::PgPool, item: Uuid) -> Vec<(Uuid, bool)> {
+    let mut rows = sqlx::query!(
+        "SELECT file_id, published FROM content.item_files WHERE item_id = $1",
+        item
+    )
+    .fetch_all(pool)
+    .await
+    .unwrap()
+    .into_iter()
+    .map(|row| (row.file_id, row.published))
+    .collect::<Vec<_>>();
+    rows.sort();
+    rows
+}
+
+#[tokio::test]
+async fn item_files_are_replaced_per_copy_and_go_with_the_item_and_its_module() {
+    db_test(async |pool| {
+        let course = course(pool).await;
+        let item = course.committed("10", false).await;
+        let other = course.committed("10", false).await;
+        let (a, b, c) = (Uuid::now_v7(), Uuid::now_v7(), Uuid::now_v7());
+        let mut conn = course.pool.acquire().await.unwrap();
+        // A repeated id is stored once.
+        repo::replace_item_files(&mut conn, item, false, &[a, b, b])
+            .await
+            .unwrap();
+        repo::replace_item_files(&mut conn, item, true, &[a])
+            .await
+            .unwrap();
+        repo::replace_item_files(&mut conn, other, false, &[c])
+            .await
+            .unwrap();
+        let mut expected = vec![(a, false), (b, false), (a, true)];
+        expected.sort();
+        assert_eq!(item_file_rows(&course.pool, item).await, expected);
+
+        // Rewriting one copy leaves the other and the other items alone.
+        repo::replace_item_files(&mut conn, item, false, &[c])
+            .await
+            .unwrap();
+        let mut expected = vec![(c, false), (a, true)];
+        expected.sort();
+        assert_eq!(item_file_rows(&course.pool, item).await, expected);
+        repo::replace_item_files(&mut conn, item, false, &[])
+            .await
+            .unwrap();
+        assert_eq!(item_file_rows(&course.pool, item).await, [(a, true)]);
+
+        delete_item(&mut conn, &course.owner, item).await.unwrap();
+        assert!(item_file_rows(&course.pool, item).await.is_empty());
+        assert_eq!(item_file_rows(&course.pool, other).await, [(c, false)]);
+
+        delete_module(&mut conn, &course.owner, course.module)
+            .await
+            .unwrap();
+        assert!(item_file_rows(&course.pool, other).await.is_empty());
+    })
+    .await;
+}
+
+fn body_of(value: Value) -> Map<String, Value> {
+    match value {
+        Value::Object(map) => map,
+        other => panic!("not an object: {other}"),
+    }
+}
+
+#[test]
+fn a_file_item_references_the_file_its_body_names() {
+    let file = Uuid::now_v7();
+    let body = body_of(json!({"file_id": file.to_string(), "description": {"v": 1, "blocks": []}}));
+    assert_eq!(
+        referenced_file_ids(ItemKind::File, &body, None).unwrap(),
+        [file]
+    );
+}
+
+#[test]
+fn a_file_item_without_a_usable_file_id_references_nothing() {
+    for body in [
+        json!({}),
+        json!({"description": {"v": 1, "blocks": []}}),
+        json!({"file_id": "not-a-uuid"}),
+        json!({"file_id": 7}),
+        json!({"file_id": null}),
+    ] {
+        assert_eq!(
+            referenced_file_ids(ItemKind::File, &body_of(body.clone()), None).unwrap(),
+            Vec::<Uuid>::new(),
+            "{body}"
+        );
+    }
+}
+
+#[test]
+fn text_and_assignment_bodies_reference_the_files_their_blocks_name() {
+    let (image, file) = (Uuid::now_v7(), Uuid::now_v7());
+    let body = body_of(json!({"v": 1, "attachments": [], "blocks": [
+        {"id": "a", "type": "image", "props": {"file_id": image.to_string()}},
+        {"id": "b", "type": "file", "props": {"file_id": file.to_string()}},
+        {"id": "c", "type": "image", "props": {"file_id": image.to_string()}},
+    ]}));
+    for kind in [ItemKind::Text, ItemKind::Assignment] {
+        assert_eq!(
+            referenced_file_ids(kind, &body, None).unwrap(),
+            [image, file]
+        );
+    }
+    // A body that is not a document is an error, never "no files".
+    let stray = body_of(json!({"file_id": Uuid::now_v7().to_string()}));
+    assert!(referenced_file_ids(ItemKind::Text, &stray, None).is_err());
+}
+
+#[test]
+fn a_file_items_description_blocks_count_and_a_quiz_config_adds_its_images() {
+    let (own, described, in_prompt) = (Uuid::now_v7(), Uuid::now_v7(), Uuid::now_v7());
+    let body = body_of(
+        json!({"file_id": own.to_string(), "description": {"v": 1, "blocks": [
+        {"id": "a", "type": "image", "props": {"file_id": described.to_string()}}]}}),
+    );
+    assert_eq!(
+        referenced_file_ids(ItemKind::File, &body, None).unwrap(),
+        [own, described]
+    );
+
+    let config = body_of(json!({"v": 1, "questions": [{
+        "id": "q1", "type": "long_text", "points": "1",
+        "prompt": {"v": 1, "blocks": [
+            {"id": "a", "type": "image", "props": {"file_id": in_prompt.to_string()}}]}}]}));
+    let text = body_of(json!({"v": 1, "blocks": []}));
+    assert_eq!(
+        referenced_file_ids(
+            ItemKind::Assignment,
+            &text,
+            Some((BuiltinType::Quiz, &config))
+        )
+        .unwrap(),
+        [in_prompt]
+    );
+    // The other types hold no document in their config.
+    assert!(
+        referenced_file_ids(
+            ItemKind::Assignment,
+            &text,
+            Some((BuiltinType::Form, &config))
+        )
+        .unwrap()
+        .is_empty()
+    );
+}
+
+#[test]
+fn a_config_or_document_the_parser_cannot_read_is_an_error_not_no_files() {
+    let text = body_of(json!({"v": 1, "blocks": []}));
+    // A quiz config of the wrong shape.
+    let shapeless = body_of(json!({"questions": "none"}));
+    assert!(
+        referenced_file_ids(
+            ItemKind::Assignment,
+            &text,
+            Some((BuiltinType::Quiz, &shapeless))
+        )
+        .is_err()
+    );
+    // A prompt that is not a document.
+    let bad_prompt = body_of(json!({"v": 1, "questions": [{
+        "id": "q1", "type": "long_text", "points": "1", "prompt": {"blocks": 3}}]}));
+    assert!(
+        referenced_file_ids(
+            ItemKind::Assignment,
+            &text,
+            Some((BuiltinType::Quiz, &bad_prompt))
+        )
+        .is_err()
+    );
+    // A file item whose description is not a document.
+    let body = body_of(json!({"description": {"v": 2}}));
+    assert!(referenced_file_ids(ItemKind::File, &body, None).is_err());
+}

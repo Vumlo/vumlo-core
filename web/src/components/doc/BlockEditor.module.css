@@ -57,3 +57,13 @@
 .menu { position: absolute; z-index: 30; min-width: 190px; }
 .hint { color: var(--muted); font-size: 14px; padding: 0 0 0.4em; }
 @media (max-width: 720px) { .gutter { display: none; } }
+.imageBody { display: flex; flex-direction: column; gap: 8px; padding: 12px 16px 16px; }
+.imageBody img { align-self: flex-start; }
+.imageField { width: 100%; min-height: 36px; padding: 0 12px; border: 0; border-radius: var(--radius-pill); background: var(--input-bg); box-shadow: inset 0 0 0 1px var(--border); color: var(--text); font-size: 14px; }
+.fileBlock { margin: 0 0 1em; border-radius: var(--radius-card); }
+.fileBlock[data-active="true"] { outline: 2px solid var(--ring); outline-offset: 2px; }
+.blockError { margin: 0; font-size: 14px; color: var(--danger); }
+.uploading { display: flex; align-items: center; gap: 12px; margin: 0 0 1em; padding: 12px 16px; border-radius: var(--radius-inner); background: var(--sunken); color: var(--muted); font-size: 14px; }
+.spinner { flex: none; width: 18px; height: 18px; border-radius: 50%; border: 2px solid var(--border-strong); border-top-color: var(--accent); animation: spin 0.8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .spinner { animation-duration: 3s; } }

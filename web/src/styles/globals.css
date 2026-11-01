@@ -150,6 +150,7 @@ ul { margin: 0; padding: 0; list-style: none; }
 .tile-sm { width: 32px; height: 32px; }
 .tile-lecture { background: var(--lec-tile); color: var(--lec-fg); }
 .tile-assignment { background: var(--asg-tile); color: var(--asg-fg); }
+.tile-file { background: var(--file-tile); color: var(--file-fg); }
 .row-assignment { background: var(--asg-row); }
 
 .meter { display: block; height: 8px; border-radius: var(--radius-pill); background: var(--sunken); }

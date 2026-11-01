@@ -1,6 +1,7 @@
-//! The assignment types whose submissions are not one block document: `quiz` (ADR-0050) and
-//! `form` (ADR-0051). Pure code: no database, no HTTP.
+//! The assignment types whose submissions are not one block document: `quiz` (ADR-0050),
+//! `form` (ADR-0051) and `file` (ADR-0069). Pure code: no database, no HTTP.
 
+pub mod file;
 pub mod form;
 pub mod quiz;
 
@@ -81,11 +82,13 @@ pub struct Claims {
     pub people: Vec<uuid::Uuid>,
     /// `(field id, option id)` of the exclusive options chosen.
     pub exclusive: Vec<(String, String)>,
+    /// The files of a `file` assignment's submission; the submitter must be allowed to use them.
+    pub files: Vec<uuid::Uuid>,
 }
 
 impl Claims {
     pub fn is_empty(&self) -> bool {
-        self.people.is_empty() && self.exclusive.is_empty()
+        self.people.is_empty() && self.exclusive.is_empty() && self.files.is_empty()
     }
 }
 

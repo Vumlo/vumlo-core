@@ -573,3 +573,88 @@ async fn the_staff_reads_leave_a_student_with_only_a_draft_without_an_attempt() 
     })
     .await;
 }
+
+async fn submission_file_rows(f: &Fixture) -> Vec<Uuid> {
+    sqlx::query_scalar!(
+        "SELECT file_id FROM assessment.submission_files sf
+         JOIN assessment.submissions s ON s.id = sf.submission_id
+         WHERE s.assignment_id = $1",
+        f.assignment
+    )
+    .fetch_all(&f.pool)
+    .await
+    .unwrap()
+}
+
+/// A document whose blocks are images of `files`.
+fn pictures(files: &[Uuid]) -> Value {
+    json!({"v": 1, "attachments": [], "blocks": files.iter().enumerate().map(|(n, file)| json!(
+        {"id": format!("i{n}"), "type": "image", "props": {"file_id": file}})).collect::<Vec<_>>()})
+}
+
+/// A file row uploaded by the student, referenced by nobody.
+async fn student_file(f: &Fixture) -> Uuid {
+    let id = Uuid::now_v7();
+    let stored = ::files::Stored {
+        id,
+        size: 3,
+        sha256: "00".to_owned(),
+        head: b"abc".to_vec(),
+    };
+    let mut conn = f.pool.acquire().await.unwrap();
+    ::files::insert(
+        &mut conn,
+        &stored,
+        f.student.user_id(),
+        "a.png",
+        "image/png",
+    )
+    .await
+    .unwrap();
+    id
+}
+
+async fn save_pictures(f: &Fixture, files: &[Uuid], now: DateTime<Utc>) {
+    let mut tx = f.pool.begin().await.unwrap();
+    save_draft(
+        &mut tx,
+        &f.student,
+        f.assignment,
+        &pictures(files),
+        &PROFILES,
+        now,
+    )
+    .await
+    .unwrap();
+    tx.commit().await.unwrap();
+}
+
+#[tokio::test]
+async fn submission_files_follow_the_draft_into_the_attempt_and_go_with_a_discarded_draft() {
+    db_test(async |pool| {
+        let f = fixture(pool, SubmissionSettings::default()).await;
+        let (a, b) = (student_file(&f).await, student_file(&f).await);
+        let draft_text = f.save("DRAFT", at(9, 0)).await.unwrap();
+        assert!(submission_file_rows(&f).await.is_empty());
+        // A repeated id is stored once, and a later save replaces the earlier rows.
+        save_pictures(&f, &[a, a], at(9, 5)).await;
+        assert_eq!(submission_file_rows(&f).await, [a]);
+        save_pictures(&f, &[b], at(9, 10)).await;
+        assert_eq!(submission_file_rows(&f).await, [b]);
+
+        // The draft row becomes the attempt in place: its files stay with it.
+        let attempt = f.submit(at(9, 30)).await.unwrap();
+        assert_eq!(attempt.id, draft_text.id);
+        assert_eq!(submission_file_rows(&f).await, [b]);
+
+        // A discarded draft takes its files along.
+        save_pictures(&f, &[a], at(9, 40)).await;
+        assert_eq!(submission_file_rows(&f).await.len(), 2);
+        let mut conn = f.pool.acquire().await.unwrap();
+        discard_draft(&mut conn, &f.student, f.assignment)
+            .await
+            .unwrap();
+        assert_eq!(submission_file_rows(&f).await, [b]);
+    })
+    .await;
+}

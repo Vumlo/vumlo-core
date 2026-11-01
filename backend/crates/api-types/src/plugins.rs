@@ -19,7 +19,8 @@ pub struct PluginSubmission {
     pub assignment_id: Uuid,
     pub student_id: Uuid,
     pub attempt: i32,
-    /// A block document for a `text` assignment, `{"answers": {...}}` for a quiz or a form.
+    /// A block document for a `text` assignment, `{"answers": {...}}` for a quiz or a form,
+    /// `{"files": [...], "comment"?}` for a file.
     #[schema(value_type = Object)]
     pub content: Map<String, Value>,
     pub submitted_at: DateTime<Utc>,

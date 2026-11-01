@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE files.files SET created_at = now() - interval '2 days' WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "ac5494c75b8d66525817a7f7b00db4d9ba2790ca8a73dbc833b15336f719781c"
+}

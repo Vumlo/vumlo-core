@@ -8,14 +8,15 @@ use std::collections::HashSet;
 use std::sync::LazyLock;
 
 use api_types::{
-    Block, CheckProps, CodeLanguage, CodeProps, Document, HeadingProps, Inline, LinkRun,
-    SourceProps, Styles, TableProps, TextRun, VideoProps, VideoProvider,
+    Block, CheckProps, CodeLanguage, CodeProps, Document, FileProps, HeadingProps, ImageProps,
+    Inline, LinkRun, SourceProps, Styles, TableProps, TextRun, VideoProps, VideoProvider,
 };
 use serde_json::{Map, Value};
+use uuid::Uuid;
 
 use super::{
     DocumentError, MAX_CODE_BYTES, MAX_DEPTH, MAX_ERRORS, MAX_FORMULA_BYTES, MAX_HREF_CHARS,
-    MAX_ID_CHARS, MAX_TABLE_COLUMNS, MAX_TABLE_ROWS,
+    MAX_ID_CHARS, MAX_IMAGE_TEXT_CHARS, MAX_TABLE_COLUMNS, MAX_TABLE_ROWS,
 };
 
 type Object = Map<String, Value>;
@@ -161,6 +162,46 @@ impl Walk {
             _ => {
                 self.err(&at(path, key), "must be a string");
                 String::new()
+            }
+        }
+    }
+
+    /// `props.file_id`. Only the syntax is judged here; whether the file may be used is decided
+    /// by the service that stores the document (ADR-0069).
+    fn file_id(&mut self, props: &Object, ppath: &str) -> Uuid {
+        match props.get("file_id").and_then(Value::as_str) {
+            // Only the spelling the server writes: lowercase and hyphenated.
+            Some(text) => match text.parse::<Uuid>() {
+                Ok(id) if id.to_string() == text => id,
+                _ => {
+                    self.err(&at(ppath, "file_id"), "must be a file id");
+                    Uuid::nil()
+                }
+            },
+            None => {
+                self.err(&at(ppath, "file_id"), "must be a file id");
+                Uuid::nil()
+            }
+        }
+    }
+
+    /// An optional plain-text prop of at most [`MAX_IMAGE_TEXT_CHARS`] characters.
+    fn optional_text(&mut self, props: &Object, key: &str, ppath: &str) -> Option<String> {
+        match props.get(key) {
+            // The schema says `string | null`, so an explicit null is the same as no key.
+            None | Some(Value::Null) => None,
+            Some(Value::String(text)) if text.chars().count() > MAX_IMAGE_TEXT_CHARS => {
+                self.err(&at(ppath, key), "is too long");
+                None
+            }
+            Some(Value::String(text)) if has_control_character(text) => {
+                self.err(&at(ppath, key), "contains a control character");
+                None
+            }
+            Some(Value::String(text)) => Some(text.clone()),
+            Some(_) => {
+                self.err(&at(ppath, key), "must be a string");
+                None
             }
         }
     }
@@ -377,7 +418,33 @@ impl Walk {
                     },
                 }
             }
-            "image" | "html" => {
+            "image" => {
+                let props = self.props(object, path, &["file_id", "alt", "caption"]);
+                let file_id = self.file_id(props, &ppath);
+                let alt = self.optional_text(props, "alt", &ppath);
+                let caption = self.optional_text(props, "caption", &ppath);
+                self.no_content(object, path);
+                self.no_children(object, path);
+                Block::Image {
+                    id,
+                    props: ImageProps {
+                        file_id,
+                        alt,
+                        caption,
+                    },
+                }
+            }
+            "file" => {
+                let props = self.props(object, path, &["file_id"]);
+                let file_id = self.file_id(props, &ppath);
+                self.no_content(object, path);
+                self.no_children(object, path);
+                Block::File {
+                    id,
+                    props: FileProps { file_id },
+                }
+            }
+            "html" => {
                 self.err(&at(path, "type"), "is not available yet");
                 return None;
             }

@@ -31,6 +31,8 @@ struct Ctx {
     subgroup: Uuid,
     term: Uuid,
     owner: Uuid,
+    /// A file the owner of the course uploaded and no item names: only the owner reads it.
+    file: Uuid,
 }
 
 type Call = (&'static str, String, Option<Value>);
@@ -67,6 +69,21 @@ fn operations(c: &Ctx, other_user: Uuid) -> Vec<Call> {
             format!("/templates/{}/courses", c.course),
             Some(json!({})),
         ),
+        // The upload is decided from the item or assignment before the body is read; a caller who
+        // may not use the owner gets what they would for the owner itself. The body is a JSON
+        // document here, which is as good as any other bytes. `tests/files.rs` has the rest.
+        call(
+            "POST",
+            format!("/files?for=item:{}&name=a.json", c.text),
+            Some(json!({"bytes": "any"})),
+        ),
+        call(
+            "POST",
+            format!("/files?for=assignment:{}&name=a.json", c.assignment),
+            Some(json!({"bytes": "any"})),
+        ),
+        // Unreferenced, so only its uploader reads it: everybody else gets 404.
+        call("GET", format!("/files/{}", c.file), None),
         call("GET", format!("/courses/{}/people", c.course), None),
         call("GET", format!("/courses/{}/item-meta", c.course), None),
         call("GET", format!("/items/{}/revision", c.text), None),
@@ -420,6 +437,15 @@ async fn build(env: &Env, admin: &Account, owner: &Account, student: &Account, t
         200,
     )
     .await;
+    let file = id_of(
+        &env.http
+            .post(&format!("/files?for=item:{text}&name=a.txt"))
+            .bearer(&owner.token)
+            .body(b"an unreferenced file".to_vec())
+            .send()
+            .await
+            .json(),
+    );
     Ctx {
         course,
         module,
@@ -433,6 +459,7 @@ async fn build(env: &Env, admin: &Account, owner: &Account, student: &Account, t
         subgroup,
         term,
         owner: owner.id,
+        file,
     }
 }
 
@@ -506,6 +533,8 @@ async fn no_operation_answers_a_caller_who_may_not_use_it() {
             ];
             (method == "GET" && reads.iter().any(|read| read == path))
                 || path.contains("/submission/")
+                // A student may add a file to the assignment they submit to.
+                || (method == "POST" && path.starts_with("/files?for=assignment:"))
         };
         for (method, path, body) in operations(&a, outsider_student.id) {
             let status = env.call(method, &student_a.token, &path, body).await.status;
@@ -764,6 +793,7 @@ async fn the_list_of_operations_is_the_api() {
             subgroup: any,
             term: any,
             owner: any,
+            file: any,
         };
         let listed: BTreeSet<String> = operations(&c, any)
             .into_iter()

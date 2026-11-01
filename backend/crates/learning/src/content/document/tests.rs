@@ -413,15 +413,185 @@ fn each_rule_refuses_with_the_path_of_the_problem() {
 }
 
 #[test]
-fn images_and_html_are_not_available_yet() {
-    for kind in ["image", "html"] {
-        let value = doc(json!([{"id": "a", "type": kind}]));
-        assert_eq!(
-            single(&value),
-            ("blocks[0].type".to_owned(), "is not available yet"),
-            "{kind}"
+fn html_block_is_still_refused() {
+    let value = doc(json!([{"id": "a", "type": "html"}]));
+    assert_eq!(
+        single(&value),
+        ("blocks[0].type".to_owned(), "is not available yet")
+    );
+}
+
+const FILE_A: &str = "0198a000-0000-7000-8000-00000000000a";
+const FILE_B: &str = "0198a000-0000-7000-8000-00000000000b";
+
+fn image(id: &str, file_id: &str) -> Value {
+    json!({"id": id, "type": "image", "props": {"file_id": file_id}})
+}
+
+fn file_block(id: &str, file_id: &str) -> Value {
+    json!({"id": id, "type": "file", "props": {"file_id": file_id}})
+}
+
+#[test]
+fn image_block_parses_in_every_profile() {
+    let profiles = full();
+    let value = doc(json!([{"id": "i", "type": "image",
+        "props": {"file_id": FILE_A, "alt": "A cell", "caption": "Figure 1"}}]));
+    for profile in ProfileName::ALL {
+        let valid = validate_document(&value, *profile, &profiles)
+            .unwrap_or_else(|e| panic!("{}: {e:?}", profile.as_str()));
+        // Stored as sent.
+        assert_eq!(Value::Object(valid.as_body().clone()), value);
+    }
+    // alt and caption are optional; null is the same as absent.
+    assert!(validate(&doc(json!([image("i", FILE_A)]))).is_ok());
+    let nulls = doc(json!([{"id": "i", "type": "image",
+        "props": {"file_id": FILE_A, "alt": null, "caption": null}}]));
+    let valid = validate(&nulls).unwrap();
+    assert_eq!(
+        Value::Object(valid.as_body().clone()),
+        doc(json!([image("i", FILE_A)]))
+    );
+}
+
+#[test]
+fn image_alt_and_caption_limits_are_enforced() {
+    let long = "x".repeat(301);
+    let exact = "я".repeat(300);
+    let make = |alt: &str, caption: &str| {
+        doc(json!([{"id": "i", "type": "image",
+            "props": {"file_id": FILE_A, "alt": alt, "caption": caption}}]))
+    };
+    assert!(validate(&make(&exact, &exact)).is_ok());
+    assert_eq!(
+        single(&make(&long, "")),
+        ("blocks[0].props.alt".to_owned(), "is too long")
+    );
+    assert_eq!(
+        single(&make("", &long)),
+        ("blocks[0].props.caption".to_owned(), "is too long")
+    );
+    assert_eq!(
+        single(&make("a\u{0}b", "")),
+        (
+            "blocks[0].props.alt".to_owned(),
+            "contains a control character"
+        )
+    );
+    // The file id must be an id, an unknown key is refused, and neither block takes content.
+    for (block, path, message) in [
+        (
+            json!({"id": "i", "type": "image", "props": {"file_id": "nope"}}),
+            "blocks[0].props.file_id",
+            "must be a file id",
+        ),
+        (
+            json!({"id": "i", "type": "image", "props": {}}),
+            "blocks[0].props.file_id",
+            "must be a file id",
+        ),
+        (
+            json!({"id": "i", "type": "image", "props": {"file_id": FILE_A, "url": "https://x.edu/a.png"}}),
+            "blocks[0].props",
+            "has an unknown property",
+        ),
+        (
+            json!({"id": "i", "type": "image", "props": {"file_id": FILE_A},
+                "content": [{"type": "text", "text": "x"}]}),
+            "blocks[0].content",
+            "is not allowed on this block",
+        ),
+        (
+            json!({"id": "i", "type": "file", "props": {"file_id": FILE_A, "alt": "x"}}),
+            "blocks[0].props",
+            "has an unknown property",
+        ),
+        (
+            json!({"id": "i", "type": "file", "props": {"file_id": 5}}),
+            "blocks[0].props.file_id",
+            "must be a file id",
+        ),
+    ] {
+        assert_eq!(single(&doc(json!([block]))), (path.to_owned(), message));
+    }
+}
+
+#[test]
+fn file_block_is_refused_in_question_and_option_profiles() {
+    let profiles = full();
+    let value = doc(json!([file_block("f", FILE_A)]));
+    for profile in [ProfileName::Full, ProfileName::Student] {
+        assert!(
+            validate_document(&value, profile, &profiles).is_ok(),
+            "{}",
+            profile.as_str()
         );
     }
+    for profile in [ProfileName::Question, ProfileName::Option] {
+        let errors = validate_document(&value, profile, &profiles).unwrap_err();
+        let found: Vec<_> = errors
+            .iter()
+            .map(|e| (e.path.as_str(), e.message))
+            .collect();
+        assert_eq!(
+            found,
+            [("blocks[0]", "is not allowed here")],
+            "{}",
+            profile.as_str()
+        );
+    }
+}
+
+#[test]
+fn attachments_must_still_be_empty() {
+    let value = json!({"v": 1, "blocks": [], "attachments": [FILE_A]});
+    assert_eq!(
+        single(&value),
+        ("attachments".to_owned(), "must be empty for now")
+    );
+}
+
+#[test]
+fn a_document_of_only_an_image_is_not_blank() {
+    let blank = |value: Value| validate(&value).unwrap().is_blank();
+    assert!(!blank(doc(json!([image("i", FILE_A)]))));
+    assert!(!blank(doc(json!([file_block("f", FILE_A)]))));
+    // Nested under a list item too.
+    assert!(!blank(doc(
+        json!([{"id": "l", "type": "bulleted_list_item",
+        "children": [image("i", FILE_A)]}])
+    )));
+}
+
+#[test]
+fn file_ids_collects_images_and_files_in_order_without_duplicates() {
+    let value = doc(json!([
+        paragraph("p", "x"),
+        image("a", FILE_B),
+        {"id": "l", "type": "bulleted_list_item", "children": [
+            file_block("c", FILE_A),
+            {"id": "n", "type": "numbered_list_item", "children": [image("d", FILE_B)]}
+        ]},
+        file_block("e", FILE_A),
+    ]));
+    let valid = validate(&value).unwrap();
+    let id = |text: &str| text.parse::<uuid::Uuid>().unwrap();
+    assert_eq!(file_ids(valid.as_document()), [id(FILE_B), id(FILE_A)]);
+    let at = |n: usize, path: &str, is_image: bool| FileRef {
+        id: id([FILE_B, FILE_A, FILE_B, FILE_A][n]),
+        path: path.to_owned(),
+        image: is_image,
+    };
+    assert_eq!(
+        file_refs(valid.as_document()),
+        [
+            at(0, "blocks[1].props.file_id", true),
+            at(1, "blocks[2].children[0].props.file_id", false),
+            at(2, "blocks[2].children[1].children[0].props.file_id", true),
+            at(3, "blocks[3].props.file_id", false),
+        ]
+    );
+    assert!(file_ids(&api_types::Document::empty()).is_empty());
 }
 
 #[test]
@@ -546,13 +716,16 @@ fn kinds() -> Vec<(&'static str, Value)> {
                 json!([{"id": "v", "type": "video", "props": {"provider": "youtube", "video_id": "dQw4w9WgXcQ"}}]),
             ),
         ),
+        ("image", doc(json!([image("i", FILE_A)]))),
+        ("file", doc(json!([file_block("f", FILE_A)]))),
     ]
 }
 
 /// The table of ADR-0025 and ADR-0027, written out once more so a change to the code is noticed.
 fn allowed(profile: ProfileName, kind: &str) -> bool {
     match profile {
-        ProfileName::Full | ProfileName::Question => true,
+        ProfileName::Full => true,
+        ProfileName::Question => kind != "file",
         ProfileName::Student => kind != "video",
         ProfileName::Option => matches!(
             kind,
@@ -563,6 +736,7 @@ fn allowed(profile: ProfileName, kind: &str) -> bool {
                 | "inline math"
                 | "code"
                 | "math"
+                | "image"
         ),
     }
 }
@@ -820,4 +994,46 @@ fn a_document_without_text_is_blank() {
     assert!(!blank(doc(json!([
         {"id": "i", "type": "code", "props": {"language": "rust", "source": "x"}}
     ]))));
+}
+
+#[test]
+fn the_extractor_reads_what_the_validator_reads() {
+    // A `code` block with an unknown language is valid (stored as text) but is not what serde
+    // reads; the extractor must still see the image after it.
+    let value = doc(json!([
+        {"id": "c", "type": "code", "props": {"language": "cobol", "source": "x"}},
+        image("i", FILE_A),
+    ]));
+    assert!(validate(&value).is_ok());
+    let refs = file_refs_of(&value).unwrap();
+    assert_eq!(refs.len(), 1);
+    assert_eq!(refs[0].path, "blocks[1].props.file_id");
+    assert!(refs[0].image);
+    // A value the validator refuses is an error, never an empty list.
+    for bad in [
+        json!({"file_id": FILE_A}),
+        json!("text"),
+        doc(json!([{"id": "i", "type": "image", "props": {"file_id": "nope"}}])),
+    ] {
+        assert!(file_refs_of(&bad).is_err(), "{bad}");
+    }
+}
+
+#[test]
+fn a_file_id_must_be_spelled_canonically() {
+    for spelling in [
+        FILE_A.to_uppercase(),
+        FILE_A.replace('-', ""),
+        format!("urn:uuid:{FILE_A}"),
+        format!("{{{FILE_A}}}"),
+    ] {
+        for kind in ["image", "file"] {
+            let value = doc(json!([{"id": "i", "type": kind, "props": {"file_id": spelling}}]));
+            assert_eq!(
+                single(&value),
+                ("blocks[0].props.file_id".to_owned(), "must be a file id"),
+                "{kind} {spelling}"
+            );
+        }
+    }
 }

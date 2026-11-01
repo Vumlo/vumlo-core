@@ -11,6 +11,7 @@ mod admin;
 mod assessment;
 mod courses;
 mod document;
+mod files;
 mod gradebook;
 mod groups;
 mod home;
@@ -22,6 +23,7 @@ pub use admin::*;
 pub use assessment::*;
 pub use courses::*;
 pub use document::*;
+pub use files::*;
 pub use gradebook::*;
 pub use groups::*;
 pub use home::*;
@@ -493,6 +495,8 @@ pub enum ContentStatus {
 pub enum ItemKind {
     Text,
     Assignment,
+    /// One uploaded file with an optional description (ADR-0024).
+    File,
 }
 
 /// A top-level module or a sub-module (ADR-0020).
@@ -515,11 +519,12 @@ pub struct Module {
 /// The assignment part of an item of kind `assignment` (ADR-0021).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct Assignment {
-    /// The assignment type: `text`, `no_submission`, `quiz` or `form`. It cannot change.
+    /// The assignment type: `text`, `no_submission`, `quiz`, `form` or `file`. It cannot change.
     #[serde(rename = "type")]
     pub assignment_type: String,
     /// Settings of the type; an empty object for `no_submission`, the editor narrowing for `text`,
-    /// the questions for a `quiz` (ADR-0050) and the fields for a `form` (ADR-0051). A student
+    /// the questions for a `quiz` (ADR-0050), the fields for a `form` (ADR-0051) and
+    /// `{max_files?, accept?}` for a `file` (ADR-0069). A student
     /// never receives the answer key of a quiz. A form's fields carry the read-only facts
     /// `has_answers` and, on the options of an exclusive field, `taken` and `taken_by`.
     #[schema(value_type = Object)]
@@ -559,8 +564,9 @@ pub struct AssignmentSummary {
     pub max_attempts: Option<i32>,
 }
 
-/// A `text` item or an assignment. `body` is a JSON object the server stores without interpreting it;
-/// for an assignment it holds the instructions.
+/// A `text` item, an assignment or a `file` item. `body` is a JSON object; for an assignment it holds
+/// the instructions, for a `file` item `{file_id?, description?}`: the uploaded file (absent while
+/// the item is a draft without one) and a document that describes it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct Item {
     pub id: Uuid,
@@ -569,7 +575,8 @@ pub struct Item {
     pub position: i32,
     pub kind: ItemKind,
     pub title: String,
-    /// A block document (ADR-0025). The server returns the stored body as is.
+    /// A block document (ADR-0025) for a `text` item and an assignment, `{file_id?, description?}`
+    /// for a `file` item. The server returns the stored body as is.
     #[schema(value_type = Document)]
     pub body: Map<String, Value>,
     pub status: ContentStatus,
@@ -698,11 +705,12 @@ fn optional_points_text<'de, D: Deserializer<'de>>(
 /// The assignment part of a new item of kind `assignment` (ADR-0021).
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct NewAssignment {
-    /// The assignment type: `text`, `no_submission`, `quiz` or `form`.
+    /// The assignment type: `text`, `no_submission`, `quiz`, `form` or `file`.
     #[serde(rename = "type", default)]
     pub assignment_type: String,
     /// Settings of the type, a JSON object. Defaults to `{}`; `no_submission` has none, a `quiz`
-    /// needs its questions (ADR-0050) and a `form` its fields (ADR-0051).
+    /// needs its questions (ADR-0050), a `form` its fields (ADR-0051) and a `file`
+    /// takes `{max_files?: 1..=20, accept?: [".pdf", ...]}` (ADR-0069).
     #[serde(default)]
     #[schema(value_type = Option<Object>)]
     pub config: Option<Map<String, Value>>,
@@ -737,17 +745,22 @@ pub struct NewAssignment {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Validate, ToSchema)]
 pub struct CreateItemRequest {
+    /// `text`, `assignment` or `file`. Omit it to get `assignment` when an `assignment` object is
+    /// sent and `text` otherwise.
+    #[serde(default)]
     #[garde(skip)]
-    pub kind: ItemKind,
+    pub kind: Option<ItemKind>,
     #[garde(length(chars, min = 1, max = 200))]
     pub title: String,
     /// A block document (ADR-0025). Defaults to the empty document. For an assignment it is the
-    /// description. It is read as a JSON value so that a rejection can name the path.
+    /// description. For a `file` item it is `{file_id?, description?}` and defaults to `{}`: the file
+    /// is uploaded (`POST /files?for=item:{id}`) once the item exists and named with
+    /// `PATCH /items/{id}`. It is read as a JSON value so that a rejection can name the path.
     #[serde(default)]
     #[schema(value_type = Option<Document>)]
     #[garde(skip)]
     pub body: Option<Value>,
-    /// Required for `kind: assignment`, not allowed for `kind: text`.
+    /// Required for `kind: assignment`, not allowed for the other kinds.
     #[serde(default)]
     #[garde(skip)]
     pub assignment: Option<NewAssignment>,
@@ -757,7 +770,8 @@ pub struct CreateItemRequest {
 pub struct UpdateItemRequest {
     #[garde(inner(length(chars, min = 1, max = 200)))]
     pub title: Option<String>,
-    /// A block document that replaces the body. Omit (or send `null`) to keep it.
+    /// A block document that replaces the body (`{file_id?, description?}` for a `file` item). Omit
+    /// (or send `null`) to keep it.
     #[schema(value_type = Option<Document>)]
     #[garde(skip)]
     pub body: Option<Value>,

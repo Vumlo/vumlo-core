@@ -391,7 +391,9 @@ export interface paths {
          *     assignment's `config.editor.features` narrow it; a rejection names the path, for example
          *     `content.blocks[2].props.level`. An empty document is a valid draft. The last write wins and
          *     nothing is versioned. After the submission window has closed (ADR-0035) a save is refused.
-         *     Saving a draft emits no event.
+         *     For a `file` assignment the content names files uploaded with `POST /files?for=assignment:{id}`;
+         *     a file that does not exist, that someone else uploaded or holds, or whose name the assignment
+         *     does not accept is `422` on `content.files[i]`. Saving a draft emits no event.
          */
         put: operations["save_draft"];
         post?: never;
@@ -1181,6 +1183,59 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/files": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Stores the raw body as a file for an item or an assignment and returns its description. The
+         *     file stays unreferenced (and is swept after 24 hours) until a document or a submission names it.
+         * @description The caller is authorized **before** the body is read: `for=item:{id}` needs the right to edit
+         *     the item (an archived course is `409`), `for=assignment:{id}` the right to submit work (an assignment that takes no submissions, whose window is closed or whose attempt limit is reached is `409`). The
+         *     content type is found from the bytes, not from the header, and only the six inline types of
+         *     ADR-0069 ever keep a type that a browser would show; the name is cleaned (no path, at most 200
+         *     characters). The body may be as large as `files.max_size` (`413` above it); an empty body is
+         *     `422`. This route is outside the 2 MiB body limit and the idempotency layer.
+         */
+        post: operations["upload"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/files/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The bytes of a file, streamed. Allowed if any item or submission that names the file lets the
+         *     caller read it, or, while nothing names it, to the uploader; every other case is `404`, never
+         *     `403` (ADR-0069).
+         * @description Only `application/pdf`, `image/png`, `image/jpeg`, `image/gif`, `image/webp` and `text/plain`
+         *     are `inline`; everything else, SVG included, is an `attachment`. Every response has
+         *     `X-Content-Type-Options: nosniff` and, except for a PDF, `Content-Security-Policy: sandbox`
+         *     (a browser does not draw its PDF viewer in a sandboxed response; ADR-0069). The `ETag` is the
+         *     SHA-256 of the bytes and `If-None-Match` gives `304`. One `Range: bytes=a-b` (or `a-`, `-n`) is
+         *     served as `206`; a start past the end is `416`; any other form of the header is ignored.
+         */
+        get: operations["download"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/groups": {
         parameters: {
             query?: never;
@@ -1378,7 +1433,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Publishes a `text` item or an assignment. Idempotent; never changes `publish_at`. */
+        /**
+         * Publishes an item. Idempotent; never changes `publish_at`. A `file` item without a file is
+         *     refused (`409`).
+         */
         post: operations["publish_item"];
         delete?: never;
         options?: never;
@@ -1414,8 +1472,8 @@ export interface paths {
         put?: never;
         /**
          * Gives students the working title and body of a published item (ADR-0049).
-         * @description A draft has nothing to publish a revision of: publish the item (`409`). Not in an archived
-         *     course.
+         * @description A draft has nothing to publish a revision of: publish the item (`409`). A `file` item whose
+         *     working body names no file cannot be published either (`409`). Not in an archived course.
          */
         post: operations["publish_revision"];
         delete?: never;
@@ -1651,14 +1709,20 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Creates a draft `text` item or assignment as the last item of a module or sub-module.
+         * Creates a draft `text` item, assignment or `file` item as the last item of a module or sub-module.
          * @description `body` is a JSON object that is stored and returned as is; an array or a string is rejected.
-         *     For an assignment it holds the instructions.
+         *     For an assignment it holds the instructions. `kind` is optional: without it the item is an
+         *     assignment when an `assignment` object is sent and a `text` item otherwise.
+         *
+         *     A `file` item has the body `{file_id?, description?}` (`description` is a document). It starts
+         *     without a file: upload one with `POST /files?for=item:{id}` and name it with
+         *     `PATCH /items/{id}`. `file_id` must be a file the caller uploaded that nothing uses yet. A
+         *     `file` item must not carry an `assignment` object.
          *
          *     `kind: assignment` requires an `assignment` object `{type, config?, max_points, is_bonus?}`
-         *     (ADR-0021); a `text` item must not carry one. `type` is `text`, `no_submission`, `quiz` or `form`; the
+         *     (ADR-0021); a `text` item must not carry one. `type` is `text`, `no_submission`, `quiz`, `form` or `file`; the
          *     `config` of a `quiz` is its questions and must add up to `max_points` (ADR-0050), that of a `form` its
-         *     fields (ADR-0051), and the others take an empty one (a `text` assignment may narrow its editor).
+         *     fields (ADR-0051), that of a `file` `{max_files?, accept?}` (ADR-0069), and the others take an empty one (a `text` assignment may narrow its editor).
          *     `max_points` is a decimal string such as `"20"` or `"7.5"`; a JSON number is rejected. The
          *     grading scale limits the points (ADR-0022): at most 12 per assignment on `twelve`, at most
          *     100 in total over the regular (not bonus) assignments of the course on `hundred`.
@@ -1699,7 +1763,8 @@ export interface paths {
         /**
          * Publishes a module. `cascade` is required and has no default (ADR-0010).
          * @description With `cascade: false` only this module is published. With `cascade: true` its sub-modules and
-         *     every draft item below it are published too, in the same transaction. Idempotent. Never
+         *     every draft item below it are published too, in the same transaction; a `file` item without a
+         *     file below it refuses the whole publish (`409`). Idempotent. Never
          *     changes `publish_at`: a module scheduled for later stays hidden from students until then.
          */
         post: operations["publish_module"];
@@ -2002,7 +2067,8 @@ export interface components {
             class_on?: string | null;
             /**
              * @description Settings of the type; an empty object for `no_submission`, the editor narrowing for `text`,
-             *     the questions for a `quiz` (ADR-0050) and the fields for a `form` (ADR-0051). A student
+             *     the questions for a `quiz` (ADR-0050), the fields for a `form` (ADR-0051) and
+             *     `{max_files?, accept?}` for a `file` (ADR-0069). A student
              *     never receives the answer key of a quiz. A form's fields carry the read-only facts
              *     `has_answers` and, on the options of an exclusive field, `taken` and `taken_by`.
              */
@@ -2028,7 +2094,7 @@ export interface components {
             /** @description A decimal string with exactly two decimals, e.g. `"20.00"`. */
             max_points: string;
             on_deadline?: components["schemas"]["OnDeadline"] | null;
-            /** @description The assignment type: `text`, `no_submission`, `quiz` or `form`. It cannot change. */
+            /** @description The assignment type: `text`, `no_submission`, `quiz`, `form` or `file`. It cannot change. */
             type: string;
         };
         /** @description What the course tree shows of an assignment: everything but `config`. */
@@ -2172,6 +2238,16 @@ export interface components {
             props: components["schemas"]["VideoProps"];
             /** @enum {string} */
             type: "video";
+        } | {
+            id: string;
+            props: components["schemas"]["ImageProps"];
+            /** @enum {string} */
+            type: "image";
+        } | {
+            id: string;
+            props: components["schemas"]["FileProps"];
+            /** @enum {string} */
+            type: "file";
         };
         /** @description Someone who could be added to the course. */
         Candidate: {
@@ -2418,7 +2494,7 @@ export interface components {
         CreateItemRequest: {
             assignment?: components["schemas"]["NewAssignment"] | null;
             body?: components["schemas"]["Document"] | null;
-            kind: components["schemas"]["ItemKind"];
+            kind?: components["schemas"]["ItemKind"] | null;
             title: string;
         };
         CreateModuleRequest: {
@@ -2518,11 +2594,32 @@ export interface components {
          * @description What a place of the editor can offer. A profile is a set of features (ADR-0025).
          * @enum {string}
          */
-        Feature: "headings" | "text_styles" | "links" | "lists" | "quote" | "divider" | "table" | "code" | "math" | "mermaid" | "video";
+        Feature: "headings" | "text_styles" | "links" | "lists" | "quote" | "divider" | "table" | "code" | "math" | "mermaid" | "video" | "image" | "file";
         /** @description One rejected field of a `422` response. */
         FieldError: {
             field: string;
             message: string;
+        };
+        FileProps: {
+            /**
+             * Format: uuid
+             * @description A file uploaded for the owner of this document; the server checks that it may be used.
+             */
+            file_id: string;
+        };
+        /** @description A stored file, as a document or a submission names it by `id`. */
+        FileRefDto: {
+            /** Format: uuid */
+            id: string;
+            /** @description The content type found from the bytes, not the one the client claimed. */
+            mime: string;
+            /** @description The cleaned file name: no path, at most 200 characters. */
+            name: string;
+            /**
+             * Format: int64
+             * @description Bytes.
+             */
+            size: number;
         };
         /** @description The answers of one student to a form: their latest attempt (ADR-0051 point 7). */
         FormResponseRow: {
@@ -2743,6 +2840,17 @@ export interface components {
          * @enum {string}
          */
         HitStatus: "draft" | "published";
+        ImageProps: {
+            /** @description At most 300 characters of plain text. */
+            alt?: string | null;
+            /** @description At most 300 characters of plain text. */
+            caption?: string | null;
+            /**
+             * Format: uuid
+             * @description A file uploaded for the owner of this document; the server checks that it may be used.
+             */
+            file_id: string;
+        };
         /** @description A run of inline content. */
         Inline: (components["schemas"]["TextRun"] & {
             /** @enum {string} */
@@ -2779,12 +2887,16 @@ export interface components {
          */
         InstitutionMode: "school" | "university";
         /**
-         * @description A `text` item or an assignment. `body` is a JSON object the server stores without interpreting it;
-         *     for an assignment it holds the instructions.
+         * @description A `text` item, an assignment or a `file` item. `body` is a JSON object; for an assignment it holds
+         *     the instructions, for a `file` item `{file_id?, description?}`: the uploaded file (absent while
+         *     the item is a draft without one) and a document that describes it.
          */
         Item: {
             assignment?: components["schemas"]["Assignment"] | null;
-            /** @description A block document (ADR-0025). The server returns the stored body as is. */
+            /**
+             * @description A block document (ADR-0025) for a `text` item and an assignment, `{file_id?, description?}`
+             *     for a `file` item. The server returns the stored body as is.
+             */
             body: components["schemas"]["Document"];
             /** Format: uuid */
             course_id: string;
@@ -2805,7 +2917,7 @@ export interface components {
             updated_at: string;
         };
         /** @enum {string} */
-        ItemKind: "text" | "assignment";
+        ItemKind: "text" | "assignment" | "file";
         /**
          * @description The facts of one item that the course tree does not carry. Only the facts that apply to the
          *     item and to the caller are present.
@@ -3076,7 +3188,8 @@ export interface components {
             class_on?: string | null;
             /**
              * @description Settings of the type, a JSON object. Defaults to `{}`; `no_submission` has none, a `quiz`
-             *     needs its questions (ADR-0050) and a `form` its fields (ADR-0051).
+             *     needs its questions (ADR-0050), a `form` its fields (ADR-0051) and a `file`
+             *     takes `{max_files?: 1..=20, accept?: [".pdf", ...]}` (ADR-0069).
              */
             config?: Record<string, never> | null;
             /**
@@ -3105,7 +3218,7 @@ export interface components {
             max_points?: string;
             /** @description `keep_draft` or `auto_submit` (the latter takes effect with the background worker). */
             on_deadline?: string | null;
-            /** @description The assignment type: `text`, `no_submission`, `quiz` or `form`. */
+            /** @description The assignment type: `text`, `no_submission`, `quiz`, `form` or `file`. */
             type?: string;
         };
         /**
@@ -3403,7 +3516,10 @@ export interface components {
             assignment_id: string;
             /** Format: int32 */
             attempt: number;
-            /** @description A block document for a `text` assignment, `{"answers": {...}}` for a quiz or a form. */
+            /**
+             * @description A block document for a `text` assignment, `{"answers": {...}}` for a quiz or a form,
+             *     `{"files": [...], "comment"?}` for a file.
+             */
             content: Record<string, never>;
             /**
              * Format: uuid
@@ -7444,6 +7560,159 @@ export interface operations {
             };
         };
     };
+    upload: {
+        parameters: {
+            query: {
+                /**
+                 * @description Whom the file is for: `item:{id}` (needs `EditContent`) or `assignment:{id}` (needs
+                 *     `SubmitWork`). The item or assignment must exist.
+                 */
+                for: string;
+                /** @description The file name as the client has it. It is cleaned before it is stored. */
+                name: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description The raw bytes of the file */
+        requestBody: {
+            content: {
+                "application/octet-stream": number[];
+            };
+        };
+        responses: {
+            /** @description The file is stored */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FileRefDto"];
+                };
+            };
+            /** @description Not logged in */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The caller may see the item or assignment but may not add files to it */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description No such item or assignment, or not visible to the caller */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The course is archived, or (for an assignment) it takes no submissions, its submission window is closed or the attempt limit is reached */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The file is larger than `files.max_size` */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description `for` is not valid, or the body is empty */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    download: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description File id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The bytes */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/octet-stream": number[];
+                };
+            };
+            /** @description The requested range of the bytes */
+            206: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/octet-stream": number[];
+                };
+            };
+            /** @description `If-None-Match` names the current `ETag` */
+            304: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not logged in */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description No such file, or not readable by the caller */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The range starts past the end of the file */
+            416: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
     list_groups: {
         parameters: {
             query?: {
@@ -8420,6 +8689,15 @@ export interface operations {
                     "application/problem+json": components["schemas"]["ProblemDetails"];
                 };
             };
+            /** @description A `file` item whose body names no file */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
         };
     };
     get_revision: {
@@ -8520,7 +8798,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["ProblemDetails"];
                 };
             };
-            /** @description The item is a draft, or the course is archived */
+            /** @description The item is a draft, the course is archived, or a `file` item has no file */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -9071,7 +9349,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["ProblemDetails"];
                 };
             };
-            /** @description Invalid title, a body that is not a JSON object, a missing or unexpected `assignment` object, an unknown type or config field, invalid points, or points the grading scale does not allow */
+            /** @description Invalid title, a body that is not a JSON object (or, for a `file` item, not `{file_id?, description?}` with a usable `file_id`), a missing or unexpected `assignment` object, an unknown type or config field, invalid points, or points the grading scale does not allow */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -9197,6 +9475,15 @@ export interface operations {
             };
             /** @description No such module, or not visible to the caller */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description With `cascade`, a `file` item below the module has no file */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

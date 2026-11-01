@@ -114,6 +114,16 @@ pub enum Block {
         id: String,
         props: VideoProps,
     },
+    /// An uploaded image (ADR-0069). Allowed in every profile.
+    Image {
+        id: String,
+        props: ImageProps,
+    },
+    /// A card for an uploaded file (ADR-0069). Allowed in the profiles `full` and `student`.
+    File {
+        id: String,
+        props: FileProps,
+    },
 }
 
 impl Block {
@@ -130,7 +140,9 @@ impl Block {
             | Self::Code { id, .. }
             | Self::Math { id, .. }
             | Self::Mermaid { id, .. }
-            | Self::Video { id, .. } => id,
+            | Self::Video { id, .. }
+            | Self::Image { id, .. }
+            | Self::File { id, .. } => id,
         }
     }
 
@@ -188,6 +200,24 @@ pub struct CodeProps {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct SourceProps {
     pub source: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct ImageProps {
+    /// A file uploaded for the owner of this document; the server checks that it may be used.
+    pub file_id: Uuid,
+    /// At most 300 characters of plain text.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub alt: Option<String>,
+    /// At most 300 characters of plain text.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub caption: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct FileProps {
+    /// A file uploaded for the owner of this document; the server checks that it may be used.
+    pub file_id: Uuid,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
@@ -314,12 +344,14 @@ pub enum Feature {
     Math,
     Mermaid,
     Video,
+    Image,
+    File,
 }
 
 names!(Feature {
     Headings => "headings", TextStyles => "text_styles", Links => "links", Lists => "lists",
     Quote => "quote", Divider => "divider", Table => "table", Code => "code", Math => "math",
-    Mermaid => "mermaid", Video => "video",
+    Mermaid => "mermaid", Video => "video", Image => "image", File => "file",
 });
 
 #[derive(

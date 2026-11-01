@@ -14,6 +14,7 @@
 .item[aria-current="page"] { background: var(--accent-soft); color: var(--accent-fg); font-weight: 600; }
 .iconLecture { flex: none; color: var(--lec-fg); }
 .iconAssignment { flex: none; color: var(--asg-text); }
+.iconFile { flex: none; color: var(--file-fg); }
 .itemTitle { flex: 1 1 auto; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .mark { flex: none; font-size: 12px; font-weight: 400; color: var(--muted); }
 .mark[data-tone="ok"] { color: var(--ok-fg); }

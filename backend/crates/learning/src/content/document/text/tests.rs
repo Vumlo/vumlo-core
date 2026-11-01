@@ -79,3 +79,15 @@ fn an_empty_document_is_empty_and_an_empty_paragraph_is_an_empty_line() {
     ]));
     assert_eq!(plain_text(&document), "x\n\ny");
 }
+
+#[test]
+fn an_image_gives_its_alt_and_caption_and_a_file_gives_nothing() {
+    let document = doc(json!([
+        {"id": "a", "type": "image", "props": {
+            "file_id": "0198a000-0000-7000-8000-00000000000a", "alt": "A cell", "caption": "Figure 1"}},
+        {"id": "b", "type": "image", "props": {"file_id": "0198a000-0000-7000-8000-00000000000a"}},
+        {"id": "c", "type": "file", "props": {"file_id": "0198a000-0000-7000-8000-00000000000b"}},
+        {"id": "d", "type": "paragraph", "content": [{"type": "text", "text": "end"}]},
+    ]));
+    assert_eq!(plain_text(&document), "A cell\nFigure 1\nend");
+}

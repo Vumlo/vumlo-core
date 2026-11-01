@@ -213,3 +213,33 @@ async fn building_the_app_from_a_bad_editor_configuration_fails_and_names_the_cu
     })
     .await;
 }
+
+/// The storage is built when the app is, from `[files]`, so a bad one stops the server at start-up.
+#[tokio::test]
+async fn the_app_builds_its_file_storage_from_the_files_settings() {
+    db_test(async |pool| {
+        let dir = std::env::temp_dir().join(format!("vumlo-files-{}", uuid::Uuid::now_v7()));
+        let mut settings = test_settings();
+        settings.files.path = Some(dir.clone());
+        settings.files.max_size = 1234;
+
+        let state = AppState::new(pool.clone(), settings).unwrap();
+
+        assert!(dir.is_dir(), "the local directory is created at start-up");
+        assert_eq!(state.learning.max_file_bytes, 1234);
+        let stored = files::put(&state.learning.files, uuid::Uuid::now_v7(), "abc", 1234)
+            .await
+            .unwrap();
+        assert_eq!(stored.size, 3);
+        std::fs::remove_dir_all(&dir).unwrap();
+
+        let mut s3_without_section = test_settings();
+        s3_without_section.files.storage = vumlo_config::FileBackend::S3;
+        let error = AppState::new(pool, s3_without_section)
+            .map(|_| ())
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("files.s3"), "{error}");
+    })
+    .await;
+}

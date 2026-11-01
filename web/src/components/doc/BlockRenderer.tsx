@@ -3,6 +3,7 @@
 import { Fragment, useState, type ReactNode } from "react";
 import { Icon } from "@/components/Icon";
 import type { Block, CodeLanguage, Document, Inline } from "@/lib/api/types";
+import { FileCard, Picture } from "./FileCard";
 import { Formula } from "./Math";
 import { highlight } from "./highlight";
 import { translate } from "@/lib/i18n/core";
@@ -134,6 +135,17 @@ export function Blocks({ blocks }: { blocks: Block[] }) {
       case "video":
         out.push(<Video key={b.id} provider={b.props.provider} id={b.props.video_id} />);
         break;
+      case "image":
+        out.push(
+          <figure key={b.id} className={s.figure}>
+            <Picture fileId={b.props.file_id} alt={b.props.alt ?? ""} />
+            {b.props.caption && <figcaption>{b.props.caption}</figcaption>}
+          </figure>,
+        );
+        break;
+      case "file":
+        out.push(<FileCard key={b.id} fileId={b.props.file_id} />);
+        break;
       case "table": {
         const [head, ...rows] = b.props.rows;
         out.push(
@@ -165,6 +177,10 @@ export function BlockRenderer({ doc, size = 17 }: { doc: Document; size?: number
 /** The plain text of a document, for word counts and previews. */
 export function plainText(doc: Document): string {
   const text = (runs: Inline[] | undefined) => (runs ?? []).map((r) => (r.type === "text" ? r.text : r.type === "link" ? r.content.map((c) => c.text).join("") : "")).join("");
-  const walk = (blocks: Block[]): string => blocks.map((b) => (b.type === "table" ? b.props.rows.flat().map(text).join(" ") : `${text("content" in b ? b.content : undefined)} ${"children" in b && b.children ? walk(b.children) : ""}`)).join(" ");
+  const walk = (blocks: Block[]): string =>
+    blocks.map((b) => (b.type === "table" ? b.props.rows.flat().map(text).join(" ") : b.type === "image" ? `${b.props.alt ?? ""} ${b.props.caption ?? ""}` : `${text("content" in b ? b.content : undefined)} ${"children" in b && b.children ? walk(b.children) : ""}`)).join(" ");
   return walk(doc.blocks);
 }
+
+/** True when the document holds a picture or a file: an answer that is only that is still an answer (ADR-0069). */
+export const hasUploads = (doc: Document): boolean => doc.blocks.some((b) => b.type === "image" || b.type === "file");

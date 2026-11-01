@@ -68,6 +68,22 @@ impl From<ContentError> for ApiError {
             ContentError::NotAnAssignment { field } => {
                 Self::invalid_field(field, error.to_string())
             }
+            ContentError::FileBody { ref field, message } => Self::invalid_field(field, message),
+            ContentError::FileDescription(errors) => Self::Unprocessable {
+                detail: "the request has invalid fields".to_owned(),
+                errors: errors.into_field_errors("body.description"),
+            },
+            ContentError::FileUnusable { id, field } => {
+                Self::invalid_field(&field, format!("the file {id} cannot be used here"))
+            }
+            ContentError::NotAnImage { field } => {
+                Self::invalid_field(&field, "an image block needs a PNG, JPEG, GIF or WebP file")
+            }
+            ContentError::StoredDocument => Self::Internal,
+            ContentError::FileMissing => {
+                Self::Conflict("a file item needs a file before it is published")
+            }
+            ContentError::Files(e) => (*e).into(),
             ContentError::Settings(problems) => Self::Unprocessable {
                 detail: "the request has invalid fields".to_owned(),
                 errors: problems
@@ -124,6 +140,7 @@ fn api_kind(kind: ItemKind) -> api_types::ItemKind {
     match kind {
         ItemKind::Text => api_types::ItemKind::Text,
         ItemKind::Assignment => api_types::ItemKind::Assignment,
+        ItemKind::File => api_types::ItemKind::File,
     }
 }
 
@@ -131,6 +148,7 @@ fn domain_kind(kind: api_types::ItemKind) -> ItemKind {
     match kind {
         api_types::ItemKind::Text => ItemKind::Text,
         api_types::ItemKind::Assignment => ItemKind::Assignment,
+        api_types::ItemKind::File => ItemKind::File,
     }
 }
 
@@ -318,8 +336,16 @@ fn rules(state: &LearningState) -> ItemRules<'_> {
 }
 
 fn under_assignment(error: ContentError) -> ApiError {
-    // The document is the item's own `body`, not part of the assignment object.
-    if matches!(error, ContentError::Document(_)) {
+    // The document, and the file of a `file` item, are the item's own `body`, not part of the
+    // assignment object.
+    if matches!(
+        error,
+        ContentError::Document(_)
+            | ContentError::FileBody { .. }
+            | ContentError::FileDescription(_)
+            | ContentError::FileUnusable { .. }
+            | ContentError::NotAnImage { .. }
+    ) {
         return error.into();
     }
     match ApiError::from(error) {
@@ -514,7 +540,8 @@ async fn reorder_modules(
 /// Publishes a module. `cascade` is required and has no default (ADR-0010).
 ///
 /// With `cascade: false` only this module is published. With `cascade: true` its sub-modules and
-/// every draft item below it are published too, in the same transaction. Idempotent. Never
+/// every draft item below it are published too, in the same transaction; a `file` item without a
+/// file below it refuses the whole publish (`409`). Idempotent. Never
 /// changes `publish_at`: a module scheduled for later stays hidden from students until then.
 #[utoipa::path(
     post,
@@ -530,6 +557,8 @@ async fn reorder_modules(
         (status = 403, description = "The caller may not change this course's content",
             body = ProblemDetails, content_type = "application/problem+json"),
         (status = 404, description = "No such module, or not visible to the caller",
+            body = ProblemDetails, content_type = "application/problem+json"),
+        (status = 409, description = "With `cascade`, a `file` item below the module has no file",
             body = ProblemDetails, content_type = "application/problem+json"),
         (status = 422, description = "`cascade` is missing", body = ProblemDetails,
             content_type = "application/problem+json"),
@@ -547,15 +576,21 @@ async fn publish_module(
     Ok(Json(api_module(module)))
 }
 
-/// Creates a draft `text` item or assignment as the last item of a module or sub-module.
+/// Creates a draft `text` item, assignment or `file` item as the last item of a module or sub-module.
 ///
 /// `body` is a JSON object that is stored and returned as is; an array or a string is rejected.
-/// For an assignment it holds the instructions.
+/// For an assignment it holds the instructions. `kind` is optional: without it the item is an
+/// assignment when an `assignment` object is sent and a `text` item otherwise.
+///
+/// A `file` item has the body `{file_id?, description?}` (`description` is a document). It starts
+/// without a file: upload one with `POST /files?for=item:{id}` and name it with
+/// `PATCH /items/{id}`. `file_id` must be a file the caller uploaded that nothing uses yet. A
+/// `file` item must not carry an `assignment` object.
 ///
 /// `kind: assignment` requires an `assignment` object `{type, config?, max_points, is_bonus?}`
-/// (ADR-0021); a `text` item must not carry one. `type` is `text`, `no_submission`, `quiz` or `form`; the
+/// (ADR-0021); a `text` item must not carry one. `type` is `text`, `no_submission`, `quiz`, `form` or `file`; the
 /// `config` of a `quiz` is its questions and must add up to `max_points` (ADR-0050), that of a `form` its
-/// fields (ADR-0051), and the others take an empty one (a `text` assignment may narrow its editor).
+/// fields (ADR-0051), that of a `file` `{max_files?, accept?}` (ADR-0069), and the others take an empty one (a `text` assignment may narrow its editor).
 /// `max_points` is a decimal string such as `"20"` or `"7.5"`; a JSON number is rejected. The
 /// grading scale limits the points (ADR-0022): at most 12 per assignment on `twelve`, at most
 /// 100 in total over the regular (not bonus) assignments of the course on `hundred`.
@@ -576,7 +611,7 @@ async fn publish_module(
             body = ProblemDetails, content_type = "application/problem+json"),
         (status = 409, description = "A concurrent change took the position; retry",
             body = ProblemDetails, content_type = "application/problem+json"),
-        (status = 422, description = "Invalid title, a body that is not a JSON object, a missing or unexpected `assignment` object, an unknown type or config field, invalid points, or points the grading scale does not allow",
+        (status = 422, description = "Invalid title, a body that is not a JSON object (or, for a `file` item, not `{file_id?, description?}` with a usable `file_id`), a missing or unexpected `assignment` object, an unknown type or config field, invalid points, or points the grading scale does not allow",
             body = ProblemDetails, content_type = "application/problem+json"),
     )
 )]
@@ -587,9 +622,19 @@ async fn create_item(
     ValidJson(request): ValidJson<CreateItemRequest>,
 ) -> Result<(StatusCode, Json<Item>), ApiError> {
     let title = title(&request.title)?;
-    let assignment = match (domain_kind(request.kind), request.assignment) {
-        (ItemKind::Text, None) => None,
-        (ItemKind::Text, Some(_)) => {
+    let kind = request.kind.map_or_else(
+        || {
+            if request.assignment.is_some() {
+                ItemKind::Assignment
+            } else {
+                ItemKind::Text
+            }
+        },
+        domain_kind,
+    );
+    let assignment = match (kind, request.assignment) {
+        (ItemKind::Text | ItemKind::File, None) => None,
+        (ItemKind::Text | ItemKind::File, Some(_)) => {
             return Err(ApiError::invalid_field(
                 "assignment",
                 "only an item of kind `assignment` has this field",
@@ -604,16 +649,28 @@ async fn create_item(
         (ItemKind::Assignment, Some(new)) => Some(domain_assignment(new)?),
     };
     let mut tx = state.db.begin().await.map_err(ContentError::from)?;
-    let item = service::create_item(
-        &mut tx,
-        &actor,
-        rules(&state),
-        module_id,
-        title,
-        request.body,
-        assignment,
-    )
-    .await
+    let item = if kind == ItemKind::File {
+        service::create_file_item(
+            &mut tx,
+            &actor,
+            rules(&state),
+            module_id,
+            title,
+            request.body,
+        )
+        .await
+    } else {
+        service::create_item(
+            &mut tx,
+            &actor,
+            rules(&state),
+            module_id,
+            title,
+            request.body,
+            assignment,
+        )
+        .await
+    }
     .map_err(under_assignment)?;
     tx.commit().await.map_err(ContentError::from)?;
     Ok((StatusCode::CREATED, Json(api_item(item))))
@@ -771,7 +828,8 @@ async fn delete_item(
     Ok(StatusCode::NO_CONTENT)
 }
 
-/// Publishes a `text` item or an assignment. Idempotent; never changes `publish_at`.
+/// Publishes an item. Idempotent; never changes `publish_at`. A `file` item without a file is
+/// refused (`409`).
 #[utoipa::path(
     post,
     path = "/items/{id}/publish",
@@ -785,6 +843,8 @@ async fn delete_item(
         (status = 403, description = "The caller may not change this course's content",
             body = ProblemDetails, content_type = "application/problem+json"),
         (status = 404, description = "No such item, or not visible to the caller",
+            body = ProblemDetails, content_type = "application/problem+json"),
+        (status = 409, description = "A `file` item whose body names no file",
             body = ProblemDetails, content_type = "application/problem+json"),
     )
 )]
@@ -836,8 +896,8 @@ async fn get_revision(
 
 /// Gives students the working title and body of a published item (ADR-0049).
 ///
-/// A draft has nothing to publish a revision of: publish the item (`409`). Not in an archived
-/// course.
+/// A draft has nothing to publish a revision of: publish the item (`409`). A `file` item whose
+/// working body names no file cannot be published either (`409`). Not in an archived course.
 #[utoipa::path(
     post,
     path = "/items/{id}/revision/publish",
@@ -852,7 +912,7 @@ async fn get_revision(
             body = ProblemDetails, content_type = "application/problem+json"),
         (status = 404, description = "No such item, or not visible to the caller",
             body = ProblemDetails, content_type = "application/problem+json"),
-        (status = 409, description = "The item is a draft, or the course is archived",
+        (status = 409, description = "The item is a draft, the course is archived, or a `file` item has no file",
             body = ProblemDetails, content_type = "application/problem+json"),
     )
 )]

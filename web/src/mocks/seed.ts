@@ -1,6 +1,6 @@
 import type { Document, Item, Module } from "@/lib/api/types";
 import type { FormConfig, QuizConfig } from "@/lib/api/gaps";
-import { bullet, code, doc, heading, math, numbered, para, quote, table, video } from "./docs";
+import { bullet, code, doc, fileBlock, heading, image, math, numbered, para, quote, table, video } from "./docs";
 import { at, auditRow, NOW_ISO, uid, type Db, type DbCourse, type DbItem, type DbMember, type DbSubmission, type DbUser } from "./db";
 
 import { DOMAIN, PASSWORD, TEMP_PASSWORD } from "./identities";
@@ -18,6 +18,8 @@ const STUDENTS_305 = [
 /** Builds the whole mock world. Called once when the worker starts. */
 export function createSeed(): Db {
   const email = (n: string, s: string) => `${n}.${s}`.toLowerCase().replace(/[^a-z.]/g, "") + `@${DOMAIN}`;
+
+  const files: Db["files"] = new Map();
 
   // ---- people ----
   const users: DbUser[] = [];
@@ -229,8 +231,13 @@ export function createSeed(): Db {
   const mSort = mod(cs201, "cs201:sort", "Sorting", "published", 2);
   const mGraphs = mod(cs201, "cs201:graphs", "Graphs", "draft", 3);
   const mProject = mod(cs201, "cs201:project", "Course project", "published", 4);
+  // A picture and a PDF the lecture "Big-O in practice" shows as an image block and a file card.
+  const figureId = uid("file:seed:figure");
+  files.set(figureId, { name: "split.png", mime: "image/png", bytes: Uint8Array.from(atob("iVBORw0KGgoAAAANSUhEUgAAAPAAAABaCAIAAAAJsExNAAAA4klEQVR42u3SMQ2AQBBFwROLiO+AhpqaBgfn4JqrUYSE7TeTjIKXN4580MaQAEODocHQYGgMDYYGQ4OhwdAYGgwNhgZDQzV0sqANQ2NoMDQYGgyNocHQYGgwNBgaQ4OhwdBgaCiHvjKhDUNjaDA0GBoMjaHB0GBoMDQYGkODocHQYGgoh37yQhuGxtBgaDA0GBpDg6HB0GBoMDSGBkODocHQUA49c0MbhsbQYGgwNBgaQ4OhwdBgaDA0hgZDg6HB0FAOvXNCG4bG0GBoMDQYGkODocHQYGgwNIYGQ4OhwdBQ+QEDk+BwAhmGUAAAAABJRU5ErkJggg=="), (c) => c.charCodeAt(0)).buffer });
+  const guideId = uid("file:seed:guide");
+  files.set(guideId, { name: "lab-guide.pdf", mime: "application/pdf", bytes: new TextEncoder().encode("%PDF-1.4\n1 0 obj<</Type/Catalog>>endobj\ntrailer<</Root 1 0 R>>\n%%EOF\n").buffer as ArrayBuffer });
   const lWhy = lecture(cs201, mFound, "why", "Why complexity matters", doc(para("Before you compare two algorithms you need a way to measure them."), heading(2, "Counting steps"), para("We count the basic steps an algorithm takes, as a function of the input size.")), "published", { read_minutes: 6 });
-  const lBig = lecture(cs201, mFound, "bigo", "Big-O in practice", doc(para("Big-O keeps the fastest growing term and drops constants."), bullet("O(1) — constant"), bullet("O(log n) — logarithmic"), bullet("O(n) — linear")), "published", { read_minutes: 12 });
+  const lBig = lecture(cs201, mFound, "bigo", "Big-O in practice", doc(para("Big-O keeps the fastest growing term and drops constants."), bullet("O(1) — constant"), bullet("O(log n) — logarithmic"), bullet("O(n) — linear"), image(figureId, "Merge sort splits the list in half", "Picture: how the list is split"), fileBlock(guideId), para("The lab guide above lists the exercises.")), "published", { read_minutes: 12 });
   const aPs1 = assignment(cs201, mFound, "ps1", "Problem set 1: counting operations", { points: "20.00", due: "2026-10-09 23:59", attempts: 1, body: doc(para("Count the basic operations in each of the five loops and give your answer as a function of n.")) });
   const aPres0 = assignment(cs201, mFound, "pres0", "Presentation: complexity in the wild", {
     type: "no_submission", points: "15.00", classOn: "2026-10-08 12:00",
@@ -279,6 +286,19 @@ export function createSeed(): Db {
   lecture(cs201, mGraphs, "graph2", "Storing graphs", doc(para("Adjacency lists and adjacency matrices.")), "draft", { read_minutes: 14 });
   const aProject = assignment(cs201, mProject, "project", "Course project: team and repository", { type: "form", points: "0.00", due: "2026-10-25 23:59", attempts: null, config: projectForm as unknown as Record<string, unknown>,
     body: doc(para("Dr. Voss uses these details to set up the project reviews. Fill in every required field, then submit.")) });
+  // A file item with a small PDF: what the teacher wrote about it, and the file itself.
+  const syllabus = new TextEncoder().encode("%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj\n3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 200 200]>>endobj\ntrailer<</Root 1 0 R>>\n%%EOF\n");
+  const syllabusId = uid("file:seed:syllabus");
+  files.set(syllabusId, { name: "syllabus.pdf", mime: "application/pdf", bytes: syllabus.buffer.slice(syllabus.byteOffset, syllabus.byteOffset + syllabus.byteLength) as ArrayBuffer });
+  const fileItem: DbItem = {
+    ...baseItem(cs201, mProject, "syllabus", "Course syllabus", doc(), "published"), kind: "file",
+    body: { file_id: syllabusId, description: doc(para("Read this before the first lab.")) } as unknown as Item["body"],
+    last_published_at: at("2026-10-12 10:00"), unpublished_changes: false,
+  };
+  items.push(fileItem);
+  // A file assignment: at most three files, a few types. The e2e specs of the file assignment hand in to it.
+  const aReport = assignment(cs201, mProject, "report", "Lab report (files)", { type: "file", points: "10.00", due: "2026-11-20 23:59", attempts: 2, late: false, config: { max_files: 3, accept: [".pdf", ".docx", ".png"] },
+    body: doc(para("Hand in your lab report as a PDF or a Word file, with the figures as PNG images.")) });
   void lQuick; void lWhy; void lBig;
 
   // CS 215
@@ -374,6 +394,36 @@ export function createSeed(): Db {
   draft(aProject, maya, "2026-10-16 14:32", { answers: { f1: "Merge Conflict", f2: "v7", f3: [maya, daniel, sofia], f4: "https://github.com/merge-conflict/route-planner", f5: "" } });
   submit(aProject, ivan, "2026-10-16 22:10", { answers: { f1: "Byte Me", f2: "v1", f3: [ivan], f4: "https://github.com/ipetrenko/spellcheck", f5: "" } });
   submit(aProject, aiko, "2026-10-16 18:45", { answers: { f1: "Off by One", f2: "v4", f3: [aiko, lena], f4: "https://gitlab.com/offbyone/social-graph", f5: "" } });
+  // Work handed in to the file assignment, for the grade-mode preview: Daniel's first attempt (a PDF, an image, a text and a
+  // comment) and his second (a Word file, slides, an SVG), and Sofia's long log, which is longer than the 1 MiB the preview reads.
+  const put = (name: string, mime: string, body: string | Uint8Array): string => {
+    const bytes = typeof body === "string" ? new TextEncoder().encode(body) : body;
+    const id = uid(`file:seed:${name}`);
+    files.set(id, { name, mime, bytes: bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer });
+    return id;
+  };
+  const PNG = Uint8Array.from(atob("iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAIAAABvFaqvAAAEL0lEQVR42g3MoQ5FYACAUc2mSESSYtNoNkGj2RTFRJIgaH+0CZJpJikm6uqn67LuAe49D3AkSUKR0CRMCVvCkwgkIolUIpeoJBoJIdFLjBKLxCZxSJwSl8Qt8Ui8Ep+EJMkoMpqMKWPLeDKBTCSTyuQylUwjI2R6mVFmkdlkDplT5pK5ZR6ZV+aT/5GKoqKpmCq2iqcSqEQqqUquUqk0KkKlVxlVFpVN5VA5VS6VW+VReVU+9R/pKDqajqlj63g6gU6kk+rkOpVOoyN0ep1RZ9HZdA6dU+fSuXUenVfn0/+RgWKgGZgGtoFnEBhEBqlBblAZNAbCoDcYDRaDzeAwOA0ug9vgMXgNPuMfWSgWmoVpYVt4FoFFZJFa5BaVRWMhLHqL0WKx2CwOi9PisrgtHovX4rP+kYPioDmYDraD5xA4RA6pQ+5QOTQOwqF3GB0Wh83hcDgdLofb4XF4HT7nH7koLpqL6WK7eC6BS+SSuuQulUvjIlx6l9FlcdlcDpfT5XK5XR6X1+Vz/5GP4qP5mD62j+cT+EQ+qU/uU/k0PsKn9xl9Fp/N5/A5fS6f2+fxeX0+/x+FKCFaiBlih3ghQUgUkobkIVVIEyJC+pAxZAnZQo6QM+QKuUOekDfkC/9RjBKjxZgxdowXE8REMWlMHlPFNDEipo8ZY5aYLeaIOWOumDvmiXljvvgfJSgJWoKZYCd4CUFClJAm5AlVQpMgEvqEMWFJ2BKOhDPhSrgTnoQ34Uv+UYaSoWWYGXaGlxFkRBlpRp5RZTQZIqPPGDOWjC3jyDgzrow748l4M77sHxUoBVqBWWAXeAVBQVSQFuQFVUFTIAr6grFgKdgKjoKz4Cq4C56Ct+Ar/lGJUqKVmCV2iVcSlEQlaUleUpU0JaKkLxlLlpKt5Cg5S66Su+QpeUu+8h/VKDVajVlj13g1QU1Uk9bkNVVNUyNq+pqxZqnZao6as+aquWuemrfmq/9Ri9KitZgtdovXErRELWlL3lK1NC2ipW8ZW5aWreVoOVuulrvlaXlbvvYfCRSBJjAFtsATBIJIkApyQSVoBELQC0bBItgEh+AUXIJb8AhewSf+UYfSoXWYHXaH1xF0RB1pR95RdTQdoqPvGDuWjq3j6Dg7ro674+l4O77uHw0oA9qAOWAPeAPBQDSQDuQD1UAzIAb6gXFgGdgGjoFz4Bq4B56Bd+Ab/tGEMqFNmBP2hDcRTEQT6UQ+UU00E2Kinxgnlolt4pg4J66Je+KZeCe+6R/NKDPajDljz3gzwUw0k87kM9VMMyNm+plxZpnZZo6Zc+aauWeemXfmm//RirKirZgr9oq3EqxEK+lKvlKtNCtipV8ZV5aVbeVYOVeulXvlWXlXvvUf7Sg72o65Y+94O8FOtJPu5DvVTrMjdvqdcWfZ2XaOnXPn2rl3np1359v5AXFhlZ7DZ1ruAAAAAElFTkSuQmCC"), (c) => c.charCodeAt(0));
+  const zip = (label: string) => new TextEncoder().encode(`PK\x03\x04 ${label}`);
+  const WORD = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+  const SLIDES = "application/vnd.openxmlformats-officedocument.presentationml.presentation";
+  let log = "";
+  for (let i = 1; log.length < 1.5 * 1024 * 1024; i++) log += `line ${i}: sensor reading nominal\n`;
+  submit(aReport, daniel, "2026-10-18 20:00", {
+    files: [
+      put("report.pdf", "application/pdf", "%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj\n3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 200 200]>>endobj\ntrailer<</Root 1 0 R>>\n%%EOF\n"),
+      put("figure.png", "image/png", PNG),
+      put("results.txt", "text/plain", "trial 1: 9.81 m/s^2\ntrial 2: 9.79 m/s^2\ntrial 3: 9.83 m/s^2\n"),
+    ],
+    comment: doc(para("The figures are in the PNG, the raw numbers in results.txt.")),
+  });
+  submit(aReport, daniel, "2026-10-19 09:15", {
+    files: [
+      put("appendix.docx", WORD, zip("appendix")),
+      put("slides.pptx", SLIDES, zip("slides")),
+      put("diagram.svg", "image/svg+xml", '<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40"><circle cx="20" cy="20" r="18"/></svg>'),
+    ],
+  }, 2);
+  submit(aReport, sofia, "2026-10-18 21:30", { files: [put("long-log.txt", "text/plain", log)] });
   // CS 215
   submit(aLab1, maya, "2026-09-24 20:00", answerDoc("SELECT statements.")); publish(aLab1, maya, "28.00", "2026-09-28 10:00");
   submit(aLab2, maya, "2026-10-08 10:00", answerDoc("Joins.")); publish(aLab2, maya, "27.00", "2026-10-08 18:00");
@@ -429,6 +479,6 @@ export function createSeed(): Db {
 
   return {
     users, terms, groups, subgroups, groupMembers, courses, members, links, modules, items, submissions, grades, sessions, audit, institution,
-    mail: [], signups: [], resets: [], formResponses: {}, quizResults,
+    mail: [], signups: [], resets: [], formResponses: {}, quizResults, files, fileMax: 52428800,
   };
 }

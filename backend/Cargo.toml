@@ -9,6 +9,7 @@ members = [
     "crates/config",
     "crates/db",
     "crates/events",
+    "crates/files",
     "crates/learning",
     "crates/module-api",
     "crates/org",
@@ -20,7 +21,7 @@ members = [
 ]
 
 [workspace.package]
-version = "0.3.0"
+version = "0.4.0"
 edition = "2024"
 publish = false
 
@@ -36,6 +37,7 @@ clap = { version = "4", features = ["derive"] }
 config = { version = "0.15", default-features = false, features = ["toml"] }
 garde = { version = "0.23", features = ["derive"] }
 hmac = "0.13"
+object_store = { version = "0.14", default-features = false, features = ["aws", "fs"] }
 openidconnect = { version = "4", default-features = false, features = ["reqwest", "rustls-tls"] }
 lettre = { version = "0.11", default-features = false, features = ["builder", "smtp-transport", "tokio1", "tokio1-rustls-tls", "file-transport"] }
 image = { version = "0.25", default-features = false, features = ["png", "ico", "jpeg", "webp"] }
@@ -66,6 +68,7 @@ auth = { path = "crates/auth" }
 common = { path = "crates/common" }
 db = { path = "crates/db" }
 events = { path = "crates/events" }
+files = { path = "crates/files" }
 learning = { path = "crates/learning" }
 module-api = { path = "crates/module-api" }
 org = { path = "crates/org" }

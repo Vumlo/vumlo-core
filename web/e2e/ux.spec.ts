@@ -108,7 +108,7 @@ test("the new assignment dialog explains each type, checks the title and opens t
   await page.goto(`/course?id=${await firstCourse(page)}`);
   await page.getByRole("button", { name: "Assignment" }).first().click();
   const dialog = page.getByRole("dialog");
-  await expect(dialog.getByRole("radio")).toHaveCount(4);
+  await expect(dialog.getByRole("radio")).toHaveCount(5);
   await expect(dialog.getByRole("radio", { name: /Text answer/ })).toHaveAttribute("aria-checked", "true");
   // A blank title is explained in place, and nothing is sent.
   await dialog.getByRole("button", { name: "Create and edit" }).click();

@@ -7,6 +7,7 @@ import type { Document, EditorProfiles, Item, ItemRevision, Module } from "../ty
 
 export type NewItem =
   | { kind: "text"; title: string; body?: Document }
+  | { kind: "file"; title: string }
   | { kind: "assignment"; title: string; body?: Document; assignment: { type: string; max_points: string; config?: Record<string, unknown>; due_at?: string | null; on_deadline?: string | null; accept_late?: boolean | null; max_attempts?: number | null } };
 
 export type ItemPatch = Partial<{

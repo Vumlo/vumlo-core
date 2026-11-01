@@ -7,6 +7,8 @@ fn the_client_config_types_describe_every_field() {
         "export type ClientConfig = {",
         "api_url: string;",
         "public_origin: string;",
+        "storage: \"local\" | \"s3\";",
+        "max_size: number;",
         "language: \"en\" | \"uk\";",
         "grading_scale: \"twelve\" | \"hundred\";",
         "modules: { [name: string]: \"enabled\" | \"disabled\" | \"unavailable\" };",

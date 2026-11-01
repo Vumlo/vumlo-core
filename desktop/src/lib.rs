@@ -1,6 +1,7 @@
 mod api;
 mod core;
 mod deeplink;
+mod files;
 mod keychain;
 mod notify;
 mod store;
@@ -69,6 +70,7 @@ pub fn run() {
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_opener::init())
+        .register_asynchronous_uri_scheme_protocol("vumlo-file", files::serve)
         .setup(|app| {
             let dir = app.path().app_data_dir()?;
             std::fs::create_dir_all(&dir)?;
@@ -129,6 +131,8 @@ pub fn run() {
             api::set_language,
             api::take_route,
             api::google_start,
+            files::upload_file,
+            files::open_file,
         ])
         .run(tauri::generate_context!())
         .expect("error while running the Vumlo desktop client");

@@ -20,10 +20,11 @@ type Body = Json<Map<String, Value>>;
 // Drafts
 // ---------------------------------------------------------------------------------------------
 
-/// Saves the draft of a student: the first save inserts it, later ones replace its content. The
-/// last writer wins and nothing is versioned.
+/// Saves the draft of a student: the first save inserts it under `id`, later ones replace its
+/// content and keep their row. The last writer wins and nothing is versioned.
 pub async fn upsert_draft(
     conn: &mut PgConnection,
+    id: Uuid,
     assignment_id: Uuid,
     student_id: Uuid,
     content: &Map<String, Value>,
@@ -33,8 +34,8 @@ pub async fn upsert_draft(
            VALUES ($1, $2, $3, 'draft', $4)
            ON CONFLICT (assignment_id, student_id) WHERE status = 'draft'
            DO UPDATE SET content = EXCLUDED.content, updated_at = now()
-           RETURNING content AS "content: Body", updated_at"#,
-        Uuid::now_v7(),
+           RETURNING id, content AS "content: Body", updated_at"#,
+        id,
         assignment_id,
         student_id,
         Json(content) as Json<&Map<String, Value>>
@@ -42,6 +43,7 @@ pub async fn upsert_draft(
     .fetch_one(conn)
     .await?;
     Ok(Draft {
+        id: row.id,
         content: row.content.0,
         updated_at: row.updated_at,
     })
@@ -53,7 +55,7 @@ pub async fn find_draft(
     student_id: Uuid,
 ) -> Result<Option<Draft>, sqlx::Error> {
     let row = sqlx::query!(
-        r#"SELECT content AS "content: Body", updated_at FROM assessment.submissions
+        r#"SELECT id, content AS "content: Body", updated_at FROM assessment.submissions
            WHERE assignment_id = $1 AND student_id = $2 AND status = 'draft'"#,
         assignment_id,
         student_id
@@ -61,6 +63,7 @@ pub async fn find_draft(
     .fetch_optional(conn)
     .await?;
     Ok(row.map(|row| Draft {
+        id: row.id,
         content: row.content.0,
         updated_at: row.updated_at,
     }))
@@ -568,4 +571,43 @@ pub async fn purge_course(conn: &mut PgConnection, course_id: Uuid) -> Result<u6
     .execute(conn)
     .await?;
     Ok(result.rows_affected())
+}
+
+/// Makes `ids` exactly the files the draft or the attempt names (ADR-0069). The caller is the
+/// service that writes the content, in the same transaction.
+pub async fn replace_submission_files(
+    conn: &mut PgConnection,
+    submission_id: Uuid,
+    ids: &[Uuid],
+) -> Result<(), sqlx::Error> {
+    sqlx::query!(
+        "DELETE FROM assessment.submission_files WHERE submission_id = $1",
+        submission_id
+    )
+    .execute(&mut *conn)
+    .await?;
+    sqlx::query!(
+        "INSERT INTO assessment.submission_files (submission_id, file_id)
+         SELECT $1, file_id FROM unnest($2::uuid[]) AS file_id
+         ON CONFLICT DO NOTHING",
+        submission_id,
+        ids
+    )
+    .execute(conn)
+    .await?;
+    Ok(())
+}
+
+/// The assignment and the author of a submission, draft or attempt.
+pub async fn assignment_and_author(
+    conn: &mut PgConnection,
+    submission_id: Uuid,
+) -> Result<Option<(Uuid, Uuid)>, sqlx::Error> {
+    let row = sqlx::query!(
+        "SELECT assignment_id, student_id FROM assessment.submissions WHERE id = $1",
+        submission_id
+    )
+    .fetch_optional(conn)
+    .await?;
+    Ok(row.map(|row| (row.assignment_id, row.student_id)))
 }

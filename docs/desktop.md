@@ -13,6 +13,8 @@ What it does, and does not:
   sent when the server answers, in order, once. The server has the last word: a deadline that passed while the
   device was offline is refused, and the app shows the server's words and keeps the text to copy.
 - **Quizzes need a connection.** They are timed and counted by the server.
+- **Adding a file needs a connection.** A file picked in the editor or on a hand-in page is sent at once and is
+  refused offline; it is not queued like a draft. Opening a file saves it to Downloads (see [Files](#files)).
 - **Notifications only while the app runs.** It stays in the tray when the window is closed. "Quit" in the tray
   stops them.
 - **No automatic updates.** Publish a new installer; people install it over the old one.
@@ -113,6 +115,34 @@ Which file goes in which field: `...-setup.exe` is Windows; `...-aarch64.dmg` is
 on the published release (right click it, "copy link address"), or wherever you host them, and keep `SHA256SUMS`.
 A new version is a new tag, `desktop-v1.0.1`, and new files: paste the new addresses, save, and people see them
 at once. They install over the old version and keep their data.
+
+## Files
+
+The window can upload a file and open one (ADR-0069, ADR-0061). It has no access to the disk of its own; two
+commands of the app do the work, and the window asks for them by file id:
+
+- **Upload.** The file the person picks is sent by the app to the server with their session; the limit is the
+  server's `files.max_size`. The whole file is held in memory while it is sent.
+- **Open.** The app downloads the file, saves it in the system's **Downloads** folder (a name already taken
+  gets a number: `report (1).pdf`; a file is never overwritten) and then:
+  - opens it in the program of the system if it is a document, spreadsheet, presentation, text, image,
+    audio or video file (`pdf doc docx odt rtf txt md ppt pptx odp xls xlsx ods csv png jpg jpeg gif webp mp3
+    wav mp4 webm mov`, judged by the last extension of the name);
+  - only **shows it in its folder** if it is anything else. That includes archives (`zip`, `7z`, `tar`, `gz`;
+    the system would unpack them) and every program or script (`.exe`, `.sh`, `.bat`, ...). The app never
+    opens or runs those. If the system cannot show the folder, the file stays in Downloads.
+- **Where the file came from is recorded** so the system can warn before it is opened by something else:
+  Windows gets a `Zone.Identifier` stream (the "downloaded from the Internet" mark, best effort), and the macOS
+  app sets `LSFileQuarantineEnabled` so the system quarantines files the app creates. Linux has no such mark.
+  **The Windows and macOS parts were not run on those systems in the testing for this release**; they follow the
+  system documentation and the tests of the code that runs on Linux. Try them with your own installer before you
+  rely on them.
+- **The `vumlo-file` scheme** (`vumlo-file://localhost/<id>`) is internal: it lets the window show an image or
+  a PDF without holding the token. It serves one file by id, only to the app's own page, and is not something
+  to link to or configure.
+
+The desktop app needs a server of the release that has file storage; against an older server the file
+screens answer with an error.
 
 ## Limits to know about
 

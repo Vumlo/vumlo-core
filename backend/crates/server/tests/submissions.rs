@@ -3,6 +3,8 @@
 
 mod common;
 
+use std::path::{Path, PathBuf};
+
 use ::common::Role;
 use chrono::{DateTime, Duration, Utc};
 use common::{
@@ -1980,6 +1982,838 @@ async fn a_module_is_deleted_only_when_no_assignment_below_has_submitted_work() 
             rows_of(&w, only).await,
             (0, 0),
             "the draft went with the module"
+        );
+    })
+    .await;
+}
+
+// =============================================================================================
+// Files (ADR-0069)
+// =============================================================================================
+
+const TEXT: &[u8] = b"my essay, as a file";
+
+/// A world whose files are stored in a directory of its own, so a test can count the objects.
+async fn file_world(pool: PgPool) -> (World, PathBuf) {
+    let dir = std::env::temp_dir().join(format!("vumlo-submission-files-{}", Uuid::now_v7()));
+    let mut settings = common::test_settings();
+    settings.files.path = Some(dir.clone());
+    (world_from(pool, settings).await, dir)
+}
+
+/// A published `file` assignment with `config` (and `settings` merged in).
+async fn file_assignment(w: &World, settings: Value, config: Value) -> Uuid {
+    let mut settings = settings;
+    settings["type"] = json!("file");
+    assignment_with(w, settings, config).await
+}
+
+async fn upload_to(w: &World, token: &str, owner: &str, name: &str, bytes: &[u8]) -> Resp {
+    w.http
+        .post(&format!("/files?for={owner}&name={name}"))
+        .bearer(token)
+        .header("content-type", "text/plain")
+        .body(bytes.to_vec())
+        .send()
+        .await
+}
+
+/// Uploads `bytes` for the assignment as the student and returns the file id.
+async fn upload_file(w: &World, token: &str, id: Uuid, name: &str, bytes: &[u8]) -> Uuid {
+    let response = upload_to(w, token, &format!("assignment:{id}"), name, bytes).await;
+    id_of(&json_of(response, 201))
+}
+
+async fn download(w: &World, token: &str, file: Uuid) -> Resp {
+    call(w, "GET", token, &format!("/files/{file}"), None).await
+}
+
+fn files_of(ids: &[Uuid]) -> Value {
+    json!({"files": ids.iter().map(Uuid::to_string).collect::<Vec<_>>()})
+}
+
+async fn file_rows(pool: &PgPool) -> i64 {
+    sqlx::query_scalar!(r#"SELECT count(*) AS "n!" FROM files.files"#)
+        .fetch_one(pool)
+        .await
+        .expect("count files")
+}
+
+/// The files the table says the submissions of `assignment` name.
+async fn referenced(w: &World, assignment: Uuid) -> Vec<Uuid> {
+    sqlx::query_scalar!(
+        "SELECT f.file_id FROM assessment.submission_files f
+         JOIN assessment.submissions s ON s.id = f.submission_id
+         WHERE s.assignment_id = $1 ORDER BY f.file_id",
+        assignment
+    )
+    .fetch_all(&w.pool)
+    .await
+    .expect("references")
+}
+
+fn objects(dir: &Path) -> usize {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return 0;
+    };
+    entries
+        .map(|entry| {
+            let path = entry.expect("entry").path();
+            if path.is_dir() { objects(&path) } else { 1 }
+        })
+        .sum()
+}
+
+async fn nothing_stored(w: &World, dir: &Path) {
+    assert_eq!(file_rows(&w.pool).await, 0, "a files row was created");
+    assert_eq!(objects(dir), 0, "an object was stored");
+}
+
+#[tokio::test]
+async fn student_uploads_and_saves_a_draft_with_files() {
+    db_test(async |pool| {
+        let (w, _dir) = file_world(pool).await;
+        let id = file_assignment(&w, json!({}), json!({})).await;
+        let file = upload_file(&w, &w.student.token, id, "essay.txt", TEXT).await;
+        // Before it is named, only the uploader reads it.
+        assert_eq!(download(&w, &w.student.token, file).await.status, 200);
+        assert_eq!(download(&w, &w.other.token, file).await.status, 404);
+
+        let saved = json_of(save(&w, &w.student.token, id, files_of(&[file])).await, 200);
+        assert_eq!(saved["content"]["files"], json!([file.to_string()]));
+        assert_eq!(referenced(&w, id).await, [file]);
+        let back = mine(&w, &w.student.token, id).await;
+        assert_eq!(back["draft"]["content"]["files"], json!([file.to_string()]));
+        let bytes = download(&w, &w.student.token, file).await;
+        assert_eq!(bytes.status, 200);
+        assert_eq!(bytes.body, TEXT);
+        assert!(outbox(&w.pool, "submission.submitted").await.is_empty());
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn student_cannot_save_a_draft_naming_another_students_file() {
+    db_test(async |pool| {
+        let (w, _dir) = file_world(pool).await;
+        let id = file_assignment(&w, json!({}), json!({})).await;
+        // Not yet named by anyone: another student's upload.
+        let loose = upload_file(&w, &w.other.token, id, "theirs.txt", b"theirs").await;
+        let response = save(&w, &w.student.token, id, files_of(&[loose])).await;
+        assert_eq!(error_fields(&response), ["content.files[0]"]);
+        // Named by their draft.
+        json_of(save(&w, &w.other.token, id, files_of(&[loose])).await, 200);
+        let response = save(&w, &w.student.token, id, files_of(&[loose])).await;
+        assert_eq!(error_fields(&response), ["content.files[0]"]);
+        assert!(mine(&w, &w.student.token, id).await["draft"].is_null());
+        assert_eq!(referenced(&w, id).await, [loose]);
+        // A good file first does not hide the bad one behind it.
+        let mine_file = upload_file(&w, &w.student.token, id, "mine.txt", TEXT).await;
+        let response = save(&w, &w.student.token, id, files_of(&[mine_file, loose])).await;
+        assert_eq!(error_fields(&response), ["content.files[1]"]);
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn submit_stores_the_files_and_staff_can_download_them() {
+    db_test(async |pool| {
+        let (w, _dir) = file_world(pool).await;
+        let id = file_assignment(&w, json!({}), json!({})).await;
+        let file = upload_file(&w, &w.student.token, id, "essay.txt", TEXT).await;
+        json_of(save(&w, &w.student.token, id, files_of(&[file])).await, 200);
+        let attempt = json_of(submit(&w, &w.student.token, id).await, 201);
+        assert_eq!(attempt["content"]["files"], json!([file.to_string()]));
+        assert_eq!(referenced(&w, id).await, [file]);
+        for token in [&w.owner.token, &w.assistant.token, &w.admin.token] {
+            let response = download(&w, token, file).await;
+            assert_eq!(response.status, 200);
+            assert_eq!(response.body, TEXT);
+        }
+        assert_eq!(download(&w, &w.student.token, file).await.body, TEXT);
+        assert_eq!(download(&w, &w.stranger.token, file).await.status, 404);
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn staff_cannot_download_a_file_of_a_draft_submission() {
+    db_test(async |pool| {
+        let (w, _dir) = file_world(pool).await;
+        let id = file_assignment(&w, json!({}), json!({})).await;
+        let file = upload_file(&w, &w.student.token, id, "essay.txt", TEXT).await;
+        json_of(save(&w, &w.student.token, id, files_of(&[file])).await, 200);
+        for token in [&w.owner.token, &w.assistant.token, &w.admin.token] {
+            assert_eq!(download(&w, token, file).await.status, 404);
+        }
+        assert_eq!(download(&w, &w.student.token, file).await.status, 200);
+        // Once it is submitted they can.
+        json_of(submit(&w, &w.student.token, id).await, 201);
+        assert_eq!(download(&w, &w.owner.token, file).await.status, 200);
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn another_student_gets_404_for_the_file() {
+    db_test(async |pool| {
+        let (w, _dir) = file_world(pool).await;
+        let id = file_assignment(&w, json!({}), json!({})).await;
+        let file = upload_file(&w, &w.student.token, id, "essay.txt", TEXT).await;
+        json_of(save(&w, &w.student.token, id, files_of(&[file])).await, 200);
+        assert_eq!(download(&w, &w.other.token, file).await.status, 404);
+        json_of(submit(&w, &w.student.token, id).await, 201);
+        assert_eq!(download(&w, &w.other.token, file).await.status, 404);
+        assert_eq!(download(&w, &w.stranger.token, file).await.status, 404);
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn upload_after_the_window_closed_is_409_and_stores_nothing() {
+    db_test(async |pool| {
+        let (w, dir) = file_world(pool).await;
+        let closed = file_assignment(
+            &w,
+            deadline(Utc::now() - Duration::hours(1), false, None),
+            json!({}),
+        )
+        .await;
+        let response = upload_to(
+            &w,
+            &w.student.token,
+            &format!("assignment:{closed}"),
+            "late.txt",
+            TEXT,
+        )
+        .await;
+        assert_eq!(detail(&response, 409), "the submission window is closed");
+        nothing_stored(&w, &dir).await;
+
+        // Late work is taken until `late_until`, and refused after it.
+        let late = file_assignment(
+            &w,
+            deadline(
+                Utc::now() - Duration::hours(2),
+                true,
+                Some(Utc::now() - Duration::hours(1)),
+            ),
+            json!({}),
+        )
+        .await;
+        let response = upload_to(
+            &w,
+            &w.student.token,
+            &format!("assignment:{late}"),
+            "late.txt",
+            TEXT,
+        )
+        .await;
+        assert_eq!(response.problem(409).status, 409);
+        let open = file_assignment(
+            &w,
+            deadline(Utc::now() - Duration::hours(1), true, None),
+            json!({}),
+        )
+        .await;
+        upload_file(&w, &w.student.token, open, "late.txt", TEXT).await;
+
+        // The attempt limit: nothing can be submitted any more, so nothing is taken.
+        let limited = file_assignment(&w, json!({"max_attempts": 1}), json!({})).await;
+        let first = upload_file(&w, &w.student.token, limited, "one.txt", TEXT).await;
+        json_of(
+            save(&w, &w.student.token, limited, files_of(&[first])).await,
+            200,
+        );
+        json_of(submit(&w, &w.student.token, limited).await, 201);
+        let before = file_rows(&w.pool).await;
+        let response = upload_to(
+            &w,
+            &w.student.token,
+            &format!("assignment:{limited}"),
+            "two.txt",
+            TEXT,
+        )
+        .await;
+        assert_eq!(detail(&response, 409), "the attempt limit is reached");
+        assert_eq!(file_rows(&w.pool).await, before);
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn upload_for_an_assignment_that_takes_no_submissions_is_409() {
+    db_test(async |pool| {
+        let (w, dir) = file_world(pool).await;
+        let id = assignment_with(&w, json!({"type": "no_submission"}), json!({})).await;
+        let response = upload_to(
+            &w,
+            &w.student.token,
+            &format!("assignment:{id}"),
+            "a.txt",
+            TEXT,
+        )
+        .await;
+        assert_eq!(
+            detail(&response, 409),
+            "this assignment takes no submissions"
+        );
+        nothing_stored(&w, &dir).await;
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn upload_before_the_assignment_is_released_is_404_and_stores_nothing() {
+    // The window has no opening date: the only "not yet" is a scheduled release, which a student
+    // cannot see at all.
+    db_test(async |pool| {
+        let (w, dir) = file_world(pool).await;
+        let id = file_assignment(&w, json!({}), json!({})).await;
+        json_of(
+            call(
+                &w,
+                "PATCH",
+                &w.owner.token,
+                &format!("/items/{id}"),
+                Some(json!({"publish_at": stamp(Utc::now() + Duration::days(1))})),
+            )
+            .await,
+            200,
+        );
+        let response = upload_to(
+            &w,
+            &w.student.token,
+            &format!("assignment:{id}"),
+            "a.txt",
+            TEXT,
+        )
+        .await;
+        assert_eq!(response.problem(404).status, 404);
+        nothing_stored(&w, &dir).await;
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn student_cannot_upload_a_file_for_an_item_target() {
+    db_test(async |pool| {
+        let (w, dir) = file_world(pool).await;
+        let item = id_of(&json_of(
+            call(
+                &w,
+                "POST",
+                &w.owner.token,
+                &format!("/modules/{}/items", w.module),
+                Some(json!({"kind": "text", "title": "Lesson"})),
+            )
+            .await,
+            201,
+        ));
+        json_of(
+            call(
+                &w,
+                "POST",
+                &w.owner.token,
+                &format!("/items/{item}/publish"),
+                None,
+            )
+            .await,
+            200,
+        );
+        let response =
+            upload_to(&w, &w.student.token, &format!("item:{item}"), "a.txt", TEXT).await;
+        assert!(
+            matches!(response.status, 403 | 404),
+            "status {}",
+            response.status
+        );
+        nothing_stored(&w, &dir).await;
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn removing_a_file_from_the_draft_drops_its_reference() {
+    db_test(async |pool| {
+        let (w, _dir) = file_world(pool).await;
+        let id = file_assignment(&w, json!({}), json!({})).await;
+        let a = upload_file(&w, &w.student.token, id, "a.txt", b"aaa").await;
+        let b = upload_file(&w, &w.student.token, id, "b.txt", b"bbb").await;
+        json_of(save(&w, &w.student.token, id, files_of(&[a, b])).await, 200);
+        let mut both = vec![a, b];
+        both.sort();
+        assert_eq!(referenced(&w, id).await, both);
+        json_of(save(&w, &w.student.token, id, files_of(&[a])).await, 200);
+        assert_eq!(referenced(&w, id).await, [a]);
+        json_of(save(&w, &w.student.token, id, files_of(&[])).await, 200);
+        assert!(referenced(&w, id).await.is_empty());
+        // The row stays for the sweep; the student still reads what they uploaded, nobody else.
+        assert_eq!(download(&w, &w.student.token, b).await.status, 200);
+        assert_eq!(download(&w, &w.owner.token, b).await.status, 404);
+        // Discarding the draft drops what it named.
+        json_of(save(&w, &w.student.token, id, files_of(&[a])).await, 200);
+        let response = call(&w, "DELETE", &w.student.token, &draft_path(id), None).await;
+        assert_eq!(response.status, 204);
+        assert!(referenced(&w, id).await.is_empty());
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn resubmission_attempt_two_keeps_attempt_one_files_readable_by_staff() {
+    db_test(async |pool| {
+        let (w, _dir) = file_world(pool).await;
+        let id = file_assignment(&w, json!({}), json!({})).await;
+        let one = upload_file(&w, &w.student.token, id, "one.txt", b"first").await;
+        json_of(save(&w, &w.student.token, id, files_of(&[one])).await, 200);
+        json_of(submit(&w, &w.student.token, id).await, 201);
+
+        // A new draft may start from the earlier answer: the author's own attempt on the same
+        // assignment holds the file. The attempt keeps its own reference.
+        json_of(save(&w, &w.student.token, id, files_of(&[one])).await, 200);
+        assert_eq!(referenced(&w, id).await, [one, one]);
+        let two = upload_file(&w, &w.student.token, id, "two.txt", b"second").await;
+        json_of(save(&w, &w.student.token, id, files_of(&[two])).await, 200);
+        let (drafts, submitted) = rows_of(&w, id).await;
+        assert_eq!((drafts, submitted), (1, 1));
+        assert_eq!(download(&w, &w.owner.token, two).await.status, 404);
+        let attempt = json_of(submit(&w, &w.student.token, id).await, 201);
+        assert_eq!(attempt["attempt"], 2);
+
+        for (file, bytes) in [(one, &b"first"[..]), (two, &b"second"[..])] {
+            for token in [&w.owner.token, &w.assistant.token] {
+                let response = download(&w, token, file).await;
+                assert_eq!(response.status, 200);
+                assert_eq!(response.body, bytes);
+            }
+        }
+        let mut both = vec![one, two];
+        both.sort();
+        assert_eq!(referenced(&w, id).await, both);
+        // A third draft is again empty.
+        json_of(save(&w, &w.student.token, id, files_of(&[])).await, 200);
+        let page = mine(&w, &w.student.token, id).await;
+        assert_eq!(page["draft"]["content"]["files"], json!([]));
+        assert_eq!(
+            page["attempts"][1]["content"]["files"],
+            json!([one.to_string()])
+        );
+    })
+    .await;
+}
+
+fn no_draft_keys(value: &Value) {
+    match value {
+        Value::Object(map) => {
+            for (key, inner) in map {
+                assert!(!key.starts_with("draft_"), "`{key}` reached a student");
+                no_draft_keys(inner);
+            }
+        }
+        Value::Array(list) => list.iter().for_each(no_draft_keys),
+        _ => {}
+    }
+}
+
+#[tokio::test]
+async fn grades_and_draft_grade_fields_never_reach_the_student_file_response() {
+    db_test(async |pool| {
+        let (w, _dir) = file_world(pool).await;
+        let id = file_assignment(&w, json!({}), json!({})).await;
+        let file = upload_file(&w, &w.student.token, id, "essay.txt", TEXT).await;
+        json_of(save(&w, &w.student.token, id, files_of(&[file])).await, 200);
+        json_of(submit(&w, &w.student.token, id).await, 201);
+        // A draft grade the teacher has not published.
+        json_of(
+            call(
+                &w,
+                "PUT",
+                &w.owner.token,
+                &format!("/assignments/{id}/grades/{}", w.student.id),
+                Some(json!({"score": "7", "feedback": "good"})),
+            )
+            .await,
+            200,
+        );
+        let page = mine(&w, &w.student.token, id).await;
+        no_draft_keys(&page);
+        assert!(!page.to_string().contains("good"), "feedback leaked");
+        let response = download(&w, &w.student.token, file).await;
+        assert_eq!(response.status, 200);
+        assert_eq!(response.body, TEXT);
+        assert!(
+            !response.headers.contains_key("x-grade") && !response.headers.contains_key("grade")
+        );
+        // The upload's answer describes the file and nothing else.
+        let other = upload_to(
+            &w,
+            &w.student.token,
+            &format!("assignment:{id}"),
+            "x.txt",
+            b"x",
+        )
+        .await;
+        let described = json_of(other, 201);
+        let mut keys: Vec<_> = described.as_object().unwrap().keys().cloned().collect();
+        keys.sort();
+        assert_eq!(keys, ["id", "mime", "name", "size"]);
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn draft_with_a_file_outside_accept_is_422_on_the_file_path() {
+    db_test(async |pool| {
+        let (w, _dir) = file_world(pool).await;
+        let id = file_assignment(&w, json!({}), json!({"accept": [".pdf"]})).await;
+        let text = upload_file(&w, &w.student.token, id, "essay.txt", TEXT).await;
+        let pdf = upload_file(&w, &w.student.token, id, "Essay.PDF", b"%PDF-1.4\n").await;
+        let response = save(&w, &w.student.token, id, files_of(&[pdf, text])).await;
+        assert_eq!(error_fields(&response), ["content.files[1]"]);
+        assert!(referenced(&w, id).await.is_empty());
+        json_of(save(&w, &w.student.token, id, files_of(&[pdf])).await, 200);
+        assert_eq!(referenced(&w, id).await, [pdf]);
+        json_of(submit(&w, &w.student.token, id).await, 201);
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn draft_naming_an_unknown_or_nil_file_id_is_422() {
+    db_test(async |pool| {
+        let (w, _dir) = file_world(pool).await;
+        // With and without `accept`, which is checked on the names.
+        for config in [json!({}), json!({"accept": [".pdf"]})] {
+            let id = file_assignment(&w, json!({}), config).await;
+            for bad in [Uuid::now_v7(), Uuid::nil()] {
+                let response = save(&w, &w.student.token, id, files_of(&[bad])).await;
+                assert_eq!(error_fields(&response), ["content.files[0]"], "{bad}");
+            }
+            assert!(referenced(&w, id).await.is_empty());
+        }
+    })
+    .await;
+}
+
+// =============================================================================================
+// `image` and `file` blocks in answers (ADR-0025, ADR-0069)
+// =============================================================================================
+
+const PNG: &[u8] = b"\x89PNG\r\n\x1a\n\0\0\0\rIHDR\0\0\0\x01\0\0\0\x01\x08\x06\0\0\0";
+
+/// Uploads a PNG for the assignment as `token` and returns the file id.
+async fn upload_png(w: &World, token: &str, id: Uuid) -> Uuid {
+    let response = w
+        .http
+        .post(&format!("/files?for=assignment:{id}&name=pic.png"))
+        .bearer(token)
+        .header("content-type", "image/png")
+        .body(PNG.to_vec())
+        .send()
+        .await;
+    id_of(&json_of(response, 201))
+}
+
+fn image(id: &str, file: Uuid) -> Value {
+    json!({"id": id, "type": "image", "props": {"file_id": file}})
+}
+
+fn file_block(id: &str, file: Uuid) -> Value {
+    json!({"id": id, "type": "file", "props": {"file_id": file}})
+}
+
+fn problem_of(response: &Resp) -> Vec<(String, String)> {
+    response
+        .problem(422)
+        .errors
+        .into_iter()
+        .map(|error| (error.field, error.message))
+        .collect()
+}
+
+#[tokio::test]
+async fn student_text_answer_with_a_file_block_saves_and_staff_can_read_it_after_submit() {
+    db_test(async |pool| {
+        let (w, _dir) = file_world(pool).await;
+        let id = assignment(&w).await;
+        let attachment = upload_file(&w, &w.student.token, id, "notes.txt", TEXT).await;
+        let picture = upload_png(&w, &w.student.token, id).await;
+        let answer = doc(json!([
+            paragraph("p", "See my notes"),
+            file_block("f", attachment),
+            image("i", picture)
+        ]));
+        let saved = json_of(save(&w, &w.student.token, id, answer.clone()).await, 200);
+        assert_eq!(saved["content"]["blocks"], answer["blocks"]);
+        let mut named = vec![attachment, picture];
+        named.sort();
+        assert_eq!(referenced(&w, id).await, named);
+
+        // A draft: only the author reads the files.
+        for file in [attachment, picture] {
+            assert_eq!(download(&w, &w.student.token, file).await.status, 200);
+            for token in [&w.owner.token, &w.assistant.token, &w.other.token] {
+                assert_eq!(download(&w, token, file).await.status, 404);
+            }
+        }
+        // Another student's file is refused, with the block's path.
+        let theirs = upload_png(&w, &w.other.token, id).await;
+        let response = save(
+            &w,
+            &w.student.token,
+            id,
+            doc(json!([paragraph("p", "x"), image("i", theirs)])),
+        )
+        .await;
+        assert_eq!(error_fields(&response), ["content.blocks[1].props.file_id"]);
+
+        // Dropping a block from the draft drops its reference.
+        json_of(
+            save(&w, &w.student.token, id, doc(json!([image("i", picture)]))).await,
+            200,
+        );
+        assert_eq!(referenced(&w, id).await, [picture]);
+        json_of(save(&w, &w.student.token, id, answer).await, 200);
+
+        json_of(submit(&w, &w.student.token, id).await, 201);
+        for file in [attachment, picture] {
+            for token in [&w.owner.token, &w.assistant.token, &w.admin.token] {
+                assert_eq!(download(&w, token, file).await.status, 200);
+            }
+            assert_eq!(download(&w, &w.other.token, file).await.status, 404);
+        }
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn a_text_answer_that_is_only_an_image_can_be_submitted() {
+    db_test(async |pool| {
+        let (w, _dir) = file_world(pool).await;
+        let id = assignment(&w).await;
+        let picture = upload_png(&w, &w.student.token, id).await;
+        json_of(
+            save(&w, &w.student.token, id, doc(json!([image("i", picture)]))).await,
+            200,
+        );
+        json_of(submit(&w, &w.student.token, id).await, 201);
+        assert_eq!(download(&w, &w.owner.token, picture).await.status, 200);
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn an_image_in_a_file_assignment_comment_is_referenced_and_does_not_count_toward_max_files() {
+    db_test(async |pool| {
+        let (w, _dir) = file_world(pool).await;
+        let id = file_assignment(&w, json!({}), json!({"max_files": 1})).await;
+        let essay_file = upload_file(&w, &w.student.token, id, "essay.txt", TEXT).await;
+        let picture = upload_png(&w, &w.student.token, id).await;
+        let content = json!({
+            "files": [essay_file],
+            "comment": doc(json!([paragraph("p", "Figure below"), image("i", picture)]))
+        });
+        let saved = json_of(save(&w, &w.student.token, id, content).await, 200);
+        assert_eq!(saved["content"]["files"], json!([essay_file.to_string()]));
+        let mut named = vec![essay_file, picture];
+        named.sort();
+        assert_eq!(referenced(&w, id).await, named);
+
+        // Two listed files are still too many for max_files = 1.
+        let second = upload_file(&w, &w.student.token, id, "more.txt", b"more").await;
+        let response = save(&w, &w.student.token, id, files_of(&[essay_file, second])).await;
+        assert_eq!(error_fields(&response), ["content.files"]);
+
+        // A comment image of someone else points at the comment.
+        let theirs = upload_png(&w, &w.other.token, id).await;
+        let response = save(
+            &w,
+            &w.student.token,
+            id,
+            json!({"files": [essay_file], "comment": doc(json!([image("i", theirs)]))}),
+        )
+        .await;
+        assert_eq!(
+            error_fields(&response),
+            ["content.comment.blocks[0].props.file_id"]
+        );
+        assert_eq!(
+            referenced(&w, id).await,
+            named,
+            "the failed save changed nothing"
+        );
+
+        // Dropping the comment drops the image reference, not the listed file.
+        json_of(
+            save(&w, &w.student.token, id, files_of(&[essay_file])).await,
+            200,
+        );
+        assert_eq!(referenced(&w, id).await, [essay_file]);
+
+        json_of(submit(&w, &w.student.token, id).await, 201);
+        assert_eq!(download(&w, &w.owner.token, essay_file).await.status, 200);
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn foreign_and_unknown_file_ids_give_the_same_message_when_accept_is_set() {
+    db_test(async |pool| {
+        let (w, _dir) = file_world(pool).await;
+        let id = file_assignment(&w, json!({}), json!({"accept": [".pdf"]})).await;
+        // A file of another student, with an extension the assignment does not take.
+        let foreign = upload_file(&w, &w.other.token, id, "theirs.txt", b"theirs").await;
+        let foreign_response = save(&w, &w.student.token, id, files_of(&[foreign])).await;
+        let unknown_response = save(&w, &w.student.token, id, files_of(&[Uuid::now_v7()])).await;
+        assert_eq!(
+            problem_of(&foreign_response),
+            [(
+                "content.files[0]".to_owned(),
+                "is not a file you can use here".to_owned()
+            )]
+        );
+        assert_eq!(problem_of(&foreign_response), problem_of(&unknown_response));
+        // Their own file with a wrong extension is still told apart: it is theirs.
+        let own = upload_file(&w, &w.student.token, id, "mine.txt", TEXT).await;
+        let response = save(&w, &w.student.token, id, files_of(&[own])).await;
+        assert_eq!(
+            problem_of(&response),
+            [(
+                "content.files[0]".to_owned(),
+                "is not a file type this assignment takes".to_owned()
+            )]
+        );
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn a_quiz_long_text_answer_may_hold_an_image_and_it_is_referenced() {
+    db_test(async |pool| {
+        let (w, _dir) = file_world(pool).await;
+        let config = json!({"v": 1, "questions": [{
+            "id": "q1", "type": "long_text", "points": "10",
+            "prompt": doc(json!([paragraph("p", "Explain")]))}]});
+        let id = assignment_with(&w, json!({"type": "quiz"}), config).await;
+        let picture = upload_png(&w, &w.student.token, id).await;
+        let content = json!({"answers": {"q1": doc(json!([image("i", picture)]))}});
+        json_of(save(&w, &w.student.token, id, content).await, 200);
+        assert_eq!(referenced(&w, id).await, [picture]);
+        let theirs = upload_png(&w, &w.other.token, id).await;
+        let response = save(
+            &w,
+            &w.student.token,
+            id,
+            json!({"answers": {"q1": doc(json!([image("i", theirs)]))}}),
+        )
+        .await;
+        assert_eq!(
+            error_fields(&response),
+            ["content.answers.q1.blocks[0].props.file_id"]
+        );
+        json_of(submit(&w, &w.student.token, id).await, 201);
+        assert_eq!(download(&w, &w.owner.token, picture).await.status, 200);
+    })
+    .await;
+}
+
+// --- image blocks take images only ---------------------------------------------------------
+
+const SVG: &[u8] = b"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"1\" height=\"1\"/>";
+const PDF: &[u8] = b"%PDF-1.4\n1 0 obj\n<<>>\nendobj\n";
+const IMAGE_ONLY: &str = "an image block needs a PNG, JPEG, GIF or WebP file";
+
+fn messages_of(response: &Resp) -> Vec<(String, String)> {
+    problem_of(response)
+}
+
+#[tokio::test]
+async fn a_text_answer_takes_an_image_block_only_for_an_image_file() {
+    db_test(async |pool| {
+        let (w, _dir) = file_world(pool).await;
+        let id = assignment(&w).await;
+        let pdf = upload_file(&w, &w.student.token, id, "notes.pdf", PDF).await;
+        let svg = upload_file(&w, &w.student.token, id, "pic.svg", SVG).await;
+        let png = upload_png(&w, &w.student.token, id).await;
+        for file in [pdf, svg] {
+            let response = save(
+                &w,
+                &w.student.token,
+                id,
+                doc(json!([paragraph("p", "x"), image("i", file)])),
+            )
+            .await;
+            assert_eq!(
+                messages_of(&response),
+                [(
+                    "content.blocks[1].props.file_id".to_owned(),
+                    IMAGE_ONLY.to_owned()
+                )]
+            );
+        }
+        assert!(referenced(&w, id).await.is_empty());
+        // The same files as `file` blocks, and a PNG as an image, are taken.
+        json_of(
+            save(
+                &w,
+                &w.student.token,
+                id,
+                doc(json!([
+                    file_block("a", pdf),
+                    file_block("b", svg),
+                    image("c", png)
+                ])),
+            )
+            .await,
+            200,
+        );
+        assert_eq!(referenced(&w, id).await.len(), 3);
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn comment_and_quiz_answer_images_must_be_image_files() {
+    db_test(async |pool| {
+        let (w, _dir) = file_world(pool).await;
+        // A file hand-in's comment.
+        let id = file_assignment(&w, json!({}), json!({})).await;
+        let list = upload_file(&w, &w.student.token, id, "essay.txt", TEXT).await;
+        let svg = upload_file(&w, &w.student.token, id, "pic.svg", SVG).await;
+        let response = save(
+            &w,
+            &w.student.token,
+            id,
+            json!({"files": [list], "comment": doc(json!([image("i", svg)]))}),
+        )
+        .await;
+        assert_eq!(
+            messages_of(&response),
+            [(
+                "content.comment.blocks[0].props.file_id".to_owned(),
+                IMAGE_ONLY.to_owned()
+            )]
+        );
+        // A quiz's long-text answer.
+        let config = json!({"v": 1, "questions": [{
+            "id": "q1", "type": "long_text", "points": "10",
+            "prompt": doc(json!([paragraph("p", "Explain")]))}]});
+        let quiz = assignment_with(&w, json!({"type": "quiz"}), config).await;
+        let svg = upload_file(&w, &w.student.token, quiz, "pic.svg", SVG).await;
+        let response = save(
+            &w,
+            &w.student.token,
+            quiz,
+            json!({"answers": {"q1": doc(json!([image("i", svg)]))}}),
+        )
+        .await;
+        assert_eq!(
+            messages_of(&response),
+            [(
+                "content.answers.q1.blocks[0].props.file_id".to_owned(),
+                IMAGE_ONLY.to_owned()
+            )]
         );
     })
     .await;

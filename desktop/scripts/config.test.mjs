@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { appNameOf, buildEnvFor, identifierOf, installerNameFor, productNameOf, tauriConfigFor, versionOf, warningsFor } from "./config.mjs";
 
 const client = {
@@ -75,4 +78,11 @@ test("the desktop file hands the address of a link to the program", async () => 
   const file = readFileSync(new URL("../desktop-template.desktop", import.meta.url), "utf8");
   assert.match(file, /^Exec=\{\{exec\}\} %u$/m);
   assert.match(file, /^MimeType=\{\{mime_type\}\}$/m);
+});
+
+test("macOS puts its quarantine mark on the files the app saves (ADR-0069)", () => {
+  const dir = dirname(fileURLToPath(import.meta.url));
+  const base = JSON.parse(readFileSync(join(dir, "..", "tauri.conf.json"), "utf8"));
+  assert.equal(base.bundle.macOS.infoPlist, "Info.plist");
+  assert.match(readFileSync(join(dir, "..", base.bundle.macOS.infoPlist), "utf8"), /<key>LSFileQuarantineEnabled<\/key>\s*<true\/>/);
 });

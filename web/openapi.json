@@ -6,7 +6,7 @@
     "license": {
       "name": ""
     },
-    "version": "0.2.2"
+    "version": "0.3.0"
   },
   "paths": {
     "/api/v1/admin/audit": {
@@ -1559,7 +1559,7 @@
           "assessment"
         ],
         "summary": "Saves the draft of the caller for an assignment, replacing the previous one. Students of the\ncourse only.",
-        "description": "`content` is a block document of the `student` profile (ADR-0025) as the institution and the\nassignment's `config.editor.features` narrow it; a rejection names the path, for example\n`content.blocks[2].props.level`. An empty document is a valid draft. The last write wins and\nnothing is versioned. After the submission window has closed (ADR-0035) a save is refused.\nSaving a draft emits no event.",
+        "description": "`content` is a block document of the `student` profile (ADR-0025) as the institution and the\nassignment's `config.editor.features` narrow it; a rejection names the path, for example\n`content.blocks[2].props.level`. An empty document is a valid draft. The last write wins and\nnothing is versioned. After the submission window has closed (ADR-0035) a save is refused.\nFor a `file` assignment the content names files uploaded with `POST /files?for=assignment:{id}`;\na file that does not exist, that someone else uploaded or holds, or whose name the assignment\ndoes not accept is `422` on `content.files[i]`. Saving a draft emits no event.",
         "operationId": "save_draft",
         "parameters": [
           {
@@ -4978,6 +4978,227 @@
         ]
       }
     },
+    "/api/v1/files": {
+      "post": {
+        "tags": [
+          "files"
+        ],
+        "summary": "Stores the raw body as a file for an item or an assignment and returns its description. The\nfile stays unreferenced (and is swept after 24 hours) until a document or a submission names it.",
+        "description": "The caller is authorized **before** the body is read: `for=item:{id}` needs the right to edit\nthe item (an archived course is `409`), `for=assignment:{id}` the right to submit work (an assignment that takes no submissions, whose window is closed or whose attempt limit is reached is `409`). The\ncontent type is found from the bytes, not from the header, and only the six inline types of\nADR-0069 ever keep a type that a browser would show; the name is cleaned (no path, at most 200\ncharacters). The body may be as large as `files.max_size` (`413` above it); an empty body is\n`422`. This route is outside the 2 MiB body limit and the idempotency layer.",
+        "operationId": "upload",
+        "parameters": [
+          {
+            "name": "for",
+            "in": "query",
+            "description": "Whom the file is for: `item:{id}` (needs `EditContent`) or `assignment:{id}` (needs\n`SubmitWork`). The item or assignment must exist.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "name",
+            "in": "query",
+            "description": "The file name as the client has it. It is cleaned before it is stored.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "description": "The raw bytes of the file",
+          "content": {
+            "application/octet-stream": {
+              "schema": {
+                "type": "array",
+                "items": {
+                  "type": "integer",
+                  "format": "int32",
+                  "minimum": 0
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "The file is stored",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileRefDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not logged in",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller may see the item or assignment but may not add files to it",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such item or assignment, or not visible to the caller",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The course is archived, or (for an assignment) it takes no submissions, its submission window is closed or the attempt limit is reached",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "The file is larger than `files.max_size`",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "`for` is not valid, or the body is empty",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          },
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/files/{id}": {
+      "get": {
+        "tags": [
+          "files"
+        ],
+        "summary": "The bytes of a file, streamed. Allowed if any item or submission that names the file lets the\ncaller read it, or, while nothing names it, to the uploader; every other case is `404`, never\n`403` (ADR-0069).",
+        "description": "Only `application/pdf`, `image/png`, `image/jpeg`, `image/gif`, `image/webp` and `text/plain`\nare `inline`; everything else, SVG included, is an `attachment`. Every response has\n`X-Content-Type-Options: nosniff` and, except for a PDF, `Content-Security-Policy: sandbox`\n(a browser does not draw its PDF viewer in a sandboxed response; ADR-0069). The `ETag` is the\nSHA-256 of the bytes and `If-None-Match` gives `304`. One `Range: bytes=a-b` (or `a-`, `-n`) is\nserved as `206`; a start past the end is `416`; any other form of the header is ignored.",
+        "operationId": "download",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "File id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The bytes",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "integer",
+                    "format": "int32",
+                    "minimum": 0
+                  }
+                }
+              }
+            }
+          },
+          "206": {
+            "description": "The requested range of the bytes",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "integer",
+                    "format": "int32",
+                    "minimum": 0
+                  }
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "`If-None-Match` names the current `ETag`"
+          },
+          "401": {
+            "description": "Not logged in",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such file, or not readable by the caller",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "416": {
+            "description": "The range starts past the end of the file",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          },
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/groups": {
       "get": {
         "tags": [
@@ -6288,7 +6509,7 @@
         "tags": [
           "content"
         ],
-        "summary": "Publishes a `text` item or an assignment. Idempotent; never changes `publish_at`.",
+        "summary": "Publishes an item. Idempotent; never changes `publish_at`. A `file` item without a file is\nrefused (`409`).",
         "operationId": "publish_item",
         "parameters": [
           {
@@ -6335,6 +6556,16 @@
           },
           "404": {
             "description": "No such item, or not visible to the caller",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A `file` item whose body names no file",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -6431,7 +6662,7 @@
           "content"
         ],
         "summary": "Gives students the working title and body of a published item (ADR-0049).",
-        "description": "A draft has nothing to publish a revision of: publish the item (`409`). Not in an archived\ncourse.",
+        "description": "A draft has nothing to publish a revision of: publish the item (`409`). A `file` item whose\nworking body names no file cannot be published either (`409`). Not in an archived course.",
         "operationId": "publish_revision",
         "parameters": [
           {
@@ -6487,7 +6718,7 @@
             }
           },
           "409": {
-            "description": "The item is a draft, or the course is archived",
+            "description": "The item is a draft, the course is archived, or a `file` item has no file",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -7188,8 +7419,8 @@
         "tags": [
           "content"
         ],
-        "summary": "Creates a draft `text` item or assignment as the last item of a module or sub-module.",
-        "description": "`body` is a JSON object that is stored and returned as is; an array or a string is rejected.\nFor an assignment it holds the instructions.\n\n`kind: assignment` requires an `assignment` object `{type, config?, max_points, is_bonus?}`\n(ADR-0021); a `text` item must not carry one. `type` is `text`, `no_submission`, `quiz` or `form`; the\n`config` of a `quiz` is its questions and must add up to `max_points` (ADR-0050), that of a `form` its\nfields (ADR-0051), and the others take an empty one (a `text` assignment may narrow its editor).\n`max_points` is a decimal string such as `\"20\"` or `\"7.5\"`; a JSON number is rejected. The\ngrading scale limits the points (ADR-0022): at most 12 per assignment on `twelve`, at most\n100 in total over the regular (not bonus) assignments of the course on `hundred`.",
+        "summary": "Creates a draft `text` item, assignment or `file` item as the last item of a module or sub-module.",
+        "description": "`body` is a JSON object that is stored and returned as is; an array or a string is rejected.\nFor an assignment it holds the instructions. `kind` is optional: without it the item is an\nassignment when an `assignment` object is sent and a `text` item otherwise.\n\nA `file` item has the body `{file_id?, description?}` (`description` is a document). It starts\nwithout a file: upload one with `POST /files?for=item:{id}` and name it with\n`PATCH /items/{id}`. `file_id` must be a file the caller uploaded that nothing uses yet. A\n`file` item must not carry an `assignment` object.\n\n`kind: assignment` requires an `assignment` object `{type, config?, max_points, is_bonus?}`\n(ADR-0021); a `text` item must not carry one. `type` is `text`, `no_submission`, `quiz`, `form` or `file`; the\n`config` of a `quiz` is its questions and must add up to `max_points` (ADR-0050), that of a `form` its\nfields (ADR-0051), that of a `file` `{max_files?, accept?}` (ADR-0069), and the others take an empty one (a `text` assignment may narrow its editor).\n`max_points` is a decimal string such as `\"20\"` or `\"7.5\"`; a JSON number is rejected. The\ngrading scale limits the points (ADR-0022): at most 12 per assignment on `twelve`, at most\n100 in total over the regular (not bonus) assignments of the course on `hundred`.",
         "operationId": "create_item",
         "parameters": [
           {
@@ -7265,7 +7496,7 @@
             }
           },
           "422": {
-            "description": "Invalid title, a body that is not a JSON object, a missing or unexpected `assignment` object, an unknown type or config field, invalid points, or points the grading scale does not allow",
+            "description": "Invalid title, a body that is not a JSON object (or, for a `file` item, not `{file_id?, description?}` with a usable `file_id`), a missing or unexpected `assignment` object, an unknown type or config field, invalid points, or points the grading scale does not allow",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -7385,7 +7616,7 @@
           "content"
         ],
         "summary": "Publishes a module. `cascade` is required and has no default (ADR-0010).",
-        "description": "With `cascade: false` only this module is published. With `cascade: true` its sub-modules and\nevery draft item below it are published too, in the same transaction. Idempotent. Never\nchanges `publish_at`: a module scheduled for later stays hidden from students until then.",
+        "description": "With `cascade: false` only this module is published. With `cascade: true` its sub-modules and\nevery draft item below it are published too, in the same transaction; a `file` item without a\nfile below it refuses the whole publish (`409`). Idempotent. Never\nchanges `publish_at`: a module scheduled for later stays hidden from students until then.",
         "operationId": "publish_module",
         "parameters": [
           {
@@ -7442,6 +7673,16 @@
           },
           "404": {
             "description": "No such module, or not visible to the caller",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "With `cascade`, a `file` item below the module has no file",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -8931,7 +9172,7 @@
           },
           "config": {
             "type": "object",
-            "description": "Settings of the type; an empty object for `no_submission`, the editor narrowing for `text`,\nthe questions for a `quiz` (ADR-0050) and the fields for a `form` (ADR-0051). A student\nnever receives the answer key of a quiz. A form's fields carry the read-only facts\n`has_answers` and, on the options of an exclusive field, `taken` and `taken_by`."
+            "description": "Settings of the type; an empty object for `no_submission`, the editor narrowing for `text`,\nthe questions for a `quiz` (ADR-0050), the fields for a `form` (ADR-0051) and\n`{max_files?, accept?}` for a `file` (ADR-0069). A student\nnever receives the answer key of a quiz. A form's fields carry the read-only facts\n`has_answers` and, on the options of an exclusive field, `taken` and `taken_by`."
           },
           "due_at": {
             "type": [
@@ -8978,7 +9219,7 @@
           },
           "type": {
             "type": "string",
-            "description": "The assignment type: `text`, `no_submission`, `quiz` or `form`. It cannot change."
+            "description": "The assignment type: `text`, `no_submission`, `quiz`, `form` or `file`. It cannot change."
           }
         }
       },
@@ -9505,6 +9746,52 @@
                 "type": "string",
                 "enum": [
                   "video"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "An uploaded image (ADR-0069). Allowed in every profile.",
+            "required": [
+              "id",
+              "props",
+              "type"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "props": {
+                "$ref": "#/components/schemas/ImageProps"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "image"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "A card for an uploaded file (ADR-0069). Allowed in the profiles `full` and `student`.",
+            "required": [
+              "id",
+              "props",
+              "type"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "props": {
+                "$ref": "#/components/schemas/FileProps"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "file"
                 ]
               }
             }
@@ -10255,7 +10542,6 @@
       "CreateItemRequest": {
         "type": "object",
         "required": [
-          "kind",
           "title"
         ],
         "properties": {
@@ -10263,7 +10549,7 @@
             "oneOf": [
               {
                 "$ref": "#/components/schemas/NewAssignment",
-                "description": "Required for `kind: assignment`, not allowed for `kind: text`."
+                "description": "Required for `kind: assignment`, not allowed for the other kinds."
               },
               {
                 "type": "null"
@@ -10274,7 +10560,7 @@
             "oneOf": [
               {
                 "$ref": "#/components/schemas/Document",
-                "description": "A block document (ADR-0025). Defaults to the empty document. For an assignment it is the\ndescription. It is read as a JSON value so that a rejection can name the path."
+                "description": "A block document (ADR-0025). Defaults to the empty document. For an assignment it is the\ndescription. For a `file` item it is `{file_id?, description?}` and defaults to `{}`: the file\nis uploaded (`POST /files?for=item:{id}`) once the item exists and named with\n`PATCH /items/{id}`. It is read as a JSON value so that a rejection can name the path."
               },
               {
                 "type": "null"
@@ -10282,7 +10568,15 @@
             ]
           },
           "kind": {
-            "$ref": "#/components/schemas/ItemKind"
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ItemKind",
+                "description": "`text`, `assignment` or `file`. Omit it to get `assignment` when an `assignment` object is\nsent and `text` otherwise."
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "title": {
             "type": "string"
@@ -10582,7 +10876,9 @@
           "code",
           "math",
           "mermaid",
-          "video"
+          "video",
+          "image",
+          "file"
         ]
       },
       "FieldError": {
@@ -10598,6 +10894,48 @@
           },
           "message": {
             "type": "string"
+          }
+        }
+      },
+      "FileProps": {
+        "type": "object",
+        "required": [
+          "file_id"
+        ],
+        "properties": {
+          "file_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "A file uploaded for the owner of this document; the server checks that it may be used."
+          }
+        }
+      },
+      "FileRefDto": {
+        "type": "object",
+        "description": "A stored file, as a document or a submission names it by `id`.",
+        "required": [
+          "id",
+          "name",
+          "mime",
+          "size"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "mime": {
+            "type": "string",
+            "description": "The content type found from the bytes, not the one the client claimed."
+          },
+          "name": {
+            "type": "string",
+            "description": "The cleaned file name: no path, at most 200 characters."
+          },
+          "size": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Bytes."
           }
         }
       },
@@ -11191,6 +11529,33 @@
           "published"
         ]
       },
+      "ImageProps": {
+        "type": "object",
+        "required": [
+          "file_id"
+        ],
+        "properties": {
+          "alt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "At most 300 characters of plain text."
+          },
+          "caption": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "At most 300 characters of plain text."
+          },
+          "file_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "A file uploaded for the owner of this document; the server checks that it may be used."
+          }
+        }
+      },
       "Inline": {
         "oneOf": [
           {
@@ -11310,7 +11675,7 @@
       },
       "Item": {
         "type": "object",
-        "description": "A `text` item or an assignment. `body` is a JSON object the server stores without interpreting it;\nfor an assignment it holds the instructions.",
+        "description": "A `text` item, an assignment or a `file` item. `body` is a JSON object; for an assignment it holds\nthe instructions, for a `file` item `{file_id?, description?}`: the uploaded file (absent while\nthe item is a draft without one) and a document that describes it.",
         "required": [
           "id",
           "module_id",
@@ -11337,7 +11702,7 @@
           },
           "body": {
             "$ref": "#/components/schemas/Document",
-            "description": "A block document (ADR-0025). The server returns the stored body as is."
+            "description": "A block document (ADR-0025) for a `text` item and an assignment, `{file_id?, description?}`\nfor a `file` item. The server returns the stored body as is."
           },
           "course_id": {
             "type": "string",
@@ -11385,7 +11750,8 @@
         "type": "string",
         "enum": [
           "text",
-          "assignment"
+          "assignment",
+          "file"
         ]
       },
       "ItemMeta": {
@@ -12088,7 +12454,7 @@
               "object",
               "null"
             ],
-            "description": "Settings of the type, a JSON object. Defaults to `{}`; `no_submission` has none, a `quiz`\nneeds its questions (ADR-0050) and a `form` its fields (ADR-0051)."
+            "description": "Settings of the type, a JSON object. Defaults to `{}`; `no_submission` has none, a `quiz`\nneeds its questions (ADR-0050), a `form` its fields (ADR-0051) and a `file`\ntakes `{max_files?: 1..=20, accept?: [\".pdf\", ...]}` (ADR-0069)."
           },
           "due_at": {
             "type": [
@@ -12131,7 +12497,7 @@
           },
           "type": {
             "type": "string",
-            "description": "The assignment type: `text`, `no_submission`, `quiz` or `form`."
+            "description": "The assignment type: `text`, `no_submission`, `quiz`, `form` or `file`."
           }
         }
       },
@@ -13117,7 +13483,7 @@
           },
           "content": {
             "type": "object",
-            "description": "A block document for a `text` assignment, `{\"answers\": {...}}` for a quiz or a form."
+            "description": "A block document for a `text` assignment, `{\"answers\": {...}}` for a quiz or a form,\n`{\"files\": [...], \"comment\"?}` for a file."
           },
           "id": {
             "type": "string",
@@ -14224,7 +14590,7 @@
             "oneOf": [
               {
                 "$ref": "#/components/schemas/Document",
-                "description": "A block document that replaces the body. Omit (or send `null`) to keep it."
+                "description": "A block document that replaces the body (`{file_id?, description?}` for a `file` item). Omit\n(or send `null`) to keep it."
               },
               {
                 "type": "null"

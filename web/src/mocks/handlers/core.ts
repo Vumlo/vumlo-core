@@ -8,7 +8,7 @@ import { isoToLocal, localToIso } from "@/lib/format";
 import type { CourseInfo, CoursePeople, Item, ServerItemMeta, TemplateSummary } from "@/lib/api/types";
 import { at, auditRow, getDb, institutionPublic, uid, type DbCourse, type DbItem } from "../db";
 import {
-  activeStudents, canView, contentTree, courseById, decimal, dueIn, flatItems, forbidden, formOf, fullName, gradeOf, hasUnpublishedChanges, isPublished,
+  activeStudents, canView, checkDocument, contentTree, courseById, decimal, dueIn, fileSettings, flatItems, forbidden, formOf, fullName, gradeOf, hasUnpublishedChanges, isPublished,
   isStaff, itemById, itemVisibleToStudent, memberOf, moduleOf, notFound, ownerOf, paged, problem, publicUser, quizOf, requireStaff, requireUser, requireView,
   SESSION_KEY, sessionUser, studentConfig, submissionOf, teacherName, termEnded, termName, userById, workItem, workStatus,
 } from "../logic";
@@ -61,6 +61,21 @@ function newCourse(title: string, ownerId: string, kind: "regular" | "template",
 }
 
 export const publicCourse = ({ code: _c, description: _d, settings_saved_at: _s, template_updated_at: _t, ...c }: DbCourse) => c;
+
+/** A file item's body is `{file_id?, description?}`; the server refuses any other key and a `file_id` that is not a stored file. */
+function checkFileBody(body: unknown) {
+  const b = body as Record<string, unknown>;
+  const bad = (field: string, message: string) => problem(422, "Unprocessable", undefined, [{ field: `body.${field}`, message }]);
+  if (typeof body !== "object" || body === null || Array.isArray(body)) throw bad("", "the body must be an object");
+  for (const key of Object.keys(b)) if (key !== "file_id" && key !== "description") throw bad(key, "unknown field");
+  if ("file_id" in b && (typeof b.file_id !== "string" || !getDb().files.has(b.file_id))) throw bad("file_id", "the file cannot be used here");
+  checkDocument(b.description, { profile: "full" }, "body.description");
+}
+
+/** A file item cannot be published, or have a revision published, while its working body names no file. */
+function needsFile(item: DbItem) {
+  if (item.kind === "file" && !(item.body as { file_id?: string }).file_id) throw problem(409, "Conflict", "a file item needs a file before it is published");
+}
 
 function itemFor(item: DbItem, staff: boolean): Item {
   const { read_minutes: _r, class_on: _o, last_published_at: _l, unpublished_changes: _u, published_body, published_title, ...rest } = item;
@@ -198,13 +213,13 @@ export const coreHandlers = [
   http.get(`${A}/editor/profiles`, () => {
     requireUser();
     const limits = { max_document_bytes: 1_048_576, max_depth: 3, max_table_rows: 50, max_table_columns: 10, max_code_bytes: 65_536, max_formula_bytes: 4096, max_href_chars: 2048 };
-    const full = ["headings", "text_styles", "links", "lists", "quote", "divider", "table", "code", "math", "mermaid", "video"] as const;
+    const full = ["headings", "text_styles", "links", "lists", "quote", "divider", "table", "code", "math", "mermaid", "video", "image", "file"] as const;
     return HttpResponse.json({
       profiles: [
         { name: "full", features: [...full], single_block: false, limits },
-        { name: "student", features: ["text_styles", "links", "lists", "code", "math"], single_block: false, limits },
-        { name: "question", features: ["text_styles", "code", "math"], single_block: false, limits },
-        { name: "option", features: ["text_styles", "math"], single_block: true, limits },
+        { name: "student", features: ["text_styles", "links", "lists", "code", "math", "image", "file"], single_block: false, limits },
+        { name: "question", features: ["text_styles", "code", "math", "image"], single_block: false, limits },
+        { name: "option", features: ["text_styles", "math", "image"], single_block: true, limits },
       ],
       video_providers: ["youtube", "vimeo"],
     });
@@ -455,10 +470,17 @@ export const coreHandlers = [
       if (!b.title.trim()) throw problem(422, "Validation failed", undefined, [{ field: "title", message: "Give it a title" }]);
       item.title = b.title.trim();
     }
-    if (b.body) item.body = b.body as Item["body"];
+    if (b.body) {
+      if (item.kind === "file") checkFileBody(b.body);
+      else checkDocument(b.body, { profile: "full" }, "body");
+      item.body = b.body as Item["body"];
+    }
     if (item.assignment) {
       const a = item.assignment;
-      if (b.config) a.config = configFromWire(a.type, b.config as Record<string, unknown>);
+      if (b.config) {
+        if (a.type === "file") fileSettings(b.config as Record<string, unknown>);
+        a.config = configFromWire(a.type, b.config as Record<string, unknown>);
+      }
       if (b.max_points !== undefined) a.max_points = decimal(b.max_points, "max_points");
       if ("due_at" in b) { a.due_at = (b.due_at as string | null) ?? null; if (!a.due_at) { a.on_deadline = null; a.accept_late = null; a.late_until = null; } }
       if ("on_deadline" in b) a.on_deadline = b.on_deadline as typeof a.on_deadline;
@@ -482,6 +504,7 @@ export const coreHandlers = [
   http.post(`${A}/items/:id/publish`, ({ params }) => {
     const item = itemById(String(params.id));
     requireStaff(item.course_id);
+    needsFile(item);
     item.status = "published";
     item.last_published_at ??= MOCK_NOW.toISOString();
     return HttpResponse.json(itemFor(item, true));
@@ -494,6 +517,7 @@ export const coreHandlers = [
   http.post(`${A}/items/:id/revision/publish`, ({ params }) => {
     const item = itemById(String(params.id));
     requireStaff(item.course_id);
+    needsFile(item);
     item.unpublished_changes = false;
     item.published_body = undefined;
     item.published_title = undefined;
@@ -547,6 +571,7 @@ export const coreHandlers = [
     m.status = "published";
     if (b.cascade) {
       const ids = [m.id, ...db.modules.filter((x) => x.parent_id === m.id).map((x) => x.id)];
+      db.items.filter((x) => ids.includes(x.module_id) && x.status === "draft").forEach(needsFile);
       for (const s of db.modules.filter((x) => ids.includes(x.id))) s.status = "published";
       for (const i of db.items.filter((x) => ids.includes(x.module_id) && x.status === "draft")) { i.status = "published"; i.last_published_at = MOCK_NOW.toISOString(); }
     }
@@ -557,14 +582,15 @@ export const coreHandlers = [
     const m = db.modules.find((x) => x.id === params.id);
     if (!m) throw notFound();
     requireStaff(m.course_id);
-    const b = (await request.json()) as { kind: "text" | "assignment"; title: string; body?: unknown; assignment?: Record<string, unknown> };
+    const b = (await request.json()) as { kind: "text" | "assignment" | "file"; title: string; body?: unknown; assignment?: Record<string, unknown> };
     const title = (b.title ?? "").trim();
     if (!title) throw problem(422, "Validation failed", undefined, [{ field: "title", message: "Give it a title" }]);
     const id = uid(`item:new:${db.items.length}:${title}`);
     const sibs = db.items.filter((i) => i.module_id === m.id);
     const a = b.assignment;
+    if (b.kind === "assignment" && a?.type === "file") fileSettings((a.config as Record<string, unknown>) ?? {});
     const item: DbItem = {
-      id, module_id: m.id, course_id: m.course_id, position: sibs.length + 1, kind: b.kind, title, body: (b.body ?? { v: 1, blocks: [] }) as Item["body"], status: "draft", publish_at: null,
+      id, module_id: m.id, course_id: m.course_id, position: sibs.length + 1, kind: b.kind, title, body: (b.body ?? (b.kind === "file" ? {} : { v: 1, blocks: [] })) as Item["body"], status: "draft", publish_at: null,
       created_at: MOCK_NOW.toISOString(), updated_at: MOCK_NOW.toISOString(), last_published_at: null, unpublished_changes: false,
       ...(b.kind === "assignment" ? {
         assignment: {
