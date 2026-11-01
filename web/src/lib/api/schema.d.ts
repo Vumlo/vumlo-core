@@ -1222,7 +1222,8 @@ export interface paths {
          *     `403` (ADR-0069).
          * @description Only `application/pdf`, `image/png`, `image/jpeg`, `image/gif`, `image/webp` and `text/plain`
          *     are `inline`; everything else, SVG included, is an `attachment`. Every response has
-         *     `X-Content-Type-Options: nosniff` and `Content-Security-Policy: sandbox`. The `ETag` is the
+         *     `X-Content-Type-Options: nosniff` and, except for a PDF, `Content-Security-Policy: sandbox`
+         *     (a browser does not draw its PDF viewer in a sandboxed response; ADR-0069). The `ETag` is the
          *     SHA-256 of the bytes and `If-None-Match` gives `304`. One `Range: bytes=a-b` (or `a-`, `-n`) is
          *     served as `206`; a start past the end is `416`; any other form of the header is ignored.
          */

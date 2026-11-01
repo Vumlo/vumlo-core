@@ -5110,7 +5110,7 @@
           "files"
         ],
         "summary": "The bytes of a file, streamed. Allowed if any item or submission that names the file lets the\ncaller read it, or, while nothing names it, to the uploader; every other case is `404`, never\n`403` (ADR-0069).",
-        "description": "Only `application/pdf`, `image/png`, `image/jpeg`, `image/gif`, `image/webp` and `text/plain`\nare `inline`; everything else, SVG included, is an `attachment`. Every response has\n`X-Content-Type-Options: nosniff` and `Content-Security-Policy: sandbox`. The `ETag` is the\nSHA-256 of the bytes and `If-None-Match` gives `304`. One `Range: bytes=a-b` (or `a-`, `-n`) is\nserved as `206`; a start past the end is `416`; any other form of the header is ignored.",
+        "description": "Only `application/pdf`, `image/png`, `image/jpeg`, `image/gif`, `image/webp` and `text/plain`\nare `inline`; everything else, SVG included, is an `attachment`. Every response has\n`X-Content-Type-Options: nosniff` and, except for a PDF, `Content-Security-Policy: sandbox`\n(a browser does not draw its PDF viewer in a sandboxed response; ADR-0069). The `ETag` is the\nSHA-256 of the bytes and `If-None-Match` gives `304`. One `Range: bytes=a-b` (or `a-`, `-n`) is\nserved as `206`; a start past the end is `416`; any other form of the header is ignored.",
         "operationId": "download",
         "parameters": [
           {
