@@ -16,10 +16,12 @@ File uploads (ADR-0069).
 
 - Files in the editor and in assignments: `image` and `file` blocks in documents, the item kind `file`, and the
   assignment type `file` (a hand-in of up to `max_files` files, graded by hand). A teacher can preview a hand-in
-  while grading; a PDF shows as a card, not an embedded page.
+  while grading.
 - `POST /api/v1/files` (the raw file as the body) and `GET /api/v1/files/{id}`; a file is served only through an
   item or a submission the caller may read (otherwise `404`), with `Range` and `ETag`; it is `inline` only for
-  PDF, PNG, JPEG, GIF, WebP and plain text, and always with `Content-Security-Policy: sandbox`.
+  PDF, PNG, JPEG, GIF, WebP and plain text, always with `X-Content-Type-Options: nosniff`, and with
+  `Content-Security-Policy: sandbox` for every type except PDF (Chrome and Edge do not show their PDF viewer in a
+  sandboxed response; the type is verified by the file's signature at upload, ADR-0069).
 - Storage in a directory on the server or in an S3-compatible bucket (`[files]` in `vumlo.toml`). A file that no
   item and no submission names is deleted after 24 hours; the sweep runs hourly.
 - Desktop app: upload a file, and "open" a file, which saves it in Downloads. Documents, spreadsheets,
@@ -42,10 +44,14 @@ File uploads (ADR-0069).
   the directory of `vumlo.toml`), `max_size` (default 52428800, 50 MiB; at most 1073741824). With `s3`, add
   `[files.s3]` (`bucket`, `region`, optional `endpoint`) and set `VUMLO__FILES__S3__ACCESS_KEY` and
   `VUMLO__FILES__S3__SECRET_KEY` in the environment.
-- **The server creates the local files directory when it starts and refuses to start if it cannot.** In the
-  shipped systemd units and Docker files the default directory is not writable: set `files.path` to a directory
-  the service owns and allow it (`ReadWritePaths=` in the units; a volume in Docker). See
-  [Uploaded files](docs/install.md#uploaded-files).
+- **The server creates the local files directory when it starts and refuses to start if it cannot.** The shipped
+  files now point it at a writable place with `VUMLO__FILES__PATH` (which overrides `files.path`). **systemd:**
+  copy the new `deploy/systemd/vumlo-core.service` and `vumlo-worker.service` over the installed units (they add
+  `StateDirectory=vumlo`, which creates `/var/lib/vumlo`, and `VUMLO__FILES__PATH=/var/lib/vumlo/files`; keep
+  your own edits, such as paths), run `systemctl daemon-reload`, then `deploy/update.sh --systemd`; `update.sh`
+  does not copy units. **Docker:** `deploy/compose.yaml` gets the `files-data` volume on `core` and `worker`
+  and the image creates its mount point, so rebuild with `deploy/update.sh --docker`. Nothing to move: no
+  uploaded files exist before this release. See [Uploaded files](docs/install.md#uploaded-files).
 - A reverse proxy in front of the API must allow request bodies of `files.max_size`. The Caddyfile of the release
   already does; with nginx set `client_max_body_size`.
 - **`vumlo db backup` does not contain the files.** Back up the files directory or the bucket separately and restore

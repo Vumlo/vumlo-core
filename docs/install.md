@@ -316,14 +316,20 @@ max_size = 52428800    # bytes, 1 to 1073741824 (1 GiB); the largest file, defau
 ```
 
 - **Local storage.** The server creates the directory when it starts, so the user that runs `serve` and
-  `worker` must be able to write there. Both read the same directory. The default, `files` beside
-  `vumlo.toml`, is not writable in the shipped systemd units (`ProtectSystem=strict` makes `/etc` read-only)
-  nor in the Docker image (the configuration is mounted read-only, and the process is not root). Set `path`
-  to an absolute directory the service owns, for example `/var/lib/vumlo/files`, and allow the units to
-  write it (`ReadWritePaths=/var/lib/vumlo/files` in `vumlo-core.service` and `vumlo-worker.service`); with
-  Docker, mount a volume or a host directory owned by uid 10001 at that path in the `core` and `worker`
-  services. These steps are not part of the shipped files and were not run for this release; `serve`
-  and `worker` refuse to start if the directory cannot be created.
+  `worker` must be able to write there, and both read the same directory. The default, `files` beside
+  `vumlo.toml`, would be under `/etc/vumlo` (systemd, read-only under `ProtectSystem=strict`) or in the
+  read-only configuration mount (Docker), so the shipped files override it with the environment variable
+  `VUMLO__FILES__PATH`, which takes precedence over `files.path` in `vumlo.toml`:
+  - **systemd.** `vumlo-core.service` and `vumlo-worker.service` set `StateDirectory=vumlo` (systemd creates
+    `/var/lib/vumlo`, owned by `vumlo` and writable despite `ProtectSystem=strict`) and
+    `VUMLO__FILES__PATH=/var/lib/vumlo/files`. Back up `/var/lib/vumlo/files`. To keep the files elsewhere,
+    change both the variable and add the directory to `ReadWritePaths=` in both units.
+  - **Docker.** The `core` and `worker` services mount the named volume `files-data` at
+    `/var/lib/vumlo/files` and set `VUMLO__FILES__PATH` to it; the image creates the directory for uid
+    10001, so the volume starts out writable. The volume survives `docker compose down` (not
+    `down --volumes`).
+  - **Without the shipped files** (a development run), the default is `files` beside `vumlo.toml`; it is
+    ignored by git. `serve` and `worker` refuse to start if the directory cannot be created.
 - **S3.** `storage = "s3"` with the `[files.s3]` section. The keys are secrets and only come from the
   environment: `VUMLO__FILES__S3__ACCESS_KEY` and `VUMLO__FILES__S3__SECRET_KEY`. `config check` names
   what is missing.
@@ -333,16 +339,19 @@ max_size = 52428800    # bytes, 1 to 1073741824 (1 GiB); the largest file, defau
   of this release sets no limit (`request_body` is off by default in Caddy) and sends `/api/*` straight to the
   API, so it needs no change. With nginx, set `client_max_body_size` to at least `max_size` (the default is
   1 MB); other proxies have a similar setting.
-  The web app's own `/api/v1` forward (used by `npm run dev`) was not tested with large bodies.
+  The web app's own `/api/v1` forward is the path of `npm run dev` and also the production path of the Docker
+  setup without Caddy; it was not tested with large bodies.
 - **Backups.** `db backup` is a `pg_dump` and does **not** contain the files. Back up the directory (or the
   bucket) on its own schedule, and restore it together with the database taken at about the same time: a
-  database restored without its files serves `404` for them, and files without their rows are never
-  reachable (the next sweep deletes them if nothing names them). `deploy/update.sh` backs up the database
+  database restored without its files makes the download fail with a logged `500` (the row is there, the
+  object is not), and objects without their rows are never reachable and nothing deletes them (the
+  sweep walks rows, not the directory or the bucket). `deploy/update.sh` backs up the database
   only.
 - **Orphans.** A file that was uploaded but that no item and no submission names (an abandoned upload, a
   file removed from a document) is deleted after 24 hours. The sweep runs every hour in the worker, and in
   `serve` unless `--no-worker`. Nothing else deletes files: a deleted course takes its references, and the
-  sweep takes the files once nothing names them.
+  sweep takes the files once nothing names them. An upload whose row could not be saved (for example because the submission window closed while the
+  file was on its way) removes its own object at once.
 
 ## Optional modules
 
