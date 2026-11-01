@@ -17,7 +17,7 @@ use crate::content::model::ModelError;
 const DEFAULT_MAX_FILES: usize = 5;
 const MAX_FILES_LIMIT: usize = 20;
 const MAX_ACCEPT: usize = 30;
-const EXTENSION_CHARS: std::ops::RangeInclusive<usize> = 2..=16;
+const EXTENSION_CHARS: std::ops::RangeInclusive<usize> = 1..=16;
 
 struct Settings {
     max_files: usize,
@@ -28,7 +28,7 @@ fn invalid(message: String) -> Result<Settings, ModelError> {
     Err(ModelError::Config(message))
 }
 
-/// An entry of `accept`: a dot and 2 to 16 lowercase letters or digits.
+/// An entry of `accept`: a dot and 1 to 16 lowercase letters or digits.
 fn valid_extension(entry: &str) -> bool {
     entry.strip_prefix('.').is_some_and(|ext| {
         EXTENSION_CHARS.contains(&ext.len())
@@ -73,7 +73,7 @@ fn parse(config: &Map<String, Value>) -> Result<Settings, ModelError> {
         for (index, entry) in list.iter().enumerate() {
             let Some(entry) = entry.as_str().filter(|entry| valid_extension(entry)) else {
                 return invalid(format!(
-                    "`accept[{index}]` must be a dot and 2 to 16 lowercase letters or digits, like `.pdf`"
+                    "`accept[{index}]` must be a dot and 1 to 16 lowercase letters or digits, like `.pdf`"
                 ));
             };
             if accept.iter().any(|seen| seen == entry) {

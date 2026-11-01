@@ -22,8 +22,6 @@ pub struct ClientConfig {
     pub modules: BTreeMap<String, ModuleStatus>,
     /// The enabled modules that have UI in the web app: only these are built into the web bundle.
     pub web_modules: Vec<String>,
-    /// The generated logo, relative to the generated directory. Absent without `institution.logo`.
-    pub logo: Option<String>,
     /// What the desktop app and the web app's sign-in page agree on (ADR-0062).
     pub desktop: ClientDesktop,
 }
@@ -64,7 +62,7 @@ pub struct PublicInstitution {
 }
 
 impl ClientConfig {
-    pub fn new(settings: &Settings, version: &str, logo: Option<String>) -> Self {
+    pub fn new(settings: &Settings, version: &str) -> Self {
         let institution = &settings.institution;
         Self {
             version: version.to_owned(),
@@ -93,7 +91,6 @@ impl ClientConfig {
                 .filter(|m| m.web && settings.module_state.is_enabled(m.name))
                 .map(|m| m.name.to_owned())
                 .collect(),
-            logo,
             desktop: ClientDesktop {
                 url_scheme: url_scheme(settings),
             },

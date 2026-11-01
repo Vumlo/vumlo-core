@@ -10,11 +10,6 @@ pub fn check(options: &Options) -> anyhow::Result<bool> {
     match vumlo_config::load_process(options, &runtime::specs()) {
         Ok(loaded) => {
             let s = &loaded.settings;
-            if let Some(problem) = crate::brand::logo_problem(s) {
-                eprintln!("configuration has 1 problem(s):");
-                eprintln!("  - {problem}");
-                return Ok(false);
-            }
             println!("configuration OK");
             match &loaded.config_file {
                 Some(file) => println!("  file         {}", file.display()),
@@ -59,7 +54,7 @@ pub fn show(options: &Options, public: bool) -> anyhow::Result<()> {
     let loaded = runtime::load(options)?;
     let settings = &loaded.settings;
     let value = if public {
-        serde_json::to_value(ClientConfig::new(settings, VERSION, None))?
+        serde_json::to_value(ClientConfig::new(settings, VERSION))?
     } else {
         serde_json::to_value(settings)?
     };

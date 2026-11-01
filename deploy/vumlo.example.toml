@@ -106,10 +106,6 @@ mode = "university"
 # short_name = "Example"   # 1-50 characters; default: name
 # language = "en"          # "en" | "uk"; default "en"
 # time_zone = "Europe/Kyiv" # an IANA zone name; default "UTC"
-# The logo `vumlo-cli brand apply` builds the favicon and the app icons from: a path (relative to
-# this file) or an http(s) URL to a PNG, JPEG, WebP or SVG. Optional. The file below is a PLACEHOLDER
-# that ships with Vumlo: replace it with your institution's logo, or point this at your own file.
-logo = "brand/logo.png"
 
 # Optional add-on modules (ADR-0054). Each is compiled in with a Cargo feature of the same name
 # and switched on here; `vumlo-cli modules list` shows which this build has. Off by default.

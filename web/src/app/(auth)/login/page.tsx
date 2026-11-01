@@ -101,6 +101,8 @@ function LoginForm() {
         </form>
         <div className={s.or}>{t("login.or")}</div>
         <button type="button" className="btn btn-outline btn-lg btn-block" disabled={google.pending} onClick={() => void withGoogle()}>
+          {/* eslint-disable-next-line @next/next/no-img-element -- Google's own colours, a static file */}
+          <img src="/google-g.svg" alt="" width={18} height={18} />
           {t("login.google")}
         </button>
       </div>

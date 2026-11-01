@@ -32,9 +32,8 @@ Everything comes from `vumlo.toml`, as for the web app, and `vumlo-cli brand app
 | Key | What it becomes |
 | --- | --- |
 | `server.public_origin` | The server the app talks to (compiled in). The identifier of the app is its host, reversed: `lms.ucu.edu.ua` is `ua.edu.ucu.lms`. |
-| `institution.short_name` | The name of the app and of its shortcut (`UCU`; a short name that is not in Latin letters gives way to the scheme, `vumlo-uku`, because a Debian package can only be named in ASCII), and, with `vumlo-`, the URL scheme of its links, `vumlo-ucu://...`, and the name of the installers, `vumlo-ucu_0.2.2_amd64.deb`. |
+| `institution.short_name` | The name of the app, its window and its shortcut (`Vumlo UCU`; a short name that is not in Latin letters gives way to the scheme, `vumlo-uku`, because a Debian package can only be named in ASCII), and, with `vumlo-`, the URL scheme of its links, `vumlo-ucu://...`, and the name of the installers, `vumlo-ucu_0.2.2_amd64.deb`. |
 | `institution.name` | The publisher of the installer and its description (the full name can be long, and in any alphabet). |
-| `institution.logo` | The icon of the app, in every size each system wants. Without it the app has Vumlo's placeholder icon. |
 | `desktop.url_scheme` (optional) | The scheme of the links, `vumlo-` and letters, digits and hyphens. **Set it if your short name has no Latin letters**; otherwise it is plain `vumlo`, and two institutions' apps on one computer would fight over `vumlo://`. |
 
 Sign-in with Google needs nothing more than the web app does (`[auth.google]`, ADR-0047): the same redirect
@@ -57,7 +56,7 @@ cd web && npm ci && cd ../desktop && npm ci
 node scripts/build.mjs -- --bundles deb,appimage      # Linux; nsis on Windows, dmg on macOS
 ```
 
-`scripts/build.mjs` builds the web app as a static export, makes the icons from your logo, writes the
+`scripts/build.mjs` builds the web app as a static export, makes the icons from the Vumlo logo, writes the
 configuration of the installer (`desktop/gen/`) and runs `tauri build`. The installers are in
 `desktop/dist/`, named `<scheme>_<version>_<arch>.<ext>`, for example `vumlo-ucu_0.2.1_amd64.deb`. It warns, before the long part, if the server address is `http` or
 `localhost`, or the scheme is plain `vumlo`. If your configuration is not beside `desktop/`, give the

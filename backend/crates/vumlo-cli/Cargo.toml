@@ -27,7 +27,6 @@ image.workspace = true
 module-api.workspace = true
 plugins.workspace = true
 reqwest.workspace = true
-resvg.workspace = true
 rpassword.workspace = true
 serde.workspace = true
 serde_json.workspace = true

@@ -52,3 +52,4 @@ value like `Europe/Kyiv` at startup needs one.
   updated; the zones in use change rarely.
 - The accent list is a contract with the web app: a new accent is added in both places.
 - Logo upload is not decided here; it needs the `files` module.
+- Amendment 2026-11-01: `institution.logo` no longer exists (ADR-0054, amended).

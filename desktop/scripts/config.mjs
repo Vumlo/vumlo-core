@@ -20,13 +20,15 @@ export function versionOf(version) {
 }
 
 /**
- * The name of the app: the short name, as the programs and links are named. A Debian package is named after it, and
- * Debian allows only ASCII letters, digits and `+ - .` in a package name, so a short name in another alphabet
- * (`УКУ`) gives way to the URL scheme (`vumlo-uku`, which is ASCII by definition).
+ * The name of the app: `Vumlo` and the short name (`Vumlo UCU`), or just `Vumlo` when the short name is Vumlo itself.
+ * A Debian package is named after it, and Debian allows only ASCII letters, digits and `+ - .` in a package name, so
+ * a short name in another alphabet (`УКУ`) gives way to the URL scheme (`vumlo-uku`, which is ASCII by definition).
+ * It is not `Vumlo | UCU` as on the web: `|` cannot be in the name of an installer or a macOS bundle.
  */
 export function appNameOf(institution, scheme) {
   const short = productNameOf(institution.short_name || institution.name);
-  return /^[A-Za-z0-9][A-Za-z0-9 .+-]*$/.test(short) ? short : scheme;
+  const name = short.toLowerCase() === "vumlo" ? "Vumlo" : `Vumlo ${short}`;
+  return /^[A-Za-z0-9][A-Za-z0-9 .+-]*$/.test(name) ? name : scheme;
 }
 
 /** A name for the installer's metadata and the shortcut, without what a file name cannot hold. */
@@ -50,8 +52,8 @@ const ICONS = ["32x32.png", "128x128.png", "128x128@2x.png", "icon.icns", "icon.
 /** The Tauri configuration to merge over `tauri.conf.json` for this institution. */
 export function tauriConfigFor(client, { frontendDist, iconDir, desktopTemplate }) {
   const institution = client.public.institution;
-  // The app is called by the short name (`UCU`), as the programs and links are (`vumlo-ucu`); the full name, which
-  // can be long and in any alphabet, is the publisher and in the descriptions.
+  // The app is called `Vumlo UCU`, as the programs and links are `vumlo-ucu`; the full name, which can be long and
+  // in any alphabet, is the publisher and in the descriptions.
   const productName = appNameOf(institution, client.desktop.url_scheme);
   const fullName = productNameOf(institution.name);
   return {
@@ -62,6 +64,9 @@ export function tauriConfigFor(client, { frontendDist, iconDir, desktopTemplate 
     version: versionOf(client.version),
     identifier: identifierOf(client.public.server.public_origin),
     build: { frontendDist },
+    // The window is titled with the name of the app. A list is replaced as a whole when configurations are merged, so
+    // the rest of the window is repeated from tauri.conf.json.
+    app: { windows: [{ label: "main", title: productName, width: 1200, height: 800, minWidth: 480, minHeight: 600 }] },
     plugins: { "deep-link": { desktop: { schemes: [client.desktop.url_scheme] } } },
     bundle: {
       icon: ICONS.map((name) => `${iconDir}/${name}`),

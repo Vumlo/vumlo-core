@@ -23,7 +23,7 @@ fn leaves(value: &Value, prefix: &str, out: &mut Vec<String>) {
 #[test]
 fn the_public_part_is_exactly_the_keys_marked_public() {
     let settings = build(VALID, &[]).unwrap();
-    let client = ClientConfig::new(&settings, "1.2.3", None);
+    let client = ClientConfig::new(&settings, "1.2.3");
     let mut shown = Vec::new();
     leaves(
         &serde_json::to_value(&client.public).unwrap(),
@@ -58,7 +58,7 @@ fn private_and_secret_values_never_reach_the_client_config() {
         ("VUMLO__SERVER__CLIENT_IP_HEADER", "sentinel-header"),
     ];
     let settings = crate::tests::build_with(&toml, &env, &["dummy"]).unwrap();
-    let client = ClientConfig::new(&settings, "1", Some("logo.png".to_owned()));
+    let client = ClientConfig::new(&settings, "1");
 
     let text = serde_json::to_string(&client).unwrap();
 
@@ -71,23 +71,23 @@ fn private_and_secret_values_never_reach_the_client_config() {
 #[test]
 fn only_enabled_modules_with_a_web_part_are_built_into_the_web_app() {
     let off = build(VALID, &[]).unwrap();
-    assert!(ClientConfig::new(&off, "1", None).web_modules.is_empty());
+    assert!(ClientConfig::new(&off, "1").web_modules.is_empty());
     let on = crate::tests::build_with(
         &format!("{VALID}\n[modules]\ndummy = true\n"),
         &[],
         &["dummy"],
     )
     .unwrap();
-    assert_eq!(ClientConfig::new(&on, "1", None).web_modules, ["dummy"]);
+    assert_eq!(ClientConfig::new(&on, "1").web_modules, ["dummy"]);
 }
 
 #[test]
 fn every_module_compiled_in_is_listed_with_its_state() {
     let none = build(VALID, &[]).unwrap();
-    assert!(ClientConfig::new(&none, "1", None).modules.is_empty());
+    assert!(ClientConfig::new(&none, "1").modules.is_empty());
 
     let settings = crate::tests::build_with(VALID, &[], &["dummy", "dummy-dep"]).unwrap();
-    let client = ClientConfig::new(&settings, "1", None);
+    let client = ClientConfig::new(&settings, "1");
     let names: Vec<_> = client.modules.keys().map(String::as_str).collect();
     assert_eq!(names, ["dummy", "dummy-dep"]);
     assert!(
@@ -102,9 +102,7 @@ fn every_module_compiled_in_is_listed_with_its_state() {
 
 fn scheme_of(extra: &str) -> String {
     let settings = build(&format!("{VALID}\n{extra}"), &[]).unwrap();
-    ClientConfig::new(&settings, "1.2.3", None)
-        .desktop
-        .url_scheme
+    ClientConfig::new(&settings, "1.2.3").desktop.url_scheme
 }
 
 #[test]
@@ -163,6 +161,6 @@ fn a_scheme_that_is_not_ours_is_refused_with_its_key_named() {
 #[test]
 fn the_scheme_is_in_the_client_config() {
     let settings = build(VALID, &[]).unwrap();
-    let json = serde_json::to_value(ClientConfig::new(&settings, "1.2.3", None)).unwrap();
+    let json = serde_json::to_value(ClientConfig::new(&settings, "1.2.3")).unwrap();
     assert_eq!(json["desktop"]["url_scheme"], "vumlo-example-university");
 }

@@ -558,27 +558,47 @@ test("submitted_attempts_list_their_files_with_open_buttons", async ({ page }) =
   expect((saved.at(-1)!.content as { files: string[] }).files).toHaveLength(2);
 });
 
-const PATCH_FIRST = { accept_late: false, config: { max_files: 2, accept: [".pdf", ".docx"] }, due_at: expect.any(String) as unknown, late_until: null, max_attempts: 2, max_points: "10.00", on_deadline: "auto_submit" };
+const PATCH_FIRST = { accept_late: false, config: { max_files: 2, accept: [".pdf", ".docx", ".jpg", ".jpeg", ".h", ".tex", ".dwg"] }, due_at: expect.any(String) as unknown, late_until: null, max_attempts: 2, max_points: "10.00", on_deadline: "auto_submit" };
 
 test("teacher_sets_max_files_and_accept_in_settings", async ({ page }) => {
   const { course, item } = await openReport(page, "teacher");
   await page.goto(`/course/item/edit?id=${course}&item=${item}`);
   const patches = watchBodies(page, "PATCH", /\/items\/[^/]+$/);
   const max = page.getByLabel("Most files per attempt");
-  const accept = page.getByLabel("Accepted file types");
+  const other = page.getByLabel("Other types");
+  const type = (name: string) => page.getByRole("checkbox", { name, exact: true });
+  // A chip hides its checkbox under the label, and the sticky header may cover a chip near the top: centre it, then click the label's box.
+  const flip = async (name: string, on: boolean) => {
+    await type(name).evaluate((el) => el.scrollIntoView({ block: "center" }));
+    await type(name).setChecked(on, { force: true });
+  };
   await expect(max).toHaveValue("3");
-  await expect(accept).toHaveValue(".pdf, .docx, .png");
+  // The stored types show as checked entries of the menu; the field holds only what the menu has not got.
+  for (const name of [".pdf", ".docx", ".png"]) await expect(type(name)).toBeChecked();
+  await expect(type(".doc")).not.toBeChecked();
+  await expect(other).toHaveValue("");
   // The rules of the server are checked while typing, and nothing is sent until they hold.
   await max.fill("21");
   await expect(page.getByText("Enter a whole number from 1 to 20.")).toBeVisible();
-  await accept.fill("pdf, .exe!, .PDF");
+  await other.fill("tex, .exe!, .TEX");
   await expect(page.getByText(".exe! is not a file type")).toBeVisible();
   await expect(page.getByRole("button", { name: "Save settings" })).toBeDisabled();
   await max.fill("2");
-  // A missing dot is added and capitals are lowered; a type listed twice is refused.
-  await accept.fill("PDF, docx, .pdf");
-  await expect(page.getByText(".pdf is listed twice.")).toBeVisible();
-  await accept.fill("PDF, docx");
+  // A missing dot is added and capitals are lowered; a type typed twice is refused.
+  await other.fill("TEX, dwg, .tex");
+  await expect(page.getByText(".tex is listed twice.")).toBeVisible();
+  await other.fill("TEX, dwg");
+  // A group box picks all its types; `.jpg` stands for `.jpeg` too; one-letter types like `.h` are fine.
+  await type("Spreadsheets").check();
+  await expect(type(".tsv")).toBeChecked();
+  await type("Spreadsheets").uncheck();
+  await expect(type(".tsv")).not.toBeChecked();
+  await flip(".png", false);
+  await flip(".jpg", true);
+  // Groups with no pick start folded; open one to reach its chips.
+  await expect(type(".h")).toHaveCount(0);
+  await page.getByRole("button", { name: "Code and data" }).click();
+  await flip(".h", true);
   // Wait for the PATCH the click sends before reading anything: "Saved" and the stored item only follow its answer.
   const saveSettings = async () => {
     const [res] = await Promise.all([
@@ -594,9 +614,10 @@ test("teacher_sets_max_files_and_accept_in_settings", async ({ page }) => {
   expect(first).toEqual(PATCH_FIRST);
   expect(patches).toEqual([first]);
   const stored = await page.evaluate(async (id) => (await (await fetch(`/api/v1/items/${id}`)).json()) as { assignment: { config: unknown } }, item);
-  expect(stored.assignment.config).toEqual({ max_files: 2, accept: [".pdf", ".docx"] });
+  expect(stored.assignment.config).toEqual({ max_files: 2, accept: PATCH_FIRST.config.accept });
   // No restriction is an empty list left out of the config.
-  await accept.fill("");
+  for (const name of [".pdf", ".docx", ".jpg", ".h"]) await flip(name, false);
+  await other.fill("");
   const second = await saveSettings();
   expect(second).toEqual({ ...PATCH_FIRST, config: { max_files: 2 } });
   expect(patches).toEqual([first, second]);
