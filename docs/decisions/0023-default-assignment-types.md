@@ -41,3 +41,7 @@ ADR-0008 made assignment types extensible and named the v1 built-ins: `file`, `t
 
 ## Built by ADR-0069 (assignment type `file`)
 - `file` exists as `BuiltinType::File`. Config `{"max_files"?: 1..=20 (default 5), "accept"?: [".pdf", ...]}`: `accept` has at most 30 lowercase extensions, each a dot and 2 to 16 letters or digits, no duplicates; any other key is refused. Content `{"files": [file_id, ...], "comment"?: block document (profile `student`)}`. A draft may hold no file or up to `max_files`, none twice; a submit needs at least one. Graded by hand. The extension of each file is checked against `accept` (case-insensitive, last extension) by the assessment service, which resolves the file names.
+
+## Amendment 2026-11-01: an `accept` extension may be one character
+- **Decision.** Each `accept` entry is a dot and 1 to 16 lowercase letters or digits (was 2 to 16). The rest of the rule stands.
+- **Reason.** The file-type menu of the assignment settings offers `.c` and `.h`, which the old minimum refused.

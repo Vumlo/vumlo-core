@@ -60,7 +60,7 @@ fn config_rejects_max_files_0_and_21() {
 #[test]
 fn config_rejects_accept_without_a_dot_or_uppercase() {
     for bad in [
-        "pdf", ".PDF", ".Pdf", ".", ".p", ".pd f", ".p.df", "", ".пдф",
+        "pdf", ".PDF", ".Pdf", ".", ".P", ".pd f", ".p.df", "", ".пдф",
     ] {
         let message = config_error(&json!({"accept": [bad]}));
         assert!(message.contains("accept[0]"), "{bad:?}: {message}");
@@ -74,7 +74,7 @@ fn config_rejects_accept_without_a_dot_or_uppercase() {
     let thirty: Vec<String> = (0..30).map(|n| format!(".e{n:02}")).collect();
     validate_config(obj(&json!({"accept": thirty}))).unwrap();
     validate_config(obj(
-        &json!({"max_files": 3, "accept": [".pdf", ".docx", ".7z"]}),
+        &json!({"max_files": 3, "accept": [".pdf", ".docx", ".7z", ".c", ".h"]}),
     ))
     .unwrap();
 }
