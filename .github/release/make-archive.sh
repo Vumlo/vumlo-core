@@ -23,7 +23,7 @@ allow=(
     backend/migrations backend/.sqlx backend/crates
     web deploy brand desktop
     vumlo .dockerignore
-    docs/install.md docs/desktop.md CHANGELOG.md README.md
+    docs/install.md docs/desktop.md docs/img CHANGELOG.md README.md
 )
 # A licence file, once the project has one.
 while IFS= read -r licence; do allow+=("$licence"); done < <(git ls-files 'LICENSE*' 'COPYING*')

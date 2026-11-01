@@ -37,7 +37,7 @@ next patch version.
 
 An explicit allowlist: `backend/` (the crates, the migrations, the offline SQL data, the lockfile),
 `web/`, `desktop/` (the desktop app, ADR-0056; its tests are left out), `deploy/`, `brand/` (the Vumlo logo and mark), the `vumlo` script, `docs/install.md`, `docs/desktop.md`,
-`CHANGELOG.md`, `README.md`, and `vumlo.toml.example`. Not in it: the tests directories, the ADRs,
+`docs/img/` (the screenshots of `README.md`), `CHANGELOG.md`, `README.md`, and `vumlo.toml.example`. Not in it: the tests directories, the ADRs,
 `ARCHITECTURE.md`, `AGENTS.md`, the CI files and the development compose file.
 
 The test-only module `dummy` is removed, and that changes manifests: the archive carries release
