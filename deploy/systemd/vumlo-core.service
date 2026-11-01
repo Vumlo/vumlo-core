@@ -13,6 +13,11 @@ User=vumlo
 Group=vumlo
 Environment=VUMLO_CONFIG=/etc/vumlo/vumlo.toml
 EnvironmentFile=/etc/vumlo/vumlo.env
+# Uploaded files (ADR-0069). StateDirectory creates /var/lib/vumlo, owned by `vumlo` and writable under
+# ProtectSystem=strict; core and worker share it. The variable overrides `files.path` of vumlo.toml,
+# whose default (`files` beside the toml, in read-only /etc) is not writable here.
+StateDirectory=vumlo
+Environment=VUMLO__FILES__PATH=/var/lib/vumlo/files
 ExecStart=/opt/vumlo/bin/vumlo-server serve --no-worker
 Restart=on-failure
 RestartSec=3
