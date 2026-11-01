@@ -56,3 +56,25 @@ fn if_none_match_matches_a_list_a_weak_tag_and_a_star() {
     assert!(!matches_etag(&with("\"c\""), "\"b\""));
     assert!(!matches_etag(&HeaderMap::new(), "\"b\""));
 }
+
+#[test]
+fn only_the_stored_pdf_type_goes_without_the_sandbox_csp() {
+    for (mime, sandboxed) in [
+        ("application/pdf", false),
+        ("application/octet-stream", true),
+        ("image/svg+xml", true),
+        ("text/plain", true),
+        ("image/png", true),
+        ("application/pdf; x=1", true),
+        ("Application/PDF", true),
+    ] {
+        let mut headers = HeaderMap::new();
+        guard(&mut headers, mime);
+        assert_eq!(headers["x-content-type-options"], "nosniff", "{mime}");
+        assert_eq!(
+            headers.contains_key("content-security-policy"),
+            sandboxed,
+            "{mime}"
+        );
+    }
+}

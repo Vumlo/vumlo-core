@@ -2369,9 +2369,10 @@ async fn resubmission_attempt_two_keeps_attempt_one_files_readable_by_staff() {
         json_of(save(&w, &w.student.token, id, files_of(&[one])).await, 200);
         json_of(submit(&w, &w.student.token, id).await, 201);
 
-        // A new draft starts with no files, and cannot borrow those of the attempt.
-        let response = save(&w, &w.student.token, id, files_of(&[one])).await;
-        assert_eq!(error_fields(&response), ["content.files[0]"]);
+        // A new draft may start from the earlier answer: the author's own attempt on the same
+        // assignment holds the file. The attempt keeps its own reference.
+        json_of(save(&w, &w.student.token, id, files_of(&[one])).await, 200);
+        assert_eq!(referenced(&w, id).await, [one, one]);
         let two = upload_file(&w, &w.student.token, id, "two.txt", b"second").await;
         json_of(save(&w, &w.student.token, id, files_of(&[two])).await, 200);
         let (drafts, submitted) = rows_of(&w, id).await;

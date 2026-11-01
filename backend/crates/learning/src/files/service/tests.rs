@@ -504,7 +504,10 @@ async fn ensure_usable_accepts_file_already_on_this_owner() {
         usable(
             &f,
             &f.student,
-            UsageOwner::Submission(submission),
+            UsageOwner::Submission {
+                id: submission,
+                assignment_id: f.assignment,
+            },
             &[theirs],
         )
         .await
@@ -528,7 +531,10 @@ async fn a_file_also_held_by_another_owner_is_still_usable_by_an_owner_that_hold
             .await
             .unwrap();
         // An owner that does not hold it still cannot borrow it, even as the uploader.
-        let stranger_submission = UsageOwner::Submission(Uuid::now_v7());
+        let stranger_submission = UsageOwner::Submission {
+            id: Uuid::now_v7(),
+            assignment_id: f.assignment,
+        };
         let error = usable(&f, &f.owner, stranger_submission, &[id])
             .await
             .unwrap_err();
@@ -551,20 +557,248 @@ async fn ensure_usable_rejects_file_of_another_owner_and_unknown_id() {
         item_names(&f.pool, f.lesson, false, other).await;
         let on_assignment = usable(&f, &f.owner, UsageOwner::Item(f.assignment), &[other]).await;
         assert!(matches!(on_assignment, Err(FileError::Unusable { id }) if id == other));
-        let on_submission =
-            usable(&f, &f.owner, UsageOwner::Submission(submission), &[other]).await;
+        let on_submission = usable(
+            &f,
+            &f.owner,
+            UsageOwner::Submission {
+                id: submission,
+                assignment_id: f.assignment,
+            },
+            &[other],
+        )
+        .await;
         assert!(matches!(on_submission, Err(FileError::Unusable { id }) if id == other));
         // Unknown id; and the first bad id of a list is the one reported.
         let unknown = Uuid::now_v7();
         let error = usable(
             &f,
             &f.student,
-            UsageOwner::Submission(submission),
+            UsageOwner::Submission {
+                id: submission,
+                assignment_id: f.assignment,
+            },
             &[mine, unknown],
         )
         .await
         .unwrap_err();
         assert!(matches!(error, FileError::Unusable { id } if id == unknown));
+    })
+    .await;
+}
+
+/// `actor` saves a draft on `assignment` whose one block is a `file` block naming `file`.
+async fn save_draft_naming(
+    f: &Fixture,
+    actor: &Actor,
+    assignment: Uuid,
+    file: Uuid,
+) -> Result<(), AssessmentError> {
+    let mut conn = f.pool.acquire().await.unwrap();
+    let document = json!({"v": 1, "attachments": [], "blocks": [
+        {"id": "i", "type": "file", "props": {"file_id": file}}]});
+    assessment::save_draft(
+        &mut conn,
+        actor,
+        assignment,
+        &document,
+        &PROFILES,
+        Utc::now(),
+    )
+    .await
+    .map(|_| ())
+}
+
+/// The ids of the submission rows of `actor` on `assignment`, oldest first.
+async fn rows_of(pool: &PgPool, assignment: Uuid, actor: &Actor) -> Vec<Uuid> {
+    sqlx::query_scalar!(
+        "SELECT id FROM assessment.submissions WHERE assignment_id = $1 AND student_id = $2
+         ORDER BY id",
+        assignment,
+        actor.user_id()
+    )
+    .fetch_all(pool)
+    .await
+    .unwrap()
+}
+
+async fn holders(pool: &PgPool, file: Uuid) -> Vec<Uuid> {
+    let mut conn = pool.acquire().await.unwrap();
+    let mut ids = repo::submission_references(&mut conn, file).await.unwrap();
+    ids.sort();
+    ids
+}
+
+#[tokio::test]
+async fn a_new_draft_may_name_a_file_of_the_authors_earlier_attempt() {
+    db_test(async |pool| {
+        let f = fixture(pool).await;
+        let id = file(&f.pool, &f.student).await;
+        save_draft_naming(&f, &f.student, f.assignment, id)
+            .await
+            .unwrap();
+        submit(&f).await;
+        // The resubmission starts from the earlier answer: a new draft row names the same file.
+        save_draft_naming(&f, &f.student, f.assignment, id)
+            .await
+            .unwrap();
+        let rows = rows_of(&f.pool, f.assignment, &f.student).await;
+        assert_eq!(rows.len(), 2, "the attempt and the new draft");
+        assert_eq!(
+            holders(&f.pool, id).await,
+            rows,
+            "each keeps its own reference"
+        );
+        // The student still reads it, and staff read it through the attempt.
+        assert_eq!(read(&f.pool, &f.student, id).await.unwrap().id, id);
+        assert_eq!(read(&f.pool, &f.owner, id).await.unwrap().id, id);
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn a_draft_cannot_name_a_file_of_another_students_attempt_or_of_another_assignment() {
+    db_test(async |pool| {
+        let f = fixture(pool).await;
+        // The classmate's attempt holds a file; the student has their own draft row.
+        let theirs = file(&f.pool, &f.classmate).await;
+        save_draft_naming(&f, &f.classmate, f.assignment, theirs)
+            .await
+            .unwrap();
+        let mine = file(&f.pool, &f.student).await;
+        let draft = draft_naming(&f, mine).await;
+        let refused = usable(
+            &f,
+            &f.student,
+            UsageOwner::Submission {
+                id: draft,
+                assignment_id: f.assignment,
+            },
+            &[theirs],
+        )
+        .await;
+        assert!(matches!(refused, Err(FileError::Unusable { id }) if id == theirs));
+        // The same through the draft: nothing is saved and the file stays the classmate's.
+        let error = save_draft_naming(&f, &f.student, f.assignment, theirs)
+            .await
+            .unwrap_err();
+        assert!(matches!(error, AssessmentError::Document(_)), "{error:?}");
+        assert_eq!(
+            holders(&f.pool, theirs).await,
+            rows_of(&f.pool, f.assignment, &f.classmate).await
+        );
+
+        // The student's own file from a submission to a different assignment.
+        let mut tx = f.pool.begin().await.unwrap();
+        let module = content::create_module(
+            &mut tx,
+            &f.owner,
+            f.course,
+            ContentTitle::parse("M2").unwrap(),
+            None,
+        )
+        .await
+        .unwrap();
+        content::publish_module(&mut tx, &f.owner, module.id, true)
+            .await
+            .unwrap();
+        let other = content::create_item(
+            &mut tx,
+            &f.owner,
+            rules(),
+            module.id,
+            ContentTitle::parse("Other").unwrap(),
+            None,
+            Some(Assignment {
+                assignment_type: BuiltinType::Text,
+                config: Map::new(),
+                max_points: MaxPoints::parse("10").unwrap(),
+                is_bonus: false,
+                settings: Default::default(),
+                class_on: None,
+            }),
+        )
+        .await
+        .unwrap();
+        content::publish_item(&mut tx, &f.owner, other.id)
+            .await
+            .unwrap();
+        tx.commit().await.unwrap();
+        let elsewhere = file(&f.pool, &f.student).await;
+        save_draft_naming(&f, &f.student, other.id, elsewhere)
+            .await
+            .unwrap();
+        let refused = usable(
+            &f,
+            &f.student,
+            UsageOwner::Submission {
+                id: draft,
+                assignment_id: f.assignment,
+            },
+            &[elsewhere],
+        )
+        .await;
+        assert!(matches!(refused, Err(FileError::Unusable { id }) if id == elsewhere));
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn a_file_held_by_an_item_is_not_usable_by_a_draft_even_next_to_an_own_attempt() {
+    db_test(async |pool| {
+        let f = fixture(pool).await;
+        let id = file(&f.pool, &f.student).await;
+        save_draft_naming(&f, &f.student, f.assignment, id)
+            .await
+            .unwrap();
+        submit(&f).await;
+        let draft = {
+            // A new draft row that names nothing yet.
+            let other = file(&f.pool, &f.student).await;
+            save_draft_naming(&f, &f.student, f.assignment, other)
+                .await
+                .unwrap();
+            *rows_of(&f.pool, f.assignment, &f.student)
+                .await
+                .last()
+                .unwrap()
+        };
+        usable(
+            &f,
+            &f.student,
+            UsageOwner::Submission {
+                id: draft,
+                assignment_id: f.assignment,
+            },
+            &[id],
+        )
+        .await
+        .unwrap();
+        // An item now holds the file as well: the earlier attempt no longer makes it the student's.
+        item_names(&f.pool, f.lesson, false, id).await;
+        let refused = usable(
+            &f,
+            &f.student,
+            UsageOwner::Submission {
+                id: draft,
+                assignment_id: f.assignment,
+            },
+            &[id],
+        )
+        .await;
+        assert!(matches!(refused, Err(FileError::Unusable { id: bad }) if bad == id));
+        let only_item = file(&f.pool, &f.owner).await;
+        item_names(&f.pool, f.lesson, true, only_item).await;
+        let refused = usable(
+            &f,
+            &f.student,
+            UsageOwner::Submission {
+                id: draft,
+                assignment_id: f.assignment,
+            },
+            &[only_item],
+        )
+        .await;
+        assert!(matches!(refused, Err(FileError::Unusable { id: bad }) if bad == only_item));
     })
     .await;
 }
@@ -623,6 +857,71 @@ async fn upload_to_an_archived_course_is_a_conflict() {
             let error = authorize_upload(&mut conn, actor, &owner, Utc::now()).await;
             assert!(matches!(error, Err(FileError::Conflict(_))), "{error:?}");
         }
+    })
+    .await;
+}
+
+fn incoming(id: Uuid) -> crate::files::routes::Incoming<'static> {
+    crate::files::routes::Incoming {
+        id,
+        data: axum::body::Bytes::from_static(b"hello"),
+        name: "a.txt",
+        claimed: "text/plain",
+    }
+}
+
+/// The upload is authorized, then the course is archived while the body is on its way: the row is
+/// refused, and no object stays behind (the sweep only walks rows).
+#[tokio::test]
+async fn an_upload_whose_row_is_refused_leaves_no_object() {
+    db_test(async |pool| {
+        let f = fixture(pool).await;
+        let storage = memory();
+        let owner = Owner::Item(f.lesson);
+        let mut conn = f.pool.acquire().await.unwrap();
+        authorize_upload(&mut conn, &f.owner, &owner, Utc::now())
+            .await
+            .unwrap();
+        teaching::archive_course(&mut conn, &f.owner, f.course)
+            .await
+            .unwrap();
+        drop(conn);
+        let id = Uuid::now_v7();
+        let error = crate::files::routes::store_upload(
+            &f.pool,
+            &storage,
+            1024,
+            &f.owner,
+            &owner,
+            incoming(id),
+        )
+        .await
+        .unwrap_err();
+        assert!(matches!(error, FileError::Conflict(_)), "{error:?}");
+        assert!(gone(&f.pool, &storage, id).await);
+    })
+    .await;
+}
+
+/// The success path keeps both the row and the object.
+#[tokio::test]
+async fn a_registered_upload_keeps_its_object() {
+    db_test(async |pool| {
+        let f = fixture(pool).await;
+        let storage = memory();
+        let id = Uuid::now_v7();
+        let file = crate::files::routes::store_upload(
+            &f.pool,
+            &storage,
+            1024,
+            &f.owner,
+            &Owner::Item(f.lesson),
+            incoming(id),
+        )
+        .await
+        .unwrap();
+        assert_eq!((file.id, file.mime.as_str()), (id, "text/plain"));
+        assert!(kept(&f.pool, &storage, id).await);
     })
     .await;
 }

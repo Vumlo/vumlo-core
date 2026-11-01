@@ -26,7 +26,11 @@ impl Owner {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UsageOwner {
     Item(Uuid),
-    Submission(Uuid),
+    /// A draft or an attempt, and the assignment it is for (the draft row may not exist yet).
+    Submission {
+        id: Uuid,
+        assignment_id: Uuid,
+    },
 }
 
 /// A row of `content.item_files`.

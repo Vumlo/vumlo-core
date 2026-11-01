@@ -10,6 +10,7 @@ use axum::extract::{FromRef, Path, State};
 use axum::http::{HeaderMap, HeaderName, HeaderValue, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use chrono::Utc;
+use sqlx::PgPool;
 use utoipa_axum::router::OpenApiRouter;
 use utoipa_axum::routes;
 use uuid::Uuid;
@@ -106,20 +107,19 @@ async fn upload(
     let data = axum::body::to_bytes(body, limit)
         .await
         .map_err(|error| read_failure(&error))?;
-    let stored = files::put(&state.files, Uuid::now_v7(), data, state.max_file_bytes)
-        .await
-        .map_err(FileError::from)?;
     let claimed = headers
         .get(header::CONTENT_TYPE)
         .and_then(|value| value.to_str().ok())
         .unwrap_or("");
     let name = files::clean_name(&query.name);
-    let mime = files::sniff(&name, &stored.head, claimed);
-    // From here on a failure leaves the object in storage; the orphan sweep removes it.
-    let mut tx = state.db.begin().await.map_err(FileError::from)?;
-    let file = service::register_upload(&mut tx, &actor, &owner, &stored, &name, &mime, Utc::now())
-        .await?;
-    tx.commit().await.map_err(FileError::from)?;
+    let (db, storage, max) = (&state.db, &state.files, state.max_file_bytes);
+    let upload = Incoming {
+        id: Uuid::now_v7(),
+        data,
+        name: &name,
+        claimed,
+    };
+    let file = store_upload(db, storage, max, &actor, &owner, upload).await?;
     Ok((
         StatusCode::CREATED,
         Json(FileRefDto {
@@ -129,6 +129,63 @@ async fn upload(
             size: file.size,
         }),
     ))
+}
+
+/// An upload whose bytes are in memory: the new file's id, the cleaned name, and the type the
+/// client claimed (a hint only).
+pub(super) struct Incoming<'a> {
+    pub id: Uuid,
+    pub data: axum::body::Bytes,
+    pub name: &'a str,
+    pub claimed: &'a str,
+}
+
+/// Writes the object, then its row, in a transaction of its own (the object first, so that
+/// nothing slow runs inside the transaction). The sweep only walks rows, so an object whose row
+/// never committed (the window closed while the body was on its way, the database failed) would
+/// stay in storage for good: it is deleted here instead, best effort, and the original error is
+/// the one returned.
+pub(super) async fn store_upload(
+    db: &PgPool,
+    storage: &files::Storage,
+    max_size: u64,
+    actor: &Actor,
+    owner: &Owner,
+    upload: Incoming<'_>,
+) -> Result<files::File, FileError> {
+    let Incoming {
+        id,
+        data,
+        name,
+        claimed,
+    } = upload;
+    let stored = files::put(storage, id, data, max_size).await?;
+    let mime = files::sniff(name, &stored.head, claimed);
+    let registered = async {
+        let mut tx = db.begin().await?;
+        let file =
+            service::register_upload(&mut tx, actor, owner, &stored, name, &mime, Utc::now())
+                .await?;
+        tx.commit().await?;
+        Ok(file)
+    }
+    .await;
+    if registered.is_err() {
+        discard(db, storage, id).await;
+    }
+    registered
+}
+
+/// Removes the object of an upload that was not registered, and its row if there is one.
+async fn discard(db: &PgPool, storage: &files::Storage, id: Uuid) {
+    let removed = async {
+        let mut conn = db.acquire().await?;
+        files::delete(&mut conn, storage, id).await
+    }
+    .await;
+    if let Err(error) = removed {
+        tracing::warn!(file_id = %id, %error, "removing the object of a failed upload failed");
+    }
 }
 
 /// Why the body could not be read: over the limit is `413`, anything else (a dropped connection)
@@ -154,7 +211,8 @@ fn read_failure(error: &axum::Error) -> ApiError {
 ///
 /// Only `application/pdf`, `image/png`, `image/jpeg`, `image/gif`, `image/webp` and `text/plain`
 /// are `inline`; everything else, SVG included, is an `attachment`. Every response has
-/// `X-Content-Type-Options: nosniff` and `Content-Security-Policy: sandbox`. The `ETag` is the
+/// `X-Content-Type-Options: nosniff` and, except for a PDF, `Content-Security-Policy: sandbox`
+/// (a browser does not draw its PDF viewer in a sandboxed response; ADR-0069). The `ETag` is the
 /// SHA-256 of the bytes and `If-None-Match` gives `304`. One `Range: bytes=a-b` (or `a-`, `-n`) is
 /// served as `206`; a start past the end is `416`; any other form of the header is ignored.
 #[utoipa::path(
@@ -190,7 +248,7 @@ async fn download(
     let etag = format!("\"{}\"", file.sha256);
     let mut response = Response::new(Body::empty());
     let out = response.headers_mut();
-    guard(out);
+    guard(out, &file.mime);
     out.insert(header::ACCEPT_RANGES, HeaderValue::from_static("bytes"));
     out.insert(
         header::CACHE_CONTROL,
@@ -211,7 +269,7 @@ async fn download(
     {
         Some(Err(())) => {
             let mut refused = ApiError::Status(StatusCode::RANGE_NOT_SATISFIABLE).into_response();
-            guard(refused.headers_mut());
+            guard(refused.headers_mut(), &file.mime);
             if let Ok(value) = HeaderValue::from_str(&format!("bytes */{size}")) {
                 refused.headers_mut().insert(header::CONTENT_RANGE, value);
             }
@@ -251,10 +309,16 @@ async fn download(
 }
 
 /// What every answer about a file says: the type is what we said it is, and the document may do
-/// nothing (no script, no forms, a unique origin) even if a browser shows it.
-fn guard(headers: &mut HeaderMap) {
+/// nothing (no script, no forms, a unique origin) even if a browser shows it. The one exception is
+/// the stored type `application/pdf`: Chrome and Edge do not draw their PDF viewer in a
+/// CSP-sandboxed response, so a PDF gets `nosniff` but no `sandbox` (ADR-0069, 2026-11-01). The
+/// decision is on the stored type, which is found from the bytes at upload, never on a name or a
+/// header of the request.
+fn guard(headers: &mut HeaderMap, mime: &str) {
     headers.insert(NOSNIFF, HeaderValue::from_static("nosniff"));
-    headers.insert(CSP, HeaderValue::from_static("sandbox"));
+    if mime != "application/pdf" {
+        headers.insert(CSP, HeaderValue::from_static("sandbox"));
+    }
 }
 
 /// Does `If-None-Match` name this `ETag` (or `*`)? A weak validator matches too: for a `GET` the

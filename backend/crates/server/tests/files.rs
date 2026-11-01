@@ -543,49 +543,94 @@ async fn download_headers_for_svg_docx_and_fake_pdf() {
     .await;
 }
 
+/// The four answers a file can give: the bytes, a range, "not modified" and "range not satisfiable".
+async fn all_kinds_of_answer(w: &World, id: Uuid, bytes: &[u8]) -> [(u16, Resp); 4] {
+    let etag = format!("\"{}\"", sha256(bytes));
+    [
+        (200, download(w, &w.owner.token, id).await),
+        (
+            206,
+            get(w, &w.owner.token, id)
+                .header("range", "bytes=0-3")
+                .send()
+                .await,
+        ),
+        (
+            304,
+            get(w, &w.owner.token, id)
+                .header("if-none-match", &etag)
+                .send()
+                .await,
+        ),
+        (
+            416,
+            get(w, &w.owner.token, id)
+                .header("range", &format!("bytes={}-", bytes.len()))
+                .send()
+                .await,
+        ),
+    ]
+}
+
+/// ADR-0069 (amended 2026-11-01): Chrome and Edge do not draw the PDF viewer in a CSP-sandboxed
+/// response, so a PDF is served without `sandbox`; it keeps `nosniff` and the verified type.
 #[tokio::test]
-async fn every_file_response_has_nosniff_and_sandbox_csp() {
+async fn a_pdf_response_has_nosniff_and_no_sandbox_csp() {
     db_test(async |pool| {
         let w = world(pool).await;
         let id = stored(&w, "a.pdf", "application/pdf", PDF).await;
-        let size = PDF.len();
-        let etag = format!("\"{}\"", sha256(PDF));
-        let responses = [
-            (200, download(&w, &w.owner.token, id).await),
-            (
-                206,
-                get(&w, &w.owner.token, id)
-                    .header("range", "bytes=0-3")
-                    .send()
-                    .await,
-            ),
-            (
-                304,
-                get(&w, &w.owner.token, id)
-                    .header("if-none-match", &etag)
-                    .send()
-                    .await,
-            ),
-            (
-                416,
-                get(&w, &w.owner.token, id)
-                    .header("range", &format!("bytes={size}-"))
-                    .send()
-                    .await,
-            ),
-        ];
-        for (status, response) in responses {
+        for (status, response) in all_kinds_of_answer(&w, id, PDF).await {
             assert_eq!(response.status, status);
             assert_eq!(
                 response.header("x-content-type-options"),
                 "nosniff",
                 "{status}"
             );
-            assert_eq!(
-                response.header("content-security-policy"),
-                "sandbox",
-                "{status}"
+            assert!(
+                response.headers.get("content-security-policy").is_none(),
+                "{status}: a PDF is sent without a CSP"
             );
+        }
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn every_other_file_response_has_nosniff_and_sandbox_csp() {
+    db_test(async |pool| {
+        let w = world(pool).await;
+        let docx = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+        let cases: [(&str, &[u8], &str); 5] = [
+            ("notes.txt", b"plain words", "text/plain"),
+            ("pixel.png", PNG, "image/png"),
+            (
+                "logo.svg",
+                b"<svg xmlns='x'><script/></svg>",
+                "image/svg+xml",
+            ),
+            ("essay.docx", b"PK\x03\x04rest", docx),
+            // The claim and the name say PDF, the bytes do not: stored as octet-stream.
+            (
+                "fake.pdf",
+                b"<html><script>1</script></html>",
+                "application/pdf",
+            ),
+        ];
+        for (name, bytes, claimed) in cases {
+            let id = stored(&w, name, claimed, bytes).await;
+            for (status, response) in all_kinds_of_answer(&w, id, bytes).await {
+                assert_eq!(response.status, status, "{name}");
+                assert_eq!(
+                    response.header("x-content-type-options"),
+                    "nosniff",
+                    "{name} {status}"
+                );
+                assert_eq!(
+                    response.header("content-security-policy"),
+                    "sandbox",
+                    "{name} {status}"
+                );
+            }
         }
     })
     .await;

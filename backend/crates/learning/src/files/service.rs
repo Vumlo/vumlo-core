@@ -9,7 +9,7 @@ use files::{File, FilesError, Stored};
 use sqlx::PgConnection;
 use uuid::Uuid;
 
-use super::model::{Owner, UsageOwner};
+use super::model::{ItemReference, Owner, UsageOwner};
 use super::repo;
 use crate::assessment::{self, AssessmentError};
 use crate::content::{self, ContentError};
@@ -155,7 +155,8 @@ pub async fn open_for_read(
 
 /// May a document or submission of `owner` name each of `ids`? Yes if the file already belongs to
 /// this owner (whoever else holds it too, as after copying a course), or the actor uploaded it and
-/// nothing references it yet. Anything else, an unknown id
+/// nothing references it yet, or, for a submission, only the actor's own earlier attempts on the
+/// same assignment hold it (a resubmission). Anything else, an unknown id
 /// included, is `Unusable`: a user cannot borrow the file id of someone else's work. The caller has
 /// authorized the write itself.
 pub async fn ensure_usable(
@@ -168,27 +169,42 @@ pub async fn ensure_usable(
         let file = files::get(conn, id)
             .await?
             .ok_or(FileError::Unusable { id })?;
-        let holders: Vec<UsageOwner> = repo::item_references(conn, id)
-            .await?
-            .into_iter()
-            .map(|reference| UsageOwner::Item(reference.item_id))
-            .chain(
-                repo::submission_references(conn, id)
-                    .await?
-                    .into_iter()
-                    .map(UsageOwner::Submission),
-            )
-            .collect();
-        let usable = if holders.is_empty() {
+        let items = repo::item_references(conn, id).await?;
+        let submissions = repo::submission_references(conn, id).await?;
+        let usable = if items.is_empty() && submissions.is_empty() {
             file.uploaded_by == actor.user_id()
         } else {
-            holders.contains(owner)
+            let held_here = match *owner {
+                UsageOwner::Item(item_id) => items.iter().any(|r| r.item_id == item_id),
+                UsageOwner::Submission { id, .. } => submissions.contains(&id),
+            };
+            held_here || held_by_own_attempts(conn, actor, owner, &items, &submissions).await?
         };
         if !usable {
             return Err(FileError::Unusable { id });
         }
     }
     Ok(())
+}
+
+/// A resubmission starts from the earlier answer, so a new draft may name a file that only the
+/// author's own earlier attempts on the same assignment hold. A file that another student's row,
+/// another assignment's row or an item also holds is not theirs to carry over.
+async fn held_by_own_attempts(
+    conn: &mut PgConnection,
+    actor: &Actor,
+    owner: &UsageOwner,
+    items: &[ItemReference],
+    submissions: &[Uuid],
+) -> Result<bool, FileError> {
+    let UsageOwner::Submission { assignment_id, .. } = *owner else {
+        return Ok(false);
+    };
+    if !items.is_empty() {
+        return Ok(false);
+    }
+    let own = repo::count_own_rows_on(conn, submissions, assignment_id, actor.user_id()).await?;
+    Ok(usize::try_from(own).is_ok_and(|own| own == submissions.len()))
 }
 
 /// The types an `image` block may name: the server-detected type of the stored file.

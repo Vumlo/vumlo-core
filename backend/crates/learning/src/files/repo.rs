@@ -50,3 +50,22 @@ pub async fn is_referenced(conn: &mut PgConnection, file_id: Uuid) -> Result<boo
     .await?;
     Ok(referenced)
 }
+
+/// How many of the submission rows `held_by` belong to `student` on `assignment_id`. Equal to
+/// `held_by.len()` when every one of them is an attempt or draft of that author on that assignment.
+pub async fn count_own_rows_on(
+    conn: &mut PgConnection,
+    held_by: &[Uuid],
+    assignment_id: Uuid,
+    student: Uuid,
+) -> Result<i64, sqlx::Error> {
+    sqlx::query_scalar!(
+        r#"SELECT count(*) AS "n!" FROM assessment.submissions
+            WHERE id = ANY($1) AND assignment_id = $2 AND student_id = $3"#,
+        held_by,
+        assignment_id,
+        student
+    )
+    .fetch_one(conn)
+    .await
+}

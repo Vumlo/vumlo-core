@@ -179,7 +179,7 @@ pub async fn save_draft(
         Some(draft) => draft.id,
         None => Uuid::now_v7(),
     };
-    let files = check_files(conn, actor, &assignment, valid.as_body(), id).await?;
+    let files = check_files(conn, actor, &assignment, assignment_id, valid.as_body(), id).await?;
     let draft =
         repo::upsert_draft(conn, id, assignment_id, actor.user_id(), valid.as_body()).await?;
     repo::replace_submission_files(conn, draft.id, &files).await?;
@@ -272,7 +272,15 @@ pub async fn submit(
         valid.as_body(),
     )
     .await?;
-    let files = check_files(conn, actor, &assignment, valid.as_body(), draft.id).await?;
+    let files = check_files(
+        conn,
+        actor,
+        &assignment,
+        assignment_id,
+        valid.as_body(),
+        draft.id,
+    )
+    .await?;
     let auto = assignment
         .assignment_type
         .auto_grade(&assignment.config, valid.as_body());
@@ -358,6 +366,7 @@ async fn check_files(
     conn: &mut PgConnection,
     actor: &Actor,
     assignment: &Assignment,
+    assignment_id: Uuid,
     body: &Map<String, Value>,
     submission_id: Uuid,
 ) -> Result<Vec<Uuid>, AssessmentError> {
@@ -368,7 +377,11 @@ async fn check_files(
         .submission_file_refs(body)
         .map_err(AssessmentError::Document)?;
     let ids = distinct_ids(&refs);
-    ensure_usable(conn, actor, &UsageOwner::Submission(submission_id), &ids)
+    let owner = UsageOwner::Submission {
+        id: submission_id,
+        assignment_id,
+    };
+    ensure_usable(conn, actor, &owner, &ids)
         .await
         .map_err(|error| match error {
             FileError::Unusable { id } => unusable(

@@ -31,7 +31,8 @@ fn hex(bytes: &[u8]) -> String {
 }
 
 /// Writes `data` to storage under a key derived from `id`. No transaction: the caller inserts the
-/// description afterwards, and a file that never gets one is swept as an orphan (ADR-0069).
+/// description afterwards, and if that fails it must call [`delete`] itself: the orphan sweep walks
+/// rows, so an object without a row is never found again (ADR-0069).
 // ponytail: buffered upload, stream it when an ADR adds a stream crate
 pub async fn put<B: AsRef<[u8]> + Into<PutPayload>>(
     storage: &Storage,
@@ -100,6 +101,8 @@ pub async fn delete(
 
 /// Ids of the files created before `older_than`. The caller (in `learning`) drops those that an
 /// owner still references and deletes the rest.
+// ponytail: loads every file older than 24 h, referenced ones included (the sweep then checks each
+// id); page it or anti-join the reference tables once the table is large.
 pub async fn candidates(
     conn: &mut PgConnection,
     older_than: DateTime<Utc>,
