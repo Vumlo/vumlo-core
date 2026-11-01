@@ -5,7 +5,7 @@ Delete the type, the hook branch and the handler when the server closes a gap.
 
 `web/openapi.json` was generated from the server crate (`/api/v1/openapi.json`) at the commit this was built on. `pnpm gen:api` rebuilds `src/lib/api/schema.d.ts` from it.
 
-Spec endpoints the UI uses as they are: `GET /institution`, `GET /admin/institution` (read-only; the settings live in `vumlo.toml`, ADR-0044), auth, `/me`, `/me/sessions`, `/me/password`, `/me/courses`, courses and members, group links and options, the content tree, modules and items (create, patch, publish, reorder, delete), submissions and drafts, grades (save, publish), the gradebook, `my-grades`, admin users, groups, subgroups, terms, `/editor/profiles`.
+Spec endpoints the UI uses as they are: `GET /institution`, `GET /admin/institution` (read-only; the settings live in `vumlo.toml`, ADR-0044), auth, `/me`, `/me/sessions`, `/me/password`, `/me/courses`, courses and members, group links and options, the content tree, modules and items (create, patch, publish, reorder, delete), files (`POST /files`, `GET /files/{id}`, ADR-0069), submissions and drafts, grades (save, publish), the gradebook, `my-grades`, admin users, groups, subgroups, terms, `/editor/profiles`.
 
 ## Sign-in extras
 - **Screens:** Sign in, Create an account, Confirm your email, Reset your password, Choose a new password, Google callback.
@@ -95,12 +95,12 @@ Spec endpoints the UI uses as they are: `GET /institution`, `GET /admin/institut
 
 ## Admin: logo
 - **Screens:** Admin, Institution.
-- **Missing:** storing and serving a logo; it needs the `files` module. The accent is set in `vumlo.toml` and shown in the preview only; the site keeps its tested accent because the design does not say how a chosen accent gets a dark-theme match.
+- **Missing:** storing and serving a logo through the API. The `files` module exists now (ADR-0069), but the logo is not built on it; `institution.logo` in `vumlo.toml` is read only by `vumlo-cli brand apply`. The accent is set in `vumlo.toml` and shown in the preview only; the site keeps its tested accent because the design does not say how a chosen accent gets a dark-theme match.
 
 ## File item: the file's name, type and size
 - **Screens:** the page of a `file` item, the editor of a `file` item.
 - **Missing:** the body of a `file` item names its file by `file_id` only, and no endpoint or field gives the file's name, type or size.
-- **Used instead:** `fileInfo` in `src/lib/files.ts` reads them from the headers of `GET /files/{id}` with `Range: bytes=0-0` (`Content-Disposition`, `Content-Range`, `Content-Type`), cached by `useFileInfo`. In the desktop app the page cannot read `Content-Disposition` (the scheme exposes only `Content-Range, Content-Length, Content-Type`), so the card shows the item's title as the name.
+- **Used instead:** `fileInfo` in `src/lib/files.ts` reads them from the headers of `GET /files/{id}` with `Range: bytes=0-0` (`Content-Disposition`, `Content-Range`, `Content-Type`), cached by `useFileInfo`. The proper fix is for the Item DTO (and a submission's content) to carry the file as `{id, name, mime, size}`, so no probe is needed. In the desktop app the page cannot read `Content-Disposition` (the scheme exposes only `Content-Range, Content-Length, Content-Type`), so the card shows the item's title as the name.
 - **Mocked:** `GET /files/{id}` in `src/mocks/handlers/files.ts` answers a range as the server does.
 
 ## Not API gaps, kept in the browser

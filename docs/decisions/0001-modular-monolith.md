@@ -23,3 +23,6 @@ The previous project (LearnSystem) had 6 Spring services, a gateway, Supabase, a
 - Deploy = one binary + one database.
 - A module can later become a separate crate without changing its API.
 - Adding Redis or a broker requires a new ADR with a measured problem behind it.
+
+## Amended by ADR-0069
+The `files` module is built. It is the crate `files`, which sits between `auth` and `events` in the chain of ADR-0065, owns the schema `files` and holds only stored bytes and their description; the routes, the authorization and the references live in `learning`.

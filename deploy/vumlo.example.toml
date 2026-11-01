@@ -82,7 +82,7 @@ max_concurrent_hashes = 8          # password hashes and checks at once, ~19 MiB
 # bucket too. A reverse proxy in front of the server must allow bodies of max_size.
 [files]
 storage = "local"      # "local" | "s3"
-# path = "files"       # the directory of the local storage, relative to this file; default "files"
+# path = "files"       # the directory of the local storage, relative to this file; default "files". The service must be able to write it (docs/install.md)
 max_size = 52428800    # bytes, 1 to 1073741824; the largest file (50 MiB)
 # [files.s3]           # required when storage = "s3"
 # endpoint = "https://s3.example.edu"   # an S3-compatible service other than AWS; https only

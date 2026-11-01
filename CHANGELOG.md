@@ -10,6 +10,49 @@ must do, in order, besides getting the new release. See [RELEASING.md](RELEASING
 
 ## [Unreleased]
 
+File uploads (ADR-0069).
+
+### Added
+
+- Files in the editor and in assignments: `image` and `file` blocks in documents, the item kind `file`, and the
+  assignment type `file` (a hand-in of up to `max_files` files, graded by hand). A teacher can preview a hand-in
+  while grading; a PDF shows as a card, not an embedded page.
+- `POST /api/v1/files` (the raw file as the body) and `GET /api/v1/files/{id}`; a file is served only through an
+  item or a submission the caller may read (otherwise `404`), with `Range` and `ETag`; it is `inline` only for
+  PDF, PNG, JPEG, GIF, WebP and plain text, and always with `Content-Security-Policy: sandbox`.
+- Storage in a directory on the server or in an S3-compatible bucket (`[files]` in `vumlo.toml`). A file that no
+  item and no submission names is deleted after 24 hours; the sweep runs hourly.
+- Desktop app: upload a file, and "open" a file, which saves it in Downloads. Documents, spreadsheets,
+  presentations, text, images, audio and video are opened; archives, programs, scripts and every other kind are
+  only shown in their folder. Windows and macOS mark the file as downloaded (not run on those systems in testing).
+
+### Changed
+
+- The crate chain gained `files` between `auth` and `events` (ADR-0065, ADR-0069).
+- A document that holds only an `image` or a `file` block is no longer counted as empty.
+- An answer option of a quiz may hold an image as its one block.
+
+### Upgrade notes
+
+- `config_version` is still **1**.
+- The newest core migration is `0038` (`0036` to `0038` are new: the `files` table, the tables that record which
+  files an item or a submission names, and the item kind `file`). Take a backup, then run `vumlo db migrate`
+  (`deploy/update.sh` does both). **A server older than this release cannot run against a migrated database.**
+- New optional section `[files]`: `storage = "local"` (default) or `"s3"`, `path` (default `files`, relative to
+  the directory of `vumlo.toml`), `max_size` (default 52428800, 50 MiB; at most 1073741824). With `s3`, add
+  `[files.s3]` (`bucket`, `region`, optional `endpoint`) and set `VUMLO__FILES__S3__ACCESS_KEY` and
+  `VUMLO__FILES__S3__SECRET_KEY` in the environment.
+- **The server creates the local files directory when it starts and refuses to start if it cannot.** In the
+  shipped systemd units and Docker files the default directory is not writable: set `files.path` to a directory
+  the service owns and allow it (`ReadWritePaths=` in the units; a volume in Docker). See
+  [Uploaded files](docs/install.md#uploaded-files).
+- A reverse proxy in front of the API must allow request bodies of `files.max_size`. The Caddyfile of the release
+  already does; with nginx set `client_max_body_size`.
+- **`vumlo db backup` does not contain the files.** Back up the files directory or the bucket separately and restore
+  it together with the database.
+- An upload is held in memory while it is stored: plan `files.max_size` of memory per upload in progress.
+- Desktop: build a new app to get file upload and open; an app built against an older release does not have them.
+
 ## [0.3.0] - 2026-10-28
 
 Plugins and optional modules, a redesigned web app, and a page for grading.

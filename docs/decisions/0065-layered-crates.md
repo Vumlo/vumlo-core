@@ -78,3 +78,6 @@ server, vumlo-cli
 - `vumlo-cli` depends on `auth` for the account value types, so it compiles the web stack of `auth` too.
 - A new crate that tests against a database needs `test-support`, and `make-archive.sh` removes that dev-dependency from every manifest.
 - The administrator CLI names `auth` and `access`; `vumlo-cli modules list` prints those names where it printed `identity` and `policy`.
+
+## Amended by ADR-0069
+The chain gained a crate: `files` sits between `auth` and `events` (`server, vumlo-cli -> learning -> org -> auth -> files -> events -> access -> common`). It owns `files.files` and the storage backend, has no routes and no `Actor`, and reads no table of another schema. The flows that need it (the upload, the download, the orphan sweep) are in `learning::files`, because `files` may not read the reference tables above it. `tests/architecture.rs` lists `files` among the owned schemas.

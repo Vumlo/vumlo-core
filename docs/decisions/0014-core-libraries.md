@@ -106,3 +106,6 @@ ORM (`sea-orm`), `diesel`, `refinery`, Redis, a message broker, a job-queue libr
 - Close to PostgreSQL. More SQL to write, but every query is visible and checked at compile time.
 - Most crates are from the tokio/tower ecosystem, so they compose with each other.
 - `sqlx` offline mode is part of the build setup from day one.
+
+## Amended by ADR-0069
+`object_store` 0.14 (listed above) is now used, with the features `aws` and `fs` and no default features: the local directory and any S3-compatible service. `sha2` (listed above) also computes the content hash of a stored file. No other crate was added. The `aws` feature brings `aws-lc-rs` into the build, and a second major version of `reqwest` (0.13, used only by `object_store`): the build now has `reqwest` 0.12 for the code of this project and 0.13 inside `object_store`, so the sentence in the `reqwest` row about a single `reqwest` no longer holds.
