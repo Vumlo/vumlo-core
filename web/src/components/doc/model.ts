@@ -84,9 +84,13 @@ export function textBlock(type: TextBlockType, content: Inline[] = [], level: 1 
   }
 }
 
-export type InsertKind = "paragraph" | "h1" | "h2" | "h3" | "quote" | "bulleted" | "numbered" | "check" | "table" | "code" | "math" | "mermaid" | "video" | "divider";
+export type InsertKind = "paragraph" | "h1" | "h2" | "h3" | "quote" | "bulleted" | "numbered" | "check" | "table" | "code" | "math" | "mermaid" | "video" | "divider" | "image" | "file";
 
-export function makeBlock(kind: InsertKind): Block {
+/** The blocks that come from an uploaded file: the menu offers them only where the editor can upload. */
+export const UPLOAD_KINDS: InsertKind[] = ["image", "file"];
+
+/** A block for `kind`. `fileId` is the stored file an `image` or `file` block names. */
+export function makeBlock(kind: InsertKind, fileId = ""): Block {
   const id = newId();
   switch (kind) {
     case "paragraph": return textBlock("paragraph");
@@ -103,6 +107,8 @@ export function makeBlock(kind: InsertKind): Block {
     case "mermaid": return { id, type: "mermaid", props: { source: "graph TD\n  A --> B" } };
     case "video": return { id, type: "video", props: { provider: "youtube", video_id: "" } };
     case "divider": return { id, type: "divider" };
+    case "image": return { id, type: "image", props: { file_id: fileId } };
+    case "file": return { id, type: "file", props: { file_id: fileId } };
   }
 }
 
@@ -155,7 +161,13 @@ export function blockMenu(): { group: string; items: MenuItem[] }[] {
       item("math", "∑", "math", "math"),
       item("mermaid", "→", "mermaid", "mermaid"),
       item("video", "▶", "video", "video"),
+      item("image", "▣", "image", "image"),
+      item("file", "▤", "file", "file"),
       item("divider", "—", "divider", "divider"),
     ] },
   ];
 }
+
+/** Does the menu offer `item`? The profile must have its feature, and a block made of a file needs somewhere to upload to. */
+export const menuOffers = (item: MenuItem, features: readonly string[], canUpload: boolean) =>
+  (!item.feature || features.includes(item.feature)) && (canUpload || !UPLOAD_KINDS.includes(item.kind));

@@ -8,7 +8,7 @@ import { isoToLocal, localToIso } from "@/lib/format";
 import type { CourseInfo, CoursePeople, Item, ServerItemMeta, TemplateSummary } from "@/lib/api/types";
 import { at, auditRow, getDb, institutionPublic, uid, type DbCourse, type DbItem } from "../db";
 import {
-  activeStudents, canView, contentTree, courseById, decimal, dueIn, fileSettings, flatItems, forbidden, formOf, fullName, gradeOf, hasUnpublishedChanges, isPublished,
+  activeStudents, canView, checkDocument, contentTree, courseById, decimal, dueIn, fileSettings, flatItems, forbidden, formOf, fullName, gradeOf, hasUnpublishedChanges, isPublished,
   isStaff, itemById, itemVisibleToStudent, memberOf, moduleOf, notFound, ownerOf, paged, problem, publicUser, quizOf, requireStaff, requireUser, requireView,
   SESSION_KEY, sessionUser, studentConfig, submissionOf, teacherName, termEnded, termName, userById, workItem, workStatus,
 } from "../logic";
@@ -69,6 +69,7 @@ function checkFileBody(body: unknown) {
   if (typeof body !== "object" || body === null || Array.isArray(body)) throw bad("", "the body must be an object");
   for (const key of Object.keys(b)) if (key !== "file_id" && key !== "description") throw bad(key, "unknown field");
   if ("file_id" in b && (typeof b.file_id !== "string" || !getDb().files.has(b.file_id))) throw bad("file_id", "the file cannot be used here");
+  checkDocument(b.description, { profile: "full" }, "body.description");
 }
 
 /** A file item cannot be published, or have a revision published, while its working body names no file. */
@@ -212,13 +213,13 @@ export const coreHandlers = [
   http.get(`${A}/editor/profiles`, () => {
     requireUser();
     const limits = { max_document_bytes: 1_048_576, max_depth: 3, max_table_rows: 50, max_table_columns: 10, max_code_bytes: 65_536, max_formula_bytes: 4096, max_href_chars: 2048 };
-    const full = ["headings", "text_styles", "links", "lists", "quote", "divider", "table", "code", "math", "mermaid", "video"] as const;
+    const full = ["headings", "text_styles", "links", "lists", "quote", "divider", "table", "code", "math", "mermaid", "video", "image", "file"] as const;
     return HttpResponse.json({
       profiles: [
         { name: "full", features: [...full], single_block: false, limits },
-        { name: "student", features: ["text_styles", "links", "lists", "code", "math"], single_block: false, limits },
-        { name: "question", features: ["text_styles", "code", "math"], single_block: false, limits },
-        { name: "option", features: ["text_styles", "math"], single_block: true, limits },
+        { name: "student", features: ["text_styles", "links", "lists", "code", "math", "image", "file"], single_block: false, limits },
+        { name: "question", features: ["text_styles", "code", "math", "image"], single_block: false, limits },
+        { name: "option", features: ["text_styles", "math", "image"], single_block: true, limits },
       ],
       video_providers: ["youtube", "vimeo"],
     });
@@ -471,6 +472,7 @@ export const coreHandlers = [
     }
     if (b.body) {
       if (item.kind === "file") checkFileBody(b.body);
+      else checkDocument(b.body, { profile: "full" }, "body");
       item.body = b.body as Item["body"];
     }
     if (item.assignment) {

@@ -7,6 +7,8 @@ const A = "/api/v1";
 // What a browser may show in place; everything else is saved (the server's rule, root AGENTS.md section 6).
 const INLINE = new Set(["application/pdf", "image/png", "image/jpeg", "image/gif", "image/webp", "text/plain"]);
 let count = 0;
+/** Set by the e2e specs through `window.__vumloFiles`: how long an upload takes. */
+export const uploadDelay = { ms: 0 };
 
 /** The mock trusts the type the client sent; the server finds it from the bytes. */
 export const fileHandlers = [
@@ -24,6 +26,7 @@ export const fileHandlers = [
     const name = (url.searchParams.get("name") ?? "").split(/[\\/]/).pop()?.trim().slice(0, 200) ?? "";
     if (!name) throw problem(422, "Unprocessable", undefined, [{ field: "name", message: "the file needs a name" }]);
     const bytes = await request.arrayBuffer();
+    if (uploadDelay.ms > 0) await new Promise((done) => setTimeout(done, uploadDelay.ms));
     if (bytes.byteLength === 0) throw problem(422, "Unprocessable", undefined, [{ field: "file", message: "the file is empty" }]);
     const db = getDb();
     if (bytes.byteLength > db.fileMax) throw problem(413, "Payload Too Large");

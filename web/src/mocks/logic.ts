@@ -262,6 +262,40 @@ export function decimal(input: unknown, field: string, max?: string): string {
 
 const bad = (field: string, message: string) => problem(422, "Unprocessable", undefined, [{ field, message }]);
 
+const IMAGE_MIMES = new Set(["image/png", "image/jpeg", "image/gif", "image/webp"]);
+
+/** Where a document is stored: the editor profile, and for a student's own work whose upload may be named. */
+export type DocPlace = { profile: "full" | "student" | "question" | "option"; userId?: string; assignmentId?: string };
+
+/**
+ * What the server refuses in the `image` and `file` blocks of a document (ADR-0025, ADR-0069): a `file` block in a profile without it,
+ * a file that is unknown, swept or somebody else's, and an `image` block whose file is not a PNG, JPEG, GIF or WebP. `path` is
+ * where the document sits in the request, so an error names `body.blocks[2].props.file_id`.
+ */
+export function documentErrors(doc: unknown, place: DocPlace, path: string): { field: string; message: string }[] {
+  const blocks = (doc as { blocks?: unknown } | null | undefined)?.blocks;
+  if (!Array.isArray(blocks)) return [];
+  const stored = getDb().files;
+  const errors: { field: string; message: string }[] = [];
+  blocks.forEach((b: { type?: string; props?: { file_id?: string } }, i) => {
+    if (b?.type !== "image" && b?.type !== "file") return;
+    const at = `${path}.blocks[${i}]`;
+    if (b.type === "file" && (place.profile === "question" || place.profile === "option")) return void errors.push({ field: `${at}.type`, message: "a file block is not allowed here" });
+    const id = b.props?.file_id;
+    const file = typeof id === "string" ? stored.get(id) : undefined;
+    const own = place.assignmentId === undefined || (file?.owner === place.userId && file?.target === `assignment:${place.assignmentId}`);
+    if (!file || !own) errors.push({ field: `${at}.props.file_id`, message: `the file ${String(id)} cannot be used here` });
+    else if (b.type === "image" && !IMAGE_MIMES.has(file.mime)) errors.push({ field: `${at}.props.file_id`, message: "an image block needs a PNG, JPEG, GIF or WebP file" });
+  });
+  return errors;
+}
+
+/** Throws the 422 the server answers with when a document has a block it refuses. */
+export function checkDocument(doc: unknown, place: DocPlace, path: string) {
+  const errors = documentErrors(doc, place, path);
+  if (errors.length) throw problem(422, "Unprocessable", undefined, errors);
+}
+
 /** The config of a `file` assignment as the server reads it: only `max_files` (1 to 20, default 5) and `accept`. */
 export function fileSettings(config: Record<string, unknown>): { max: number; accept: string[] } {
   for (const key of Object.keys(config)) if (key !== "max_files" && key !== "accept") throw bad("config", `unknown field \`${key}\`: the file type has only \`max_files\` and \`accept\``);
@@ -298,6 +332,7 @@ export function checkFileContent(item: DbItem, userId: string, content: unknown,
     else if (!file || file.owner !== userId || file.target !== `assignment:${item.id}`) errors.push({ field: `files[${i}]`, message: "the file cannot be used here" });
     else if (accept.length > 0 && !accept.some((e) => file.name.toLowerCase().endsWith(e))) errors.push({ field: `files[${i}]`, message: "is not a file type this assignment takes" });
   });
+  errors.push(...documentErrors(c.comment, { profile: "student", userId, assignmentId: item.id }, "content.comment"));
   if (errors.length) throw problem(422, "Unprocessable", undefined, errors);
   if (submit && files.length === 0) throw bad("files", "add at least one file before you submit");
   // A comment with nothing in it is not kept.

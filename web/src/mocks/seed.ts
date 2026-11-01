@@ -1,6 +1,6 @@
 import type { Document, Item, Module } from "@/lib/api/types";
 import type { FormConfig, QuizConfig } from "@/lib/api/gaps";
-import { bullet, code, doc, heading, math, numbered, para, quote, table, video } from "./docs";
+import { bullet, code, doc, fileBlock, heading, image, math, numbered, para, quote, table, video } from "./docs";
 import { at, auditRow, NOW_ISO, uid, type Db, type DbCourse, type DbItem, type DbMember, type DbSubmission, type DbUser } from "./db";
 
 import { DOMAIN, PASSWORD, TEMP_PASSWORD } from "./identities";
@@ -231,8 +231,13 @@ export function createSeed(): Db {
   const mSort = mod(cs201, "cs201:sort", "Sorting", "published", 2);
   const mGraphs = mod(cs201, "cs201:graphs", "Graphs", "draft", 3);
   const mProject = mod(cs201, "cs201:project", "Course project", "published", 4);
+  // A picture and a PDF the lecture "Big-O in practice" shows as an image block and a file card.
+  const figureId = uid("file:seed:figure");
+  files.set(figureId, { name: "split.png", mime: "image/png", bytes: Uint8Array.from(atob("iVBORw0KGgoAAAANSUhEUgAAAPAAAABaCAIAAAAJsExNAAAA4klEQVR42u3SMQ2AQBBFwROLiO+AhpqaBgfn4JqrUYSE7TeTjIKXN4580MaQAEODocHQYGgMDYYGQ4OhwdAYGgwNhgZDQzV0sqANQ2NoMDQYGgyNocHQYGgwNBgaQ4OhwdBgaCiHvjKhDUNjaDA0GBoMjaHB0GBoMDQYGkODocHQYGgoh37yQhuGxtBgaDA0GBpDg6HB0GBoMDSGBkODocHQUA49c0MbhsbQYGgwNBgaQ4OhwdBgaDA0hgZDg6HB0FAOvXNCG4bG0GBoMDQYGkODocHQYGgwNIYGQ4OhwdBQ+QEDk+BwAhmGUAAAAABJRU5ErkJggg=="), (c) => c.charCodeAt(0)).buffer });
+  const guideId = uid("file:seed:guide");
+  files.set(guideId, { name: "lab-guide.pdf", mime: "application/pdf", bytes: new TextEncoder().encode("%PDF-1.4\n1 0 obj<</Type/Catalog>>endobj\ntrailer<</Root 1 0 R>>\n%%EOF\n").buffer as ArrayBuffer });
   const lWhy = lecture(cs201, mFound, "why", "Why complexity matters", doc(para("Before you compare two algorithms you need a way to measure them."), heading(2, "Counting steps"), para("We count the basic steps an algorithm takes, as a function of the input size.")), "published", { read_minutes: 6 });
-  const lBig = lecture(cs201, mFound, "bigo", "Big-O in practice", doc(para("Big-O keeps the fastest growing term and drops constants."), bullet("O(1) — constant"), bullet("O(log n) — logarithmic"), bullet("O(n) — linear")), "published", { read_minutes: 12 });
+  const lBig = lecture(cs201, mFound, "bigo", "Big-O in practice", doc(para("Big-O keeps the fastest growing term and drops constants."), bullet("O(1) — constant"), bullet("O(log n) — logarithmic"), bullet("O(n) — linear"), image(figureId, "Merge sort splits the list in half", "Picture: how the list is split"), fileBlock(guideId), para("The lab guide above lists the exercises.")), "published", { read_minutes: 12 });
   const aPs1 = assignment(cs201, mFound, "ps1", "Problem set 1: counting operations", { points: "20.00", due: "2026-10-09 23:59", attempts: 1, body: doc(para("Count the basic operations in each of the five loops and give your answer as a function of n.")) });
   const aPres0 = assignment(cs201, mFound, "pres0", "Presentation: complexity in the wild", {
     type: "no_submission", points: "15.00", classOn: "2026-10-08 12:00",

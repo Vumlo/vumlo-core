@@ -10,6 +10,8 @@ declare global {
       uploadFile(file: File, target: { item: string } | { assignment: string }): Promise<{ id: string; name: string; mime: string; size: number }>;
       openFile(ref: { id: string; name: string; mime: string; size: number }): Promise<void>;
       setMaxSize(bytes: number): void;
+      setUploadDelay(ms: number): void;
+      sweep(id: string): void;
       setPdfIframe(on: boolean): void;
       fileUrl(id: string): string;
       readFileText(id: string, maxBytes: number): Promise<string>;

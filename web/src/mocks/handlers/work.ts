@@ -7,7 +7,7 @@ import type { MyWork, SearchHit, TeachingOverview } from "@/lib/api/types";
 import { answersFromWire, answersToWire } from "@/lib/api/sheetWire";
 import { getDb, uid, type DbSubmission } from "../db";
 import {
-  activeStudents, autoScore, canView, checkFileContent, courseById, decimal, dueIn, flatItems, forbidden, formOf, fullName, gradeOf, hasUnpublishedChanges, isPublished, isStaff,
+  activeStudents, autoScore, canView, checkDocument, checkFileContent, courseById, decimal, dueIn, flatItems, forbidden, formOf, fullName, gradeOf, hasUnpublishedChanges, isPublished, isStaff,
   itemById, itemVisibleToStudent, memberOf, notFound, paged, problem, quizOf, requireStaff, requireUser, requireView, scoreQuestion, submissionOf, userById, workItem,
 } from "../logic";
 import { courseInfo } from "./core";
@@ -157,6 +157,13 @@ export const workHandlers = [
     const db = getDb();
     let s = sub;
     if (!s) { s = { assignment_id: item.id, student_id: user.id, draft: null, attempts: [] }; db.submissions.push(s); }
+    const place = { profile: "student", userId: user.id, assignmentId: item.id } as const;
+    // A file hand-in judges its comment in checkFileContent.
+    if (a.type === "quiz" || a.type === "form") {
+      for (const [id, value] of Object.entries((b.content as { answers?: Record<string, unknown> } | undefined)?.answers ?? {})) checkDocument(value, place, `content.answers.${id}`);
+    } else if (a.type !== "file") {
+      checkDocument(b.content, place, "content");
+    }
     const content = a.type === "file" ? checkFileContent(item, user.id, b.content, false) : uiContent(item, b.content);
     s.draft = { content, updated_at: MOCK_NOW.toISOString() };
     return HttpResponse.json({ ...s.draft, content: wireContent(item, s.draft.content) });

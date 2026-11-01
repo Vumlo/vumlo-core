@@ -88,6 +88,7 @@ function FileDraft({ item, draft, disabled, last, locked }: { item: Item; draft:
   const save = useSaveDraft(item.id);
   const submit = useSubmitDraft(item.id);
   const features = profiles.data?.profiles.find((p) => p.name === "student")?.features ?? STUDENT_FEATURES;
+  const target = useMemo(() => ({ assignment: item.id }), [item.id]);
   const input = useRef<HTMLInputElement>(null);
   const counter = useRef(0);
   const [initial] = useState(() => fileContentOf(draft?.content));
@@ -230,7 +231,7 @@ function FileDraft({ item, draft, disabled, last, locked }: { item: Item; draft:
         <h2 className={s.h2}>{t("fa.comment")}</h2>
         {locked ? (comment && <BlockRenderer doc={comment} size={16} />) : (
           <div className={s.editor}>
-            <BlockEditor value={initial.comment ?? emptyDocument()} onChange={setComment} features={features} label={t("fa.comment")} mode="float" minHeight={140} placeholder={t("fa.commentPlaceholder")} />
+            <BlockEditor value={initial.comment ?? emptyDocument()} onChange={setComment} features={features} label={t("fa.comment")} mode="float" minHeight={140} placeholder={t("fa.commentPlaceholder")} uploadTarget={target} errors={save.error?.errors} errorPath="content.comment" />
           </div>
         )}
       </div>

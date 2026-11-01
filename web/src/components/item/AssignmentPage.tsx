@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { BlockEditor } from "@/components/doc/BlockEditor";
-import { BlockRenderer, plainText } from "@/components/doc/BlockRenderer";
+import { BlockRenderer, hasUploads, plainText } from "@/components/doc/BlockRenderer";
 import { emptyDoc } from "@/components/doc/model";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { Icon } from "@/components/Icon";
@@ -45,6 +45,7 @@ export function AssignmentPage({ item, courseId, staff }: { item: Item; courseId
   const unsaved = useRef<(() => void) | null>(null);
   const [asking, setAsking] = useState<string[] | null>(null);
   const features = profiles.data?.profiles.find((p) => p.name === "student")?.features ?? STUDENT_FEATURES;
+  const target = useMemo(() => ({ assignment: item.id }), [item.id]);
 
   // The deadline can pass while the page is open.
   useTick();
@@ -85,12 +86,16 @@ export function AssignmentPage({ item, courseId, staff }: { item: Item; courseId
     await save.run(emptyDoc());
   }
   async function resubmit() {
-    await save.run(latest ? (latest.content as unknown as Document) : emptyDoc());
+    // The server refuses a file another submission holds, so a new draft keeps the words and leaves the pictures and files out.
+    const before = latest ? (latest.content as unknown as Document) : emptyDoc();
+    const blocks = before.blocks.filter((b) => b.type !== "image" && b.type !== "file");
+    await save.run({ v: 1, blocks: blocks.length > 0 ? blocks : emptyDoc().blocks });
   }
   // Sending cannot be undone, so an empty answer or the last attempt is confirmed first.
   function review() {
     const warnings: string[] = [];
-    if (plainText(doc ?? (draft?.content as Document | undefined) ?? emptyDoc()).trim() === "") warnings.push(t("sub.empty"));
+    const answer = doc ?? (draft?.content as Document | undefined) ?? emptyDoc();
+    if (plainText(answer).trim() === "" && !hasUploads(answer)) warnings.push(t("sub.empty"));
     if (attemptsLeft === 1) warnings.push(t("sub.last"));
     if (warnings.length > 0) setAsking(warnings);
     else void send();
@@ -204,6 +209,9 @@ export function AssignmentPage({ item, courseId, staff }: { item: Item; courseId
                           mode="float"
                           minHeight={view === "focus" ? 560 : 320}
                           placeholder={t("asg.placeholder")}
+                          uploadTarget={target}
+                          errors={save.error?.errors}
+                          errorPath="content"
                         />
                       </div>
                     )}

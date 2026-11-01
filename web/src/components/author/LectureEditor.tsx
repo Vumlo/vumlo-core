@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useMemo, useRef, useState } from "react";
 import { BlockEditor, type EditorHandle, type EditorState } from "@/components/doc/BlockEditor";
 import { plainText } from "@/components/doc/BlockRenderer";
-import { blockMenu, type InsertKind } from "@/components/doc/model";
+import { blockMenu, menuOffers, type InsertKind } from "@/components/doc/model";
 import { Icon } from "@/components/Icon";
 import { useEditorProfiles, usePublishItem, usePublishRevision, useItemRevision, useUpdateItem } from "@/lib/api/hooks/content";
 import { useCourseInfo } from "@/lib/api/hooks/courses";
@@ -32,6 +32,7 @@ export function LectureEditor({ item, courseId }: { item: Item; courseId: string
   const publishRevision = usePublishRevision(item.id, courseId);
   const handle = useRef<EditorHandle>(null);
   const [initial] = useState(() => bodyOf(item));
+  const target = useMemo(() => ({ item: item.id }), [item.id]);
   const [doc, setDoc] = useState<Document>(initial);
   const [title, setTitle] = useState(item.title);
   const [tab, setTab] = useState<"insert" | "style" | "page">("insert");
@@ -77,7 +78,7 @@ export function LectureEditor({ item, courseId }: { item: Item; courseId: string
             <input id="title" className={s.titleInput} value={title} onChange={(e) => setTitle(e.target.value)} aria-invalid={!title.trim()} />
             {!title.trim() && <p className="hint" style={{ color: "var(--danger)", marginTop: 8 }}>{t("le.needsTitle")}</p>}
             <div style={{ marginTop: 16 }}>
-              <BlockEditor handle={handle} value={initial} onChange={setDoc} features={features} label={t("le.content")} mode="float" minHeight={420} onState={setState} />
+              <BlockEditor handle={handle} value={initial} onChange={setDoc} features={features} label={t("le.content")} mode="float" minHeight={420} onState={setState} uploadTarget={target} errors={update.error?.errors} errorPath="body" />
             </div>
           </div>
           <p className="muted" style={{ margin: "12px 4px 0", fontSize: 13 }}>{t("le.images")}</p>
@@ -91,7 +92,7 @@ export function LectureEditor({ item, courseId }: { item: Item; courseId: string
             <div role="tabpanel" aria-label={t("le.tab.insert")} className={s.panelBody}>
               <label className="search"><Icon name="search" size={16} /><input type="search" aria-label={t("le.findBlock")} placeholder={t("le.findBlock")} value={find} onChange={(e) => setFind(e.target.value)} /></label>
               {blockMenu().map((g) => {
-                const list = g.items.filter((i) => (!i.feature || features.includes(i.feature as Feature)) && i.name.toLowerCase().includes(find.toLowerCase()));
+                const list = g.items.filter((i) => menuOffers(i, features, true) && i.name.toLowerCase().includes(find.toLowerCase()));
                 return list.length === 0 ? null : (
                   <div key={g.group}>
                     <p className={s.group}>{g.group}</p>

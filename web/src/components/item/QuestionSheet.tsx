@@ -4,7 +4,9 @@ import { useState } from "react";
 import { BlockEditor } from "@/components/doc/BlockEditor";
 import { BlockRenderer } from "@/components/doc/BlockRenderer";
 import { Icon } from "@/components/Icon";
+import type { FieldError } from "@/lib/api/client";
 import type { Answer } from "@/lib/api/gaps";
+import type { FileTarget } from "@/lib/files";
 import type { Document, Feature } from "@/lib/api/types";
 import { useT } from "@/lib/i18n";
 import s from "./QuestionSheet.module.css";
@@ -38,14 +40,18 @@ type Props = {
   ownerInitials?: string;
   ownerName?: string;
   mode: "quiz" | "form";
+  /** The assignment a picture or file in a long answer is stored for. */
+  uploadTarget?: FileTarget;
+  /** The field errors of the last save or submit: the ones about a block of a long answer show on that block. */
+  blockErrors?: FieldError[];
 };
 
-const LONG_FEATURES: Feature[] = ["text_styles", "lists", "math"];
+const LONG_FEATURES: Feature[] = ["text_styles", "lists", "math", "image", "file"];
 const isDoc = (v: Answer | undefined): v is Document => !!v && typeof v === "object" && !Array.isArray(v);
 const asList = (v: Answer | undefined): string[] => (Array.isArray(v) ? v : typeof v === "string" && v ? [v] : []);
 
 export function isAnswered(q: Q, v: Answer | undefined): boolean {
-  if (q.kind === "long") return isDoc(v) ? v.blocks.some((b) => ("content" in b && (b.content ?? []).length > 0) || b.type === "code") : false;
+  if (q.kind === "long") return isDoc(v) ? v.blocks.some((b) => ("content" in b && (b.content ?? []).length > 0) || b.type === "code" || b.type === "image" || b.type === "file") : false;
   if (q.kind === "multi" || q.kind === "people") return asList(v).length > 0;
   return typeof v === "string" && v.trim() !== "";
 }
@@ -63,7 +69,7 @@ function Option({ role, checked, readOnly, result, note, children, onClick }: { 
 }
 
 /** Quiz questions and form fields as one list of cards: the student answers them, or reads them after grading. */
-export function QuestionSheet({ questions, answers, onChange, readOnly, result, errors, classmates = [], me, ownerInitials, ownerName, mode }: Props) {
+export function QuestionSheet({ questions, answers, onChange, readOnly, result, errors, classmates = [], me, ownerInitials, ownerName, mode, uploadTarget, blockErrors }: Props) {
   const t = useT();
   const [adding, setAdding] = useState<string | null>(null);
   const nameOf = (id: string) => (id === me?.id ? t("sheet.you", { name: me.name }) : classmates.find((c) => c.id === id)?.name ?? t("sheet.classmate"));
@@ -167,7 +173,7 @@ export function QuestionSheet({ questions, answers, onChange, readOnly, result, 
                 </div>
               ) : (
                 <div className={s.editor}>
-                  <BlockEditor value={isDoc(v) ? v : { v: 1, blocks: [] }} onChange={(d) => onChange(q.id, d)} features={LONG_FEATURES} label={q.label} mode="float" minHeight={96} placeholder={t("asg.placeholder")} />
+                  <BlockEditor value={isDoc(v) ? v : { v: 1, blocks: [] }} onChange={(d) => onChange(q.id, d)} features={LONG_FEATURES} label={q.label} mode="float" minHeight={96} placeholder={t("asg.placeholder")} uploadTarget={uploadTarget} errors={blockErrors} errorPath={`content.answers.${q.id}`} />
                 </div>
               )
             )}

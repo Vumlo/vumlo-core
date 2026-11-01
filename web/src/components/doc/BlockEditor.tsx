@@ -1,12 +1,17 @@
 "use client";
 
-import { useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode, type Ref } from "react";
+import { Fragment, useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode, type Ref } from "react";
 import { Icon } from "@/components/Icon";
+import { ApiError, type FieldError } from "@/lib/api/client";
+import { uploadFile, type FileTarget } from "@/lib/files";
 import { useT } from "@/lib/i18n";
+import { notice } from "@/lib/notice";
+import { useOffline } from "@/lib/offline";
 import type { Block, CodeLanguage, Document, Feature } from "@/lib/api/types";
+import { FileCard, Picture } from "./FileCard";
 import { Formula } from "./Math";
 import { languageName } from "./BlockRenderer";
-import { blockMenu, esc, htmlToInline, inlineToHtml, isTextBlock, kindOfBlock, makeBlock, newId, parseVideo, textBlock, textOf, type InsertKind, type TextBlockType } from "./model";
+import { blockMenu, esc, htmlToInline, inlineToHtml, isTextBlock, kindOfBlock, makeBlock, menuOffers, newId, parseVideo, textBlock, textOf, UPLOAD_KINDS, type InsertKind, type TextBlockType } from "./model";
 import s from "./BlockEditor.module.css";
 import { translate } from "@/lib/i18n/core";
 
@@ -38,7 +43,23 @@ type Props = {
   placeholder?: string;
   /** Start with the slash menu open on the first empty block, for demos of the menu. */
   autoFocus?: boolean;
+  /** Whom an uploaded picture or file is stored for. Without it the editor offers no Image or File and takes no dropped file. */
+  uploadTarget?: FileTarget;
+  /** The field errors of the last save and where this document sits in the request (`body`, `content.comment`): they show on the block they name. */
+  errors?: FieldError[];
+  errorPath?: string;
 };
+
+type UploadKind = "image" | "file";
+/** A file on its way to the server. It is editor state: the document holds a block only once the upload is done. */
+type Upload = { id: string; after: string | null; name: string; replace?: string };
+/** `props` with the optional text `key` set, or left out when it is empty (the server takes no empty alt or caption as text). */
+function withText<P extends { file_id: string; alt?: string | null; caption?: string | null }>(props: P, key: "alt" | "caption", text: string): P {
+  const { [key]: _old, ...rest } = props;
+  return (text ? { ...rest, [key]: text } : rest) as P;
+}
+const IMAGE_TYPES = ["image/png", "image/jpeg", "image/gif", "image/webp"];
+const ACCEPT: Record<UploadKind, string> = { image: IMAGE_TYPES.join(","), file: "" };
 
 const LANGUAGES: CodeLanguage[] = ["python", "javascript", "typescript", "java", "c", "cpp", "csharp", "rust", "go", "sql", "bash", "html", "css", "json", "yaml", "markdown", "text"];
 
@@ -131,7 +152,7 @@ function TextEditable({ block, rev, placeholder, onInput, onKeyDown, onPaste, on
   );
 }
 
-export function BlockEditor({ value, onChange, features, label, mode, minHeight = 240, toolbarRight, handle, onState, placeholder, autoFocus }: Props) {
+export function BlockEditor({ value, onChange, features, label, mode, minHeight = 240, toolbarRight, handle, onState, placeholder, autoFocus, uploadTarget, errors, errorPath = "body" }: Props) {
   const t = useT();
   const hint = placeholder ?? t("be.placeholder");
   const [blocks, setBlocks] = useState<Block[]>(() => (value.blocks.length ? value.blocks : [textBlock("paragraph")]));
@@ -150,6 +171,16 @@ export function BlockEditor({ value, onChange, features, label, mode, minHeight 
   const has = useCallback((f?: string) => !f || features.includes(f as Feature), [features]);
   const blocksRef = useRef(blocks);
   useEffect(() => { blocksRef.current = blocks; });
+  const offline = useOffline();
+  const [uploads, setUploadsState] = useState<Upload[]>([]);
+  const uploadsRef = useRef<Upload[]>([]);
+  const setUploads = (fn: (u: Upload[]) => Upload[]) => { uploadsRef.current = fn(uploadsRef.current); setUploadsState(uploadsRef.current); };
+  const queue = useRef<Promise<void>>(Promise.resolve());
+  const alive = useRef(true);
+  useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
+  // The functions below are re-made on every render; an upload that finishes later must use the newest ones.
+  const latest = useRef<{ place: (job: Upload & { kind: UploadKind }, fileId: string) => void; start: (files: { file: File; kind: UploadKind }[], after: string | null, replace?: string) => void }>(null);
+  const [errorById, setErrorById] = useState<Record<string, string>>({});
 
   const commit = useCallback((next: Block[], to?: Focus, bump?: string[]) => {
     setBlocks(next);
@@ -222,7 +253,7 @@ export function BlockEditor({ value, onChange, features, label, mode, minHeight 
 
   // ---- structure ----
   const turnInto = useCallback((kind: InsertKind, id = activeId ?? blocksRef.current[0]?.id) => {
-    if (!id) return;
+    if (!id || UPLOAD_KINDS.includes(kind)) return;
     const i = indexOf(id);
     const old = blocksRef.current[i];
     if (!old) return;
@@ -237,6 +268,7 @@ export function BlockEditor({ value, onChange, features, label, mode, minHeight 
   }, [activeId, commit]);
 
   const insert = useCallback((kind: InsertKind) => {
+    if (kind === "image" || kind === "file") { choose(kind, activeId ?? blocksRef.current[blocksRef.current.length - 1]?.id ?? null); setSlash(null); return; }
     const made = makeBlock(kind);
     const at = activeId ? indexOf(activeId) : blocksRef.current.length - 1;
     const cur = blocksRef.current[at];
@@ -250,7 +282,8 @@ export function BlockEditor({ value, onChange, features, label, mode, minHeight 
     }
     commit(list, { id: made.id, at: "start" });
     setSlash(null);
-  }, [activeId, commit]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `choose` only reads the upload target and the connection
+  }, [activeId, commit, uploadTarget, offline]);
 
   const move = useCallback((delta: -1 | 1) => {
     if (!activeId) return;
@@ -378,8 +411,8 @@ export function BlockEditor({ value, onChange, features, label, mode, minHeight 
 
   const slashItems = useMemo(() => {
     if (!slash) return [];
-    return blockMenu().map((g) => ({ ...g, items: g.items.filter((it) => has(it.feature) && (it.name.toLowerCase().includes(slash.filter) || it.kind.includes(slash.filter))) })).filter((g) => g.items.length > 0);
-  }, [slash, has]);
+    return blockMenu().map((g) => ({ ...g, items: g.items.filter((it) => menuOffers(it, features, !!uploadTarget) && (it.name.toLowerCase().includes(slash.filter) || it.kind.includes(slash.filter))) })).filter((g) => g.items.length > 0);
+  }, [slash, features, uploadTarget]);
   const flatSlash = slashItems.flatMap((g) => g.items);
 
   // The menu opens upward when there is no room below its block, as one near the bottom of the screen would be cut off.
@@ -402,6 +435,7 @@ export function BlockEditor({ value, onChange, features, label, mode, minHeight 
     const i = indexOf(id);
     const old = blocksRef.current[i];
     if (old && isTextBlock(old)) patch(id, (b) => ({ ...b, content: [] }) as Block, undefined, [id]);
+    if (kind === "image" || kind === "file") { setSlash(null); choose(kind, id); return; }
     turnInto(kind, id);
   }
 
@@ -473,13 +507,134 @@ export function BlockEditor({ value, onChange, features, label, mode, minHeight 
     }
   }
 
-  function onPaste(e: React.ClipboardEvent<HTMLElement>) {
+  // ---- pictures and files ----
+  /** The kind of block a file becomes when it is pasted or dropped: a picture when the editor takes pictures and the file is one. */
+  function kindFor(file: File): UploadKind | null {
+    if (IMAGE_TYPES.includes(file.type) && has("image")) return "image";
+    return has("file") ? "file" : null;
+  }
+
+  /** Puts the finished upload in the document: replacing the block it was meant for, an empty paragraph, or after the anchor. */
+  function place(job: Upload & { kind: UploadKind }, fileId: string) {
+    const current = uploadsRef.current.find((u) => u.id === job.id) ?? job;
+    const list = blocksRef.current.slice();
+    if (current.replace) {
+      const i = list.findIndex((b) => b.id === current.replace);
+      if (i === -1) return;
+      list[i] = { ...(list[i] as Block), props: { ...(list[i] as { props: object }).props, file_id: fileId } } as Block;
+      commit(list);
+      return;
+    }
+    const made = makeBlock(job.kind, fileId);
+    let at = current.after ? list.findIndex((b) => b.id === current.after) : -1;
+    if (at === -1) at = list.length - 1;
+    const here = list[at];
+    if (here && here.type === "paragraph" && textOf(here.content) === "") {
+      list[at] = made;
+      if (activeId === here.id) setActiveId(made.id);
+    } else {
+      list.splice(at + 1, 0, made);
+    }
+    if (list[list.length - 1] === made) list.push(textBlock("paragraph"));
+    // The files still waiting go after this one, so several files keep their order.
+    setUploads((u) => u.map((x) => (x.id !== job.id && x.after === current.after ? { ...x, after: made.id } : x)));
+    commit(list);
+  }
+
+  /** Uploads the files one after the other. A placeholder stands for each until its block can take its place. */
+  function startUploads(files: { file: File; kind: UploadKind }[], after: string | null, replace?: string) {
+    if (!uploadTarget || files.length === 0) return;
+    if (offline) { notice(translate("be.uploadOffline"), "error"); return; }
+    const jobs = files.map(({ file, kind }) => ({ id: newId(), after, name: file.name, kind, file, ...(replace ? { replace } : {}) }));
+    setUploads((u) => [...u, ...jobs.map(({ id, after: a, name, replace: r }) => ({ id, after: a, name, ...(r ? { replace: r } : {}) }))]);
+    for (const job of jobs) {
+      queue.current = queue.current.then(async () => {
+        try {
+          const ref = await uploadFile(job.file, uploadTarget);
+          if (alive.current) latest.current?.place(job, ref.id);
+        } catch (e) {
+          notice(e instanceof ApiError ? (e.detail ?? e.title) : translate("files.uploadFailed"), "error");
+        } finally {
+          setUploads((u) => u.filter((x) => x.id !== job.id));
+        }
+      });
+    }
+  }
+
+  /**
+   * Opens the file chooser for an Image or File block; `replace` swaps the file of an existing block. The input lives in the page
+   * only while the chooser is open, so no other file input of a screen is ever one of two.
+   */
+  function choose(kind: UploadKind, after: string | null, replace?: string) {
+    if (!uploadTarget) return;
+    if (offline) { notice(translate("be.uploadOffline"), "error"); return; }
+    const input = document.createElement("input");
+    input.type = "file";
+    input.hidden = true;
+    input.accept = ACCEPT[kind];
+    input.multiple = kind === "file" && !replace;
+    input.addEventListener("change", () => { latest.current?.start(Array.from(input.files ?? []).map((file) => ({ file, kind })), after, replace); input.remove(); }, { once: true });
+    input.addEventListener("cancel", () => input.remove(), { once: true });
+    document.body.append(input);
+    input.click();
+  }
+
+  /** Files from the clipboard or a drop: each is classified, the ones the editor cannot take are named. */
+  function takeFiles(list: File[], after: string | null) {
+    const ok: { file: File; kind: UploadKind }[] = [];
+    for (const file of list) {
+      const kind = kindFor(file);
+      if (kind) ok.push({ file, kind });
+      else notice(translate("files.typeNotAllowed"), "error");
+    }
+    startUploads(ok, after);
+  }
+
+  function onPaste(e: React.ClipboardEvent<HTMLElement>, id: string) {
+    const files = Array.from(e.clipboardData.files);
+    if (files.length > 0 && uploadTarget) {
+      e.preventDefault();
+      takeFiles(files, id);
+      return;
+    }
     e.preventDefault();
     const text = e.clipboardData.getData("text/plain").replace(/\r?\n+/g, " ");
     document.execCommand("insertText", false, text);
   }
 
+  useEffect(() => { latest.current = { place, start: startUploads }; });
+
+  const dragsFiles = (e: React.DragEvent) => !!uploadTarget && Array.from(e.dataTransfer.types).includes("Files");
+  function onDrop(e: React.DragEvent<HTMLDivElement>) {
+    if (!dragsFiles(e)) return;
+    e.preventDefault();
+    const under = (e.target as HTMLElement).closest<HTMLElement>("[data-block-id]")?.dataset.blockId;
+    takeFiles(Array.from(e.dataTransfer.files), under ?? activeId ?? null);
+  }
+
+  // The errors of the last save name blocks by position; they stay with the block they were about while the person edits.
+  useEffect(() => {
+    const found: Record<string, string> = {};
+    const start = `${errorPath}.blocks[`;
+    for (const err of errors ?? []) {
+      if (!err.field.startsWith(start)) continue;
+      const block = blocksRef.current[Number(/^\d+/.exec(err.field.slice(start.length))?.[0])];
+      if (block && !isTextBlock(block)) found[block.id] = /cannot be used here/.test(err.message) ? translate("files.reupload") : err.message;
+    }
+    setErrorById(found);
+  }, [errors, errorPath]);
+
   // ---- rendering ----
+  const holder = (u: Upload) => (
+    <div key={u.id} className={s.block} data-upload={u.id}>
+      <div className={s.content} style={{ width: "100%" }}>
+        <div className={s.uploading} role="status" aria-busy="true"><span className={s.spinner} aria-hidden="true" />{t("be.uploading", { name: u.name })}</div>
+      </div>
+    </div>
+  );
+  const anchorOf = (u: Upload) => u.replace ?? u.after;
+  const holdersFor = (id: string) => uploads.filter((u) => anchorOf(u) === id).map(holder);
+  const loose = uploads.filter((u) => !blocks.some((b) => b.id === anchorOf(u)));
   const numbers = blocks.reduce<number[]>((acc, b, i) => { acc.push(b.type === "numbered_list_item" ? (blocks[i - 1]?.type === "numbered_list_item" ? (acc[i - 1] ?? 0) + 1 : 1) : 0); return acc; }, []);
   const bar = mode === "bar";
   const textStyles = has("text_styles");
@@ -539,8 +694,8 @@ export function BlockEditor({ value, onChange, features, label, mode, minHeight 
         </div>
       )}
 
-      <div className={s.area} style={{ minHeight }} onMouseDown={onAreaMouseDown}>
-        {blocks.map((b, i) => {
+      <div className={s.area} style={{ minHeight }} onMouseDown={onAreaMouseDown} onDragOver={(e) => { if (dragsFiles(e)) e.preventDefault(); }} onDrop={onDrop}>
+        {blocks.map((b, i) => (<Fragment key={b.id}>{(() => {
           const rev = revs[b.id] ?? 0;
           const active = activeId === b.id;
           const gutter = !bar && (
@@ -574,7 +729,7 @@ export function BlockEditor({ value, onChange, features, label, mode, minHeight 
                     placeholder={i === 0 && blocks.length === 1 && b.type === "paragraph" ? hint : b.type === "paragraph" ? "" : ""}
                     onInput={(el) => onInput(b.id, el)}
                     onKeyDown={(e, el) => onKeyDown(b.id, e, el)}
-                    onPaste={onPaste}
+                    onPaste={(e) => onPaste(e, b.id)}
                     onFocus={() => setActiveId(b.id)}
                   />
                 </div>
@@ -638,6 +793,23 @@ export function BlockEditor({ value, onChange, features, label, mode, minHeight 
                     </div>
                   </div>
                 )}
+                {b.type === "image" && (
+                  <div className={s.card} data-active={active} data-kind-block="image">
+                    <div className={s.cardHead}><span>{t("be.imageTitle")}</span><button type="button" className={s.mini} onClick={() => choose("image", b.id, b.id)}>{t("fe.replace")}</button></div>
+                    <div className={s.imageBody}>
+                      <Picture key={b.props.file_id} fileId={b.props.file_id} alt={b.props.alt ?? ""} />
+                      <input className={s.imageField} aria-label={t("be.imageAlt")} placeholder={t("be.imageAlt")} maxLength={300} value={b.props.alt ?? ""} onChange={(e) => patch(b.id, (x) => (x.type === "image" ? { ...x, props: withText(x.props, "alt", e.target.value) } : x))} />
+                      <input className={s.imageField} aria-label={t("be.imageCaption")} placeholder={t("be.imageCaption")} maxLength={300} value={b.props.caption ?? ""} onChange={(e) => patch(b.id, (x) => (x.type === "image" ? { ...x, props: withText(x.props, "caption", e.target.value) } : x))} />
+                      {errorById[b.id] && <p role="alert" className={s.blockError}>{errorById[b.id]}</p>}
+                    </div>
+                  </div>
+                )}
+                {b.type === "file" && (
+                  <div className={s.fileBlock} data-active={active} data-kind-block="file">
+                    <FileCard fileId={b.props.file_id}><button type="button" className={s.mini} onClick={() => choose("file", b.id, b.id)}>{t("fe.replace")}</button></FileCard>
+                    {errorById[b.id] && <p role="alert" className={s.blockError}>{errorById[b.id]}</p>}
+                  </div>
+                )}
                 {b.type === "table" && (
                   <div className={s.card} data-active={active}>
                     <table className={s.cells}>
@@ -666,7 +838,8 @@ export function BlockEditor({ value, onChange, features, label, mode, minHeight 
               </div>
             </div>
           );
-        })}
+        })()}{holdersFor(b.id)}</Fragment>))}
+        {loose.map(holder)}
       </div>
     </div>
   );

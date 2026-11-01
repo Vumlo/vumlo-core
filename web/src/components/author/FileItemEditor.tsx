@@ -31,6 +31,7 @@ export function FileItemEditor({ item, courseId }: { item: Item; courseId: strin
   const publishRevision = usePublishRevision(item.id, courseId);
   const input = useRef<HTMLInputElement>(null);
   const [initial] = useState(() => fileBodyOf(item));
+  const target = useMemo(() => ({ item: item.id }), [item.id]);
   const [initialDescription] = useState<Document>(() => initial.description ?? emptyDocument());
   const [description, setDescription] = useState(initialDescription);
   const [title, setTitle] = useState(item.title);
@@ -112,7 +113,7 @@ export function FileItemEditor({ item, courseId }: { item: Item; courseId: strin
 
           <h2 className="card-title" style={{ marginTop: 24 }}>{t("fe.description")}</h2>
           <p className="muted" style={{ margin: "0 0 8px", fontSize: 14 }}>{t("fe.descriptionHint")}</p>
-          <BlockEditor value={initialDescription} onChange={setDescription} features={features} label={t("fe.description")} mode="float" minHeight={160} />
+          <BlockEditor value={initialDescription} onChange={setDescription} features={features} label={t("fe.description")} mode="float" minHeight={160} uploadTarget={target} errors={update.error?.errors} errorPath="body.description" />
         </div>
       </div>
     </div>

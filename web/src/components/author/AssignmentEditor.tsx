@@ -23,6 +23,7 @@ export function AssignmentEditor({ item, courseId }: { item: Item; courseId: str
   const update = useUpdateItem(courseId);
   const publish = usePublishItem(courseId);
   const [initial] = useState(() => bodyOf(item));
+  const target = useMemo(() => ({ item: item.id }), [item.id]);
   const [doc, setDoc] = useState<Document>(initial);
   const [title, setTitle] = useState(item.title);
   const draft = useMemo(() => ({ doc, title }), [doc, title]);
@@ -44,7 +45,7 @@ export function AssignmentEditor({ item, courseId }: { item: Item; courseId: str
             <input id="title" className={s.titleInput} value={title} onChange={(e) => setTitle(e.target.value)} />
             <h2 style={{ fontSize: 16, fontWeight: 600, margin: "20px 0 8px" }}>{t("item.instructions")}</h2>
             <div>
-              <BlockEditor value={initial} onChange={setDoc} features={features} label={t("item.instructions")} mode="float" minHeight={260} />
+              <BlockEditor value={initial} onChange={setDoc} features={features} label={t("item.instructions")} mode="float" minHeight={260} uploadTarget={target} errors={update.error?.errors} errorPath="body" />
             </div>
           </div>
         </div>

@@ -27,6 +27,8 @@ export const divider = (): Block => ({ id: bid(), type: "divider" });
 export const code = (language: "python" | "text" | "sql", source: string): Block => ({ id: bid(), type: "code", props: { language, source } });
 export const math = (source: string): Block => ({ id: bid(), type: "math", props: { source } });
 export const video = (video_id: string): Block => ({ id: bid(), type: "video", props: { provider: "youtube", video_id } });
+export const image = (file_id: string, alt: string, caption?: string): Block => ({ id: bid(), type: "image", props: { file_id, alt, ...(caption ? { caption } : {}) } });
+export const fileBlock = (file_id: string): Block => ({ id: bid(), type: "file", props: { file_id } });
 export const table = (rows: string[][]): Block => ({
   id: bid(),
   type: "table",
