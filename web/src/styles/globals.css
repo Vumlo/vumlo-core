@@ -118,6 +118,21 @@ ul { margin: 0; padding: 0; list-style: none; }
 .check input { width: 20px; height: 20px; accent-color: var(--accent); }
 
 /* A toggle pill that is a real checkbox underneath (the file-type menu of an assignment). */
+/* The file-type menu: one hairline-separated row per group; the whole name is the fold button. */
+.fold-list { border-bottom: 1px solid var(--border); }
+.fold { border-top: 1px solid var(--border); }
+.fold-head { display: flex; align-items: center; gap: var(--space-3); }
+.fold-head > input { width: 20px; height: 20px; flex: none; accent-color: var(--accent); }
+.fold-toggle {
+  flex: 1; display: flex; align-items: center; gap: var(--space-2); min-height: 44px; padding: 0; border: 0; background: none;
+  color: var(--text); font-size: 14px; font-weight: 500; text-align: left; cursor: pointer;
+}
+.fold-toggle:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; border-radius: var(--radius-field); }
+.fold-count { color: var(--muted); font-size: 13px; font-weight: 400; }
+.fold-chevron { flex: none; color: var(--muted); transition: transform var(--dur-micro) var(--ease-out); }
+.fold-toggle > span:first-child { flex: 1; }
+.fold-toggle[aria-expanded="true"] .fold-chevron { transform: rotate(180deg); }
+.fold .chips { padding: 0 0 var(--space-3) 32px; }
 .chips { display: flex; flex-wrap: wrap; gap: var(--space-2); }
 .chip {
   position: relative;

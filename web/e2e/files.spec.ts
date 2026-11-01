@@ -597,7 +597,7 @@ test("teacher_sets_max_files_and_accept_in_settings", async ({ page }) => {
   await flip(".jpg", true);
   // Groups with no pick start folded; open one to reach its chips.
   await expect(type(".h")).toHaveCount(0);
-  await page.getByRole("button", { name: "Show or hide Code and data" }).click();
+  await page.getByRole("button", { name: "Code and data" }).click();
   await flip(".h", true);
   // Wait for the PATCH the click sends before reading anything: "Saved" and the stored item only follow its answer.
   const saveSettings = async () => {

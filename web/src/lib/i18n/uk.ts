@@ -1430,7 +1430,6 @@ export const uk: Record<Keys, string> & Extra = {
   "as.maxFilesError": "Введіть ціле число від 1 до 20.",
   "as.accept": "Дозволені типи файлів",
   "as.acceptHint": "Позначте типи, які студенти можуть здавати. Якщо нічого не позначено, приймається будь-який файл.",
-  "as.acceptToggle": "Показати або сховати: {group}",
   "as.acceptOther": "Інші типи",
   "as.acceptOtherHint": "Через кому, наприклад .tex, .dwg.",
   "as.acceptGroup.documents": "Документи",

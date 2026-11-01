@@ -18,27 +18,27 @@ export function AcceptPicker({ value, onChange }: { value: string[]; onChange: (
   };
   const toggle = (title: MessageKey, on: boolean) => setOpen((o) => (on ? [...o, title] : o.filter((x) => x !== title)));
   return (
-    <div className="stack" style={{ gap: 8 }}>
+    <div className="fold-list">
       {ACCEPT_GROUPS.map((g) => {
         const all = g.types.flatMap((x) => x.exts);
         const picked = all.filter((e) => value.includes(e)).length;
+        const chips = g.types.filter((x) => x.exts.every((e) => value.includes(e))).length;
         const shown = open.includes(g.title);
         const name = t(g.title);
         return (
-          <div key={g.title} role="group" aria-label={name} className="stack" style={{ gap: 4 }}>
-            <div className="row" style={{ justifyContent: "space-between", gap: 8 }}>
-              <label className="check" style={{ minHeight: 32, fontWeight: 500 }}>
-                <input
-                  type="checkbox"
-                  checked={picked === all.length}
-                  ref={(el) => { if (el) el.indeterminate = picked > 0 && picked < all.length; }}
-                  onChange={(e) => { set(all, e.target.checked); if (e.target.checked && !shown) toggle(g.title, true); }}
-                />
-                {name}
-              </label>
-              <button type="button" className="btn" style={{ minHeight: 32, gap: 4, padding: "0 8px", background: "transparent" }} aria-expanded={shown} aria-label={t("as.acceptToggle", { group: name })} onClick={() => toggle(g.title, !shown)}>
-                {picked > 0 && <span className="muted" style={{ fontSize: 13 }}>{picked}/{all.length}</span>}
-                <Icon name={shown ? "chevronUp" : "chevronDown"} size={16} />
+          <div key={g.title} role="group" aria-label={name} className="fold">
+            <div className="fold-head">
+              <input
+                type="checkbox"
+                aria-label={name}
+                checked={picked === all.length}
+                ref={(el) => { if (el) el.indeterminate = picked > 0 && picked < all.length; }}
+                onChange={(e) => { set(all, e.target.checked); if (e.target.checked && !shown) toggle(g.title, true); }}
+              />
+              <button type="button" className="fold-toggle" aria-expanded={shown} onClick={() => toggle(g.title, !shown)}>
+                <span>{name}</span>
+                {picked > 0 && <span className="fold-count">{chips}/{g.types.length}</span>}
+                <Icon name="chevronDown" size={16} className="fold-chevron" />
               </button>
             </div>
             {shown && (
