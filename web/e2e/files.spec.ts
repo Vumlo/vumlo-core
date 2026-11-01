@@ -1,5 +1,4 @@
 import { expect, test, type Page } from "@playwright/test";
-import { readFileSync } from "node:fs";
 import { accounts, PASSWORD } from "./routes";
 import { gradeHref } from "../src/lib/routes";
 
@@ -11,6 +10,7 @@ declare global {
       uploadFile(file: File, target: { item: string } | { assignment: string }): Promise<{ id: string; name: string; mime: string; size: number }>;
       openFile(ref: { id: string; name: string; mime: string; size: number }): Promise<void>;
       setMaxSize(bytes: number): void;
+      setPdfIframe(on: boolean): void;
       fileUrl(id: string): string;
       readFileText(id: string, maxBytes: number): Promise<string>;
     };
@@ -589,19 +589,20 @@ test("teacher_sets_max_files_and_accept_in_settings", async ({ page }) => {
 // The mock holds three submissions of the seeded file assignment: Daniel's attempt 1 (report.pdf, figure.png,
 // results.txt and a comment), Daniel's attempt 2 (appendix.docx, slides.pptx, diagram.svg) and Sofia's long-log.txt (1.5 MiB).
 
-// Whether a PDF is shown in an <iframe> (see PDF_IFRAME_PREVIEW in FilePreview.tsx) or as the Open card; the specs follow it.
-const PDF_IFRAME = /PDF_IFRAME_PREVIEW = true/.test(readFileSync(new URL("../src/components/grading/FilePreview.tsx", import.meta.url), "utf8"));
 const MIB = 1_048_576;
 
 /** Signs in as the teacher and opens the grading workspace on `student`'s submission of the file assignment. */
-async function gradeFiles(page: Page, student: "Daniel" | "Sofia", init?: string) {
-  if (init) await page.addInitScript(init);
+async function gradeFiles(page: Page, student: "Daniel" | "Sofia", init?: string | ((attempts: { attempt: number; files: string[] }[]) => string)) {
   await signInAs(page, "teacher");
   const ids = await report(page);
-  const id = await page.evaluate(async (args) => {
+  const { id, attempts } = await page.evaluate(async (args) => {
     const rows = (await (await fetch(`/api/v1/assignments/${args.item}/submissions?limit=100`)).json()) as { items: { name: string; student_id: string }[] };
-    return rows.items.find((r) => r.name === args.student)!.student_id;
+    const id = rows.items.find((r) => r.name === args.student)!.student_id;
+    const all = (await (await fetch(`/api/v1/assignments/${args.item}/submissions/${id}`)).json()) as { items: { attempt: number; content: { files: string[] } }[] };
+    return { id, attempts: all.items.map((a) => ({ attempt: a.attempt, files: a.content.files })) };
   }, { item: ids.item, student });
+  // An init script runs on the next page load, so it is added after sign-in and before the workspace is opened.
+  if (init) await page.addInitScript(typeof init === "string" ? init : init(attempts));
   await page.goto(gradeHref(ids.course, ids.item, id));
   const region = page.getByRole("region", { name: "Submission" });
   await expect(region.getByRole("list", { name: "Files" })).toBeVisible();
@@ -620,19 +621,31 @@ async function firstAttempt(page: Page) {
 }
 
 test("teacher_previews_a_pdf_per_the_step0_decision", async ({ page }) => {
+  // The decision (Task 14, STEP 0): while the server sends `Content-Security-Policy: sandbox` with a PDF, a PDF is an Open card.
   const region = await firstAttempt(page);
   const shown = preview(region, "report.pdf");
-  if (PDF_IFRAME) {
-    await expect(shown.locator("iframe")).toHaveAttribute("src", /^\/api\/v1\/files\/[0-9a-f-]+$/);
-    await expect(shown.locator("iframe")).toHaveAttribute("title", "report.pdf");
-    await expect(shown.getByRole("button", { name: "Open in new tab" })).toHaveCount(0);
-  } else {
-    // The sandbox policy the server sends keeps Chrome from drawing a PDF in a frame: the card opens it in a tab.
-    await expect(shown.locator("iframe")).toHaveCount(0);
-    await expect(shown.getByRole("group", { name: "File" })).toContainText("report.pdf");
-    const [popup] = await Promise.all([page.waitForEvent("popup"), shown.getByRole("button", { name: "Open in new tab" }).click()]);
-    await popup.close();
-  }
+  await expect(shown.locator("iframe")).toHaveCount(0);
+  await expect(shown.getByRole("group", { name: "File" })).toContainText("report.pdf");
+  const [popup] = await Promise.all([page.waitForEvent("popup"), shown.getByRole("button", { name: "Open in new tab" }).click()]);
+  await popup.close();
+});
+
+/** Turns the iframe preview of PDFs on for the open page and re-opens Daniel's first attempt, which holds the PDF. */
+async function withPdfIframe(page: Page, init?: string) {
+  const region = await gradeFiles(page, "Daniel", init);
+  await page.waitForFunction(() => "setPdfIframe" in window.__vumloFiles);
+  await page.evaluate(() => window.__vumloFiles.setPdfIframe(true));
+  await region.getByRole("tab", { name: "Attempt 1" }).click();
+  return region;
+}
+
+test("teacher_previews_a_pdf_in_an_iframe_when_enabled", async ({ page }) => {
+  const region = await withPdfIframe(page);
+  const frame = preview(region, "report.pdf").locator("iframe");
+  await expect(frame).toHaveAttribute("src", /^\/api\/v1\/files\/[0-9a-f-]+$/);
+  await expect(frame).toHaveAttribute("title", "report.pdf");
+  await expect(frame).toHaveAttribute("referrerpolicy", "no-referrer");
+  await expect(preview(region, "report.pdf").getByRole("button", { name: "Open in new tab" })).toHaveCount(0);
 });
 
 test("teacher_previews_an_image", async ({ page }) => {
@@ -655,6 +668,43 @@ test("teacher_previews_text_up_to_1_mib_and_sees_a_truncation_note_beyond", asyn
   await expect(pre).toContainText("line 1");
   await expect(preview(big, "long-log.txt").getByText("Showing only the first 1 MiB")).toBeVisible();
   expect(await pre.evaluate((el) => el.textContent!.length)).toBe(MIB);
+});
+
+// A file whose size the page does not know (the desktop protocol hands over no `Content-Range`): the probe of its first byte
+// answers without a size, and the read of its start answers with `len` bytes of `unit` (cut at the range asked for).
+const unknownSize = (id: string, unit: string, len: number) => `
+  const real = window.fetch.bind(window);
+  window.fetch = (input, init) => {
+    const url = String(input instanceof Request ? input.url : input);
+    if (!url.endsWith("/files/${id}")) return real(input, init);
+    const headers = { "Content-Type": "text/plain", "Content-Disposition": 'inline; filename="results.txt"' };
+    const range = /^bytes=0-(\\d+)$/.exec(new Headers(init && init.headers).get("range") || "");
+    if (range && range[1] === "0") return Promise.resolve(new Response("x", { status: 200, headers }));
+    const bytes = new TextEncoder().encode(${JSON.stringify(unit)}.repeat(Math.ceil(${len} / ${new TextEncoder().encode(unit).length})));
+    return Promise.resolve(new Response(bytes.subarray(0, Math.min(${len}, range ? Number(range[1]) + 1 : ${len})), { status: 206, headers }));
+  };
+`;
+/** Daniel's first attempt with `results.txt` made to look like a file of unknown size and `len` bytes of `unit`. */
+const resultsOfUnknownSize = (page: Page, unit: string, len: number) =>
+  gradeFiles(page, "Daniel", (attempts) => unknownSize(attempts.find((a) => a.attempt === 1)!.files[2]!, unit, len)).then(async (region) => {
+    await region.getByRole("tab", { name: "Attempt 1" }).click();
+    await fileButton(region, "results.txt").click();
+    return preview(region, "results.txt");
+  });
+
+test("text_preview_shows_the_truncation_note_when_the_size_is_unknown", async ({ page }) => {
+  // 1.5 MiB of a 3-byte character: the cap of 1 MiB falls inside one, and the half character is not shown.
+  const shown = await resultsOfUnknownSize(page, "\u20ac", Math.floor(1.5 * MIB));
+  await expect(shown.getByText("Showing only the first 1 MiB")).toBeVisible();
+  const text = await shown.locator("pre").evaluate((el) => el.textContent!);
+  expect(text.length).toBe(Math.floor(MIB / 3));
+  expect(text).not.toContain("\ufffd");
+});
+
+test("a_text_file_under_the_cap_with_unknown_size_shows_no_note", async ({ page }) => {
+  const shown = await resultsOfUnknownSize(page, "short line\n", 600);
+  await expect(shown.locator("pre")).toContainText("short line");
+  await expect(shown.getByText("Showing only the first 1 MiB")).toHaveCount(0);
 });
 
 test("teacher_sees_an_open_card_for_a_pptx", async ({ page }) => {
@@ -696,10 +746,9 @@ const LINUX = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/605.1.15 (KHTML, like
 const MAC = "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) AppleWebKit/605.1.15 (KHTML, like Gecko)";
 
 test("desktop_linux_shows_an_open_card_for_a_pdf", async ({ page }) => {
-  const region = await gradeFiles(page, "Daniel", desktopOn(LINUX));
-  await region.getByRole("tab", { name: "Attempt 1" }).click();
+  const region = await withPdfIframe(page, desktopOn(LINUX));
   const shown = preview(region, "report.pdf");
-  // WebKitGTK cannot draw a PDF; the card hands it to the system's program.
+  // Even with the iframe preview on, WebKitGTK cannot draw a PDF; the card hands it to the system's program.
   await expect(shown.getByRole("group", { name: "File" })).toContainText("report.pdf");
   await expect(shown.locator("iframe")).toHaveCount(0);
   await shown.getByRole("button", { name: "Open", exact: true }).click();
@@ -708,9 +757,7 @@ test("desktop_linux_shows_an_open_card_for_a_pdf", async ({ page }) => {
 });
 
 test("desktop_on_another_system_previews_a_pdf_when_the_iframe_is_enabled", async ({ page }) => {
-  test.skip(!PDF_IFRAME, "PDF_IFRAME_PREVIEW is off: every PDF is an Open card");
-  const region = await gradeFiles(page, "Daniel", desktopOn(MAC));
-  await region.getByRole("tab", { name: "Attempt 1" }).click();
+  const region = await withPdfIframe(page, desktopOn(MAC));
   await expect(preview(region, "report.pdf").locator("iframe")).toHaveAttribute("src", /\/api\/v1\/files\//);
 });
 

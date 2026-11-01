@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
+import { pdfPreview } from "@/components/grading/FilePreview";
 import { fileUrl, openFile, readFileText, uploadFile } from "@/lib/files";
 import { getDb } from "./db";
 import { worker } from "./browser";
@@ -13,7 +14,7 @@ export default function StartWorker({ onReady }: { onReady: () => void }) {
     let cancelled = false;
     started ??= worker.start({ onUnhandledFrame: "bypass", quiet: true });
     // No screen uploads or opens a file yet; the specs of e2e/files.spec.ts drive the two functions from here.
-    Object.assign(window, { __vumloFiles: { uploadFile, openFile, fileUrl, readFileText, setMaxSize: (bytes: number) => (getDb().fileMax = bytes) } });
+    Object.assign(window, { __vumloFiles: { uploadFile, openFile, fileUrl, readFileText, setMaxSize: (bytes: number) => (getDb().fileMax = bytes), setPdfIframe: (on: boolean) => (pdfPreview.iframe = on) } });
     started.then(() => {
       if (!cancelled) onReady();
     });

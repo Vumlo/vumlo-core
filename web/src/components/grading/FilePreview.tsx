@@ -21,6 +21,9 @@ import s from "./FilePreview.module.css";
  */
 export const PDF_IFRAME_PREVIEW = false;
 
+/** The flag as the screens read it. Nothing but the mock build's test hook (src/mocks/StartWorker.tsx) ever changes it. */
+export const pdfPreview = { iframe: PDF_IFRAME_PREVIEW };
+
 /** What the text preview reads of a file. */
 const TEXT_MAX = 1_048_576;
 // The types the server serves `inline` (root AGENTS.md section 6), minus the PDF, which has its own case. SVG is never among them.
@@ -29,10 +32,10 @@ const IMAGES = new Set(["image/png", "image/jpeg", "image/gif", "image/webp"]);
 export type Preview = "image" | "text" | "pdf" | "card";
 
 /** How a file of type `mime` is shown. WebKitGTK, the desktop app's webview on Linux, cannot draw a PDF. */
-export function previewOf(mime: string, desktopLinux: boolean): Preview {
+export function previewOf(mime: string, desktopLinux: boolean, pdfIframe = PDF_IFRAME_PREVIEW): Preview {
   if (IMAGES.has(mime)) return "image";
   if (mime === "text/plain") return "text";
-  if (mime === "application/pdf" && PDF_IFRAME_PREVIEW && !desktopLinux) return "pdf";
+  if (mime === "application/pdf" && pdfIframe && !desktopLinux) return "pdf";
   return "card";
 }
 
@@ -55,32 +58,39 @@ function PickFile({ id, title, on, onPick }: { id: string; title: string; on: bo
 
 function TextPreview({ file, name }: { file: FileRef; name: string }) {
   const t = useT();
-  const text = useQuery<string>(`/files/${file.id}/text`, () => readFileText(file.id, TEXT_MAX));
-  if (text.error) return <p role="alert" className="alert alert-danger">{t("gw.textFailed")}</p>;
-  if (text.data === undefined) return <p className="loading" role="status">{t("common.loading")}</p>;
+  // The start of the file, and whether the read ran into the cap. The size alone cannot say: the desktop protocol gives none.
+  const read = useQuery<{ text: string; capped: boolean }>(`/files/${file.id}/text`, async () => {
+    const text = await readFileText(file.id, TEXT_MAX);
+    // A cut inside a character leaves up to 3 bytes of it, which the decoder turns into one U+FFFD.
+    return { text, capped: new TextEncoder().encode(text).length >= TEXT_MAX - 3 };
+  });
+  if (read.error) return <p role="alert" className="alert alert-danger">{t("gw.textFailed")}</p>;
+  if (read.data === undefined) return <p className="loading" role="status">{t("common.loading")}</p>;
+  const truncated = file.size > 0 ? file.size > TEXT_MAX : read.data.capped;
+  const text = truncated && read.data.text.endsWith("\ufffd") ? read.data.text.slice(0, -1) : read.data.text;
   return (
     <>
-      <pre className={s.text} tabIndex={0} aria-label={name}>{text.data}</pre>
-      {file.size > TEXT_MAX && <p className={s.note}>{t("gw.truncated")}</p>}
+      <pre className={s.text} tabIndex={0} aria-label={name}>{text}</pre>
+      {truncated && <p className={s.note}>{t("gw.truncated")}</p>}
     </>
   );
 }
 
-function Shown({ id, title }: { id: string; title: string }) {
+function Shown({ id, title, pdfIframe }: { id: string; title: string; pdfIframe: boolean }) {
   const t = useT();
   const info = useFileInfo(id);
   const file = info.data;
   if (info.error) return <p role="alert" className="alert alert-danger">{errorText(info.error)}</p>;
   if (!file) return <p className="loading" role="status">{t("common.loading")}</p>;
   const name = file.name || title;
-  const kind = previewOf(file.mime, onDesktopLinux());
+  const kind = previewOf(file.mime, onDesktopLinux(), pdfIframe);
   return (
     <section aria-label={t("gw.preview", { name })} className={s.preview}>
       {kind === "image" && (
         // eslint-disable-next-line @next/next/no-img-element -- the API serves the file with its own policy; there is nothing to optimize
         <img className={s.img} src={fileUrl(id)} alt={name} />
       )}
-      {kind === "pdf" && <iframe className={s.frame} src={fileUrl(id)} title={name} />}
+      {kind === "pdf" && <iframe className={s.frame} src={fileUrl(id)} title={name} referrerPolicy="no-referrer" />}
       {kind === "text" && <TextPreview file={file} name={name} />}
       {kind === "card" && (
         <FileCard file={file} title={title}>
@@ -94,7 +104,7 @@ function Shown({ id, title }: { id: string; title: string }) {
 }
 
 /** The files of one attempt of a `file` assignment, one of them shown in place, and the student's comment under them. Mounted afresh for every attempt (`key`), so each starts at its first file. */
-export function FilePreview({ content, title }: { content: unknown; title: string }) {
+export function FilePreview({ content, title, pdfIframe = pdfPreview.iframe }: { content: unknown; title: string; pdfIframe?: boolean }) {
   const t = useT();
   const { files = [], comment } = fileContentOf(content);
   const [picked, setPicked] = useState<string | null>(null);
@@ -106,7 +116,7 @@ export function FilePreview({ content, title }: { content: unknown; title: strin
           {files.map((id) => <li key={id}><PickFile id={id} title={title} on={id === shown} onPick={() => setPicked(id)} /></li>)}
         </ul>
       )}
-      {shown && <Shown id={shown} title={title} />}
+      {shown && <Shown id={shown} title={title} pdfIframe={pdfIframe} />}
       {comment && !isBlankDoc(comment) && (
         <div className={s.comment}>
           <p className={s.commentLabel}>{t("gw.studentComment")}</p>
