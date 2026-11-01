@@ -15,8 +15,8 @@ use sqlx::types::Decimal;
 use uuid::Uuid;
 
 use super::document::{
-    DocumentErrors, EffectiveProfiles, ValidDocument, distinct_ids, file_refs_of, plain_text,
-    validate_document,
+    DocumentErrors, EffectiveProfiles, FileRef, ValidDocument, distinct_ids, file_refs_under,
+    plain_text, validate_document,
 };
 use super::model::{
     Assignment, AssignmentType, BuiltinType, ContentModule, ContentSubModule, ContentTitle, Hit,
@@ -73,6 +73,13 @@ pub enum ContentError {
     /// The file does not exist, or belongs to someone else's work (ADR-0069).
     #[error("the file {id} cannot be used here")]
     FileUnusable { id: Uuid, field: String },
+    /// An `image` block names a file that is not a PNG, JPEG, GIF or WebP (ADR-0069).
+    #[error("an image block needs a PNG, JPEG, GIF or WebP file")]
+    NotAnImage { field: String },
+    /// A document that was stored cannot be read by the parser that validated it: a fault of the
+    /// server, never of the request.
+    #[error("a stored document cannot be read")]
+    StoredDocument,
     /// Publishing a `file` item whose published body would name no file.
     #[error("a file item needs a file before it is published")]
     FileMissing,
@@ -807,43 +814,51 @@ fn file_id_of(body: &Map<String, Value>) -> Option<Uuid> {
     body.get("file_id")?.as_str()?.parse().ok()
 }
 
-/// A file an item names and the request field it sits at, for example
-/// `body.blocks[0].props.file_id`.
-type FileRef = (Uuid, String);
-
 /// Every file an item of `kind` names: in its `body` (fields start with `body.`) and, for an
 /// assignment, in the documents of its `config` (fields start with `config_field`). The `file`
-/// item's own file and the blocks of its description both count (ADR-0069).
+/// item's own file and the blocks of its description both count (ADR-0069). The documents are read
+/// with the validator's parser; one it cannot read is an error, never "no files".
 fn item_file_refs(
     kind: ItemKind,
     body: &Map<String, Value>,
     config: Option<(BuiltinType, &Map<String, Value>)>,
     config_field: &str,
-) -> Vec<FileRef> {
-    let prefixed = |prefix: &str, refs: Vec<FileRef>| -> Vec<FileRef> {
-        refs.into_iter()
-            .map(|(id, path)| (id, format!("{prefix}.{path}")))
-            .collect()
+) -> Result<Vec<FileRef>, ContentError> {
+    let stored = |errors: DocumentErrors| {
+        let found = errors.iter().next().map(|e| (e.path.clone(), e.message));
+        tracing::error!(?found, "content: a stored document cannot be read");
+        ContentError::StoredDocument
     };
-    let in_body = match kind {
-        ItemKind::File => file_id_of(body)
-            .map(|id| (id, "body.file_id".to_owned()))
-            .into_iter()
-            .chain(prefixed(
-                "body.description",
-                body.get("description")
-                    .map(file_refs_of)
-                    .unwrap_or_default(),
-            ))
-            .collect(),
-        ItemKind::Text | ItemKind::Assignment => {
-            prefixed("body", file_refs_of(&Value::Object(body.clone())))
+    let mut refs = Vec::new();
+    match kind {
+        ItemKind::File => {
+            if let Some(id) = file_id_of(body) {
+                refs.push(FileRef {
+                    id,
+                    path: "body.file_id".to_owned(),
+                    image: false,
+                });
+            }
+            if let Some(description) = body.get("description") {
+                refs.extend(file_refs_under("body.description", description).map_err(stored)?);
+            }
         }
-    };
-    let in_config = config
-        .map(|(kind, config)| prefixed(config_field, kind.config_file_refs(config)))
-        .unwrap_or_default();
-    [in_body, in_config].concat()
+        ItemKind::Text | ItemKind::Assignment => {
+            refs.extend(file_refs_under("body", &Value::Object(body.clone())).map_err(stored)?)
+        }
+    }
+    if let Some((assignment_type, config)) = config {
+        refs.extend(
+            assignment_type
+                .config_file_refs(config)?
+                .into_iter()
+                .map(|file| FileRef {
+                    path: format!("{config_field}.{}", file.path),
+                    ..file
+                }),
+        );
+    }
+    Ok(refs)
 }
 
 /// The ids of the files an item names: what `content.item_files` holds for it (ADR-0069). Every
@@ -852,12 +867,13 @@ fn referenced_file_ids(
     kind: ItemKind,
     body: &Map<String, Value>,
     config: Option<(BuiltinType, &Map<String, Value>)>,
-) -> Vec<Uuid> {
-    distinct_ids(&item_file_refs(kind, body, config, "config"))
+) -> Result<Vec<Uuid>, ContentError> {
+    Ok(distinct_ids(&item_file_refs(kind, body, config, "config")?))
 }
 
 /// May the item `owner` name each of `refs` (ADR-0069)? Done before the write. A refusal names
-/// the field of the first file that cannot be used.
+/// the field of the first file that cannot be used, or of the first image block whose file is not
+/// a PNG, JPEG, GIF or WebP.
 async fn usable_files(
     conn: &mut PgConnection,
     actor: &Actor,
@@ -867,13 +883,25 @@ async fn usable_files(
     match file_service::ensure_usable(conn, actor, &UsageOwner::Item(owner), &distinct_ids(refs))
         .await
     {
-        Ok(()) => Ok(()),
+        Ok(()) => {}
         Err(FileError::Unusable { id }) => {
             let field = refs
                 .iter()
-                .find(|(file, _)| *file == id)
-                .map_or_else(|| "body".to_owned(), |(_, field)| field.clone());
-            Err(ContentError::FileUnusable { id, field })
+                .find(|file| file.id == id)
+                .map_or_else(|| "body".to_owned(), |file| file.path.clone());
+            return Err(ContentError::FileUnusable { id, field });
+        }
+        Err(other) => return Err(ContentError::Files(Box::new(other))),
+    }
+    let images: Vec<FileRef> = refs.iter().filter(|file| file.image).cloned().collect();
+    match file_service::first_non_image(conn, &distinct_ids(&images)).await {
+        Ok(None) => Ok(()),
+        Ok(Some(id)) => {
+            let field = images
+                .iter()
+                .find(|file| file.id == id)
+                .map_or_else(|| "body".to_owned(), |file| file.path.clone());
+            Err(ContentError::NotAnImage { field })
         }
         Err(other) => Err(ContentError::Files(Box::new(other))),
     }
@@ -901,7 +929,7 @@ async fn sync_working_files(conn: &mut PgConnection, item: &Item) -> Result<(), 
         item.kind,
         &item.body,
         config.as_ref().map(|(kind, config)| (*kind, config)),
-    );
+    )?;
     repo::replace_item_files(conn, item.id, false, &ids).await?;
     Ok(())
 }
@@ -925,7 +953,7 @@ async fn sync_published_files(conn: &mut PgConnection, item: &Item) -> Result<()
         item.kind,
         &slot.body,
         config.as_ref().map(|(kind, config)| (*kind, config)),
-    );
+    )?;
     repo::replace_item_files(conn, item.id, true, &ids).await?;
     Ok(())
 }
@@ -1018,7 +1046,7 @@ async fn create(
         &body,
         assignment.as_ref().map(|a| (a.assignment_type, &a.config)),
         "assignment.config",
-    );
+    )?;
     usable_files(conn, actor, id, &refs).await?;
     let mut item =
         repo::insert_item(conn, id, module_id, course_id, kind, title.as_str(), &body).await?;
@@ -1478,7 +1506,7 @@ pub async fn update_item(
     }
     let body = validated_body(row.item.kind, patch.body.as_ref(), rules.profiles)?;
     if let Some(body) = &body {
-        let refs = item_file_refs(row.item.kind, body, None, "config");
+        let refs = item_file_refs(row.item.kind, body, None, "config")?;
         usable_files(conn, actor, id, &refs).await?;
     }
     let mut settings = None;
@@ -1515,9 +1543,12 @@ pub async fn update_item(
             if patch.config.is_some() {
                 kind.validate_config(config, rules.profiles)?;
                 let refs = kind
-                    .config_file_refs(config)
+                    .config_file_refs(config)?
                     .into_iter()
-                    .map(|(file, path)| (file, format!("config.{path}")))
+                    .map(|file| FileRef {
+                        path: format!("config.{}", file.path),
+                        ..file
+                    })
                     .collect::<Vec<_>>();
                 usable_files(conn, actor, id, &refs).await?;
             }

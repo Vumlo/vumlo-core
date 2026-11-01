@@ -170,10 +170,14 @@ impl Walk {
     /// by the service that stores the document (ADR-0069).
     fn file_id(&mut self, props: &Object, ppath: &str) -> Uuid {
         match props.get("file_id").and_then(Value::as_str) {
-            Some(text) => text.parse().unwrap_or_else(|_| {
-                self.err(&at(ppath, "file_id"), "must be a file id");
-                Uuid::nil()
-            }),
+            // Only the spelling the server writes: lowercase and hyphenated.
+            Some(text) => match text.parse::<Uuid>() {
+                Ok(id) if id.to_string() == text => id,
+                _ => {
+                    self.err(&at(ppath, "file_id"), "must be a file id");
+                    Uuid::nil()
+                }
+            },
             None => {
                 self.err(&at(ppath, "file_id"), "must be a file id");
                 Uuid::nil()

@@ -577,16 +577,18 @@ fn file_ids_collects_images_and_files_in_order_without_duplicates() {
     let valid = validate(&value).unwrap();
     let id = |text: &str| text.parse::<uuid::Uuid>().unwrap();
     assert_eq!(file_ids(valid.as_document()), [id(FILE_B), id(FILE_A)]);
+    let at = |n: usize, path: &str, is_image: bool| FileRef {
+        id: id([FILE_B, FILE_A, FILE_B, FILE_A][n]),
+        path: path.to_owned(),
+        image: is_image,
+    };
     assert_eq!(
         file_refs(valid.as_document()),
         [
-            (id(FILE_B), "blocks[1].props.file_id".to_owned()),
-            (id(FILE_A), "blocks[2].children[0].props.file_id".to_owned()),
-            (
-                id(FILE_B),
-                "blocks[2].children[1].children[0].props.file_id".to_owned()
-            ),
-            (id(FILE_A), "blocks[3].props.file_id".to_owned()),
+            at(0, "blocks[1].props.file_id", true),
+            at(1, "blocks[2].children[0].props.file_id", false),
+            at(2, "blocks[2].children[1].children[0].props.file_id", true),
+            at(3, "blocks[3].props.file_id", false),
         ]
     );
     assert!(file_ids(&api_types::Document::empty()).is_empty());
@@ -992,4 +994,46 @@ fn a_document_without_text_is_blank() {
     assert!(!blank(doc(json!([
         {"id": "i", "type": "code", "props": {"language": "rust", "source": "x"}}
     ]))));
+}
+
+#[test]
+fn the_extractor_reads_what_the_validator_reads() {
+    // A `code` block with an unknown language is valid (stored as text) but is not what serde
+    // reads; the extractor must still see the image after it.
+    let value = doc(json!([
+        {"id": "c", "type": "code", "props": {"language": "cobol", "source": "x"}},
+        image("i", FILE_A),
+    ]));
+    assert!(validate(&value).is_ok());
+    let refs = file_refs_of(&value).unwrap();
+    assert_eq!(refs.len(), 1);
+    assert_eq!(refs[0].path, "blocks[1].props.file_id");
+    assert!(refs[0].image);
+    // A value the validator refuses is an error, never an empty list.
+    for bad in [
+        json!({"file_id": FILE_A}),
+        json!("text"),
+        doc(json!([{"id": "i", "type": "image", "props": {"file_id": "nope"}}])),
+    ] {
+        assert!(file_refs_of(&bad).is_err(), "{bad}");
+    }
+}
+
+#[test]
+fn a_file_id_must_be_spelled_canonically() {
+    for spelling in [
+        FILE_A.to_uppercase(),
+        FILE_A.replace('-', ""),
+        format!("urn:uuid:{FILE_A}"),
+        format!("{{{FILE_A}}}"),
+    ] {
+        for kind in ["image", "file"] {
+            let value = doc(json!([{"id": "i", "type": kind, "props": {"file_id": spelling}}]));
+            assert_eq!(
+                single(&value),
+                ("blocks[0].props.file_id".to_owned(), "must be a file id"),
+                "{kind} {spelling}"
+            );
+        }
+    }
 }

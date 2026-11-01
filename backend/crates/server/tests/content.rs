@@ -5151,3 +5151,173 @@ async fn quiz_question_image_is_referenced_by_the_assignment_item_and_readable_b
     })
     .await;
 }
+
+// --- the extractor reads what the validator reads; image blocks take images only ---------------
+
+const SVG: &[u8] = b"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"1\" height=\"1\"/>";
+
+/// Uploads `bytes` as `name` for the item and answers the new file's id.
+async fn upload_named(w: &World, item: Uuid, name: &str, bytes: &[u8]) -> Uuid {
+    let response = w
+        .http
+        .post(&format!("/files?for=item:{item}&name={name}"))
+        .bearer(&w.owner.token)
+        .header("content-type", "application/octet-stream")
+        .body(bytes.to_vec())
+        .send()
+        .await;
+    assert_eq!(
+        response.status,
+        201,
+        "{}",
+        String::from_utf8_lossy(&response.body)
+    );
+    id_of(&response.json())
+}
+
+fn code(id: &str, language: &str) -> Value {
+    json!({"id": id, "type": "code", "props": {"language": language, "source": "x"}})
+}
+
+#[tokio::test]
+async fn quiz_prompt_with_an_unknown_code_language_and_a_foreign_image_is_422_on_the_image_path() {
+    db_test(async |pool| {
+        let w = world(pool).await;
+        let module = module(&w, "Quizzes", None).await;
+        let item = quiz_item(&w, module).await;
+
+        let course = create_course(&w.http, &w.stranger.token, "Other").await;
+        let their_module = module_as_stranger(&w, course).await;
+        let theirs = id_of(&created(
+            &post(
+                &w.http,
+                &w.stranger.token,
+                &format!("/modules/{their_module}/items"),
+                json!({"title": "Theirs"}),
+            )
+            .await,
+        ));
+        let foreign = upload_png(&w, &w.stranger.token, theirs, PNG).await;
+        let mine = upload_png(&w, &w.owner.token, item, OTHER_PNG).await;
+        let option = doc(json!([paragraph("p", "Yes")]));
+
+        // The parser stores an unknown language as text, so this passes the validator.
+        let prompt = |file: Uuid| doc(json!([code("c", "cobol"), image("i", file)]));
+        let response = set_config(&w, item, question_with(prompt(foreign), option.clone())).await;
+        assert_eq!(
+            error_fields(&response),
+            ["config.questions[0].prompt.blocks[1].props.file_id"]
+        );
+        assert_eq!(reference_rows(&w.pool, item).await, []);
+
+        // The teacher's own image in such a prompt is referenced, so it is not swept and
+        // students read it after publish.
+        ok(&set_config(&w, item, question_with(prompt(mine), option)).await);
+        assert_eq!(reference_rows(&w.pool, item).await, [(mine, false)]);
+        let stored = item_json(&w, item).await;
+        assert_eq!(
+            stored["assignment"]["config"]["questions"][0]["prompt"]["blocks"][0]["props"]["language"],
+            "cobol",
+            "the config is stored as sent"
+        );
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn an_image_block_takes_a_png_jpeg_gif_or_webp_file_and_a_file_block_takes_any() {
+    db_test(async |pool| {
+        let w = world(pool).await;
+        let item = draft_text_item(&w).await;
+        let svg = upload_named(&w, item, "a.svg", SVG).await;
+        let pdf = upload_named(&w, item, "a.pdf", b"%PDF-1.4\n1 0 obj\n<<>>\nendobj\n").await;
+        let png = upload_png(&w, &w.owner.token, item, PNG).await;
+        let message = "an image block needs a PNG, JPEG, GIF or WebP file";
+
+        for (what, file) in [("svg", svg), ("pdf", pdf)] {
+            let response = set_body(&w, item, json!([paragraph("p", "x"), image("i", file)])).await;
+            let problem = response.problem(422);
+            assert_eq!(problem.errors.len(), 1, "{what}");
+            assert_eq!(
+                problem.errors[0].field, "body.blocks[1].props.file_id",
+                "{what}"
+            );
+            assert_eq!(problem.errors[0].message, message, "{what}");
+        }
+        assert_eq!(reference_rows(&w.pool, item).await, []);
+
+        // The same files in `file` blocks, and a PNG in an image block, are fine.
+        ok(&set_body(
+            &w,
+            item,
+            json!([file_block("a", svg), file_block("b", pdf), image("c", png)]),
+        )
+        .await);
+        assert_eq!(reference_rows(&w.pool, item).await.len(), 3);
+
+        // A file item's description is a document too.
+        let module = module(&w, "Files", None).await;
+        let file_item = file_item(&w, module, "Syllabus").await;
+        let other_svg = upload_named(&w, file_item, "b.svg", SVG).await;
+        let response = patch(
+            &w.http,
+            &w.owner.token,
+            &format!("/items/{file_item}"),
+            json!({"body": {"description": doc(json!([image("i", other_svg)]))}}),
+        )
+        .await;
+        let problem = response.problem(422);
+        assert_eq!(
+            problem.errors[0].field,
+            "body.description.blocks[0].props.file_id"
+        );
+        assert_eq!(problem.errors[0].message, message);
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn a_quiz_image_must_be_an_image_file_too() {
+    db_test(async |pool| {
+        let w = world(pool).await;
+        let module = module(&w, "Quizzes", None).await;
+        let item = quiz_item(&w, module).await;
+        let svg = upload_named(&w, item, "a.svg", SVG).await;
+        let png = upload_png(&w, &w.owner.token, item, PNG).await;
+        let plain = doc(json!([paragraph("p", "Yes")]));
+
+        let response = set_config(
+            &w,
+            item,
+            question_with(doc(json!([image("i", svg)])), plain.clone()),
+        )
+        .await;
+        let problem = response.problem(422);
+        assert_eq!(
+            problem.errors[0].field,
+            "config.questions[0].prompt.blocks[0].props.file_id"
+        );
+        assert_eq!(
+            problem.errors[0].message,
+            "an image block needs a PNG, JPEG, GIF or WebP file"
+        );
+        let response = set_config(
+            &w,
+            item,
+            question_with(plain.clone(), doc(json!([image("o", svg)]))),
+        )
+        .await;
+        assert_eq!(
+            error_fields(&response),
+            ["config.questions[0].options[0].content.blocks[0].props.file_id"]
+        );
+        ok(&set_config(
+            &w,
+            item,
+            question_with(doc(json!([image("i", png)])), plain),
+        )
+        .await);
+        assert_eq!(reference_rows(&w.pool, item).await, [(png, false)]);
+    })
+    .await;
+}

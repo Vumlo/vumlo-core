@@ -191,5 +191,24 @@ pub async fn ensure_usable(
     Ok(())
 }
 
+/// The types an `image` block may name: the server-detected type of the stored file.
+const IMAGE_MIMES: [&str; 4] = ["image/png", "image/jpeg", "image/gif", "image/webp"];
+
+/// The first of `ids` that is not a PNG, JPEG, GIF or WebP file (an unknown id counts), or `None`.
+/// Called after [`ensure_usable`], so the files exist; the type is the one the server detected at
+/// upload, never the client's claim.
+pub async fn first_non_image(
+    conn: &mut PgConnection,
+    ids: &[Uuid],
+) -> Result<Option<Uuid>, FileError> {
+    for &id in ids {
+        match files::get(conn, id).await? {
+            Some(file) if IMAGE_MIMES.contains(&file.mime.as_str()) => {}
+            _ => return Ok(Some(id)),
+        }
+    }
+    Ok(None)
+}
+
 #[cfg(test)]
 mod tests;

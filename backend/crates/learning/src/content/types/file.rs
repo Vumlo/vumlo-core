@@ -10,7 +10,7 @@ use uuid::Uuid;
 
 use super::{Claims, Problems, Stage, ValidContent};
 use crate::content::document::{
-    DocumentErrors, EffectiveProfiles, file_refs_of, validate_document,
+    DocumentErrors, EffectiveProfiles, FileRef, file_refs_under, validate_document,
 };
 use crate::content::model::ModelError;
 
@@ -216,19 +216,20 @@ pub fn validate_submission(
 
 /// Every file a stored content names, each with its path in the content: the listed files
 /// (`files[0]`) and the images and files of the comment (`comment.blocks[0].props.file_id`).
-pub fn submission_file_refs(content: &Map<String, Value>) -> Vec<(Uuid, String)> {
-    let comment = content
-        .get("comment")
-        .map(file_refs_of)
-        .unwrap_or_default()
-        .into_iter()
-        .map(|(id, path)| (id, format!("comment.{path}")));
-    file_ids(content)
+pub fn submission_file_refs(content: &Map<String, Value>) -> Result<Vec<FileRef>, DocumentErrors> {
+    let mut refs: Vec<FileRef> = file_ids(content)
         .into_iter()
         .enumerate()
-        .map(|(index, id)| (id, format!("files[{index}]")))
-        .chain(comment)
-        .collect()
+        .map(|(index, id)| FileRef {
+            id,
+            path: format!("files[{index}]"),
+            image: false,
+        })
+        .collect();
+    if let Some(comment) = content.get("comment") {
+        refs.extend(file_refs_under("comment", comment)?);
+    }
+    Ok(refs)
 }
 
 /// The files of a content, for the service to check that the submitter may use them.

@@ -200,11 +200,11 @@ async fn submission_of(pool: &PgPool, assignment: Uuid, student: &Actor) -> Uuid
     .unwrap()
 }
 
-/// The student saves a draft whose one block is an image of `file`.
+/// The student saves a draft whose one block is a `file` block naming `file`.
 async fn draft_naming(f: &Fixture, file: Uuid) -> Uuid {
     let mut conn = f.pool.acquire().await.unwrap();
     let document = json!({"v": 1, "attachments": [], "blocks": [
-        {"id": "i", "type": "image", "props": {"file_id": file}}]});
+        {"id": "i", "type": "file", "props": {"file_id": file}}]});
     assessment::save_draft(
         &mut conn,
         &f.student,

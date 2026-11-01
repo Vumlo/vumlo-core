@@ -23,9 +23,9 @@ use super::model::{
 use super::repo;
 use crate::content::{
     self, Assignment, AssignmentType, AutoGrade, BuiltinType, DocumentErrors, EffectiveProfiles,
-    OpenError, OpenedAssignment, Stage, distinct_ids,
+    FileRef, OpenError, OpenedAssignment, Stage, distinct_ids,
 };
-use crate::files::{FileError, UsageOwner, ensure_usable};
+use crate::files::{FileError, UsageOwner, ensure_usable, first_non_image};
 use crate::gradebook::{self, GradebookError};
 use crate::teaching::TeachingError;
 use access::Actor;
@@ -361,15 +361,20 @@ async fn check_files(
     body: &Map<String, Value>,
     submission_id: Uuid,
 ) -> Result<Vec<Uuid>, AssessmentError> {
-    let refs = assignment.assignment_type.submission_file_refs(body);
+    // The content passed the validator, so the same parser reads it; if it ever does not, the
+    // refusal names the path rather than leaving a reference unchecked.
+    let refs = assignment
+        .assignment_type
+        .submission_file_refs(body)
+        .map_err(AssessmentError::Document)?;
     let ids = distinct_ids(&refs);
     ensure_usable(conn, actor, &UsageOwner::Submission(submission_id), &ids)
         .await
         .map_err(|error| match error {
             FileError::Unusable { id } => unusable(
                 refs.iter()
-                    .find(|(file, _)| *file == id)
-                    .map_or("files", |(_, path)| path),
+                    .find(|file| file.id == id)
+                    .map_or("files", |file| &file.path),
             ),
             FileError::Db(error) | FileError::Files(::files::FilesError::Db(error)) => {
                 AssessmentError::Db(error)
@@ -377,6 +382,24 @@ async fn check_files(
             // Deny by default: `ensure_usable` has no other way to fail.
             _ => unusable("files"),
         })?;
+    let images: Vec<FileRef> = refs.iter().filter(|file| file.image).cloned().collect();
+    match first_non_image(conn, &distinct_ids(&images)).await {
+        Ok(None) => {}
+        Ok(Some(id)) => {
+            let path = images
+                .iter()
+                .find(|file| file.id == id)
+                .map_or("files", |file| &file.path);
+            return Err(AssessmentError::Document(DocumentErrors::one(
+                path,
+                "an image block needs a PNG, JPEG, GIF or WebP file",
+            )));
+        }
+        Err(FileError::Db(error) | FileError::Files(::files::FilesError::Db(error))) => {
+            return Err(AssessmentError::Db(error));
+        }
+        Err(_) => return Err(unusable("files")),
+    }
     if assignment.assignment_type == BuiltinType::File {
         let listed = assignment
             .assignment_type

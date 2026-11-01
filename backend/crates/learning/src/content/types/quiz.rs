@@ -6,14 +6,13 @@ use api_types::ProfileName;
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
 use sqlx::types::Decimal;
-use uuid::Uuid;
 
 use super::{
     AutoGrade, Problems, Stage, ValidContent, answer_path, answers_of, document_problem,
     parse_number, shape_problem, valid_id,
 };
 use crate::content::document::{
-    DocumentErrors, EffectiveProfiles, file_refs_of, validate_document,
+    DocumentErrors, EffectiveProfiles, FileRef, file_refs_under, validate_document,
 };
 use crate::content::model::{MaxPoints, ModelError};
 
@@ -297,50 +296,45 @@ fn parse(
 }
 
 /// The files the documents of a quiz config name (the prompts, the explanations and the options),
-/// each with its path in the config. A config that cannot be read names none: it is refused where
-/// it is validated (ADR-0069).
-pub fn file_refs(config: &Map<String, Value>) -> Vec<(Uuid, String)> {
-    let Ok(raw) = serde_json::from_value::<RawConfig>(Value::Object(config.clone())) else {
-        return Vec::new();
-    };
+/// each with its path in the config. The documents are read by the validator's parser, and a
+/// config or document that cannot be read is an error, never "no files" (ADR-0069).
+pub fn file_refs(config: &Map<String, Value>) -> Result<Vec<FileRef>, ModelError> {
+    let raw: RawConfig = serde_json::from_value(Value::Object(config.clone()))
+        .map_err(|error| shape_problem("quiz", &error))?;
     let mut refs = Vec::new();
-    let mut add = |path: String, document: &Value| {
-        refs.extend(
-            file_refs_of(document)
-                .into_iter()
-                .map(|(id, inner)| (id, format!("{path}.{inner}"))),
-        );
+    let mut add = |path: String, document: &Value| -> Result<(), ModelError> {
+        let found =
+            file_refs_under(&path, document).map_err(|errors| document_problem(&path, &errors))?;
+        refs.extend(found);
+        Ok(())
     };
     for (n, question) in raw.questions.iter().enumerate() {
-        add(format!("questions[{n}].prompt"), &question.prompt);
+        add(format!("questions[{n}].prompt"), &question.prompt)?;
         if let Some(explanation) = &question.explanation {
-            add(format!("questions[{n}].explanation"), explanation);
+            add(format!("questions[{n}].explanation"), explanation)?;
         }
         for (m, option) in question.options.iter().flatten().enumerate() {
             add(
                 format!("questions[{n}].options[{m}].content"),
                 &option.content,
-            );
+            )?;
         }
     }
-    refs
+    Ok(refs)
 }
 
 /// The files the long-text answers of a stored quiz content name (documents of the `student`
 /// profile), each with its path in the content.
-pub fn answer_file_refs(content: &Map<String, Value>) -> Vec<(Uuid, String)> {
+pub fn answer_file_refs(content: &Map<String, Value>) -> Result<Vec<FileRef>, DocumentErrors> {
     let Some(Value::Object(answers)) = content.get("answers") else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
-    answers
-        .iter()
-        .filter(|(_, answer)| answer.is_object())
-        .flat_map(|(id, answer)| {
-            file_refs_of(answer)
-                .into_iter()
-                .map(move |(file, inner)| (file, format!("answers.{id}.{inner}")))
-        })
-        .collect()
+    let mut refs = Vec::new();
+    // Only a long-text answer is an object; the other answers are text, numbers and lists.
+    for (id, answer) in answers.iter().filter(|(_, answer)| answer.is_object()) {
+        refs.extend(file_refs_under(&format!("answers.{id}"), answer)?);
+    }
+    Ok(refs)
 }
 
 /// Checks a quiz config (ADR-0050 points 1 and 2).

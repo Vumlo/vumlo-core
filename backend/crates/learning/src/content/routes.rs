@@ -76,6 +76,10 @@ impl From<ContentError> for ApiError {
             ContentError::FileUnusable { id, field } => {
                 Self::invalid_field(&field, format!("the file {id} cannot be used here"))
             }
+            ContentError::NotAnImage { field } => {
+                Self::invalid_field(&field, "an image block needs a PNG, JPEG, GIF or WebP file")
+            }
+            ContentError::StoredDocument => Self::Internal,
             ContentError::FileMissing => {
                 Self::Conflict("a file item needs a file before it is published")
             }
@@ -340,6 +344,7 @@ fn under_assignment(error: ContentError) -> ApiError {
             | ContentError::FileBody { .. }
             | ContentError::FileDescription(_)
             | ContentError::FileUnusable { .. }
+            | ContentError::NotAnImage { .. }
     ) {
         return error.into();
     }

@@ -2716,3 +2716,104 @@ async fn a_quiz_long_text_answer_may_hold_an_image_and_it_is_referenced() {
     })
     .await;
 }
+
+// --- image blocks take images only ---------------------------------------------------------
+
+const SVG: &[u8] = b"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"1\" height=\"1\"/>";
+const PDF: &[u8] = b"%PDF-1.4\n1 0 obj\n<<>>\nendobj\n";
+const IMAGE_ONLY: &str = "an image block needs a PNG, JPEG, GIF or WebP file";
+
+fn messages_of(response: &Resp) -> Vec<(String, String)> {
+    problem_of(response)
+}
+
+#[tokio::test]
+async fn a_text_answer_takes_an_image_block_only_for_an_image_file() {
+    db_test(async |pool| {
+        let (w, _dir) = file_world(pool).await;
+        let id = assignment(&w).await;
+        let pdf = upload_file(&w, &w.student.token, id, "notes.pdf", PDF).await;
+        let svg = upload_file(&w, &w.student.token, id, "pic.svg", SVG).await;
+        let png = upload_png(&w, &w.student.token, id).await;
+        for file in [pdf, svg] {
+            let response = save(
+                &w,
+                &w.student.token,
+                id,
+                doc(json!([paragraph("p", "x"), image("i", file)])),
+            )
+            .await;
+            assert_eq!(
+                messages_of(&response),
+                [(
+                    "content.blocks[1].props.file_id".to_owned(),
+                    IMAGE_ONLY.to_owned()
+                )]
+            );
+        }
+        assert!(referenced(&w, id).await.is_empty());
+        // The same files as `file` blocks, and a PNG as an image, are taken.
+        json_of(
+            save(
+                &w,
+                &w.student.token,
+                id,
+                doc(json!([
+                    file_block("a", pdf),
+                    file_block("b", svg),
+                    image("c", png)
+                ])),
+            )
+            .await,
+            200,
+        );
+        assert_eq!(referenced(&w, id).await.len(), 3);
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn comment_and_quiz_answer_images_must_be_image_files() {
+    db_test(async |pool| {
+        let (w, _dir) = file_world(pool).await;
+        // A file hand-in's comment.
+        let id = file_assignment(&w, json!({}), json!({})).await;
+        let list = upload_file(&w, &w.student.token, id, "essay.txt", TEXT).await;
+        let svg = upload_file(&w, &w.student.token, id, "pic.svg", SVG).await;
+        let response = save(
+            &w,
+            &w.student.token,
+            id,
+            json!({"files": [list], "comment": doc(json!([image("i", svg)]))}),
+        )
+        .await;
+        assert_eq!(
+            messages_of(&response),
+            [(
+                "content.comment.blocks[0].props.file_id".to_owned(),
+                IMAGE_ONLY.to_owned()
+            )]
+        );
+        // A quiz's long-text answer.
+        let config = json!({"v": 1, "questions": [{
+            "id": "q1", "type": "long_text", "points": "10",
+            "prompt": doc(json!([paragraph("p", "Explain")]))}]});
+        let quiz = assignment_with(&w, json!({"type": "quiz"}), config).await;
+        let svg = upload_file(&w, &w.student.token, quiz, "pic.svg", SVG).await;
+        let response = save(
+            &w,
+            &w.student.token,
+            quiz,
+            json!({"answers": {"q1": doc(json!([image("i", svg)]))}}),
+        )
+        .await;
+        assert_eq!(
+            messages_of(&response),
+            [(
+                "content.answers.q1.blocks[0].props.file_id".to_owned(),
+                IMAGE_ONLY.to_owned()
+            )]
+        );
+    })
+    .await;
+}

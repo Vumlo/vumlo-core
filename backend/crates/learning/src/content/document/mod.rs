@@ -124,17 +124,33 @@ impl ValidDocument {
     }
 }
 
-/// The files the image and file blocks of a document name, each with the path of its `file_id`
-/// in the document (`blocks[2].children[0].props.file_id`), in document order. A file named twice
+/// A file a document names: its id, the path of its `file_id` in the document
+/// (`blocks[2].children[0].props.file_id`) and whether an `image` block (and not a `file` block)
+/// names it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FileRef {
+    pub id: Uuid,
+    pub path: String,
+    pub image: bool,
+}
+
+/// The files the image and file blocks of a document name, in document order. A file named twice
 /// appears twice.
-pub fn file_refs(document: &Document) -> Vec<(Uuid, String)> {
-    fn walk(blocks: &[Block], path: &str, out: &mut Vec<(Uuid, String)>) {
+pub fn file_refs(document: &Document) -> Vec<FileRef> {
+    fn walk(blocks: &[Block], path: &str, out: &mut Vec<FileRef>) {
         for (index, block) in blocks.iter().enumerate() {
             let here = format!("{path}[{index}]");
-            if let Block::Image { props, .. } = block {
-                out.push((props.file_id, format!("{here}.props.file_id")));
-            } else if let Block::File { props, .. } = block {
-                out.push((props.file_id, format!("{here}.props.file_id")));
+            let named = match block {
+                Block::Image { props, .. } => Some((props.file_id, true)),
+                Block::File { props, .. } => Some((props.file_id, false)),
+                _ => None,
+            };
+            if let Some((id, image)) = named {
+                out.push(FileRef {
+                    id,
+                    path: format!("{here}.props.file_id"),
+                    image,
+                });
             }
             walk(block.children(), &format!("{here}.children"), out);
         }
@@ -150,22 +166,51 @@ pub fn file_ids(document: &Document) -> Vec<Uuid> {
 }
 
 /// The ids of `refs`, each once, in order.
-pub fn distinct_ids(refs: &[(Uuid, String)]) -> Vec<Uuid> {
+pub fn distinct_ids(refs: &[FileRef]) -> Vec<Uuid> {
     let mut ids: Vec<Uuid> = Vec::new();
-    for (id, _) in refs {
-        if !ids.contains(id) {
-            ids.push(*id);
+    for file in refs {
+        if !ids.contains(&file.id) {
+            ids.push(file.id);
         }
     }
     ids
 }
 
-/// [`file_refs`] of a stored document. A value that is not a document names no file: what was
-/// stored passed the validator when it was written.
-pub fn file_refs_of(value: &Value) -> Vec<(Uuid, String)> {
-    serde_json::from_value::<Document>(value.clone())
-        .map(|document| file_refs(&document))
-        .unwrap_or_default()
+/// [`file_refs`] of a stored or submitted document found at `prefix` (a path such as
+/// `answers.q1`, empty for the document itself), read by the validator's own parser so that the
+/// two can never disagree about what the document holds. The paths of the references and of the
+/// errors start with `prefix`. A value the parser refuses is an error, never "no files": a
+/// reference that is skipped would be stored unchecked and unrecorded.
+pub fn file_refs_under(prefix: &str, value: &Value) -> Result<Vec<FileRef>, DocumentErrors> {
+    let join = |path: &str| match (prefix.is_empty(), path.is_empty()) {
+        (true, _) => path.to_owned(),
+        (false, true) => prefix.to_owned(),
+        (false, false) => format!("{prefix}.{path}"),
+    };
+    let (document, errors) = parse::parse_document(value);
+    match document {
+        Some(document) if errors.is_empty() => Ok(file_refs(&document)
+            .into_iter()
+            .map(|file| FileRef {
+                path: join(&file.path),
+                ..file
+            })
+            .collect()),
+        _ => Err(DocumentErrors::of(
+            errors
+                .into_iter()
+                .map(|error| DocumentError {
+                    path: join(&error.path),
+                    message: error.message,
+                })
+                .collect(),
+        )),
+    }
+}
+
+/// [`file_refs_under`] the document itself.
+pub fn file_refs_of(value: &Value) -> Result<Vec<FileRef>, DocumentErrors> {
+    file_refs_under("", value)
 }
 
 /// Parses `value` into a [`Document`] and checks it against `profile` as narrowed by `profiles`.
