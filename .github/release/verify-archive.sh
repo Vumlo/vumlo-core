@@ -43,7 +43,7 @@ leftover="$(find backend/crates -type f \( -name tests.rs -o -name content_tests
 [ -z "$leftover" ] || { echo "the archive contains test files:" >&2; echo "$leftover" >&2; exit 1; }
 leftover="$(find backend/crates -type d \( -name tests -o -name test-support \) -print)"
 [ -z "$leftover" ] || { echo "the archive contains test directories:" >&2; echo "$leftover" >&2; exit 1; }
-for wanted in vumlo vumlo.toml.example docs/install.md docs/desktop.md CHANGELOG.md brand/vumlo-mark.png brand/vumlo-logo.png deploy/compose.yaml backend/.sqlx desktop/scripts/build.mjs desktop/release/desktop-release.yml desktop/Cargo.lock; do
+for wanted in vumlo vumlo.toml.example docs/install.md docs/desktop.md docs/img/student-course.png CHANGELOG.md brand/vumlo-mark.png brand/vumlo-logo.png deploy/compose.yaml backend/.sqlx desktop/scripts/build.mjs desktop/release/desktop-release.yml desktop/Cargo.lock; do
     [ -e "$wanted" ] || { echo "the archive lacks $wanted" >&2; exit 1; }
 done
 

@@ -12,6 +12,11 @@ There are two ways to run it. Pick one:
 - **[A Linux server](#path-2-a-linux-server)**: PostgreSQL from your distribution, binaries you build
   (or copy), systemd for the services and Caddy for TLS.
 
+`npx create-vumlo` does the first two steps of the Docker path for you: it downloads the newest release, checks it
+against its `SHA256SUMS`, keeps only the parts you pick (web app, desktop app), asks for the institution's name, mode,
+address and who may sign up, and writes `vumlo.toml` and `.env` (with a generated database password). It then prints the
+commands of step 3. It needs Node 20 or newer. Nothing in it is required: the steps below do the same by hand.
+
 Everything that follows is for one institution per installation. The institution's mode, `school` or
 `university`, is chosen before the first start and cannot be changed afterwards.
 
