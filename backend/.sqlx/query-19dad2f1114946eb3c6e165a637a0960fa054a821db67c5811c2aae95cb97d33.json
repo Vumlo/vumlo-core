@@ -1,16 +1,16 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT id FROM assessment.submissions WHERE assignment_id = $1 AND status = 'draft'",
+  "query": "SELECT module_id FROM content.items WHERE id = $1",
   "describe": {
     "columns": [
       {
         "ordinal": 0,
-        "name": "id",
+        "name": "module_id",
         "type_info": "Uuid",
         "origin": {
           "Table": {
-            "table": "assessment.submissions",
-            "name": "id"
+            "table": "content.items",
+            "name": "module_id"
           }
         }
       }
@@ -24,5 +24,5 @@
       false
     ]
   },
-  "hash": "bc10d34bc9b0008e9b8537b6e87427133308fa8a234ca78ccfee276b394e6c90"
+  "hash": "19dad2f1114946eb3c6e165a637a0960fa054a821db67c5811c2aae95cb97d33"
 }

@@ -4,6 +4,7 @@
 //! A file the actor may not read does not exist as far as they can tell: an unknown id, a file of
 //! a draft item, of someone else's submission and of nobody all give `NotFound` (ADR-0069).
 
+use chrono::{DateTime, Utc};
 use files::{File, FilesError, Stored};
 use sqlx::PgConnection;
 use uuid::Uuid;
@@ -73,6 +74,11 @@ impl From<AssessmentError> for FileError {
                 Self::Conflict("the course is archived")
             }
             AssessmentError::Forbidden(denied) => Self::Forbidden(denied),
+            AssessmentError::TakesNoSubmissions => {
+                Self::Conflict("this assignment takes no submissions")
+            }
+            AssessmentError::WindowClosed => Self::Conflict("the submission window is closed"),
+            AssessmentError::AttemptLimit => Self::Conflict("the attempt limit is reached"),
             other => Self::Assessment(other),
         }
     }
@@ -80,16 +86,17 @@ impl From<AssessmentError> for FileError {
 
 /// May the actor upload a file for `owner`? Call it before reading the body. An owner they may not
 /// see is `NotFound`, one they may see but not change is `Forbidden`, and an archived course is
-/// `Conflict`.
+/// `Conflict`. So is an assignment that takes no more submissions at `now` (ADR-0035).
 pub async fn authorize_upload(
     conn: &mut PgConnection,
     actor: &Actor,
     owner: &Owner,
+    now: DateTime<Utc>,
 ) -> Result<(), FileError> {
     match *owner {
         Owner::Item(item_id) => content::authorize_edit_item(conn, actor, item_id).await?,
         Owner::Assignment(assignment_id) => {
-            assessment::authorize_submit(conn, actor, assignment_id).await?;
+            assessment::authorize_submit(conn, actor, assignment_id, now).await?;
         }
     }
     Ok(())
@@ -105,8 +112,9 @@ pub async fn register_upload(
     stored: &Stored,
     name: &str,
     mime: &str,
+    now: DateTime<Utc>,
 ) -> Result<File, FileError> {
-    authorize_upload(conn, actor, owner).await?;
+    authorize_upload(conn, actor, owner, now).await?;
     Ok(files::insert(conn, stored, actor.user_id(), name, mime).await?)
 }
 
@@ -181,6 +189,25 @@ pub async fn ensure_usable(
         }
     }
     Ok(())
+}
+
+/// The types an `image` block may name: the server-detected type of the stored file.
+const IMAGE_MIMES: [&str; 4] = ["image/png", "image/jpeg", "image/gif", "image/webp"];
+
+/// The first of `ids` that is not a PNG, JPEG, GIF or WebP file (an unknown id counts), or `None`.
+/// Called after [`ensure_usable`], so the files exist; the type is the one the server detected at
+/// upload, never the client's claim.
+pub async fn first_non_image(
+    conn: &mut PgConnection,
+    ids: &[Uuid],
+) -> Result<Option<Uuid>, FileError> {
+    for &id in ids {
+        match files::get(conn, id).await? {
+            Some(file) if IMAGE_MIMES.contains(&file.mime.as_str()) => {}
+            _ => return Ok(Some(id)),
+        }
+    }
+    Ok(None)
 }
 
 #[cfg(test)]

@@ -3,7 +3,7 @@
 use std::sync::{Arc, LazyLock};
 
 use chrono::{Duration, Utc};
-use serde_json::{Map, Value, json};
+use serde_json::{Map, json};
 use sqlx::PgPool;
 use test_support::db_test;
 
@@ -27,12 +27,6 @@ fn rules() -> ItemRules<'static> {
         scale: GradingScale::Hundred,
         profiles: &PROFILES,
     }
-}
-
-fn essay() -> Value {
-    json!({"v": 1, "attachments": [], "blocks": [
-        {"id": "p", "type": "paragraph", "content": [{"type": "text", "text": "My answer"}]}
-    ]})
 }
 
 struct Fixture {
@@ -206,24 +200,22 @@ async fn submission_of(pool: &PgPool, assignment: Uuid, student: &Actor) -> Uuid
     .unwrap()
 }
 
-/// The student saves a draft, which names `file`.
+/// The student saves a draft whose one block is a `file` block naming `file`.
 async fn draft_naming(f: &Fixture, file: Uuid) -> Uuid {
     let mut conn = f.pool.acquire().await.unwrap();
+    let document = json!({"v": 1, "attachments": [], "blocks": [
+        {"id": "i", "type": "file", "props": {"file_id": file}}]});
     assessment::save_draft(
         &mut conn,
         &f.student,
         f.assignment,
-        &essay(),
+        &document,
         &PROFILES,
         Utc::now(),
     )
     .await
     .unwrap();
-    let submission = submission_of(&f.pool, f.assignment, &f.student).await;
-    assessment::replace_submission_files(&mut conn, submission, &[file])
-        .await
-        .unwrap();
-    submission
+    submission_of(&f.pool, f.assignment, &f.student).await
 }
 
 async fn submit(f: &Fixture) {
@@ -584,18 +576,20 @@ async fn upload_is_authorized_by_the_owner() {
         let mut conn = f.pool.acquire().await.unwrap();
         let item = Owner::Item(f.lesson);
         let assignment = Owner::Assignment(f.assignment);
-        authorize_upload(&mut conn, &f.owner, &item).await.unwrap();
-        authorize_upload(&mut conn, &f.student, &assignment)
+        authorize_upload(&mut conn, &f.owner, &item, Utc::now())
+            .await
+            .unwrap();
+        authorize_upload(&mut conn, &f.student, &assignment, Utc::now())
             .await
             .unwrap();
         // A student may see the lesson but not change it.
-        let error = authorize_upload(&mut conn, &f.student, &item).await;
+        let error = authorize_upload(&mut conn, &f.student, &item, Utc::now()).await;
         assert!(matches!(
             error,
             Err(FileError::Forbidden(AccessError::Denied))
         ));
         // Staff do not submit work.
-        let error = authorize_upload(&mut conn, &f.owner, &assignment).await;
+        let error = authorize_upload(&mut conn, &f.owner, &assignment, Utc::now()).await;
         assert!(matches!(
             error,
             Err(FileError::Forbidden(AccessError::Denied))
@@ -607,7 +601,7 @@ async fn upload_is_authorized_by_the_owner() {
             (&f.owner, Owner::Item(Uuid::now_v7())),
             (&f.student, Owner::Assignment(Uuid::now_v7())),
         ] {
-            let error = authorize_upload(&mut conn, actor, &owner).await;
+            let error = authorize_upload(&mut conn, actor, &owner, Utc::now()).await;
             assert!(matches!(error, Err(FileError::NotFound)), "{owner:?}");
         }
     })
@@ -626,7 +620,7 @@ async fn upload_to_an_archived_course_is_a_conflict() {
             (&f.owner, Owner::Item(f.lesson)),
             (&f.student, Owner::Assignment(f.assignment)),
         ] {
-            let error = authorize_upload(&mut conn, actor, &owner).await;
+            let error = authorize_upload(&mut conn, actor, &owner, Utc::now()).await;
             assert!(matches!(error, Err(FileError::Conflict(_))), "{error:?}");
         }
     })

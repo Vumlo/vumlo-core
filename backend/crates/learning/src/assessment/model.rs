@@ -11,6 +11,7 @@ use common::Page;
 /// The unsubmitted document of a student for an assignment (ADR-0011). Only its owner reads it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Draft {
+    pub id: Uuid,
     pub content: Map<String, Value>,
     pub updated_at: DateTime<Utc>,
 }

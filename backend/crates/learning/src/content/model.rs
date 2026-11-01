@@ -9,7 +9,9 @@ use sqlx::postgres::{PgTypeInfo, PgValueRef};
 use sqlx::types::Decimal;
 use uuid::Uuid;
 
-use super::document::{DocumentErrors, EffectiveProfiles, validate_document_within};
+use super::document::{
+    DocumentErrors, EffectiveProfiles, FileRef, file_refs_of, validate_document_within,
+};
 use super::types::{AutoGrade, Claims, Stage, ValidContent, file, form, quiz};
 use crate::points;
 use access::{CourseAccess, Release};
@@ -197,6 +199,33 @@ impl BuiltinType {
     /// An unknown or not-yet-built type is an error that does not repeat the input.
     pub fn parse(raw: &str) -> Result<Self, ModelError> {
         raw.parse().map_err(|_| ModelError::AssignmentType)
+    }
+
+    /// The files the documents of a `config` name (the questions of a quiz), each with its path in
+    /// the config. The other types hold no document in their config (ADR-0069).
+    pub fn config_file_refs(
+        &self,
+        config: &Map<String, Value>,
+    ) -> Result<Vec<FileRef>, ModelError> {
+        match self {
+            Self::Quiz => quiz::file_refs(config),
+            Self::Text | Self::NoSubmission | Self::Form | Self::File => Ok(Vec::new()),
+        }
+    }
+
+    /// Every file a stored `content` names, each with its path in the content: a text answer, the
+    /// long-text answers of a quiz, and the files and comment of a file hand-in. A form holds no
+    /// document (ADR-0069).
+    pub fn submission_file_refs(
+        &self,
+        content: &Map<String, Value>,
+    ) -> Result<Vec<FileRef>, DocumentErrors> {
+        match self {
+            Self::Text => file_refs_of(&Value::Object(content.clone())),
+            Self::Quiz => quiz::answer_file_refs(content),
+            Self::File => file::submission_file_refs(content),
+            Self::NoSubmission | Self::Form => Ok(Vec::new()),
+        }
     }
 }
 

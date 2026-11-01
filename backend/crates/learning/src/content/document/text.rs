@@ -4,7 +4,8 @@ use api_types::{Block, Document, Inline, LinkRun};
 
 /// Blocks in order, one per line; a block's children right after it. Inline and link text as
 /// they are; a formula, a diagram and a code block as their source; a table as rows separated by
-/// `\n` with cells separated by `\t`. A divider and a video give nothing, not even a line.
+/// `\n` with cells separated by `\t`. An image gives its alt and its caption, one line each when set. A divider, a video and a file
+/// give nothing, not even a line.
 pub fn plain_text(document: &Document) -> String {
     let mut lines = Vec::new();
     push_blocks(&document.blocks, &mut lines);
@@ -14,7 +15,14 @@ pub fn plain_text(document: &Document) -> String {
 fn push_blocks(blocks: &[Block], lines: &mut Vec<String>) {
     for block in blocks {
         match block {
-            Block::Divider { .. } | Block::Video { .. } => {}
+            Block::Divider { .. } | Block::Video { .. } | Block::File { .. } => {}
+            Block::Image { props, .. } => lines.extend(
+                [&props.alt, &props.caption]
+                    .into_iter()
+                    .flatten()
+                    .filter(|text| !text.is_empty())
+                    .cloned(),
+            ),
             Block::Code { props, .. } => lines.push(props.source.clone()),
             Block::Math { props, .. } | Block::Mermaid { props, .. } => {
                 lines.push(props.source.clone());

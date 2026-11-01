@@ -391,7 +391,9 @@ export interface paths {
          *     assignment's `config.editor.features` narrow it; a rejection names the path, for example
          *     `content.blocks[2].props.level`. An empty document is a valid draft. The last write wins and
          *     nothing is versioned. After the submission window has closed (ADR-0035) a save is refused.
-         *     Saving a draft emits no event.
+         *     For a `file` assignment the content names files uploaded with `POST /files?for=assignment:{id}`;
+         *     a file that does not exist, that someone else uploaded or holds, or whose name the assignment
+         *     does not accept is `422` on `content.files[i]`. Saving a draft emits no event.
          */
         put: operations["save_draft"];
         post?: never;
@@ -1194,7 +1196,7 @@ export interface paths {
          * Stores the raw body as a file for an item or an assignment and returns its description. The
          *     file stays unreferenced (and is swept after 24 hours) until a document or a submission names it.
          * @description The caller is authorized **before** the body is read: `for=item:{id}` needs the right to edit
-         *     the item (an archived course is `409`), `for=assignment:{id}` the right to submit work. The
+         *     the item (an archived course is `409`), `for=assignment:{id}` the right to submit work (an assignment that takes no submissions, whose window is closed or whose attempt limit is reached is `409`). The
          *     content type is found from the bytes, not from the header, and only the six inline types of
          *     ADR-0069 ever keep a type that a browser would show; the name is cleaned (no path, at most 200
          *     characters). The body may be as large as `files.max_size` (`413` above it); an empty body is
@@ -2235,6 +2237,16 @@ export interface components {
             props: components["schemas"]["VideoProps"];
             /** @enum {string} */
             type: "video";
+        } | {
+            id: string;
+            props: components["schemas"]["ImageProps"];
+            /** @enum {string} */
+            type: "image";
+        } | {
+            id: string;
+            props: components["schemas"]["FileProps"];
+            /** @enum {string} */
+            type: "file";
         };
         /** @description Someone who could be added to the course. */
         Candidate: {
@@ -2581,11 +2593,18 @@ export interface components {
          * @description What a place of the editor can offer. A profile is a set of features (ADR-0025).
          * @enum {string}
          */
-        Feature: "headings" | "text_styles" | "links" | "lists" | "quote" | "divider" | "table" | "code" | "math" | "mermaid" | "video";
+        Feature: "headings" | "text_styles" | "links" | "lists" | "quote" | "divider" | "table" | "code" | "math" | "mermaid" | "video" | "image" | "file";
         /** @description One rejected field of a `422` response. */
         FieldError: {
             field: string;
             message: string;
+        };
+        FileProps: {
+            /**
+             * Format: uuid
+             * @description A file uploaded for the owner of this document; the server checks that it may be used.
+             */
+            file_id: string;
         };
         /** @description A stored file, as a document or a submission names it by `id`. */
         FileRefDto: {
@@ -2820,6 +2839,17 @@ export interface components {
          * @enum {string}
          */
         HitStatus: "draft" | "published";
+        ImageProps: {
+            /** @description At most 300 characters of plain text. */
+            alt?: string | null;
+            /** @description At most 300 characters of plain text. */
+            caption?: string | null;
+            /**
+             * Format: uuid
+             * @description A file uploaded for the owner of this document; the server checks that it may be used.
+             */
+            file_id: string;
+        };
         /** @description A run of inline content. */
         Inline: (components["schemas"]["TextRun"] & {
             /** @enum {string} */
@@ -7587,7 +7617,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["ProblemDetails"];
                 };
             };
-            /** @description The course is archived */
+            /** @description The course is archived, or (for an assignment) it takes no submissions, its submission window is closed or the attempt limit is reached */
             409: {
                 headers: {
                     [name: string]: unknown;

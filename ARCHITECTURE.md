@@ -455,7 +455,7 @@ Examples: in a school, the template "Algebra 7" becomes courses "Algebra 7-A" an
 - **A student's `GET /items/{id}` still returns the whole `config`.** For `text` that is the editor features only; a type with an answer key needs the student view of ADR-0023 first.
 - **Rights are checked before the assignment row lock** in `assessment` too: a student removed from the course in the same instant can still save one draft.
 - **`content` and `assessment` call each other** (`content` guards its deletes with `assessment`, `assessment` opens assignments through `content`), like `content` and `gradebook`: a call cycle inside one crate (ADR-0035).
-- **The empty-document rule counts text only.** It must learn images and attachments when they exist.
+- **The empty-document rule counts text, images and files, not videos or attachments.** A document of only an `image` or a `file` block is not blank; a document of only a video, a divider or an empty paragraph is. `attachments` is still refused unless empty, so it needs no rule yet.
 - **The roster is `teaching.effective_members`, live.** The gradebook and `teaching` read the students of a course from this one view; the students of linked groups and subgroups are on it without a sync job. Changes to a group's members show at once on every linked course.
 - **An exclusion can go stale.** It stays until restored. A student who left the group since is excluded from nothing; if they are added to the group again they are still excluded.
 - **Removing an assistant or a teacher who is in a linked group leaves them a student of the course.** Only a student's removal records an exclusion; remove the person from the group, or exclude them after the removal, to take them off.

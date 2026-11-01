@@ -9,6 +9,7 @@ use axum::body::Body;
 use axum::extract::{FromRef, Path, State};
 use axum::http::{HeaderMap, HeaderName, HeaderValue, StatusCode, header};
 use axum::response::{IntoResponse, Response};
+use chrono::Utc;
 use utoipa_axum::router::OpenApiRouter;
 use utoipa_axum::routes;
 use uuid::Uuid;
@@ -58,7 +59,7 @@ const CSP: HeaderName = HeaderName::from_static("content-security-policy");
 /// file stays unreferenced (and is swept after 24 hours) until a document or a submission names it.
 ///
 /// The caller is authorized **before** the body is read: `for=item:{id}` needs the right to edit
-/// the item (an archived course is `409`), `for=assignment:{id}` the right to submit work. The
+/// the item (an archived course is `409`), `for=assignment:{id}` the right to submit work (an assignment that takes no submissions, whose window is closed or whose attempt limit is reached is `409`). The
 /// content type is found from the bytes, not from the header, and only the six inline types of
 /// ADR-0069 ever keep a type that a browser would show; the name is cleaned (no path, at most 200
 /// characters). The body may be as large as `files.max_size` (`413` above it); an empty body is
@@ -79,7 +80,7 @@ const CSP: HeaderName = HeaderName::from_static("content-security-policy");
             body = ProblemDetails, content_type = "application/problem+json"),
         (status = 404, description = "No such item or assignment, or not visible to the caller",
             body = ProblemDetails, content_type = "application/problem+json"),
-        (status = 409, description = "The course is archived", body = ProblemDetails,
+        (status = 409, description = "The course is archived, or (for an assignment) it takes no submissions, its submission window is closed or the attempt limit is reached", body = ProblemDetails,
             content_type = "application/problem+json"),
         (status = 413, description = "The file is larger than `files.max_size`", body = ProblemDetails,
             content_type = "application/problem+json"),
@@ -99,7 +100,7 @@ async fn upload(
     {
         // Released before the body is read: a slow upload holds no connection.
         let mut conn = state.db.acquire().await.map_err(FileError::from)?;
-        service::authorize_upload(&mut conn, &actor, &owner).await?;
+        service::authorize_upload(&mut conn, &actor, &owner, Utc::now()).await?;
     }
     let limit = usize::try_from(state.max_file_bytes).unwrap_or(usize::MAX);
     let data = axum::body::to_bytes(body, limit)
@@ -116,7 +117,8 @@ async fn upload(
     let mime = files::sniff(&name, &stored.head, claimed);
     // From here on a failure leaves the object in storage; the orphan sweep removes it.
     let mut tx = state.db.begin().await.map_err(FileError::from)?;
-    let file = service::register_upload(&mut tx, &actor, &owner, &stored, &name, &mime).await?;
+    let file = service::register_upload(&mut tx, &actor, &owner, &stored, &name, &mime, Utc::now())
+        .await?;
     tx.commit().await.map_err(FileError::from)?;
     Ok((
         StatusCode::CREATED,

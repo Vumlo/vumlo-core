@@ -132,7 +132,9 @@ fn api_row(row: model::StudentSubmission) -> SubmissionRow {
 /// assignment's `config.editor.features` narrow it; a rejection names the path, for example
 /// `content.blocks[2].props.level`. An empty document is a valid draft. The last write wins and
 /// nothing is versioned. After the submission window has closed (ADR-0035) a save is refused.
-/// Saving a draft emits no event.
+/// For a `file` assignment the content names files uploaded with `POST /files?for=assignment:{id}`;
+/// a file that does not exist, that someone else uploaded or holds, or whose name the assignment
+/// does not accept is `422` on `content.files[i]`. Saving a draft emits no event.
 #[utoipa::path(
     put,
     path = "/assignments/{id}/submission/draft",
