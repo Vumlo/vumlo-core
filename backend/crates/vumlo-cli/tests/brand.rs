@@ -8,7 +8,7 @@ use std::path::Path;
 use common::{CONFIG, Env, db_test};
 use serde_json::Value;
 
-const LOGO: &[u8] = include_bytes!("../../../../brand/logo.png");
+const LOGO: &[u8] = include_bytes!("../../../../brand/vumlo-mark.png");
 
 /// Every file under `dir`, by name.
 fn tree(dir: &Path) -> BTreeMap<String, Vec<u8>> {
@@ -48,14 +48,20 @@ async fn it_writes_the_config_the_types_the_schema_the_manifest_and_the_vumlo_ic
                 "icon-1024.png",
                 "icon-192.png",
                 "icon-512.png",
-                "logo.png",
                 "site.webmanifest",
                 "vumlo.schema.json"
             ]
         );
+        let icon = image::load_from_memory(&files["icon-1024.png"])
+            .unwrap()
+            .to_rgba8();
+        let mark = image::load_from_memory(LOGO).unwrap().to_rgba8();
         assert_eq!(
-            files["logo.png"], LOGO,
-            "the logo is Vumlo's, copied as it is"
+            icon.get_pixel(512, 512).0,
+            image::imageops::resize(&mark, 1024, 1024, image::imageops::FilterType::Lanczos3)
+                .get_pixel(512, 512)
+                .0,
+            "the icons are made from the Vumlo mark"
         );
         assert_eq!(dimensions(&files["icon-512.png"]), (512, 512));
         assert_eq!(dimensions(&files["icon-192.png"]), (192, 192));

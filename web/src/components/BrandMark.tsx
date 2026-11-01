@@ -3,7 +3,7 @@ import { orgName } from "@/lib/appName";
 /**
  * The Vumlo logo: the mark and the word, the same in every installation (ADR-0054, amended). The word is a mask filled with
  * the ink colour, so it follows the theme. `--h` is the height of the mark (36px; a place with
- * another size sets it); the word is half of that.
+ * another size sets it); the word is about half of that.
  */
 export function BrandLockup() {
   return (

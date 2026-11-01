@@ -1,3 +1,5 @@
+<p align="center"><img src="brand/vumlo-logo.png" alt="Vumlo" width="360"></p>
+
 # Vumlo
 
 A self-hosted LMS for one school or university: courses, groups and rosters, lessons, assignments

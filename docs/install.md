@@ -78,7 +78,7 @@ binary. Edit the two files:
 
 The release ships with the name "Vumlo". Set `institution.name` and `institution.short_name` to your
 institution's: the web app and the desktop app are then called "Vumlo | Short name". The logo is
-always Vumlo's (`brand/logo.png`); it is not configurable.
+always Vumlo's (`brand/vumlo-mark.png` and `brand/vumlo-logo.png`); it is not configurable.
 
 ### 3. Build and start
 

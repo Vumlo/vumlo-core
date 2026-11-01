@@ -2,7 +2,7 @@
 //!
 //! It writes `.vumlo/generated/` next to `vumlo.toml`, from scratch every time: the public part of
 //! the configuration as `client-config.json` and its TypeScript types, the JSON Schema of
-//! `vumlo.toml`, the web manifest, and the Vumlo logo with the favicon and the app icons made from it.
+//! `vumlo.toml`, the web manifest, and the favicon and the app icons made from the Vumlo mark.
 //! The logo is Vumlo's, the same in every installation (ADR-0054, amended). The web build reads
 //! only this directory. Nothing here is served at run time: changing the configuration means
 //! `brand apply`, a web rebuild and a restart.
@@ -20,8 +20,8 @@ use vumlo_config::{ClientConfig, Options, Settings};
 
 use crate::runtime::{self, VERSION};
 
-/// The Vumlo logo, compiled in: every installation has the same one.
-const LOGO: &[u8] = include_bytes!("../../../../brand/logo.png");
+/// The Vumlo mark (`brand/vumlo-mark.png`), compiled in: every installation has the same one.
+const LOGO: &[u8] = include_bytes!("../../../../brand/vumlo-mark.png");
 /// Every icon is scaled from this one. 1024 is what the desktop app's installer icons are made from (ADR-0062).
 const MASTER: u32 = 1024;
 
@@ -98,7 +98,6 @@ pub fn generate(settings: &Settings) -> anyhow::Result<Files> {
     ));
 
     let master = render_master()?;
-    files.push(("logo.png".into(), LOGO.to_vec()));
     files.push(("icon-1024.png".into(), png(&master)?));
     files.push(("icon-512.png".into(), png(&scaled(&master, 512))?));
     files.push(("icon-192.png".into(), png(&scaled(&master, 192))?));
@@ -121,7 +120,7 @@ fn render_master() -> anyhow::Result<RgbaImage> {
     let decoded = image::ImageReader::new(Cursor::new(LOGO))
         .with_guessed_format()
         .and_then(|reader| reader.decode().map_err(std::io::Error::other))
-        .context("cannot read brand/logo.png")?;
+        .context("cannot read brand/vumlo-mark.png")?;
     Ok(fit_square(&decoded.to_rgba8(), MASTER))
 }
 

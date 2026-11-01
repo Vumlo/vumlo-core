@@ -47,9 +47,9 @@ if (existsSync(join(generated, "client-config.json"))) {
     desktop: { url_scheme: "vumlo" },
   };
   writeFileSync(join(outDir, "client-config.json"), JSON.stringify(config, null, 2) + "\n");
-  // The real files come from `brand apply`, which scales the Vumlo logo. For `dev` the logo itself stands in for each icon
+  // The real files come from `brand apply`, which scales the Vumlo mark. For `dev` the mark itself stands in for each icon
   // (the .ico is a PNG under that name, which browsers accept).
-  for (const name of ["logo.png", "icon-192.png", "icon-512.png", "apple-touch-icon.png", "favicon.ico"]) cpSync(join(web, "..", "brand", "logo.png"), join(brand, name));
+  for (const name of ["icon-192.png", "icon-512.png", "apple-touch-icon.png", "favicon.ico"]) cpSync(join(web, "..", "brand", "vumlo-mark.png"), join(brand, name));
   writeFileSync(join(outDir, "client-config.d.ts"), "export type ClientConfig = any;\n");
 } else {
   console.error(`brand: ${generated} not found. Run \`vumlo-cli brand apply\` first (the web build reads only that directory).`);

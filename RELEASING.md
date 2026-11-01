@@ -36,7 +36,7 @@ next patch version.
 ## What the archive contains
 
 An explicit allowlist: `backend/` (the crates, the migrations, the offline SQL data, the lockfile),
-`web/`, `desktop/` (the desktop app, ADR-0056; its tests are left out), `deploy/`, `brand/` (the Vumlo logo), the `vumlo` script, `docs/install.md`, `docs/desktop.md`,
+`web/`, `desktop/` (the desktop app, ADR-0056; its tests are left out), `deploy/`, `brand/` (the Vumlo logo and mark), the `vumlo` script, `docs/install.md`, `docs/desktop.md`,
 `CHANGELOG.md`, `README.md`, and `vumlo.toml.example`. Not in it: the tests directories, the ADRs,
 `ARCHITECTURE.md`, `AGENTS.md`, the CI files and the development compose file.
 
