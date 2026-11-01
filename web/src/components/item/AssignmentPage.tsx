@@ -86,10 +86,9 @@ export function AssignmentPage({ item, courseId, staff }: { item: Item; courseId
     await save.run(emptyDoc());
   }
   async function resubmit() {
-    // The server refuses a file another submission holds, so a new draft keeps the words and leaves the pictures and files out.
+    // The new draft starts from the last attempt, pictures and files included: the server lets it name the student's own earlier files.
     const before = latest ? (latest.content as unknown as Document) : emptyDoc();
-    const blocks = before.blocks.filter((b) => b.type !== "image" && b.type !== "file");
-    await save.run({ v: 1, blocks: blocks.length > 0 ? blocks : emptyDoc().blocks });
+    await save.run(before.blocks.length > 0 ? before : emptyDoc());
   }
   // Sending cannot be undone, so an empty answer or the last attempt is confirmed first.
   function review() {

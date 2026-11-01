@@ -44,8 +44,6 @@ export function formQuestions(cfg: FormConfig, answers: AnswerMap): Q[] {
   });
 }
 
-const isDocument = (v: unknown): v is Document => typeof v === "object" && v !== null && Array.isArray((v as Document).blocks);
-
 export function SheetPage({ item, courseId, staff, mode }: { item: Item; courseId: string; staff: boolean; mode: "quiz" | "form" }) {
   const t = useT();
   const a = item.assignment!;
@@ -132,10 +130,9 @@ export function SheetPage({ item, courseId, staff, mode }: { item: Item; courseI
     if (ok) { setLocal(null); setSavedAt(null); }
   }
   async function edit() {
-    // The server refuses a file another submission holds, so the new draft keeps the words and leaves pictures and files out.
+    // The new draft starts from the last attempt, pictures and files included: the server lets it name the student's own earlier files.
     const before = latest ? answersOf(latest.content) : {};
-    const kept: AnswerMap = Object.fromEntries(Object.entries(before).map(([id, v]) => [id, isDocument(v) ? { ...v, blocks: v.blocks.filter((b) => b.type !== "image" && b.type !== "file") } : v]));
-    await save.run({ answers: answersToWire(mode, a.config, kept) });
+    await save.run({ answers: answersToWire(mode, a.config, before) });
     setLocal(null);
   }
   // Server errors show until the student edits that field.

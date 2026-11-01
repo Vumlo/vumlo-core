@@ -277,16 +277,21 @@ export function documentErrors(doc: unknown, place: DocPlace, path: string): { f
   if (!Array.isArray(blocks)) return [];
   const stored = getDb().files;
   const errors: { field: string; message: string }[] = [];
-  blocks.forEach((b: { type?: string; props?: { file_id?: string } }, i) => {
-    if (b?.type !== "image" && b?.type !== "file") return;
-    const at = `${path}.blocks[${i}]`;
+  type Block = { type?: string; props?: { file_id?: string }; children?: Block[] };
+  // The server checks every block, nested ones too (a list item or a quote may hold a picture).
+  const walk = (list: Block[], prefix: string) => list.forEach((b, i) => {
+    if (b?.type !== "image" && b?.type !== "file") return void (Array.isArray(b?.children) && walk(b.children, `${prefix}[${i}].children`));
+    const at = `${prefix}[${i}]`;
     if (b.type === "file" && (place.profile === "question" || place.profile === "option")) return void errors.push({ field: `${at}.type`, message: "a file block is not allowed here" });
     const id = b.props?.file_id;
     const file = typeof id === "string" ? stored.get(id) : undefined;
+    // A student's file is usable in that student's drafts and attempts of the assignment it was uploaded for, new draft after an earlier attempt included;
+    // another student's file, another assignment's and an item's (no owner) are not.
     const own = place.assignmentId === undefined || (file?.owner === place.userId && file?.target === `assignment:${place.assignmentId}`);
     if (!file || !own) errors.push({ field: `${at}.props.file_id`, message: `the file ${String(id)} cannot be used here` });
     else if (b.type === "image" && !IMAGE_MIMES.has(file.mime)) errors.push({ field: `${at}.props.file_id`, message: "an image block needs a PNG, JPEG, GIF or WebP file" });
   });
+  walk(blocks as Block[], `${path}.blocks`);
   return errors;
 }
 

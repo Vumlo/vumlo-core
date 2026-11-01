@@ -53,7 +53,8 @@ export const fileHandlers = [
         "Content-Type": file.mime,
         "Content-Disposition": `${inline ? "inline" : "attachment"}; filename="${file.name.replace(/[^\x20-\x7e]|["\\;%]/g, "_")}"; filename*=UTF-8''${encodeURIComponent(file.name)}`,
         "X-Content-Type-Options": "nosniff",
-        "Content-Security-Policy": "sandbox",
+        // The server sends the sandbox with every file but a PDF, which the browser's viewer would not draw inside it (ADR-0069).
+        ...(file.mime === "application/pdf" ? {} : { "Content-Security-Policy": "sandbox" }),
         ETag: `"${params.id}"`,
       },
     });

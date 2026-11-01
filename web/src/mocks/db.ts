@@ -60,7 +60,7 @@ export type Db = {
   formResponses: Record<string, { team: string; variant: string; members: string; repo: string; submitted_at: string; late: boolean }[]>;
   quizResults: Record<string, Record<string, { got: string; feedback: string | null }>>;
   /** Uploaded files (`POST /files`) and the largest one the mock takes, as the server's `files.max_size`. */
-  /** `owner` and `target` (`assignment:{id}`) are set for a student's upload: only that student's drafts for that assignment may name it. */
+  /** `owner` and `target` (`assignment:{id}`) are set for a student's upload: only that student's drafts and attempts for that assignment may name it (a new draft after an earlier attempt included). */
   files: Map<string, { name: string; mime: string; bytes: ArrayBuffer; owner?: string; target?: string }>;
   fileMax: number;
 };

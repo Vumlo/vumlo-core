@@ -265,6 +265,8 @@ export function FileAssignmentPage({ item, courseId, staff }: { item: Item; cour
   const grades = useMyGrades(staff ? null : courseId);
   const waiting = useQueued(`/assignments/${item.id}/submission/submit`);
   const resubmit = useSaveDraft(item.id);
+  // The new draft starts from the last attempt: the server lets it name the student's own earlier files.
+  const startAgain = (content: unknown) => { const { files = [], comment } = fileContentOf(content); return resubmit.run(fileContentToWire(files, comment ?? null)); };
   const { max_files: max, accept } = useMemo(() => fileConfigOf(a.config), [a.config]);
 
   // The deadline can pass while the page is open.
@@ -347,7 +349,7 @@ export function FileAssignmentPage({ item, courseId, staff }: { item: Item; cour
                       <h2 id="sub-h" style={{ fontSize: 16, fontWeight: 600 }}>{t("grading.attempt", { n: latest.attempt })}</h2>
                       <p className="muted" style={{ fontSize: 13 }}>{t("asg.submittedWaiting", { when: sinceLabel(latest.submitted_at) })}</p>
                     </div>
-                    {canEdit && <button type="button" className="btn btn-outline" onClick={() => void resubmit.run(fileContentToWire([], null))} disabled={resubmit.pending}>{t("asg.resubmit")}</button>}
+                    {canEdit && <button type="button" className="btn btn-outline" onClick={() => void startAgain(latest.content)} disabled={resubmit.pending}>{t("asg.resubmit")}</button>}
                   </div>
                   <div className={s.panelBody}><AttemptContent content={latest.content} title={item.title} /></div>
                   {canEdit && (

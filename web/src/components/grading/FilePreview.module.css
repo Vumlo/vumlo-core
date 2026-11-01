@@ -10,7 +10,11 @@
 .meta { font-size: 13px; color: var(--muted); }
 .preview { margin-top: var(--space-4); }
 .img { display: block; max-width: 100%; max-height: 70vh; margin: 0 auto; object-fit: contain; border-radius: var(--radius-inner); background: var(--surface); }
-.frame { display: block; width: 100%; height: 70vh; min-height: 420px; border: 0; border-radius: var(--radius-inner); background: var(--surface); box-shadow: inset 0 0 0 1px var(--border); }
+.frame { display: block; width: 100%; height: 75vh; min-height: 480px; border: 0; border-radius: var(--radius-inner); background: var(--surface); box-shadow: inset 0 0 0 1px var(--border); }
+.frameHead { margin: 0 0 var(--space-1); text-align: right; font-size: 13px; }
+.openLink { color: var(--muted); text-decoration: underline; }
+.openLink:hover { color: var(--text); }
+.openLink:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
 .text { margin: 0; max-height: 70vh; overflow: auto; padding: var(--space-4); border-radius: var(--radius-inner); background: var(--code-bg); color: var(--text); font-family: var(--font-mono), ui-monospace, monospace; font-size: 13px; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
 .text:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
 .note { margin: var(--space-2) 0 0; font-size: 13px; color: var(--muted); }

@@ -15,11 +15,12 @@ import { notice } from "@/lib/notice";
 import s from "./FilePreview.module.css";
 
 /**
- * Whether a PDF is drawn in an <iframe> while grading. Off: the server sends every file with `Content-Security-Policy: sandbox`,
- * and Chrome does not draw a PDF in a sandboxed frame (STEP 0 of Task 14 could not be run to check it, so the safe card is used).
- * Turn it on when the server serves `application/pdf` without that policy; the iframe code and its spec are in place.
+ * Whether a PDF is drawn in an <iframe> while grading. The server sends `application/pdf` without `Content-Security-Policy: sandbox`
+ * (ADR-0069), and nothing frames-blocks the app (no `X-Frame-Options`, `frame-ancestors` or `Cross-Origin-Resource-Policy` anywhere;
+ * the desktop CSP lists `vumlo-file:` in `frame-src`). Not checked in a real Chrome.
+ * WebKitGTK, the desktop app's webview on Linux, cannot draw a PDF and keeps the card.
  */
-export const PDF_IFRAME_PREVIEW = false;
+export const PDF_IFRAME_PREVIEW = true;
 
 /** The flag as the screens read it. Nothing but the mock build's test hook (src/mocks/StartWorker.tsx) ever changes it. */
 export const pdfPreview = { iframe: PDF_IFRAME_PREVIEW };
@@ -90,7 +91,13 @@ function Shown({ id, title, pdfIframe }: { id: string; title: string; pdfIframe:
         // eslint-disable-next-line @next/next/no-img-element -- the API serves the file with its own policy; there is nothing to optimize
         <img className={s.img} src={fileUrl(id)} alt={name} />
       )}
-      {kind === "pdf" && <iframe className={s.frame} src={fileUrl(id)} title={name} referrerPolicy="no-referrer" />}
+      {kind === "pdf" && (
+        <>
+          {/* The fallback for a browser that draws a blank frame: one small link, delete this line to drop it. */}
+          <p className={s.frameHead}><a className={s.openLink} href={fileUrl(id)} target="_blank" rel="noopener" onClick={(e) => { e.preventDefault(); void openFile(file).catch((err: unknown) => notice(err instanceof Error ? err.message : String(err))); }}>{t("gw.openTab")}</a></p>
+          <iframe className={s.frame} src={fileUrl(id)} title={name} referrerPolicy="no-referrer" />
+        </>
+      )}
       {kind === "text" && <TextPreview file={file} name={name} />}
       {kind === "card" && (
         <FileCard file={file} title={title}>
