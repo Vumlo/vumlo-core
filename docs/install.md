@@ -380,6 +380,30 @@ loses nothing: its data stays in the database, and `doctor` tells you when data 
 The web UI of a module is built into the web app only while the module is on; after changing `[modules]`
 run `brand apply` and rebuild the web app.
 
+### The Buddy (`ai_agent`)
+
+A chat helper on every page for students, teachers and admins ([ADR-0070](decisions/in-progress.md)). Build
+with the feature `ai_agent`, then:
+
+```toml
+[modules.ai_agent]
+enabled = true
+endpoint = "https://api.openai.com/v1"   # any OpenAI-compatible API, or your own: http://localhost:11434/v1
+# allow_insecure_http = true             # only for a model on this same machine
+model = "gpt-4o-mini"
+roles = "teacher,admin"                  # who gets it: student, teacher, admin (default: teacher,admin)
+daily_cap = 100                          # messages per person per day; 0 = no limit
+retention_days = 30                      # how long a chat is kept
+notice = "Your messages and the course data they ask about are sent to Example AI."
+```
+
+The key goes in the environment, never in the file: `VUMLO_AI_AGENT_API_KEY` (not needed for a model that
+has no key). The Buddy looks things up as the person who asks, so it shows nothing they could not open
+themselves. A student's Buddy explains and coaches; it can also prepare saving a draft of a text assignment or submitting the saved draft, but only words the student wrote in the chat (it cannot write or change an answer), and only the student's Confirm does it. A teacher's or admin's Buddy can also *prepare* a change (save a draft grade, publish grades, set or remove a deadline, create a draft section, page, assignment or quiz; what it creates is never published; for an admin also create a term or a group, add students to a group, and give a person a temporary password); it happens only when that person presses Confirm, as them, so the usual rules and audit rows apply. **What leaves your server:** the
+person's message, the earlier messages of their chat, and what the lookups return (for a teacher that
+includes the names of students whose work waits for grading; for an admin, the names, emails and roles of people they ask about). A temporary password never leaves your server: the person who confirms sees it in the panel, once, and the model never does. Say so in `notice`; it is shown on the first
+open. A person's chat, and the changes it prepared, are readable by nobody else and are deleted after `retention_days`; "Clear chat" deletes them at once. The desktop app shows the panel too, but only while it is online: it keeps no copy of the chat on the disk, and a message may take minutes (the app waits up to ten).
+
 ## Commands
 
 | Command | What it does |
