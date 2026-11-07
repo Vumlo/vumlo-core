@@ -83,7 +83,7 @@ pub struct Settings {
     #[serde(skip)]
     #[schemars(skip)]
     pub module_state: Modules,
-    /// The directory relative paths (`web.dir`, `cli.env_file`, `institution.logo`) are read from:
+    /// The directory relative paths (`web.dir`, `cli.env_file`) are read from:
     /// the one the config file is in. Filled by the loader.
     #[serde(skip)]
     #[schemars(skip)]
@@ -296,8 +296,6 @@ pub struct InstitutionSettings {
     /// The grading scale that applies: `institution.grading_scale` when set, else the one the
     /// mode implies (ADR-0022, ADR-0031).
     pub grading_scale: GradingScale,
-    /// A path or an http(s) URL of the logo `vumlo-cli brand apply` builds the icons from.
-    pub logo: Option<String>,
 }
 
 fn serialize_time_zone<S: serde::Serializer>(
@@ -324,8 +322,6 @@ pub struct InstitutionSection {
     language: Option<String>,
     #[schemars(extend("x-visibility" = "public"))]
     time_zone: Option<String>,
-    #[schemars(extend("x-visibility" = "private"))]
-    logo: Option<String>,
 }
 
 impl TryFrom<InstitutionSection> for InstitutionSettings {
@@ -369,10 +365,6 @@ impl TryFrom<InstitutionSection> for InstitutionSettings {
                 )
             })?,
         };
-        let logo = section
-            .logo
-            .map(|text| text.trim().to_owned())
-            .filter(|text| !text.is_empty());
         Ok(Self {
             name: section.name,
             short_name,
@@ -380,7 +372,6 @@ impl TryFrom<InstitutionSection> for InstitutionSettings {
             time_zone,
             mode,
             grading_scale: section.grading_scale.unwrap_or(implied),
-            logo,
         })
     }
 }

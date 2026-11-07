@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
-import { BrandMark } from "@/components/BrandMark";
+import { BrandLockup } from "@/components/BrandMark";
+import { appName } from "@/lib/appName";
 import { Icon } from "@/components/Icon";
 import { navFor } from "@/lib/nav";
 import { onSessionExpired } from "@/lib/api/client";
@@ -11,12 +12,12 @@ import { invalidate, retryFailed } from "@/lib/query";
 import { fullName, useMe, type User } from "@/lib/session";
 import { useTheme } from "@/lib/theme";
 import { initials } from "@/lib/format";
-import { useInstitution } from "@/lib/api/hooks/institution";
 import { useAppOffer } from "@/lib/downloads";
 import { Notice } from "./Notice";
 import { OfflineBar } from "./OfflineBar";
 import { useSignOut } from "./useSignOut";
 import { useT } from "@/lib/i18n";
+import { launchers } from "@/modules/enabled";
 import s from "./Shell.module.css";
 
 /** The address with its query string: a course screen is `/course?id=...`, and sign-in must come back to it. */
@@ -117,8 +118,6 @@ export function Shell({ children }: { children: ReactNode }) {
   const router = useRouter();
   const me = useMe();
   const t = useT();
-  const institution = useInstitution();
-  const institutionName = institution.data?.name ?? "Vumlo";
   const mustChange = me.data?.must_change_password === true;
 
   // Any call that answers 401 asks `/me` again; when that says 401 too, the effect below goes to sign-in.
@@ -152,9 +151,8 @@ export function Shell({ children }: { children: ReactNode }) {
   return (
     <>
       <header className={s.header}>
-        <Link href="/" className={s.brand}>
-          <BrandMark name={institutionName} tile={s.logo} img={s.logoImg} />
-          <span className={s.brandName}>{institutionName}</span>
+        <Link href="/" className={s.brand} aria-label={appName}>
+          <BrandLockup />
         </Link>
         <nav aria-label={t("shell.main")} className={s.nav}>
           {nav.map((n) => (
@@ -191,6 +189,10 @@ export function Shell({ children }: { children: ReactNode }) {
           </Link>
         ))}
       </nav>
+      {/* What the enabled modules draw on every page: the one slot of ADR-0071. */}
+      {launchers.map((Launcher, i) => (
+        <Launcher key={i} />
+      ))}
     </>
   );
 }

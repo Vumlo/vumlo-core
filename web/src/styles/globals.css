@@ -117,6 +117,42 @@ ul { margin: 0; padding: 0; list-style: none; }
 .check { display: flex; align-items: center; gap: var(--space-3); min-height: 40px; font-size: 14px; }
 .check input { width: 20px; height: 20px; accent-color: var(--accent); }
 
+/* The Vumlo logo (BrandLockup): the mark, the word as a mask in the ink colour, and the institution's short name. */
+.lockup { --h: 36px; display: inline-flex; align-items: center; gap: calc(var(--h) * 0.14); color: var(--brand-ink); }
+.lockup-mark { flex: none; height: var(--h); width: auto; }
+.lockup-word {
+  flex: none; height: calc(var(--h) * 0.5244); aspect-ratio: 445 / 129; background: currentColor;
+  -webkit-mask: url(/vumlo-wordmark.png) center / contain no-repeat; mask: url(/vumlo-wordmark.png) center / contain no-repeat;
+}
+.lockup-org { margin-left: calc(var(--h) * 0.1); padding-left: calc(var(--h) * 0.3); border-left: 1.5px solid var(--border-strong); color: var(--muted); font-size: calc(var(--h) * 0.44); font-weight: 500; line-height: 1.1; }
+
+/* A toggle pill that is a real checkbox underneath (the file-type menu of an assignment). */
+/* The file-type menu: one hairline-separated row per group; the whole name is the fold button. */
+.fold-list { border-bottom: 1px solid var(--border); }
+.fold { border-top: 1px solid var(--border); }
+.fold-head { display: flex; align-items: center; gap: var(--space-3); }
+.fold-head > input { width: 20px; height: 20px; flex: none; accent-color: var(--accent); }
+.fold-toggle {
+  flex: 1; display: flex; align-items: center; gap: var(--space-2); min-height: 44px; padding: 0; border: 0; background: none;
+  color: var(--text); font-size: 14px; font-weight: 500; text-align: left; cursor: pointer;
+}
+.fold-toggle:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; border-radius: var(--radius-field); }
+.fold-count { color: var(--muted); font-size: 13px; font-weight: 400; }
+.fold-chevron { flex: none; color: var(--muted); transition: transform var(--dur-micro) var(--ease-out); }
+.fold-toggle > span:first-child { flex: 1; }
+.fold-toggle[aria-expanded="true"] .fold-chevron { transform: rotate(180deg); }
+.fold .chips { padding: 0 0 var(--space-3) 32px; }
+.chips { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.chip {
+  position: relative;
+  display: inline-flex; align-items: center; min-height: 36px; padding: 0 var(--space-4); border-radius: var(--radius-pill);
+  background: var(--sunken); box-shadow: inset 0 0 0 1.5px transparent; color: var(--text); font-size: 14px; cursor: pointer;
+  transition: background-color var(--dur-micro) var(--ease-out), box-shadow var(--dur-micro) var(--ease-out);
+}
+.chip:hover { box-shadow: inset 0 0 0 1.5px var(--border-strong); }
+.chip:has(input:checked) { background: var(--accent); color: var(--accent-text); font-weight: 600; }
+.chip:has(input:focus-visible) { outline: 2px solid var(--ring); outline-offset: 2px; }
+
 .segmented { display: inline-flex; gap: var(--space-1); padding: var(--space-1); border-radius: var(--radius-pill); background: var(--sunken); }
 .segmented button {
   min-height: 36px; padding: 0 var(--space-4); border: 0; border-radius: var(--radius-pill); background: transparent;

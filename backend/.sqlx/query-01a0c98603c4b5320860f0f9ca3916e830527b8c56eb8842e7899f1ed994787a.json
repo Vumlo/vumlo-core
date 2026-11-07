@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE mod_ai_agent.usage SET count = greatest(count - 1, 0)\n         WHERE user_id = $1 AND day = current_date",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "01a0c98603c4b5320860f0f9ca3916e830527b8c56eb8842e7899f1ed994787a"
+}

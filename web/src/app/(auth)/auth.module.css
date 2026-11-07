@@ -2,10 +2,8 @@
 .page { min-height: 100vh; display: flex; flex-direction: column; }
 .center { flex: 1 1 auto; display: flex; align-items: center; justify-content: center; padding: 56px 16px 32px; }
 .col { width: 100%; max-width: 400px; }
-.brand { display: flex; align-items: center; gap: 12px; margin-bottom: 24px; }
-.logo { flex: none; width: 40px; height: 40px; border-radius: var(--radius-inner); background: var(--accent); color: var(--accent-text); display: flex; align-items: center; justify-content: center; font-size: 19px; font-weight: 700; }
-.logoImg { flex: none; width: 44px; height: 44px; object-fit: contain; }
-.brandName { font-size: 17px; font-weight: 600; line-height: 1.25; }
+.brand { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; margin-bottom: 24px; }
+.brand :global(.lockup) { --h: 52px; }
 .brandSub { font-size: 13px; color: var(--muted); }
 .card { padding: 32px; background: var(--surface); border-radius: var(--radius-card); box-shadow: var(--shadow); }
 .title { margin: 0 0 4px; font-size: 26px; line-height: 1.2; font-weight: 600; letter-spacing: -0.01em; }

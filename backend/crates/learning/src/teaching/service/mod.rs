@@ -244,6 +244,12 @@ pub async fn create_course(
     .await
 }
 
+/// Whether there is such a course, for a caller that is not a person and so has no view of it to
+/// ask for (a plugin, ADR-0072). It reveals nothing but that.
+pub async fn course_exists(conn: &mut PgConnection, course_id: Uuid) -> Result<bool, sqlx::Error> {
+    repo::course_exists(conn, course_id).await
+}
+
 pub async fn get_course(
     conn: &mut PgConnection,
     actor: &Actor,

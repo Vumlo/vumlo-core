@@ -2,11 +2,14 @@
 //! The core trusts none of it: an unknown scope, event or slot stops the install, and the message
 //! names the value.
 
+use std::collections::BTreeMap;
+
 use access::Scope;
 use serde::Deserialize;
 
 use crate::PluginsError;
 use crate::model::{API_VERSION, PluginManifest, SLOTS, SUBSCRIBABLE, UiSlot};
+use crate::settings::{MAX_SETTINGS, SettingSpec, is_key};
 
 const MAX_SUBSCRIPTIONS: usize = 10;
 const MAX_SLOTS: usize = 4;
@@ -26,6 +29,8 @@ struct Raw {
     scopes: Vec<String>,
     #[serde(default)]
     ui: Vec<RawSlot>,
+    #[serde(default)]
+    settings: BTreeMap<String, serde_json::Value>,
 }
 
 #[derive(Deserialize)]
@@ -128,13 +133,39 @@ pub fn parse_manifest(bytes: &[u8]) -> Result<PluginManifest, PluginsError> {
             shown(&twice.slot)
         )));
     }
+    let settings = settings(raw.settings)?;
     Ok(PluginManifest {
         id: raw.id,
         version: raw.version,
         subscribes,
         scopes,
         ui,
+        settings,
     })
+}
+
+fn settings(
+    raw: BTreeMap<String, serde_json::Value>,
+) -> Result<BTreeMap<String, SettingSpec>, PluginsError> {
+    if raw.len() > MAX_SETTINGS {
+        return Err(invalid(format!(
+            "settings lists more than {MAX_SETTINGS} settings"
+        )));
+    }
+    raw.into_iter()
+        .map(|(key, spec)| {
+            if !is_key(&key) {
+                return Err(invalid(format!(
+                    "setting {} must be lowercase letters, digits and `_`, start with a letter, and have at most 40 characters",
+                    shown(&key)
+                )));
+            }
+            let spec: SettingSpec = serde_json::from_value(spec)
+                .map_err(|e| invalid(format!("setting `{key}` is not valid ({e})")))?;
+            spec.validate(&key).map_err(invalid)?;
+            Ok((key, spec))
+        })
+        .collect()
 }
 
 fn slot(raw: RawSlot) -> Result<UiSlot, PluginsError> {

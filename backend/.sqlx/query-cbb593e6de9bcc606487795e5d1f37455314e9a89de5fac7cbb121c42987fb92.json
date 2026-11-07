@@ -1,0 +1,80 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO mod_ai_agent.proposals (id, user_id, tool, args, facts)\n         VALUES ($1, $2, $3, $4, $5)\n         RETURNING id, tool, args, facts, created_at",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "mod_ai_agent.proposals",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "tool",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "mod_ai_agent.proposals",
+            "name": "tool"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "args",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "mod_ai_agent.proposals",
+            "name": "args"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "facts",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "mod_ai_agent.proposals",
+            "name": "facts"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "mod_ai_agent.proposals",
+            "name": "created_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "cbb593e6de9bcc606487795e5d1f37455314e9a89de5fac7cbb121c42987fb92"
+}

@@ -7712,6 +7712,74 @@
         ]
       }
     },
+    "/api/v1/plugin-api/settings": {
+      "get": {
+        "tags": [
+          "plugin-api"
+        ],
+        "summary": "The plugin's own settings: what an administrator configured, secrets included, with the manifest's\ndefaults where nothing was set. The scope `settings:read`. The settings of a course come with\n`course_id` (`404` for a course that is not there). A plugin learns of a change from its `plugin.settings.changed` event.",
+        "operationId": "get_settings",
+        "parameters": [
+          {
+            "name": "course_id",
+            "in": "query",
+            "description": "Also the settings that are per course, for this course. Without it only the settings of the\nwhole institution are returned.",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The values",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PluginSettings"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No token, or one that is unknown or disabled",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The plugin was not granted `settings:read`",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`course_id` names no course",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "plugin": []
+          }
+        ]
+      }
+    },
     "/api/v1/plugin-api/submissions/{id}": {
       "get": {
         "tags": [
@@ -13421,6 +13489,19 @@
             "items": {
               "$ref": "#/components/schemas/PluginReport"
             }
+          }
+        }
+      },
+      "PluginSettings": {
+        "type": "object",
+        "description": "The settings of a plugin as an administrator configured them, with the defaults of its manifest\nwhere nothing was set. A setting with neither is not in `values`.",
+        "required": [
+          "values"
+        ],
+        "properties": {
+          "values": {
+            "type": "object",
+            "description": "Setting key to value: a string, a number, a boolean or a list. Secrets are in clear: the\nplugin is who they were entered for."
           }
         }
       },

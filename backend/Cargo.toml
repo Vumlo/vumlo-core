@@ -21,7 +21,7 @@ members = [
 ]
 
 [workspace.package]
-version = "0.4.0"
+version = "0.4.1"
 edition = "2024"
 publish = false
 
@@ -31,6 +31,8 @@ argon2 = "0.6"
 axum = "0.8"
 axum-extra = { version = "0.12", default-features = false, features = ["cookie"] }
 base64 = "0.23"
+# Sealing of secret plugin settings (ADR-0073). `alloc` only: the nonce comes from `rand`.
+chacha20poly1305 = { version = "0.11", default-features = false, features = ["alloc"] }
 chrono = { version = "0.4", features = ["serde"] }
 chrono-tz = { version = "0.10", default-features = false }
 clap = { version = "4", features = ["derive"] }
@@ -43,7 +45,6 @@ lettre = { version = "0.11", default-features = false, features = ["builder", "s
 image = { version = "0.25", default-features = false, features = ["png", "ico", "jpeg", "webp"] }
 rand = "0.10"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
-resvg = { version = "0.48", default-features = false }
 rpassword = "7"
 schemars = "1.2"
 serde = { version = "1", features = ["derive"] }
@@ -78,6 +79,8 @@ test-support = { path = "crates/test-support" }
 vumlo-config = { path = "crates/config" }
 # The test-only module (feature `dummy` of server and vumlo-cli); never in a default build.
 vumlo-module-dummy = { path = "crates/modules/dummy" }
+# The Buddy (feature `ai_agent` of server and vumlo-cli, ADR-0070).
+vumlo-module-ai-agent = { path = "crates/modules/ai_agent" }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

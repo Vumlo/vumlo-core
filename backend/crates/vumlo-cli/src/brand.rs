@@ -1,65 +1,37 @@
-//! `vumlo-cli brand apply`: everything the web build takes from the institution's configuration.
+//! `vumlo-cli brand apply`: everything the web build takes from the installation's configuration.
 //!
 //! It writes `.vumlo/generated/` next to `vumlo.toml`, from scratch every time: the public part of
 //! the configuration as `client-config.json` and its TypeScript types, the JSON Schema of
-//! `vumlo.toml`, the web manifest, and from the logo the favicon and the app icons. The web build
-//! reads only this directory (ADR-0054). Nothing here is served at run time: changing the
-//! configuration means `brand apply`, a web rebuild and a restart.
+//! `vumlo.toml`, the web manifest, and the favicon and the app icons made from the Vumlo mark.
+//! The logo is Vumlo's, the same in every installation (ADR-0054, amended). The web build reads
+//! only this directory. Nothing here is served at run time: changing the configuration means
+//! `brand apply`, a web rebuild and a restart.
 
 use std::io::Cursor;
 use std::path::Path;
-use std::time::Duration;
 
-use anyhow::{Context, bail};
+use anyhow::Context;
 use image::codecs::ico::{IcoEncoder, IcoFrame};
 use image::codecs::png::PngEncoder;
 use image::imageops::{self, FilterType};
 use image::{ExtendedColorType, ImageEncoder, Rgba, RgbaImage};
-use module_api::OutboundClient;
 use serde_json::json;
 use vumlo_config::{ClientConfig, Options, Settings};
 
 use crate::runtime::{self, VERSION};
 
-/// The most a logo may weigh, as a file or a download.
-const LOGO_MAX_BYTES: usize = 5 * 1024 * 1024;
-const LOGO_DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(10);
-/// A raster logo may not be larger than this in either direction (a decompression bomb guard).
-const LOGO_MAX_SIDE: u32 = 4096;
+/// The Vumlo mark (`brand/vumlo-mark.png`), compiled in: every installation has the same one.
+const LOGO: &[u8] = include_bytes!("../../../../brand/vumlo-mark.png");
 /// Every icon is scaled from this one. 1024 is what the desktop app's installer icons are made from (ADR-0062).
 const MASTER: u32 = 1024;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum LogoKind {
-    Png,
-    Jpeg,
-    Webp,
-    Svg,
-}
-
-impl LogoKind {
-    fn extension(self) -> &'static str {
-        match self {
-            Self::Png => "png",
-            Self::Jpeg => "jpg",
-            Self::Webp => "webp",
-            Self::Svg => "svg",
-        }
-    }
-}
-
-pub struct Logo {
-    pub bytes: Vec<u8>,
-    pub kind: LogoKind,
-}
 
 /// The files of `.vumlo/generated/`, by name, ready to write.
 pub type Files = Vec<(String, Vec<u8>)>;
 
-pub async fn apply(options: &Options, dry_run: bool) -> anyhow::Result<()> {
+pub fn apply(options: &Options, dry_run: bool) -> anyhow::Result<()> {
     let loaded = runtime::load(options)?;
     let settings = &loaded.settings;
-    let files = generate_from_config(settings).await?;
+    let files = generate(settings)?;
     let out = generated_dir(settings);
     if dry_run {
         for (name, bytes) in &files {
@@ -70,9 +42,6 @@ pub async fn apply(options: &Options, dry_run: bool) -> anyhow::Result<()> {
     }
     write_tree(&out, &files)?;
     println!("wrote {} files to {}", files.len(), out.display());
-    if settings.institution.logo.is_none() {
-        println!("(no institution.logo: no favicon or icons were generated)");
-    }
     println!("Next: rebuild the web app (`vumlo-cli build web`) and restart.");
     Ok(())
 }
@@ -82,89 +51,21 @@ pub fn generated_dir(settings: &Settings) -> std::path::PathBuf {
     settings.base_dir.join(".vumlo/generated")
 }
 
-/// Loads the logo the configuration names and renders everything from it.
-pub async fn generate_from_config(settings: &Settings) -> anyhow::Result<Files> {
-    let logo = match &settings.institution.logo {
-        Some(source) => Some(load_logo(settings, source).await?),
-        None => None,
-    };
-    generate(settings, logo.as_ref())
-}
-
-/// A problem with `institution.logo` that is visible without fetching it: for `config check`.
-pub fn logo_problem(settings: &Settings) -> Option<String> {
-    let source = settings.institution.logo.as_deref()?;
-    if is_url(source) {
-        return None;
-    }
-    let path = settings.base_dir.join(source);
-    (!path.is_file()).then(|| {
-        format!(
-            "institution.logo: {} is not a file (a path relative to vumlo.toml, or an http(s) URL)",
-            path.display()
-        )
-    })
-}
-
-fn is_url(source: &str) -> bool {
-    source.starts_with("http://") || source.starts_with("https://")
-}
-
-async fn load_logo(settings: &Settings, source: &str) -> anyhow::Result<Logo> {
-    let bytes = if is_url(source) {
-        let client = OutboundClient::new(
-            LOGO_DOWNLOAD_TIMEOUT,
-            LOGO_DOWNLOAD_TIMEOUT,
-            LOGO_MAX_BYTES,
-            3,
-        )?;
-        let (status, body) = client
-            .get(source)
-            .await
-            .with_context(|| "cannot download institution.logo")?;
-        if status != 200 {
-            bail!("institution.logo: the URL answered HTTP {status}");
-        }
-        body
+/// The name of the app: "Vumlo | Northfield", or just "Vumlo" when the short name is Vumlo itself.
+fn app_name(settings: &Settings) -> String {
+    let short = &settings.institution.short_name;
+    if short.eq_ignore_ascii_case("vumlo") {
+        "Vumlo".to_owned()
     } else {
-        let path = settings.base_dir.join(source);
-        let size = std::fs::metadata(&path)
-            .with_context(|| format!("institution.logo: cannot read {}", path.display()))?
-            .len();
-        if size > LOGO_MAX_BYTES as u64 {
-            bail!("institution.logo: {} is larger than 5 MiB", path.display());
-        }
-        std::fs::read(&path)
-            .with_context(|| format!("institution.logo: cannot read {}", path.display()))?
-    };
-    let kind = detect(&bytes).context(
-        "institution.logo: not a PNG, JPEG, WebP or SVG image (SVG text must be converted to paths)",
-    )?;
-    Ok(Logo { bytes, kind })
-}
-
-fn detect(bytes: &[u8]) -> Option<LogoKind> {
-    if bytes.starts_with(&[0x89, b'P', b'N', b'G']) {
-        Some(LogoKind::Png)
-    } else if bytes.starts_with(&[0xFF, 0xD8, 0xFF]) {
-        Some(LogoKind::Jpeg)
-    } else if bytes.len() > 12 && &bytes[..4] == b"RIFF" && &bytes[8..12] == b"WEBP" {
-        Some(LogoKind::Webp)
-    } else if std::str::from_utf8(&bytes[..bytes.len().min(2048)])
-        .is_ok_and(|head| head.contains("<svg"))
-    {
-        Some(LogoKind::Svg)
-    } else {
-        None
+        format!("Vumlo | {short}")
     }
 }
 
-/// The generated files, deterministic: the same configuration and logo give the same bytes.
-pub fn generate(settings: &Settings, logo: Option<&Logo>) -> anyhow::Result<Files> {
+/// The generated files, deterministic: the same configuration gives the same bytes.
+pub fn generate(settings: &Settings) -> anyhow::Result<Files> {
     let mut files: Files = Vec::new();
-    let logo_name = logo.map(|l| format!("logo.{}", l.kind.extension()));
 
-    let client = ClientConfig::new(settings, VERSION, logo_name.clone());
+    let client = ClientConfig::new(settings, VERSION);
     files.push(("client-config.json".into(), pretty(&json!(client))?));
     files.push((
         "client-config.d.ts".into(),
@@ -177,44 +78,34 @@ pub fn generate(settings: &Settings, logo: Option<&Logo>) -> anyhow::Result<File
         pretty(vumlo_config::settings_schema())?,
     ));
 
-    let icons = |sizes: &[(&str, u32)]| -> Vec<serde_json::Value> {
-        sizes
-            .iter()
-            .map(|(name, side)| {
-                json!({"src": format!("/brand/{name}"), "sizes": format!("{side}x{side}"), "type": "image/png"})
-            })
-            .collect()
-    };
-    let manifest_icons = if logo.is_some() {
-        icons(&[("icon-192.png", 192), ("icon-512.png", 512)])
-    } else {
-        Vec::new()
-    };
+    let icons: Vec<serde_json::Value> = [("icon-192.png", 192), ("icon-512.png", 512)]
+        .iter()
+        .map(|(name, side)| {
+            json!({"src": format!("/brand/{name}"), "sizes": format!("{side}x{side}"), "type": "image/png"})
+        })
+        .collect();
     files.push((
         "site.webmanifest".into(),
         pretty(&json!({
-            "name": settings.institution.name,
-            "short_name": settings.institution.short_name,
+            "name": app_name(settings),
+            "short_name": "Vumlo",
             "lang": settings.institution.language.as_str(),
             "start_url": "/",
             "scope": "/",
             "display": "standalone",
-            "icons": manifest_icons,
+            "icons": icons,
         }))?,
     ));
 
-    if let (Some(logo), Some(name)) = (logo, logo_name) {
-        let master = render_master(logo)?;
-        files.push((name, logo.bytes.clone()));
-        files.push(("icon-1024.png".into(), png(&master)?));
-        files.push(("icon-512.png".into(), png(&scaled(&master, 512))?));
-        files.push(("icon-192.png".into(), png(&scaled(&master, 192))?));
-        files.push((
-            "apple-touch-icon.png".into(),
-            png(&on_white(&scaled(&master, 180)))?,
-        ));
-        files.push(("favicon.ico".into(), favicon(&master)?));
-    }
+    let master = render_master()?;
+    files.push(("icon-1024.png".into(), png(&master)?));
+    files.push(("icon-512.png".into(), png(&scaled(&master, 512))?));
+    files.push(("icon-192.png".into(), png(&scaled(&master, 192))?));
+    files.push((
+        "apple-touch-icon.png".into(),
+        png(&on_white(&scaled(&master, 180)))?,
+    ));
+    files.push(("favicon.ico".into(), favicon(&master)?));
     Ok(files)
 }
 
@@ -224,49 +115,13 @@ fn pretty(value: &serde_json::Value) -> anyhow::Result<Vec<u8>> {
     Ok(text.into_bytes())
 }
 
-/// The logo as a square `MASTER` x `MASTER` image with a transparent margin where the logo is not
-/// square.
-fn render_master(logo: &Logo) -> anyhow::Result<RgbaImage> {
-    match logo.kind {
-        LogoKind::Svg => render_svg(&logo.bytes),
-        _ => {
-            let mut reader = image::ImageReader::new(Cursor::new(&logo.bytes))
-                .with_guessed_format()
-                .context("cannot read institution.logo")?;
-            let mut limits = image::Limits::default();
-            limits.max_image_width = Some(LOGO_MAX_SIDE);
-            limits.max_image_height = Some(LOGO_MAX_SIDE);
-            reader.limits(limits);
-            let decoded = reader.decode().context(
-                "institution.logo: cannot decode the image (or it is larger than 4096 px)",
-            )?;
-            Ok(fit_square(&decoded.to_rgba8(), MASTER))
-        }
-    }
-}
-
-fn render_svg(bytes: &[u8]) -> anyhow::Result<RgbaImage> {
-    use resvg::tiny_skia::{Pixmap, Transform};
-    let tree = resvg::usvg::Tree::from_data(bytes, &resvg::usvg::Options::default())
-        .context("institution.logo: cannot read the SVG")?;
-    let size = tree.size();
-    let longest = size.width().max(size.height());
-    if longest.is_nan() || longest <= 0.0 {
-        bail!("institution.logo: the SVG has no size");
-    }
-    let scale = MASTER as f32 / longest;
-    let mut pixmap = Pixmap::new(MASTER, MASTER).context("cannot allocate the icon")?;
-    let transform = Transform::from_scale(scale, scale).post_translate(
-        (MASTER as f32 - size.width() * scale) / 2.0,
-        (MASTER as f32 - size.height() * scale) / 2.0,
-    );
-    resvg::render(&tree, transform, &mut pixmap.as_mut());
-    let mut out = RgbaImage::new(MASTER, MASTER);
-    for (target, source) in out.pixels_mut().zip(pixmap.pixels()) {
-        let c = source.demultiply();
-        *target = Rgba([c.red(), c.green(), c.blue(), c.alpha()]);
-    }
-    Ok(out)
+/// The logo as a square `MASTER` x `MASTER` image with a transparent margin where it is not square.
+fn render_master() -> anyhow::Result<RgbaImage> {
+    let decoded = image::ImageReader::new(Cursor::new(LOGO))
+        .with_guessed_format()
+        .and_then(|reader| reader.decode().map_err(std::io::Error::other))
+        .context("cannot read brand/vumlo-mark.png")?;
+    Ok(fit_square(&decoded.to_rgba8(), MASTER))
 }
 
 fn fit_square(source: &RgbaImage, side: u32) -> RgbaImage {

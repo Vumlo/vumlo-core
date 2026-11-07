@@ -37,6 +37,13 @@ pub enum Event {
     EmailVerificationRequested { user_id: Uuid },
     /// A password reset was asked for this user; the handler mints the token and sends the link.
     PasswordResetRequested { user_id: Uuid },
+    /// An administrator changed or reset a setting of a plugin (ADR-0072). Only that plugin is
+    /// sent it. No key and no value: the plugin reads its settings again. `course_id` is `None`
+    /// for an institution-wide setting.
+    PluginSettingsChanged {
+        install_id: Uuid,
+        course_id: Option<Uuid>,
+    },
 }
 
 impl Event {
@@ -47,6 +54,7 @@ impl Event {
             Self::SubmissionSubmitted { .. } => "submission.submitted",
             Self::EmailVerificationRequested { .. } => "user.verification_requested",
             Self::PasswordResetRequested { .. } => "user.password_reset_requested",
+            Self::PluginSettingsChanged { .. } => "plugin.settings.changed",
         }
     }
 
@@ -56,7 +64,8 @@ impl Event {
             Self::GradePublished { .. }
             | Self::SubmissionSubmitted { .. }
             | Self::EmailVerificationRequested { .. }
-            | Self::PasswordResetRequested { .. } => 1,
+            | Self::PasswordResetRequested { .. }
+            | Self::PluginSettingsChanged { .. } => 1,
         }
     }
 
@@ -86,6 +95,10 @@ impl Event {
             | Self::PasswordResetRequested { user_id } => {
                 serde_json::json!({ "user_id": user_id })
             }
+            Self::PluginSettingsChanged {
+                install_id,
+                course_id,
+            } => serde_json::json!({ "install_id": install_id, "course_id": course_id }),
         }
     }
 }

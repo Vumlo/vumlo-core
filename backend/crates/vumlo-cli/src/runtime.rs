@@ -5,7 +5,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::Context;
-use module_api::{Module, ModuleState, NoActors};
+use module_api::{Institution, Module, ModuleState, NoActors};
 use sqlx::PgPool;
 use sqlx::migrate::Migrator;
 use sqlx::postgres::PgPoolOptions;
@@ -19,6 +19,8 @@ pub fn compiled() -> Vec<&'static dyn Module> {
     vec![
         #[cfg(feature = "dummy")]
         vumlo_module_dummy::module(),
+        #[cfg(feature = "ai_agent")]
+        vumlo_module_ai_agent::module(),
     ]
 }
 
@@ -69,6 +71,10 @@ pub fn module_state(
             .cloned()
             .unwrap_or_default(),
         Arc::new(NoActors),
+        Institution {
+            grading_scale: settings.institution.grading_scale,
+            editor: Arc::new(settings.editor.clone()),
+        },
     )
 }
 

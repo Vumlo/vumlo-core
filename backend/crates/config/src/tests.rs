@@ -338,6 +338,16 @@ fn the_accent_is_gone_and_the_error_says_so() {
 }
 
 #[test]
+fn the_logo_key_is_gone_and_the_error_says_so() {
+    let toml = VALID.replace(
+        "mode = \"university\"",
+        "mode = \"university\"\nlogo = \"brand/logo.png\"",
+    );
+    let e = build(&toml, &[]).unwrap_err().to_string();
+    assert!(e.contains("institution.logo: unknown key"), "{e}");
+}
+
+#[test]
 fn a_config_version_newer_than_the_binary_is_refused() {
     let e = build(&format!("config_version = 2\n{VALID}"), &[])
         .unwrap_err()
@@ -610,7 +620,6 @@ fn the_institution_profile_has_defaults() {
     assert_eq!(i.short_name, "Example University");
     assert_eq!(i.language, Language::En);
     assert_eq!(i.time_zone, chrono_tz::UTC);
-    assert_eq!(i.logo, None);
 }
 
 #[test]
@@ -618,13 +627,12 @@ fn the_institution_profile_is_read_from_the_file_and_the_environment() {
     let toml = VALID.replace(
         "mode = \"university\"",
         "mode = \"university\"\nshort_name = \" Example \"\nlanguage = \"uk\"\n\
-         time_zone = \"Europe/Kyiv\"\nlogo = \"brand/logo.svg\"",
+         time_zone = \"Europe/Kyiv\"",
     );
     let i = build(&toml, &[]).unwrap().institution;
     assert_eq!(i.short_name, "Example");
     assert_eq!(i.language, Language::Uk);
     assert_eq!(i.time_zone, chrono_tz::Europe::Kyiv);
-    assert_eq!(i.logo.as_deref(), Some("brand/logo.svg"));
     let i = build(&toml, &[("VUMLO__INSTITUTION__LANGUAGE", "en")])
         .unwrap()
         .institution;

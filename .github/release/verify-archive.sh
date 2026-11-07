@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Proves that a release archive works, by following docs/install.md (the Docker path) in a clean
-# directory: verify the checksum, unpack, init, configure, replace the placeholder logo, config
+# directory: verify the checksum, unpack, init, configure, config
 # check, brand apply, build, migrate, create an administrator, start, doctor, and ask the API and
 # the web app. Everything it creates is removed at the end.
 #
@@ -34,7 +34,7 @@ step "1. verify and unpack"
 sha256sum --check --ignore-missing SHA256SUMS
 tar xzf "vumlo-$version-source.tar.gz"
 cd "vumlo-$version"
-for unwanted in .github docs/decisions backend/crates/server/tests backend/crates/modules backend/crates/test-support ARCHITECTURE.md AGENTS.md; do
+for unwanted in .github docs/decisions backend/crates/server/tests backend/crates/modules backend/crates/test-support ARCHITECTURE.md docs/PLAN.md CLAUDE.md AGENTS.md; do
     [ ! -e "$unwanted" ] || { echo "the archive contains $unwanted" >&2; exit 1; }
 done
 # No crate ships its tests or the test harness: every `tests.rs` is deleted, and a `mod tests;` declaration
@@ -43,29 +43,26 @@ leftover="$(find backend/crates -type f \( -name tests.rs -o -name content_tests
 [ -z "$leftover" ] || { echo "the archive contains test files:" >&2; echo "$leftover" >&2; exit 1; }
 leftover="$(find backend/crates -type d \( -name tests -o -name test-support \) -print)"
 [ -z "$leftover" ] || { echo "the archive contains test directories:" >&2; echo "$leftover" >&2; exit 1; }
-for wanted in vumlo vumlo.toml.example docs/install.md docs/desktop.md CHANGELOG.md brand/logo.png deploy/compose.yaml backend/.sqlx desktop/scripts/build.mjs desktop/release/desktop-release.yml desktop/Cargo.lock; do
+for wanted in vumlo vumlo.toml.example docs/install.md docs/desktop.md docs/img/student-course.png CHANGELOG.md brand/vumlo-mark.png brand/vumlo-logo.png deploy/compose.yaml backend/.sqlx desktop/scripts/build.mjs desktop/release/desktop-release.yml desktop/Cargo.lock; do
     [ -e "$wanted" ] || { echo "the archive lacks $wanted" >&2; exit 1; }
 done
 
 node --check desktop/scripts/build.mjs
 node --check desktop/scripts/config.mjs
 
-step "2. configure (init, .env, vumlo.toml, logo)"
+step "2. configure (init, .env, vumlo.toml)"
 ./vumlo init
 cp deploy/env.example .env && chmod 600 .env
 db_password="$(openssl rand -hex 16)"
 sed -i "s/change-me/$db_password/g" .env
 grep -q '^name = "Vumlo"' vumlo.toml          # the placeholder name
-printf '%s\n' '<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"><rect width="64" height="64" fill="#b00020"/></svg>' >brand/own-logo.svg
-sed -i 's#^logo = "brand/logo.png"#logo = "brand/own-logo.svg"#' vumlo.toml
 sed -i 's/^name = "Vumlo"/name = "Verification University"/' vumlo.toml
 
 step "3. config check, brand apply"
 ./vumlo config check
 ./vumlo brand apply
 grep -q 'Verification University' .vumlo/generated/client-config.json
-[ ! -e .vumlo/generated/logo.png ]   # the placeholder is not what was generated
-[ "$(cat .vumlo/generated/logo.svg)" = "$(cat brand/own-logo.svg)" ]
+[ -s .vumlo/generated/favicon.ico ]
 
 step "4. build"
 ./vumlo version

@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT args FROM mod_ai_agent.proposals\n         WHERE id = $1 AND user_id = $2 AND status = 'pending'\n           AND created_at > now() - interval '1 day'",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "args",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "mod_ai_agent.proposals",
+            "name": "args"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "1b8c5ca76d46e9276a6c5bd2e7c9d62ad371849880ff9fdd0a136b686e03871e"
+}

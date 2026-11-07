@@ -223,6 +223,18 @@ const SUBMIT: &str = "/assignments/a1/submission/submit";
 // --- pure helpers ---------------------------------------------------------------------------------
 
 #[test]
+fn the_buddys_chat_is_never_kept_and_its_messages_get_time_to_think() {
+    assert!(cacheable("/me/courses"));
+    assert!(!cacheable("/auth/me") && !cacheable("/health"));
+    assert!(!cacheable("/modules/ai_agent/chat"));
+    assert_eq!(timeout_for("/courses/c1"), Duration::from_secs(30));
+    assert_eq!(
+        timeout_for("/modules/ai_agent/messages"),
+        Duration::from_secs(600)
+    );
+}
+
+#[test]
 fn only_paths_inside_the_api_are_accepted() {
     assert!(valid_path("/me"));
     assert!(valid_path("/courses/abc/content?x=1"));

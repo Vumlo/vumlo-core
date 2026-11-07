@@ -35,6 +35,8 @@ pub struct SettingSpec {
 pub enum SettingKind {
     Text,
     Bool,
+    /// A whole number, zero or more.
+    Int,
     /// An `https://` URL without credentials (`http://` only for localhost with
     /// `allow_insecure_http = true`).
     Endpoint,
@@ -336,6 +338,8 @@ fn value_ok(kind: SettingKind, value: &serde_json::Value) -> Result<(), &'static
         SettingKind::Text | SettingKind::Endpoint => Err("must be a string"),
         SettingKind::Bool if value.is_boolean() => Ok(()),
         SettingKind::Bool => Err("must be true or false"),
+        SettingKind::Int if value.is_u64() => Ok(()),
+        SettingKind::Int => Err("must be a whole number, zero or more"),
         SettingKind::Secret { .. } => Err("is a secret"),
     }
 }

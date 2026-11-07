@@ -9,6 +9,7 @@
   --border: oklch(84% 0.04 300);
   --border-strong: oklch(58% 0.09 295);
   --text: oklch(18% 0.02 300);
+  --brand-ink: oklch(33% 0.06 280);
   --muted: oklch(42% 0.05 300);
   --accent: oklch(50% 0.25 290);
   --accent-text: oklch(98% 0.01 300);
@@ -65,6 +66,7 @@
   --border: oklch(42% 0.04 290);
   --border-strong: oklch(60% 0.08 292);
   --text: oklch(95% 0.02 300);
+  --brand-ink: oklch(92% 0.03 290);
   --muted: oklch(76% 0.05 300);
   --accent: oklch(56% 0.25 290);
   --accent-text: oklch(98% 0.01 300);

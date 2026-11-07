@@ -1774,6 +1774,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/plugin-api/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The plugin's own settings: what an administrator configured, secrets included, with the manifest's
+         *     defaults where nothing was set. The scope `settings:read`. The settings of a course come with
+         *     `course_id` (`404` for a course that is not there). A plugin learns of a change from its `plugin.settings.changed` event.
+         */
+        get: operations["get_settings"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/plugin-api/submissions/{id}": {
         parameters: {
             query?: never;
@@ -3494,6 +3515,17 @@ export interface components {
         };
         PluginReports: {
             items: components["schemas"]["PluginReport"][];
+        };
+        /**
+         * @description The settings of a plugin as an administrator configured them, with the defaults of its manifest
+         *     where nothing was set. A setting with neither is not in `values`.
+         */
+        PluginSettings: {
+            /**
+             * @description Setting key to value: a string, a number, a boolean or a list. Secrets are in clear: the
+             *     plugin is who they were entered for.
+             */
+            values: Record<string, never>;
         };
         /** @description A page that an enabled plugin offers in a slot. */
         PluginSlot: {
@@ -9493,6 +9525,59 @@ export interface operations {
             };
             /** @description `cascade` is missing */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    get_settings: {
+        parameters: {
+            query?: {
+                /**
+                 * @description Also the settings that are per course, for this course. Without it only the settings of the
+                 *     whole institution are returned.
+                 */
+                course_id?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The values */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PluginSettings"];
+                };
+            };
+            /** @description No token, or one that is unknown or disabled */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The plugin was not granted `settings:read` */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description `course_id` names no course */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

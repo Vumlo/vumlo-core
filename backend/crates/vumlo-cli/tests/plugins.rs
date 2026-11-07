@@ -15,10 +15,15 @@ const KEY: &str = "0123456789abcdef0123456789abcdef";
 
 /// A plugin that serves only its manifest, asking for `scopes`. Returns where it listens.
 async fn plugin(scopes: &[&str]) -> String {
-    let manifest = json!({
+    serve(json!({
         "id": "hello", "version": "1.0.0", "api": "1",
         "subscribes": ["submission.submitted"], "scopes": scopes
-    });
+    }))
+    .await
+}
+
+/// A plugin that serves only this manifest. Returns where it listens.
+async fn serve(manifest: Value) -> String {
     let app = Router::new().route(
         "/manifest",
         get(move || {
@@ -366,6 +371,314 @@ async fn every_change_is_audited_and_a_command_that_changes_nothing_says_so() {
             "{}",
             missing.stderr
         );
+    })
+    .await;
+}
+
+// ---------------------------------------------------------------------------------------------
+// Settings (ADR-0072)
+// ---------------------------------------------------------------------------------------------
+
+async fn configurable() -> String {
+    serve(json!({
+        "id": "hello", "version": "1.0.0", "api": "1",
+        "subscribes": ["plugin.settings.changed"], "scopes": ["settings:read"],
+        "settings": {
+            "unit": {"type": "string", "enum": ["words", "characters"], "default": "words",
+                     "description": "What to count"},
+            "api_token": {"type": "string", "secret": true},
+            "limit": {"type": "number", "minimum": 1},
+            "tags": {"type": "array", "items": {"type": "string"}},
+            "max_words": {"type": "number", "scope": "course"}
+        }
+    }))
+    .await
+}
+
+async fn install_configurable(env: &Env) {
+    let base = configurable().await;
+    let out = run(
+        env,
+        &["plugin", "install", &base, "--grant", "settings:read"],
+        None,
+    )
+    .await;
+    assert!(out.ok, "{}", out.stderr);
+    assert!(
+        out.stdout
+            .contains("declares settings: api_token, limit, max_words, tags, unit"),
+        "{}",
+        out.stdout
+    );
+}
+
+async fn setting_rows(pool: &PgPool) -> i64 {
+    sqlx::query_scalar("SELECT count(*) FROM plugins.settings")
+        .fetch_one(pool)
+        .await
+        .unwrap()
+}
+
+#[tokio::test]
+async fn settings_are_listed_set_read_and_unset_with_one_audit_row_each_and_no_value_in_it() {
+    db_test(async |pool| {
+        common::migrate_modules(&pool).await;
+        let env = Env::new(&pool);
+        install_configurable(&env).await;
+
+        let listed = run(&env, &["plugin", "settings", "list", "hello"], None).await;
+        assert!(listed.ok, "{}", listed.stderr);
+        for line in [
+            "unit",
+            "words (default)",
+            "What to count",
+            "api_token",
+            "(not set)",
+            "per course: add --course <id>",
+        ] {
+            assert!(
+                listed.stdout.contains(line),
+                "{line} in:\n{}",
+                listed.stdout
+            );
+        }
+
+        // Text stays text; a number, a boolean and a list are JSON.
+        for (key, value) in [
+            ("unit", "characters"),
+            ("limit", "12"),
+            ("tags", r#"["a","b"]"#),
+        ] {
+            let out = run(
+                &env,
+                &["plugin", "settings", "set", "hello", key, value],
+                None,
+            )
+            .await;
+            assert!(out.ok, "{key}: {}", out.stderr);
+        }
+        let get = |key: &'static str| {
+            let env = &env;
+            async move {
+                run(env, &["plugin", "settings", "get", "hello", key], None)
+                    .await
+                    .stdout
+                    .trim()
+                    .to_owned()
+            }
+        };
+        assert_eq!(get("unit").await, "characters");
+        assert_eq!(get("limit").await, "12");
+        assert_eq!(get("tags").await, r#"["a","b"]"#);
+
+        // The same value again changes nothing and writes nothing.
+        let again = run(
+            &env,
+            &["plugin", "settings", "set", "hello", "unit", "characters"],
+            None,
+        )
+        .await;
+        assert!(
+            again.ok && again.stdout.contains("nothing was changed"),
+            "{}",
+            again.stdout
+        );
+
+        let unset = run(
+            &env,
+            &["plugin", "settings", "unset", "hello", "unit"],
+            None,
+        )
+        .await;
+        assert!(unset.ok, "{}", unset.stderr);
+        assert_eq!(get("unit").await, "words (default)");
+        let again = run(
+            &env,
+            &["plugin", "settings", "unset", "hello", "unit"],
+            None,
+        )
+        .await;
+        assert!(again.stdout.contains("nothing was changed"));
+
+        // Audit: the install, then three sets and one unset; never a value.
+        let rows = audit(&pool).await;
+        let actions: Vec<_> = rows.iter().map(|r| r.0.as_str()).collect();
+        assert_eq!(
+            actions,
+            [
+                "plugin.install",
+                "plugin.setting.set",
+                "plugin.setting.set",
+                "plugin.setting.set",
+                "plugin.setting.unset"
+            ]
+        );
+        let meta = audit_meta(&pool, "plugin.setting.unset").await;
+        assert_eq!(
+            meta,
+            json!({"plugin_id": "hello", "key": "unit", "course_id": null})
+        );
+        let event_count: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM events.outbox WHERE type = 'plugin.settings.changed'",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(event_count, 4, "one per change, none for the repeats");
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn a_secret_is_read_from_standard_input_stored_sealed_and_never_printed() {
+    db_test(async |pool| {
+        common::migrate_modules(&pool).await;
+        let env = Env::new(&pool);
+        install_configurable(&env).await;
+
+        let out = run(
+            &env,
+            &["plugin", "settings", "set", "hello", "api_token", "-"],
+            Some("tok-s3cret\n"),
+        )
+        .await;
+        assert!(out.ok, "{}", out.stderr);
+        assert!(!out.stdout.contains("s3cret") && !out.stderr.contains("s3cret"));
+
+        let stored: String =
+            sqlx::query_scalar("SELECT value::text FROM plugins.settings WHERE key = 'api_token'")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert!(!stored.contains("s3cret"));
+        for args in [
+            vec!["plugin", "settings", "get", "hello", "api_token"],
+            vec!["plugin", "settings", "list", "hello"],
+        ] {
+            let shown = run(&env, &args, None).await;
+            assert!(
+                shown.ok && shown.stdout.contains("(set)") && !shown.stdout.contains("s3cret"),
+                "{}",
+                shown.stdout
+            );
+        }
+        let meta = audit_meta(&pool, "plugin.setting.set").await;
+        assert!(!meta.to_string().contains("s3cret"));
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn a_value_the_spec_refuses_a_wrong_scope_and_an_unknown_course_change_nothing() {
+    db_test(async |pool| {
+        common::migrate_modules(&pool).await;
+        let env = Env::new(&pool);
+        install_configurable(&env).await;
+        let course = uuid::Uuid::now_v7().to_string();
+
+        for (args, message) in [
+            (
+                vec!["unit", "furlongs"],
+                "must be one of: words, characters",
+            ),
+            (vec!["limit", "0"], "must be at least 1"),
+            (vec!["limit", "many"], "must be a number"),
+            (vec!["tags", "a,b"], "must be a list"),
+            (vec!["nope", "1"], "has no setting `nope`"),
+            (vec!["max_words", "5"], "give the course"),
+            (
+                vec!["unit", "words", "--course", &course],
+                "belongs to no course",
+            ),
+            (
+                vec!["max_words", "5", "--course", &course],
+                "no such course",
+            ),
+        ] {
+            let mut full = vec!["plugin", "settings", "set", "hello"];
+            full.extend(&args);
+            let out = run(&env, &full, None).await;
+            assert!(
+                !out.ok && out.stderr.contains(message),
+                "{args:?}: {}",
+                out.stderr
+            );
+        }
+        assert_eq!(setting_rows(&pool).await, 0);
+        assert_eq!(audit(&pool).await.len(), 1, "only the install");
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn a_dry_run_checks_the_value_and_writes_nothing() {
+    db_test(async |pool| {
+        common::migrate_modules(&pool).await;
+        let env = Env::new(&pool);
+        install_configurable(&env).await;
+
+        let out = run(
+            &env,
+            &[
+                "plugin",
+                "settings",
+                "set",
+                "hello",
+                "unit",
+                "characters",
+                "--dry-run",
+            ],
+            None,
+        )
+        .await;
+        assert!(out.ok && out.stdout.contains("would set"), "{}", out.stdout);
+        let bad = run(
+            &env,
+            &[
+                "plugin",
+                "settings",
+                "set",
+                "hello",
+                "unit",
+                "x",
+                "--dry-run",
+            ],
+            None,
+        )
+        .await;
+        assert!(!bad.ok);
+        assert_eq!(setting_rows(&pool).await, 0);
+        let events: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM events.outbox WHERE type = 'plugin.settings.changed'",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!((events, audit(&pool).await.len()), (0, 1));
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn a_course_setting_is_set_and_listed_for_its_course() {
+    db_test(async |pool| {
+        common::migrate_modules(&pool).await;
+        let env = Env::new(&pool);
+        install_configurable(&env).await;
+        let owner = test_support::insert_user(&pool, "t@x.edu", "teacher").await;
+        let course = uuid::Uuid::now_v7();
+        sqlx::query("INSERT INTO teaching.courses (id, title, owner_id, created_by) VALUES ($1, 'C', $2, $2)")
+            .bind(course).bind(owner).execute(&pool).await.unwrap();
+        let course = course.to_string();
+
+        let out = run(&env, &["plugin", "settings", "set", "hello", "max_words", "300", "--course", &course], None).await;
+        assert!(out.ok, "{}", out.stderr);
+        let listed = run(&env, &["plugin", "settings", "list", "hello", "--course", &course], None).await;
+        assert!(listed.stdout.contains("max_words") && listed.stdout.contains("300"), "{}", listed.stdout);
+        // The institution's settings are named, not shown, in a course's list.
+        assert!(listed.stdout.contains("per institution: list without --course") && !listed.stdout.contains("(not set)"), "{}", listed.stdout);
+        let meta = audit_meta(&pool, "plugin.setting.set").await;
+        assert_eq!(meta["course_id"], course.as_str());
     })
     .await;
 }

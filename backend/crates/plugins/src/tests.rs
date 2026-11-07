@@ -90,5 +90,12 @@ async fn an_event_in_the_outbox_owes_a_delivery_to_each_plugin_that_asked_for_it
 
 #[test]
 fn the_events_a_plugin_may_subscribe_to_are_events_that_exist_and_hold_ids_only() {
-    assert_eq!(SUBSCRIBABLE, ["submission.submitted", "grade.published"]);
+    assert_eq!(
+        SUBSCRIBABLE,
+        [
+            "submission.submitted",
+            "grade.published",
+            "plugin.settings.changed"
+        ]
+    );
 }

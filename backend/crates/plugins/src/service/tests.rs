@@ -331,3 +331,345 @@ async fn list_counts_what_is_pending_and_what_is_dead() {
     })
     .await;
 }
+
+// ---------------------------------------------------------------------------------------------
+// Settings (ADR-0072)
+// ---------------------------------------------------------------------------------------------
+
+fn configurable(id: &str) -> PluginManifest {
+    let value = json!({
+        "id": id, "version": "1.0.0", "api": "1",
+        "scopes": ["settings:read"], "subscribes": ["plugin.settings.changed"],
+        "settings": {
+            "unit": {"type": "string", "enum": ["words", "characters"], "default": "words"},
+            "api_token": {"type": "string", "secret": true},
+            "tags": {"type": "array", "items": {"type": "string"}},
+            "max_words": {"type": "number", "minimum": 1, "scope": "course"},
+            "strict": {"type": "boolean", "default": false, "scope": "course"}
+        }
+    });
+    parse_manifest(value.to_string().as_bytes()).unwrap()
+}
+
+async fn install_configurable(pool: &PgPool, id: &str) -> Installed {
+    let mut conn = pool.acquire().await.unwrap();
+    install(
+        &mut conn,
+        &key(),
+        "http://127.0.0.1:9",
+        &configurable(id),
+        &[Scope::SettingsRead],
+    )
+    .await
+    .unwrap()
+}
+
+async fn a_course(pool: &PgPool) -> Uuid {
+    let owner =
+        test_support::insert_user(pool, &format!("{}@x.edu", Uuid::now_v7()), "teacher").await;
+    let actor = Actor::for_tests(owner, common::Role::Teacher, Uuid::now_v7());
+    let mut conn = pool.acquire().await.unwrap();
+    let title = learning::teaching::CourseTitle::parse("Course").unwrap();
+    learning::teaching::create_course(&mut conn, &actor, title, None)
+        .await
+        .unwrap()
+        .id
+}
+
+async fn set(
+    pool: &PgPool,
+    plugin: &str,
+    name: &str,
+    value: Value,
+    course: Option<Uuid>,
+) -> Result<bool, PluginsError> {
+    let mut conn = pool.acquire().await.unwrap();
+    set_setting(&mut conn, &key(), plugin, name, value, course).await
+}
+
+/// What the plugin reads, as the plugin API would give it.
+async fn read(pool: &PgPool, installed: &Installed, course: Option<Uuid>) -> Map<String, Value> {
+    let caller = PluginCaller::for_install(
+        installed.install.id,
+        &installed.install.plugin_id,
+        &installed.install.scopes,
+    );
+    let mut conn = pool.acquire().await.unwrap();
+    settings_for_plugin(&mut conn, &caller, &key(), course)
+        .await
+        .unwrap()
+}
+
+async fn changes(pool: &PgPool) -> Vec<Value> {
+    sqlx::query_scalar(
+        "SELECT payload FROM events.outbox WHERE type = 'plugin.settings.changed' ORDER BY id",
+    )
+    .fetch_all(pool)
+    .await
+    .unwrap()
+}
+
+#[tokio::test]
+async fn a_setting_is_its_default_until_set_and_a_set_value_is_what_the_plugin_reads() {
+    db_test(async |pool| {
+        let installed = install_configurable(&pool, "conf").await;
+        assert_eq!(
+            read(&pool, &installed, None).await,
+            json!({"unit": "words"}).as_object().unwrap().clone()
+        );
+
+        assert!(
+            set(&pool, "conf", "unit", json!("characters"), None)
+                .await
+                .unwrap()
+        );
+        assert!(
+            set(&pool, "conf", "tags", json!(["a", "b"]), None)
+                .await
+                .unwrap()
+        );
+        let values = read(&pool, &installed, None).await;
+        assert_eq!(
+            Value::Object(values),
+            json!({"unit": "characters", "tags": ["a", "b"]})
+        );
+
+        // The administrator sees the same, with where each value comes from.
+        let mut conn = pool.acquire().await.unwrap();
+        let views = list_settings(&mut conn, "conf", None).await.unwrap();
+        let unit = views.iter().find(|v| v.key == "unit").unwrap();
+        assert_eq!(
+            (unit.is_set, unit.value.clone()),
+            (true, Some(json!("characters")))
+        );
+        assert!(
+            unset_setting(&mut conn, "conf", "unit", None)
+                .await
+                .unwrap()
+        );
+        let unit = get_setting(&mut conn, "conf", "unit", None).await.unwrap();
+        assert_eq!((unit.is_set, unit.value), (false, Some(json!("words"))));
+        // Course settings are not in the institution's list.
+        assert!(views.iter().all(|v| v.key != "max_words"));
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn a_secret_is_stored_sealed_and_only_the_plugin_reads_it_back() {
+    db_test(async |pool| {
+        let installed = install_configurable(&pool, "conf").await;
+        assert!(
+            set(&pool, "conf", "api_token", json!("tok-s3cret"), None)
+                .await
+                .unwrap()
+        );
+
+        let stored: String =
+            sqlx::query_scalar("SELECT value::text FROM plugins.settings WHERE key = 'api_token'")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert!(!stored.contains("s3cret"), "{stored}");
+        assert_eq!(
+            read(&pool, &installed, None).await["api_token"],
+            "tok-s3cret"
+        );
+
+        // The administrator is told it is set, never what it is.
+        let mut conn = pool.acquire().await.unwrap();
+        let view = get_setting(&mut conn, "conf", "api_token", None)
+            .await
+            .unwrap();
+        assert_eq!((view.is_set, view.value), (true, None));
+        assert!(
+            !format!(
+                "{:?}",
+                list_settings(&mut conn, "conf", None).await.unwrap()
+            )
+            .contains("s3cret")
+        );
+
+        // The same token again is no change, although its sealed form would differ.
+        assert!(
+            !set(&pool, "conf", "api_token", json!("tok-s3cret"), None)
+                .await
+                .unwrap()
+        );
+        assert!(
+            set(&pool, "conf", "api_token", json!("tok-other"), None)
+                .await
+                .unwrap()
+        );
+        assert_eq!(
+            read(&pool, &installed, None).await["api_token"],
+            "tok-other"
+        );
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn reading_settings_needs_the_scope_and_a_plugin_reads_only_its_own() {
+    db_test(async |pool| {
+        let one = install_configurable(&pool, "one").await;
+        let two = install_configurable(&pool, "two").await;
+        set(&pool, "one", "api_token", json!("one-token"), None)
+            .await
+            .unwrap();
+
+        let mut conn = pool.acquire().await.unwrap();
+        let without = PluginCaller::for_install(one.install.id, "one", &[Scope::SubmissionsRead]);
+        assert!(matches!(
+            settings_for_plugin(&mut conn, &without, &key(), None).await,
+            Err(PluginsError::Forbidden(_))
+        ));
+        assert!(!read(&pool, &two, None).await.contains_key("api_token"));
+        assert_eq!(read(&pool, &one, None).await["api_token"], "one-token");
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn a_value_is_checked_against_the_spec_and_a_wrong_one_stores_and_announces_nothing() {
+    db_test(async |pool| {
+        install_configurable(&pool, "conf").await;
+        for (name, value) in [
+            ("unit", json!("furlongs")),
+            ("unit", json!(3)),
+            ("tags", json!("a")),
+            ("api_token", json!("")),
+        ] {
+            let error = set(&pool, "conf", name, value, None).await.unwrap_err();
+            assert!(
+                matches!(error, PluginsError::BadSetting { .. }),
+                "{name}: {error}"
+            );
+        }
+        assert!(matches!(
+            set(&pool, "conf", "nope", json!(1), None).await,
+            Err(PluginsError::NoSuchSetting { .. })
+        ));
+        assert!(matches!(
+            set(&pool, "missing", "unit", json!("words"), None).await,
+            Err(PluginsError::NotFound(_))
+        ));
+        assert_eq!(count_settings(&pool).await, 0);
+        assert!(changes(&pool).await.is_empty());
+    })
+    .await;
+}
+
+async fn count_settings(pool: &PgPool) -> i64 {
+    sqlx::query_scalar("SELECT count(*) FROM plugins.settings")
+        .fetch_one(pool)
+        .await
+        .unwrap()
+}
+
+#[tokio::test]
+async fn a_course_setting_is_per_course_and_a_scope_is_not_mixed_up() {
+    db_test(async |pool| {
+        let installed = install_configurable(&pool, "conf").await;
+        let (a, b) = (a_course(&pool).await, a_course(&pool).await);
+
+        assert!(
+            set(&pool, "conf", "max_words", json!(100), Some(a))
+                .await
+                .unwrap()
+        );
+        assert!(
+            set(&pool, "conf", "max_words", json!(250), Some(b))
+                .await
+                .unwrap()
+        );
+        assert!(
+            set(&pool, "conf", "max_words", json!(120), Some(a))
+                .await
+                .unwrap()
+        );
+
+        // One course's value is not another's; a course with none gets the default or nothing.
+        assert_eq!(read(&pool, &installed, Some(a)).await["max_words"], 120);
+        assert_eq!(read(&pool, &installed, Some(b)).await["max_words"], 250);
+        let fresh = a_course(&pool).await;
+        let values = read(&pool, &installed, Some(fresh)).await;
+        assert!(!values.contains_key("max_words") && values["strict"] == false);
+        // The institution's values come along, and no course key without a course.
+        assert_eq!(values["unit"], "words");
+        assert!(!read(&pool, &installed, None).await.contains_key("strict"));
+        assert_eq!(count_settings(&pool).await, 2);
+
+        // A course setting needs a course and an institution setting refuses one.
+        assert!(matches!(
+            set(&pool, "conf", "max_words", json!(1), None).await,
+            Err(PluginsError::WrongScope { .. })
+        ));
+        assert!(matches!(
+            set(&pool, "conf", "unit", json!("words"), Some(a)).await,
+            Err(PluginsError::WrongScope { .. })
+        ));
+        // A course that is not there.
+        assert!(matches!(
+            set(&pool, "conf", "max_words", json!(1), Some(Uuid::now_v7())).await,
+            Err(PluginsError::CourseGone)
+        ));
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn a_change_is_announced_once_with_ids_only_and_only_to_its_plugin() {
+    db_test(async |pool| {
+        let one = install_configurable(&pool, "one").await;
+        install_configurable(&pool, "two").await;
+        let course = a_course(&pool).await;
+
+        assert!(set(&pool, "one", "unit", json!("characters"), None).await.unwrap());
+        assert!(!set(&pool, "one", "unit", json!("characters"), None).await.unwrap(), "same value");
+        assert!(set(&pool, "one", "max_words", json!(10), Some(course)).await.unwrap());
+        {
+            let mut conn = pool.acquire().await.unwrap();
+            assert!(unset_setting(&mut conn, "one", "max_words", Some(course)).await.unwrap());
+            assert!(!unset_setting(&mut conn, "one", "max_words", Some(course)).await.unwrap());
+        }
+
+        let events = changes(&pool).await;
+        assert_eq!(events.len(), 3, "{events:?}");
+        assert_eq!(events[0], json!({"install_id": one.install.id, "course_id": null}));
+        assert_eq!(events[1], json!({"install_id": one.install.id, "course_id": course}));
+        assert!(!format!("{events:?}").contains("characters"));
+
+        // Both plugins subscribed to the type; the change reaches the one it is about.
+        let mut conn = pool.acquire().await.unwrap();
+        let outbox = OutboxEvent {
+            id: Uuid::now_v7(),
+            kind: "plugin.settings.changed".to_owned(),
+            version: 1,
+            payload: events[0].clone(),
+        };
+        assert_eq!(fan_out(&mut conn, &outbox).await.unwrap(), 1);
+        let owner: String = sqlx::query_scalar(
+            "SELECT i.plugin_id FROM plugins.deliveries d JOIN plugins.plugin_installs i ON i.id = d.install_id",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(owner, "one");
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn removing_a_plugin_removes_its_settings() {
+    db_test(async |pool| {
+        install_configurable(&pool, "conf").await;
+        set(&pool, "conf", "unit", json!("characters"), None)
+            .await
+            .unwrap();
+        let mut conn = pool.acquire().await.unwrap();
+        remove(&mut conn, "conf").await.unwrap();
+        assert_eq!(count_settings(&pool).await, 0);
+    })
+    .await;
+}

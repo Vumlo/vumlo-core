@@ -1,4 +1,5 @@
 import type { Document } from "@/lib/api/types";
+import type { MessageKey } from "@/lib/i18n/core";
 
 /** The settings of a `file` assignment (spec 8): the server's defaults and limits. */
 export const DEFAULT_MAX_FILES = 5;
@@ -33,6 +34,29 @@ export function acceptsName(accept: string[], name: string): boolean {
   return dot >= 0 && dot < name.length - 1 && accept.includes(name.toLowerCase().slice(dot));
 }
 
+/** The menu of the assignment settings: kinds of file with the extensions each chip stands for (`.jpg` also means `.jpeg`). */
+export const ACCEPT_GROUPS: { title: MessageKey; types: { label: string; exts: string[] }[] }[] = [
+  { title: "as.acceptGroup.documents", types: [".pdf", ".docx", ".doc", ".odt", ".rtf", ".txt", ".md"].map(one) },
+  { title: "as.acceptGroup.sheets", types: [".xlsx", ".xls", ".ods", ".csv", ".tsv"].map(one) },
+  { title: "as.acceptGroup.slides", types: [".pptx", ".ppt", ".odp"].map(one) },
+  { title: "as.acceptGroup.images", types: [{ label: ".jpg", exts: [".jpg", ".jpeg"] }, ...[".png", ".gif", ".webp", ".heic", ".svg"].map(one)] },
+  { title: "as.acceptGroup.audio", types: [".mp3", ".wav", ".m4a", ".ogg"].map(one) },
+  { title: "as.acceptGroup.video", types: [".mp4", ".mov", ".webm"].map(one) },
+  { title: "as.acceptGroup.code", types: [".py", ".js", ".java", ".c", ".h", ".cpp", ".hpp", ".html", ".css", ".sql", ".json", ".ipynb"].map(one) },
+  { title: "as.acceptGroup.archives", types: [".zip"].map(one) },
+];
+function one(ext: string) {
+  return { label: ext, exts: [ext] };
+}
+/** Every extension of the menu in menu order. */
+export const MENU_EXTS = ACCEPT_GROUPS.flatMap((g) => g.types.flatMap((t) => t.exts));
+const MENU = new Set(MENU_EXTS);
+
+/** Splits a stored list into what the menu shows and what only the "other types" field can show. */
+export function splitAccept(accept: string[]): { menu: string[]; other: string[] } {
+  return { menu: accept.filter((e) => MENU.has(e)), other: accept.filter((e) => !MENU.has(e)) };
+}
+
 /** "pdf, DOCX" -> [".pdf", ".docx"]: lowercase, a leading dot, no empty entries. */
 export function parseAccept(text: string): string[] {
   return text.split(/[\s,;]+/).filter(Boolean).map((e) => (e.startsWith(".") ? e : `.${e}`).toLowerCase());
@@ -40,12 +64,12 @@ export function parseAccept(text: string): string[] {
 
 export type AcceptProblem = { kind: "bad" | "twice"; entry: string } | { kind: "many" };
 
-/** The first rule of the server that `accept` breaks: a dot and 2 to 16 letters or digits, no repeats, at most 30. */
+/** The first rule of the server that `accept` breaks: a dot and 1 to 16 letters or digits, no repeats, at most 30. */
 export function acceptProblem(accept: string[]): AcceptProblem | null {
   if (accept.length > MAX_ACCEPT) return { kind: "many" };
   const seen = new Set<string>();
   for (const entry of accept) {
-    if (!/^\.[a-z0-9]{2,16}$/.test(entry)) return { kind: "bad", entry };
+    if (!/^\.[a-z0-9]{1,16}$/.test(entry)) return { kind: "bad", entry };
     if (seen.has(entry)) return { kind: "twice", entry };
     seen.add(entry);
   }

@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM plugins.settings\n         WHERE install_id = $1 AND key = $3 AND COALESCE(course_id, $4) = COALESCE($2, $4)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "0c4c79a4949384bf798fa028f89dd37135b5a276f24a5f6e5a6b0c0e22bbc79c"
+}

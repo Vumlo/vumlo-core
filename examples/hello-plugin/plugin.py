@@ -9,6 +9,13 @@ plugin API, counts the words, and posts a report back. It shows the whole protoc
                    once, work afterwards
   ...and, towards the core, `GET /plugin-api/submissions/{id}` and `PUT .../report` with the token.
 
+It also reads its settings (`GET /plugin-api/settings`, scope `settings:read`) and is told when an
+administrator changes one (`plugin.settings.changed`):
+
+  unit       what the report counts: `words` (default) or `characters` (the whole institution)
+  max_words  a limit per course; a report says `over_limit` when a work is longer (set per course:
+             `vumlo-cli plugin settings set hello max_words 300 --course <course id>`)
+
 And a page for the tab "Words" on an assignment:
 
   GET  /ui/words   the page the web app shows in a sandboxed frame (an opaque origin, no cookie).
@@ -46,9 +53,24 @@ MANIFEST = {
     "id": "hello",
     "version": "1.0.0",
     "api": "1",
-    "subscribes": ["submission.submitted"],
-    "scopes": ["submissions:read", "reports:write"],
+    "subscribes": ["submission.submitted", "plugin.settings.changed"],
+    "scopes": ["submissions:read", "reports:write", "settings:read"],
     "ui": [{"slot": "assignment.tab", "title": "Words", "path": "/ui/words"}],
+    # What an administrator may configure (a subset of JSON Schema; `secret: true` would be for a token).
+    "settings": {
+        "unit": {
+            "type": "string",
+            "enum": ["words", "characters"],
+            "default": "words",
+            "description": "What the report counts",
+        },
+        "max_words": {
+            "type": "number",
+            "minimum": 1,
+            "scope": "course",
+            "description": "A work longer than this is reported as over the limit",
+        },
+    },
 }
 # An event older (or newer) than this is refused: a captured request cannot be replayed later.
 MAX_AGE_SECONDS = 300
@@ -58,6 +80,8 @@ TOKEN = os.environ.get("VUMLO_PLUGIN_TOKEN", "")
 SECRET = os.environ.get("VUMLO_WEBHOOK_SECRET", "")
 
 seen = set()  # event ids already taken; the core delivers at least once, so repeats come
+# The settings last read, by course id (None: no course). Dropped when the core says one changed.
+settings_cache = {}
 # What the page shows to staff: per assignment, how many works and how many words in all.
 stats = {}
 seen_lock = threading.Lock()
@@ -111,13 +135,13 @@ def launch_claims(secret, token, now=None):
         return None
 
 
-def count_words(node):
-    """The words in the `text` leaves of a block document."""
+def count_text(node, measure):
+    """`measure` summed over the `text` leaves of a block document."""
     if isinstance(node, dict):
-        own = len(node["text"].split()) if node.get("type") == "text" and isinstance(node.get("text"), str) else 0
-        return own + sum(count_words(value) for value in node.values())
+        own = measure(node["text"]) if node.get("type") == "text" and isinstance(node.get("text"), str) else 0
+        return own + sum(count_text(value, measure) for value in node.values())
     if isinstance(node, list):
-        return sum(count_words(item) for item in node)
+        return sum(count_text(item, measure) for item in node)
     return 0
 
 
@@ -133,19 +157,41 @@ def call(method, path, payload=None):
         return json.loads(body) if body else None
 
 
+def settings_for(course_id):
+    """The settings for a course, read from the core once and kept until `plugin.settings.changed`.
+    Without the scope (403) or the core, the defaults of the manifest apply."""
+    with seen_lock:
+        if course_id in settings_cache:
+            return settings_cache[course_id]
+    try:
+        values = call("GET", "/plugin-api/settings?course_id=" + course_id)["values"]
+    except (urllib.error.URLError, KeyError, ValueError):
+        return {}  # not cached, so the next work tries again
+    with seen_lock:
+        settings_cache[course_id] = values
+    return values
+
+
 def work(event):
     """Fetch the submission, count its words, report. Runs after the core was answered."""
     try:
         submission_id = event["data"]["submission_id"]
         submission = call("GET", "/plugin-api/submissions/" + submission_id)
-        words = count_words(submission["content"])
+        words = count_text(submission["content"], lambda text: len(text.split()))
+        config = settings_for(event["data"]["course_id"])
         with seen_lock:
             total = stats.setdefault(submission["assignment_id"], {"submissions": 0, "words": 0})
             total["submissions"] += 1
             total["words"] += words
-        call("PUT", "/plugin-api/submissions/%s/report" % submission_id,
-             {"summary": "%d words" % words, "data": {"words": words}})
-        print("reported %d words for %s" % (words, submission_id), flush=True)
+        data = {"words": words}
+        if "max_words" in config:
+            data["over_limit"] = words > config["max_words"]
+        if config.get("unit") == "characters":
+            summary = "%d characters" % count_text(submission["content"], len)
+        else:
+            summary = "%d words" % words
+        call("PUT", "/plugin-api/submissions/%s/report" % submission_id, {"summary": summary, "data": data})
+        print("reported %s for %s" % (summary, submission_id), flush=True)
     except (urllib.error.URLError, KeyError, ValueError) as error:
         # An HTTP error carries its status (403: the scope was not granted).
         print("could not report: %s" % error, file=sys.stderr, flush=True)
@@ -295,6 +341,9 @@ class Handler(BaseHTTPRequestHandler):
             seen.add(event_id)
         if first and kind == "submission.submitted":
             threading.Thread(target=work, args=(event,), daemon=True).start()
+        elif first and kind == "plugin.settings.changed":
+            with seen_lock:
+                settings_cache.clear()
         self.reply(202)  # taken; the work goes on without the core waiting
 
     def log_message(self, format, *args):  # keep the request line out of the log

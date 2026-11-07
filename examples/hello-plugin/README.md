@@ -1,6 +1,6 @@
 # hello-plugin
 
-The smallest plugin of Vumlo ([ADR-0066](../../docs/decisions/0066-modules-and-plugins.md)): a Python
+The smallest plugin of Vumlo ([ADR-0066](../../docs/decisions/done.md)): a Python
 file with no dependencies. For every submitted work it counts the words and posts a report that
 staff read at `GET /api/v1/submissions/{id}/plugin-reports`.
 
@@ -8,11 +8,25 @@ staff read at `GET /api/v1/submissions/{id}/plugin-reports`.
 2. Start the plugin with no credentials, so the core can read its manifest:
    `PORT=9000 python3 plugin.py`
 3. Install it and approve what it asks for:
-   `vumlo-cli plugin install http://127.0.0.1:9000 --grant submissions:read,reports:write`
+   `vumlo-cli plugin install http://127.0.0.1:9000 --grant submissions:read,reports:write,settings:read`
    It prints a token and a secret, once.
 4. Stop the plugin and start it with them:
    `PORT=9000 VUMLO_API=http://127.0.0.1:8080/api/v1 VUMLO_PLUGIN_TOKEN=... VUMLO_WEBHOOK_SECRET=... python3 plugin.py`
 5. A student submits; within a few seconds the report is there.
+
+It has two settings, declared in its manifest (`MANIFEST["settings"]` in `plugin.py`), which an administrator
+changes without touching the plugin:
+
+    vumlo-cli plugin settings list hello
+    vumlo-cli plugin settings set hello unit characters                    # the whole institution
+    vumlo-cli plugin settings set hello max_words 300 --course <course id> # one course
+    vumlo-cli plugin settings unset hello unit                             # back to the default
+
+The plugin reads them with `GET /plugin-api/settings?course_id=...` (scope `settings:read`) and drops what it
+read when the core sends `plugin.settings.changed`; see `settings_for` and `do_POST`. A secret (a token the
+plugin needs for another service) is declared `{"type": "string", "secret": true}`, set with
+`vumlo-cli plugin settings set <plugin> <key> -` (the value comes from standard input), shown by no command, and
+returned only to the plugin, in that same response.
 
 It also has a page. Every assignment gets a tab **Words** (the address gains `&tab=hello`); a teacher sees how
 many words were submitted for it in all, a student is told the numbers are for teachers. How it works, for a

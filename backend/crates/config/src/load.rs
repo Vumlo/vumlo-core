@@ -259,6 +259,8 @@ fn is_module_key(path: &str) -> bool {
 fn unknown_message(path: &str) -> String {
     let hint = if path == "institution.accent" {
         " (the accent colour is gone; the web app has one default)"
+    } else if path == "institution.logo" {
+        " (the logo is gone; every installation uses the Vumlo logo)"
     } else {
         ""
     };

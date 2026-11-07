@@ -106,5 +106,25 @@ pub struct Launch {
     pub expires_at: DateTime<Utc>,
 }
 
+/// Which scope of settings a plugin asks for.
+#[derive(Debug, Clone, Serialize, Deserialize, Validate, IntoParams)]
+#[into_params(parameter_in = Query)]
+pub struct SettingsQuery {
+    /// Also the settings that are per course, for this course. Without it only the settings of the
+    /// whole institution are returned.
+    #[garde(skip)]
+    pub course_id: Option<Uuid>,
+}
+
+/// The settings of a plugin as an administrator configured them, with the defaults of its manifest
+/// where nothing was set. A setting with neither is not in `values`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
+pub struct PluginSettings {
+    /// Setting key to value: a string, a number, a boolean or a list. Secrets are in clear: the
+    /// plugin is who they were entered for.
+    #[schema(value_type = Object)]
+    pub values: Map<String, Value>,
+}
+
 #[cfg(test)]
 mod tests;

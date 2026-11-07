@@ -165,12 +165,57 @@ enum PluginCommand {
         #[arg(long)]
         dry_run: bool,
     },
+    /// What the plugin lets you configure: the settings its manifest declares (ADR-0072).
+    #[command(subcommand)]
+    Settings(SettingsCommand),
+}
+
+#[derive(Subcommand)]
+enum SettingsCommand {
+    /// The settings of a plugin in one scope, with their values. A secret shows only whether it is
+    /// set.
+    List {
+        plugin_id: String,
+        /// List the settings that are per course, for this course (a UUID). Without it, the
+        /// settings of the whole institution.
+        #[arg(long, value_name = "COURSE")]
+        course: Option<uuid::Uuid>,
+    },
+    /// One setting.
+    Get {
+        plugin_id: String,
+        key: String,
+        #[arg(long, value_name = "COURSE")]
+        course: Option<uuid::Uuid>,
+    },
+    /// Set a value. Text stays text; a number, a boolean or a list is JSON (`3`, `true`,
+    /// `'["a","b"]'`). Give `-` as the value to read it from standard input, so that a secret
+    /// stays out of the shell history and the process list. The plugin is sent
+    /// `plugin.settings.changed`.
+    Set {
+        plugin_id: String,
+        key: String,
+        value: String,
+        #[arg(long, value_name = "COURSE")]
+        course: Option<uuid::Uuid>,
+        #[arg(long)]
+        dry_run: bool,
+    },
+    /// Remove the value, so that the default of the manifest applies again.
+    Unset {
+        plugin_id: String,
+        key: String,
+        #[arg(long, value_name = "COURSE")]
+        course: Option<uuid::Uuid>,
+        #[arg(long)]
+        dry_run: bool,
+    },
 }
 
 #[derive(Subcommand)]
 enum BrandCommand {
     /// Regenerate `.vumlo/generated/` from the configuration: client-config.json and its types,
-    /// the manifest, the favicon and the app icons from `institution.logo`. Starts from scratch
+    /// the manifest, the Vumlo logo, the favicon and the app icons. Starts from scratch
     /// every time. Then rebuild the web app and restart.
     Apply {
         /// Say what would be written, write nothing.
@@ -302,8 +347,36 @@ async fn run(cli: Cli) -> anyhow::Result<bool> {
                 yes,
                 dry_run,
             } => plugin_cmd::remove(&options, &plugin_id, yes, dry_run).await?,
+            PluginCommand::Settings(command) => match command {
+                SettingsCommand::List { plugin_id, course } => {
+                    plugin_cmd::settings_list(&options, &plugin_id, course).await?
+                }
+                SettingsCommand::Get {
+                    plugin_id,
+                    key,
+                    course,
+                } => plugin_cmd::settings_get(&options, &plugin_id, &key, course).await?,
+                SettingsCommand::Set {
+                    plugin_id,
+                    key,
+                    value,
+                    course,
+                    dry_run,
+                } => {
+                    plugin_cmd::settings_set(&options, &plugin_id, &key, &value, course, dry_run)
+                        .await?
+                }
+                SettingsCommand::Unset {
+                    plugin_id,
+                    key,
+                    course,
+                    dry_run,
+                } => {
+                    plugin_cmd::settings_unset(&options, &plugin_id, &key, course, dry_run).await?
+                }
+            },
         },
-        Command::Brand(BrandCommand::Apply { dry_run }) => brand::apply(&options, dry_run).await?,
+        Command::Brand(BrandCommand::Apply { dry_run }) => brand::apply(&options, dry_run)?,
         Command::Build(BuildCommand::Web { dry_run }) => build_web::run(&options, dry_run).await?,
         Command::Seed { demo, yes, dry_run } => {
             if !demo {

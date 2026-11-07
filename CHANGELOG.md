@@ -10,6 +10,24 @@ must do, in order, besides getting the new release. See [RELEASING.md](RELEASING
 
 ## [Unreleased]
 
+### Added
+
+- **Plugin settings** (ADR-0072). A plugin's manifest may declare `settings` (string, number, boolean, `enum`, list; `default`, `description`, `secret`, scope `institution` or `course`). Administrators manage them with `vumlo-cli plugin settings list|get|set|unset`; secrets are stored sealed (XChaCha20-Poly1305 from the `chacha20poly1305` crate, ADR-0073; the key is derived from `plugins.secret_key`) and never shown. A plugin with the new scope `settings:read` reads its values at `GET /api/v1/plugin-api/settings` (`404` for a `course_id` that names no course), and is sent `plugin.settings.changed` when one changes. `examples/hello-plugin` uses them.
+
+**Upgrade notes.** Run `vumlo-cli db migrate` (migration 0039). Plugins that were installed keep working and declare no settings; to use settings, a plugin's new manifest must be read again (`plugin remove`, then `plugin install`), and the key `plugins.secret_key` must stay the same for as long as secret settings are in use.
+
+## [0.4.1] - 2026-11-01
+
+Branding, and a menu for the file types of a file assignment.
+
+- File assignments: the accepted types are picked from a menu of groups, with a field for other types. `accept` entries may be one character long (`.c`, `.h`) (ADR-0023, amended).
+- **Branding.** The logo is always Vumlo's: the favicon, the app icons, the navbar and the sign-in page. `institution.logo` is removed (ADR-0054, amended), and `resvg` with it.
+- The name of the app is "Vumlo | Short name" on the web and "Vumlo Short name" on the desktop (the installers cannot have a `|` in their name).
+- The title of a browser tab says where you are: "Lab report · Course · Vumlo | Short name".
+- The sign-in page has Google's logo on its button and a proper language icon.
+
+**Upgrade notes.** This release removes a configuration key, which a patch release should not. If your `vumlo.toml` has `logo = ...` in `[institution]`, delete that line: `config check` and the server stop with "institution.logo: unknown key". Then run `./vumlo brand apply` and rebuild the images. No migrations, no new `config_version`.
+
 ## [0.4.0] - 2026-11-01
 
 File uploads (ADR-0069).
@@ -81,7 +99,7 @@ Plugins and optional modules, a redesigned web app, and a page for grading.
 
 ### Added
 
-- **Plugins** ([ADR-0066](docs/decisions/0066-modules-and-plugins.md)): external HTTP services in any language that the core
+- **Plugins** ([ADR-0066](docs/decisions/done.md)): external HTTP services in any language that the core
   does not trust. `vumlo-cli plugin install|list|grant|disable|enable|remove`; the core sends the events a plugin subscribed to
   (`submission.submitted`, `grade.published`), signed with `X-Vumlo-Timestamp` and `X-Vumlo-Signature`, and the plugin calls
   `/api/v1/plugin-api/*` with its token, where every call needs a scope (`submissions:read`, `reports:write`). Staff read what
@@ -105,8 +123,8 @@ Plugins and optional modules, a redesigned web app, and a page for grading.
 ### Changed
 
 - **The web app is redesigned** in a new visual system, and the teacher's course screens are recomposed. Formulas are drawn
-  by KaTeX ([ADR-0068](docs/decisions/0068-formulas-are-drawn-by-katex.md)).
-- **Optional modules are a `Module` trait** ([ADR-0066](docs/decisions/0066-modules-and-plugins.md)): a manifest (id, version,
+  by KaTeX ([ADR-0068](docs/decisions/done.md)).
+- **Optional modules are a `Module` trait** ([ADR-0066](docs/decisions/done.md)): a manifest (id, version,
   `requires`, permissions, settings), migrations, and `register` for routes, event handlers and background jobs; they start in
   the order of their `requires`. Module routes moved to `/api/v1/modules/{id}/...` and sign in like the core's, with permissions
   decided by `access`. A module's tables are in the schema `mod_<id>` with its history in `mod_<id>._sqlx_migrations`.
@@ -114,7 +132,7 @@ Plugins and optional modules, a redesigned web app, and a page for grading.
   whether it is on or off. Several event handlers may listen to one event type. The only module in the tree is still the
   test-only `dummy`, so a release installation has nothing to migrate; a fork with its own module has to port it to the trait.
 
-- **The backend is one crate per layer** ([ADR-0065](docs/decisions/0065-layered-crates.md)): `server` → `learning` → `org`
+- **The backend is one crate per layer** ([ADR-0065](docs/decisions/done.md)): `server` → `learning` → `org`
   → `auth` → `events` → `access` → `common`, so the compiler refuses a call from a lower layer to a higher one. The HTTP API,
   its OpenAPI document, the configuration and the commands are unchanged. For a build from source: the library crate `server`
   no longer holds the modules (`server::identity` is the crate `auth`, `server::policy` is `access`), and the database harness
@@ -268,7 +286,8 @@ There is nothing to upgrade from; follow [docs/install.md](docs/install.md).
 - Any optional module, and an end-user CLI (ADR-0055).
 - Published container images: the images are built on your server from the archive.
 
-[Unreleased]: https://github.com/Vumlo/vumlo-core/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/Vumlo/vumlo-core/compare/v0.4.1...HEAD
+[0.4.1]: https://github.com/Vumlo/vumlo-core/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/Vumlo/vumlo-core/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/Vumlo/vumlo-core/compare/v0.2.2...v0.3.0
 [0.2.2]: https://github.com/Vumlo/vumlo-core/compare/v0.2.1...v0.2.2

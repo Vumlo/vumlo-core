@@ -5,8 +5,8 @@
 
 use access::{Actor, ActorSource, PluginCaller, PluginSource};
 use api_types::{
-    Launch, LaunchRequest, PluginReport, PluginReports, PluginSlot, PluginSlots, PluginSubmission,
-    ProblemDetails, PutReportRequest, SlotQuery,
+    Launch, LaunchRequest, PluginReport, PluginReports, PluginSettings, PluginSlot, PluginSlots,
+    PluginSubmission, ProblemDetails, PutReportRequest, SettingsQuery, SlotQuery,
 };
 use axum::Json;
 use axum::extract::{FromRef, Path, State};
@@ -18,6 +18,7 @@ use utoipa_axum::router::OpenApiRouter;
 use utoipa_axum::routes;
 use uuid::Uuid;
 
+use crate::PluginsError;
 use crate::model::SLOTS;
 use crate::secret::LAUNCH_TTL_SECONDS;
 use crate::service;
@@ -31,6 +32,7 @@ where
     OpenApiRouter::new()
         .routes(routes!(get_submission))
         .routes(routes!(put_report))
+        .routes(routes!(get_settings))
         .routes(routes!(list_reports))
         .routes(routes!(list_slots))
         .routes(routes!(launch))
@@ -115,6 +117,38 @@ async fn put_report(
     service::put_report(&mut tx, &caller, id, &body.summary, &body.data).await?;
     tx.commit().await.map_err(db)?;
     Ok(StatusCode::NO_CONTENT)
+}
+
+/// The plugin's own settings: what an administrator configured, secrets included, with the manifest's
+/// defaults where nothing was set. The scope `settings:read`. The settings of a course come with
+/// `course_id` (`404` for a course that is not there). A plugin learns of a change from its `plugin.settings.changed` event.
+#[utoipa::path(
+    get,
+    path = "/plugin-api/settings",
+    tag = "plugin-api",
+    security(("plugin" = [])),
+    params(SettingsQuery),
+    responses(
+        (status = 200, description = "The values", body = PluginSettings),
+        (status = 401, description = "No token, or one that is unknown or disabled",
+            body = ProblemDetails, content_type = "application/problem+json"),
+        (status = 403, description = "The plugin was not granted `settings:read`",
+            body = ProblemDetails, content_type = "application/problem+json"),
+        (status = 404, description = "`course_id` names no course", body = ProblemDetails,
+            content_type = "application/problem+json"),
+    )
+)]
+async fn get_settings(
+    caller: PluginCaller,
+    State(state): State<PluginsState>,
+    ValidQuery(query): ValidQuery<SettingsQuery>,
+) -> Result<([(HeaderName, HeaderValue); 1], Json<PluginSettings>), ApiError> {
+    // Without the key no secret can be read, and no plugin was installed.
+    let key = state.key.as_deref().ok_or(PluginsError::NoKey)?;
+    let mut conn = state.db.acquire().await.map_err(db)?;
+    let values = service::settings_for_plugin(&mut conn, &caller, key, query.course_id).await?;
+    // The values may hold a credential (AGENTS section 11).
+    Ok(([no_store()], Json(PluginSettings { values })))
 }
 
 /// What the plugins reported about a submitted attempt, by plugin. Staff and admins who may see

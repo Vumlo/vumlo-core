@@ -17,6 +17,7 @@ default = []
 # Optional modules (ADR-0054): the feature of a module is named after it, on server and vumlo-cli
 # alike. `dummy` is the test-only module; only the test jobs of CI build with it.
 dummy = ["dep:vumlo-module-dummy"]
+ai_agent = ["dep:vumlo-module-ai-agent"]
 
 [dependencies]
 access.workspace = true
@@ -47,6 +48,7 @@ utoipa-axum.workspace = true
 utoipa-scalar.workspace = true
 vumlo-config.workspace = true
 vumlo-module-dummy = { workspace = true, optional = true }
+vumlo-module-ai-agent = { workspace = true, optional = true }
 
 [dev-dependencies]
 access = { workspace = true, features = ["testing"] }

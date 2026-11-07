@@ -13,6 +13,7 @@ path = "src/main.rs"
 default = []
 # Optional modules (ADR-0054): the same feature names as on `server`. Build both with one set.
 dummy = ["dep:vumlo-module-dummy"]
+ai_agent = ["dep:vumlo-module-ai-agent"]
 
 [dependencies]
 access.workspace = true
@@ -27,7 +28,6 @@ image.workspace = true
 module-api.workspace = true
 plugins.workspace = true
 reqwest.workspace = true
-resvg.workspace = true
 rpassword.workspace = true
 serde.workspace = true
 serde_json.workspace = true
@@ -36,6 +36,7 @@ tokio.workspace = true
 uuid.workspace = true
 vumlo-config.workspace = true
 vumlo-module-dummy = { workspace = true, optional = true }
+vumlo-module-ai-agent = { workspace = true, optional = true }
 
 [dev-dependencies]
 axum.workspace = true

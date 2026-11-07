@@ -30,7 +30,7 @@ pub async fn run(options: &Options, dry_run: bool) -> anyhow::Result<()> {
         .context("cannot resolve the generated directory")?;
     let install = !web.join("node_modules").is_dir();
 
-    brand::apply(options, dry_run).await?;
+    brand::apply(options, dry_run)?;
     if dry_run {
         if install {
             println!("would run  npm ci  in {}", web.display());
