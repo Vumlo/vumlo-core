@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT i.course_id FROM assessment.submissions s\n         JOIN content.items i ON i.id = s.assignment_id\n         WHERE s.id = $1 AND s.status = 'submitted'",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "course_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "content.items",
+            "name": "course_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "56fb09eb8a250e1da834ef754c5274b6eddbb5b2bf3010536cedb440ec01bee7"
+}

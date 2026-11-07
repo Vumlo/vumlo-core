@@ -29,9 +29,16 @@ fn hello() -> PluginManifest {
 
 async fn install_hello(pool: &PgPool, granted: &[Scope]) -> Installed {
     let mut conn = pool.acquire().await.unwrap();
-    install(&mut conn, &key(), "http://127.0.0.1:9", &hello(), granted)
-        .await
-        .unwrap()
+    install(
+        &mut conn,
+        &key(),
+        "http://127.0.0.1:9",
+        &hello(),
+        granted,
+        &access::CourseScope::All,
+    )
+    .await
+    .unwrap()
 }
 
 async fn count(pool: &PgPool, table: &str) -> i64 {
@@ -125,6 +132,7 @@ async fn a_scope_the_plugin_did_not_ask_for_cannot_be_granted() {
             "http://127.0.0.1:9",
             &reports_only,
             &[Scope::SubmissionsRead],
+            &access::CourseScope::All,
         )
         .await
         .unwrap_err();
@@ -145,7 +153,15 @@ async fn a_plugin_may_be_granted_nothing_and_an_id_is_installed_once() {
         assert!(none.install.scopes.is_empty());
 
         let mut conn = pool.acquire().await.unwrap();
-        let again = install(&mut conn, &key(), "http://127.0.0.1:9", &hello(), &[]).await;
+        let again = install(
+            &mut conn,
+            &key(),
+            "http://127.0.0.1:9",
+            &hello(),
+            &[],
+            &access::CourseScope::All,
+        )
+        .await;
         assert!(matches!(again, Err(PluginsError::AlreadyInstalled(ref id)) if id == "hello"));
         assert_eq!(count(&pool, "installs").await, 1);
     })
@@ -158,9 +174,14 @@ async fn grant_replaces_the_scopes_within_what_was_asked_for() {
         install_hello(&pool, &[Scope::SubmissionsRead]).await;
         let mut conn = pool.acquire().await.unwrap();
 
-        let changed = grant(&mut conn, "hello", &[Scope::ReportsWrite])
-            .await
-            .unwrap();
+        let changed = grant(
+            &mut conn,
+            "hello",
+            &[Scope::ReportsWrite],
+            &access::CourseScope::All,
+        )
+        .await
+        .unwrap();
         assert_eq!(changed.scopes, [Scope::ReportsWrite]);
         let all = grant(
             &mut conn,
@@ -170,12 +191,13 @@ async fn grant_replaces_the_scopes_within_what_was_asked_for() {
                 Scope::SubmissionsRead,
                 Scope::ReportsWrite,
             ],
+            &access::CourseScope::All,
         )
         .await
         .unwrap();
         assert_eq!(all.scopes, [Scope::SubmissionsRead, Scope::ReportsWrite]);
         assert!(
-            grant(&mut conn, "hello", &[])
+            grant(&mut conn, "hello", &[], &access::CourseScope::All)
                 .await
                 .unwrap()
                 .scopes
@@ -188,7 +210,7 @@ async fn grant_replaces_the_scopes_within_what_was_asked_for() {
             .await;
         assert!(beyond.is_err());
         assert!(matches!(
-            grant(&mut conn, "nobody", &[]).await,
+            grant(&mut conn, "nobody", &[], &access::CourseScope::All).await,
             Err(PluginsError::NotFound(_))
         ));
     })
@@ -201,13 +223,27 @@ async fn the_fan_out_owes_each_enabled_subscriber_once() {
         install_hello(&pool, &[]).await;
         let mut conn = pool.acquire().await.unwrap();
         let grades = manifest("grades", &[], &["grade.published"]);
-        install(&mut conn, &key(), "http://127.0.0.1:9", &grades, &[])
-            .await
-            .unwrap();
+        install(
+            &mut conn,
+            &key(),
+            "http://127.0.0.1:9",
+            &grades,
+            &[],
+            &access::CourseScope::All,
+        )
+        .await
+        .unwrap();
         let both = manifest("both", &[], &["submission.submitted", "grade.published"]);
-        install(&mut conn, &key(), "http://127.0.0.1:9", &both, &[])
-            .await
-            .unwrap();
+        install(
+            &mut conn,
+            &key(),
+            "http://127.0.0.1:9",
+            &both,
+            &[],
+            &access::CourseScope::All,
+        )
+        .await
+        .unwrap();
 
         let submitted = event("submission.submitted");
         assert_eq!(
@@ -359,6 +395,7 @@ async fn install_configurable(pool: &PgPool, id: &str) -> Installed {
         "http://127.0.0.1:9",
         &configurable(id),
         &[Scope::SettingsRead],
+        &access::CourseScope::All,
     )
     .await
     .unwrap()
@@ -670,6 +707,142 @@ async fn removing_a_plugin_removes_its_settings() {
         let mut conn = pool.acquire().await.unwrap();
         remove(&mut conn, "conf").await.unwrap();
         assert_eq!(count_settings(&pool).await, 0);
+    })
+    .await;
+}
+
+fn about(course: Uuid) -> OutboxEvent {
+    OutboxEvent {
+        id: Uuid::now_v7(),
+        kind: "submission.submitted".to_owned(),
+        version: 1,
+        payload: json!({"course_id": course, "submission_id": Uuid::now_v7()}),
+    }
+}
+
+async fn install_in(pool: &PgPool, id: &str, courses: &CourseScope) -> Installed {
+    let mut conn = pool.acquire().await.unwrap();
+    install(
+        &mut conn,
+        &key(),
+        "http://127.0.0.1:9",
+        &manifest(id, &["submissions:read"], &["submission.submitted"]),
+        &[Scope::SubmissionsRead],
+        courses,
+    )
+    .await
+    .unwrap()
+}
+
+#[tokio::test]
+async fn an_install_keeps_the_courses_it_was_granted_and_grant_replaces_them() {
+    db_test(async |pool| {
+        let (a, b) = (a_course(&pool).await, a_course(&pool).await);
+        let one = install_in(&pool, "one", &CourseScope::Only(vec![a])).await;
+        assert_eq!(one.install.courses, CourseScope::Only(vec![a]));
+        let mut conn = pool.acquire().await.unwrap();
+        let read = get(&mut conn, "one").await.unwrap();
+        assert_eq!(read.courses, CourseScope::Only(vec![a]));
+
+        let widened = grant(
+            &mut conn,
+            "one",
+            &[Scope::SubmissionsRead],
+            &CourseScope::Only(vec![b, a]),
+        )
+        .await
+        .unwrap();
+        let CourseScope::Only(mut list) = widened.courses else {
+            panic!("a list")
+        };
+        list.sort();
+        let mut expected = vec![a, b];
+        expected.sort();
+        assert_eq!(list, expected);
+
+        let everything = grant(&mut conn, "one", &[], &CourseScope::All)
+            .await
+            .unwrap();
+        assert_eq!(everything.courses, CourseScope::All);
+        let rows: i64 = sqlx::query_scalar("SELECT count(*) FROM plugins.install_courses")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(rows, 0, "`all` keeps no list");
+        let none = grant(&mut conn, "one", &[], &CourseScope::Only(Vec::new()))
+            .await
+            .unwrap();
+        assert_eq!(none.courses, CourseScope::Only(Vec::new()));
+
+        // A course that is not there refuses the grant, and changes nothing.
+        let ghost = grant(
+            &mut conn,
+            "one",
+            &[],
+            &CourseScope::Only(vec![Uuid::now_v7()]),
+        )
+        .await;
+        assert!(matches!(ghost, Err(PluginsError::CourseGone)), "{ghost:?}");
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn the_fan_out_sends_a_plugin_only_the_events_of_the_courses_it_reaches() {
+    db_test(async |pool| {
+        let (a, b) = (a_course(&pool).await, a_course(&pool).await);
+        install_in(&pool, "everywhere", &CourseScope::All).await;
+        install_in(&pool, "in-a", &CourseScope::Only(vec![a])).await;
+        install_in(&pool, "nowhere", &CourseScope::Only(Vec::new())).await;
+        let mut conn = pool.acquire().await.unwrap();
+
+        assert_eq!(fan_out(&mut conn, &about(a)).await.unwrap(), 2);
+        assert_eq!(fan_out(&mut conn, &about(b)).await.unwrap(), 1);
+        let owed: Vec<String> = sqlx::query_scalar(
+            "SELECT i.plugin_id FROM plugins.deliveries d
+             JOIN plugins.plugin_installs i ON i.id = d.install_id
+             ORDER BY i.plugin_id, d.id",
+        )
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+        assert_eq!(owed, ["everywhere", "everywhere", "in-a"]);
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn a_plugin_reads_the_settings_of_a_course_only_when_it_reaches_it() {
+    db_test(async |pool| {
+        let (a, b) = (a_course(&pool).await, a_course(&pool).await);
+        // `for_courses` makes a caller named "test".
+        install_configurable(&pool, "test").await;
+        let mut conn = pool.acquire().await.unwrap();
+        grant(
+            &mut conn,
+            "test",
+            &[Scope::SettingsRead],
+            &CourseScope::Only(vec![a]),
+        )
+        .await
+        .unwrap();
+        let caller = PluginCaller::for_courses(&[Scope::SettingsRead], &[a]);
+        assert!(
+            settings_for_plugin(&mut conn, &caller, &key(), Some(a))
+                .await
+                .is_ok()
+        );
+        let refused = settings_for_plugin(&mut conn, &caller, &key(), Some(b)).await;
+        assert!(
+            matches!(refused, Err(PluginsError::Forbidden(_))),
+            "{refused:?}"
+        );
+        // The institution's own settings belong to no course, so a course grant does not hide them.
+        assert!(
+            settings_for_plugin(&mut conn, &caller, &key(), None)
+                .await
+                .is_ok()
+        );
     })
     .await;
 }

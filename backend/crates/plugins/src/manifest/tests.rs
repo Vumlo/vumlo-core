@@ -130,7 +130,10 @@ fn a_plugin_offers_one_page_in_a_slot() {
 fn a_long_value_is_cut_in_the_message() {
     let mut value = hello();
     value["scopes"] = json!(["x".repeat(500)]);
-    assert!(message(value).len() < 200);
+    // The message names the value cut short, then the scopes there are: it does not grow with the value.
+    let text = message(value);
+    assert!(!text.contains(&"x".repeat(50)), "{text}");
+    assert!(text.len() < 300, "{text}");
 }
 
 #[test]

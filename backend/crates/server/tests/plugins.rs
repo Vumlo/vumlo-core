@@ -177,9 +177,16 @@ impl World {
             .as_deref()
             .expect("a plugin key is set");
         let mut conn = self.state.db.acquire().await.expect("a connection");
-        plugins::install(&mut conn, key, url, &manifest, granted)
-            .await
-            .expect("the install")
+        plugins::install(
+            &mut conn,
+            key,
+            url,
+            &manifest,
+            granted,
+            &access::CourseScope::All,
+        )
+        .await
+        .expect("the install")
     }
 
     /// The plugin API as the plugin calls it.
@@ -209,7 +216,14 @@ async fn a_signed_event_reaches_the_plugin_and_its_report_appears_for_staff() {
         let installed = {
             let bare = Plugin::start(port, &w.api, None).await;
             let installed = w
-                .install(&bare.url(), &[Scope::SubmissionsRead, Scope::ReportsWrite])
+                .install(
+                    &bare.url(),
+                    &[
+                        Scope::SubmissionsRead,
+                        Scope::ReportsWrite,
+                        Scope::AssignmentsRead,
+                    ],
+                )
                 .await;
             assert_eq!(installed.install.plugin_id, "hello");
             assert_eq!(
@@ -217,7 +231,8 @@ async fn a_signed_event_reaches_the_plugin_and_its_report_appears_for_staff() {
                 [
                     Scope::SubmissionsRead,
                     Scope::ReportsWrite,
-                    Scope::SettingsRead
+                    Scope::SettingsRead,
+                    Scope::AssignmentsRead
                 ]
             );
             installed
@@ -238,7 +253,7 @@ async fn a_signed_event_reaches_the_plugin_and_its_report_appears_for_staff() {
         let report = wait_for_report(&w, submission).await;
         assert_eq!(report["plugin_id"], "hello");
         assert_eq!(report["summary"], "5 words");
-        assert_eq!(report["data"], json!({"words": 5}));
+        assert_eq!(report["data"], json!({"words": 5, "kind": "text"}));
 
         // The outbox delivers at least once; a second pass owes the plugin nothing new.
         sqlx::query("UPDATE events.outbox SET processed_at = NULL, run_after = now()")
@@ -402,6 +417,7 @@ async fn a_call_without_the_scope_is_refused_and_a_draft_is_not_there() {
                 &mut conn,
                 "reader",
                 &[Scope::SubmissionsRead, Scope::ReportsWrite],
+                &access::CourseScope::All,
             )
             .await
             .unwrap();
@@ -566,9 +582,16 @@ impl World {
             .as_deref()
             .expect("a plugin key is set");
         let mut conn = self.state.db.acquire().await.expect("a connection");
-        plugins::install(&mut conn, key, "http://127.0.0.1:9", &manifest, granted)
-            .await
-            .expect("the install")
+        plugins::install(
+            &mut conn,
+            key,
+            "http://127.0.0.1:9",
+            &manifest,
+            granted,
+            &access::CourseScope::All,
+        )
+        .await
+        .expect("the install")
     }
 
     /// An install that offers a page in the tab of an assignment, with no process behind it.
@@ -588,9 +611,16 @@ impl World {
             .as_deref()
             .expect("a plugin key is set");
         let mut conn = self.state.db.acquire().await.expect("a connection");
-        plugins::install(&mut conn, key, base_url, &manifest, &[])
-            .await
-            .expect("the install")
+        plugins::install(
+            &mut conn,
+            key,
+            base_url,
+            &manifest,
+            &[],
+            &access::CourseScope::All,
+        )
+        .await
+        .expect("the install")
     }
 
     /// Asks for the launch token of `plugin_id` in the tab of the assignment, as `token`'s owner.
@@ -921,9 +951,16 @@ impl World {
             .as_deref()
             .expect("a plugin key is set");
         let mut conn = self.state.db.acquire().await.expect("a connection");
-        plugins::install(&mut conn, key, "http://127.0.0.1:9", &manifest, granted)
-            .await
-            .expect("the install")
+        plugins::install(
+            &mut conn,
+            key,
+            "http://127.0.0.1:9",
+            &manifest,
+            granted,
+            &access::CourseScope::All,
+        )
+        .await
+        .expect("the install")
     }
 
     /// What `vumlo-cli plugin settings set` does, minus the audit row.
@@ -1043,6 +1080,7 @@ async fn a_plugin_reads_its_own_settings_secrets_included_and_nobody_else_can() 
                 &mut conn,
                 "blind",
                 &[Scope::SubmissionsRead, Scope::SettingsRead],
+                &access::CourseScope::All,
             )
             .await
             .unwrap();

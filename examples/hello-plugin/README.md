@@ -8,11 +8,15 @@ staff read at `GET /api/v1/submissions/{id}/plugin-reports`.
 2. Start the plugin with no credentials, so the core can read its manifest:
    `PORT=9000 python3 plugin.py`
 3. Install it and approve what it asks for:
-   `vumlo-cli plugin install http://127.0.0.1:9000 --grant submissions:read,reports:write,settings:read`
-   It prints a token and a secret, once.
+   `vumlo-cli plugin install http://127.0.0.1:9000 --grant submissions:read,reports:write,settings:read,assignments:read --courses all`
+   It prints a token and a secret, once. `--courses` says which courses the plugin may reach: `all`, or the
+   ids of some courses, comma-separated ([ADR-0074](../../docs/decisions/done.md)). Every call the plugin
+   makes is checked against it, and it is sent the events of those courses only.
 4. Stop the plugin and start it with them:
    `PORT=9000 VUMLO_API=http://127.0.0.1:8080/api/v1 VUMLO_PLUGIN_TOKEN=... VUMLO_WEBHOOK_SECRET=... python3 plugin.py`
-5. A student submits; within a few seconds the report is there.
+5. A student submits; within a few seconds the report is there. When it was granted `assignments:read` the
+   report also says the type of the assignment (`GET /plugin-api/assignments/{id}`); without it the plugin
+   gets a `403` for that call and reports the words alone.
 
 It has two settings, declared in its manifest (`MANIFEST["settings"]` in `plugin.py`), which an administrator
 changes without touching the plugin:

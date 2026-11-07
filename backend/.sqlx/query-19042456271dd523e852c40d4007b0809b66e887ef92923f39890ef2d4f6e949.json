@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT id AS install_id, plugin_id, scopes AS \"scopes!\"\n           FROM plugins.plugin_installs\n           WHERE token_hash = $1 AND status = 'enabled'",
+  "query": "SELECT id AS install_id, plugin_id, scopes AS \"scopes!\", all_courses,\n                  ARRAY(SELECT course_id FROM plugins.install_courses\n                        WHERE install_id = plugin_installs.id) AS \"courses!\"\n           FROM plugins.plugin_installs\n           WHERE token_hash = $1 AND status = 'enabled'",
   "describe": {
     "columns": [
       {
@@ -35,6 +35,23 @@
             "name": "scopes"
           }
         }
+      },
+      {
+        "ordinal": 3,
+        "name": "all_courses",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "plugins.plugin_installs",
+            "name": "all_courses"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "courses!",
+        "type_info": "UuidArray",
+        "origin": "Expression"
       }
     ],
     "parameters": {
@@ -45,8 +62,10 @@
     "nullable": [
       false,
       false,
-      false
+      false,
+      false,
+      null
     ]
   },
-  "hash": "f3790b086cb5ec16b0bee6d70335b4b978e8e09e879e47a19edcb74030a68e2a"
+  "hash": "19042456271dd523e852c40d4007b0809b66e887ef92923f39890ef2d4f6e949"
 }

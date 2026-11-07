@@ -7712,6 +7712,684 @@
         ]
       }
     },
+    "/api/v1/plugin-api/assignments": {
+      "get": {
+        "tags": [
+          "plugin-api"
+        ],
+        "summary": "The assignments a student could see: open, with their published titles. The scope\n`assignments:read`. Without `course_id`, those of every course the plugin was granted. Sorted by\nthe last change; `updated_since` is the time of that change.",
+        "operationId": "list_assignments",
+        "parameters": [
+          {
+            "name": "course_id",
+            "in": "query",
+            "description": "One course. Without it, every course the plugin was granted.",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Page size, 1 to 100 (default 50).",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "updated_since",
+            "in": "query",
+            "description": "Only assignments, titles or settings changed at or after this time (RFC 3339).",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A page of assignments",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_PluginAssignment"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No token, or one that is unknown or disabled",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The plugin was not granted `assignments:read`, or not the course",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`course_id` names no course",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "A cursor or a time that is not valid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "plugin": []
+          }
+        ]
+      }
+    },
+    "/api/v1/plugin-api/assignments/{id}": {
+      "get": {
+        "tags": [
+          "plugin-api"
+        ],
+        "summary": "One assignment a student could see. The scope `assignments:read`.",
+        "operationId": "get_assignment",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The `assignment_id` of an event",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The assignment",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PluginAssignment"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No token, or one that is unknown or disabled",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The plugin was not granted `assignments:read`, or not the course",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such assignment, or none a student could see",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "plugin": []
+          }
+        ]
+      }
+    },
+    "/api/v1/plugin-api/assignments/{id}/attempts": {
+      "get": {
+        "tags": [
+          "plugin-api"
+        ],
+        "summary": "The submitted attempts at a quiz with their score per question, by the time they were\nsubmitted; `updated_since` is that time. The scope `quizzes:read`.",
+        "operationId": "list_attempts",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "A quiz",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Page size, 1 to 100 (default 50).",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "updated_since",
+            "in": "query",
+            "description": "Only what changed at or after this time (RFC 3339), so a plugin can catch up after events it\nmissed. What counts as a change is said on each list.",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A page of attempts",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_PluginAttempt"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No token, or one that is unknown or disabled",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The plugin was not granted `quizzes:read`, or not the course",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such quiz",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "A cursor or a time that is not valid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "plugin": []
+          }
+        ]
+      }
+    },
+    "/api/v1/plugin-api/assignments/{id}/quiz": {
+      "get": {
+        "tags": [
+          "plugin-api"
+        ],
+        "summary": "The questions of a quiz without its answer key. The scope `quizzes:read`.",
+        "operationId": "get_quiz",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "A quiz",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The questions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PluginQuiz"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No token, or one that is unknown or disabled",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The plugin was not granted `quizzes:read`, or not the course",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such quiz",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "plugin": []
+          }
+        ]
+      }
+    },
+    "/api/v1/plugin-api/assignments/{id}/submissions": {
+      "get": {
+        "tags": [
+          "plugin-api"
+        ],
+        "summary": "The submitted attempts of an assignment, without their content, by the time they were\nsubmitted; `updated_since` is that time. The scope `submissions:read`.",
+        "operationId": "list_submissions",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "An assignment",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Page size, 1 to 100 (default 50).",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "updated_since",
+            "in": "query",
+            "description": "Only what changed at or after this time (RFC 3339), so a plugin can catch up after events it\nmissed. What counts as a change is said on each list.",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A page of attempts",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_PluginSubmissionItem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No token, or one that is unknown or disabled",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The plugin was not granted `submissions:read`, or not the course",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such assignment",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "A cursor or a time that is not valid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "plugin": []
+          }
+        ]
+      }
+    },
+    "/api/v1/plugin-api/courses/{id}/members": {
+      "get": {
+        "tags": [
+          "plugin-api"
+        ],
+        "summary": "The people of a course: ids, names and roles, no contact data. The scope `roster:read`. A full\nsnapshot sorted by user id: the roster has no change time, so there is no `updated_since`; the\n`enrollment.changed` event says when to read it again.",
+        "operationId": "list_members",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "A course",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "role",
+            "in": "query",
+            "description": "Only people with this role in the course.",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/CourseRole"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Page size, 1 to 100 (default 50).",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A page of people",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_PluginMember"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No token, or one that is unknown or disabled",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The plugin was not granted `roster:read`, or not the course",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such course",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "A cursor that is not valid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "plugin": []
+          }
+        ]
+      }
+    },
+    "/api/v1/plugin-api/grades": {
+      "get": {
+        "tags": [
+          "plugin-api"
+        ],
+        "summary": "Published grades, never a draft, by the time they were published; `updated_since` is that time.\nThe scope `grades:read`. Without `course_id`, those of every course the plugin was granted.",
+        "operationId": "list_grades",
+        "parameters": [
+          {
+            "name": "course_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "assignment_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Page size, 1 to 100 (default 50).",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "updated_since",
+            "in": "query",
+            "description": "Only grades published at or after this time (RFC 3339).",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A page of grades",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_PluginGrade"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No token, or one that is unknown or disabled",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The plugin was not granted `grades:read`, or not the course",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`course_id` or `assignment_id` names nothing",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "A cursor or a time that is not valid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "plugin": []
+          }
+        ]
+      }
+    },
     "/api/v1/plugin-api/settings": {
       "get": {
         "tags": [
@@ -7821,7 +8499,7 @@
             }
           },
           "403": {
-            "description": "The plugin was not granted `submissions:read`",
+            "description": "The plugin was not granted `submissions:read`, or not the course",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -7832,6 +8510,74 @@
           },
           "404": {
             "description": "No such submitted attempt",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "plugin": []
+          }
+        ]
+      }
+    },
+    "/api/v1/plugin-api/submissions/{id}/fields": {
+      "get": {
+        "tags": [
+          "plugin-api"
+        ],
+        "summary": "The values a student gave in a submitted `form`, by field id. The scope `assignments:read`.",
+        "operationId": "get_form_answers",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The `submission_id` of an event",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The values",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PluginFormAnswers"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No token, or one that is unknown or disabled",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The plugin was not granted `assignments:read`, or not the course",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such submitted attempt, or not at a form",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -7913,6 +8659,73 @@
           },
           "422": {
             "description": "The summary or the data is not valid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "plugin": []
+          }
+        ]
+      }
+    },
+    "/api/v1/plugin-api/users/contact": {
+      "get": {
+        "tags": [
+          "plugin-api"
+        ],
+        "summary": "The email addresses of up to 100 people, for those of them who are in a course the plugin was\ngranted. The others are left out, not reported. The scope `users:contact`.",
+        "operationId": "get_contacts",
+        "parameters": [
+          {
+            "name": "ids",
+            "in": "query",
+            "description": "User ids, separated by commas: at most 100.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The addresses",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PluginContacts"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No token, or one that is unknown or disabled",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The plugin was not granted `users:contact`",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "`ids` is not a list of at most 100 user ids",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -13116,6 +13929,306 @@
           }
         }
       },
+      "Page_PluginAssignment": {
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "description": "An assignment as a student can see it: open, with its published title.",
+              "required": [
+                "id",
+                "course_id",
+                "kind",
+                "title",
+                "max_points",
+                "updated_at"
+              ],
+              "properties": {
+                "course_id": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "due_at": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "format": "date-time"
+                },
+                "fields": {
+                  "type": [
+                    "array",
+                    "null"
+                  ],
+                  "items": {
+                    "type": "object"
+                  },
+                  "description": "The fields of a `form` (`id`, `type`, `label`, `help`, `required`, `options`, `rules`); absent\nfor the other types."
+                },
+                "id": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "kind": {
+                  "type": "string",
+                  "description": "`text`, `no_submission`, `quiz`, `form` or `file`."
+                },
+                "max_points": {
+                  "type": "string",
+                  "description": "A decimal number as text."
+                },
+                "title": {
+                  "type": "string"
+                },
+                "updated_at": {
+                  "type": "string",
+                  "format": "date-time",
+                  "description": "When the assignment, its title or its settings last changed."
+                }
+              }
+            }
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Pass as `cursor` to get the next page; `null` on the last page."
+          }
+        }
+      },
+      "Page_PluginAttempt": {
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "description": "A submitted attempt at a quiz.",
+              "required": [
+                "id",
+                "student_id",
+                "attempt",
+                "scores",
+                "started_at",
+                "submitted_at"
+              ],
+              "properties": {
+                "attempt": {
+                  "type": "integer",
+                  "format": "int32"
+                },
+                "id": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "scores": {
+                  "type": "object",
+                  "description": "The score of each question by question id, as decimal text."
+                },
+                "started_at": {
+                  "type": "string",
+                  "format": "date-time",
+                  "description": "When the attempt was first saved as a draft."
+                },
+                "student_id": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "submitted_at": {
+                  "type": "string",
+                  "format": "date-time"
+                }
+              }
+            }
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Pass as `cursor` to get the next page; `null` on the last page."
+          }
+        }
+      },
+      "Page_PluginGrade": {
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "description": "A published grade. A draft is never here.",
+              "required": [
+                "course_id",
+                "assignment_id",
+                "student_id",
+                "max_points",
+                "published_at"
+              ],
+              "properties": {
+                "assignment_id": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "course_id": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "max_points": {
+                  "type": "string"
+                },
+                "published_at": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "published_by": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "format": "uuid",
+                  "description": "Who published the grade; `null` for a grade the system published."
+                },
+                "score": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "description": "A decimal number as text; `null` when only feedback was published."
+                },
+                "student_id": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            }
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Pass as `cursor` to get the next page; `null` on the last page."
+          }
+        }
+      },
+      "Page_PluginMember": {
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "user_id",
+                "name",
+                "surname",
+                "role",
+                "source"
+              ],
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "role": {
+                  "$ref": "#/components/schemas/CourseRole"
+                },
+                "source": {
+                  "type": "string",
+                  "description": "`direct`, or `group` when the student is on the roster through a linked group."
+                },
+                "surname": {
+                  "type": "string"
+                },
+                "user_id": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            }
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Pass as `cursor` to get the next page; `null` on the last page."
+          }
+        }
+      },
+      "Page_PluginSubmissionItem": {
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "description": "A submitted attempt in the list of an assignment, without its content.",
+              "required": [
+                "id",
+                "student_id",
+                "attempt",
+                "submitted_at",
+                "is_late"
+              ],
+              "properties": {
+                "attempt": {
+                  "type": "integer",
+                  "format": "int32"
+                },
+                "graded_at": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "format": "date-time",
+                  "description": "When the grade of this student for the assignment was published; `null` while it is not."
+                },
+                "id": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "is_late": {
+                  "type": "boolean"
+                },
+                "student_id": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "submitted_at": {
+                  "type": "string",
+                  "format": "date-time"
+                }
+              }
+            }
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Pass as `cursor` to get the next page; `null` on the last page."
+          }
+        }
+      },
       "Page_Session": {
         "type": "object",
         "required": [
@@ -13452,6 +14565,265 @@
           }
         }
       },
+      "PluginAssignment": {
+        "type": "object",
+        "description": "An assignment as a student can see it: open, with its published title.",
+        "required": [
+          "id",
+          "course_id",
+          "kind",
+          "title",
+          "max_points",
+          "updated_at"
+        ],
+        "properties": {
+          "course_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "due_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "fields": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "object"
+            },
+            "description": "The fields of a `form` (`id`, `type`, `label`, `help`, `required`, `options`, `rules`); absent\nfor the other types."
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "kind": {
+            "type": "string",
+            "description": "`text`, `no_submission`, `quiz`, `form` or `file`."
+          },
+          "max_points": {
+            "type": "string",
+            "description": "A decimal number as text."
+          },
+          "title": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When the assignment, its title or its settings last changed."
+          }
+        }
+      },
+      "PluginAttempt": {
+        "type": "object",
+        "description": "A submitted attempt at a quiz.",
+        "required": [
+          "id",
+          "student_id",
+          "attempt",
+          "scores",
+          "started_at",
+          "submitted_at"
+        ],
+        "properties": {
+          "attempt": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "scores": {
+            "type": "object",
+            "description": "The score of each question by question id, as decimal text."
+          },
+          "started_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When the attempt was first saved as a draft."
+          },
+          "student_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "submitted_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "PluginContact": {
+        "type": "object",
+        "required": [
+          "user_id",
+          "email"
+        ],
+        "properties": {
+          "email": {
+            "type": "string"
+          },
+          "user_id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      },
+      "PluginContacts": {
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PluginContact"
+            },
+            "description": "Those of the ids who are in a course the plugin reaches. The others are left out."
+          }
+        }
+      },
+      "PluginFormAnswers": {
+        "type": "object",
+        "description": "The values a student gave in a `form`, by field id.",
+        "required": [
+          "submission_id",
+          "course_id",
+          "assignment_id",
+          "student_id",
+          "answers"
+        ],
+        "properties": {
+          "answers": {
+            "type": "object"
+          },
+          "assignment_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "course_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "student_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "submission_id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      },
+      "PluginGrade": {
+        "type": "object",
+        "description": "A published grade. A draft is never here.",
+        "required": [
+          "course_id",
+          "assignment_id",
+          "student_id",
+          "max_points",
+          "published_at"
+        ],
+        "properties": {
+          "assignment_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "course_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "max_points": {
+            "type": "string"
+          },
+          "published_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "published_by": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid",
+            "description": "Who published the grade; `null` for a grade the system published."
+          },
+          "score": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "A decimal number as text; `null` when only feedback was published."
+          },
+          "student_id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      },
+      "PluginMember": {
+        "type": "object",
+        "required": [
+          "user_id",
+          "name",
+          "surname",
+          "role",
+          "source"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "role": {
+            "$ref": "#/components/schemas/CourseRole"
+          },
+          "source": {
+            "type": "string",
+            "description": "`direct`, or `group` when the student is on the roster through a linked group."
+          },
+          "surname": {
+            "type": "string"
+          },
+          "user_id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      },
+      "PluginQuiz": {
+        "type": "object",
+        "description": "The questions of a quiz as a student sees them: no `correct`, `answer`, `tolerance`,\n`accepted`, `explanation`, `partial_credit` or `grading_notes`.",
+        "required": [
+          "assignment_id",
+          "course_id",
+          "max_points",
+          "config"
+        ],
+        "properties": {
+          "assignment_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "config": {
+            "type": "object"
+          },
+          "course_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "max_points": {
+            "type": "string"
+          }
+        }
+      },
       "PluginReport": {
         "type": "object",
         "description": "The report of one plugin on one submitted attempt, for the staff who may see the attempt.",
@@ -13547,6 +14919,7 @@
         "description": "A submitted attempt as a plugin with `submissions:read` sees it: which work, whose, and what it\nsays. No draft, no score and no grade.",
         "required": [
           "id",
+          "course_id",
           "assignment_id",
           "student_id",
           "attempt",
@@ -13566,10 +14939,54 @@
             "type": "object",
             "description": "A block document for a `text` assignment, `{\"answers\": {...}}` for a quiz or a form,\n`{\"files\": [...], \"comment\"?}` for a file."
           },
+          "course_id": {
+            "type": "string",
+            "format": "uuid"
+          },
           "id": {
             "type": "string",
             "format": "uuid",
             "description": "The id the `submission.submitted` event carries as `submission_id`."
+          },
+          "student_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "submitted_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "PluginSubmissionItem": {
+        "type": "object",
+        "description": "A submitted attempt in the list of an assignment, without its content.",
+        "required": [
+          "id",
+          "student_id",
+          "attempt",
+          "submitted_at",
+          "is_late"
+        ],
+        "properties": {
+          "attempt": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "graded_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "When the grade of this student for the assignment was published; `null` while it is not."
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "is_late": {
+            "type": "boolean"
           },
           "student_id": {
             "type": "string",

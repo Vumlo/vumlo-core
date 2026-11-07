@@ -1,7 +1,7 @@
 //! SQL only. Every function takes the connection it runs on and never begins a transaction. This
 //! crate reads and writes the schema `plugins` and nothing else.
 
-use access::Scope;
+use access::{CourseScope, Scope};
 use chrono::{DateTime, Utc};
 use sqlx::PgConnection;
 use uuid::Uuid;
@@ -18,6 +18,8 @@ struct InstallRow {
     subscribes: Vec<String>,
     requested_scopes: Vec<String>,
     scopes: Vec<String>,
+    all_courses: bool,
+    courses: Vec<Uuid>,
     ui_slots: serde_json::Value,
     settings: serde_json::Value,
     secret_version: i32,
@@ -59,6 +61,7 @@ impl From<InstallRow> for Install {
             subscribes: row.subscribes,
             requested_scopes: scopes_of(&row.requested_scopes),
             scopes: scopes_of(&row.scopes),
+            courses: course_scope(row.all_courses, row.courses),
             ui: ui_of(&row.ui_slots),
             // Checked when the plugin was installed; one that does not read back declares nothing.
             settings: serde_json::from_value(row.settings).unwrap_or_default(),
@@ -66,6 +69,14 @@ impl From<InstallRow> for Install {
             status: row.status,
             created_at: row.created_at,
         }
+    }
+}
+
+pub(crate) fn course_scope(all_courses: bool, courses: Vec<Uuid>) -> CourseScope {
+    if all_courses {
+        CourseScope::All
+    } else {
+        CourseScope::Only(courses)
     }
 }
 
@@ -88,6 +99,7 @@ pub struct NewInstall<'a> {
     pub subscribes: &'a [String],
     pub requested_scopes: &'a [String],
     pub scopes: &'a [String],
+    pub courses: &'a CourseScope,
     pub ui_slots: serde_json::Value,
     pub settings: &'a std::collections::BTreeMap<String, SettingSpec>,
     pub token_hash: &'a [u8],
@@ -100,8 +112,8 @@ pub async fn insert_install(
     sqlx::query!(
         "INSERT INTO plugins.plugin_installs
              (id, plugin_id, version, base_url, api, subscribes, requested_scopes, scopes,
-              ui_slots, settings, token_hash)
-         VALUES ($1, $2, $3, $4, '1', $5, $6, $7, $8, $9, $10)",
+              ui_slots, settings, token_hash, all_courses)
+         VALUES ($1, $2, $3, $4, '1', $5, $6, $7, $8, $9, $10, $11)",
         new.id,
         new.plugin_id,
         new.version,
@@ -111,7 +123,42 @@ pub async fn insert_install(
         new.scopes,
         new.ui_slots,
         serde_json::to_value(new.settings).unwrap_or_default(),
-        new.token_hash
+        new.token_hash,
+        matches!(new.courses, CourseScope::All)
+    )
+    .execute(&mut *conn)
+    .await?;
+    set_courses(conn, new.id, new.courses).await
+}
+
+/// Makes the courses of the install exactly `courses`: `All` keeps no list, `Only` keeps these.
+pub async fn set_courses(
+    conn: &mut PgConnection,
+    install_id: Uuid,
+    courses: &CourseScope,
+) -> Result<(), sqlx::Error> {
+    let (all, list): (bool, &[Uuid]) = match courses {
+        CourseScope::All => (true, &[]),
+        CourseScope::Only(list) => (false, list),
+    };
+    sqlx::query!(
+        "UPDATE plugins.plugin_installs SET all_courses = $2, updated_at = now() WHERE id = $1",
+        install_id,
+        all
+    )
+    .execute(&mut *conn)
+    .await?;
+    sqlx::query!(
+        "DELETE FROM plugins.install_courses WHERE install_id = $1",
+        install_id
+    )
+    .execute(&mut *conn)
+    .await?;
+    sqlx::query!(
+        "INSERT INTO plugins.install_courses (install_id, course_id)
+         SELECT $1, course_id FROM unnest($2::uuid[]) AS course_id",
+        install_id,
+        list
     )
     .execute(conn)
     .await?;
@@ -126,7 +173,10 @@ pub async fn find_install(
         InstallRow,
         r#"SELECT id, plugin_id, version, base_url,
                   subscribes AS "subscribes!", requested_scopes AS "requested_scopes!",
-                  scopes AS "scopes!", ui_slots, settings, secret_version,
+                  scopes AS "scopes!", all_courses,
+                  ARRAY(SELECT course_id FROM plugins.install_courses
+                        WHERE install_id = plugin_installs.id) AS "courses!",
+                  ui_slots, settings, secret_version,
                   status AS "status: InstallStatus", created_at
            FROM plugins.plugin_installs WHERE plugin_id = $1"#,
         plugin_id
@@ -141,7 +191,10 @@ pub async fn list_installs(conn: &mut PgConnection) -> Result<Vec<Install>, sqlx
         InstallRow,
         r#"SELECT id, plugin_id, version, base_url,
                   subscribes AS "subscribes!", requested_scopes AS "requested_scopes!",
-                  scopes AS "scopes!", ui_slots, settings, secret_version,
+                  scopes AS "scopes!", all_courses,
+                  ARRAY(SELECT course_id FROM plugins.install_courses
+                        WHERE install_id = plugin_installs.id) AS "courses!",
+                  ui_slots, settings, secret_version,
                   status AS "status: InstallStatus", created_at
            FROM plugins.plugin_installs ORDER BY plugin_id"#
     )
@@ -211,6 +264,8 @@ pub struct TokenOwner {
     pub install_id: Uuid,
     pub plugin_id: String,
     pub scopes: Vec<String>,
+    pub all_courses: bool,
+    pub courses: Vec<Uuid>,
 }
 
 pub async fn find_enabled_by_token(
@@ -219,7 +274,9 @@ pub async fn find_enabled_by_token(
 ) -> Result<Option<TokenOwner>, sqlx::Error> {
     sqlx::query_as!(
         TokenOwner,
-        r#"SELECT id AS install_id, plugin_id, scopes AS "scopes!"
+        r#"SELECT id AS install_id, plugin_id, scopes AS "scopes!", all_courses,
+                  ARRAY(SELECT course_id FROM plugins.install_courses
+                        WHERE install_id = plugin_installs.id) AS "courses!"
            FROM plugins.plugin_installs
            WHERE token_hash = $1 AND status = 'enabled'"#,
         token_hash
@@ -232,16 +289,22 @@ pub async fn find_enabled_by_token(
 // Deliveries
 // ---------------------------------------------------------------------------------------------
 
-/// The enabled installs that subscribed to `kind`.
+/// The enabled installs that subscribed to `kind` and, when the event is about a course, may reach
+/// it (ADR-0074).
 pub async fn enabled_subscribers(
     conn: &mut PgConnection,
     kind: &str,
+    course_id: Option<Uuid>,
 ) -> Result<Vec<Uuid>, sqlx::Error> {
     sqlx::query_scalar!(
-        "SELECT id FROM plugins.plugin_installs
+        "SELECT id FROM plugins.plugin_installs i
          WHERE status = 'enabled' AND $1 = ANY (subscribes)
+           AND ($2::uuid IS NULL OR all_courses
+                OR EXISTS (SELECT 1 FROM plugins.install_courses c
+                           WHERE c.install_id = i.id AND c.course_id = $2))
          ORDER BY id",
-        kind
+        kind,
+        course_id
     )
     .fetch_all(conn)
     .await

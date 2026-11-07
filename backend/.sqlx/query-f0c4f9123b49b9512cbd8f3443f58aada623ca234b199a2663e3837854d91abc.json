@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT id, plugin_id, version, base_url,\n                  subscribes AS \"subscribes!\", requested_scopes AS \"requested_scopes!\",\n                  scopes AS \"scopes!\", ui_slots, settings, secret_version,\n                  status AS \"status: InstallStatus\", created_at\n           FROM plugins.plugin_installs WHERE plugin_id = $1",
+  "query": "SELECT id, plugin_id, version, base_url,\n                  subscribes AS \"subscribes!\", requested_scopes AS \"requested_scopes!\",\n                  scopes AS \"scopes!\", all_courses,\n                  ARRAY(SELECT course_id FROM plugins.install_courses\n                        WHERE install_id = plugin_installs.id) AS \"courses!\",\n                  ui_slots, settings, secret_version,\n                  status AS \"status: InstallStatus\", created_at\n           FROM plugins.plugin_installs ORDER BY plugin_id",
   "describe": {
     "columns": [
       {
@@ -82,6 +82,23 @@
       },
       {
         "ordinal": 7,
+        "name": "all_courses",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "plugins.plugin_installs",
+            "name": "all_courses"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "courses!",
+        "type_info": "UuidArray",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 9,
         "name": "ui_slots",
         "type_info": "Jsonb",
         "origin": {
@@ -92,7 +109,7 @@
         }
       },
       {
-        "ordinal": 8,
+        "ordinal": 10,
         "name": "settings",
         "type_info": "Jsonb",
         "origin": {
@@ -103,7 +120,7 @@
         }
       },
       {
-        "ordinal": 9,
+        "ordinal": 11,
         "name": "secret_version",
         "type_info": "Int4",
         "origin": {
@@ -114,7 +131,7 @@
         }
       },
       {
-        "ordinal": 10,
+        "ordinal": 12,
         "name": "status: InstallStatus",
         "type_info": "Text",
         "origin": {
@@ -125,7 +142,7 @@
         }
       },
       {
-        "ordinal": 11,
+        "ordinal": 13,
         "name": "created_at",
         "type_info": "Timestamptz",
         "origin": {
@@ -137,9 +154,7 @@
       }
     ],
     "parameters": {
-      "Left": [
-        "Text"
-      ]
+      "Left": []
     },
     "nullable": [
       false,
@@ -150,11 +165,13 @@
       false,
       false,
       false,
+      null,
+      false,
       false,
       false,
       false,
       false
     ]
   },
-  "hash": "085621c64b74e207ddb6d50d8421b0c2013bd5f33c102d9d75817f34c93aef98"
+  "hash": "f0c4f9123b49b9512cbd8f3443f58aada623ca234b199a2663e3837854d91abc"
 }

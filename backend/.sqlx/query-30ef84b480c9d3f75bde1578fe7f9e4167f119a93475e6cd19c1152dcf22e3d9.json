@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO plugins.plugin_installs\n             (id, plugin_id, version, base_url, api, subscribes, requested_scopes, scopes,\n              ui_slots, settings, token_hash, all_courses)\n         VALUES ($1, $2, $3, $4, '1', $5, $6, $7, $8, $9, $10, $11)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text",
+        "Text",
+        "TextArray",
+        "TextArray",
+        "TextArray",
+        "Jsonb",
+        "Jsonb",
+        "Bytea",
+        "Bool"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "30ef84b480c9d3f75bde1578fe7f9e4167f119a93475e6cd19c1152dcf22e3d9"
+}

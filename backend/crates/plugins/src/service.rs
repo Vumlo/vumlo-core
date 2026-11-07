@@ -7,7 +7,7 @@ use std::time::Duration;
 use access::{self, Actor};
 use std::collections::BTreeMap;
 
-use access::{PluginCaller, Scope};
+use access::{CourseScope, PluginCaller, Scope};
 use events::{Event, OutboxEvent};
 use learning::assessment;
 use learning::content::{self, OpenError};
@@ -76,6 +76,7 @@ pub async fn install(
     base_url: &str,
     manifest: &PluginManifest,
     granted: &[Scope],
+    courses: &CourseScope,
 ) -> Result<Installed, PluginsError> {
     let base_url = check_base_url(base_url)?;
     if let Some(extra) = granted.iter().find(|s| !manifest.scopes.contains(s)) {
@@ -99,6 +100,7 @@ pub async fn install(
             subscribes: &manifest.subscribes,
             requested_scopes: &scope_names(&manifest.scopes),
             scopes: &scope_names(&granted),
+            courses,
             ui_slots: Value::Array(ui),
             settings: &manifest.settings,
             token_hash: &token.hash(),
@@ -109,6 +111,7 @@ pub async fn install(
         return Err(
             match error.as_database_error().and_then(|e| e.code()).as_deref() {
                 Some("23505") => PluginsError::AlreadyInstalled(manifest.id.clone()),
+                Some("23503") => PluginsError::CourseGone,
                 _ => PluginsError::Db(error),
             },
         );
@@ -150,11 +153,13 @@ pub async fn list(conn: &mut PgConnection) -> Result<Vec<InstallSummary>, Plugin
         .collect())
 }
 
-/// Replaces the granted scopes. They stay within what the plugin asked for.
+/// Replaces the granted scopes and the courses the plugin may reach. The scopes stay within what
+/// the plugin asked for; a course that is not there is `CourseGone`.
 pub async fn grant(
     conn: &mut PgConnection,
     plugin_id: &str,
     scopes: &[Scope],
+    courses: &CourseScope,
 ) -> Result<Install, PluginsError> {
     let install = get(conn, plugin_id).await?;
     if let Some(extra) = scopes
@@ -164,6 +169,14 @@ pub async fn grant(
         return Err(PluginsError::NotRequested(extra.as_str().to_owned()));
     }
     repo::set_scopes(conn, install.id, &scope_names(&unique(scopes))).await?;
+    repo::set_courses(conn, install.id, courses)
+        .await
+        .map_err(
+            |error| match error.as_database_error().and_then(|e| e.code()).as_deref() {
+                Some("23503") => PluginsError::CourseGone,
+                _ => PluginsError::Db(error),
+            },
+        )?;
     get(conn, plugin_id).await
 }
 
@@ -197,7 +210,12 @@ pub async fn fan_out(conn: &mut PgConnection, event: &OutboxEvent) -> Result<u64
             .and_then(|id| id.parse().ok())
             .unwrap_or(Uuid::nil())
     });
-    for install_id in repo::enabled_subscribers(conn, &event.kind).await? {
+    // A plugin is sent the events of the courses it may reach and no others (ADR-0074). An event
+    // without a course (a change of settings) is not about one.
+    let course = event.payload["course_id"]
+        .as_str()
+        .and_then(|id| id.parse().ok());
+    for install_id in repo::enabled_subscribers(conn, &event.kind, course).await? {
         if only.is_some_and(|only| only != install_id) {
             continue;
         }
@@ -397,6 +415,9 @@ pub async fn settings_for_plugin(
     course: Option<Uuid>,
 ) -> Result<Map<String, Value>, PluginsError> {
     access::authorize_plugin(caller, Scope::SettingsRead)?;
+    if let Some(course) = course {
+        access::authorize_plugin_course(caller, Scope::SettingsRead, course)?;
+    }
     if let Some(course) = course
         && !teaching::course_exists(conn, course).await?
     {
@@ -484,6 +505,7 @@ pub async fn launch(
         .await?
         .filter(|install| install.status == InstallStatus::Enabled)
         .filter(|install| install.ui.iter().any(|page| page.slot == ASSIGNMENT_TAB))
+        .filter(|install| install.courses.allows(opened.course_id))
         .ok_or_else(not_found)?;
     let secret = derive_secret(key, install.id, install.secret_version)?;
     let claims = LaunchClaims {

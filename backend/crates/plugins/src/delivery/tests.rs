@@ -81,9 +81,16 @@ async fn owed(pool: &PgPool, base: &str) -> (Installed, OutboxEvent) {
     )
     .unwrap();
     let mut conn = pool.acquire().await.unwrap();
-    let installed = install(&mut conn, &key(), base, &manifest, &[])
-        .await
-        .unwrap();
+    let installed = install(
+        &mut conn,
+        &key(),
+        base,
+        &manifest,
+        &[],
+        &access::CourseScope::All,
+    )
+    .await
+    .unwrap();
     let event = OutboxEvent {
         id: Uuid::now_v7(),
         kind: "submission.submitted".to_owned(),

@@ -10,7 +10,7 @@ use sqlx::PgPool;
 use vumlo_config::Settings;
 
 use crate::model::PluginToken;
-use crate::repo::{self, scopes_of};
+use crate::repo::{self, course_scope, scopes_of};
 use crate::secret::SecretKey;
 
 #[derive(Clone)]
@@ -60,6 +60,7 @@ impl PluginSource for PluginsState {
             install_id: owner.install_id,
             plugin_id: owner.plugin_id,
             scopes: scopes_of(&owner.scopes),
+            courses: course_scope(owner.all_courses, owner.courses),
         })
     }
 }

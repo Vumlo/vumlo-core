@@ -967,7 +967,21 @@ fn an_institution_student_is_never_a_course_teacher_or_owner() {
 }
 
 fn plugin(scopes: &[Scope]) -> PluginCaller {
-    PluginCaller::new(Uuid::now_v7(), "test".to_owned(), scopes.to_vec())
+    PluginCaller::new(
+        Uuid::now_v7(),
+        "test".to_owned(),
+        scopes.to_vec(),
+        CourseScope::All,
+    )
+}
+
+fn plugin_in(scopes: &[Scope], courses: &[Uuid]) -> PluginCaller {
+    PluginCaller::new(
+        Uuid::now_v7(),
+        "test".to_owned(),
+        scopes.to_vec(),
+        CourseScope::Only(courses.to_vec()),
+    )
 }
 
 #[test]
@@ -989,9 +1003,71 @@ fn scopes_have_the_names_the_manifest_and_the_cli_use() {
     for (text, scope) in [
         ("submissions:read", Scope::SubmissionsRead),
         ("reports:write", Scope::ReportsWrite),
+        ("settings:read", Scope::SettingsRead),
+        ("assignments:read", Scope::AssignmentsRead),
+        ("roster:read", Scope::RosterRead),
+        ("grades:read", Scope::GradesRead),
+        ("quizzes:read", Scope::QuizzesRead),
+        ("users:contact", Scope::UsersContact),
     ] {
         assert_eq!(text.parse::<Scope>(), Ok(scope));
         assert_eq!(scope.as_str(), text);
     }
     assert!("submissions:write".parse::<Scope>().is_err());
+}
+
+#[test]
+fn a_plugin_reaches_only_the_courses_it_was_granted() {
+    let (mine, other) = (Uuid::now_v7(), Uuid::now_v7());
+    let one = plugin_in(&[Scope::GradesRead], &[mine]);
+    assert_eq!(
+        authorize_plugin_course(&one, Scope::GradesRead, mine),
+        Ok(())
+    );
+    assert_eq!(
+        authorize_plugin_course(&one, Scope::GradesRead, other),
+        Err(AccessError::Denied)
+    );
+    // The scope is checked too: a course alone grants nothing.
+    assert_eq!(
+        authorize_plugin_course(&one, Scope::RosterRead, mine),
+        Err(AccessError::Denied)
+    );
+    let all = plugin(&[Scope::GradesRead]);
+    assert_eq!(
+        authorize_plugin_course(&all, Scope::GradesRead, other),
+        Ok(())
+    );
+    let none = plugin_in(&[Scope::GradesRead], &[]);
+    assert_eq!(
+        authorize_plugin_course(&none, Scope::GradesRead, mine),
+        Err(AccessError::Denied)
+    );
+}
+
+#[test]
+fn a_list_is_about_the_requested_course_or_every_course_the_plugin_reaches() {
+    let (a, b) = (Uuid::now_v7(), Uuid::now_v7());
+    let scoped = plugin_in(&[Scope::RosterRead], &[a, b]);
+    assert_eq!(
+        plugin_course_filter(&scoped, Scope::RosterRead, None),
+        Ok(Some(vec![a, b]))
+    );
+    assert_eq!(
+        plugin_course_filter(&scoped, Scope::RosterRead, Some(a)),
+        Ok(Some(vec![a]))
+    );
+    assert_eq!(
+        plugin_course_filter(&scoped, Scope::RosterRead, Some(Uuid::now_v7())),
+        Err(AccessError::Denied)
+    );
+    assert_eq!(
+        plugin_course_filter(&scoped, Scope::GradesRead, None),
+        Err(AccessError::Denied)
+    );
+    let all = plugin(&[Scope::RosterRead]);
+    assert_eq!(
+        plugin_course_filter(&all, Scope::RosterRead, None),
+        Ok(None)
+    );
 }

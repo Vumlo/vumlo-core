@@ -16,6 +16,7 @@ pub const MAX_REPORT_DATA_BYTES: usize = 16 * 1024;
 pub struct PluginSubmission {
     /// The id the `submission.submitted` event carries as `submission_id`.
     pub id: Uuid,
+    pub course_id: Uuid,
     pub assignment_id: Uuid,
     pub student_id: Uuid,
     pub attempt: i32,
@@ -124,6 +125,188 @@ pub struct PluginSettings {
     /// plugin is who they were entered for.
     #[schema(value_type = Object)]
     pub values: Map<String, Value>,
+}
+
+// ---------------------------------------------------------------------------------------------
+// The read surface of the plugin API (ADR-0074)
+// ---------------------------------------------------------------------------------------------
+
+/// How a plugin pages through a list. The cursor is opaque: pass back `next_cursor` unchanged.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, Validate, IntoParams)]
+#[into_params(parameter_in = Query)]
+pub struct PluginListQuery {
+    #[garde(inner(length(min = 1, max = 100)))]
+    pub cursor: Option<String>,
+    /// Page size, 1 to 100 (default 50).
+    #[garde(inner(range(min = 1, max = 100)))]
+    pub limit: Option<u32>,
+    /// Only what changed at or after this time (RFC 3339), so a plugin can catch up after events it
+    /// missed. What counts as a change is said on each list.
+    #[garde(skip)]
+    pub updated_since: Option<DateTime<Utc>>,
+}
+
+/// The assignments of a course, or of every course the plugin reaches.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, Validate, IntoParams)]
+#[into_params(parameter_in = Query)]
+pub struct PluginAssignmentsQuery {
+    /// One course. Without it, every course the plugin was granted.
+    #[garde(skip)]
+    pub course_id: Option<Uuid>,
+    #[garde(inner(length(min = 1, max = 100)))]
+    pub cursor: Option<String>,
+    /// Page size, 1 to 100 (default 50).
+    #[garde(inner(range(min = 1, max = 100)))]
+    pub limit: Option<u32>,
+    /// Only assignments, titles or settings changed at or after this time (RFC 3339).
+    #[garde(skip)]
+    pub updated_since: Option<DateTime<Utc>>,
+}
+
+/// The published grades of a course, of every course the plugin reaches, or of one assignment.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, Validate, IntoParams)]
+#[into_params(parameter_in = Query)]
+pub struct PluginGradesQuery {
+    #[garde(skip)]
+    pub course_id: Option<Uuid>,
+    #[garde(skip)]
+    pub assignment_id: Option<Uuid>,
+    #[garde(inner(length(min = 1, max = 100)))]
+    pub cursor: Option<String>,
+    /// Page size, 1 to 100 (default 50).
+    #[garde(inner(range(min = 1, max = 100)))]
+    pub limit: Option<u32>,
+    /// Only grades published at or after this time (RFC 3339).
+    #[garde(skip)]
+    pub updated_since: Option<DateTime<Utc>>,
+}
+
+/// The people of a course.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, Validate, IntoParams)]
+#[into_params(parameter_in = Query)]
+pub struct PluginMembersQuery {
+    /// Only people with this role in the course.
+    #[garde(skip)]
+    pub role: Option<crate::CourseRole>,
+    #[garde(inner(length(min = 1, max = 100)))]
+    pub cursor: Option<String>,
+    /// Page size, 1 to 100 (default 50).
+    #[garde(inner(range(min = 1, max = 100)))]
+    pub limit: Option<u32>,
+}
+
+/// The most user ids one call to `users/contact` takes.
+pub const MAX_CONTACT_IDS: usize = 100;
+
+#[derive(Debug, Clone, Serialize, Deserialize, Validate, IntoParams)]
+#[into_params(parameter_in = Query)]
+pub struct PluginContactQuery {
+    /// User ids, separated by commas: at most 100.
+    #[garde(length(min = 36, max = 4000))]
+    pub ids: String,
+}
+
+/// An assignment as a student can see it: open, with its published title.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
+pub struct PluginAssignment {
+    pub id: Uuid,
+    pub course_id: Uuid,
+    /// `text`, `no_submission`, `quiz`, `form` or `file`.
+    pub kind: String,
+    pub title: String,
+    pub due_at: Option<DateTime<Utc>>,
+    /// A decimal number as text.
+    pub max_points: String,
+    /// The fields of a `form` (`id`, `type`, `label`, `help`, `required`, `options`, `rules`); absent
+    /// for the other types.
+    #[schema(value_type = Option<Vec<Object>>)]
+    pub fields: Option<Vec<Value>>,
+    /// When the assignment, its title or its settings last changed.
+    pub updated_at: DateTime<Utc>,
+}
+
+/// The values a student gave in a `form`, by field id.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
+pub struct PluginFormAnswers {
+    pub submission_id: Uuid,
+    pub course_id: Uuid,
+    pub assignment_id: Uuid,
+    pub student_id: Uuid,
+    #[schema(value_type = Object)]
+    pub answers: Map<String, Value>,
+}
+
+/// A submitted attempt in the list of an assignment, without its content.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
+pub struct PluginSubmissionItem {
+    pub id: Uuid,
+    pub student_id: Uuid,
+    pub attempt: i32,
+    pub submitted_at: DateTime<Utc>,
+    pub is_late: bool,
+    /// When the grade of this student for the assignment was published; `null` while it is not.
+    pub graded_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct PluginMember {
+    pub user_id: Uuid,
+    pub name: String,
+    pub surname: String,
+    pub role: crate::CourseRole,
+    /// `direct`, or `group` when the student is on the roster through a linked group.
+    pub source: String,
+}
+
+/// A published grade. A draft is never here.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
+pub struct PluginGrade {
+    pub course_id: Uuid,
+    pub assignment_id: Uuid,
+    pub student_id: Uuid,
+    /// A decimal number as text; `null` when only feedback was published.
+    pub score: Option<String>,
+    pub max_points: String,
+    /// Who published the grade; `null` for a grade the system published.
+    pub published_by: Option<Uuid>,
+    pub published_at: DateTime<Utc>,
+}
+
+/// The questions of a quiz as a student sees them: no `correct`, `answer`, `tolerance`,
+/// `accepted`, `explanation`, `partial_credit` or `grading_notes`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
+pub struct PluginQuiz {
+    pub assignment_id: Uuid,
+    pub course_id: Uuid,
+    pub max_points: String,
+    #[schema(value_type = Object)]
+    pub config: Map<String, Value>,
+}
+
+/// A submitted attempt at a quiz.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
+pub struct PluginAttempt {
+    pub id: Uuid,
+    pub student_id: Uuid,
+    pub attempt: i32,
+    /// The score of each question by question id, as decimal text.
+    #[schema(value_type = Object)]
+    pub scores: Map<String, Value>,
+    /// When the attempt was first saved as a draft.
+    pub started_at: DateTime<Utc>,
+    pub submitted_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct PluginContact {
+    pub user_id: Uuid,
+    pub email: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct PluginContacts {
+    /// Those of the ids who are in a course the plugin reaches. The others are left out.
+    pub items: Vec<PluginContact>,
 }
 
 #[cfg(test)]

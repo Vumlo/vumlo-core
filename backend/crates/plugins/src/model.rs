@@ -3,7 +3,7 @@
 use std::collections::BTreeMap;
 use std::fmt;
 
-use access::Scope;
+use access::{CourseScope, Scope};
 use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use chrono::{DateTime, Utc};
@@ -69,6 +69,8 @@ pub struct Install {
     pub subscribes: Vec<String>,
     pub requested_scopes: Vec<Scope>,
     pub scopes: Vec<Scope>,
+    /// The courses the plugin may reach (ADR-0074).
+    pub courses: CourseScope,
     /// The pages the plugin offers, as its manifest said (checked when it was installed).
     pub ui: Vec<UiSlot>,
     /// The settings the plugin declared, as its manifest said (checked when it was installed).

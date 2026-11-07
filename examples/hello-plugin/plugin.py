@@ -54,7 +54,7 @@ MANIFEST = {
     "version": "1.0.0",
     "api": "1",
     "subscribes": ["submission.submitted", "plugin.settings.changed"],
-    "scopes": ["submissions:read", "reports:write", "settings:read"],
+    "scopes": ["submissions:read", "reports:write", "settings:read", "assignments:read"],
     "ui": [{"slot": "assignment.tab", "title": "Words", "path": "/ui/words"}],
     # What an administrator may configure (a subset of JSON Schema; `secret: true` would be for a token).
     "settings": {
@@ -172,6 +172,16 @@ def settings_for(course_id):
     return values
 
 
+def assignment_kind(assignment_id):
+    """The type of the assignment (`text`, `quiz`, ...), or None when the scope `assignments:read` was
+    not granted (403), the course is not one the plugin may reach (403), or the assignment is gone.
+    A plugin asks for more than it needs and works with what it was given."""
+    try:
+        return call("GET", "/plugin-api/assignments/" + assignment_id)["kind"]
+    except (urllib.error.URLError, KeyError, ValueError):
+        return None
+
+
 def work(event):
     """Fetch the submission, count its words, report. Runs after the core was answered."""
     try:
@@ -184,6 +194,9 @@ def work(event):
             total["submissions"] += 1
             total["words"] += words
         data = {"words": words}
+        kind = assignment_kind(submission["assignment_id"])
+        if kind:
+            data["kind"] = kind
         if "max_words" in config:
             data["over_limit"] = words > config["max_words"]
         if config.get("unit") == "characters":

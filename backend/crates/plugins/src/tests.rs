@@ -26,6 +26,7 @@ async fn install_one(pool: &PgPool, id: &str, subscribes: &[&str]) {
         "http://127.0.0.1:9",
         &manifest,
         &[Scope::SubmissionsRead],
+        &access::CourseScope::All,
     )
     .await
     .unwrap();

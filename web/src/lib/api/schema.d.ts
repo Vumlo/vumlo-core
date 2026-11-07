@@ -1774,6 +1774,142 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/plugin-api/assignments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The assignments a student could see: open, with their published titles. The scope
+         *     `assignments:read`. Without `course_id`, those of every course the plugin was granted. Sorted by
+         *     the last change; `updated_since` is the time of that change.
+         */
+        get: operations["list_assignments"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/plugin-api/assignments/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** One assignment a student could see. The scope `assignments:read`. */
+        get: operations["get_assignment"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/plugin-api/assignments/{id}/attempts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The submitted attempts at a quiz with their score per question, by the time they were
+         *     submitted; `updated_since` is that time. The scope `quizzes:read`.
+         */
+        get: operations["list_attempts"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/plugin-api/assignments/{id}/quiz": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The questions of a quiz without its answer key. The scope `quizzes:read`. */
+        get: operations["get_quiz"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/plugin-api/assignments/{id}/submissions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The submitted attempts of an assignment, without their content, by the time they were
+         *     submitted; `updated_since` is that time. The scope `submissions:read`.
+         */
+        get: operations["list_submissions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/plugin-api/courses/{id}/members": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The people of a course: ids, names and roles, no contact data. The scope `roster:read`. A full
+         *     snapshot sorted by user id: the roster has no change time, so there is no `updated_since`; the
+         *     `enrollment.changed` event says when to read it again.
+         */
+        get: operations["list_members"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/plugin-api/grades": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Published grades, never a draft, by the time they were published; `updated_since` is that time.
+         *     The scope `grades:read`. Without `course_id`, those of every course the plugin was granted.
+         */
+        get: operations["list_grades"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/plugin-api/settings": {
         parameters: {
             query?: never;
@@ -1815,6 +1951,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/plugin-api/submissions/{id}/fields": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The values a student gave in a submitted `form`, by field id. The scope `assignments:read`. */
+        get: operations["get_form_answers"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/plugin-api/submissions/{id}/report": {
         parameters: {
             query?: never;
@@ -1828,6 +1981,26 @@ export interface paths {
          *     `reports:write`. Sending the same report twice leaves one.
          */
         put: operations["put_report"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/plugin-api/users/contact": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The email addresses of up to 100 people, for those of them who are in a course the plugin was
+         *     granted. The others are left out, not reported. The scope `users:contact`.
+         */
+        get: operations["get_contacts"];
+        put?: never;
         post?: never;
         delete?: never;
         options?: never;
@@ -3401,6 +3574,109 @@ export interface components {
             /** @description Pass as `cursor` to get the next page; `null` on the last page. */
             next_cursor?: string | null;
         };
+        Page_PluginAssignment: {
+            items: {
+                /** Format: uuid */
+                course_id: string;
+                /** Format: date-time */
+                due_at?: string | null;
+                /**
+                 * @description The fields of a `form` (`id`, `type`, `label`, `help`, `required`, `options`, `rules`); absent
+                 *     for the other types.
+                 */
+                fields?: Record<string, never>[] | null;
+                /** Format: uuid */
+                id: string;
+                /** @description `text`, `no_submission`, `quiz`, `form` or `file`. */
+                kind: string;
+                /** @description A decimal number as text. */
+                max_points: string;
+                title: string;
+                /**
+                 * Format: date-time
+                 * @description When the assignment, its title or its settings last changed.
+                 */
+                updated_at: string;
+            }[];
+            /** @description Pass as `cursor` to get the next page; `null` on the last page. */
+            next_cursor?: string | null;
+        };
+        Page_PluginAttempt: {
+            items: {
+                /** Format: int32 */
+                attempt: number;
+                /** Format: uuid */
+                id: string;
+                /** @description The score of each question by question id, as decimal text. */
+                scores: Record<string, never>;
+                /**
+                 * Format: date-time
+                 * @description When the attempt was first saved as a draft.
+                 */
+                started_at: string;
+                /** Format: uuid */
+                student_id: string;
+                /** Format: date-time */
+                submitted_at: string;
+            }[];
+            /** @description Pass as `cursor` to get the next page; `null` on the last page. */
+            next_cursor?: string | null;
+        };
+        Page_PluginGrade: {
+            items: {
+                /** Format: uuid */
+                assignment_id: string;
+                /** Format: uuid */
+                course_id: string;
+                max_points: string;
+                /** Format: date-time */
+                published_at: string;
+                /**
+                 * Format: uuid
+                 * @description Who published the grade; `null` for a grade the system published.
+                 */
+                published_by?: string | null;
+                /** @description A decimal number as text; `null` when only feedback was published. */
+                score?: string | null;
+                /** Format: uuid */
+                student_id: string;
+            }[];
+            /** @description Pass as `cursor` to get the next page; `null` on the last page. */
+            next_cursor?: string | null;
+        };
+        Page_PluginMember: {
+            items: {
+                name: string;
+                role: components["schemas"]["CourseRole"];
+                /** @description `direct`, or `group` when the student is on the roster through a linked group. */
+                source: string;
+                surname: string;
+                /** Format: uuid */
+                user_id: string;
+            }[];
+            /** @description Pass as `cursor` to get the next page; `null` on the last page. */
+            next_cursor?: string | null;
+        };
+        Page_PluginSubmissionItem: {
+            items: {
+                /** Format: int32 */
+                attempt: number;
+                /**
+                 * Format: date-time
+                 * @description When the grade of this student for the assignment was published; `null` while it is not.
+                 */
+                graded_at?: string | null;
+                /** Format: uuid */
+                id: string;
+                is_late: boolean;
+                /** Format: uuid */
+                student_id: string;
+                /** Format: date-time */
+                submitted_at: string;
+            }[];
+            /** @description Pass as `cursor` to get the next page; `null` on the last page. */
+            next_cursor?: string | null;
+        };
         Page_Session: {
             items: {
                 /** Format: date-time */
@@ -3504,6 +3780,109 @@ export interface components {
             /** Format: uuid */
             user_id: string;
         };
+        /** @description An assignment as a student can see it: open, with its published title. */
+        PluginAssignment: {
+            /** Format: uuid */
+            course_id: string;
+            /** Format: date-time */
+            due_at?: string | null;
+            /**
+             * @description The fields of a `form` (`id`, `type`, `label`, `help`, `required`, `options`, `rules`); absent
+             *     for the other types.
+             */
+            fields?: Record<string, never>[] | null;
+            /** Format: uuid */
+            id: string;
+            /** @description `text`, `no_submission`, `quiz`, `form` or `file`. */
+            kind: string;
+            /** @description A decimal number as text. */
+            max_points: string;
+            title: string;
+            /**
+             * Format: date-time
+             * @description When the assignment, its title or its settings last changed.
+             */
+            updated_at: string;
+        };
+        /** @description A submitted attempt at a quiz. */
+        PluginAttempt: {
+            /** Format: int32 */
+            attempt: number;
+            /** Format: uuid */
+            id: string;
+            /** @description The score of each question by question id, as decimal text. */
+            scores: Record<string, never>;
+            /**
+             * Format: date-time
+             * @description When the attempt was first saved as a draft.
+             */
+            started_at: string;
+            /** Format: uuid */
+            student_id: string;
+            /** Format: date-time */
+            submitted_at: string;
+        };
+        PluginContact: {
+            email: string;
+            /** Format: uuid */
+            user_id: string;
+        };
+        PluginContacts: {
+            /** @description Those of the ids who are in a course the plugin reaches. The others are left out. */
+            items: components["schemas"]["PluginContact"][];
+        };
+        /** @description The values a student gave in a `form`, by field id. */
+        PluginFormAnswers: {
+            answers: Record<string, never>;
+            /** Format: uuid */
+            assignment_id: string;
+            /** Format: uuid */
+            course_id: string;
+            /** Format: uuid */
+            student_id: string;
+            /** Format: uuid */
+            submission_id: string;
+        };
+        /** @description A published grade. A draft is never here. */
+        PluginGrade: {
+            /** Format: uuid */
+            assignment_id: string;
+            /** Format: uuid */
+            course_id: string;
+            max_points: string;
+            /** Format: date-time */
+            published_at: string;
+            /**
+             * Format: uuid
+             * @description Who published the grade; `null` for a grade the system published.
+             */
+            published_by?: string | null;
+            /** @description A decimal number as text; `null` when only feedback was published. */
+            score?: string | null;
+            /** Format: uuid */
+            student_id: string;
+        };
+        PluginMember: {
+            name: string;
+            role: components["schemas"]["CourseRole"];
+            /** @description `direct`, or `group` when the student is on the roster through a linked group. */
+            source: string;
+            surname: string;
+            /** Format: uuid */
+            user_id: string;
+        };
+        /**
+         * @description The questions of a quiz as a student sees them: no `correct`, `answer`, `tolerance`,
+         *     `accepted`, `explanation`, `partial_credit` or `grading_notes`.
+         */
+        PluginQuiz: {
+            /** Format: uuid */
+            assignment_id: string;
+            config: Record<string, never>;
+            /** Format: uuid */
+            course_id: string;
+            max_points: string;
+        };
         /** @description The report of one plugin on one submitted attempt, for the staff who may see the attempt. */
         PluginReport: {
             data: Record<string, never>;
@@ -3553,11 +3932,30 @@ export interface components {
              *     `{"files": [...], "comment"?}` for a file.
              */
             content: Record<string, never>;
+            /** Format: uuid */
+            course_id: string;
             /**
              * Format: uuid
              * @description The id the `submission.submitted` event carries as `submission_id`.
              */
             id: string;
+            /** Format: uuid */
+            student_id: string;
+            /** Format: date-time */
+            submitted_at: string;
+        };
+        /** @description A submitted attempt in the list of an assignment, without its content. */
+        PluginSubmissionItem: {
+            /** Format: int32 */
+            attempt: number;
+            /**
+             * Format: date-time
+             * @description When the grade of this student for the assignment was published; `null` while it is not.
+             */
+            graded_at?: string | null;
+            /** Format: uuid */
+            id: string;
+            is_late: boolean;
             /** Format: uuid */
             student_id: string;
             /** Format: date-time */
@@ -9534,6 +9932,435 @@ export interface operations {
             };
         };
     };
+    list_assignments: {
+        parameters: {
+            query?: {
+                /** @description One course. Without it, every course the plugin was granted. */
+                course_id?: string;
+                cursor?: string;
+                /** @description Page size, 1 to 100 (default 50). */
+                limit?: number;
+                /** @description Only assignments, titles or settings changed at or after this time (RFC 3339). */
+                updated_since?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A page of assignments */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Page_PluginAssignment"];
+                };
+            };
+            /** @description No token, or one that is unknown or disabled */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The plugin was not granted `assignments:read`, or not the course */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description `course_id` names no course */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description A cursor or a time that is not valid */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    get_assignment: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The `assignment_id` of an event */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The assignment */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PluginAssignment"];
+                };
+            };
+            /** @description No token, or one that is unknown or disabled */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The plugin was not granted `assignments:read`, or not the course */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description No such assignment, or none a student could see */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    list_attempts: {
+        parameters: {
+            query?: {
+                cursor?: string;
+                /** @description Page size, 1 to 100 (default 50). */
+                limit?: number;
+                /**
+                 * @description Only what changed at or after this time (RFC 3339), so a plugin can catch up after events it
+                 *     missed. What counts as a change is said on each list.
+                 */
+                updated_since?: string;
+            };
+            header?: never;
+            path: {
+                /** @description A quiz */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A page of attempts */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Page_PluginAttempt"];
+                };
+            };
+            /** @description No token, or one that is unknown or disabled */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The plugin was not granted `quizzes:read`, or not the course */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description No such quiz */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description A cursor or a time that is not valid */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    get_quiz: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A quiz */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The questions */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PluginQuiz"];
+                };
+            };
+            /** @description No token, or one that is unknown or disabled */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The plugin was not granted `quizzes:read`, or not the course */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description No such quiz */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    list_submissions: {
+        parameters: {
+            query?: {
+                cursor?: string;
+                /** @description Page size, 1 to 100 (default 50). */
+                limit?: number;
+                /**
+                 * @description Only what changed at or after this time (RFC 3339), so a plugin can catch up after events it
+                 *     missed. What counts as a change is said on each list.
+                 */
+                updated_since?: string;
+            };
+            header?: never;
+            path: {
+                /** @description An assignment */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A page of attempts */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Page_PluginSubmissionItem"];
+                };
+            };
+            /** @description No token, or one that is unknown or disabled */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The plugin was not granted `submissions:read`, or not the course */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description No such assignment */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description A cursor or a time that is not valid */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    list_members: {
+        parameters: {
+            query?: {
+                /** @description Only people with this role in the course. */
+                role?: components["schemas"]["CourseRole"];
+                cursor?: string;
+                /** @description Page size, 1 to 100 (default 50). */
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                /** @description A course */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A page of people */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Page_PluginMember"];
+                };
+            };
+            /** @description No token, or one that is unknown or disabled */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The plugin was not granted `roster:read`, or not the course */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description No such course */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description A cursor that is not valid */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    list_grades: {
+        parameters: {
+            query?: {
+                course_id?: string;
+                assignment_id?: string;
+                cursor?: string;
+                /** @description Page size, 1 to 100 (default 50). */
+                limit?: number;
+                /** @description Only grades published at or after this time (RFC 3339). */
+                updated_since?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A page of grades */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Page_PluginGrade"];
+                };
+            };
+            /** @description No token, or one that is unknown or disabled */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The plugin was not granted `grades:read`, or not the course */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description `course_id` or `assignment_id` names nothing */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description A cursor or a time that is not valid */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
     get_settings: {
         parameters: {
             query?: {
@@ -9617,7 +10444,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["ProblemDetails"];
                 };
             };
-            /** @description The plugin was not granted `submissions:read` */
+            /** @description The plugin was not granted `submissions:read`, or not the course */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -9627,6 +10454,56 @@ export interface operations {
                 };
             };
             /** @description No such submitted attempt */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    get_form_answers: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The `submission_id` of an event */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The values */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PluginFormAnswers"];
+                };
+            };
+            /** @description No token, or one that is unknown or disabled */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The plugin was not granted `assignments:read`, or not the course */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description No such submitted attempt, or not at a form */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -9688,6 +10565,56 @@ export interface operations {
                 };
             };
             /** @description The summary or the data is not valid */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    get_contacts: {
+        parameters: {
+            query: {
+                /** @description User ids, separated by commas: at most 100. */
+                ids: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The addresses */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PluginContacts"];
+                };
+            };
+            /** @description No token, or one that is unknown or disabled */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The plugin was not granted `users:contact` */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description `ids` is not a list of at most 100 user ids */
             422: {
                 headers: {
                     [name: string]: unknown;

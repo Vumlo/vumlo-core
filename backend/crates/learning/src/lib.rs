@@ -10,6 +10,7 @@ pub mod files;
 pub mod gradebook;
 pub mod groups;
 pub mod people;
+pub mod plugin_read;
 mod points;
 pub mod reports;
 mod state;

@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO plugins.install_courses (install_id, course_id)\n         SELECT $1, course_id FROM unnest($2::uuid[]) AS course_id",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "UuidArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "dd2be5114c7af020398439925f31b58fa7fcafbd2840ce3c4f038f9e25dd6fc9"
+}

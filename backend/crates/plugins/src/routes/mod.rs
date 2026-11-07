@@ -3,17 +3,17 @@
 //! Writes open the transaction, call exactly one writing service function and commit; the reads
 //! that decide whether the write may go ahead run before it.
 
-use access::{Actor, ActorSource, PluginCaller, PluginSource};
+use access::{Actor, ActorSource, PluginCaller, PluginSource, Scope};
 use api_types::{
     Launch, LaunchRequest, PluginReport, PluginReports, PluginSettings, PluginSlot, PluginSlots,
-    PluginSubmission, ProblemDetails, PutReportRequest, SettingsQuery, SlotQuery,
+    ProblemDetails, PutReportRequest, SettingsQuery, SlotQuery,
 };
 use axum::Json;
 use axum::extract::{FromRef, Path, State};
 use axum::http::{HeaderName, HeaderValue, StatusCode, header};
 use chrono::{TimeDelta, Utc};
 use common::{ApiError, ValidJson, ValidQuery};
-use learning::assessment;
+use learning::plugin_read;
 use utoipa_axum::router::OpenApiRouter;
 use utoipa_axum::routes;
 use uuid::Uuid;
@@ -24,13 +24,15 @@ use crate::secret::LAUNCH_TTL_SECONDS;
 use crate::service;
 use crate::state::PluginsState;
 
+mod reads;
+
 pub fn router<S>() -> OpenApiRouter<S>
 where
     S: PluginSource + ActorSource + Clone + 'static,
     PluginsState: FromRef<S>,
 {
     OpenApiRouter::new()
-        .routes(routes!(get_submission))
+        .merge(reads::router())
         .routes(routes!(put_report))
         .routes(routes!(get_settings))
         .routes(routes!(list_reports))
@@ -39,47 +41,12 @@ where
 }
 
 /// Responses that carry a credential must not be cached (AGENTS section 11).
-fn no_store() -> (HeaderName, HeaderValue) {
+pub(crate) fn no_store() -> (HeaderName, HeaderValue) {
     (header::CACHE_CONTROL, HeaderValue::from_static("no-store"))
 }
 
-fn db(error: sqlx::Error) -> ApiError {
+pub(crate) fn db(error: sqlx::Error) -> ApiError {
     ApiError::from_db("plugins", &error)
-}
-
-/// A submitted attempt: which work, whose, and what it says. The scope `submissions:read`. Never a
-/// draft, a score or a grade.
-#[utoipa::path(
-    get,
-    path = "/plugin-api/submissions/{id}",
-    tag = "plugin-api",
-    security(("plugin" = [])),
-    params(("id" = Uuid, Path, description = "The `submission_id` of the event")),
-    responses(
-        (status = 200, description = "The submitted attempt", body = PluginSubmission),
-        (status = 401, description = "No token, or one that is unknown or disabled",
-            body = ProblemDetails, content_type = "application/problem+json"),
-        (status = 403, description = "The plugin was not granted `submissions:read`",
-            body = ProblemDetails, content_type = "application/problem+json"),
-        (status = 404, description = "No such submitted attempt", body = ProblemDetails,
-            content_type = "application/problem+json"),
-    )
-)]
-async fn get_submission(
-    caller: PluginCaller,
-    State(state): State<PluginsState>,
-    Path(id): Path<Uuid>,
-) -> Result<Json<PluginSubmission>, ApiError> {
-    let mut conn = state.db.acquire().await.map_err(db)?;
-    let work = assessment::submission_for_plugin(&mut conn, &caller, id).await?;
-    Ok(Json(PluginSubmission {
-        id: work.id,
-        assignment_id: work.assignment_id,
-        student_id: work.student_id,
-        attempt: work.attempt,
-        content: work.content,
-        submitted_at: work.submitted_at,
-    }))
 }
 
 /// The plugin's report on a submitted attempt, replacing its earlier one. The scope
@@ -111,7 +78,7 @@ async fn put_report(
 ) -> Result<StatusCode, ApiError> {
     {
         let mut conn = state.db.acquire().await.map_err(db)?;
-        assessment::ensure_reportable(&mut conn, &caller, id).await?;
+        plugin_read::ensure_reportable(&mut conn, &caller, Scope::ReportsWrite, id).await?;
     }
     let mut tx = state.db.begin().await.map_err(db)?;
     service::put_report(&mut tx, &caller, id, &body.summary, &body.data).await?;

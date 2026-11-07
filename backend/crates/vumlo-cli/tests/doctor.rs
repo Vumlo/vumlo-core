@@ -82,7 +82,7 @@ async fn doctor_warns_about_plugins_that_are_sent_nothing_and_about_dead_letters
         )
         .unwrap();
         let mut conn = pool.acquire().await.unwrap();
-        plugins::install(&mut conn, &key, "http://127.0.0.1:9", &manifest, &[])
+        plugins::install(&mut conn, &key, "http://127.0.0.1:9", &manifest, &[], &access::CourseScope::All)
             .await
             .unwrap();
         drop(conn);

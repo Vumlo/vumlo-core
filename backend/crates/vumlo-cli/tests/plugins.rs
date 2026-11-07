@@ -76,7 +76,15 @@ async fn install_shows_the_token_and_the_secret_once_and_stores_neither() {
 
         let out = run(
             &env,
-            &["plugin", "install", &base, "--grant", "submissions:read"],
+            &[
+                "plugin",
+                "install",
+                &base,
+                "--grant",
+                "submissions:read",
+                "--courses",
+                "all",
+            ],
             None,
         )
         .await;
@@ -132,7 +140,15 @@ async fn a_scope_nobody_asked_for_or_that_does_not_exist_stops_the_install() {
 
         let not_asked = run(
             &env,
-            &["plugin", "install", &base, "--grant", "reports:write"],
+            &[
+                "plugin",
+                "install",
+                &base,
+                "--grant",
+                "reports:write",
+                "--courses",
+                "all",
+            ],
             None,
         )
         .await;
@@ -147,7 +163,15 @@ async fn a_scope_nobody_asked_for_or_that_does_not_exist_stops_the_install() {
 
         let unknown = run(
             &env,
-            &["plugin", "install", &base, "--grant", "users:read"],
+            &[
+                "plugin",
+                "install",
+                &base,
+                "--grant",
+                "users:read",
+                "--courses",
+                "all",
+            ],
             None,
         )
         .await;
@@ -171,7 +195,7 @@ async fn without_a_grant_flag_each_requested_scope_is_asked_for() {
         let env = Env::new(&pool);
         let base = plugin(&["submissions:read", "reports:write"]).await;
 
-        let out = run(&env, &["plugin", "install", &base], Some("y\nn\n")).await;
+        let out = run(&env, &["plugin", "install", &base], Some("y\nn\nall\n")).await;
 
         assert!(out.ok, "{}", out.stderr);
         assert!(
@@ -190,7 +214,20 @@ async fn a_plugin_may_be_installed_with_nothing_granted() {
         let env = Env::new(&pool);
         let base = plugin(&["submissions:read"]).await;
 
-        let out = run(&env, &["plugin", "install", &base, "--grant", "none"], None).await;
+        let out = run(
+            &env,
+            &[
+                "plugin",
+                "install",
+                &base,
+                "--grant",
+                "none",
+                "--courses",
+                "all",
+            ],
+            None,
+        )
+        .await;
 
         assert!(out.ok, "{}", out.stderr);
         assert!(scopes_of_hello(&pool).await.is_empty());
@@ -207,7 +244,15 @@ async fn an_install_needs_the_key_and_a_safe_address_and_an_id_is_installed_once
 
         let no_key = env
             .run_with(
-                &["plugin", "install", &base, "--grant", "none"],
+                &[
+                    "plugin",
+                    "install",
+                    &base,
+                    "--grant",
+                    "none",
+                    "--courses",
+                    "all",
+                ],
                 None,
                 &[("DATABASE_URL", env.url.as_str())],
             )
@@ -227,6 +272,8 @@ async fn an_install_needs_the_key_and_a_safe_address_and_an_id_is_installed_once
                 "http://tools.example.edu",
                 "--grant",
                 "none",
+                "--courses",
+                "all",
             ],
             None,
         )
@@ -248,11 +295,36 @@ async fn an_install_needs_the_key_and_a_safe_address_and_an_id_is_installed_once
         );
 
         assert!(
-            run(&env, &["plugin", "install", &base, "--grant", "none"], None)
-                .await
-                .ok
+            run(
+                &env,
+                &[
+                    "plugin",
+                    "install",
+                    &base,
+                    "--grant",
+                    "none",
+                    "--courses",
+                    "all"
+                ],
+                None
+            )
+            .await
+            .ok
         );
-        let again = run(&env, &["plugin", "install", &base, "--grant", "none"], None).await;
+        let again = run(
+            &env,
+            &[
+                "plugin",
+                "install",
+                &base,
+                "--grant",
+                "none",
+                "--courses",
+                "all",
+            ],
+            None,
+        )
+        .await;
         assert!(!again.ok);
         assert!(
             again.stderr.contains("installed already"),
@@ -278,6 +350,8 @@ async fn every_change_is_audited_and_a_command_that_changes_nothing_says_so() {
                 &base,
                 "--grant",
                 "submissions:read,reports:write",
+                "--courses",
+                "all",
             ],
             None,
         )
@@ -399,7 +473,15 @@ async fn install_configurable(env: &Env) {
     let base = configurable().await;
     let out = run(
         env,
-        &["plugin", "install", &base, "--grant", "settings:read"],
+        &[
+            "plugin",
+            "install",
+            &base,
+            "--grant",
+            "settings:read",
+            "--courses",
+            "all",
+        ],
         None,
     )
     .await;
@@ -679,6 +761,158 @@ async fn a_course_setting_is_set_and_listed_for_its_course() {
         assert!(listed.stdout.contains("per institution: list without --course") && !listed.stdout.contains("(not set)"), "{}", listed.stdout);
         let meta = audit_meta(&pool, "plugin.setting.set").await;
         assert_eq!(meta["course_id"], course.as_str());
+    })
+    .await;
+}
+
+async fn a_course(pool: &PgPool, email: &str) -> uuid::Uuid {
+    let owner = test_support::insert_user(pool, email, "teacher").await;
+    let course = uuid::Uuid::now_v7();
+    sqlx::query(
+        "INSERT INTO teaching.courses (id, title, owner_id, created_by) VALUES ($1, 'C', $2, $2)",
+    )
+    .bind(course)
+    .bind(owner)
+    .execute(pool)
+    .await
+    .unwrap();
+    course
+}
+
+async fn courses_of_hello(pool: &PgPool) -> (bool, Vec<uuid::Uuid>) {
+    let all: bool = sqlx::query_scalar(
+        "SELECT all_courses FROM plugins.plugin_installs WHERE plugin_id = 'hello'",
+    )
+    .fetch_one(pool)
+    .await
+    .unwrap();
+    let list = sqlx::query_scalar(
+        "SELECT course_id FROM plugins.install_courses c
+         JOIN plugins.plugin_installs i ON i.id = c.install_id
+         WHERE i.plugin_id = 'hello' ORDER BY course_id",
+    )
+    .fetch_all(pool)
+    .await
+    .unwrap();
+    (all, list)
+}
+
+#[tokio::test]
+async fn the_courses_a_plugin_may_reach_are_chosen_at_install_and_changed_with_grant() {
+    db_test(async |pool| {
+        common::migrate_modules(&pool).await;
+        let env = Env::new(&pool);
+        let base = plugin(&["submissions:read"]).await;
+        let (a, b) = (
+            a_course(&pool, "a@x.edu").await,
+            a_course(&pool, "b@x.edu").await,
+        );
+
+        // There is no default: with no answer the install stops and changes nothing.
+        let silent = run(
+            &env,
+            &["plugin", "install", &base, "--grant", "none"],
+            Some(""),
+        )
+        .await;
+        assert!(!silent.ok);
+        assert!(silent.stderr.contains("--courses"), "{}", silent.stderr);
+        assert_eq!(installs(&pool).await, 0);
+        let junk = run(
+            &env,
+            &[
+                "plugin",
+                "install",
+                &base,
+                "--grant",
+                "none",
+                "--courses",
+                "everything",
+            ],
+            None,
+        )
+        .await;
+        assert!(
+            !junk.ok && junk.stderr.contains("not a course id"),
+            "{}",
+            junk.stderr
+        );
+        let ghost = run(
+            &env,
+            &[
+                "plugin",
+                "install",
+                &base,
+                "--grant",
+                "none",
+                "--courses",
+                &uuid::Uuid::now_v7().to_string(),
+            ],
+            None,
+        )
+        .await;
+        assert!(!ghost.ok, "a course that is not there stops the install");
+        assert_eq!(installs(&pool).await, 0);
+
+        // The question is asked when the flag is not given.
+        let asked = run(
+            &env,
+            &["plugin", "install", &base, "--grant", "none"],
+            Some(&format!("\n{a}, {b}\n")),
+        )
+        .await;
+        assert!(asked.ok, "{}", asked.stderr);
+        assert!(asked.stdout.contains("courses the plugin may reach"));
+        let mut both = vec![a, b];
+        both.sort();
+        assert_eq!(courses_of_hello(&pool).await, (false, both));
+        let meta = audit_meta(&pool, "plugin.install").await;
+        assert_eq!(meta["courses"].as_array().unwrap().len(), 2);
+
+        // Grant changes the courses with or without the scopes, and says what it did.
+        let narrowed = run(
+            &env,
+            &[
+                "plugin",
+                "grant",
+                "hello",
+                "none",
+                "--courses",
+                &a.to_string(),
+            ],
+            None,
+        )
+        .await;
+        assert!(narrowed.ok, "{}", narrowed.stderr);
+        assert_eq!(courses_of_hello(&pool).await, (false, vec![a]));
+        let meta = audit_meta(&pool, "plugin.grant").await;
+        assert_eq!(meta["courses_to"], json!([a.to_string()]));
+        let listed = run(&env, &["plugin", "list"], None).await;
+        assert!(listed.stdout.contains(&a.to_string()), "{}", listed.stdout);
+        // Without `--courses` they stay; the same words again change nothing.
+        let kept = run(&env, &["plugin", "grant", "hello", "none"], None).await;
+        assert!(
+            kept.stdout.contains("nothing was changed"),
+            "{}",
+            kept.stdout
+        );
+        assert_eq!(courses_of_hello(&pool).await, (false, vec![a]));
+        let everywhere = run(
+            &env,
+            &["plugin", "grant", "hello", "none", "--courses", "all"],
+            None,
+        )
+        .await;
+        assert!(everywhere.ok, "{}", everywhere.stderr);
+        assert_eq!(courses_of_hello(&pool).await, (true, Vec::new()));
+        let nowhere = run(
+            &env,
+            &["plugin", "grant", "hello", "none", "--courses", "none"],
+            None,
+        )
+        .await;
+        assert!(nowhere.ok, "{}", nowhere.stderr);
+        assert_eq!(courses_of_hello(&pool).await, (false, Vec::new()));
     })
     .await;
 }

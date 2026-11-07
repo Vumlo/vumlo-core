@@ -17,8 +17,7 @@ use sqlx::PgConnection;
 use uuid::Uuid;
 
 use super::model::{
-    Attempt, Draft, FormFacts, MySubmission, PluginSubmission, QuizResult, Responses,
-    StudentSubmission, Window,
+    Attempt, Draft, FormFacts, MySubmission, QuizResult, Responses, StudentSubmission, Window,
 };
 use super::repo;
 use crate::content::{
@@ -29,7 +28,7 @@ use crate::files::{FileError, UsageOwner, ensure_usable, first_non_image};
 use crate::gradebook::{self, GradebookError};
 use crate::teaching::TeachingError;
 use access::Actor;
-use access::{self, AccessError, Action, PluginCaller, Scope};
+use access::{self, AccessError, Action};
 use common::{Page, PageParams};
 use events::{self, Event, EventsError};
 
@@ -581,37 +580,6 @@ pub async fn student_attempts(
         }
     }
     Ok(page)
-}
-
-// ---------------------------------------------------------------------------------------------
-// Plugins (ADR-0066). A plugin has no `Actor`: its scope is checked first, then only a submitted
-// attempt is read, never a draft.
-// ---------------------------------------------------------------------------------------------
-
-/// A submitted attempt for a plugin granted `submissions:read`.
-pub async fn submission_for_plugin(
-    conn: &mut PgConnection,
-    caller: &PluginCaller,
-    submission_id: Uuid,
-) -> Result<PluginSubmission, AssessmentError> {
-    access::authorize_plugin(caller, Scope::SubmissionsRead)?;
-    repo::submitted_by_id(conn, submission_id)
-        .await?
-        .ok_or(AssessmentError::SubmissionNotFound)
-}
-
-/// Whether there is a submitted attempt a plugin granted `reports:write` may report on. The scope
-/// is checked first, so a plugin without it learns nothing about which ids exist.
-pub async fn ensure_reportable(
-    conn: &mut PgConnection,
-    caller: &PluginCaller,
-    submission_id: Uuid,
-) -> Result<(), AssessmentError> {
-    access::authorize_plugin(caller, Scope::ReportsWrite)?;
-    repo::assignment_of_submitted(conn, submission_id)
-        .await?
-        .map(|_| ())
-        .ok_or(AssessmentError::SubmissionNotFound)
 }
 
 /// May the actor save work to the assignment at `now` (`SubmitWork`)? An assignment they may not

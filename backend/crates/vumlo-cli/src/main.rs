@@ -130,6 +130,10 @@ enum PluginCommand {
         /// asked for.
         #[arg(long, value_name = "SCOPES")]
         grant: Option<String>,
+        /// The courses the plugin may reach: `all`, `none`, or course ids, comma-separated. Without
+        /// it the question is asked; there is no default.
+        #[arg(long, value_name = "COURSES")]
+        courses: Option<String>,
         /// Read the manifest and say what would be installed, install nothing.
         #[arg(long)]
         dry_run: bool,
@@ -141,6 +145,10 @@ enum PluginCommand {
         plugin_id: String,
         /// Comma-separated scopes, or `none`.
         scopes: String,
+        /// Also replace the courses the plugin may reach: `all`, `none`, or course ids,
+        /// comma-separated. Without it they stay as they are.
+        #[arg(long, value_name = "COURSES")]
+        courses: Option<String>,
         #[arg(long)]
         dry_run: bool,
     },
@@ -306,6 +314,7 @@ async fn run(cli: Cli) -> anyhow::Result<bool> {
             PluginCommand::Install {
                 base_url,
                 grant,
+                courses,
                 dry_run,
             } => {
                 plugin_cmd::install(
@@ -313,6 +322,7 @@ async fn run(cli: Cli) -> anyhow::Result<bool> {
                     plugin_cmd::InstallArgs {
                         base_url,
                         grant,
+                        courses,
                         dry_run,
                     },
                 )
@@ -322,8 +332,12 @@ async fn run(cli: Cli) -> anyhow::Result<bool> {
             PluginCommand::Grant {
                 plugin_id,
                 scopes,
+                courses,
                 dry_run,
-            } => plugin_cmd::grant(&options, &plugin_id, &scopes, dry_run).await?,
+            } => {
+                plugin_cmd::grant(&options, &plugin_id, &scopes, courses.as_deref(), dry_run)
+                    .await?
+            }
             PluginCommand::Disable { plugin_id, dry_run } => {
                 plugin_cmd::set_status(
                     &options,
