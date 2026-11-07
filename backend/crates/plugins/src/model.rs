@@ -39,6 +39,35 @@ pub const SLOTS: [&str; 1] = [ASSIGNMENT_TAB];
 /// A tab on the page of an assignment.
 pub const ASSIGNMENT_TAB: &str = "assignment.tab";
 
+/// What a plugin's report is about (ADR-0077).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReportSubject {
+    /// A submitted attempt.
+    Submission(Uuid),
+    Assignment(Uuid),
+    Course(Uuid),
+}
+
+impl ReportSubject {
+    pub fn id(self) -> Uuid {
+        match self {
+            Self::Submission(id) | Self::Assignment(id) | Self::Course(id) => id,
+        }
+    }
+}
+
+/// How many reports, each under its own key, one plugin keeps on one subject.
+pub const MAX_REPORTS_PER_SUBJECT: i64 = 20;
+
+/// The name a plugin gives a report: lowercase letters, digits, `_` and `-`, starting with a letter,
+/// at most 40 characters.
+pub fn is_report_key(key: &str) -> bool {
+    let mut chars = key.chars();
+    chars.next().is_some_and(|c| c.is_ascii_lowercase())
+        && key.len() <= 40
+        && chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_' || c == '-')
+}
+
 /// The version of the plugin protocol this core speaks.
 pub const API_VERSION: &str = "1";
 

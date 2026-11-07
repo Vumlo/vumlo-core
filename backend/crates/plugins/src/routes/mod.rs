@@ -3,17 +3,16 @@
 //! Writes open the transaction, call exactly one writing service function and commit; the reads
 //! that decide whether the write may go ahead run before it.
 
-use access::{Actor, ActorSource, PluginCaller, PluginSource, Scope};
+use access::{Actor, ActorSource, PluginCaller, PluginSource};
 use api_types::{
-    Launch, LaunchRequest, PluginReport, PluginReports, PluginSettings, PluginSlot, PluginSlots,
-    ProblemDetails, PutReportRequest, SettingsQuery, SlotQuery,
+    Launch, LaunchRequest, PluginSettings, PluginSlot, PluginSlots, ProblemDetails, SettingsQuery,
+    SlotQuery,
 };
 use axum::Json;
 use axum::extract::{FromRef, Path, State};
-use axum::http::{HeaderName, HeaderValue, StatusCode, header};
+use axum::http::{HeaderName, HeaderValue, header};
 use chrono::{TimeDelta, Utc};
 use common::{ApiError, ValidJson, ValidQuery};
-use learning::plugin_read;
 use utoipa_axum::router::OpenApiRouter;
 use utoipa_axum::routes;
 use uuid::Uuid;
@@ -25,6 +24,7 @@ use crate::service;
 use crate::state::PluginsState;
 
 mod reads;
+mod reports;
 
 pub fn router<S>() -> OpenApiRouter<S>
 where
@@ -33,9 +33,8 @@ where
 {
     OpenApiRouter::new()
         .merge(reads::router())
-        .routes(routes!(put_report))
+        .merge(reports::router())
         .routes(routes!(get_settings))
-        .routes(routes!(list_reports))
         .routes(routes!(list_slots))
         .routes(routes!(launch))
 }
@@ -47,43 +46,6 @@ pub(crate) fn no_store() -> (HeaderName, HeaderValue) {
 
 pub(crate) fn db(error: sqlx::Error) -> ApiError {
     ApiError::from_db("plugins", &error)
-}
-
-/// The plugin's report on a submitted attempt, replacing its earlier one. The scope
-/// `reports:write`. Sending the same report twice leaves one.
-#[utoipa::path(
-    put,
-    path = "/plugin-api/submissions/{id}/report",
-    tag = "plugin-api",
-    security(("plugin" = [])),
-    params(("id" = Uuid, Path, description = "The `submission_id` of the event")),
-    request_body = PutReportRequest,
-    responses(
-        (status = 204, description = "The report is stored"),
-        (status = 401, description = "No token, or one that is unknown or disabled",
-            body = ProblemDetails, content_type = "application/problem+json"),
-        (status = 403, description = "The plugin was not granted `reports:write`",
-            body = ProblemDetails, content_type = "application/problem+json"),
-        (status = 404, description = "No such submitted attempt", body = ProblemDetails,
-            content_type = "application/problem+json"),
-        (status = 422, description = "The summary or the data is not valid", body = ProblemDetails,
-            content_type = "application/problem+json"),
-    )
-)]
-async fn put_report(
-    caller: PluginCaller,
-    State(state): State<PluginsState>,
-    Path(id): Path<Uuid>,
-    ValidJson(body): ValidJson<PutReportRequest>,
-) -> Result<StatusCode, ApiError> {
-    {
-        let mut conn = state.db.acquire().await.map_err(db)?;
-        plugin_read::ensure_reportable(&mut conn, &caller, Scope::ReportsWrite, id).await?;
-    }
-    let mut tx = state.db.begin().await.map_err(db)?;
-    service::put_report(&mut tx, &caller, id, &body.summary, &body.data).await?;
-    tx.commit().await.map_err(db)?;
-    Ok(StatusCode::NO_CONTENT)
 }
 
 /// The plugin's own settings: what an administrator configured, secrets included, with the manifest's
@@ -116,44 +78,6 @@ async fn get_settings(
     let values = service::settings_for_plugin(&mut conn, &caller, key, query.course_id).await?;
     // The values may hold a credential (AGENTS section 11).
     Ok(([no_store()], Json(PluginSettings { values })))
-}
-
-/// What the plugins reported about a submitted attempt, by plugin. Staff and admins who may see
-/// the attempt.
-#[utoipa::path(
-    get,
-    path = "/submissions/{id}/plugin-reports",
-    tag = "plugin-api",
-    security(("cookie" = []), ("bearer" = [])),
-    params(("id" = Uuid, Path, description = "A submitted attempt")),
-    responses(
-        (status = 200, description = "The reports, by plugin", body = PluginReports),
-        (status = 401, description = "Not logged in", body = ProblemDetails,
-            content_type = "application/problem+json"),
-        (status = 403, description = "The caller may see the assignment but not its submissions",
-            body = ProblemDetails, content_type = "application/problem+json"),
-        (status = 404, description = "No such attempt, or not visible to the caller",
-            body = ProblemDetails, content_type = "application/problem+json"),
-    )
-)]
-async fn list_reports(
-    actor: Actor,
-    State(state): State<PluginsState>,
-    Path(id): Path<Uuid>,
-) -> Result<Json<PluginReports>, ApiError> {
-    let mut conn = state.db.acquire().await.map_err(db)?;
-    let rows = service::reports(&mut conn, &actor, id).await?;
-    Ok(Json(PluginReports {
-        items: rows
-            .into_iter()
-            .map(|row| PluginReport {
-                plugin_id: row.plugin_id,
-                summary: row.summary,
-                data: row.data,
-                updated_at: row.updated_at,
-            })
-            .collect(),
-    }))
 }
 
 /// The pages that enabled plugins offer in a slot of the web app. Any signed-in user. The web app

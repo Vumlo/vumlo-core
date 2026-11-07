@@ -26,14 +26,14 @@ pub use error::PluginsError;
 pub use manifest::parse_manifest;
 pub use model::{
     API_VERSION, Install, InstallStatus, InstallSummary, Installed, PluginManifest, PluginToken,
-    SLOTS, SUBSCRIBABLE, UiSlot,
+    ReportSubject, SLOTS, SUBSCRIBABLE, UiSlot,
 };
 pub use routes::router;
 pub use secret::{SecretError, SecretKey, derive_secret, sign};
 pub use service::{
-    SettingView, check_base_url, fan_out, fetch_manifest, get, get_setting, grant, install, list,
-    list_settings, put_report, remove, reports, set_setting, set_status, settings_for_plugin,
-    unset_setting,
+    SettingView, assignment_reports, check_base_url, course_reports, delete_report, fan_out,
+    fetch_manifest, get, get_setting, grant, install, list, list_settings, put_report, remove,
+    reports, set_setting, set_status, settings_for_plugin, unset_setting,
 };
 pub use settings::{ItemSpec, ScalarKind, SettingKind, SettingScope, SettingSpec};
 pub use state::PluginsState;

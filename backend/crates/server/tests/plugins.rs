@@ -254,6 +254,23 @@ async fn a_signed_event_reaches_the_plugin_and_its_report_appears_for_staff() {
         assert_eq!(report["plugin_id"], "hello");
         assert_eq!(report["summary"], "5 words");
         assert_eq!(report["data"], json!({"words": 5, "kind": "text"}));
+        // The example keeps a total on the assignment, under a key of its own. It writes it after
+        // the report on the attempt, so wait for it.
+        let totals_path = format!("/assignments/{}/plugin-reports", w.assignment);
+        wait_until(|| async {
+            let body = w
+                .env
+                .ok("GET", &w.teacher.token, &totals_path, None, 200)
+                .await;
+            !body["items"].as_array().unwrap().is_empty()
+        })
+        .await;
+        let totals = w
+            .env
+            .ok("GET", &w.teacher.token, &totals_path, None, 200)
+            .await;
+        assert_eq!(totals["items"][0]["key"], "totals");
+        assert_eq!(totals["items"][0]["summary"], "1 work(s), 5 words");
 
         // The outbox delivers at least once; a second pass owes the plugin nothing new.
         sqlx::query("UPDATE events.outbox SET processed_at = NULL, run_after = now()")
@@ -376,7 +393,7 @@ async fn a_call_without_the_scope_is_refused_and_a_draft_is_not_there() {
         assert!(work.get("score").is_none() && work.get("draft").is_none());
         w.plugin_call(
             "PUT",
-            &format!("/submissions/{submission}/report"),
+            &format!("/submissions/{submission}/reports/words"),
             reader.token.expose(),
         )
         .json(&report)
@@ -422,7 +439,7 @@ async fn a_call_without_the_scope_is_refused_and_a_draft_is_not_there() {
             .await
             .unwrap();
         }
-        let path = format!("/submissions/{submission}/report");
+        let path = format!("/submissions/{submission}/reports/words");
         let put = |body: Value| {
             w.plugin_call("PUT", &path, reader.token.expose())
                 .json(&body)
@@ -433,7 +450,7 @@ async fn a_call_without_the_scope_is_refused_and_a_draft_is_not_there() {
         put(json!({"summary": "x", "data": [1]})).await.problem(422);
         w.plugin_call(
             "PUT",
-            &format!("/submissions/{draft}/report"),
+            &format!("/submissions/{draft}/reports/words"),
             reader.token.expose(),
         )
         .json(&report)
@@ -884,7 +901,7 @@ async fn a_report_is_replaced_by_the_next_and_goes_with_its_attempt_and_with_its
         let report = |submission: Uuid, summary: &'static str| {
             let call = w.plugin_call(
                 "PUT",
-                &format!("/submissions/{submission}/report"),
+                &format!("/submissions/{submission}/reports/words"),
                 plugin.token.expose(),
             );
             async move {

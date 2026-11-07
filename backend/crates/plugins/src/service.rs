@@ -11,7 +11,7 @@ use access::{CourseScope, PluginCaller, Scope};
 use events::{Event, OutboxEvent};
 use learning::assessment;
 use learning::content::{self, OpenError};
-use learning::teaching;
+use learning::teaching::{self, TeachingError};
 use module_api::OutboundClient;
 use serde_json::{Map, Value, json};
 use sqlx::PgConnection;
@@ -20,8 +20,8 @@ use uuid::Uuid;
 use crate::PluginsError;
 use crate::manifest::parse_manifest;
 use crate::model::{
-    ASSIGNMENT_TAB, Install, InstallStatus, InstallSummary, Installed, PluginManifest, PluginToken,
-    SETTINGS_CHANGED,
+    ASSIGNMENT_TAB, Install, InstallStatus, InstallSummary, Installed, MAX_REPORTS_PER_SUBJECT,
+    PluginManifest, PluginToken, ReportSubject, SETTINGS_CHANGED,
 };
 use crate::repo::{self, NewInstall, ReportRow, scope_names};
 use crate::secret::{LaunchClaims, SecretKey, derive_secret, launch_token, open, seal};
@@ -533,25 +533,50 @@ pub async fn launch(
     Ok(launch_token(&secret, &claims)?)
 }
 
-/// Stores the plugin's report on a submitted attempt, replacing its earlier one.
+/// Stores the plugin's report under `key` on the subject, replacing its earlier one under that key.
+/// The caller has checked that the subject is there and in a course the plugin reaches
+/// (`learning::plugin_read`); a plugin keeps a limited number of keys on one subject. The count and
+/// the write are two statements, so two writes of new keys at once may pass the limit by one.
 pub async fn put_report(
     conn: &mut PgConnection,
     caller: &PluginCaller,
-    submission_id: Uuid,
+    subject: ReportSubject,
+    key: &str,
     summary: &str,
     data: &Value,
 ) -> Result<(), PluginsError> {
     access::authorize_plugin(caller, Scope::ReportsWrite)?;
-    repo::upsert_report(conn, caller.install_id(), submission_id, summary, data)
+    let install = caller.install_id();
+    if !repo::report_exists(conn, install, subject, key).await?
+        && repo::count_reports(conn, install, subject).await? >= MAX_REPORTS_PER_SUBJECT
+    {
+        return Err(PluginsError::TooManyReports(MAX_REPORTS_PER_SUBJECT));
+    }
+    repo::upsert_report(conn, install, subject, key, summary, data)
         .await
         .map_err(
             |error| match error.as_database_error().and_then(|e| e.code()).as_deref() {
-                // The foreign key to the attempt: it is not there (any more).
-                Some("23503") => PluginsError::SubmissionGone,
+                // The foreign key to the subject: it is not there (any more).
+                Some("23503") => PluginsError::SubjectGone,
                 _ => PluginsError::Db(error),
             },
         )?;
     Ok(())
+}
+
+/// Removes the plugin's report under `key`; `ReportGone` when it keeps none.
+pub async fn delete_report(
+    conn: &mut PgConnection,
+    caller: &PluginCaller,
+    subject: ReportSubject,
+    key: &str,
+) -> Result<(), PluginsError> {
+    access::authorize_plugin(caller, Scope::ReportsWrite)?;
+    if repo::delete_report(conn, caller.install_id(), subject, key).await? {
+        Ok(())
+    } else {
+        Err(PluginsError::ReportGone)
+    }
 }
 
 /// The reports on an attempt, for someone who may see the attempt as staff do.
@@ -561,7 +586,41 @@ pub async fn reports(
     submission_id: Uuid,
 ) -> Result<Vec<ReportRow>, PluginsError> {
     assessment::authorize_view_submission(conn, actor, submission_id).await?;
-    Ok(repo::reports_of(conn, submission_id).await?)
+    Ok(repo::reports_of(conn, ReportSubject::Submission(submission_id)).await?)
+}
+
+/// The reports on an assignment, for the staff of its course. An assignment the actor cannot see is
+/// not there.
+pub async fn assignment_reports(
+    conn: &mut PgConnection,
+    actor: &Actor,
+    assignment_id: Uuid,
+) -> Result<Vec<ReportRow>, PluginsError> {
+    let opened = content::open_assignment(conn, actor, assignment_id)
+        .await
+        .map_err(|error| match error {
+            OpenError::NotFound => PluginsError::SubjectGone,
+            OpenError::Teaching(error) => PluginsError::Teaching(error),
+            OpenError::Db(error) => PluginsError::Db(error),
+        })?;
+    access::authorize(actor, access::Action::ViewSubmissions(opened.access))?;
+    Ok(repo::reports_of(conn, ReportSubject::Assignment(assignment_id)).await?)
+}
+
+/// The reports on a course, for its staff. A course the actor cannot see is not there.
+pub async fn course_reports(
+    conn: &mut PgConnection,
+    actor: &Actor,
+    course_id: Uuid,
+) -> Result<Vec<ReportRow>, PluginsError> {
+    let course = teaching::course_access(conn, actor, course_id)
+        .await
+        .map_err(|error| match error {
+            TeachingError::CourseNotFound => PluginsError::SubjectGone,
+            other => PluginsError::Teaching(other),
+        })?;
+    access::authorize(actor, access::Action::ViewSubmissions(course))?;
+    Ok(repo::reports_of(conn, ReportSubject::Course(course_id)).await?)
 }
 
 #[cfg(test)]

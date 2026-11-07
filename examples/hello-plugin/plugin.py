@@ -7,7 +7,7 @@ plugin API, counts the words, and posts a report back. It shows the whole protoc
   GET  /manifest   what the plugin is and asks for (read once, when an administrator installs it)
   POST /events     a signed event from the core, `{id, type, occurred_at, data}` (ids only): check the
                    signature and the time, answer 2xx at once, work afterwards
-  ...and, towards the core, `GET /plugin-api/submissions/{id}` and `PUT .../report` with the token.
+  ...and, towards the core, `GET /plugin-api/submissions/{id}` and `PUT .../reports/words` with the token.
 
 It also reads its settings (`GET /plugin-api/settings`, scope `settings:read`) and is told when an
 administrator changes one (`plugin.settings.changed`):
@@ -203,7 +203,15 @@ def work(event):
             summary = "%d characters" % count_text(submission["content"], len)
         else:
             summary = "%d words" % words
-        call("PUT", "/plugin-api/submissions/%s/report" % submission_id, {"summary": summary, "data": data})
+        call("PUT", "/plugin-api/submissions/%s/reports/words" % submission_id, {"summary": summary, "data": data})
+        with seen_lock:
+            total = dict(stats[submission["assignment_id"]])
+        # A report on the assignment too, under a key of its own; it is replaced each time.
+        call(
+            "PUT",
+            "/plugin-api/assignments/%s/reports/totals" % submission["assignment_id"],
+            {"summary": "%d work(s), %d words" % (total["submissions"], total["words"]), "data": total},
+        )
         print("reported %s for %s" % (summary, submission_id), flush=True)
     except (urllib.error.URLError, KeyError, ValueError) as error:
         # An HTTP error carries its status (403: the scope was not granted).

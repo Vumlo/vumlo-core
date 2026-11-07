@@ -163,21 +163,40 @@ pub async fn submission(
     })
 }
 
-/// Whether there is a submitted attempt in a course the plugin may reach, for a plugin granted
-/// `scope` to write about. The scope is checked first, so a plugin without it learns nothing about
-/// which ids exist.
-pub async fn ensure_reportable(
+/// The submitted attempt a plugin granted `reports:write` wants to report on is there, in a course it
+/// may reach. The scope is checked first, so a plugin without it learns nothing about which ids
+/// exist.
+pub async fn reportable_submission(
     conn: &mut PgConnection,
     caller: &PluginCaller,
-    scope: Scope,
     submission_id: Uuid,
 ) -> Result<(), PluginReadError> {
-    authorize_plugin(caller, scope)?;
+    authorize_plugin(caller, Scope::ReportsWrite)?;
     let course_id = repo::submission_course(conn, submission_id)
         .await?
         .ok_or(PluginReadError::NotFound)?;
-    authorize_plugin_course(caller, scope, course_id)?;
+    authorize_plugin_course(caller, Scope::ReportsWrite, course_id)?;
     Ok(())
+}
+
+/// The assignment to report on is there, in a course the plugin may reach.
+pub async fn reportable_assignment(
+    conn: &mut PgConnection,
+    caller: &PluginCaller,
+    assignment_id: Uuid,
+) -> Result<(), PluginReadError> {
+    reachable_assignment(conn, caller, Scope::ReportsWrite, assignment_id).await?;
+    Ok(())
+}
+
+/// The course to report on is there, and the plugin may reach it.
+pub async fn reportable_course(
+    conn: &mut PgConnection,
+    caller: &PluginCaller,
+    course_id: Uuid,
+) -> Result<(), PluginReadError> {
+    authorize_plugin_course(caller, Scope::ReportsWrite, course_id)?;
+    course_must_exist(conn, course_id).await
 }
 
 /// The values of a submitted `form`, by field id. Any other type is `NotFound`.

@@ -14,8 +14,9 @@ pub use model::{
     PluginSubmissionRow,
 };
 pub use service::{
-    PluginReadError, announcements, assignment, assignments, attempts, contacts, ensure_reportable,
-    form_answers, grades, members, quiz, submission, submissions,
+    PluginReadError, announcements, assignment, assignments, attempts, contacts, form_answers,
+    grades, members, quiz, reportable_assignment, reportable_course, reportable_submission,
+    submission, submissions,
 };
 
 #[cfg(test)]

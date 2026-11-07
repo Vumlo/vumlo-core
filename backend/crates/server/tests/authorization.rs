@@ -227,6 +227,12 @@ fn operations(c: &Ctx, other_user: Uuid) -> Vec<Call> {
         ),
         call(
             "GET",
+            format!("/assignments/{}/plugin-reports", c.assignment),
+            None,
+        ),
+        call("GET", format!("/courses/{}/plugin-reports", c.course), None),
+        call(
+            "GET",
             format!("/assignments/{}/submission", c.assignment),
             None,
         ),
@@ -771,7 +777,12 @@ async fn the_list_of_operations_is_the_api() {
         // signed in, the launch with its own check of who may see the assignment (same file).
         let own: BTreeSet<String> = [
             "GET /plugin-api/submissions/{id}",
-            "PUT /plugin-api/submissions/{id}/report",
+            "PUT /plugin-api/submissions/{id}/reports/{key}",
+            "DELETE /plugin-api/submissions/{id}/reports/{key}",
+            "PUT /plugin-api/assignments/{id}/reports/{key}",
+            "DELETE /plugin-api/assignments/{id}/reports/{key}",
+            "PUT /plugin-api/courses/{id}/reports/{key}",
+            "DELETE /plugin-api/courses/{id}/reports/{key}",
             "GET /plugin-api/settings",
             "GET /plugin-api/announcements",
             "GET /plugin-api/assignments",

@@ -332,6 +332,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/assignments/{id}/plugin-reports": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** What the plugins reported about an assignment, by plugin and key. Staff and admins of its course. */
+        get: operations["list_assignment_reports"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/assignments/{id}/responses": {
         parameters: {
             query?: never;
@@ -1140,6 +1157,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/courses/{id}/plugin-reports": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** What the plugins reported about a course, by plugin and key. Staff and admins of the course. */
+        get: operations["list_course_reports"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/courses/{id}/publish": {
         parameters: {
             query?: never;
@@ -1909,6 +1943,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/plugin-api/assignments/{id}/reports/{key}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * The plugin's report on an assignment under `key`, replacing its earlier one under that key. The
+         *     scope `reports:write`.
+         */
+        put: operations["put_assignment_report"];
+        post?: never;
+        /** Removes the plugin's report on an assignment under `key`. The scope `reports:write`. */
+        delete: operations["delete_assignment_report"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/plugin-api/assignments/{id}/submissions": {
         parameters: {
             query?: never;
@@ -1945,6 +2000,27 @@ export interface paths {
         put?: never;
         post?: never;
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/plugin-api/courses/{id}/reports/{key}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * The plugin's report on a course under `key`, replacing its earlier one under that key. The scope
+         *     `reports:write`.
+         */
+        put: operations["put_course_report"];
+        post?: never;
+        /** Removes the plugin's report on a course under `key`. The scope `reports:write`. */
+        delete: operations["delete_course_report"];
         options?: never;
         head?: never;
         patch?: never;
@@ -2028,7 +2104,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/plugin-api/submissions/{id}/report": {
+    "/api/v1/plugin-api/submissions/{id}/reports/{key}": {
         parameters: {
             query?: never;
             header?: never;
@@ -2037,12 +2113,14 @@ export interface paths {
         };
         get?: never;
         /**
-         * The plugin's report on a submitted attempt, replacing its earlier one. The scope
-         *     `reports:write`. Sending the same report twice leaves one.
+         * The plugin's report on a submitted attempt under `key`, replacing its earlier one under that key.
+         *     The scope `reports:write`. Sending the same report twice leaves one. A plugin keeps at most 20
+         *     keys on a subject.
          */
-        put: operations["put_report"];
+        put: operations["put_submission_report"];
         post?: never;
-        delete?: never;
+        /** Removes the plugin's report on a submitted attempt under `key`. The scope `reports:write`. */
+        delete: operations["delete_submission_report"];
         options?: never;
         head?: never;
         patch?: never;
@@ -2174,10 +2252,10 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * What the plugins reported about a submitted attempt, by plugin. Staff and admins who may see
-         *     the attempt.
+         * What the plugins reported about a submitted attempt, by plugin and key. Staff and admins who may
+         *     see the attempt.
          */
-        get: operations["list_reports"];
+        get: operations["list_submission_reports"];
         put?: never;
         post?: never;
         delete?: never;
@@ -3983,9 +4061,11 @@ export interface components {
             course_id: string;
             max_points: string;
         };
-        /** @description The report of one plugin on one submitted attempt, for the staff who may see the attempt. */
+        /** @description A report of one plugin on a submitted attempt, an assignment or a course, for the staff who may see it. */
         PluginReport: {
             data: Record<string, never>;
+            /** @description The name the plugin gave this report: it keeps one report per key on a subject. */
+            key: string;
             /** @description The id the plugin gave in its manifest. */
             plugin_id: string;
             summary: string;
@@ -4094,7 +4174,10 @@ export interface components {
         PutMemberRequest: {
             role: components["schemas"]["CourseRole"];
         };
-        /** @description What a plugin says about one submitted attempt. It replaces the plugin's earlier report on it. */
+        /**
+         * @description What a plugin says about a submitted attempt, an assignment or a course. It replaces the plugin's
+         *     earlier report on the subject under the same key.
+         */
         PutReportRequest: {
             /** @description What a program may want: a JSON object of at most 16 KiB. */
             data: Record<string, never>;
@@ -5601,6 +5684,56 @@ export interface operations {
             };
             /** @description No plugin id */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    list_assignment_reports: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description An assignment */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The reports, by plugin and key */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PluginReports"];
+                };
+            };
+            /** @description Not logged in */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The caller may see the assignment but not its submissions */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description No such assignment, or not visible to the caller */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -8149,6 +8282,56 @@ export interface operations {
             };
         };
     };
+    list_course_reports: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A course */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The reports, by plugin and key */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PluginReports"];
+                };
+            };
+            /** @description Not logged in */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The caller may see the course but not its submissions */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description No such course, or not visible to the caller */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
     publish_course: {
         parameters: {
             query?: never;
@@ -10588,6 +10771,128 @@ export interface operations {
             };
         };
     };
+    put_assignment_report: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description An assignment */
+                id: string;
+                /** @description The name of the report: lowercase letters, digits, `_`, `-` */
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PutReportRequest"];
+            };
+        };
+        responses: {
+            /** @description The report is stored */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description No token, or one that is unknown or disabled */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The plugin was not granted `reports:write`, or not the course */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description No such assignment */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The key, the summary or the data is not valid, or the plugin keeps the most reports it may */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    delete_assignment_report: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description An assignment */
+                id: string;
+                /** @description The name of the report */
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The report is gone */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description No token, or one that is unknown or disabled */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The plugin was not granted `reports:write`, or not the course */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description No such assignment, or no report under that key */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The key is not valid */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
     list_submissions: {
         parameters: {
             query?: {
@@ -10711,6 +11016,128 @@ export interface operations {
                 };
             };
             /** @description A cursor that is not valid */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    put_course_report: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A course */
+                id: string;
+                /** @description The name of the report: lowercase letters, digits, `_`, `-` */
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PutReportRequest"];
+            };
+        };
+        responses: {
+            /** @description The report is stored */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description No token, or one that is unknown or disabled */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The plugin was not granted `reports:write`, or not the course */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description No such course */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The key, the summary or the data is not valid, or the plugin keeps the most reports it may */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    delete_course_report: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A course */
+                id: string;
+                /** @description The name of the report */
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The report is gone */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description No token, or one that is unknown or disabled */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The plugin was not granted `reports:write`, or not the course */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description No such course, or no report under that key */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The key is not valid */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -10938,13 +11365,15 @@ export interface operations {
             };
         };
     };
-    put_report: {
+    put_submission_report: {
         parameters: {
             query?: never;
             header?: never;
             path: {
                 /** @description The `submission_id` of the event */
                 id: string;
+                /** @description The name of the report: lowercase letters, digits, `_`, `-` */
+                key: string;
             };
             cookie?: never;
         };
@@ -10970,7 +11399,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["ProblemDetails"];
                 };
             };
-            /** @description The plugin was not granted `reports:write` */
+            /** @description The plugin was not granted `reports:write`, or not the course */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -10988,7 +11417,66 @@ export interface operations {
                     "application/problem+json": components["schemas"]["ProblemDetails"];
                 };
             };
-            /** @description The summary or the data is not valid */
+            /** @description The key, the summary or the data is not valid, or the plugin keeps the most reports it may */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    delete_submission_report: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The `submission_id` of the event */
+                id: string;
+                /** @description The name of the report */
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The report is gone */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description No token, or one that is unknown or disabled */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The plugin was not granted `reports:write`, or not the course */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description No such submitted attempt, or no report under that key */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The key is not valid */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -11436,7 +11924,7 @@ export interface operations {
             };
         };
     };
-    list_reports: {
+    list_submission_reports: {
         parameters: {
             query?: never;
             header?: never;
@@ -11448,7 +11936,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description The reports, by plugin */
+            /** @description The reports, by plugin and key */
             200: {
                 headers: {
                     [name: string]: unknown;

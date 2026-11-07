@@ -1474,6 +1474,77 @@
         ]
       }
     },
+    "/api/v1/assignments/{id}/plugin-reports": {
+      "get": {
+        "tags": [
+          "plugin-api"
+        ],
+        "summary": "What the plugins reported about an assignment, by plugin and key. Staff and admins of its course.",
+        "operationId": "list_assignment_reports",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "An assignment",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The reports, by plugin and key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PluginReports"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not logged in",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller may see the assignment but not its submissions",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such assignment, or not visible to the caller",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          },
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/assignments/{id}/responses": {
       "get": {
         "tags": [
@@ -5056,6 +5127,77 @@
         ]
       }
     },
+    "/api/v1/courses/{id}/plugin-reports": {
+      "get": {
+        "tags": [
+          "plugin-api"
+        ],
+        "summary": "What the plugins reported about a course, by plugin and key. Staff and admins of the course.",
+        "operationId": "list_course_reports",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "A course",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The reports, by plugin and key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PluginReports"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not logged in",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller may see the course but not its submissions",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such course, or not visible to the caller",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          },
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/courses/{id}/publish": {
       "post": {
         "tags": [
@@ -8531,6 +8673,174 @@
         ]
       }
     },
+    "/api/v1/plugin-api/assignments/{id}/reports/{key}": {
+      "put": {
+        "tags": [
+          "plugin-api"
+        ],
+        "summary": "The plugin's report on an assignment under `key`, replacing its earlier one under that key. The\nscope `reports:write`.",
+        "operationId": "put_assignment_report",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "An assignment",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "key",
+            "in": "path",
+            "description": "The name of the report: lowercase letters, digits, `_`, `-`",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PutReportRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "The report is stored"
+          },
+          "401": {
+            "description": "No token, or one that is unknown or disabled",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The plugin was not granted `reports:write`, or not the course",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such assignment",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The key, the summary or the data is not valid, or the plugin keeps the most reports it may",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "plugin": []
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "plugin-api"
+        ],
+        "summary": "Removes the plugin's report on an assignment under `key`. The scope `reports:write`.",
+        "operationId": "delete_assignment_report",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "An assignment",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "key",
+            "in": "path",
+            "description": "The name of the report",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "The report is gone"
+          },
+          "401": {
+            "description": "No token, or one that is unknown or disabled",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The plugin was not granted `reports:write`, or not the course",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such assignment, or no report under that key",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The key is not valid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "plugin": []
+          }
+        ]
+      }
+    },
     "/api/v1/plugin-api/assignments/{id}/submissions": {
       "get": {
         "tags": [
@@ -8728,6 +9038,174 @@
           },
           "422": {
             "description": "A cursor that is not valid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "plugin": []
+          }
+        ]
+      }
+    },
+    "/api/v1/plugin-api/courses/{id}/reports/{key}": {
+      "put": {
+        "tags": [
+          "plugin-api"
+        ],
+        "summary": "The plugin's report on a course under `key`, replacing its earlier one under that key. The scope\n`reports:write`.",
+        "operationId": "put_course_report",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "A course",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "key",
+            "in": "path",
+            "description": "The name of the report: lowercase letters, digits, `_`, `-`",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PutReportRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "The report is stored"
+          },
+          "401": {
+            "description": "No token, or one that is unknown or disabled",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The plugin was not granted `reports:write`, or not the course",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such course",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The key, the summary or the data is not valid, or the plugin keeps the most reports it may",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "plugin": []
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "plugin-api"
+        ],
+        "summary": "Removes the plugin's report on a course under `key`. The scope `reports:write`.",
+        "operationId": "delete_course_report",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "A course",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "key",
+            "in": "path",
+            "description": "The name of the report",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "The report is gone"
+          },
+          "401": {
+            "description": "No token, or one that is unknown or disabled",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The plugin was not granted `reports:write`, or not the course",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such course, or no report under that key",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The key is not valid",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -9063,13 +9541,13 @@
         ]
       }
     },
-    "/api/v1/plugin-api/submissions/{id}/report": {
+    "/api/v1/plugin-api/submissions/{id}/reports/{key}": {
       "put": {
         "tags": [
           "plugin-api"
         ],
-        "summary": "The plugin's report on a submitted attempt, replacing its earlier one. The scope\n`reports:write`. Sending the same report twice leaves one.",
-        "operationId": "put_report",
+        "summary": "The plugin's report on a submitted attempt under `key`, replacing its earlier one under that key.\nThe scope `reports:write`. Sending the same report twice leaves one. A plugin keeps at most 20\nkeys on a subject.",
+        "operationId": "put_submission_report",
         "parameters": [
           {
             "name": "id",
@@ -9079,6 +9557,15 @@
             "schema": {
               "type": "string",
               "format": "uuid"
+            }
+          },
+          {
+            "name": "key",
+            "in": "path",
+            "description": "The name of the report: lowercase letters, digits, `_`, `-`",
+            "required": true,
+            "schema": {
+              "type": "string"
             }
           }
         ],
@@ -9107,7 +9594,7 @@
             }
           },
           "403": {
-            "description": "The plugin was not granted `reports:write`",
+            "description": "The plugin was not granted `reports:write`, or not the course",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -9127,7 +9614,85 @@
             }
           },
           "422": {
-            "description": "The summary or the data is not valid",
+            "description": "The key, the summary or the data is not valid, or the plugin keeps the most reports it may",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "plugin": []
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "plugin-api"
+        ],
+        "summary": "Removes the plugin's report on a submitted attempt under `key`. The scope `reports:write`.",
+        "operationId": "delete_submission_report",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The `submission_id` of the event",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "key",
+            "in": "path",
+            "description": "The name of the report",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "The report is gone"
+          },
+          "401": {
+            "description": "No token, or one that is unknown or disabled",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The plugin was not granted `reports:write`, or not the course",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such submitted attempt, or no report under that key",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The key is not valid",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -9773,8 +10338,8 @@
         "tags": [
           "plugin-api"
         ],
-        "summary": "What the plugins reported about a submitted attempt, by plugin. Staff and admins who may see\nthe attempt.",
-        "operationId": "list_reports",
+        "summary": "What the plugins reported about a submitted attempt, by plugin and key. Staff and admins who may\nsee the attempt.",
+        "operationId": "list_submission_reports",
         "parameters": [
           {
             "name": "id",
@@ -9789,7 +10354,7 @@
         ],
         "responses": {
           "200": {
-            "description": "The reports, by plugin",
+            "description": "The reports, by plugin and key",
             "content": {
               "application/json": {
                 "schema": {
@@ -15413,9 +15978,10 @@
       },
       "PluginReport": {
         "type": "object",
-        "description": "The report of one plugin on one submitted attempt, for the staff who may see the attempt.",
+        "description": "A report of one plugin on a submitted attempt, an assignment or a course, for the staff who may see it.",
         "required": [
           "plugin_id",
+          "key",
           "summary",
           "data",
           "updated_at"
@@ -15423,6 +15989,10 @@
         "properties": {
           "data": {
             "type": "object"
+          },
+          "key": {
+            "type": "string",
+            "description": "The name the plugin gave this report: it keeps one report per key on a subject."
           },
           "plugin_id": {
             "type": "string",
@@ -15698,7 +16268,7 @@
       },
       "PutReportRequest": {
         "type": "object",
-        "description": "What a plugin says about one submitted attempt. It replaces the plugin's earlier report on it.",
+        "description": "What a plugin says about a submitted attempt, an assignment or a course. It replaces the plugin's\nearlier report on the subject under the same key.",
         "required": [
           "summary",
           "data"

@@ -27,7 +27,8 @@ pub struct PluginSubmission {
     pub submitted_at: DateTime<Utc>,
 }
 
-/// What a plugin says about one submitted attempt. It replaces the plugin's earlier report on it.
+/// What a plugin says about a submitted attempt, an assignment or a course. It replaces the plugin's
+/// earlier report on the subject under the same key.
 #[derive(Debug, Clone, Serialize, Deserialize, Validate, ToSchema)]
 pub struct PutReportRequest {
     /// One line for people to read, 1 to 500 characters.
@@ -51,11 +52,13 @@ fn a_small_object(data: &Value, _: &()) -> garde::Result {
     Ok(())
 }
 
-/// The report of one plugin on one submitted attempt, for the staff who may see the attempt.
+/// A report of one plugin on a submitted attempt, an assignment or a course, for the staff who may see it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct PluginReport {
     /// The id the plugin gave in its manifest.
     pub plugin_id: String,
+    /// The name the plugin gave this report: it keeps one report per key on a subject.
+    pub key: String,
     pub summary: String,
     #[schema(value_type = Object)]
     pub data: Value,

@@ -327,16 +327,29 @@ async fn a_report_needs_the_scope_and_one_for_an_attempt_that_is_not_there_is_re
         let id = installed.install.id;
         let without = PluginCaller::for_install(id, "hello", &[Scope::SubmissionsRead]);
 
-        let refused = put_report(&mut conn, &without, submission, "x", &json!({})).await;
+        let refused = put_report(
+            &mut conn,
+            &without,
+            ReportSubject::Submission(submission),
+            "x",
+            "x",
+            &json!({}),
+        )
+        .await;
         assert!(matches!(refused, Err(PluginsError::Forbidden(_))));
 
         // With the scope, but nothing to report on: the foreign key says so.
         let me = PluginCaller::for_install(id, "hello", &[Scope::ReportsWrite]);
-        let gone = put_report(&mut conn, &me, submission, "x", &json!({})).await;
-        assert!(
-            matches!(gone, Err(PluginsError::SubmissionGone)),
-            "{gone:?}"
-        );
+        let gone = put_report(
+            &mut conn,
+            &me,
+            ReportSubject::Submission(submission),
+            "x",
+            "x",
+            &json!({}),
+        )
+        .await;
+        assert!(matches!(gone, Err(PluginsError::SubjectGone)), "{gone:?}");
         assert_eq!(count(&pool, "reports").await, 0);
     })
     .await;

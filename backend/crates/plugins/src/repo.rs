@@ -6,7 +6,7 @@ use chrono::{DateTime, Utc};
 use sqlx::PgConnection;
 use uuid::Uuid;
 
-use crate::model::{Install, InstallStatus, UiSlot};
+use crate::model::{Install, InstallStatus, ReportSubject, UiSlot};
 use crate::settings::SettingSpec;
 
 /// The columns of `plugin_installs`, as the database holds them.
@@ -425,21 +425,31 @@ pub async fn mark_failed(
 // Reports
 // ---------------------------------------------------------------------------------------------
 
-/// One report per plugin and attempt: a later one replaces the earlier.
+/// One report per plugin, subject and key: a later one replaces the earlier.
 pub async fn upsert_report(
     conn: &mut PgConnection,
     install_id: Uuid,
-    submission_id: Uuid,
+    subject: ReportSubject,
+    key: &str,
     summary: &str,
     data: &serde_json::Value,
 ) -> Result<(), sqlx::Error> {
+    let (submission, assignment, course) = match subject {
+        ReportSubject::Submission(id) => (Some(id), None, None),
+        ReportSubject::Assignment(id) => (None, Some(id), None),
+        ReportSubject::Course(id) => (None, None, Some(id)),
+    };
     sqlx::query!(
-        "INSERT INTO plugins.reports (install_id, submission_id, summary, data)
-         VALUES ($1, $2, $3, $4)
-         ON CONFLICT (install_id, submission_id)
-         DO UPDATE SET summary = $3, data = $4, updated_at = now()",
+        "INSERT INTO plugins.reports
+             (install_id, submission_id, assignment_id, course_id, key, summary, data)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)
+         ON CONFLICT (install_id, subject_id, key)
+         DO UPDATE SET summary = $6, data = $7, updated_at = now()",
         install_id,
-        submission_id,
+        submission,
+        assignment,
+        course,
+        key,
         summary,
         data
     )
@@ -448,26 +458,79 @@ pub async fn upsert_report(
     Ok(())
 }
 
+/// Whether the plugin keeps a report under this key on the subject.
+pub async fn report_exists(
+    conn: &mut PgConnection,
+    install_id: Uuid,
+    subject: ReportSubject,
+    key: &str,
+) -> Result<bool, sqlx::Error> {
+    sqlx::query_scalar!(
+        r#"SELECT EXISTS (SELECT 1 FROM plugins.reports
+                          WHERE install_id = $1 AND subject_id = $2 AND key = $3) AS "found!""#,
+        install_id,
+        subject.id(),
+        key
+    )
+    .fetch_one(conn)
+    .await
+}
+
+/// How many reports the plugin keeps on the subject.
+pub async fn count_reports(
+    conn: &mut PgConnection,
+    install_id: Uuid,
+    subject: ReportSubject,
+) -> Result<i64, sqlx::Error> {
+    sqlx::query_scalar!(
+        r#"SELECT count(*) AS "n!" FROM plugins.reports
+           WHERE install_id = $1 AND subject_id = $2"#,
+        install_id,
+        subject.id()
+    )
+    .fetch_one(conn)
+    .await
+}
+
+/// Whether there was a report to delete.
+pub async fn delete_report(
+    conn: &mut PgConnection,
+    install_id: Uuid,
+    subject: ReportSubject,
+    key: &str,
+) -> Result<bool, sqlx::Error> {
+    let done = sqlx::query!(
+        "DELETE FROM plugins.reports WHERE install_id = $1 AND subject_id = $2 AND key = $3",
+        install_id,
+        subject.id(),
+        key
+    )
+    .execute(conn)
+    .await?;
+    Ok(done.rows_affected() == 1)
+}
+
 pub struct ReportRow {
     pub plugin_id: String,
+    pub key: String,
     pub summary: String,
     pub data: serde_json::Value,
     pub updated_at: DateTime<Utc>,
 }
 
-/// The reports on an attempt, by plugin. A disabled plugin's reports stay; they were written
+/// The reports on a subject, by plugin and key. A disabled plugin's reports stay; they were written
 /// while it was allowed to.
 pub async fn reports_of(
     conn: &mut PgConnection,
-    submission_id: Uuid,
+    subject: ReportSubject,
 ) -> Result<Vec<ReportRow>, sqlx::Error> {
     sqlx::query_as!(
         ReportRow,
-        "SELECT i.plugin_id, r.summary, r.data, r.updated_at
+        "SELECT i.plugin_id, r.key, r.summary, r.data, r.updated_at
          FROM plugins.reports r JOIN plugins.plugin_installs i ON i.id = r.install_id
-         WHERE r.submission_id = $1
-         ORDER BY i.plugin_id",
-        submission_id
+         WHERE r.subject_id = $1
+         ORDER BY i.plugin_id, r.key",
+        subject.id()
     )
     .fetch_all(conn)
     .await

@@ -2,7 +2,10 @@
 
 The smallest plugin of Vumlo ([ADR-0066](../../docs/decisions/done.md)): a Python
 file with no dependencies. For every submitted work it counts the words and posts a report that
-staff read at `GET /api/v1/submissions/{id}/plugin-reports`.
+staff read at `GET /api/v1/submissions/{id}/plugin-reports`. It also keeps a running total on the assignment
+(`PUT /plugin-api/assignments/{id}/reports/totals`, read at `GET /api/v1/assignments/{id}/plugin-reports`):
+a report is kept under a key, on an attempt, an assignment or a course, and writing it again replaces it
+([ADR-0077](../../docs/decisions/done.md)).
 
 1. Set `VUMLO__PLUGINS__SECRET_KEY` (32 characters or more) where the server and `vumlo-cli` run.
 2. Start the plugin with no credentials, so the core can read its manifest:
