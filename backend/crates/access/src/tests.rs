@@ -1009,6 +1009,7 @@ fn scopes_have_the_names_the_manifest_and_the_cli_use() {
         ("grades:read", Scope::GradesRead),
         ("quizzes:read", Scope::QuizzesRead),
         ("users:contact", Scope::UsersContact),
+        ("announcements:read", Scope::AnnouncementsRead),
     ] {
         assert_eq!(text.parse::<Scope>(), Ok(scope));
         assert_eq!(scope.as_str(), text);

@@ -219,7 +219,16 @@ pub async fn fan_out(conn: &mut PgConnection, event: &OutboxEvent) -> Result<u64
         if only.is_some_and(|only| only != install_id) {
             continue;
         }
-        if repo::insert_delivery(conn, install_id, event.id, &event.kind, &event.payload).await? {
+        if repo::insert_delivery(
+            conn,
+            install_id,
+            event.id,
+            &event.kind,
+            &event.payload,
+            event.occurred_at,
+        )
+        .await?
+        {
             owed += 1;
         }
     }

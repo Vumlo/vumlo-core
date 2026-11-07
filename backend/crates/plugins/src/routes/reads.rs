@@ -4,10 +4,10 @@
 
 use access::{PluginCaller, PluginSource};
 use api_types::{
-    MAX_CONTACT_IDS, Page, PluginAssignment, PluginAssignmentsQuery, PluginAttempt, PluginContact,
-    PluginContactQuery, PluginContacts, PluginFormAnswers, PluginGrade, PluginGradesQuery,
-    PluginListQuery, PluginMember, PluginMembersQuery, PluginQuiz, PluginSubmission,
-    PluginSubmissionItem, ProblemDetails,
+    Announcement, MAX_CONTACT_IDS, Page, PluginAnnouncementsQuery, PluginAssignment,
+    PluginAssignmentsQuery, PluginAttempt, PluginContact, PluginContactQuery, PluginContacts,
+    PluginFormAnswers, PluginGrade, PluginGradesQuery, PluginListQuery, PluginMember,
+    PluginMembersQuery, PluginQuiz, PluginSubmission, PluginSubmissionItem, ProblemDetails,
 };
 use axum::Json;
 use axum::extract::{FromRef, Path, State};
@@ -27,6 +27,7 @@ where
     PluginsState: FromRef<S>,
 {
     OpenApiRouter::new()
+        .routes(routes!(list_announcements))
         .routes(routes!(list_assignments))
         .routes(routes!(get_assignment))
         .routes(routes!(get_form_answers))
@@ -459,4 +460,51 @@ async fn get_contacts(
             })
             .collect(),
     })
+}
+
+/// The announcements teachers published, by the time they last changed; `updated_since` is that
+/// time. The scope `announcements:read`. Without `course_id`, those of every course the plugin was
+/// granted. A plugin learns of a new one from `announcement.published`.
+#[utoipa::path(
+    get,
+    path = "/plugin-api/announcements",
+    tag = "plugin-api",
+    security(("plugin" = [])),
+    params(PluginAnnouncementsQuery),
+    responses(
+        (status = 200, description = "A page of announcements", body = Page<Announcement>),
+        (status = 401, description = "No token, or one that is unknown or disabled",
+            body = ProblemDetails, content_type = "application/problem+json"),
+        (status = 403, description = "The plugin was not granted `announcements:read`, or not the course",
+            body = ProblemDetails, content_type = "application/problem+json"),
+        (status = 404, description = "`course_id` names no course", body = ProblemDetails,
+            content_type = "application/problem+json"),
+        (status = 422, description = "A cursor or a time that is not valid", body = ProblemDetails,
+            content_type = "application/problem+json"),
+    )
+)]
+async fn list_announcements(
+    caller: PluginCaller,
+    State(state): State<PluginsState>,
+    ValidQuery(query): ValidQuery<PluginAnnouncementsQuery>,
+) -> Reply<Page<Announcement>> {
+    let page_params = PluginPage::new(query.cursor.as_deref(), query.limit)?;
+    let mut conn = state.db.acquire().await.map_err(db)?;
+    let list = plugin_read::announcements(
+        &mut conn,
+        &caller,
+        query.course_id,
+        query.updated_since,
+        page_params,
+    )
+    .await?;
+    reply(page(list, |a| Announcement {
+        id: a.id,
+        course_id: a.course_id,
+        author_id: a.author_id,
+        title: a.title,
+        body: a.body,
+        created_at: a.created_at,
+        updated_at: a.updated_at,
+    }))
 }

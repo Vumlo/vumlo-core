@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT type, version, payload FROM events.outbox",
+  "query": "SELECT type, version, payload FROM events.outbox WHERE type = 'grade.published'",
   "describe": {
     "columns": [
       {
@@ -46,5 +46,5 @@
       false
     ]
   },
-  "hash": "980f385e2a2cbad14dba3517774ac7a0ca37cef7ad3825758411351311de1cf6"
+  "hash": "2f6128c81d4be6e7bfc36b8ef2d3de0a16aa7697532ba560eeaa29cc099935c3"
 }

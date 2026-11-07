@@ -84,6 +84,7 @@ impl Deliverer {
         let body = serde_json::to_vec(&json!({
             "id": delivery.event_id,
             "type": delivery.event_type,
+            "occurred_at": delivery.occurred_at,
             "data": delivery.data,
         }))
         .map_err(|e| e.to_string())?;

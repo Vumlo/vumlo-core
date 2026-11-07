@@ -7,7 +7,7 @@ use sqlx::PgConnection;
 use sqlx::types::Json;
 use uuid::Uuid;
 
-use super::model::{Cursor, PluginContact, PluginGrade, PluginMember};
+use super::model::{Cursor, PluginAnnouncement, PluginContact, PluginGrade, PluginMember};
 
 /// A list resumed after `cursor`; `at` is `None` for the first page.
 pub struct After {
@@ -338,6 +338,35 @@ pub async fn contacts(
            ORDER BY p.id"#,
         ids,
         only
+    )
+    .fetch_all(conn)
+    .await
+}
+
+/// The announcements of the courses in `only` (`None`: every course), by the time they last changed.
+pub async fn announcements(
+    conn: &mut PgConnection,
+    only: Option<&[Uuid]>,
+    since: Option<DateTime<Utc>>,
+    after: &After,
+    limit: i64,
+) -> Result<Vec<PluginAnnouncement>, sqlx::Error> {
+    sqlx::query_as!(
+        PluginAnnouncement,
+        r#"SELECT a.id, a.course_id, a.author_id, a.title, a.body, a.created_at, a.updated_at
+           FROM teaching.announcements a
+           JOIN teaching.courses c ON c.id = a.course_id
+           WHERE c.status <> 'draft'
+             AND ($1::uuid[] IS NULL OR a.course_id = ANY($1))
+             AND ($2::timestamptz IS NULL OR a.updated_at >= $2)
+             AND ($3::timestamptz IS NULL OR (a.updated_at, a.id) > ($3, $4))
+           ORDER BY a.updated_at, a.id
+           LIMIT $5"#,
+        only,
+        since,
+        after.at,
+        after.a,
+        limit
     )
     .fetch_all(conn)
     .await

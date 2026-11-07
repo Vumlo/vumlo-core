@@ -55,7 +55,7 @@ pub async fn claim(
                SELECT id FROM events.outbox
                WHERE processed_at IS NULL AND failed_at IS NULL AND run_after <= now()
                ORDER BY id LIMIT $1 FOR UPDATE SKIP LOCKED)
-           RETURNING id, type AS kind, version, payload, attempts"#,
+           RETURNING id, type AS kind, version, payload, occurred_at, attempts"#,
         limit,
         lease_secs
     )
@@ -71,6 +71,7 @@ pub async fn claim(
                     kind: row.kind,
                     version: row.version,
                     payload: row.payload,
+                    occurred_at: row.occurred_at,
                 },
                 row.attempts,
             )

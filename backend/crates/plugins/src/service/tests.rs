@@ -56,6 +56,7 @@ fn event(kind: &str) -> OutboxEvent {
         kind: kind.to_owned(),
         version: 1,
         payload: json!({"submission_id": Uuid::now_v7()}),
+        occurred_at: chrono::Utc::now(),
     }
 }
 
@@ -684,6 +685,7 @@ async fn a_change_is_announced_once_with_ids_only_and_only_to_its_plugin() {
             kind: "plugin.settings.changed".to_owned(),
             version: 1,
             payload: events[0].clone(),
+            occurred_at: chrono::Utc::now(),
         };
         assert_eq!(fan_out(&mut conn, &outbox).await.unwrap(), 1);
         let owner: String = sqlx::query_scalar(
@@ -717,6 +719,7 @@ fn about(course: Uuid) -> OutboxEvent {
         kind: "submission.submitted".to_owned(),
         version: 1,
         payload: json!({"course_id": course, "submission_id": Uuid::now_v7()}),
+        occurred_at: chrono::Utc::now(),
     }
 }
 

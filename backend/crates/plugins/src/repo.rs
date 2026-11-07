@@ -318,16 +318,18 @@ pub async fn insert_delivery(
     event_id: Uuid,
     event_type: &str,
     data: &serde_json::Value,
+    occurred_at: DateTime<Utc>,
 ) -> Result<bool, sqlx::Error> {
     let done = sqlx::query!(
-        "INSERT INTO plugins.deliveries (id, install_id, event_id, event_type, data)
-         VALUES ($1, $2, $3, $4, $5)
+        "INSERT INTO plugins.deliveries (id, install_id, event_id, event_type, data, occurred_at)
+         VALUES ($1, $2, $3, $4, $5, $6)
          ON CONFLICT (install_id, event_id) DO NOTHING",
         Uuid::now_v7(),
         install_id,
         event_id,
         event_type,
-        data
+        data,
+        occurred_at
     )
     .execute(conn)
     .await?;
@@ -341,6 +343,7 @@ pub struct Claimed {
     pub event_id: Uuid,
     pub event_type: String,
     pub data: serde_json::Value,
+    pub occurred_at: DateTime<Utc>,
     pub attempts: i32,
     pub base_url: String,
     pub secret_version: i32,
@@ -369,10 +372,11 @@ pub async fn claim(
                UPDATE plugins.deliveries d
                SET attempts = d.attempts + 1, run_after = now() + make_interval(secs => $2)
                FROM due WHERE d.id = due.id
-               RETURNING d.id, d.install_id, d.event_id, d.event_type, d.data, d.attempts
+               RETURNING d.id, d.install_id, d.event_id, d.event_type, d.data, d.occurred_at, d.attempts
            )
            SELECT c.id AS "id!", c.install_id AS "install_id!", c.event_id AS "event_id!",
-                  c.event_type AS "event_type!", c.data AS "data!", c.attempts AS "attempts!",
+                  c.event_type AS "event_type!", c.data AS "data!",
+                  c.occurred_at AS "occurred_at!", c.attempts AS "attempts!",
                   i.base_url, i.secret_version
            FROM claimed c JOIN plugins.plugin_installs i ON i.id = c.install_id
            ORDER BY c.id"#,

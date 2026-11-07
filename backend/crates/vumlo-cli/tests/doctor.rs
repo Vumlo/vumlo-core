@@ -102,8 +102,9 @@ async fn doctor_warns_about_plugins_that_are_sent_nothing_and_about_dead_letters
         // With the key it is fine, until an event has failed for good.
         assert_eq!(status(&doctor(true).await, "plugins"), "ok");
         sqlx::query(
-            "INSERT INTO plugins.deliveries (id, install_id, event_id, event_type, data, failed_at)
-             SELECT gen_random_uuid(), id, gen_random_uuid(), 'submission.submitted', '{}', now()
+            "INSERT INTO plugins.deliveries
+                 (id, install_id, event_id, event_type, data, occurred_at, failed_at)
+             SELECT gen_random_uuid(), id, gen_random_uuid(), 'submission.submitted', '{}', now(), now()
              FROM plugins.plugin_installs",
         )
         .execute(&pool)

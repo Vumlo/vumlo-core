@@ -15,8 +15,20 @@ use uuid::Uuid;
 use crate::settings::SettingSpec;
 
 /// The event types a plugin may subscribe to. Anything else in a manifest stops the install.
-/// `plugin.settings.changed` is sent only to the plugin whose setting changed (ADR-0072).
-pub const SUBSCRIBABLE: [&str; 3] = ["submission.submitted", "grade.published", SETTINGS_CHANGED];
+/// `plugin.settings.changed` is sent only to the plugin whose setting changed (ADR-0072). The events
+/// that name a course (all but that one) are sent only to a plugin that may reach the course
+/// (ADR-0074). A plugin gets only the events it subscribed to: nothing is sent by default.
+pub const SUBSCRIBABLE: [&str; 9] = [
+    "submission.submitted",
+    "grade.published",
+    SETTINGS_CHANGED,
+    "assignment.created",
+    "assignment.updated",
+    "assignment.deadline_changed",
+    "enrollment.changed",
+    "quiz.attempt_submitted",
+    "announcement.published",
+];
 
 /// The event type that says an administrator changed a setting of the plugin.
 pub const SETTINGS_CHANGED: &str = "plugin.settings.changed";

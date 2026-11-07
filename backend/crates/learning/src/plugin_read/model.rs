@@ -191,3 +191,15 @@ pub struct PluginContact {
     pub user_id: Uuid,
     pub email: String,
 }
+
+/// An announcement of a course the plugin reaches.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PluginAnnouncement {
+    pub id: Uuid,
+    pub course_id: Uuid,
+    pub author_id: Uuid,
+    pub title: String,
+    pub body: String,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}

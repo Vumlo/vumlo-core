@@ -226,6 +226,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/announcements/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Deletes an announcement. Staff and admins. */
+        delete: operations["delete_announcement"];
+        options?: never;
+        head?: never;
+        /** Changes an announcement. Staff and admins. The plugins are not told. */
+        patch: operations["update_announcement"];
+        trace?: never;
+    };
     "/api/v1/assignments/{id}/grades/publish": {
         parameters: {
             query?: never;
@@ -706,6 +724,27 @@ export interface paths {
          *     Works on a draft and a published course; an archived one takes no change (ADR-0048).
          */
         patch: operations["update_course"];
+        trace?: never;
+    };
+    "/api/v1/courses/{id}/announcements": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The announcements of a course, newest first. Anyone who can see the course. */
+        get: operations["list_announcements"];
+        put?: never;
+        /**
+         * Publishes an announcement to the course at once, and tells the plugins that subscribed to
+         *     `announcement.published`. Staff and admins; not in an archived course.
+         */
+        post: operations["publish_announcement"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/v1/courses/{id}/archive": {
@@ -1774,6 +1813,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/plugin-api/announcements": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The announcements teachers published, by the time they last changed; `updated_since` is that
+         *     time. The scope `announcements:read`. Without `course_id`, those of every course the plugin was
+         *     granted. A plugin learns of a new one from `announcement.published`.
+         */
+        get: operations["list_announcements"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/plugin-api/assignments": {
         parameters: {
             query?: never;
@@ -2225,6 +2285,21 @@ export interface components {
          * @enum {string}
          */
         AllStudents: "all";
+        /** @description Something a teacher told the course. Plain text. */
+        Announcement: {
+            /** Format: uuid */
+            author_id: string;
+            body: string;
+            /** Format: uuid */
+            course_id: string;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: uuid */
+            id: string;
+            title: string;
+            /** Format: date-time */
+            updated_at: string;
+        };
         /** @description Where one installer of the institution's desktop app can be downloaded. */
         AppDownload: {
             platform: components["schemas"]["AppPlatform"];
@@ -2667,6 +2742,13 @@ export interface components {
         CourseRole: "teacher" | "assistant" | "student";
         /** @enum {string} */
         CourseStatus: "draft" | "published" | "archived";
+        /** @description Publishes an announcement to the course at once. */
+        CreateAnnouncementRequest: {
+            /** @description 1 to 10 000 characters of plain text. */
+            body: string;
+            /** @description 1 to 200 characters after trimming. */
+            title: string;
+        };
         CreateCourseRequest: {
             /**
              * Format: uuid
@@ -3434,6 +3516,24 @@ export interface components {
                 term_id?: string | null;
                 term_name?: string | null;
             })[];
+            /** @description Pass as `cursor` to get the next page; `null` on the last page. */
+            next_cursor?: string | null;
+        };
+        Page_Announcement: {
+            items: {
+                /** Format: uuid */
+                author_id: string;
+                body: string;
+                /** Format: uuid */
+                course_id: string;
+                /** Format: date-time */
+                created_at: string;
+                /** Format: uuid */
+                id: string;
+                title: string;
+                /** Format: date-time */
+                updated_at: string;
+            }[];
             /** @description Pass as `cursor` to get the next page; `null` on the last page. */
             next_cursor?: string | null;
         };
@@ -4326,6 +4426,11 @@ export interface components {
          * @enum {string}
          */
         UnpublishedReason: "draft" | "edits";
+        /** @description Changes an announcement. A field that is absent stays. Nothing is sent to the plugins. */
+        UpdateAnnouncementRequest: {
+            body?: string | null;
+            title?: string | null;
+        };
         /** @description Only the fields present change. */
         UpdateCourseInfoRequest: {
             /** @description At most 32 characters after trimming; empty clears the code. */
@@ -5120,6 +5225,135 @@ export interface operations {
             };
             /** @description No such user */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    delete_announcement: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Announcement id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not logged in */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The caller may not write content in this course */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description No such announcement, or not visible to the caller */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The course is archived */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    update_announcement: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Announcement id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateAnnouncementRequest"];
+            };
+        };
+        responses: {
+            /** @description Changed */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Announcement"];
+                };
+            };
+            /** @description Not logged in */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The caller may not write content in this course */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description No such announcement, or not visible to the caller */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The course is archived */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Invalid title or text */
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -6565,6 +6799,132 @@ export interface operations {
                 };
             };
             /** @description Invalid title, an unknown term, or a term on a template */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    list_announcements: {
+        parameters: {
+            query?: {
+                cursor?: string;
+                /** @description Page size, 1 to 100 (default 50). */
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                /** @description Course id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A page of announcements */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Page_Announcement"];
+                };
+            };
+            /** @description Not logged in */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description No such course, or not visible to the caller */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Invalid cursor */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    publish_announcement: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Course id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateAnnouncementRequest"];
+            };
+        };
+        responses: {
+            /** @description Published */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Announcement"];
+                };
+            };
+            /** @description Not logged in */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The caller may not write content in this course */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description No such course, or not visible to the caller */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The course is archived */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Invalid title or text */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -9922,6 +10282,70 @@ export interface operations {
                 };
             };
             /** @description `cascade` is missing */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    list_announcements: {
+        parameters: {
+            query?: {
+                /** @description One course. Without it, every course the plugin was granted. */
+                course_id?: string;
+                cursor?: string;
+                /** @description Page size, 1 to 100 (default 50). */
+                limit?: number;
+                /** @description Only announcements published or changed at or after this time (RFC 3339). */
+                updated_since?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A page of announcements */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Page_Announcement"];
+                };
+            };
+            /** @description No token, or one that is unknown or disabled */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The plugin was not granted `announcements:read`, or not the course */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description `course_id` names no course */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description A cursor or a time that is not valid */
             422: {
                 headers: {
                     [name: string]: unknown;

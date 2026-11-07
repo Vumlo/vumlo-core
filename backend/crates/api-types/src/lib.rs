@@ -8,6 +8,7 @@ use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
 mod admin;
+mod announcements;
 mod assessment;
 mod courses;
 mod document;
@@ -20,6 +21,7 @@ mod org;
 mod plugins;
 
 pub use admin::*;
+pub use announcements::*;
 pub use assessment::*;
 pub use courses::*;
 pub use document::*;

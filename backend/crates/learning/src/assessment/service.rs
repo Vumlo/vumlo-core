@@ -300,6 +300,18 @@ pub async fn submit(
         },
     )
     .await?;
+    if assignment.assignment_type == BuiltinType::Quiz {
+        events::emit(
+            conn,
+            Event::QuizAttemptSubmitted {
+                assignment_id,
+                student_id,
+                course_id: opened.course_id,
+                submission_id: attempt.id,
+            },
+        )
+        .await?;
+    }
     Ok(attempt)
 }
 

@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "WITH due AS (\n               SELECT d.id FROM plugins.deliveries d\n               JOIN plugins.plugin_installs i ON i.id = d.install_id\n               WHERE d.delivered_at IS NULL AND d.failed_at IS NULL\n                 AND d.run_after <= now() AND i.status = 'enabled'\n               ORDER BY d.id\n               LIMIT $1\n               FOR UPDATE OF d SKIP LOCKED\n           ), claimed AS (\n               UPDATE plugins.deliveries d\n               SET attempts = d.attempts + 1, run_after = now() + make_interval(secs => $2)\n               FROM due WHERE d.id = due.id\n               RETURNING d.id, d.install_id, d.event_id, d.event_type, d.data, d.attempts\n           )\n           SELECT c.id AS \"id!\", c.install_id AS \"install_id!\", c.event_id AS \"event_id!\",\n                  c.event_type AS \"event_type!\", c.data AS \"data!\", c.attempts AS \"attempts!\",\n                  i.base_url, i.secret_version\n           FROM claimed c JOIN plugins.plugin_installs i ON i.id = c.install_id\n           ORDER BY c.id",
+  "query": "WITH due AS (\n               SELECT d.id FROM plugins.deliveries d\n               JOIN plugins.plugin_installs i ON i.id = d.install_id\n               WHERE d.delivered_at IS NULL AND d.failed_at IS NULL\n                 AND d.run_after <= now() AND i.status = 'enabled'\n               ORDER BY d.id\n               LIMIT $1\n               FOR UPDATE OF d SKIP LOCKED\n           ), claimed AS (\n               UPDATE plugins.deliveries d\n               SET attempts = d.attempts + 1, run_after = now() + make_interval(secs => $2)\n               FROM due WHERE d.id = due.id\n               RETURNING d.id, d.install_id, d.event_id, d.event_type, d.data, d.occurred_at, d.attempts\n           )\n           SELECT c.id AS \"id!\", c.install_id AS \"install_id!\", c.event_id AS \"event_id!\",\n                  c.event_type AS \"event_type!\", c.data AS \"data!\",\n                  c.occurred_at AS \"occurred_at!\", c.attempts AS \"attempts!\",\n                  i.base_url, i.secret_version\n           FROM claimed c JOIN plugins.plugin_installs i ON i.id = c.install_id\n           ORDER BY c.id",
   "describe": {
     "columns": [
       {
@@ -60,6 +60,17 @@
       },
       {
         "ordinal": 5,
+        "name": "occurred_at!",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "plugins.deliveries",
+            "name": "occurred_at"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
         "name": "attempts!",
         "type_info": "Int4",
         "origin": {
@@ -70,7 +81,7 @@
         }
       },
       {
-        "ordinal": 6,
+        "ordinal": 7,
         "name": "base_url",
         "type_info": "Text",
         "origin": {
@@ -81,7 +92,7 @@
         }
       },
       {
-        "ordinal": 7,
+        "ordinal": 8,
         "name": "secret_version",
         "type_info": "Int4",
         "origin": {
@@ -106,8 +117,9 @@
       false,
       false,
       false,
+      false,
       false
     ]
   },
-  "hash": "dc381bfdfc75c6ab25da70fd936f7fa36c1380b3b38f6cb423c567050f50dbe1"
+  "hash": "33de8eb229040ecdead79d6c35a3c9687384d505d6f23e2cdcdc557258efd6c3"
 }

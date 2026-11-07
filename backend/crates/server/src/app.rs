@@ -197,6 +197,7 @@ impl AppState {
         if self.plugins.key.is_some() {
             handlers = handlers.merge(plugins::event_handlers(self.db.clone()));
         }
+        handlers = handlers.merge(learning::event_handlers(self.db.clone()));
         handlers.merge(crate::modules::event_handlers(self))
     }
 

@@ -96,7 +96,13 @@ fn the_events_a_plugin_may_subscribe_to_are_events_that_exist_and_hold_ids_only(
         [
             "submission.submitted",
             "grade.published",
-            "plugin.settings.changed"
+            "plugin.settings.changed",
+            "assignment.created",
+            "assignment.updated",
+            "assignment.deadline_changed",
+            "enrollment.changed",
+            "quiz.attempt_submitted",
+            "announcement.published",
         ]
     );
 }

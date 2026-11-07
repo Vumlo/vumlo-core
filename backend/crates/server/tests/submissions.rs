@@ -1521,10 +1521,15 @@ async fn a_submit_emits_one_event_with_ids_only_and_a_draft_emits_none() {
             409
         );
         assert_eq!(outbox(&w.pool, "submission.submitted").await.len(), 1);
-        let total = sqlx::query_scalar!(r#"SELECT count(*) AS "n!" FROM events.outbox"#)
-            .fetch_one(&w.pool)
-            .await
-            .unwrap();
+        // Setting up the course wrote events of its own (the assignment, the roster); a refused
+        // submit wrote none of the work's.
+        let total = sqlx::query_scalar!(
+            r#"SELECT count(*) AS "n!" FROM events.outbox
+               WHERE type IN ('submission.submitted', 'quiz.attempt_submitted', 'grade.published')"#
+        )
+        .fetch_one(&w.pool)
+        .await
+        .unwrap();
         assert_eq!(total, 1, "no other event was written");
     })
     .await;

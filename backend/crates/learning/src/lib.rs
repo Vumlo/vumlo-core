@@ -5,6 +5,7 @@
 pub mod assessment;
 pub mod audit;
 pub mod content;
+mod enrollment;
 mod error;
 pub mod files;
 pub mod gradebook;
@@ -16,5 +17,6 @@ pub mod reports;
 mod state;
 pub mod teaching;
 
+pub use enrollment::event_handlers;
 pub use error::LearningError;
 pub use state::LearningState;

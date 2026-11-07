@@ -13,8 +13,9 @@ use sqlx::PgConnection;
 use uuid::Uuid;
 
 use super::model::{
-    Cursor, PluginAssignment, PluginAttempt, PluginContact, PluginFormAnswers, PluginGrade,
-    PluginList, PluginMember, PluginPage, PluginQuiz, PluginSubmission, PluginSubmissionRow,
+    Cursor, PluginAnnouncement, PluginAssignment, PluginAttempt, PluginContact, PluginFormAnswers,
+    PluginGrade, PluginList, PluginMember, PluginPage, PluginQuiz, PluginSubmission,
+    PluginSubmissionRow,
 };
 use super::repo::{self, After, AssignmentRow};
 use crate::content::{AssignmentType, BuiltinType};
@@ -360,4 +361,30 @@ pub async fn contacts(
 ) -> Result<Vec<PluginContact>, PluginReadError> {
     let only = plugin_course_filter(caller, Scope::UsersContact, None)?;
     Ok(repo::contacts(conn, ids, only.as_deref()).await?)
+}
+
+/// The announcements of one course or of every course the plugin reaches, changed at or after
+/// `since`.
+pub async fn announcements(
+    conn: &mut PgConnection,
+    caller: &PluginCaller,
+    course_id: Option<Uuid>,
+    since: Option<DateTime<Utc>>,
+    page: PluginPage,
+) -> Result<PluginList<PluginAnnouncement>, PluginReadError> {
+    let only = plugin_course_filter(caller, Scope::AnnouncementsRead, course_id)?;
+    if let Some(course_id) = course_id {
+        course_must_exist(conn, course_id).await?;
+    }
+    let rows = repo::announcements(
+        conn,
+        only.as_deref(),
+        since,
+        &After::from(page.after),
+        limit(&page),
+    )
+    .await?;
+    Ok(PluginList::from_rows(rows, page.limit, |a| {
+        by_time(a.updated_at, a.id)
+    }))
 }

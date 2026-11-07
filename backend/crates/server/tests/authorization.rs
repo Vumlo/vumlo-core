@@ -33,6 +33,8 @@ struct Ctx {
     owner: Uuid,
     /// A file the owner of the course uploaded and no item names: only the owner reads it.
     file: Uuid,
+    /// An announcement the owner published in the course.
+    announcement: Uuid,
 }
 
 type Call = (&'static str, String, Option<Value>);
@@ -132,6 +134,18 @@ fn operations(c: &Ctx, other_user: Uuid) -> Vec<Call> {
             None,
         ),
         call("GET", format!("/courses/{}/group-options", c.course), None),
+        call("GET", format!("/courses/{}/announcements", c.course), None),
+        call(
+            "POST",
+            format!("/courses/{}/announcements", c.course),
+            Some(json!({"title": "x", "body": "y"})),
+        ),
+        call(
+            "PATCH",
+            format!("/announcements/{}", c.announcement),
+            Some(json!({"body": "changed"})),
+        ),
+        call("DELETE", format!("/announcements/{}", c.announcement), None),
         call("GET", format!("/courses/{}/exclusions", c.course), None),
         call(
             "DELETE",
@@ -446,6 +460,16 @@ async fn build(env: &Env, admin: &Account, owner: &Account, student: &Account, t
             .await
             .json(),
     );
+    let announcement = id_of(
+        &env.ok(
+            "POST",
+            &owner.token,
+            &format!("/courses/{course}/announcements"),
+            Some(json!({"title": "n", "body": "text"})),
+            201,
+        )
+        .await,
+    );
     Ctx {
         course,
         module,
@@ -460,6 +484,7 @@ async fn build(env: &Env, admin: &Account, owner: &Account, student: &Account, t
         term,
         owner: owner.id,
         file,
+        announcement,
     }
 }
 
@@ -522,6 +547,7 @@ async fn no_operation_answers_a_caller_who_may_not_use_it() {
             let reads = [
                 format!("/courses/{}", a.course),
                 format!("/courses/{}/members", a.course),
+                format!("/courses/{}/announcements", a.course),
                 format!("/courses/{}/content", a.course),
                 format!("/items/{}", a.text),
                 format!("/items/{}", a.assignment),
@@ -747,6 +773,7 @@ async fn the_list_of_operations_is_the_api() {
             "GET /plugin-api/submissions/{id}",
             "PUT /plugin-api/submissions/{id}/report",
             "GET /plugin-api/settings",
+            "GET /plugin-api/announcements",
             "GET /plugin-api/assignments",
             "GET /plugin-api/assignments/{id}",
             "GET /plugin-api/assignments/{id}/attempts",
@@ -804,6 +831,7 @@ async fn the_list_of_operations_is_the_api() {
             term: any,
             owner: any,
             file: any,
+            announcement: any,
         };
         let listed: BTreeSet<String> = operations(&c, any)
             .into_iter()

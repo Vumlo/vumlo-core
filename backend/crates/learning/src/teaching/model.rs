@@ -347,5 +347,17 @@ pub struct CourseCardData {
     pub todo: Vec<Todo>,
 }
 
+/// Something a teacher told the course (ADR-0076).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Announcement {
+    pub id: Uuid,
+    pub course_id: Uuid,
+    pub author_id: Uuid,
+    pub title: String,
+    pub body: String,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
 #[cfg(test)]
 mod tests;

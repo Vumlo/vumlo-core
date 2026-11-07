@@ -96,6 +96,9 @@ async fn owed(pool: &PgPool, base: &str) -> (Installed, OutboxEvent) {
         kind: "submission.submitted".to_owned(),
         version: 1,
         payload: json!({"submission_id": Uuid::now_v7(), "student_id": Uuid::now_v7()}),
+        // The database keeps microseconds.
+        occurred_at: chrono::DateTime::from_timestamp_micros(chrono::Utc::now().timestamp_micros())
+            .unwrap(),
     };
     assert_eq!(fan_out(&mut conn, &event).await.unwrap(), 1);
     (installed, event)
@@ -158,7 +161,8 @@ async fn an_event_is_sent_signed_with_the_time_and_the_secret_of_the_install() {
         let sent: Value = serde_json::from_slice(&body).unwrap();
         assert_eq!(
             sent,
-            json!({"id": event.id, "type": "submission.submitted", "data": event.payload})
+            json!({"id": event.id, "type": "submission.submitted",
+                   "occurred_at": event.occurred_at, "data": event.payload})
         );
         let after = state(&pool).await;
         assert!(after.delivered && !after.failed && after.attempts == 1);

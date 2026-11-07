@@ -309,5 +309,22 @@ pub struct PluginContacts {
     pub items: Vec<PluginContact>,
 }
 
+/// The announcements of a course or of every course the plugin reaches.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, Validate, IntoParams)]
+#[into_params(parameter_in = Query)]
+pub struct PluginAnnouncementsQuery {
+    /// One course. Without it, every course the plugin was granted.
+    #[garde(skip)]
+    pub course_id: Option<Uuid>,
+    #[garde(inner(length(min = 1, max = 100)))]
+    pub cursor: Option<String>,
+    /// Page size, 1 to 100 (default 50).
+    #[garde(inner(range(min = 1, max = 100)))]
+    pub limit: Option<u32>,
+    /// Only announcements published or changed at or after this time (RFC 3339).
+    #[garde(skip)]
+    pub updated_since: Option<DateTime<Utc>>,
+}
+
 #[cfg(test)]
 mod tests;

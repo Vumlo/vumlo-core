@@ -5,8 +5,8 @@ It subscribes to `submission.submitted`. When one arrives it fetches the submiss
 plugin API, counts the words, and posts a report back. It shows the whole protocol:
 
   GET  /manifest   what the plugin is and asks for (read once, when an administrator installs it)
-  POST /events     a signed event from the core: check the signature and the time, answer 2xx at
-                   once, work afterwards
+  POST /events     a signed event from the core, `{id, type, occurred_at, data}` (ids only): check the
+                   signature and the time, answer 2xx at once, work afterwards
   ...and, towards the core, `GET /plugin-api/submissions/{id}` and `PUT .../report` with the token.
 
 It also reads its settings (`GET /plugin-api/settings`, scope `settings:read`) and is told when an
