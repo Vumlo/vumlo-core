@@ -1,6 +1,7 @@
 use serde_json::json;
 
 use super::*;
+use crate::settings::SettingScope;
 
 fn parse(value: serde_json::Value) -> Result<PluginManifest, PluginsError> {
     parse_manifest(value.to_string().as_bytes())
@@ -130,4 +131,46 @@ fn a_long_value_is_cut_in_the_message() {
     let mut value = hello();
     value["scopes"] = json!(["x".repeat(500)]);
     assert!(message(value).len() < 200);
+}
+
+#[test]
+fn the_settings_of_a_manifest_are_read_with_their_defaults_and_scopes() {
+    let mut value = hello();
+    value["settings"] = json!({
+        "unit": {"type": "string", "enum": ["words", "characters"], "default": "words"},
+        "max_words": {"type": "number", "minimum": 0, "scope": "course"},
+        "api_token": {"type": "string", "secret": true, "description": "Its key"},
+        "tags": {"type": "array", "items": {"type": "string"}}
+    });
+    let manifest = parse(value).unwrap();
+    assert_eq!(manifest.settings.len(), 4);
+    assert_eq!(manifest.settings["unit"].default, Some(json!("words")));
+    assert_eq!(manifest.settings["max_words"].scope, SettingScope::Course);
+    assert!(manifest.settings["api_token"].secret);
+    assert!(parse(hello()).unwrap().settings.is_empty());
+}
+
+#[test]
+fn a_setting_that_is_not_valid_stops_the_install_and_is_named() {
+    for (settings, part) in [
+        (json!({"Bad-Key": {"type": "string"}}), "`Bad-Key`"),
+        (json!({"a": {"type": "object"}}), "setting `a` is not valid"),
+        (json!({"a": {"type": "string", "pattern": "x"}}), "pattern"),
+        (
+            json!({"a": {"type": "string", "secret": true, "default": "x"}}),
+            "no default",
+        ),
+        (json!({"a": "string"}), "setting `a` is not valid"),
+    ] {
+        let mut value = hello();
+        value["settings"] = settings.clone();
+        let text = message(value);
+        assert!(text.contains(part), "{settings}: {text}");
+    }
+    let mut many = hello();
+    many["settings"] = (0..41)
+        .map(|n| (format!("s{n}"), json!({"type": "boolean"})))
+        .collect::<serde_json::Map<_, _>>()
+        .into();
+    assert!(message(many).contains("more than 40"));
 }

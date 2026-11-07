@@ -10,6 +10,12 @@ must do, in order, besides getting the new release. See [RELEASING.md](RELEASING
 
 ## [Unreleased]
 
+### Added
+
+- **Plugin settings** (ADR-0072). A plugin's manifest may declare `settings` (string, number, boolean, `enum`, list; `default`, `description`, `secret`, scope `institution` or `course`). Administrators manage them with `vumlo-cli plugin settings list|get|set|unset`; secrets are stored sealed (XChaCha20-Poly1305 from the `chacha20poly1305` crate, ADR-0073; the key is derived from `plugins.secret_key`) and never shown. A plugin with the new scope `settings:read` reads its values at `GET /api/v1/plugin-api/settings` (`404` for a `course_id` that names no course), and is sent `plugin.settings.changed` when one changes. `examples/hello-plugin` uses them.
+
+**Upgrade notes.** Run `vumlo-cli db migrate` (migration 0039). Plugins that were installed keep working and declare no settings; to use settings, a plugin's new manifest must be read again (`plugin remove`, then `plugin install`), and the key `plugins.secret_key` must stay the same for as long as secret settings are in use.
+
 ## [0.4.1] - 2026-11-01
 
 Branding, and a menu for the file types of a file assignment.

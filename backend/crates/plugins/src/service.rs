@@ -5,12 +5,15 @@
 use std::time::Duration;
 
 use access::{self, Actor};
+use std::collections::BTreeMap;
+
 use access::{PluginCaller, Scope};
-use events::OutboxEvent;
+use events::{Event, OutboxEvent};
 use learning::assessment;
 use learning::content::{self, OpenError};
+use learning::teaching;
 use module_api::OutboundClient;
-use serde_json::{Value, json};
+use serde_json::{Map, Value, json};
 use sqlx::PgConnection;
 use uuid::Uuid;
 
@@ -18,9 +21,11 @@ use crate::PluginsError;
 use crate::manifest::parse_manifest;
 use crate::model::{
     ASSIGNMENT_TAB, Install, InstallStatus, InstallSummary, Installed, PluginManifest, PluginToken,
+    SETTINGS_CHANGED,
 };
 use crate::repo::{self, NewInstall, ReportRow, scope_names};
-use crate::secret::{LaunchClaims, SecretKey, derive_secret, launch_token};
+use crate::secret::{LaunchClaims, SecretKey, derive_secret, launch_token, open, seal};
+use crate::settings::{SettingScope, SettingSpec};
 
 const MANIFEST_CONNECT: Duration = Duration::from_secs(3);
 const MANIFEST_TOTAL: Duration = Duration::from_secs(5);
@@ -95,6 +100,7 @@ pub async fn install(
             requested_scopes: &scope_names(&manifest.scopes),
             scopes: &scope_names(&granted),
             ui_slots: Value::Array(ui),
+            settings: &manifest.settings,
             token_hash: &token.hash(),
         },
     )
@@ -184,12 +190,243 @@ pub async fn remove(conn: &mut PgConnection, plugin_id: &str) -> Result<Install,
 /// created; a second run for the same event creates none.
 pub async fn fan_out(conn: &mut PgConnection, event: &OutboxEvent) -> Result<u64, PluginsError> {
     let mut owed = 0;
+    // A change of settings is for the plugin it is about, not for everyone who subscribed to it.
+    let only = (event.kind == SETTINGS_CHANGED).then(|| {
+        event.payload["install_id"]
+            .as_str()
+            .and_then(|id| id.parse().ok())
+            .unwrap_or(Uuid::nil())
+    });
     for install_id in repo::enabled_subscribers(conn, &event.kind).await? {
+        if only.is_some_and(|only| only != install_id) {
+            continue;
+        }
         if repo::insert_delivery(conn, install_id, event.id, &event.kind, &event.payload).await? {
             owed += 1;
         }
     }
     Ok(owed)
+}
+
+// ---------------------------------------------------------------------------------------------
+// Settings (ADR-0072)
+// ---------------------------------------------------------------------------------------------
+
+/// One setting in one scope, as an administrator sees it. A secret never shows its value.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SettingView {
+    pub key: String,
+    pub spec: SettingSpec,
+    /// Whether a value was set in this scope; if not, the default applies.
+    pub is_set: bool,
+    /// The value in force. `None` for a secret whatever it is, and when there is no value and no
+    /// default.
+    pub value: Option<Value>,
+}
+
+fn scope_of(course: Option<Uuid>) -> SettingScope {
+    if course.is_some() {
+        SettingScope::Course
+    } else {
+        SettingScope::Institution
+    }
+}
+
+/// The spec of `name`, which must live in the scope that `course` implies.
+fn spec_in_scope<'a>(
+    install: &'a Install,
+    name: &str,
+    course: Option<Uuid>,
+) -> Result<&'a SettingSpec, PluginsError> {
+    let spec = install
+        .settings
+        .get(name)
+        .ok_or_else(|| PluginsError::NoSuchSetting {
+            plugin: install.plugin_id.clone(),
+            key: name.to_owned(),
+        })?;
+    if spec.scope != scope_of(course) {
+        return Err(PluginsError::WrongScope {
+            key: name.to_owned(),
+            scope: spec.scope.as_str(),
+            hint: match spec.scope {
+                SettingScope::Course => "give the course",
+                SettingScope::Institution => "it belongs to no course",
+            },
+        });
+    }
+    Ok(spec)
+}
+
+async fn stored(
+    conn: &mut PgConnection,
+    install: &Install,
+    course: Option<Uuid>,
+) -> Result<BTreeMap<String, Value>, PluginsError> {
+    Ok(repo::settings_of(conn, install.id, course)
+        .await?
+        .into_iter()
+        .map(|row| (row.key, row.value))
+        .collect())
+}
+
+fn view(key: &str, spec: &SettingSpec, stored: &BTreeMap<String, Value>) -> SettingView {
+    let value = stored.get(key);
+    SettingView {
+        key: key.to_owned(),
+        spec: spec.clone(),
+        is_set: value.is_some(),
+        value: if spec.secret {
+            None
+        } else {
+            value.or(spec.default.as_ref()).cloned()
+        },
+    }
+}
+
+/// The settings of the plugin that live in one scope: the institution's, or those of `course`.
+pub async fn list_settings(
+    conn: &mut PgConnection,
+    plugin_id: &str,
+    course: Option<Uuid>,
+) -> Result<Vec<SettingView>, PluginsError> {
+    let install = get(conn, plugin_id).await?;
+    let stored = stored(conn, &install, course).await?;
+    Ok(install
+        .settings
+        .iter()
+        .filter(|(_, spec)| spec.scope == scope_of(course))
+        .map(|(key, spec)| view(key, spec, &stored))
+        .collect())
+}
+
+pub async fn get_setting(
+    conn: &mut PgConnection,
+    plugin_id: &str,
+    name: &str,
+    course: Option<Uuid>,
+) -> Result<SettingView, PluginsError> {
+    let install = get(conn, plugin_id).await?;
+    let spec = spec_in_scope(&install, name, course)?;
+    Ok(view(name, spec, &stored(conn, &install, course).await?))
+}
+
+/// Stores a value after checking it against the spec the plugin declared, and tells the plugin
+/// (`plugin.settings.changed`) in the same transaction. A secret is stored sealed. Returns whether
+/// anything changed: the value it already has is left alone and announces nothing.
+pub async fn set_setting(
+    conn: &mut PgConnection,
+    key: &SecretKey,
+    plugin_id: &str,
+    name: &str,
+    value: Value,
+    course: Option<Uuid>,
+) -> Result<bool, PluginsError> {
+    let install = get(conn, plugin_id).await?;
+    let spec = spec_in_scope(&install, name, course)?;
+    spec.check(&value).map_err(|why| PluginsError::BadSetting {
+        key: name.to_owned(),
+        why,
+    })?;
+    let current = stored(conn, &install, course).await?.remove(name);
+    let to_store = match (spec.secret, &value) {
+        (true, Value::String(plain)) => {
+            // Compared as typed: the sealed form differs every time.
+            if let Some(Value::String(sealed)) = &current
+                && open(key, install.id, name, sealed).is_ok_and(|was| &was == plain)
+            {
+                return Ok(false);
+            }
+            Value::String(seal(key, install.id, name, plain)?)
+        }
+        _ if current.as_ref() == Some(&value) => return Ok(false),
+        _ => value,
+    };
+    repo::upsert_setting(conn, install.id, course, name, &to_store)
+        .await
+        .map_err(
+            |error| match error.as_database_error().and_then(|e| e.code()).as_deref() {
+                Some("23503") => PluginsError::CourseGone,
+                _ => PluginsError::Db(error),
+            },
+        )?;
+    changed(conn, &install, course).await?;
+    Ok(true)
+}
+
+/// Removes the value, so that the default applies again. Returns whether there was one.
+pub async fn unset_setting(
+    conn: &mut PgConnection,
+    plugin_id: &str,
+    name: &str,
+    course: Option<Uuid>,
+) -> Result<bool, PluginsError> {
+    let install = get(conn, plugin_id).await?;
+    spec_in_scope(&install, name, course)?;
+    let removed = repo::delete_setting(conn, install.id, course, name).await?;
+    if removed {
+        changed(conn, &install, course).await?;
+    }
+    Ok(removed)
+}
+
+async fn changed(
+    conn: &mut PgConnection,
+    install: &Install,
+    course: Option<Uuid>,
+) -> Result<(), PluginsError> {
+    events::emit(
+        conn,
+        Event::PluginSettingsChanged {
+            install_id: install.id,
+            course_id: course,
+        },
+    )
+    .await?;
+    Ok(())
+}
+
+/// The values the plugin reads with `settings:read`: those of the institution and, when `course` is
+/// given, those of that course (a course that is not there is `CourseGone`). A setting that has
+/// neither a value nor a default is left out. This is the one place a secret leaves the core, and
+/// it leaves it for the plugin it belongs to.
+pub async fn settings_for_plugin(
+    conn: &mut PgConnection,
+    caller: &PluginCaller,
+    key: &SecretKey,
+    course: Option<Uuid>,
+) -> Result<Map<String, Value>, PluginsError> {
+    access::authorize_plugin(caller, Scope::SettingsRead)?;
+    if let Some(course) = course
+        && !teaching::course_exists(conn, course).await?
+    {
+        return Err(PluginsError::CourseGone);
+    }
+    let install = get(conn, caller.plugin_id()).await?;
+    let mut values = Map::new();
+    for scope in [None, course] {
+        let stored = stored(conn, &install, scope).await?;
+        for (name, spec) in install
+            .settings
+            .iter()
+            .filter(|(_, spec)| spec.scope == scope_of(scope))
+        {
+            let value = match (stored.get(name), spec.secret) {
+                (Some(Value::String(sealed)), true) => {
+                    Some(Value::String(open(key, install.id, name, sealed)?))
+                }
+                (Some(value), _) => Some(value.clone()),
+                (None, _) => spec.default.clone(),
+            };
+            if let Some(value) = value {
+                values.insert(name.clone(), value);
+            }
+        }
+        if course.is_none() {
+            break;
+        }
+    }
+    Ok(values)
 }
 
 /// A page that an enabled plugin offers in a slot, with its full address.

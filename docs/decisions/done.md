@@ -13,6 +13,8 @@ Accepted and built. Short form: the full texts of ADR-0001 to ADR-0069 are in gi
 - ADR-0016 — Module layout and transactions: routes → service → repo, the handler owns the transaction.
 - ADR-0065 — Layered crates: server → plugins → modules → learning → org → auth → files → events → access → common.
 - ADR-0066 — Optional modules behind Cargo features, built on `module-api`; plugins installed and fed by events.
+- ADR-0073 — New crate `chacha20poly1305` 0.11 (RustCrypto, feature `alloc`, no default features), added to ADR-0014. Used only by `plugins::secret::{seal, open}` for secret plugin settings: XChaCha20-Poly1305, a random 24-byte nonce per seal, key = HMAC-SHA256 of `plugins.secret_key` with a purpose label, associated data = install id and setting key. The sealed blob is `0x01 || nonce || ciphertext+tag` in base64url; the first byte is the format version. Replaces the hand-made HMAC construction of ADR-0072.
+- ADR-0072 — Plugin settings. A manifest declares `settings` (a subset of JSON Schema: string, number, boolean, string with `enum`, list; `default`, `description`, `secret`, scope `institution` or `course`); an administrator sets them with `vumlo-cli plugin settings`; the core stores and validates the values per install, seals secrets with `plugins.secret_key` (XChaCha20-Poly1305, ADR-0073), shows no secret to anyone, and gives the values to the plugin at `GET /plugin-api/settings` (scope `settings:read`) and tells it by `plugin.settings.changed` (ids only, sent to that plugin alone). No web form yet.
 - ADR-0054 — Deployment: `vumlo-cli`, one config schema, build-time branding, optional modules.
 - ADR-0036 — Each test gets its own database and pool (`db_test`); the harness is the `test-support` crate.
 

@@ -2,15 +2,16 @@
 //! services that receive events and call the plugin API. Every command that changes the database
 //! writes an audit row (no actor, source `cli`) in the same transaction, and says nothing was
 //! changed, writing nothing, when it changes nothing. The token and the secret of an install are
-//! printed once, by `install`, and nowhere else.
+//! printed once, by `install`, and nowhere else. A secret setting is never printed at all.
 
 use std::io::{BufRead, Write};
 
 use access::Scope;
 use anyhow::{Context, bail};
-use plugins::{Install, InstallStatus, PluginManifest, SecretKey};
-use serde_json::json;
+use plugins::{Install, InstallStatus, PluginManifest, SecretKey, SettingScope, SettingView};
+use serde_json::{Value, json};
 use sqlx::PgPool;
+use uuid::Uuid;
 use vumlo_config::{Options, Settings};
 
 use crate::runtime;
@@ -99,6 +100,14 @@ pub async fn install(options: &Options, args: InstallArgs) -> anyhow::Result<()>
         }
     );
     println!("  asks for scopes: {}", scope_list(&manifest.scopes));
+    if !manifest.settings.is_empty() {
+        let keys: Vec<_> = manifest.settings.keys().map(String::as_str).collect();
+        println!(
+            "  declares settings: {} (see `vumlo-cli plugin settings list {}`)",
+            keys.join(", "),
+            manifest.id
+        );
+    }
     let granted = match &args.grant {
         Some(text) => parse_scopes(text)?,
         None => ask(&manifest)?,
@@ -312,5 +321,194 @@ pub async fn remove(
     .await?;
     tx.commit().await.context("cannot commit")?;
     println!("removed {plugin_id}");
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------------------------
+// Settings (ADR-0072)
+// ---------------------------------------------------------------------------------------------
+
+fn shown(value: &Value) -> String {
+    match value {
+        Value::String(text) => text.clone(),
+        other => other.to_string(),
+    }
+}
+
+/// `value`, `value (default)`, `(set)` for a secret, or `(not set)`.
+fn state(view: &SettingView) -> String {
+    match (&view.value, view.spec.secret, view.is_set) {
+        (_, true, true) => "(set)".to_owned(),
+        (Some(value), _, true) => shown(value),
+        (Some(value), _, false) => format!("{} (default)", shown(value)),
+        (None, _, _) => "(not set)".to_owned(),
+    }
+}
+
+fn kind_of(view: &SettingView) -> String {
+    let spec = &view.spec;
+    let base = match (spec.options.as_ref(), spec.kind) {
+        (Some(options), _) => format!("one of {}", options.join("|")),
+        (None, plugins::SettingKind::Array) => "list".to_owned(),
+        (None, kind) => serde_json::to_value(kind)
+            .ok()
+            .and_then(|v| v.as_str().map(str::to_owned))
+            .unwrap_or_default(),
+    };
+    if spec.secret {
+        format!("{base}, secret")
+    } else {
+        base
+    }
+}
+
+pub async fn settings_list(
+    options: &Options,
+    plugin_id: &str,
+    course: Option<Uuid>,
+) -> anyhow::Result<()> {
+    let loaded = runtime::load(options)?;
+    let pool = ready(&loaded.settings).await?;
+    let mut conn = pool.acquire().await.context("cannot reach the database")?;
+    let install = plugins::get(&mut conn, plugin_id).await?;
+    let views = plugins::list_settings(&mut conn, plugin_id, course).await?;
+    if install.settings.is_empty() {
+        println!("{plugin_id} declares no settings");
+    }
+    for view in &views {
+        println!("{:<20} {:<22} {}", view.key, kind_of(view), state(view));
+        if !view.spec.description.is_empty() {
+            println!("    {}", view.spec.description);
+        }
+    }
+    // The ones of the other scope: said, not shown.
+    let other = if course.is_some() {
+        SettingScope::Institution
+    } else {
+        SettingScope::Course
+    };
+    for key in install
+        .settings
+        .iter()
+        .filter(|(_, spec)| spec.scope == other)
+        .map(|(key, _)| key)
+    {
+        println!(
+            "{key:<20} per {}: {}",
+            other.as_str(),
+            if course.is_some() {
+                "list without --course"
+            } else {
+                "add --course <id>"
+            }
+        );
+    }
+    Ok(())
+}
+
+pub async fn settings_get(
+    options: &Options,
+    plugin_id: &str,
+    key: &str,
+    course: Option<Uuid>,
+) -> anyhow::Result<()> {
+    let loaded = runtime::load(options)?;
+    let pool = ready(&loaded.settings).await?;
+    let mut conn = pool.acquire().await.context("cannot reach the database")?;
+    let view = plugins::get_setting(&mut conn, plugin_id, key, course).await?;
+    println!("{}", state(&view));
+    Ok(())
+}
+
+/// The value as typed, or the first line of standard input when it is `-`.
+fn typed(value: &str) -> anyhow::Result<String> {
+    if value != "-" {
+        return Ok(value.to_owned());
+    }
+    let mut line = String::new();
+    std::io::stdin()
+        .lock()
+        .read_line(&mut line)
+        .context("cannot read the value")?;
+    Ok(line.trim_end_matches(['\n', '\r']).to_owned())
+}
+
+fn audit_meta(install: &Install, key: &str, course: Option<Uuid>) -> Value {
+    // Never the value: it may be a credential.
+    json!({"plugin_id": install.plugin_id, "key": key, "course_id": course})
+}
+
+pub async fn settings_set(
+    options: &Options,
+    plugin_id: &str,
+    key: &str,
+    value: &str,
+    course: Option<Uuid>,
+    dry_run: bool,
+) -> anyhow::Result<()> {
+    let loaded = runtime::load(options)?;
+    let secret_key = self::key(&loaded.settings)?;
+    let text = typed(value)?;
+    let pool = ready(&loaded.settings).await?;
+    let mut tx = pool.begin().await.context("cannot start a transaction")?;
+    let install = plugins::get(&mut tx, plugin_id).await?;
+    let view = plugins::get_setting(&mut tx, plugin_id, key, course).await?;
+    let parsed = view
+        .spec
+        .parse_text(&text)
+        .map_err(|why| anyhow::anyhow!("the value of `{key}` {why}"))?;
+    // Checked, stored and announced inside the transaction; a dry run rolls it back.
+    let changed =
+        plugins::set_setting(&mut tx, &secret_key, plugin_id, key, parsed, course).await?;
+    if !changed {
+        println!("{plugin_id} `{key}` has this value already; nothing was changed");
+        return Ok(());
+    }
+    if dry_run {
+        println!("would set `{key}` of {plugin_id}");
+        return Ok(());
+    }
+    db::insert_cli_audit(
+        &mut tx,
+        "plugin.setting.set",
+        "plugin",
+        install.id,
+        audit_meta(&install, key, course),
+    )
+    .await?;
+    tx.commit().await.context("cannot commit")?;
+    println!("set `{key}` of {plugin_id}");
+    Ok(())
+}
+
+pub async fn settings_unset(
+    options: &Options,
+    plugin_id: &str,
+    key: &str,
+    course: Option<Uuid>,
+    dry_run: bool,
+) -> anyhow::Result<()> {
+    let loaded = runtime::load(options)?;
+    let pool = ready(&loaded.settings).await?;
+    let mut tx = pool.begin().await.context("cannot start a transaction")?;
+    let install = plugins::get(&mut tx, plugin_id).await?;
+    if !plugins::unset_setting(&mut tx, plugin_id, key, course).await? {
+        println!("{plugin_id} `{key}` has no value; nothing was changed");
+        return Ok(());
+    }
+    if dry_run {
+        println!("would unset `{key}` of {plugin_id}");
+        return Ok(());
+    }
+    db::insert_cli_audit(
+        &mut tx,
+        "plugin.setting.unset",
+        "plugin",
+        install.id,
+        audit_meta(&install, key, course),
+    )
+    .await?;
+    tx.commit().await.context("cannot commit")?;
+    println!("unset `{key}` of {plugin_id}; the default applies");
     Ok(())
 }

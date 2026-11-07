@@ -116,6 +116,15 @@ pub async fn set_owner(
     .await
 }
 
+pub async fn course_exists(conn: &mut PgConnection, course_id: Uuid) -> Result<bool, sqlx::Error> {
+    sqlx::query_scalar!(
+        r#"SELECT EXISTS (SELECT 1 FROM teaching.courses WHERE id = $1) AS "exists!""#,
+        course_id
+    )
+    .fetch_one(conn)
+    .await
+}
+
 /// The course and `user_id`'s membership in it.
 pub async fn find_course(
     conn: &mut PgConnection,

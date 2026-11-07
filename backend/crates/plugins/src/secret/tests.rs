@@ -100,3 +100,81 @@ fn an_unset_key_gives_no_secret_key_and_the_key_is_never_shown() {
     assert!(SecretKey::from_config(&Secret::new("")).is_none());
     assert_eq!(format!("{:?}", key()), "SecretKey(***)");
 }
+
+#[test]
+fn a_sealed_value_opens_to_what_was_sealed_whatever_its_length() {
+    let id = Uuid::now_v7();
+    for plain in ["", "x", "token-123", &"long secret ".repeat(40)] {
+        let sealed = seal(&key(), id, "api_token", plain).unwrap();
+        assert_eq!(open(&key(), id, "api_token", &sealed).unwrap(), plain);
+        assert!(plain.len() < 8 || !sealed.contains(plain));
+    }
+}
+
+#[test]
+fn sealing_the_same_value_twice_gives_two_different_values() {
+    let id = Uuid::now_v7();
+    assert_ne!(
+        seal(&key(), id, "k", "same").unwrap(),
+        seal(&key(), id, "k", "same").unwrap()
+    );
+}
+
+fn bytes_of(sealed: &str) -> Vec<u8> {
+    URL_SAFE_NO_PAD.decode(sealed).unwrap()
+}
+
+fn text_of(bytes: &[u8]) -> String {
+    URL_SAFE_NO_PAD.encode(bytes)
+}
+
+#[test]
+fn a_sealed_value_is_a_format_byte_a_24_byte_nonce_and_a_ciphertext_with_its_tag() {
+    let sealed = bytes_of(&seal(&key(), Uuid::now_v7(), "k", "token").unwrap());
+    assert_eq!(sealed[0], 1, "the format version");
+    // version + nonce + the five bytes of the text + the 16-byte Poly1305 tag
+    assert_eq!(sealed.len(), 1 + 24 + 5 + 16);
+}
+
+#[test]
+fn a_sealed_value_opens_only_where_and_with_what_it_was_sealed() {
+    let id = Uuid::now_v7();
+    let sealed = seal(&key(), id, "api_token", "token-123").unwrap();
+    assert_eq!(open(&key(), id, "api_token", &sealed).unwrap(), "token-123");
+    // Another setting, another install, another key.
+    assert!(open(&key(), id, "other_setting", &sealed).is_err());
+    assert!(open(&key(), Uuid::now_v7(), "api_token", &sealed).is_err());
+    let other =
+        SecretKey::from_config(&Secret::new("a-different-key-of-at-least-32-chars")).unwrap();
+    assert!(open(&other, id, "api_token", &sealed).is_err());
+}
+
+#[test]
+fn a_sealed_value_that_was_changed_cut_or_never_sealed_does_not_open() {
+    let id = Uuid::now_v7();
+    let sealed = seal(&key(), id, "api_token", "token-123").unwrap();
+    let bytes = bytes_of(&sealed);
+    // One flipped bit in the nonce, the ciphertext and the tag; one in the format byte.
+    for at in [1, 1 + 24, bytes.len() - 1, 0] {
+        let mut changed = bytes.clone();
+        changed[at] ^= 1;
+        assert!(
+            open(&key(), id, "api_token", &text_of(&changed)).is_err(),
+            "byte {at}"
+        );
+    }
+    // A format this code does not know, even if everything else is right.
+    let mut future = bytes.clone();
+    future[0] = 2;
+    assert!(open(&key(), id, "api_token", &text_of(&future)).is_err());
+    // Cut short, empty, not base64, and plain text.
+    for bad in [
+        text_of(&bytes[..bytes.len() - 1]),
+        text_of(&bytes[..10]),
+        String::new(),
+        "not base64!".to_owned(),
+        "token-123".to_owned(),
+    ] {
+        assert!(open(&key(), id, "api_token", &bad).is_err(), "{bad}");
+    }
+}

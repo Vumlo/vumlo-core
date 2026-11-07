@@ -3,8 +3,9 @@
 //! An administrator installs a plugin with `vumlo-cli plugin install`: the core reads its manifest,
 //! the administrator grants scopes, and the core gives it a token and derives a secret. From then
 //! on the core sends it the events it asked for, signed (`delivery`), and it calls the plugin API
-//! with its token (`routes`), where every handler checks a scope. This crate writes only the
-//! schema `plugins`.
+//! with its token (`routes`), where every handler checks a scope. What an administrator may
+//! configure is declared in the manifest and kept per install (`settings`, ADR-0072). This crate
+//! writes only the schema `plugins`.
 
 mod delivery;
 mod error;
@@ -14,6 +15,7 @@ mod repo;
 mod routes;
 mod secret;
 mod service;
+mod settings;
 mod state;
 
 use events::{HandlerError, Handlers};
@@ -29,9 +31,11 @@ pub use model::{
 pub use routes::router;
 pub use secret::{SecretError, SecretKey, derive_secret, sign};
 pub use service::{
-    check_base_url, fan_out, fetch_manifest, get, grant, install, list, put_report, remove,
-    reports, set_status,
+    SettingView, check_base_url, fan_out, fetch_manifest, get, get_setting, grant, install, list,
+    list_settings, put_report, remove, reports, set_setting, set_status, settings_for_plugin,
+    unset_setting,
 };
+pub use settings::{ItemSpec, ScalarKind, SettingKind, SettingScope, SettingSpec};
 pub use state::PluginsState;
 
 /// The outbox handlers that owe a delivery to every enabled plugin subscribed to an event. A

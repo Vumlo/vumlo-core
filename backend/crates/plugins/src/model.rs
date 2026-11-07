@@ -1,5 +1,6 @@
 //! What the crate talks about: the manifest a plugin publishes, an install, and the token.
 
+use std::collections::BTreeMap;
 use std::fmt;
 
 use access::Scope;
@@ -11,8 +12,14 @@ use rand::Rng;
 use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
+use crate::settings::SettingSpec;
+
 /// The event types a plugin may subscribe to. Anything else in a manifest stops the install.
-pub const SUBSCRIBABLE: [&str; 2] = ["submission.submitted", "grade.published"];
+/// `plugin.settings.changed` is sent only to the plugin whose setting changed (ADR-0072).
+pub const SUBSCRIBABLE: [&str; 3] = ["submission.submitted", "grade.published", SETTINGS_CHANGED];
+
+/// The event type that says an administrator changed a setting of the plugin.
+pub const SETTINGS_CHANGED: &str = "plugin.settings.changed";
 
 /// The places in the web app a plugin may put a page (a later step of ADR-0066).
 pub const SLOTS: [&str; 1] = [ASSIGNMENT_TAB];
@@ -33,13 +40,15 @@ pub struct UiSlot {
 }
 
 /// What `GET {base}/manifest` says, checked.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct PluginManifest {
     pub id: String,
     pub version: String,
     pub subscribes: Vec<String>,
     pub scopes: Vec<Scope>,
     pub ui: Vec<UiSlot>,
+    /// What an administrator may configure, by key (checked).
+    pub settings: BTreeMap<String, SettingSpec>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -51,7 +60,7 @@ text_enum!(InstallStatus { Enabled => "enabled", Disabled => "disabled" });
 
 /// One installed plugin. Holds no token and no secret: the token is stored only as a hash, and the
 /// secret is derived when it is needed.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Install {
     pub id: Uuid,
     pub plugin_id: String,
@@ -62,13 +71,15 @@ pub struct Install {
     pub scopes: Vec<Scope>,
     /// The pages the plugin offers, as its manifest said (checked when it was installed).
     pub ui: Vec<UiSlot>,
+    /// The settings the plugin declared, as its manifest said (checked when it was installed).
+    pub settings: BTreeMap<String, SettingSpec>,
     pub secret_version: i32,
     pub status: InstallStatus,
     pub created_at: DateTime<Utc>,
 }
 
 /// An install with the state of its deliveries, for `plugin list`.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct InstallSummary {
     pub install: Install,
     pub pending: i64,

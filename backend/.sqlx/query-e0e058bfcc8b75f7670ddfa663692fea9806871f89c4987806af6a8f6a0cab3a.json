@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT id, plugin_id, version, base_url,\n                  subscribes AS \"subscribes!\", requested_scopes AS \"requested_scopes!\",\n                  scopes AS \"scopes!\", ui_slots, secret_version,\n                  status AS \"status: InstallStatus\", created_at\n           FROM plugins.plugin_installs ORDER BY plugin_id",
+  "query": "SELECT id, plugin_id, version, base_url,\n                  subscribes AS \"subscribes!\", requested_scopes AS \"requested_scopes!\",\n                  scopes AS \"scopes!\", ui_slots, settings, secret_version,\n                  status AS \"status: InstallStatus\", created_at\n           FROM plugins.plugin_installs ORDER BY plugin_id",
   "describe": {
     "columns": [
       {
@@ -93,6 +93,17 @@
       },
       {
         "ordinal": 8,
+        "name": "settings",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "plugins.plugin_installs",
+            "name": "settings"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
         "name": "secret_version",
         "type_info": "Int4",
         "origin": {
@@ -103,7 +114,7 @@
         }
       },
       {
-        "ordinal": 9,
+        "ordinal": 10,
         "name": "status: InstallStatus",
         "type_info": "Text",
         "origin": {
@@ -114,7 +125,7 @@
         }
       },
       {
-        "ordinal": 10,
+        "ordinal": 11,
         "name": "created_at",
         "type_info": "Timestamptz",
         "origin": {
@@ -139,8 +150,9 @@
       false,
       false,
       false,
+      false,
       false
     ]
   },
-  "hash": "4514410e76c1b2d801ad438acf3003b8a11b234b2d263abb65503ead9461babe"
+  "hash": "e0e058bfcc8b75f7670ddfa663692fea9806871f89c4987806af6a8f6a0cab3a"
 }

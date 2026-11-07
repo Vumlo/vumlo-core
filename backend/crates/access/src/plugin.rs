@@ -18,11 +18,21 @@ pub enum Scope {
     SubmissionsRead,
     /// Store the plugin's own report about a submitted attempt.
     ReportsWrite,
+    /// Read the plugin's own settings, secrets included (ADR-0072).
+    SettingsRead,
 }
-text_enum!(Scope { SubmissionsRead => "submissions:read", ReportsWrite => "reports:write" });
+text_enum!(Scope {
+    SubmissionsRead => "submissions:read",
+    ReportsWrite => "reports:write",
+    SettingsRead => "settings:read",
+});
 
 impl Scope {
-    pub const ALL: [Scope; 2] = [Scope::SubmissionsRead, Scope::ReportsWrite];
+    pub const ALL: [Scope; 3] = [
+        Scope::SubmissionsRead,
+        Scope::ReportsWrite,
+        Scope::SettingsRead,
+    ];
 }
 
 /// An installed, enabled plugin whose token the request carried, with the scopes it was granted.

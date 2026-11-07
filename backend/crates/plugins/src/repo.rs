@@ -7,6 +7,7 @@ use sqlx::PgConnection;
 use uuid::Uuid;
 
 use crate::model::{Install, InstallStatus, UiSlot};
+use crate::settings::SettingSpec;
 
 /// The columns of `plugin_installs`, as the database holds them.
 struct InstallRow {
@@ -18,6 +19,7 @@ struct InstallRow {
     requested_scopes: Vec<String>,
     scopes: Vec<String>,
     ui_slots: serde_json::Value,
+    settings: serde_json::Value,
     secret_version: i32,
     status: InstallStatus,
     created_at: DateTime<Utc>,
@@ -58,6 +60,8 @@ impl From<InstallRow> for Install {
             requested_scopes: scopes_of(&row.requested_scopes),
             scopes: scopes_of(&row.scopes),
             ui: ui_of(&row.ui_slots),
+            // Checked when the plugin was installed; one that does not read back declares nothing.
+            settings: serde_json::from_value(row.settings).unwrap_or_default(),
             secret_version: row.secret_version,
             status: row.status,
             created_at: row.created_at,
@@ -85,6 +89,7 @@ pub struct NewInstall<'a> {
     pub requested_scopes: &'a [String],
     pub scopes: &'a [String],
     pub ui_slots: serde_json::Value,
+    pub settings: &'a std::collections::BTreeMap<String, SettingSpec>,
     pub token_hash: &'a [u8],
 }
 
@@ -95,8 +100,8 @@ pub async fn insert_install(
     sqlx::query!(
         "INSERT INTO plugins.plugin_installs
              (id, plugin_id, version, base_url, api, subscribes, requested_scopes, scopes,
-              ui_slots, token_hash)
-         VALUES ($1, $2, $3, $4, '1', $5, $6, $7, $8, $9)",
+              ui_slots, settings, token_hash)
+         VALUES ($1, $2, $3, $4, '1', $5, $6, $7, $8, $9, $10)",
         new.id,
         new.plugin_id,
         new.version,
@@ -105,6 +110,7 @@ pub async fn insert_install(
         new.requested_scopes,
         new.scopes,
         new.ui_slots,
+        serde_json::to_value(new.settings).unwrap_or_default(),
         new.token_hash
     )
     .execute(conn)
@@ -120,7 +126,7 @@ pub async fn find_install(
         InstallRow,
         r#"SELECT id, plugin_id, version, base_url,
                   subscribes AS "subscribes!", requested_scopes AS "requested_scopes!",
-                  scopes AS "scopes!", ui_slots, secret_version,
+                  scopes AS "scopes!", ui_slots, settings, secret_version,
                   status AS "status: InstallStatus", created_at
            FROM plugins.plugin_installs WHERE plugin_id = $1"#,
         plugin_id
@@ -135,7 +141,7 @@ pub async fn list_installs(conn: &mut PgConnection) -> Result<Vec<Install>, sqlx
         InstallRow,
         r#"SELECT id, plugin_id, version, base_url,
                   subscribes AS "subscribes!", requested_scopes AS "requested_scopes!",
-                  scopes AS "scopes!", ui_slots, secret_version,
+                  scopes AS "scopes!", ui_slots, settings, secret_version,
                   status AS "status: InstallStatus", created_at
            FROM plugins.plugin_installs ORDER BY plugin_id"#
     )
@@ -398,4 +404,79 @@ pub async fn reports_of(
     )
     .fetch_all(conn)
     .await
+}
+
+// ---------------------------------------------------------------------------------------------
+// Settings
+// ---------------------------------------------------------------------------------------------
+
+/// The nil uuid stands for "no course" in the unique index of `plugins.settings`.
+const NO_COURSE: Uuid = Uuid::nil();
+
+/// A stored value of one setting. For a secret it is the sealed string.
+pub struct StoredSetting {
+    pub key: String,
+    pub value: serde_json::Value,
+}
+
+/// The values stored for the install in one scope: the whole institution (`course_id` is `None`) or
+/// one course.
+pub async fn settings_of(
+    conn: &mut PgConnection,
+    install_id: Uuid,
+    course_id: Option<Uuid>,
+) -> Result<Vec<StoredSetting>, sqlx::Error> {
+    sqlx::query_as!(
+        StoredSetting,
+        "SELECT key, value FROM plugins.settings
+         WHERE install_id = $1 AND COALESCE(course_id, $3) = COALESCE($2, $3)
+         ORDER BY key",
+        install_id,
+        course_id,
+        NO_COURSE
+    )
+    .fetch_all(conn)
+    .await
+}
+
+pub async fn upsert_setting(
+    conn: &mut PgConnection,
+    install_id: Uuid,
+    course_id: Option<Uuid>,
+    key: &str,
+    value: &serde_json::Value,
+) -> Result<(), sqlx::Error> {
+    sqlx::query!(
+        "INSERT INTO plugins.settings (install_id, course_id, key, value)
+         VALUES ($1, $2, $3, $4)
+         ON CONFLICT (install_id, key, (COALESCE(course_id, '00000000-0000-0000-0000-000000000000')))
+         DO UPDATE SET value = $4, updated_at = now()",
+        install_id,
+        course_id,
+        key,
+        value
+    )
+    .execute(conn)
+    .await?;
+    Ok(())
+}
+
+/// Whether a value was there to delete.
+pub async fn delete_setting(
+    conn: &mut PgConnection,
+    install_id: Uuid,
+    course_id: Option<Uuid>,
+    key: &str,
+) -> Result<bool, sqlx::Error> {
+    let done = sqlx::query!(
+        "DELETE FROM plugins.settings
+         WHERE install_id = $1 AND key = $3 AND COALESCE(course_id, $4) = COALESCE($2, $4)",
+        install_id,
+        course_id,
+        key,
+        NO_COURSE
+    )
+    .execute(conn)
+    .await?;
+    Ok(done.rows_affected() == 1)
 }
