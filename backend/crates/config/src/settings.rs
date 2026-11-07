@@ -265,14 +265,31 @@ fn default_google_issuer() -> String {
 
 /// The `[plugins]` section (ADR-0066). The webhook secret of every plugin is derived from this key,
 /// the id of its install and its secret version, so nothing about it is stored.
-#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
+#[serde(default, deny_unknown_fields)]
 pub struct PluginsSettings {
     /// Secret: `VUMLO__PLUGINS__SECRET_KEY`, at least 32 characters. Empty means "not set": no
     /// plugin can be installed and no event is sent to one. Changing it changes every plugin's
     /// secret, so each plugin has to be given the new one.
-    #[serde(default)]
     pub secret_key: Secret,
+    /// Calls one plugin token may make to the plugin API in a burst (ADR-0079). Every token has an
+    /// allowance of its own.
+    pub api_burst: u32,
+    /// Calls per second one plugin token gets back after a burst.
+    pub api_requests_per_second: u32,
+    /// Days the log of a plugin's calls is kept (`vumlo-cli plugin calls`).
+    pub call_log_days: u32,
+}
+
+impl Default for PluginsSettings {
+    fn default() -> Self {
+        Self {
+            secret_key: Secret::default(),
+            api_burst: 100,
+            api_requests_per_second: 20,
+            call_log_days: 30,
+        }
+    }
 }
 
 /// The shortest `plugins.secret_key` accepted. Generate one with `openssl rand -base64 32`.

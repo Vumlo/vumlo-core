@@ -57,6 +57,10 @@ impl PluginSource for PluginsState {
     /// token itself is never compared in a way that could leak it. Unknown, malformed, missing and
     /// disabled all give the same `401`.
     async fn authenticate_plugin(&self, parts: &Parts) -> Result<AuthenticatedPlugin, ApiError> {
+        // The guard in front of the plugin API (`routes::guard`) has looked the token up already.
+        if let Some(found) = parts.extensions.get::<AuthenticatedPlugin>() {
+            return Ok(found.clone());
+        }
         let denied = ApiError::Unauthorized("invalid or missing plugin token");
         let token = bearer(parts)
             .and_then(PluginToken::from_presented)

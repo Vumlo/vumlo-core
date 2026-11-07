@@ -288,6 +288,57 @@ pub async fn set_scopes(
     Ok(())
 }
 
+/// Replaces the credential: the old token stops working in the same statement.
+pub async fn set_token_hash(
+    conn: &mut PgConnection,
+    id: Uuid,
+    token_hash: &[u8],
+) -> Result<(), sqlx::Error> {
+    sqlx::query!(
+        "UPDATE plugins.plugin_installs SET token_hash = $2, updated_at = now() WHERE id = $1",
+        id,
+        token_hash
+    )
+    .execute(conn)
+    .await?;
+    Ok(())
+}
+
+/// What a new manifest changes about an install; the token, the secret and the courses stay.
+pub struct ManifestUpdate<'a> {
+    pub version: &'a str,
+    pub subscribes: &'a [String],
+    pub requested_scopes: &'a [String],
+    pub scopes: &'a [String],
+    pub ui_slots: serde_json::Value,
+    pub routes: serde_json::Value,
+    pub settings: &'a std::collections::BTreeMap<String, SettingSpec>,
+}
+
+pub async fn update_manifest(
+    conn: &mut PgConnection,
+    id: Uuid,
+    new: ManifestUpdate<'_>,
+) -> Result<(), sqlx::Error> {
+    sqlx::query!(
+        "UPDATE plugins.plugin_installs
+         SET version = $2, subscribes = $3, requested_scopes = $4, scopes = $5, ui_slots = $6,
+             routes = $7, settings = $8, updated_at = now()
+         WHERE id = $1",
+        id,
+        new.version,
+        new.subscribes,
+        new.requested_scopes,
+        new.scopes,
+        new.ui_slots,
+        new.routes,
+        serde_json::to_value(new.settings).unwrap_or_default()
+    )
+    .execute(conn)
+    .await?;
+    Ok(())
+}
+
 pub async fn set_status(
     conn: &mut PgConnection,
     id: Uuid,
@@ -643,6 +694,24 @@ pub async fn upsert_setting(
     Ok(())
 }
 
+/// Every stored value of the install, in every scope: `(course, key, value)`.
+pub async fn all_settings(
+    conn: &mut PgConnection,
+    install_id: Uuid,
+) -> Result<Vec<(Option<Uuid>, String, serde_json::Value)>, sqlx::Error> {
+    let rows = sqlx::query!(
+        "SELECT course_id, key, value FROM plugins.settings WHERE install_id = $1
+         ORDER BY key, course_id NULLS FIRST",
+        install_id
+    )
+    .fetch_all(conn)
+    .await?;
+    Ok(rows
+        .into_iter()
+        .map(|row| (row.course_id, row.key, row.value))
+        .collect())
+}
+
 /// Whether a value was there to delete.
 pub async fn delete_setting(
     conn: &mut PgConnection,
@@ -661,4 +730,96 @@ pub async fn delete_setting(
     .execute(conn)
     .await?;
     Ok(done.rows_affected() == 1)
+}
+
+// ---------------------------------------------------------------------------------------------
+// The log of plugin API calls (ADR-0079)
+// ---------------------------------------------------------------------------------------------
+
+pub async fn insert_call(
+    conn: &mut PgConnection,
+    install_id: Uuid,
+    method: &str,
+    route: &str,
+    status: i16,
+    duration_ms: i32,
+) -> Result<(), sqlx::Error> {
+    sqlx::query!(
+        "INSERT INTO plugins.api_calls (id, install_id, method, route, status, duration_ms)
+         VALUES ($1, $2, $3, $4, $5, $6)",
+        Uuid::now_v7(),
+        install_id,
+        method,
+        route,
+        status,
+        duration_ms
+    )
+    .execute(conn)
+    .await?;
+    Ok(())
+}
+
+pub struct CallRow {
+    pub at: DateTime<Utc>,
+    pub method: String,
+    pub route: String,
+    pub status: i16,
+    pub duration_ms: i32,
+}
+
+/// The newest calls of the install since `since`, newest first.
+pub async fn recent_calls(
+    conn: &mut PgConnection,
+    install_id: Uuid,
+    since: DateTime<Utc>,
+    limit: i64,
+) -> Result<Vec<CallRow>, sqlx::Error> {
+    sqlx::query_as!(
+        CallRow,
+        "SELECT at, method, route, status, duration_ms FROM plugins.api_calls
+         WHERE install_id = $1 AND at >= $2 ORDER BY at DESC, id DESC LIMIT $3",
+        install_id,
+        since,
+        limit
+    )
+    .fetch_all(conn)
+    .await
+}
+
+/// How many calls the install made since `since`, by route and answer.
+pub struct CallCount {
+    pub method: String,
+    pub route: String,
+    pub status: i16,
+    pub calls: i64,
+    pub average_ms: i64,
+}
+
+pub async fn call_counts(
+    conn: &mut PgConnection,
+    install_id: Uuid,
+    since: DateTime<Utc>,
+) -> Result<Vec<CallCount>, sqlx::Error> {
+    sqlx::query_as!(
+        CallCount,
+        r#"SELECT method, route, status, count(*) AS "calls!",
+                  COALESCE(avg(duration_ms), 0)::bigint AS "average_ms!"
+           FROM plugins.api_calls WHERE install_id = $1 AND at >= $2
+           GROUP BY method, route, status ORDER BY route, method, status"#,
+        install_id,
+        since
+    )
+    .fetch_all(conn)
+    .await
+}
+
+/// Deletes the lines older than `days`. Returns how many.
+pub async fn prune_calls(conn: &mut PgConnection, days: i32) -> Result<u64, sqlx::Error> {
+    let done = sqlx::query!(
+        "DELETE FROM plugins.api_calls WHERE at < now() - make_interval(days => $1)",
+        days
+    )
+    .execute(conn)
+    .await?;
+    Ok(done.rows_affected())
 }

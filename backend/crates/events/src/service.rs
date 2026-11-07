@@ -2,6 +2,7 @@ use std::time::Duration;
 
 use common::ApiError;
 use sqlx::{PgConnection, PgPool};
+use uuid::Uuid;
 
 use super::model::{AuditEntry, Event, Handlers};
 use super::repo;
@@ -41,6 +42,23 @@ pub async fn audit(
 /// (ADR-0034). Same transaction rule as [`audit`].
 pub async fn audit_cli(conn: &mut PgConnection, entry: AuditEntry) -> Result<(), EventsError> {
     repo::insert_audit(conn, None, "cli", &entry).await?;
+    Ok(())
+}
+
+/// Records something a plugin changed through the plugin API (ADR-0079): no actor, the source
+/// `plugin`, and the plugin named in `meta` (`plugin_id`, `install_id`). The entry's own `meta` must
+/// be an object; it holds ids and keys, never content. Same transaction rule as [`audit`].
+pub async fn audit_plugin(
+    conn: &mut PgConnection,
+    install_id: Uuid,
+    plugin_id: &str,
+    mut entry: AuditEntry,
+) -> Result<(), EventsError> {
+    if let Some(meta) = entry.meta.as_object_mut() {
+        meta.insert("plugin_id".to_owned(), plugin_id.into());
+        meta.insert("install_id".to_owned(), install_id.to_string().into());
+    }
+    repo::insert_audit(conn, None, "plugin", &entry).await?;
     Ok(())
 }
 

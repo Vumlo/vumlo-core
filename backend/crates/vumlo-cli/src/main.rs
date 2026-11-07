@@ -152,6 +152,35 @@ enum PluginCommand {
         #[arg(long)]
         dry_run: bool,
     },
+    /// Read the plugin's manifest again and take what changed: its version, the events it asks for,
+    /// its settings, routes and pages. Only a scope it did not ask for before needs approving; a
+    /// grant it no longer asks for goes. The token, the secret and the courses stay.
+    Upgrade {
+        plugin_id: String,
+        /// The new scopes to grant, comma-separated, or `none`. Without it each is asked for.
+        #[arg(long, value_name = "SCOPES")]
+        grant: Option<String>,
+        /// Say what would change, change nothing.
+        #[arg(long)]
+        dry_run: bool,
+    },
+    /// Give a plugin a new token. The old one stops working at once; the new one is printed, once.
+    RotateToken {
+        plugin_id: String,
+        /// Say what would happen, do nothing.
+        #[arg(long)]
+        dry_run: bool,
+    },
+    /// What a plugin has called on the plugin API: counts by route and answer, and the newest calls.
+    Calls {
+        plugin_id: String,
+        /// How far back to look.
+        #[arg(long, default_value_t = 24)]
+        hours: u32,
+        /// How many of the newest calls to list.
+        #[arg(long, default_value_t = 20)]
+        limit: u32,
+    },
     /// Stop sending events to a plugin and refuse its token. Nothing is deleted.
     Disable {
         plugin_id: String,
@@ -338,6 +367,19 @@ async fn run(cli: Cli) -> anyhow::Result<bool> {
                 plugin_cmd::grant(&options, &plugin_id, &scopes, courses.as_deref(), dry_run)
                     .await?
             }
+            PluginCommand::Upgrade {
+                plugin_id,
+                grant,
+                dry_run,
+            } => plugin_cmd::upgrade(&options, &plugin_id, grant.as_deref(), dry_run).await?,
+            PluginCommand::RotateToken { plugin_id, dry_run } => {
+                plugin_cmd::rotate_token(&options, &plugin_id, dry_run).await?
+            }
+            PluginCommand::Calls {
+                plugin_id,
+                hours,
+                limit,
+            } => plugin_cmd::calls(&options, &plugin_id, hours, limit).await?,
             PluginCommand::Disable { plugin_id, dry_run } => {
                 plugin_cmd::set_status(
                     &options,

@@ -49,6 +49,9 @@ pub enum PluginsError {
     /// The plugin already keeps as many reports on the subject as it may.
     #[error("a plugin may keep at most {0} reports on one subject")]
     TooManyReports(i64),
+    /// The configured allowance of calls per token is not one the limiter can use.
+    #[error("the plugin API rate limit is not a valid quota")]
+    RateLimit,
     #[error(transparent)]
     Forbidden(#[from] AccessError),
     #[error(transparent)]

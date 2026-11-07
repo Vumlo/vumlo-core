@@ -19,6 +19,7 @@ const BATCH: i64 = 20;
 /// A delivery whose worker died comes back after this.
 const LEASE: Duration = Duration::from_secs(5 * 60);
 const POLL: Duration = Duration::from_secs(2);
+const PRUNE_EVERY: Duration = Duration::from_secs(60 * 60);
 const CONNECT: Duration = Duration::from_secs(3);
 /// A plugin must answer 2xx quickly and work afterwards.
 const TOTAL: Duration = Duration::from_secs(5);
@@ -29,13 +30,27 @@ const MAX_ERROR_CHARS: usize = 500;
 pub struct Deliverer {
     key: SecretKey,
     client: OutboundClient,
+    /// Days the log of plugin API calls is kept (ADR-0079).
+    log_days: u32,
 }
 
 impl Deliverer {
-    pub fn new(key: SecretKey) -> Result<Self, PluginsError> {
+    pub fn new(key: SecretKey, log_days: u32) -> Result<Self, PluginsError> {
         let client = OutboundClient::new(CONNECT, TOTAL, MAX_RESPONSE_BYTES, 0)
             .map_err(|e| PluginsError::Fetch(e.to_string()))?;
-        Ok(Self { key, client })
+        Ok(Self {
+            key,
+            client,
+            log_days,
+        })
+    }
+
+    /// Deletes the log lines older than the retention. There is no scheduler yet (ADR-0007), so the
+    /// worker that already wakes every few seconds does it, about once an hour.
+    pub async fn prune(&self, pool: &PgPool) -> Result<u64, PluginsError> {
+        let mut conn = pool.acquire().await?;
+        let days = i32::try_from(self.log_days).unwrap_or(i32::MAX);
+        Ok(repo::prune_calls(&mut conn, days).await?)
     }
 
     /// Claims one batch and sends each delivery. A 2xx answer is delivered; anything else, and a
@@ -113,7 +128,16 @@ impl Deliverer {
 
     /// Delivers until the process ends.
     pub async fn run(self, pool: PgPool) {
+        let mut last_prune: Option<std::time::Instant> = None;
         loop {
+            if last_prune.is_none_or(|at| at.elapsed() >= PRUNE_EVERY) {
+                last_prune = Some(std::time::Instant::now());
+                match self.prune(&pool).await {
+                    Ok(0) => {}
+                    Ok(n) => tracing::info!(lines = n, "old plugin API calls were deleted"),
+                    Err(error) => tracing::error!(%error, "the plugin call log was not pruned"),
+                }
+            }
             match self.once(&pool).await {
                 Ok(n) if n as i64 >= BATCH => continue,
                 Ok(_) => {}

@@ -137,3 +137,10 @@ video_providers = ["youtube", "vimeo"]
 # headings, text_styles, links, lists, quote, divider, table, code, math, mermaid, video, image, file.
 # [editor.profiles.student]
 # features = ["text_styles", "links", "lists", "code", "math"]
+
+[plugins]
+# secret_key comes from VUMLO__PLUGINS__SECRET_KEY (32 characters or more), never from this file.
+# What one plugin token may do to the plugin API (ADR-0079). Every token has an allowance of its own.
+api_burst = 100                # calls in a burst (1..=100000)
+api_requests_per_second = 20   # calls given back per second (1..=10000)
+call_log_days = 30             # days `vumlo-cli plugin calls` can look back (1..=3650)

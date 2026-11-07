@@ -209,7 +209,7 @@ impl AppState {
         self.plugins
             .key
             .as_deref()
-            .map(|key| plugins::Deliverer::new(key.clone()))
+            .map(|key| plugins::Deliverer::new(key.clone(), self.config.plugins.call_log_days))
             .transpose()
     }
 }
@@ -279,7 +279,10 @@ pub fn router(state: AppState) -> Result<Router, SetupError> {
                 .merge(assessment::router())
                 .merge(org::router())
                 .merge(learning::audit::router())
-                .merge(plugins::router()),
+                .merge(
+                    plugins::router(&state.plugins, &state.config)
+                        .map_err(|_| SetupError::RateLimit)?,
+                ),
         )
         .split_for_parts();
     let (router, mut openapi) = mount_modules(&state, router, openapi);

@@ -27,6 +27,7 @@ thiserror.workspace = true
 tokio.workspace = true
 tracing.workspace = true
 utoipa.workspace = true
+tower_governor.workspace = true
 utoipa-axum.workspace = true
 uuid.workspace = true
 vumlo-config.workspace = true

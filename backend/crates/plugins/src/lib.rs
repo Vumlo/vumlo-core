@@ -18,6 +18,7 @@ mod secret;
 mod service;
 mod settings;
 mod state;
+mod upgrade;
 
 use events::{HandlerError, Handlers};
 use sqlx::PgPool;
@@ -32,15 +33,18 @@ pub use model::{
 pub use proxy::{
     MAX_REQUEST_BYTES as PROXY_MAX_REQUEST_BYTES, openapi as proxy_openapi, router as proxy_router,
 };
+pub use repo::{CallCount, CallRow};
 pub use routes::router;
 pub use secret::{ProxyClaims, SecretError, SecretKey, derive_secret, proxy_signature, sign};
 pub use service::{
-    SettingView, assignment_reports, check_base_url, course_reports, delete_report, fan_out,
-    fetch_manifest, get, get_setting, grant, install, list, list_settings, put_report, remove,
-    reports, set_setting, set_status, settings_for_plugin, unset_setting,
+    CallReport, SettingView, assignment_reports, calls, check_base_url, course_reports,
+    delete_report, fan_out, fetch_manifest, get, get_setting, grant, install, list, list_settings,
+    put_report, remove, reports, rotate_token, set_setting, set_status, settings_for_plugin,
+    unset_setting,
 };
 pub use settings::{ItemSpec, ScalarKind, SettingKind, SettingScope, SettingSpec};
 pub use state::PluginsState;
+pub use upgrade::{DroppedValue, UpgradePlan, Upgraded, apply as upgrade, plan as plan_upgrade};
 
 /// The outbox handlers that owe a delivery to every enabled plugin subscribed to an event. A
 /// delivery is unique per plugin and event, so an event handled twice owes once.

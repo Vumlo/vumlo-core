@@ -119,9 +119,13 @@ fn parse_scopes(text: &str) -> anyhow::Result<Vec<Scope>> {
 
 /// Asks, for each scope the plugin requested, whether to grant it.
 fn ask(manifest: &PluginManifest) -> anyhow::Result<Vec<Scope>> {
+    ask_scopes(&manifest.scopes)
+}
+
+fn ask_scopes(scopes: &[Scope]) -> anyhow::Result<Vec<Scope>> {
     let mut granted = Vec::new();
     let stdin = std::io::stdin();
-    for scope in &manifest.scopes {
+    for scope in scopes {
         print!("grant `{}`? [y/N] ", scope.as_str());
         std::io::stdout()
             .flush()
@@ -328,6 +332,209 @@ pub async fn grant(
         scope_list(&after.scopes),
         courses_text(&after.courses)
     );
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------------------------
+// Upgrade, token, calls (ADR-0079)
+// ---------------------------------------------------------------------------------------------
+
+fn list_line(label: &str, items: &[String]) {
+    if !items.is_empty() {
+        println!("  {label}: {}", items.join(", "));
+    }
+}
+
+fn print_plan(plan: &plugins::UpgradePlan) {
+    println!("  version: {} -> {}", plan.from_version, plan.to_version);
+    list_line(
+        "asks for new scopes",
+        &plan
+            .scopes_new
+            .iter()
+            .map(|s| s.as_str().to_owned())
+            .collect::<Vec<_>>(),
+    );
+    list_line(
+        "no longer asks for",
+        &plan
+            .scopes_dropped
+            .iter()
+            .map(|s| s.as_str().to_owned())
+            .collect::<Vec<_>>(),
+    );
+    list_line("subscribes to now", &plan.subscribes_added);
+    list_line("no longer subscribes to", &plan.subscribes_removed);
+    list_line("new settings", &plan.settings_added);
+    list_line("settings changed", &plan.settings_changed);
+    list_line("settings gone", &plan.settings_removed);
+    list_line("new routes", &plan.routes_added);
+    list_line("routes changed", &plan.routes_changed);
+    list_line("routes gone", &plan.routes_removed);
+    if plan.pages_changed {
+        println!("  its pages in the web app changed");
+    }
+}
+
+fn scope_strings(scopes: &[Scope]) -> Vec<&'static str> {
+    scopes.iter().map(|s| s.as_str()).collect()
+}
+
+/// Reads the manifest of an installed plugin again and takes what changed. Only the scopes it did
+/// not ask for before are asked about; `--grant` answers for all of them.
+pub async fn upgrade(
+    options: &Options,
+    plugin_id: &str,
+    grant: Option<&str>,
+    dry_run: bool,
+) -> anyhow::Result<()> {
+    let loaded = runtime::load(options)?;
+    let pool = ready(&loaded.settings).await?;
+    let installed = {
+        let mut conn = pool.acquire().await.context("cannot reach the database")?;
+        plugins::get(&mut conn, plugin_id).await?
+    };
+    // The plugin answers from where it is installed; no transaction is open while it does.
+    let manifest = plugins::fetch_manifest(&installed.base_url).await?;
+    if manifest.id != installed.plugin_id {
+        bail!(
+            "the plugin at {} is `{}`, not `{plugin_id}`: nothing was changed",
+            installed.base_url,
+            manifest.id
+        );
+    }
+    let plan = plugins::plan_upgrade(&installed, &manifest);
+    if plan.is_empty() {
+        println!(
+            "{plugin_id} {} says what it said: nothing was changed",
+            plan.to_version
+        );
+        return Ok(());
+    }
+    println!("{plugin_id} changed:");
+    print_plan(&plan);
+    let approved = match grant {
+        Some(text) => parse_scopes(text)?,
+        None if dry_run => Vec::new(),
+        None => ask_scopes(&plan.scopes_new)?,
+    };
+    if let Some(extra) = approved.iter().find(|s| !plan.scopes_new.contains(s)) {
+        bail!(
+            "`{}` cannot be granted here: {plugin_id} did not newly ask for it (the new ones are: {})",
+            extra.as_str(),
+            scope_list(&plan.scopes_new)
+        );
+    }
+    if dry_run {
+        println!("(dry run: nothing was changed)");
+        return Ok(());
+    }
+    let mut tx = pool.begin().await.context("cannot start a transaction")?;
+    let done = plugins::upgrade(&mut tx, plugin_id, &manifest, &approved).await?;
+    db::insert_cli_audit(
+        &mut tx,
+        "plugin.upgrade",
+        "plugin",
+        done.after.id,
+        json!({
+            "plugin_id": done.after.plugin_id,
+            "from": done.plan.from_version,
+            "to": done.plan.to_version,
+            "scopes_new": scope_strings(&done.plan.scopes_new),
+            "scopes_granted": scope_strings(&approved),
+            "scopes_dropped": scope_strings(&done.plan.scopes_dropped),
+            "settings_values_dropped": done.dropped.iter().map(|d| json!({"key": d.key, "course_id": d.course})).collect::<Vec<_>>(),
+        }),
+    )
+    .await?;
+    tx.commit().await.context("cannot commit")?;
+    println!(
+        "{plugin_id} is now {}; scopes: {}",
+        done.after.version,
+        scope_list(&done.after.scopes)
+    );
+    let held_back: Vec<_> = plan
+        .scopes_new
+        .iter()
+        .filter(|s| !approved.contains(s))
+        .map(|s| s.as_str())
+        .collect();
+    if !held_back.is_empty() {
+        println!("not granted (it asks for them): {}", held_back.join(", "));
+    }
+    for value in &done.dropped {
+        println!(
+            "removed the value of `{}`{}: {}",
+            value.key,
+            value
+                .course
+                .map_or(String::new(), |c| format!(" for course {c}")),
+            value.why
+        );
+    }
+    Ok(())
+}
+
+/// Gives the plugin a new token; the old one stops working at once.
+pub async fn rotate_token(options: &Options, plugin_id: &str, dry_run: bool) -> anyhow::Result<()> {
+    let loaded = runtime::load(options)?;
+    let pool = ready(&loaded.settings).await?;
+    let mut tx = pool.begin().await.context("cannot start a transaction")?;
+    let before = plugins::get(&mut tx, plugin_id).await?;
+    if dry_run {
+        println!("would give {plugin_id} a new token; its current one would stop working at once");
+        return Ok(());
+    }
+    let token = plugins::rotate_token(&mut tx, plugin_id).await?;
+    db::insert_cli_audit(
+        &mut tx,
+        "plugin.rotate_token",
+        "plugin",
+        before.id,
+        json!({"plugin_id": before.plugin_id}),
+    )
+    .await?;
+    tx.commit().await.context("cannot commit")?;
+    println!("{plugin_id} has a new token; the old one no longer works.");
+    println!("It is shown once. Give it to the plugin, for example as an environment variable:");
+    println!("  VUMLO_PLUGIN_TOKEN={}", token.expose());
+    Ok(())
+}
+
+/// What the plugin has called on the plugin API.
+pub async fn calls(
+    options: &Options,
+    plugin_id: &str,
+    hours: u32,
+    limit: u32,
+) -> anyhow::Result<()> {
+    let loaded = runtime::load(options)?;
+    let pool = ready(&loaded.settings).await?;
+    let mut conn = pool.acquire().await.context("cannot reach the database")?;
+    let since = chrono::Utc::now() - chrono::TimeDelta::hours(i64::from(hours));
+    let report = plugins::calls(&mut conn, plugin_id, since, i64::from(limit)).await?;
+    if report.counts.is_empty() {
+        println!("{plugin_id} made no call in the last {hours} hour(s)");
+        return Ok(());
+    }
+    println!("{plugin_id}, the last {hours} hour(s):");
+    for count in &report.counts {
+        println!(
+            "  {:>6} x {:<6} {} -> {} (about {} ms)",
+            count.calls, count.method, count.route, count.status, count.average_ms
+        );
+    }
+    println!("newest first:");
+    for call in &report.recent {
+        println!(
+            "  {} {:<6} {} -> {} ({} ms)",
+            call.at.to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
+            call.method,
+            call.route,
+            call.status,
+            call.duration_ms
+        );
+    }
     Ok(())
 }
 

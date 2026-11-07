@@ -1005,3 +1005,46 @@ fn an_env_file_has_pairs_comments_quotes_and_export() {
         ]
     );
 }
+
+#[test]
+fn the_plugin_api_allowance_and_the_call_log_have_defaults_and_bounds() {
+    let defaults = build(VALID, &[]).unwrap().plugins;
+    assert_eq!(
+        (
+            defaults.api_burst,
+            defaults.api_requests_per_second,
+            defaults.call_log_days
+        ),
+        (100, 20, 30)
+    );
+    let toml = format!(
+        "{VALID}\n[plugins]\napi_burst = 7\napi_requests_per_second = 2\ncall_log_days = 3\n"
+    );
+    let set = build(&toml, &[]).unwrap().plugins;
+    assert_eq!(
+        (
+            set.api_burst,
+            set.api_requests_per_second,
+            set.call_log_days
+        ),
+        (7, 2, 3)
+    );
+    for (line, key) in [
+        ("api_burst = 0", "plugins.api_burst"),
+        (
+            "api_requests_per_second = 0",
+            "plugins.api_requests_per_second",
+        ),
+        (
+            "api_requests_per_second = 20000",
+            "plugins.api_requests_per_second",
+        ),
+        ("call_log_days = 0", "plugins.call_log_days"),
+        ("call_log_days = 4000", "plugins.call_log_days"),
+    ] {
+        let e = build(&format!("{VALID}\n[plugins]\n{line}\n"), &[])
+            .unwrap_err()
+            .to_string();
+        assert!(e.contains(key), "{line}: {e}");
+    }
+}

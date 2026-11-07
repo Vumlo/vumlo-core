@@ -85,11 +85,6 @@ pub async fn install(
     let granted = unique(granted);
     let id = Uuid::now_v7();
     let token = PluginToken::generate();
-    let ui: Vec<Value> = manifest
-        .ui
-        .iter()
-        .map(|s| json!({"slot": s.slot, "title": s.title, "path": s.path}))
-        .collect();
     let inserted = repo::insert_install(
         conn,
         NewInstall {
@@ -101,7 +96,7 @@ pub async fn install(
             requested_scopes: &scope_names(&manifest.scopes),
             scopes: &scope_names(&granted),
             courses,
-            ui_slots: Value::Array(ui),
+            ui_slots: ui_json(&manifest.ui),
             routes: repo::routes_json(&manifest.routes),
             settings: &manifest.settings,
             token_hash: &token.hash(),
@@ -126,6 +121,15 @@ pub async fn install(
         token,
         secret,
     })
+}
+
+/// The pages of a manifest as the `ui_slots` column holds them.
+pub(crate) fn ui_json(ui: &[crate::model::UiSlot]) -> Value {
+    Value::Array(
+        ui.iter()
+            .map(|s| json!({"slot": s.slot, "title": s.title, "path": s.path}))
+            .collect(),
+    )
 }
 
 pub async fn get(conn: &mut PgConnection, plugin_id: &str) -> Result<Install, PluginsError> {
@@ -198,6 +202,38 @@ pub async fn remove(conn: &mut PgConnection, plugin_id: &str) -> Result<Install,
     let install = get(conn, plugin_id).await?;
     repo::delete_install(conn, install.id).await?;
     Ok(install)
+}
+
+/// Gives the plugin a new token and takes the old one away in the same statement. Returns the new
+/// one: this is the only time it is shown. The secret is not touched.
+pub async fn rotate_token(
+    conn: &mut PgConnection,
+    plugin_id: &str,
+) -> Result<PluginToken, PluginsError> {
+    let install = get(conn, plugin_id).await?;
+    let token = PluginToken::generate();
+    repo::set_token_hash(conn, install.id, &token.hash()).await?;
+    Ok(token)
+}
+
+/// What a plugin did to the plugin API since `since` (ADR-0079): the newest calls and the counts by
+/// route and answer.
+pub struct CallReport {
+    pub recent: Vec<repo::CallRow>,
+    pub counts: Vec<repo::CallCount>,
+}
+
+pub async fn calls(
+    conn: &mut PgConnection,
+    plugin_id: &str,
+    since: chrono::DateTime<chrono::Utc>,
+    limit: i64,
+) -> Result<CallReport, PluginsError> {
+    let install = get(conn, plugin_id).await?;
+    Ok(CallReport {
+        recent: repo::recent_calls(conn, install.id, since, limit).await?,
+        counts: repo::call_counts(conn, install.id, since).await?,
+    })
 }
 
 /// Owes every enabled plugin that subscribed to the event a delivery. Returns how many it
@@ -378,7 +414,7 @@ pub async fn set_setting(
                 _ => PluginsError::Db(error),
             },
         )?;
-    changed(conn, &install, course).await?;
+    settings_changed(conn, &install, course).await?;
     Ok(true)
 }
 
@@ -393,12 +429,12 @@ pub async fn unset_setting(
     spec_in_scope(&install, name, course)?;
     let removed = repo::delete_setting(conn, install.id, course, name).await?;
     if removed {
-        changed(conn, &install, course).await?;
+        settings_changed(conn, &install, course).await?;
     }
     Ok(removed)
 }
 
-async fn changed(
+pub(crate) async fn settings_changed(
     conn: &mut PgConnection,
     install: &Install,
     course: Option<Uuid>,
@@ -562,6 +598,35 @@ pub async fn put_report(
                 _ => PluginsError::Db(error),
             },
         )?;
+    audit_report(conn, caller, "plugin.report.put", subject, key).await
+}
+
+/// Records what a plugin changed, in the transaction of the change (ADR-0079): which plugin, which
+/// subject and key, never what the report says.
+async fn audit_report(
+    conn: &mut PgConnection,
+    caller: &PluginCaller,
+    action: &'static str,
+    subject: ReportSubject,
+    key: &str,
+) -> Result<(), PluginsError> {
+    let resource_type = match subject {
+        ReportSubject::Submission(_) => "submission",
+        ReportSubject::Assignment(_) => "assignment",
+        ReportSubject::Course(_) => "course",
+    };
+    events::audit_plugin(
+        conn,
+        caller.install_id(),
+        caller.plugin_id(),
+        events::AuditEntry {
+            action,
+            resource_type,
+            resource_id: subject.id(),
+            meta: json!({ "key": key }),
+        },
+    )
+    .await?;
     Ok(())
 }
 
@@ -574,7 +639,7 @@ pub async fn delete_report(
 ) -> Result<(), PluginsError> {
     access::authorize_plugin(caller, Scope::ReportsWrite)?;
     if repo::delete_report(conn, caller.install_id(), subject, key).await? {
-        Ok(())
+        audit_report(conn, caller, "plugin.report.delete", subject, key).await
     } else {
         Err(PluginsError::ReportGone)
     }

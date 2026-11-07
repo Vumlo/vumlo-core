@@ -6,6 +6,6 @@ mod service;
 
 pub use model::{AuditEntry, Event, HandlerError, HandlerFuture, Handlers, OutboxEvent};
 pub use service::{
-    EventsError, MAX_ATTEMPTS, audit, audit_admin, audit_cli, backoff, emit, process_once,
-    run_worker,
+    EventsError, MAX_ATTEMPTS, audit, audit_admin, audit_cli, audit_plugin, backoff, emit,
+    process_once, run_worker,
 };

@@ -916,3 +916,322 @@ async fn the_courses_a_plugin_may_reach_are_chosen_at_install_and_changed_with_g
     })
     .await;
 }
+
+// ---------------------------------------------------------------------------------------------
+// Upgrade, token rotation and the call log (ADR-0079)
+// ---------------------------------------------------------------------------------------------
+
+/// A plugin whose manifest can be changed while it runs: the second version of it.
+async fn serve_changing(manifest: Value) -> (String, std::sync::Arc<std::sync::Mutex<Value>>) {
+    let shared = std::sync::Arc::new(std::sync::Mutex::new(manifest));
+    let served = shared.clone();
+    let app = Router::new().route(
+        "/manifest",
+        get(move || {
+            let manifest = served.lock().unwrap().clone();
+            async move { Json(manifest) }
+        }),
+    );
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base = format!("http://{}", listener.local_addr().unwrap());
+    tokio::spawn(async move { axum::serve(listener, app).await });
+    (base, shared)
+}
+
+fn version(n: u32, scopes: &[&str], subscribes: &[&str]) -> Value {
+    json!({"id": "hello", "version": format!("{n}.0.0"), "api": "1",
+           "subscribes": subscribes, "scopes": scopes})
+}
+
+async fn version_of_hello(pool: &PgPool) -> String {
+    sqlx::query_scalar("SELECT version FROM plugins.plugin_installs WHERE plugin_id = 'hello'")
+        .fetch_one(pool)
+        .await
+        .unwrap()
+}
+
+#[tokio::test]
+async fn an_upgrade_shows_what_changed_asks_only_for_the_new_scopes_and_is_audited() {
+    db_test(async |pool| {
+        common::migrate_modules(&pool).await;
+        let env = Env::new(&pool);
+        let (base, shared) =
+            serve_changing(version(1, &["submissions:read"], &["submission.submitted"])).await;
+        let installed = run(
+            &env,
+            &[
+                "plugin",
+                "install",
+                &base,
+                "--grant",
+                "submissions:read",
+                "--courses",
+                "all",
+            ],
+            None,
+        )
+        .await;
+        assert!(installed.ok, "{}", installed.stderr);
+        let token = value_of(&installed, "VUMLO_PLUGIN_TOKEN");
+
+        // A manifest that says what the install holds: nothing to do, nothing written.
+        let same = run(&env, &["plugin", "upgrade", "hello"], None).await;
+        assert!(
+            same.ok && same.stdout.contains("nothing was changed"),
+            "{}",
+            same.stdout
+        );
+        assert_eq!(audit(&pool).await.len(), 1);
+
+        // Version 2 asks for one more scope and one more event.
+        *shared.lock().unwrap() = version(
+            2,
+            &["submissions:read", "reports:write"],
+            &["submission.submitted", "enrollment.changed"],
+        );
+        let looked = run(&env, &["plugin", "upgrade", "hello", "--dry-run"], None).await;
+        assert!(looked.ok, "{}", looked.stderr);
+        assert!(
+            looked.stdout.contains("1.0.0 -> 2.0.0"),
+            "{}",
+            looked.stdout
+        );
+        assert!(
+            looked.stdout.contains("asks for new scopes: reports:write"),
+            "{}",
+            looked.stdout
+        );
+        assert!(
+            looked
+                .stdout
+                .contains("subscribes to now: enrollment.changed"),
+            "{}",
+            looked.stdout
+        );
+        assert_eq!(
+            version_of_hello(&pool).await,
+            "1.0.0",
+            "a dry run changes nothing"
+        );
+        assert_eq!(audit(&pool).await.len(), 1);
+
+        // Only the new scope is asked about; saying yes grants it.
+        let done = run(&env, &["plugin", "upgrade", "hello"], Some("y\n")).await;
+        assert!(done.ok, "{}", done.stderr);
+        assert!(
+            done.stdout.contains("grant `reports:write`?"),
+            "{}",
+            done.stdout
+        );
+        assert!(
+            !done.stdout.contains("grant `submissions:read`?"),
+            "{}",
+            done.stdout
+        );
+        assert_eq!(version_of_hello(&pool).await, "2.0.0");
+        assert_eq!(
+            scopes_of_hello(&pool).await,
+            ["submissions:read", "reports:write"]
+        );
+        let meta = audit_meta(&pool, "plugin.upgrade").await;
+        assert_eq!(meta["from"], "1.0.0");
+        assert_eq!(meta["to"], "2.0.0");
+        assert_eq!(meta["scopes_granted"], json!(["reports:write"]));
+        assert_eq!(audit(&pool).await.last().unwrap().1, "cli");
+        // The token it was given is still its token.
+        let hash: Vec<u8> = sqlx::query_scalar("SELECT token_hash FROM plugins.plugin_installs")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(hash.len(), 32);
+        assert!(!token.is_empty());
+
+        // Version 3 asks for another scope: `--grant none` keeps it out and says so; naming a scope
+        // that is not new, or that it does not ask for, is refused and changes nothing.
+        *shared.lock().unwrap() = version(
+            3,
+            &["submissions:read", "reports:write", "users:contact"],
+            &["submission.submitted"],
+        );
+        let wrong = run(
+            &env,
+            &["plugin", "upgrade", "hello", "--grant", "reports:write"],
+            None,
+        )
+        .await;
+        assert!(
+            !wrong.ok && wrong.stderr.contains("did not newly ask"),
+            "{}",
+            wrong.stderr
+        );
+        assert_eq!(version_of_hello(&pool).await, "2.0.0");
+        let held = run(
+            &env,
+            &["plugin", "upgrade", "hello", "--grant", "none"],
+            None,
+        )
+        .await;
+        assert!(
+            held.ok
+                && held
+                    .stdout
+                    .contains("not granted (it asks for them): users:contact"),
+            "{}",
+            held.stdout
+        );
+        assert_eq!(
+            scopes_of_hello(&pool).await,
+            ["submissions:read", "reports:write"]
+        );
+
+        // Version 4 no longer asks for reports:write: the grant goes with it.
+        *shared.lock().unwrap() = version(4, &["submissions:read"], &["submission.submitted"]);
+        let dropped = run(&env, &["plugin", "upgrade", "hello"], None).await;
+        assert!(dropped.ok, "{}", dropped.stderr);
+        assert!(
+            dropped.stdout.contains("no longer asks for: reports:write"),
+            "{}",
+            dropped.stdout
+        );
+        assert_eq!(scopes_of_hello(&pool).await, ["submissions:read"]);
+
+        // Another plugin at the same address is not an upgrade.
+        let mut other = version(5, &["submissions:read"], &[]);
+        other["id"] = json!("someone-else");
+        *shared.lock().unwrap() = other;
+        let refused = run(&env, &["plugin", "upgrade", "hello"], None).await;
+        assert!(
+            !refused.ok && refused.stderr.contains("not `hello`"),
+            "{}",
+            refused.stderr
+        );
+        assert_eq!(version_of_hello(&pool).await, "4.0.0");
+        let unknown = run(&env, &["plugin", "upgrade", "nobody"], None).await;
+        assert!(!unknown.ok);
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn a_new_token_is_shown_once_and_a_dry_run_changes_nothing() {
+    db_test(async |pool| {
+        common::migrate_modules(&pool).await;
+        let env = Env::new(&pool);
+        let base = plugin(&["submissions:read"]).await;
+        let installed = run(
+            &env,
+            &[
+                "plugin",
+                "install",
+                &base,
+                "--grant",
+                "none",
+                "--courses",
+                "all",
+            ],
+            None,
+        )
+        .await;
+        assert!(installed.ok, "{}", installed.stderr);
+        let first = value_of(&installed, "VUMLO_PLUGIN_TOKEN");
+        let hash_of = async || -> Vec<u8> {
+            sqlx::query_scalar("SELECT token_hash FROM plugins.plugin_installs")
+                .fetch_one(&pool)
+                .await
+                .unwrap()
+        };
+        let before = hash_of().await;
+
+        let looked = run(
+            &env,
+            &["plugin", "rotate-token", "hello", "--dry-run"],
+            None,
+        )
+        .await;
+        assert!(
+            looked.ok && looked.stdout.contains("would give hello a new token"),
+            "{}",
+            looked.stdout
+        );
+        assert_eq!(hash_of().await, before);
+        assert_eq!(audit(&pool).await.len(), 1);
+
+        let rotated = run(&env, &["plugin", "rotate-token", "hello"], None).await;
+        assert!(rotated.ok, "{}", rotated.stderr);
+        let second = value_of(&rotated, "VUMLO_PLUGIN_TOKEN");
+        assert!(second.starts_with("vplg_") && second != first);
+        assert_ne!(hash_of().await, before);
+        // One audit row, with no actor and no token in it.
+        let rows = audit(&pool).await;
+        assert_eq!(
+            rows.last().unwrap(),
+            &(
+                "plugin.rotate_token".to_owned(),
+                "cli".to_owned(),
+                true,
+                "plugin".to_owned()
+            )
+        );
+        let meta = audit_meta(&pool, "plugin.rotate_token").await;
+        assert!(!meta.to_string().contains(&second) && !meta.to_string().contains(&first));
+        // The token is stored only as a hash and is printed nowhere else.
+        let row: String =
+            sqlx::query_scalar("SELECT row_to_json(t)::text FROM plugins.plugin_installs t")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert!(!row.contains(&second));
+        let listed = run(&env, &["plugin", "list"], None).await;
+        assert!(!listed.stdout.contains(&second));
+        let unknown = run(&env, &["plugin", "rotate-token", "nobody"], None).await;
+        assert!(!unknown.ok);
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn the_calls_of_a_plugin_are_listed_by_route_and_by_time() {
+    db_test(async |pool| {
+        common::migrate_modules(&pool).await;
+        let env = Env::new(&pool);
+        let base = plugin(&["submissions:read"]).await;
+        assert!(
+            run(&env, &["plugin", "install", &base, "--grant", "none", "--courses", "all"], None)
+                .await
+                .ok
+        );
+        let none = run(&env, &["plugin", "calls", "hello"], None).await;
+        assert!(none.ok && none.stdout.contains("made no call in the last 24 hour(s)"), "{}", none.stdout);
+
+        sqlx::query(
+            "INSERT INTO plugins.api_calls (id, install_id, at, method, route, status, duration_ms)
+             SELECT gen_random_uuid(), id, now() - make_interval(mins => n), 'GET',
+                    CASE WHEN n < 3 THEN '/api/v1/plugin-api/assignments' ELSE '/api/v1/plugin-api/grades' END,
+                    CASE WHEN n = 4 THEN 403 ELSE 200 END, 10 * n
+             FROM plugins.plugin_installs, generate_series(1, 5) AS n",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        // One an hour ago too old for `--hours 0`... and one a week old for the default.
+        sqlx::query(
+            "INSERT INTO plugins.api_calls (id, install_id, at, method, route, status, duration_ms)
+             SELECT gen_random_uuid(), id, now() - interval '7 days', 'GET', '/old', 200, 1
+             FROM plugins.plugin_installs",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        let out = run(&env, &["plugin", "calls", "hello", "--limit", "3"], None).await;
+        assert!(out.ok, "{}", out.stderr);
+        assert!(out.stdout.contains("2 x GET") && out.stdout.contains("plugin-api/assignments -> 200"), "{}", out.stdout);
+        assert!(out.stdout.contains("plugin-api/grades -> 403"), "{}", out.stdout);
+        assert!(!out.stdout.contains("/old"), "{}", out.stdout);
+        let newest = out.stdout.split("newest first:").nth(1).unwrap();
+        assert_eq!(newest.lines().filter(|l| l.contains("plugin-api")).count(), 3, "the limit");
+        let week = run(&env, &["plugin", "calls", "hello", "--hours", "200"], None).await;
+        assert!(week.stdout.contains("/old"), "{}", week.stdout);
+        assert!(!run(&env, &["plugin", "calls", "nobody"], None).await.ok);
+    })
+    .await;
+}

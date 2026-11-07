@@ -16,6 +16,7 @@ use common::{ApiError, ValidJson, ValidQuery};
 use utoipa_axum::router::OpenApiRouter;
 use utoipa_axum::routes;
 use uuid::Uuid;
+use vumlo_config::Settings;
 
 use crate::PluginsError;
 use crate::model::SLOTS;
@@ -23,20 +24,34 @@ use crate::secret::LAUNCH_TTL_SECONDS;
 use crate::service;
 use crate::state::PluginsState;
 
+mod guard;
 mod reads;
 mod reports;
 
-pub fn router<S>() -> OpenApiRouter<S>
+/// Everything under `/plugin-api` has an allowance of calls per token and a line in the log
+/// (ADR-0079); the calls staff and the web app make about plugins do not.
+pub fn router<S>(
+    state: &PluginsState,
+    settings: &Settings,
+) -> Result<OpenApiRouter<S>, PluginsError>
 where
     S: PluginSource + ActorSource + Clone + 'static,
     PluginsState: FromRef<S>,
 {
-    OpenApiRouter::new()
+    // The limiter is the inner layer and the guard the outer: the guard finds the plugin the token
+    // belongs to, which is what the limiter counts by.
+    let plugin_api = OpenApiRouter::new()
         .merge(reads::router())
-        .merge(reports::router())
-        .routes(routes!(get_settings))
+        .merge(reports::plugin_router())
+        .routes(routes!(get_settings));
+    let plugin_api = guard::limit(plugin_api, settings)?.layer(
+        axum::middleware::from_fn_with_state(state.clone(), guard::record),
+    );
+    Ok(OpenApiRouter::new()
+        .merge(plugin_api)
+        .merge(reports::staff_router())
         .routes(routes!(list_slots))
-        .routes(routes!(launch))
+        .routes(routes!(launch)))
 }
 
 /// Responses that carry a credential must not be cached (AGENTS section 11).

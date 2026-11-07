@@ -11903,7 +11903,8 @@
         "description": "Where an audit row was written.",
         "enum": [
           "api",
-          "cli"
+          "cli",
+          "plugin"
         ]
       },
       "Block": {

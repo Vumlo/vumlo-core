@@ -135,6 +135,8 @@ pub enum AuditKind {
 pub enum AuditSource {
     Api,
     Cli,
+    /// A plugin changed it through the plugin API (ADR-0079); `meta` names the plugin.
+    Plugin,
 }
 
 /// The person who did it.

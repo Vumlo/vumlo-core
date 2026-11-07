@@ -298,6 +298,25 @@ fn validate(settings: &mut Settings) -> Vec<String> {
             "plugins.secret_key must be at least {MIN_PLUGIN_KEY_CHARS} characters"
         ));
     }
+    for (name, value, low, high) in [
+        ("plugins.api_burst", settings.plugins.api_burst, 1, 100_000),
+        (
+            "plugins.api_requests_per_second",
+            settings.plugins.api_requests_per_second,
+            1,
+            10_000,
+        ),
+        (
+            "plugins.call_log_days",
+            settings.plugins.call_log_days,
+            1,
+            3650,
+        ),
+    ] {
+        if !(low..=high).contains(&value) {
+            errors.push(format!("{name} must be between {low} and {high}"));
+        }
+    }
     errors.extend(files_problems(&settings.files));
     let auth = &settings.auth;
     if !(8..=128).contains(&auth.password_min_length) {

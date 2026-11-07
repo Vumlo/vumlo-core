@@ -19,15 +19,25 @@ use crate::repo::ReportRow;
 use crate::service;
 use crate::state::PluginsState;
 
-pub fn router<S>() -> OpenApiRouter<S>
+/// The calls of a plugin: it writes and removes its reports.
+pub fn plugin_router<S>() -> OpenApiRouter<S>
 where
-    S: PluginSource + ActorSource + Clone + 'static,
+    S: PluginSource + Clone + 'static,
     PluginsState: FromRef<S>,
 {
     OpenApiRouter::new()
         .routes(routes!(put_submission_report, delete_submission_report))
         .routes(routes!(put_assignment_report, delete_assignment_report))
         .routes(routes!(put_course_report, delete_course_report))
+}
+
+/// The calls of staff: they read what the plugins reported.
+pub fn staff_router<S>() -> OpenApiRouter<S>
+where
+    S: ActorSource + Clone + 'static,
+    PluginsState: FromRef<S>,
+{
+    OpenApiRouter::new()
         .routes(routes!(list_submission_reports))
         .routes(routes!(list_assignment_reports))
         .routes(routes!(list_course_reports))

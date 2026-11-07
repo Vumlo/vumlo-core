@@ -2733,6 +2733,7 @@ dependencies = [
  "test-support",
  "thiserror 2.0.21",
  "tokio",
+ "tower_governor",
  "tracing",
  "utoipa",
  "utoipa-axum",
