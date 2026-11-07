@@ -17,6 +17,7 @@ import { Notice } from "./Notice";
 import { OfflineBar } from "./OfflineBar";
 import { useSignOut } from "./useSignOut";
 import { useT } from "@/lib/i18n";
+import { launchers } from "@/modules/enabled";
 import s from "./Shell.module.css";
 
 /** The address with its query string: a course screen is `/course?id=...`, and sign-in must come back to it. */
@@ -188,6 +189,10 @@ export function Shell({ children }: { children: ReactNode }) {
           </Link>
         ))}
       </nav>
+      {/* What the enabled modules draw on every page: the one slot of ADR-0071. */}
+      {launchers.map((Launcher, i) => (
+        <Launcher key={i} />
+      ))}
     </>
   );
 }
