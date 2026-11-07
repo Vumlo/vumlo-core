@@ -17,7 +17,7 @@ pub use mail::{MailError, Mailer};
 pub use model::{
     Email, EmailToken, HashedPassword, ModelError, NewSession, NewUser, Password, PasswordPolicy,
     PersonName, SessionInfo, SessionKind, SessionToken, TemporaryPassword, TokenPurpose, User,
-    UserStatus, UserUpdate, hash,
+    UserFilter, UserStatus, UserUpdate, hash,
 };
 pub use routes::{
     COOKIE_NAME, SetupError, api_role, api_status, api_user, authenticate_request, domain_role,
@@ -26,6 +26,7 @@ pub use routes::{
 pub use service::{
     AppliedUserUpdate, AuthError, HashGate, LoginThrottle, apply_user_update, create_user_from_cli,
     find_user, find_user_shared, find_users, hash_password, hash_password_gated, last_login_at,
+    list_users, reset_password,
 };
 pub use state::AuthState;
 #[cfg(feature = "testing")]

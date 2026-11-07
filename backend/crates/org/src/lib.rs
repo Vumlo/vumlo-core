@@ -14,7 +14,8 @@ pub use model::{
 };
 pub use routes::router;
 pub use service::{
-    OrgError, group_member_lines, group_options, groups_of_user, record_mode, terms_newest_first,
+    OrgError, add_group_members, create_group, create_term, get_group, group_member_lines,
+    group_options, groups_of_user, list_groups, list_terms, record_mode, terms_newest_first,
     view_institution_settings,
 };
 pub use state::OrgState;
