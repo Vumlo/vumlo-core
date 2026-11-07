@@ -130,6 +130,10 @@ enum PluginCommand {
         /// asked for.
         #[arg(long, value_name = "SCOPES")]
         grant: Option<String>,
+        /// The courses the plugin may reach: `all`, `none`, or course ids, comma-separated. Without
+        /// it the question is asked; there is no default.
+        #[arg(long, value_name = "COURSES")]
+        courses: Option<String>,
         /// Read the manifest and say what would be installed, install nothing.
         #[arg(long)]
         dry_run: bool,
@@ -141,8 +145,41 @@ enum PluginCommand {
         plugin_id: String,
         /// Comma-separated scopes, or `none`.
         scopes: String,
+        /// Also replace the courses the plugin may reach: `all`, `none`, or course ids,
+        /// comma-separated. Without it they stay as they are.
+        #[arg(long, value_name = "COURSES")]
+        courses: Option<String>,
         #[arg(long)]
         dry_run: bool,
+    },
+    /// Read the plugin's manifest again and take what changed: its version, the events it asks for,
+    /// its settings, routes and pages. Only a scope it did not ask for before needs approving; a
+    /// grant it no longer asks for goes. The token, the secret and the courses stay.
+    Upgrade {
+        plugin_id: String,
+        /// The new scopes to grant, comma-separated, or `none`. Without it each is asked for.
+        #[arg(long, value_name = "SCOPES")]
+        grant: Option<String>,
+        /// Say what would change, change nothing.
+        #[arg(long)]
+        dry_run: bool,
+    },
+    /// Give a plugin a new token. The old one stops working at once; the new one is printed, once.
+    RotateToken {
+        plugin_id: String,
+        /// Say what would happen, do nothing.
+        #[arg(long)]
+        dry_run: bool,
+    },
+    /// What a plugin has called on the plugin API: counts by route and answer, and the newest calls.
+    Calls {
+        plugin_id: String,
+        /// How far back to look.
+        #[arg(long, default_value_t = 24)]
+        hours: u32,
+        /// How many of the newest calls to list.
+        #[arg(long, default_value_t = 20)]
+        limit: u32,
     },
     /// Stop sending events to a plugin and refuse its token. Nothing is deleted.
     Disable {
@@ -162,6 +199,51 @@ enum PluginCommand {
         /// Do it. Without it the command only says what it would delete.
         #[arg(long)]
         yes: bool,
+        #[arg(long)]
+        dry_run: bool,
+    },
+    /// What the plugin lets you configure: the settings its manifest declares (ADR-0072).
+    #[command(subcommand)]
+    Settings(SettingsCommand),
+}
+
+#[derive(Subcommand)]
+enum SettingsCommand {
+    /// The settings of a plugin in one scope, with their values. A secret shows only whether it is
+    /// set.
+    List {
+        plugin_id: String,
+        /// List the settings that are per course, for this course (a UUID). Without it, the
+        /// settings of the whole institution.
+        #[arg(long, value_name = "COURSE")]
+        course: Option<uuid::Uuid>,
+    },
+    /// One setting.
+    Get {
+        plugin_id: String,
+        key: String,
+        #[arg(long, value_name = "COURSE")]
+        course: Option<uuid::Uuid>,
+    },
+    /// Set a value. Text stays text; a number, a boolean or a list is JSON (`3`, `true`,
+    /// `'["a","b"]'`). Give `-` as the value to read it from standard input, so that a secret
+    /// stays out of the shell history and the process list. The plugin is sent
+    /// `plugin.settings.changed`.
+    Set {
+        plugin_id: String,
+        key: String,
+        value: String,
+        #[arg(long, value_name = "COURSE")]
+        course: Option<uuid::Uuid>,
+        #[arg(long)]
+        dry_run: bool,
+    },
+    /// Remove the value, so that the default of the manifest applies again.
+    Unset {
+        plugin_id: String,
+        key: String,
+        #[arg(long, value_name = "COURSE")]
+        course: Option<uuid::Uuid>,
         #[arg(long)]
         dry_run: bool,
     },
@@ -261,6 +343,7 @@ async fn run(cli: Cli) -> anyhow::Result<bool> {
             PluginCommand::Install {
                 base_url,
                 grant,
+                courses,
                 dry_run,
             } => {
                 plugin_cmd::install(
@@ -268,6 +351,7 @@ async fn run(cli: Cli) -> anyhow::Result<bool> {
                     plugin_cmd::InstallArgs {
                         base_url,
                         grant,
+                        courses,
                         dry_run,
                     },
                 )
@@ -277,8 +361,25 @@ async fn run(cli: Cli) -> anyhow::Result<bool> {
             PluginCommand::Grant {
                 plugin_id,
                 scopes,
+                courses,
                 dry_run,
-            } => plugin_cmd::grant(&options, &plugin_id, &scopes, dry_run).await?,
+            } => {
+                plugin_cmd::grant(&options, &plugin_id, &scopes, courses.as_deref(), dry_run)
+                    .await?
+            }
+            PluginCommand::Upgrade {
+                plugin_id,
+                grant,
+                dry_run,
+            } => plugin_cmd::upgrade(&options, &plugin_id, grant.as_deref(), dry_run).await?,
+            PluginCommand::RotateToken { plugin_id, dry_run } => {
+                plugin_cmd::rotate_token(&options, &plugin_id, dry_run).await?
+            }
+            PluginCommand::Calls {
+                plugin_id,
+                hours,
+                limit,
+            } => plugin_cmd::calls(&options, &plugin_id, hours, limit).await?,
             PluginCommand::Disable { plugin_id, dry_run } => {
                 plugin_cmd::set_status(
                     &options,
@@ -302,6 +403,34 @@ async fn run(cli: Cli) -> anyhow::Result<bool> {
                 yes,
                 dry_run,
             } => plugin_cmd::remove(&options, &plugin_id, yes, dry_run).await?,
+            PluginCommand::Settings(command) => match command {
+                SettingsCommand::List { plugin_id, course } => {
+                    plugin_cmd::settings_list(&options, &plugin_id, course).await?
+                }
+                SettingsCommand::Get {
+                    plugin_id,
+                    key,
+                    course,
+                } => plugin_cmd::settings_get(&options, &plugin_id, &key, course).await?,
+                SettingsCommand::Set {
+                    plugin_id,
+                    key,
+                    value,
+                    course,
+                    dry_run,
+                } => {
+                    plugin_cmd::settings_set(&options, &plugin_id, &key, &value, course, dry_run)
+                        .await?
+                }
+                SettingsCommand::Unset {
+                    plugin_id,
+                    key,
+                    course,
+                    dry_run,
+                } => {
+                    plugin_cmd::settings_unset(&options, &plugin_id, &key, course, dry_run).await?
+                }
+            },
         },
         Command::Brand(BrandCommand::Apply { dry_run }) => brand::apply(&options, dry_run)?,
         Command::Build(BuildCommand::Web { dry_run }) => build_web::run(&options, dry_run).await?,

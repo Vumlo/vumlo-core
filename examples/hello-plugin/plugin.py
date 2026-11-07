@@ -5,9 +5,16 @@ It subscribes to `submission.submitted`. When one arrives it fetches the submiss
 plugin API, counts the words, and posts a report back. It shows the whole protocol:
 
   GET  /manifest   what the plugin is and asks for (read once, when an administrator installs it)
-  POST /events     a signed event from the core: check the signature and the time, answer 2xx at
-                   once, work afterwards
-  ...and, towards the core, `GET /plugin-api/submissions/{id}` and `PUT .../report` with the token.
+  POST /events     a signed event from the core, `{id, type, occurred_at, data}` (ids only): check the
+                   signature and the time, answer 2xx at once, work afterwards
+  ...and, towards the core, `GET /plugin-api/submissions/{id}` and `PUT .../reports/words` with the token.
+
+It also reads its settings (`GET /plugin-api/settings`, scope `settings:read`) and is told when an
+administrator changes one (`plugin.settings.changed`):
+
+  unit       what the report counts: `words` (default) or `characters` (the whole institution)
+  max_words  a limit per course; a report says `over_limit` when a work is longer (set per course:
+             `vumlo-cli plugin settings set hello max_words 300 --course <course id>`)
 
 And a page for the tab "Words" on an assignment:
 
@@ -17,6 +24,13 @@ And a page for the tab "Words" on an assignment:
   GET  /ui/data    checks the token with the webhook secret, then answers by who looks: the totals for
                    the staff of the course, nothing for a student. CORS, because the frame's origin
                    is `null`.
+
+And two routes for people, through the core (ADR-0078), at /api/v1/plugins/hello/api/...:
+
+  GET  /api/summary/{course_id}   teachers of the course; how many works were submitted
+  POST /api/echo                  anyone signed in; says what the core told it about the call
+  The core signs who the person is (X-Vumlo-* headers); `check_proxy` verifies the signature, the time
+  and the nonce. The session never reaches this server.
 
 Environment:
   PORT                  where to listen on 127.0.0.1 (0: pick a free port and print it)
@@ -46,9 +60,37 @@ MANIFEST = {
     "id": "hello",
     "version": "1.0.0",
     "api": "1",
-    "subscribes": ["submission.submitted"],
-    "scopes": ["submissions:read", "reports:write"],
+    "subscribes": ["submission.submitted", "plugin.settings.changed"],
+    "scopes": ["submissions:read", "reports:write", "settings:read", "assignments:read"],
     "ui": [{"slot": "assignment.tab", "title": "Words", "path": "/ui/words"}],
+    # Routes of this server that people reach through the core, at /api/v1/plugins/hello/<path>
+    # (ADR-0078). The core checks the person's session and the roles below, and signs who they are.
+    "routes": [
+        # Staff of a course, and administrators: what this plugin has seen. `{course_id}` is a course.
+        {
+            "method": "GET",
+            "path": "/api/summary/{course_id}",
+            "roles": ["admin", "teacher"],
+            "course_roles": ["teacher", "assistant"],
+        },
+        # Anyone signed in: says what the core told it about the call.
+        {"method": "POST", "path": "/api/echo", "roles": ["admin", "teacher", "student"]},
+    ],
+    # What an administrator may configure (a subset of JSON Schema; `secret: true` would be for a token).
+    "settings": {
+        "unit": {
+            "type": "string",
+            "enum": ["words", "characters"],
+            "default": "words",
+            "description": "What the report counts",
+        },
+        "max_words": {
+            "type": "number",
+            "minimum": 1,
+            "scope": "course",
+            "description": "A work longer than this is reported as over the limit",
+        },
+    },
 }
 # An event older (or newer) than this is refused: a captured request cannot be replayed later.
 MAX_AGE_SECONDS = 300
@@ -58,6 +100,8 @@ TOKEN = os.environ.get("VUMLO_PLUGIN_TOKEN", "")
 SECRET = os.environ.get("VUMLO_WEBHOOK_SECRET", "")
 
 seen = set()  # event ids already taken; the core delivers at least once, so repeats come
+# The settings last read, by course id (None: no course). Dropped when the core says one changed.
+settings_cache = {}
 # What the page shows to staff: per assignment, how many works and how many words in all.
 stats = {}
 seen_lock = threading.Lock()
@@ -111,13 +155,70 @@ def launch_claims(secret, token, now=None):
         return None
 
 
-def count_words(node):
-    """The words in the `text` leaves of a block document."""
+# The nonces of calls through the core that were taken, with the time; a call is taken once.
+proxy_nonces = {}
+MAX_NONCES = 10000
+
+
+def proxy_signature(secret, timestamp, method, target, user, role, course, course_role, nonce, body):
+    """The signature of a call the core forwarded: the HMAC-SHA256 of `timestamp + "." + canonical`, where
+    canonical joins these with newlines: `vumlo-proxy`, the nonce, the method, the request-target
+    (path and query, as received), the user, their role, the course and their role in it (`-` for
+    none), and the hex SHA-256 of the body."""
+    canonical = "\n".join([
+        "vumlo-proxy", nonce, method, target, user, role, course or "-", course_role or "-",
+        hashlib.sha256(body).hexdigest(),
+    ])
+    message = str(timestamp).encode() + b"." + canonical.encode()
+    return "sha256=" + hmac.new(secret.encode(), message, hashlib.sha256).hexdigest()
+
+
+def check_proxy(secret, method, target, headers, body, now=None):
+    """`(claims, None)` for a call the core forwarded and that is fresh and new, else `(None, (status, why))`.
+
+    Three things are checked, and all three matter: the signature (it covers the user, the role, the
+    course, the target and the body, so none can be changed on the way), the time (a captured call is
+    refused after five minutes) and the nonce (and inside five minutes, a second time)."""
+    if not secret:
+        return None, (503, "no webhook secret configured")
+    now = now if now is not None else time.time()
+    try:
+        timestamp = int(headers.get("X-Vumlo-Timestamp", ""))
+    except ValueError:
+        return None, (401, "bad timestamp")
+    if abs(now - timestamp) > MAX_AGE_SECONDS:
+        return None, (401, "stale timestamp")
+    claims = {
+        "user": headers.get("X-Vumlo-User", ""),
+        "role": headers.get("X-Vumlo-Role", ""),
+        "course": headers.get("X-Vumlo-Course") or None,
+        "course_role": headers.get("X-Vumlo-Course-Role") or None,
+    }
+    nonce = headers.get("X-Vumlo-Nonce", "")
+    expected = proxy_signature(
+        secret, timestamp, method, target, claims["user"], claims["role"], claims["course"],
+        claims["course_role"], nonce, body,
+    )
+    if not nonce or not hmac.compare_digest(expected, headers.get("X-Vumlo-Signature", "")):
+        return None, (401, "bad signature")
+    with seen_lock:
+        for old in [n for n, at in proxy_nonces.items() if now - at > 2 * MAX_AGE_SECONDS]:
+            del proxy_nonces[old]
+        if nonce in proxy_nonces:
+            return None, (401, "a call seen before")
+        if len(proxy_nonces) >= MAX_NONCES:
+            return None, (503, "too many calls to tell apart")
+        proxy_nonces[nonce] = now
+    return claims, None
+
+
+def count_text(node, measure):
+    """`measure` summed over the `text` leaves of a block document."""
     if isinstance(node, dict):
-        own = len(node["text"].split()) if node.get("type") == "text" and isinstance(node.get("text"), str) else 0
-        return own + sum(count_words(value) for value in node.values())
+        own = measure(node["text"]) if node.get("type") == "text" and isinstance(node.get("text"), str) else 0
+        return own + sum(count_text(value, measure) for value in node.values())
     if isinstance(node, list):
-        return sum(count_words(item) for item in node)
+        return sum(count_text(item, measure) for item in node)
     return 0
 
 
@@ -133,19 +234,62 @@ def call(method, path, payload=None):
         return json.loads(body) if body else None
 
 
+def settings_for(course_id):
+    """The settings for a course, read from the core once and kept until `plugin.settings.changed`.
+    Without the scope (403) or the core, the defaults of the manifest apply."""
+    with seen_lock:
+        if course_id in settings_cache:
+            return settings_cache[course_id]
+    try:
+        values = call("GET", "/plugin-api/settings?course_id=" + course_id)["values"]
+    except (urllib.error.URLError, KeyError, ValueError):
+        return {}  # not cached, so the next work tries again
+    with seen_lock:
+        settings_cache[course_id] = values
+    return values
+
+
+def assignment_kind(assignment_id):
+    """The type of the assignment (`text`, `quiz`, ...), or None when the scope `assignments:read` was
+    not granted (403), the course is not one the plugin may reach (403), or the assignment is gone.
+    A plugin asks for more than it needs and works with what it was given."""
+    try:
+        return call("GET", "/plugin-api/assignments/" + assignment_id)["kind"]
+    except (urllib.error.URLError, KeyError, ValueError):
+        return None
+
+
 def work(event):
     """Fetch the submission, count its words, report. Runs after the core was answered."""
     try:
         submission_id = event["data"]["submission_id"]
         submission = call("GET", "/plugin-api/submissions/" + submission_id)
-        words = count_words(submission["content"])
+        words = count_text(submission["content"], lambda text: len(text.split()))
+        config = settings_for(event["data"]["course_id"])
         with seen_lock:
             total = stats.setdefault(submission["assignment_id"], {"submissions": 0, "words": 0})
             total["submissions"] += 1
             total["words"] += words
-        call("PUT", "/plugin-api/submissions/%s/report" % submission_id,
-             {"summary": "%d words" % words, "data": {"words": words}})
-        print("reported %d words for %s" % (words, submission_id), flush=True)
+        data = {"words": words}
+        kind = assignment_kind(submission["assignment_id"])
+        if kind:
+            data["kind"] = kind
+        if "max_words" in config:
+            data["over_limit"] = words > config["max_words"]
+        if config.get("unit") == "characters":
+            summary = "%d characters" % count_text(submission["content"], len)
+        else:
+            summary = "%d words" % words
+        call("PUT", "/plugin-api/submissions/%s/reports/words" % submission_id, {"summary": summary, "data": data})
+        with seen_lock:
+            total = dict(stats[submission["assignment_id"]])
+        # A report on the assignment too, under a key of its own; it is replaced each time.
+        call(
+            "PUT",
+            "/plugin-api/assignments/%s/reports/totals" % submission["assignment_id"],
+            {"summary": "%d work(s), %d words" % (total["submissions"], total["words"]), "data": total},
+        )
+        print("reported %s for %s" % (summary, submission_id), flush=True)
     except (urllib.error.URLError, KeyError, ValueError) as error:
         # An HTTP error carries its status (403: the scope was not granted).
         print("could not report: %s" % error, file=sys.stderr, flush=True)
@@ -247,9 +391,33 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def reply_api(self, body=b""):
+        """A route people reach through the core. Who they are is only what the core signed."""
+        claims, refused = check_proxy(SECRET, self.command, self.path, self.headers, body)
+        if refused:
+            return self.reply(refused[0], {"error": refused[1]})
+        path = self.path.split("?")[0]
+        if self.command == "GET" and path.startswith("/api/summary/"):
+            if claims["course"] != path.rsplit("/", 1)[1]:
+                return self.reply(400, {"error": "not the course the core named"})
+            with seen_lock:
+                works = sum(total["submissions"] for total in stats.values())
+            return self.reply(200, {**claims, "works": works})
+        if self.command == "POST" and path == "/api/echo":
+            return self.reply(200, {
+                **claims,
+                "body_sha256": hashlib.sha256(body).hexdigest(),
+                "body_bytes": len(body),
+                # What the core did not pass on: a cookie, an authorization, a header of the caller's.
+                "headers": sorted(name.lower() for name in self.headers.keys()),
+            })
+        self.reply(404, {"error": "not found"})
+
     def do_GET(self):
         if self.path == "/manifest":
             self.reply(200, MANIFEST)
+        elif self.path.startswith("/api/"):
+            self.reply_api()
         elif self.path == "/ui/words":
             self.reply_page()
         elif self.path == "/ui/data":
@@ -279,9 +447,11 @@ class Handler(BaseHTTPRequestHandler):
         ])
 
     def do_POST(self):
+        body = self.rfile.read(int(self.headers.get("Content-Length", "0")))
+        if self.path.startswith("/api/"):
+            return self.reply_api(body)
         if self.path != "/events":
             return self.reply(404, {"error": "not found"})
-        body = self.rfile.read(int(self.headers.get("Content-Length", "0")))
         refused = check(SECRET, self.headers, body)
         if refused:
             return self.reply(refused[0], {"error": refused[1]})
@@ -295,6 +465,9 @@ class Handler(BaseHTTPRequestHandler):
             seen.add(event_id)
         if first and kind == "submission.submitted":
             threading.Thread(target=work, args=(event,), daemon=True).start()
+        elif first and kind == "plugin.settings.changed":
+            with seen_lock:
+                settings_cache.clear()
         self.reply(202)  # taken; the work goes on without the core waiting
 
     def log_message(self, format, *args):  # keep the request line out of the log
@@ -327,6 +500,29 @@ def check_vector():
     # The signature of an event over the same bytes is not a token.
     as_event = hmac.new(b"test-secret", b"1700000000." + payload.encode(), hashlib.sha256).hexdigest()
     assert launch_claims("test-secret", payload + "." + as_event, now=1700000010) is None, "an event passed as a token"
+    # A call the core forwarded (backend/crates/plugins, secret tests): signed, fresh, and taken once.
+    user, course = "018f0000-0000-7000-8000-000000000003", "018f0000-0000-7000-8000-000000000004"
+    nonce = "018f0000-0000-7000-8000-000000000005"
+    body = b'{"a":1}'
+    expected = "sha256=f0550504dfb2f66b16d94c999990f57b5b6c5c1d5ac69cc62076cca03e7da247"
+    assert proxy_signature("test-secret", 1700000000, "POST", "/hello/api/echo?x=1", user, "teacher", course,
+                           "assistant", nonce, body) == expected, "the proxy signature differs from the core's"
+    sent = {"X-Vumlo-Timestamp": "1700000000", "X-Vumlo-User": user, "X-Vumlo-Role": "teacher",
+            "X-Vumlo-Course": course, "X-Vumlo-Course-Role": "assistant", "X-Vumlo-Nonce": nonce,
+            "X-Vumlo-Signature": expected}
+    taken, refused = check_proxy("test-secret", "POST", "/hello/api/echo?x=1", sent, body, now=1700000000)
+    assert refused is None and taken["course_role"] == "assistant", refused
+    assert check_proxy("test-secret", "POST", "/hello/api/echo?x=1", sent, body, now=1700000001)[1] == (401, "a call seen before")
+    proxy_nonces.clear()
+    assert check_proxy("test-secret", "POST", "/hello/api/echo?x=1", sent, body, now=1700000000 + MAX_AGE_SECONDS + 1)[1] == (401, "stale timestamp")
+    for what, changed in [
+        ("the role", ("X-Vumlo-Role", "admin")), ("the user", ("X-Vumlo-User", course)),
+        ("the course", ("X-Vumlo-Course", user)), ("the nonce", ("X-Vumlo-Nonce", user)),
+    ]:
+        assert check_proxy("test-secret", "POST", "/hello/api/echo?x=1", {**sent, changed[0]: changed[1]}, body, now=1700000000)[1] == (401, "bad signature"), what
+    assert check_proxy("test-secret", "POST", "/hello/api/echo?x=1", sent, b'{"a":2}', now=1700000000)[1] == (401, "bad signature"), "the body"
+    assert check_proxy("test-secret", "POST", "/hello/api/echo?x=2", sent, body, now=1700000000)[1] == (401, "bad signature"), "the target"
+    assert check_proxy("test-secret", "GET", "/hello/api/echo?x=1", sent, body, now=1700000000)[1] == (401, "bad signature"), "the method"
     print("ok")
 
 

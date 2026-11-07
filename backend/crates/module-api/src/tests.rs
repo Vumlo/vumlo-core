@@ -114,3 +114,117 @@ fn the_spec_carries_what_the_configuration_checks() {
     );
     assert_eq!(WEB.schema(), "mod_w");
 }
+
+// ---------------------------------------------------------------------------------------------
+// The outbound client
+// ---------------------------------------------------------------------------------------------
+
+use std::time::Duration;
+
+async fn server() -> String {
+    use axum::Router;
+    use axum::body::Bytes;
+    use axum::http::{HeaderMap, Method, header};
+    use axum::response::IntoResponse;
+    use axum::routing::any;
+    let app = Router::new()
+        .route(
+            "/echo",
+            any(
+                |method: Method, headers: HeaderMap, body: Bytes| async move {
+                    let tag = headers
+                        .get("x-tag")
+                        .and_then(|v| v.to_str().ok())
+                        .unwrap_or("");
+                    (
+                        [
+                            (header::CONTENT_TYPE, "text/plain; charset=utf-8"),
+                            (header::CONTENT_DISPOSITION, "attachment; filename=a.txt"),
+                        ],
+                        format!("{method} {tag} {}", String::from_utf8_lossy(&body)),
+                    )
+                },
+            ),
+        )
+        .route("/big", any(|| async { vec![b'x'; 2048].into_response() }))
+        .route(
+            "/slow",
+            any(|| async {
+                tokio::time::sleep(Duration::from_secs(3)).await;
+                "late"
+            }),
+        );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let url = format!("http://{}", listener.local_addr().unwrap());
+    tokio::spawn(async move { axum::serve(listener, app).await });
+    url
+}
+
+fn client(max: usize, total: Duration) -> OutboundClient {
+    OutboundClient::new(Duration::from_secs(1), total, max, 0).unwrap()
+}
+
+#[tokio::test]
+async fn a_request_of_any_method_sends_its_headers_and_body_and_returns_the_two_headers_to_pass_on()
+{
+    let base = server().await;
+    let client = client(1024, Duration::from_secs(2));
+    for method in ["GET", "POST", "PUT", "PATCH", "DELETE"] {
+        let body = if method == "GET" {
+            Vec::new()
+        } else {
+            b"payload".to_vec()
+        };
+        let reply = client
+            .request(
+                method,
+                &format!("{base}/echo"),
+                &[("x-tag", "t1")],
+                body.clone(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(reply.status, 200);
+        assert_eq!(
+            String::from_utf8(reply.body).unwrap(),
+            format!("{method} t1 {}", String::from_utf8(body).unwrap())
+        );
+        assert_eq!(
+            reply.content_type.as_deref(),
+            Some("text/plain; charset=utf-8")
+        );
+        assert_eq!(
+            reply.content_disposition.as_deref(),
+            Some("attachment; filename=a.txt")
+        );
+    }
+    assert!(matches!(
+        client
+            .request("NOT A METHOD", &format!("{base}/echo"), &[], Vec::new())
+            .await,
+        Err(OutboundError::Request(_))
+    ));
+}
+
+#[tokio::test]
+async fn an_answer_larger_than_the_limit_and_one_that_takes_too_long_are_refused() {
+    let base = server().await;
+    assert!(matches!(
+        client(1024, Duration::from_secs(2))
+            .request("GET", &format!("{base}/big"), &[], Vec::new())
+            .await,
+        Err(OutboundError::TooLarge { limit: 1024 })
+    ));
+    assert!(matches!(
+        client(1024, Duration::from_millis(300))
+            .request("GET", &format!("{base}/slow"), &[], Vec::new())
+            .await,
+        Err(OutboundError::Timeout)
+    ));
+    // The old calls still work and say what they did.
+    let (status, body) = client(1024, Duration::from_secs(2))
+        .get(&format!("{base}/echo"))
+        .await
+        .unwrap();
+    assert_eq!((status, body.starts_with(b"GET")), (200, true));
+}

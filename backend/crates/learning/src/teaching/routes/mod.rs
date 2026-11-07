@@ -2,6 +2,7 @@
 //! transaction, call exactly one service function and commit; reads use a pooled connection.
 
 mod admin;
+mod announcements;
 mod cards;
 mod info;
 mod roster;
@@ -55,6 +56,14 @@ where
         .routes(routes!(roster::group_options))
         .routes(routes!(roster::list_exclusions))
         .routes(routes!(roster::restore_exclusion))
+        .routes(routes!(
+            announcements::list_announcements,
+            announcements::publish_announcement
+        ))
+        .routes(routes!(
+            announcements::update_announcement,
+            announcements::delete_announcement
+        ))
 }
 
 impl From<TeachingError> for ApiError {
@@ -85,7 +94,8 @@ impl From<TeachingError> for ApiError {
             TeachingError::CourseNotFound
             | TeachingError::MemberNotFound
             | TeachingError::LinkNotFound
-            | TeachingError::ExclusionNotFound => Self::NotFound,
+            | TeachingError::ExclusionNotFound
+            | TeachingError::AnnouncementNotFound => Self::NotFound,
             TeachingError::GroupNotFound => Self::invalid_field("group_id", "no such group"),
             TeachingError::SubgroupNotValid => {
                 Self::invalid_field("subgroup_id", "no such subgroup in that group")

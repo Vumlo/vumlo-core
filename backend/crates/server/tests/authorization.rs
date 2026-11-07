@@ -33,6 +33,8 @@ struct Ctx {
     owner: Uuid,
     /// A file the owner of the course uploaded and no item names: only the owner reads it.
     file: Uuid,
+    /// An announcement the owner published in the course.
+    announcement: Uuid,
 }
 
 type Call = (&'static str, String, Option<Value>);
@@ -132,6 +134,18 @@ fn operations(c: &Ctx, other_user: Uuid) -> Vec<Call> {
             None,
         ),
         call("GET", format!("/courses/{}/group-options", c.course), None),
+        call("GET", format!("/courses/{}/announcements", c.course), None),
+        call(
+            "POST",
+            format!("/courses/{}/announcements", c.course),
+            Some(json!({"title": "x", "body": "y"})),
+        ),
+        call(
+            "PATCH",
+            format!("/announcements/{}", c.announcement),
+            Some(json!({"body": "changed"})),
+        ),
+        call("DELETE", format!("/announcements/{}", c.announcement), None),
         call("GET", format!("/courses/{}/exclusions", c.course), None),
         call(
             "DELETE",
@@ -211,6 +225,12 @@ fn operations(c: &Ctx, other_user: Uuid) -> Vec<Call> {
             format!("/submissions/{}/plugin-reports", c.submission),
             None,
         ),
+        call(
+            "GET",
+            format!("/assignments/{}/plugin-reports", c.assignment),
+            None,
+        ),
+        call("GET", format!("/courses/{}/plugin-reports", c.course), None),
         call(
             "GET",
             format!("/assignments/{}/submission", c.assignment),
@@ -446,6 +466,16 @@ async fn build(env: &Env, admin: &Account, owner: &Account, student: &Account, t
             .await
             .json(),
     );
+    let announcement = id_of(
+        &env.ok(
+            "POST",
+            &owner.token,
+            &format!("/courses/{course}/announcements"),
+            Some(json!({"title": "n", "body": "text"})),
+            201,
+        )
+        .await,
+    );
     Ctx {
         course,
         module,
@@ -460,6 +490,7 @@ async fn build(env: &Env, admin: &Account, owner: &Account, student: &Account, t
         term,
         owner: owner.id,
         file,
+        announcement,
     }
 }
 
@@ -522,6 +553,7 @@ async fn no_operation_answers_a_caller_who_may_not_use_it() {
             let reads = [
                 format!("/courses/{}", a.course),
                 format!("/courses/{}/members", a.course),
+                format!("/courses/{}/announcements", a.course),
                 format!("/courses/{}/content", a.course),
                 format!("/items/{}", a.text),
                 format!("/items/{}", a.assignment),
@@ -740,12 +772,35 @@ async fn the_list_of_operations_is_the_api() {
             }
         }
         // Operations that need no sign-in or only a session of one's own are not in the list above.
-        // The two plugin-api operations take a plugin token, not a session: `tests/plugins.rs`
+        // The plugin-api operations take a plugin token, not a session: `tests/plugins.rs`
         // checks them with and without the scope. The slot list and the launch are for anyone
         // signed in, the launch with its own check of who may see the assignment (same file).
         let own: BTreeSet<String> = [
             "GET /plugin-api/submissions/{id}",
-            "PUT /plugin-api/submissions/{id}/report",
+            "PUT /plugin-api/submissions/{id}/reports/{key}",
+            "DELETE /plugin-api/submissions/{id}/reports/{key}",
+            "PUT /plugin-api/assignments/{id}/reports/{key}",
+            "DELETE /plugin-api/assignments/{id}/reports/{key}",
+            "PUT /plugin-api/courses/{id}/reports/{key}",
+            "DELETE /plugin-api/courses/{id}/reports/{key}",
+            "GET /plugin-api/settings",
+            "GET /plugin-api/announcements",
+            "GET /plugin-api/assignments",
+            "GET /plugin-api/assignments/{id}",
+            "GET /plugin-api/assignments/{id}/attempts",
+            "GET /plugin-api/assignments/{id}/quiz",
+            "GET /plugin-api/assignments/{id}/submissions",
+            "GET /plugin-api/courses/{id}/members",
+            "GET /plugin-api/grades",
+            "GET /plugin-api/submissions/{id}/fields",
+            "GET /plugin-api/users/contact",
+            // The routes of a plugin's own server: who may call each is in its manifest, and
+            // `tests/plugin_routes.rs` checks every answer.
+            "GET /plugins/{plugin_id}/{path}",
+            "POST /plugins/{plugin_id}/{path}",
+            "PUT /plugins/{plugin_id}/{path}",
+            "PATCH /plugins/{plugin_id}/{path}",
+            "DELETE /plugins/{plugin_id}/{path}",
             "GET /plugin-slots",
             "POST /assignments/{id}/plugin-launch",
             "GET /health",
@@ -794,6 +849,7 @@ async fn the_list_of_operations_is_the_api() {
             term: any,
             owner: any,
             file: any,
+            announcement: any,
         };
         let listed: BTreeSet<String> = operations(&c, any)
             .into_iter()

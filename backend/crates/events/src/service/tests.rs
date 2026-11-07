@@ -224,3 +224,72 @@ async fn several_handlers_of_one_type_all_run_and_one_failure_retries_the_event(
     })
     .await;
 }
+
+#[test]
+fn every_event_has_a_dotted_kind_and_a_payload_of_ids_only() {
+    let id = Uuid::now_v7;
+    let events = [
+        Event::AssignmentCreated {
+            course_id: id(),
+            assignment_id: id(),
+        },
+        Event::AssignmentUpdated {
+            course_id: id(),
+            assignment_id: id(),
+        },
+        Event::AssignmentDeadlineChanged {
+            course_id: id(),
+            assignment_id: id(),
+        },
+        Event::EnrollmentChanged {
+            course_id: id(),
+            user_id: id(),
+        },
+        Event::QuizAttemptSubmitted {
+            course_id: id(),
+            assignment_id: id(),
+            student_id: id(),
+            submission_id: id(),
+        },
+        Event::AnnouncementPublished {
+            course_id: id(),
+            announcement_id: id(),
+        },
+        Event::GroupMembersChanged {
+            group_id: id(),
+            user_ids: vec![id(), id()],
+        },
+    ];
+    let mut kinds = Vec::new();
+    for event in &events {
+        kinds.push(event.kind());
+        assert_eq!(event.version(), 1);
+        let payload = event.payload();
+        let fields = payload.as_object().expect("an object");
+        assert!(!fields.is_empty());
+        // Nothing but ids: a uuid, or a list of them.
+        for (name, value) in fields {
+            let is_id =
+                |v: &serde_json::Value| v.as_str().is_some_and(|t| t.parse::<Uuid>().is_ok());
+            let ok = is_id(value) || value.as_array().is_some_and(|list| list.iter().all(is_id));
+            assert!(ok, "{} {name}: {value}", event.kind());
+        }
+    }
+    kinds.sort();
+    kinds.dedup();
+    assert_eq!(kinds.len(), events.len(), "each kind once");
+}
+
+#[tokio::test]
+async fn a_claimed_event_says_when_it_happened() {
+    db_test(async |pool| {
+        let before = chrono::Utc::now() - chrono::TimeDelta::seconds(5);
+        emit_grade(&pool).await;
+        let mut conn = pool.acquire().await.unwrap();
+        let claimed = repo::claim(&mut conn, 10, 60.0).await.unwrap();
+        assert_eq!(claimed.len(), 1);
+        let at = claimed[0].0.occurred_at;
+        assert!(at > before && at <= chrono::Utc::now(), "{at}");
+    })
+    .await;
+}

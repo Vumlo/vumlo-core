@@ -1,24 +1,72 @@
 //! What the crate talks about: the manifest a plugin publishes, an install, and the token.
 
+use std::collections::BTreeMap;
 use std::fmt;
 
-use access::Scope;
+use access::{CourseRole, CourseScope, Scope};
 use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use chrono::{DateTime, Utc};
-use common::text_enum;
+use common::{Role, text_enum};
 use rand::Rng;
 use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
+use crate::settings::SettingSpec;
+
 /// The event types a plugin may subscribe to. Anything else in a manifest stops the install.
-pub const SUBSCRIBABLE: [&str; 2] = ["submission.submitted", "grade.published"];
+/// `plugin.settings.changed` is sent only to the plugin whose setting changed (ADR-0072). The events
+/// that name a course (all but that one) are sent only to a plugin that may reach the course
+/// (ADR-0074). A plugin gets only the events it subscribed to: nothing is sent by default.
+pub const SUBSCRIBABLE: [&str; 9] = [
+    "submission.submitted",
+    "grade.published",
+    SETTINGS_CHANGED,
+    "assignment.created",
+    "assignment.updated",
+    "assignment.deadline_changed",
+    "enrollment.changed",
+    "quiz.attempt_submitted",
+    "announcement.published",
+];
+
+/// The event type that says an administrator changed a setting of the plugin.
+pub const SETTINGS_CHANGED: &str = "plugin.settings.changed";
 
 /// The places in the web app a plugin may put a page (a later step of ADR-0066).
 pub const SLOTS: [&str; 1] = [ASSIGNMENT_TAB];
 
 /// A tab on the page of an assignment.
 pub const ASSIGNMENT_TAB: &str = "assignment.tab";
+
+/// What a plugin's report is about (ADR-0077).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReportSubject {
+    /// A submitted attempt.
+    Submission(Uuid),
+    Assignment(Uuid),
+    Course(Uuid),
+}
+
+impl ReportSubject {
+    pub fn id(self) -> Uuid {
+        match self {
+            Self::Submission(id) | Self::Assignment(id) | Self::Course(id) => id,
+        }
+    }
+}
+
+/// How many reports, each under its own key, one plugin keeps on one subject.
+pub const MAX_REPORTS_PER_SUBJECT: i64 = 20;
+
+/// The name a plugin gives a report: lowercase letters, digits, `_` and `-`, starting with a letter,
+/// at most 40 characters.
+pub fn is_report_key(key: &str) -> bool {
+    let mut chars = key.chars();
+    chars.next().is_some_and(|c| c.is_ascii_lowercase())
+        && key.len() <= 40
+        && chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_' || c == '-')
+}
 
 /// The version of the plugin protocol this core speaks.
 pub const API_VERSION: &str = "1";
@@ -32,14 +80,80 @@ pub struct UiSlot {
     pub path: String,
 }
 
-/// What `GET {base}/manifest` says, checked.
+/// A route of the plugin's own server that people reach through the core (ADR-0078), as its manifest
+/// declared it.
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RouteSpec {
+    /// `GET`, `POST`, `PUT`, `PATCH` or `DELETE`.
+    pub method: String,
+    /// Starts with `/`; a segment is a name, or `{name}` for any one segment. `{course_id}` is a
+    /// course the core resolves.
+    pub path: String,
+    /// The institution roles that may call it.
+    pub roles: Vec<Role>,
+    /// The roles in the course of `{course_id}` that may call it; empty: any.
+    pub course_roles: Vec<CourseRole>,
+}
+
+/// The methods a route may declare.
+pub const ROUTE_METHODS: [&str; 5] = ["GET", "POST", "PUT", "PATCH", "DELETE"];
+
+/// The segment of a route path that names a course.
+pub const COURSE_SEGMENT: &str = "course_id";
+
+/// A literal segment, or the value of a parameter, is made of these and is not `.` or `..`: nothing a
+/// plugin's server could read as a way up or out of the route that was checked.
+pub fn is_plain_segment(segment: &str) -> bool {
+    !segment.is_empty()
+        && segment != "."
+        && segment != ".."
+        && segment
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'~' | b'-'))
+}
+
+impl RouteSpec {
+    /// The values of the parameters when `path` (the part of the address after the plugin's id)
+    /// is this route's, else `None`. Every segment of `path` is plain.
+    pub fn matches<'p>(&self, path: &'p str) -> Option<Vec<(&str, &'p str)>> {
+        let mut params = Vec::new();
+        let mut wanted = self.path.split('/');
+        let mut given = path.split('/');
+        loop {
+            match (wanted.next(), given.next()) {
+                (None, None) => return Some(params),
+                (Some(want), Some(have)) => {
+                    // The path starts with `/`, so the first segment of both is empty.
+                    if want.is_empty() && have.is_empty() {
+                        continue;
+                    }
+                    if !is_plain_segment(have) {
+                        return None;
+                    }
+                    match want.strip_prefix('{').and_then(|w| w.strip_suffix('}')) {
+                        Some(name) => params.push((name, have)),
+                        None if want == have => {}
+                        None => return None,
+                    }
+                }
+                _ => return None,
+            }
+        }
+    }
+}
+
+/// What `GET {base}/manifest` says, checked.
+#[derive(Debug, Clone, PartialEq)]
 pub struct PluginManifest {
     pub id: String,
     pub version: String,
     pub subscribes: Vec<String>,
     pub scopes: Vec<Scope>,
     pub ui: Vec<UiSlot>,
+    /// What an administrator may configure, by key (checked).
+    pub settings: BTreeMap<String, SettingSpec>,
+    /// The routes of its own server people reach through the core (checked).
+    pub routes: Vec<RouteSpec>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -51,7 +165,7 @@ text_enum!(InstallStatus { Enabled => "enabled", Disabled => "disabled" });
 
 /// One installed plugin. Holds no token and no secret: the token is stored only as a hash, and the
 /// secret is derived when it is needed.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Install {
     pub id: Uuid,
     pub plugin_id: String,
@@ -60,15 +174,21 @@ pub struct Install {
     pub subscribes: Vec<String>,
     pub requested_scopes: Vec<Scope>,
     pub scopes: Vec<Scope>,
+    /// The courses the plugin may reach (ADR-0074).
+    pub courses: CourseScope,
     /// The pages the plugin offers, as its manifest said (checked when it was installed).
     pub ui: Vec<UiSlot>,
+    /// The settings the plugin declared, as its manifest said (checked when it was installed).
+    pub settings: BTreeMap<String, SettingSpec>,
+    /// The routes the plugin declared (checked when it was installed).
+    pub routes: Vec<RouteSpec>,
     pub secret_version: i32,
     pub status: InstallStatus,
     pub created_at: DateTime<Utc>,
 }
 
 /// An install with the state of its deliveries, for `plugin list`.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct InstallSummary {
     pub install: Install,
     pub pending: i64,

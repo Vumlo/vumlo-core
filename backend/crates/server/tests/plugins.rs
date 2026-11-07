@@ -89,6 +89,7 @@ struct World {
     state: AppState,
     teacher: Account,
     student: Account,
+    course: Uuid,
     assignment: Uuid,
     api: String,
 }
@@ -102,7 +103,7 @@ async fn world(pool: PgPool) -> World {
     };
     let teacher = env.user("teacher@x.edu", Role::Teacher).await;
     let student = env.user("student@x.edu", Role::Student).await;
-    let (_, module) = env.course(&teacher, &[&student]).await;
+    let (course, module) = env.course(&teacher, &[&student]).await;
     let assignment = env.assignment(&teacher, module, "10").await;
     World {
         api: format!("{base}/api/v1"),
@@ -110,6 +111,7 @@ async fn world(pool: PgPool) -> World {
         state,
         teacher,
         student,
+        course,
         assignment,
     }
 }
@@ -175,9 +177,16 @@ impl World {
             .as_deref()
             .expect("a plugin key is set");
         let mut conn = self.state.db.acquire().await.expect("a connection");
-        plugins::install(&mut conn, key, url, &manifest, granted)
-            .await
-            .expect("the install")
+        plugins::install(
+            &mut conn,
+            key,
+            url,
+            &manifest,
+            granted,
+            &access::CourseScope::All,
+        )
+        .await
+        .expect("the install")
     }
 
     /// The plugin API as the plugin calls it.
@@ -207,12 +216,24 @@ async fn a_signed_event_reaches_the_plugin_and_its_report_appears_for_staff() {
         let installed = {
             let bare = Plugin::start(port, &w.api, None).await;
             let installed = w
-                .install(&bare.url(), &[Scope::SubmissionsRead, Scope::ReportsWrite])
+                .install(
+                    &bare.url(),
+                    &[
+                        Scope::SubmissionsRead,
+                        Scope::ReportsWrite,
+                        Scope::AssignmentsRead,
+                    ],
+                )
                 .await;
             assert_eq!(installed.install.plugin_id, "hello");
             assert_eq!(
                 installed.install.requested_scopes,
-                [Scope::SubmissionsRead, Scope::ReportsWrite]
+                [
+                    Scope::SubmissionsRead,
+                    Scope::ReportsWrite,
+                    Scope::SettingsRead,
+                    Scope::AssignmentsRead
+                ]
             );
             installed
         };
@@ -232,7 +253,24 @@ async fn a_signed_event_reaches_the_plugin_and_its_report_appears_for_staff() {
         let report = wait_for_report(&w, submission).await;
         assert_eq!(report["plugin_id"], "hello");
         assert_eq!(report["summary"], "5 words");
-        assert_eq!(report["data"], json!({"words": 5}));
+        assert_eq!(report["data"], json!({"words": 5, "kind": "text"}));
+        // The example keeps a total on the assignment, under a key of its own. It writes it after
+        // the report on the attempt, so wait for it.
+        let totals_path = format!("/assignments/{}/plugin-reports", w.assignment);
+        wait_until(|| async {
+            let body = w
+                .env
+                .ok("GET", &w.teacher.token, &totals_path, None, 200)
+                .await;
+            !body["items"].as_array().unwrap().is_empty()
+        })
+        .await;
+        let totals = w
+            .env
+            .ok("GET", &w.teacher.token, &totals_path, None, 200)
+            .await;
+        assert_eq!(totals["items"][0]["key"], "totals");
+        assert_eq!(totals["items"][0]["summary"], "1 work(s), 5 words");
 
         // The outbox delivers at least once; a second pass owes the plugin nothing new.
         sqlx::query("UPDATE events.outbox SET processed_at = NULL, run_after = now()")
@@ -355,7 +393,7 @@ async fn a_call_without_the_scope_is_refused_and_a_draft_is_not_there() {
         assert!(work.get("score").is_none() && work.get("draft").is_none());
         w.plugin_call(
             "PUT",
-            &format!("/submissions/{submission}/report"),
+            &format!("/submissions/{submission}/reports/words"),
             reader.token.expose(),
         )
         .json(&report)
@@ -396,11 +434,12 @@ async fn a_call_without_the_scope_is_refused_and_a_draft_is_not_there() {
                 &mut conn,
                 "reader",
                 &[Scope::SubmissionsRead, Scope::ReportsWrite],
+                &access::CourseScope::All,
             )
             .await
             .unwrap();
         }
-        let path = format!("/submissions/{submission}/report");
+        let path = format!("/submissions/{submission}/reports/words");
         let put = |body: Value| {
             w.plugin_call("PUT", &path, reader.token.expose())
                 .json(&body)
@@ -411,7 +450,7 @@ async fn a_call_without_the_scope_is_refused_and_a_draft_is_not_there() {
         put(json!({"summary": "x", "data": [1]})).await.problem(422);
         w.plugin_call(
             "PUT",
-            &format!("/submissions/{draft}/report"),
+            &format!("/submissions/{draft}/reports/words"),
             reader.token.expose(),
         )
         .json(&report)
@@ -560,9 +599,16 @@ impl World {
             .as_deref()
             .expect("a plugin key is set");
         let mut conn = self.state.db.acquire().await.expect("a connection");
-        plugins::install(&mut conn, key, "http://127.0.0.1:9", &manifest, granted)
-            .await
-            .expect("the install")
+        plugins::install(
+            &mut conn,
+            key,
+            "http://127.0.0.1:9",
+            &manifest,
+            granted,
+            &access::CourseScope::All,
+        )
+        .await
+        .expect("the install")
     }
 
     /// An install that offers a page in the tab of an assignment, with no process behind it.
@@ -582,9 +628,16 @@ impl World {
             .as_deref()
             .expect("a plugin key is set");
         let mut conn = self.state.db.acquire().await.expect("a connection");
-        plugins::install(&mut conn, key, base_url, &manifest, &[])
-            .await
-            .expect("the install")
+        plugins::install(
+            &mut conn,
+            key,
+            base_url,
+            &manifest,
+            &[],
+            &access::CourseScope::All,
+        )
+        .await
+        .expect("the install")
     }
 
     /// Asks for the launch token of `plugin_id` in the tab of the assignment, as `token`'s owner.
@@ -848,7 +901,7 @@ async fn a_report_is_replaced_by_the_next_and_goes_with_its_attempt_and_with_its
         let report = |submission: Uuid, summary: &'static str| {
             let call = w.plugin_call(
                 "PUT",
-                &format!("/submissions/{submission}/report"),
+                &format!("/submissions/{submission}/reports/words"),
                 plugin.token.expose(),
             );
             async move {
@@ -885,6 +938,244 @@ async fn a_report_is_replaced_by_the_next_and_goes_with_its_attempt_and_with_its
         let mut conn = w.env.pool.acquire().await.unwrap();
         plugins::remove(&mut conn, "writer").await.unwrap();
         assert_eq!(stored_reports(&w).await, 0);
+    })
+    .await;
+}
+
+// ---------------------------------------------------------------------------------------------
+// Settings (ADR-0072)
+// ---------------------------------------------------------------------------------------------
+
+impl World {
+    /// An install with these settings and no process behind it, granted `granted`.
+    async fn install_with_settings(
+        &self,
+        id: &str,
+        settings: Value,
+        granted: &[Scope],
+    ) -> Installed {
+        let manifest = parse_manifest(
+            json!({"id": id, "version": "1", "api": "1", "scopes": ["settings:read", "submissions:read"],
+                   "settings": settings})
+            .to_string()
+            .as_bytes(),
+        )
+        .unwrap();
+        let key = self
+            .state
+            .plugins
+            .key
+            .as_deref()
+            .expect("a plugin key is set");
+        let mut conn = self.state.db.acquire().await.expect("a connection");
+        plugins::install(
+            &mut conn,
+            key,
+            "http://127.0.0.1:9",
+            &manifest,
+            granted,
+            &access::CourseScope::All,
+        )
+        .await
+        .expect("the install")
+    }
+
+    /// What `vumlo-cli plugin settings set` does, minus the audit row.
+    async fn set(&self, plugin: &str, name: &str, value: Value, course: Option<Uuid>) -> bool {
+        let key = self
+            .state
+            .plugins
+            .key
+            .as_deref()
+            .expect("a plugin key is set");
+        let mut tx = self.state.db.begin().await.expect("a transaction");
+        let changed = plugins::set_setting(&mut tx, key, plugin, name, value, course)
+            .await
+            .expect("the setting");
+        tx.commit().await.expect("commit");
+        changed
+    }
+}
+
+#[tokio::test]
+async fn a_plugin_reads_its_own_settings_secrets_included_and_nobody_else_can() {
+    db_test(async |pool| {
+        let w = world(pool).await;
+        let spec = json!({
+            "unit": {"type": "string", "enum": ["words", "characters"], "default": "words"},
+            "api_token": {"type": "string", "secret": true},
+            "max_words": {"type": "number", "scope": "course"}
+        });
+        let reader = w
+            .install_with_settings("reader", spec.clone(), &[Scope::SettingsRead])
+            .await;
+        let other = w
+            .install_with_settings("other", spec, &[Scope::SettingsRead])
+            .await;
+        let blind = w
+            .install_with_settings(
+                "blind",
+                json!({"unit": {"type": "string"}}),
+                &[Scope::SubmissionsRead],
+            )
+            .await;
+        w.set("reader", "api_token", json!("tok-s3cret"), None)
+            .await;
+        w.set("reader", "max_words", json!(250), Some(w.course))
+            .await;
+
+        let get = |token: &str, query: &str| {
+            w.plugin_call("GET", &format!("/settings{query}"), token)
+                .send()
+        };
+        // The institution's values, defaults filled in; the secret in clear, and not cacheable.
+        let institution = get(reader.token.expose(), "").await;
+        assert_eq!(institution.status, 200);
+        assert_eq!(institution.header("cache-control"), "no-store");
+        assert_eq!(
+            institution.json(),
+            json!({"values": {"unit": "words", "api_token": "tok-s3cret"}})
+        );
+        // With a course, that course's values too.
+        let course = get(reader.token.expose(), &format!("?course_id={}", w.course))
+            .await
+            .json();
+        assert_eq!(course["values"]["max_words"], 250);
+        assert_eq!(course["values"]["api_token"], "tok-s3cret");
+        // A course that is not there is a 404, not an empty answer, and the scope is checked first.
+        let unknown = format!("?course_id={}", Uuid::now_v7());
+        get(reader.token.expose(), &unknown).await.problem(404);
+        get(blind.token.expose(), &unknown).await.problem(403);
+
+        // Another plugin has its own, and none of the first one's.
+        let theirs = get(other.token.expose(), "").await.json();
+        assert_eq!(theirs, json!({"values": {"unit": "words"}}));
+        // No scope, no settings; a bad id is a 422; a bad token, a session and no token are 401s.
+        get(blind.token.expose(), "").await.problem(403);
+        get(reader.token.expose(), "?course_id=nope")
+            .await
+            .problem(422);
+        get("vplg_".to_owned().as_str(), "").await.problem(401);
+        get(&w.teacher.token, "").await.problem(401);
+        common::Http::new(&w.env.base)
+            .get("/plugin-api/settings")
+            .send()
+            .await
+            .problem(401);
+
+        // The secret is in no route a person can call: the pages of the slot, the reports.
+        for path in ["/plugin-slots?slot=assignment.tab", "/meta"] {
+            let body = w.env.call("GET", &w.teacher.token, path, None).await.body;
+            assert!(!String::from_utf8_lossy(&body).contains("s3cret"), "{path}");
+        }
+        // A course's values go with the course.
+        let rows = || async {
+            sqlx::query_scalar::<_, i64>(
+                "SELECT count(*) FROM plugins.settings WHERE course_id IS NOT NULL",
+            )
+            .fetch_one(&w.env.pool)
+            .await
+            .unwrap()
+        };
+        assert_eq!(rows().await, 1);
+        let gone = w
+            .env
+            .call(
+                "DELETE",
+                &w.teacher.token,
+                &format!("/courses/{}", w.course),
+                None,
+            )
+            .await;
+        assert_eq!(gone.status, 204, "{}", String::from_utf8_lossy(&gone.body));
+        assert_eq!(rows().await, 0);
+
+        // Granting takes effect at once, the scope is read from the install each time.
+        {
+            let mut conn = w.env.pool.acquire().await.unwrap();
+            plugins::grant(
+                &mut conn,
+                "blind",
+                &[Scope::SubmissionsRead, Scope::SettingsRead],
+                &access::CourseScope::All,
+            )
+            .await
+            .unwrap();
+        }
+        assert_eq!(
+            get(blind.token.expose(), "").await.json(),
+            json!({"values": {}})
+        );
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn the_example_plugin_changes_what_it_reports_when_its_settings_change() {
+    db_test(async |pool| {
+        let w = world(pool).await;
+        let port = Plugin::free_port();
+        let installed = {
+            let bare = Plugin::start(port, &w.api, None).await;
+            w.install(
+                &bare.url(),
+                &[
+                    Scope::SubmissionsRead,
+                    Scope::ReportsWrite,
+                    Scope::SettingsRead,
+                ],
+            )
+            .await
+        };
+        let _plugin = Plugin::start(port, &w.api, Some(&installed)).await;
+
+        // The defaults: words, and no limit.
+        let first = w.submit("one two three four five").await;
+        assert_eq!(w.pump().await, 1);
+        let report = wait_for_report(&w, first).await;
+        assert_eq!(
+            (report["summary"].as_str(), &report["data"]),
+            (Some("5 words"), &json!({"words": 5}))
+        );
+
+        // An administrator changes two settings; the plugin is told, once each, and nobody else.
+        assert!(w.set("hello", "unit", json!("characters"), None).await);
+        assert!(w.set("hello", "max_words", json!(3), Some(w.course)).await);
+        assert_eq!(w.pump().await, 2, "one delivery per change");
+        let second = w.submit("one two three four five").await;
+        assert_eq!(w.pump().await, 1);
+        wait_until(|| async {
+            w.reports(second)
+                .await
+                .first()
+                .is_some_and(|r| r["summary"] == "23 characters")
+        })
+        .await;
+        let report = w.reports(second).await.remove(0);
+        assert_eq!(report["data"], json!({"words": 5, "over_limit": true}));
+
+        // Back to the default: the report is in words again.
+        {
+            let mut tx = w.state.db.begin().await.unwrap();
+            plugins::unset_setting(&mut tx, "hello", "unit", None)
+                .await
+                .unwrap();
+            tx.commit().await.unwrap();
+        }
+        assert_eq!(w.pump().await, 1);
+        let third = w.submit("one two").await;
+        assert_eq!(w.pump().await, 1);
+        wait_until(|| async {
+            w.reports(third)
+                .await
+                .first()
+                .is_some_and(|r| r["summary"] == "2 words")
+        })
+        .await;
+        assert_eq!(
+            w.reports(third).await[0]["data"],
+            json!({"words": 2, "over_limit": false})
+        );
     })
     .await;
 }

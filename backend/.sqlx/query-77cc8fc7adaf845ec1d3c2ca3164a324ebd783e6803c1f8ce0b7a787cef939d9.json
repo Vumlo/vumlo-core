@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id FROM plugins.plugin_installs i\n         WHERE status = 'enabled' AND $1 = ANY (subscribes)\n           AND ($2::uuid IS NULL OR all_courses\n                OR EXISTS (SELECT 1 FROM plugins.install_courses c\n                           WHERE c.install_id = i.id AND c.course_id = $2))\n         ORDER BY id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "plugins.plugin_installs",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "77cc8fc7adaf845ec1d3c2ca3164a324ebd783e6803c1f8ce0b7a787cef939d9"
+}

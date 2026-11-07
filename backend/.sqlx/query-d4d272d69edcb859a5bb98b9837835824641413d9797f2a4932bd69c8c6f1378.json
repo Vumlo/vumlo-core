@@ -1,0 +1,21 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT count(*) AS \"n!\" FROM events.outbox\n               WHERE type IN ('submission.submitted', 'quiz.attempt_submitted', 'grade.published')",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "n!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "d4d272d69edcb859a5bb98b9837835824641413d9797f2a4932bd69c8c6f1378"
+}

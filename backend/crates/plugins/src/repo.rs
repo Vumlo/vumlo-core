@@ -1,12 +1,14 @@
 //! SQL only. Every function takes the connection it runs on and never begins a transaction. This
 //! crate reads and writes the schema `plugins` and nothing else.
 
-use access::Scope;
+use access::{CourseRole, CourseScope, Scope};
 use chrono::{DateTime, Utc};
+use common::Role;
 use sqlx::PgConnection;
 use uuid::Uuid;
 
-use crate::model::{Install, InstallStatus, UiSlot};
+use crate::model::{Install, InstallStatus, ReportSubject, RouteSpec, UiSlot};
+use crate::settings::SettingSpec;
 
 /// The columns of `plugin_installs`, as the database holds them.
 struct InstallRow {
@@ -17,7 +19,11 @@ struct InstallRow {
     subscribes: Vec<String>,
     requested_scopes: Vec<String>,
     scopes: Vec<String>,
+    all_courses: bool,
+    courses: Vec<Uuid>,
     ui_slots: serde_json::Value,
+    settings: serde_json::Value,
+    routes: serde_json::Value,
     secret_version: i32,
     status: InstallStatus,
     created_at: DateTime<Utc>,
@@ -41,6 +47,53 @@ fn ui_of(value: &serde_json::Value) -> Vec<UiSlot> {
         .collect()
 }
 
+/// The routes in `routes`. They were checked when the plugin was installed; an entry that does not
+/// read back is left out, so it is a route nobody may call.
+pub(crate) fn routes_of(value: &serde_json::Value) -> Vec<RouteSpec> {
+    let text = |entry: &serde_json::Value, key: &str| entry[key].as_str().map(str::to_owned);
+    let list = |entry: &serde_json::Value, key: &str| -> Vec<String> {
+        entry[key]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(|v| v.as_str().map(str::to_owned))
+            .collect()
+    };
+    value
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|entry| {
+            Some(RouteSpec {
+                method: text(entry, "method")?,
+                path: text(entry, "path")?,
+                roles: list(entry, "roles")
+                    .iter()
+                    .filter_map(|r| r.parse::<Role>().ok())
+                    .collect(),
+                course_roles: list(entry, "course_roles")
+                    .iter()
+                    .filter_map(|r| r.parse::<CourseRole>().ok())
+                    .collect(),
+            })
+        })
+        .collect()
+}
+
+pub(crate) fn routes_json(routes: &[RouteSpec]) -> serde_json::Value {
+    routes
+        .iter()
+        .map(|route| {
+            serde_json::json!({
+                "method": route.method,
+                "path": route.path,
+                "roles": route.roles.iter().map(|r| r.as_str()).collect::<Vec<_>>(),
+                "course_roles": route.course_roles.iter().map(|r| r.as_str()).collect::<Vec<_>>(),
+            })
+        })
+        .collect()
+}
+
 /// The scopes in the database were checked when they were written; one that does not parse (a
 /// scope a later release removed) grants nothing.
 pub(crate) fn scopes_of(names: &[String]) -> Vec<Scope> {
@@ -57,11 +110,23 @@ impl From<InstallRow> for Install {
             subscribes: row.subscribes,
             requested_scopes: scopes_of(&row.requested_scopes),
             scopes: scopes_of(&row.scopes),
+            courses: course_scope(row.all_courses, row.courses),
             ui: ui_of(&row.ui_slots),
+            // Checked when the plugin was installed; one that does not read back declares nothing.
+            settings: serde_json::from_value(row.settings).unwrap_or_default(),
+            routes: routes_of(&row.routes),
             secret_version: row.secret_version,
             status: row.status,
             created_at: row.created_at,
         }
+    }
+}
+
+pub(crate) fn course_scope(all_courses: bool, courses: Vec<Uuid>) -> CourseScope {
+    if all_courses {
+        CourseScope::All
+    } else {
+        CourseScope::Only(courses)
     }
 }
 
@@ -84,7 +149,10 @@ pub struct NewInstall<'a> {
     pub subscribes: &'a [String],
     pub requested_scopes: &'a [String],
     pub scopes: &'a [String],
+    pub courses: &'a CourseScope,
     pub ui_slots: serde_json::Value,
+    pub routes: serde_json::Value,
+    pub settings: &'a std::collections::BTreeMap<String, SettingSpec>,
     pub token_hash: &'a [u8],
 }
 
@@ -95,8 +163,8 @@ pub async fn insert_install(
     sqlx::query!(
         "INSERT INTO plugins.plugin_installs
              (id, plugin_id, version, base_url, api, subscribes, requested_scopes, scopes,
-              ui_slots, token_hash)
-         VALUES ($1, $2, $3, $4, '1', $5, $6, $7, $8, $9)",
+              ui_slots, settings, token_hash, all_courses, routes)
+         VALUES ($1, $2, $3, $4, '1', $5, $6, $7, $8, $9, $10, $11, $12)",
         new.id,
         new.plugin_id,
         new.version,
@@ -105,7 +173,44 @@ pub async fn insert_install(
         new.requested_scopes,
         new.scopes,
         new.ui_slots,
-        new.token_hash
+        serde_json::to_value(new.settings).unwrap_or_default(),
+        new.token_hash,
+        matches!(new.courses, CourseScope::All),
+        new.routes
+    )
+    .execute(&mut *conn)
+    .await?;
+    set_courses(conn, new.id, new.courses).await
+}
+
+/// Makes the courses of the install exactly `courses`: `All` keeps no list, `Only` keeps these.
+pub async fn set_courses(
+    conn: &mut PgConnection,
+    install_id: Uuid,
+    courses: &CourseScope,
+) -> Result<(), sqlx::Error> {
+    let (all, list): (bool, &[Uuid]) = match courses {
+        CourseScope::All => (true, &[]),
+        CourseScope::Only(list) => (false, list),
+    };
+    sqlx::query!(
+        "UPDATE plugins.plugin_installs SET all_courses = $2, updated_at = now() WHERE id = $1",
+        install_id,
+        all
+    )
+    .execute(&mut *conn)
+    .await?;
+    sqlx::query!(
+        "DELETE FROM plugins.install_courses WHERE install_id = $1",
+        install_id
+    )
+    .execute(&mut *conn)
+    .await?;
+    sqlx::query!(
+        "INSERT INTO plugins.install_courses (install_id, course_id)
+         SELECT $1, course_id FROM unnest($2::uuid[]) AS course_id",
+        install_id,
+        list
     )
     .execute(conn)
     .await?;
@@ -120,7 +225,10 @@ pub async fn find_install(
         InstallRow,
         r#"SELECT id, plugin_id, version, base_url,
                   subscribes AS "subscribes!", requested_scopes AS "requested_scopes!",
-                  scopes AS "scopes!", ui_slots, secret_version,
+                  scopes AS "scopes!", all_courses,
+                  ARRAY(SELECT course_id FROM plugins.install_courses
+                        WHERE install_id = plugin_installs.id) AS "courses!",
+                  ui_slots, settings, routes, secret_version,
                   status AS "status: InstallStatus", created_at
            FROM plugins.plugin_installs WHERE plugin_id = $1"#,
         plugin_id
@@ -135,7 +243,10 @@ pub async fn list_installs(conn: &mut PgConnection) -> Result<Vec<Install>, sqlx
         InstallRow,
         r#"SELECT id, plugin_id, version, base_url,
                   subscribes AS "subscribes!", requested_scopes AS "requested_scopes!",
-                  scopes AS "scopes!", ui_slots, secret_version,
+                  scopes AS "scopes!", all_courses,
+                  ARRAY(SELECT course_id FROM plugins.install_courses
+                        WHERE install_id = plugin_installs.id) AS "courses!",
+                  ui_slots, settings, routes, secret_version,
                   status AS "status: InstallStatus", created_at
            FROM plugins.plugin_installs ORDER BY plugin_id"#
     )
@@ -177,6 +288,57 @@ pub async fn set_scopes(
     Ok(())
 }
 
+/// Replaces the credential: the old token stops working in the same statement.
+pub async fn set_token_hash(
+    conn: &mut PgConnection,
+    id: Uuid,
+    token_hash: &[u8],
+) -> Result<(), sqlx::Error> {
+    sqlx::query!(
+        "UPDATE plugins.plugin_installs SET token_hash = $2, updated_at = now() WHERE id = $1",
+        id,
+        token_hash
+    )
+    .execute(conn)
+    .await?;
+    Ok(())
+}
+
+/// What a new manifest changes about an install; the token, the secret and the courses stay.
+pub struct ManifestUpdate<'a> {
+    pub version: &'a str,
+    pub subscribes: &'a [String],
+    pub requested_scopes: &'a [String],
+    pub scopes: &'a [String],
+    pub ui_slots: serde_json::Value,
+    pub routes: serde_json::Value,
+    pub settings: &'a std::collections::BTreeMap<String, SettingSpec>,
+}
+
+pub async fn update_manifest(
+    conn: &mut PgConnection,
+    id: Uuid,
+    new: ManifestUpdate<'_>,
+) -> Result<(), sqlx::Error> {
+    sqlx::query!(
+        "UPDATE plugins.plugin_installs
+         SET version = $2, subscribes = $3, requested_scopes = $4, scopes = $5, ui_slots = $6,
+             routes = $7, settings = $8, updated_at = now()
+         WHERE id = $1",
+        id,
+        new.version,
+        new.subscribes,
+        new.requested_scopes,
+        new.scopes,
+        new.ui_slots,
+        new.routes,
+        serde_json::to_value(new.settings).unwrap_or_default()
+    )
+    .execute(conn)
+    .await?;
+    Ok(())
+}
+
 pub async fn set_status(
     conn: &mut PgConnection,
     id: Uuid,
@@ -205,6 +367,8 @@ pub struct TokenOwner {
     pub install_id: Uuid,
     pub plugin_id: String,
     pub scopes: Vec<String>,
+    pub all_courses: bool,
+    pub courses: Vec<Uuid>,
 }
 
 pub async fn find_enabled_by_token(
@@ -213,7 +377,9 @@ pub async fn find_enabled_by_token(
 ) -> Result<Option<TokenOwner>, sqlx::Error> {
     sqlx::query_as!(
         TokenOwner,
-        r#"SELECT id AS install_id, plugin_id, scopes AS "scopes!"
+        r#"SELECT id AS install_id, plugin_id, scopes AS "scopes!", all_courses,
+                  ARRAY(SELECT course_id FROM plugins.install_courses
+                        WHERE install_id = plugin_installs.id) AS "courses!"
            FROM plugins.plugin_installs
            WHERE token_hash = $1 AND status = 'enabled'"#,
         token_hash
@@ -226,16 +392,22 @@ pub async fn find_enabled_by_token(
 // Deliveries
 // ---------------------------------------------------------------------------------------------
 
-/// The enabled installs that subscribed to `kind`.
+/// The enabled installs that subscribed to `kind` and, when the event is about a course, may reach
+/// it (ADR-0074).
 pub async fn enabled_subscribers(
     conn: &mut PgConnection,
     kind: &str,
+    course_id: Option<Uuid>,
 ) -> Result<Vec<Uuid>, sqlx::Error> {
     sqlx::query_scalar!(
-        "SELECT id FROM plugins.plugin_installs
+        "SELECT id FROM plugins.plugin_installs i
          WHERE status = 'enabled' AND $1 = ANY (subscribes)
+           AND ($2::uuid IS NULL OR all_courses
+                OR EXISTS (SELECT 1 FROM plugins.install_courses c
+                           WHERE c.install_id = i.id AND c.course_id = $2))
          ORDER BY id",
-        kind
+        kind,
+        course_id
     )
     .fetch_all(conn)
     .await
@@ -249,16 +421,18 @@ pub async fn insert_delivery(
     event_id: Uuid,
     event_type: &str,
     data: &serde_json::Value,
+    occurred_at: DateTime<Utc>,
 ) -> Result<bool, sqlx::Error> {
     let done = sqlx::query!(
-        "INSERT INTO plugins.deliveries (id, install_id, event_id, event_type, data)
-         VALUES ($1, $2, $3, $4, $5)
+        "INSERT INTO plugins.deliveries (id, install_id, event_id, event_type, data, occurred_at)
+         VALUES ($1, $2, $3, $4, $5, $6)
          ON CONFLICT (install_id, event_id) DO NOTHING",
         Uuid::now_v7(),
         install_id,
         event_id,
         event_type,
-        data
+        data,
+        occurred_at
     )
     .execute(conn)
     .await?;
@@ -272,6 +446,7 @@ pub struct Claimed {
     pub event_id: Uuid,
     pub event_type: String,
     pub data: serde_json::Value,
+    pub occurred_at: DateTime<Utc>,
     pub attempts: i32,
     pub base_url: String,
     pub secret_version: i32,
@@ -300,10 +475,11 @@ pub async fn claim(
                UPDATE plugins.deliveries d
                SET attempts = d.attempts + 1, run_after = now() + make_interval(secs => $2)
                FROM due WHERE d.id = due.id
-               RETURNING d.id, d.install_id, d.event_id, d.event_type, d.data, d.attempts
+               RETURNING d.id, d.install_id, d.event_id, d.event_type, d.data, d.occurred_at, d.attempts
            )
            SELECT c.id AS "id!", c.install_id AS "install_id!", c.event_id AS "event_id!",
-                  c.event_type AS "event_type!", c.data AS "data!", c.attempts AS "attempts!",
+                  c.event_type AS "event_type!", c.data AS "data!",
+                  c.occurred_at AS "occurred_at!", c.attempts AS "attempts!",
                   i.base_url, i.secret_version
            FROM claimed c JOIN plugins.plugin_installs i ON i.id = c.install_id
            ORDER BY c.id"#,
@@ -352,21 +528,31 @@ pub async fn mark_failed(
 // Reports
 // ---------------------------------------------------------------------------------------------
 
-/// One report per plugin and attempt: a later one replaces the earlier.
+/// One report per plugin, subject and key: a later one replaces the earlier.
 pub async fn upsert_report(
     conn: &mut PgConnection,
     install_id: Uuid,
-    submission_id: Uuid,
+    subject: ReportSubject,
+    key: &str,
     summary: &str,
     data: &serde_json::Value,
 ) -> Result<(), sqlx::Error> {
+    let (submission, assignment, course) = match subject {
+        ReportSubject::Submission(id) => (Some(id), None, None),
+        ReportSubject::Assignment(id) => (None, Some(id), None),
+        ReportSubject::Course(id) => (None, None, Some(id)),
+    };
     sqlx::query!(
-        "INSERT INTO plugins.reports (install_id, submission_id, summary, data)
-         VALUES ($1, $2, $3, $4)
-         ON CONFLICT (install_id, submission_id)
-         DO UPDATE SET summary = $3, data = $4, updated_at = now()",
+        "INSERT INTO plugins.reports
+             (install_id, submission_id, assignment_id, course_id, key, summary, data)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)
+         ON CONFLICT (install_id, subject_id, key)
+         DO UPDATE SET summary = $6, data = $7, updated_at = now()",
         install_id,
-        submission_id,
+        submission,
+        assignment,
+        course,
+        key,
         summary,
         data
     )
@@ -375,27 +561,265 @@ pub async fn upsert_report(
     Ok(())
 }
 
+/// Whether the plugin keeps a report under this key on the subject.
+pub async fn report_exists(
+    conn: &mut PgConnection,
+    install_id: Uuid,
+    subject: ReportSubject,
+    key: &str,
+) -> Result<bool, sqlx::Error> {
+    sqlx::query_scalar!(
+        r#"SELECT EXISTS (SELECT 1 FROM plugins.reports
+                          WHERE install_id = $1 AND subject_id = $2 AND key = $3) AS "found!""#,
+        install_id,
+        subject.id(),
+        key
+    )
+    .fetch_one(conn)
+    .await
+}
+
+/// How many reports the plugin keeps on the subject.
+pub async fn count_reports(
+    conn: &mut PgConnection,
+    install_id: Uuid,
+    subject: ReportSubject,
+) -> Result<i64, sqlx::Error> {
+    sqlx::query_scalar!(
+        r#"SELECT count(*) AS "n!" FROM plugins.reports
+           WHERE install_id = $1 AND subject_id = $2"#,
+        install_id,
+        subject.id()
+    )
+    .fetch_one(conn)
+    .await
+}
+
+/// Whether there was a report to delete.
+pub async fn delete_report(
+    conn: &mut PgConnection,
+    install_id: Uuid,
+    subject: ReportSubject,
+    key: &str,
+) -> Result<bool, sqlx::Error> {
+    let done = sqlx::query!(
+        "DELETE FROM plugins.reports WHERE install_id = $1 AND subject_id = $2 AND key = $3",
+        install_id,
+        subject.id(),
+        key
+    )
+    .execute(conn)
+    .await?;
+    Ok(done.rows_affected() == 1)
+}
+
 pub struct ReportRow {
     pub plugin_id: String,
+    pub key: String,
     pub summary: String,
     pub data: serde_json::Value,
     pub updated_at: DateTime<Utc>,
 }
 
-/// The reports on an attempt, by plugin. A disabled plugin's reports stay; they were written
+/// The reports on a subject, by plugin and key. A disabled plugin's reports stay; they were written
 /// while it was allowed to.
 pub async fn reports_of(
     conn: &mut PgConnection,
-    submission_id: Uuid,
+    subject: ReportSubject,
 ) -> Result<Vec<ReportRow>, sqlx::Error> {
     sqlx::query_as!(
         ReportRow,
-        "SELECT i.plugin_id, r.summary, r.data, r.updated_at
+        "SELECT i.plugin_id, r.key, r.summary, r.data, r.updated_at
          FROM plugins.reports r JOIN plugins.plugin_installs i ON i.id = r.install_id
-         WHERE r.submission_id = $1
-         ORDER BY i.plugin_id",
-        submission_id
+         WHERE r.subject_id = $1
+         ORDER BY i.plugin_id, r.key",
+        subject.id()
     )
     .fetch_all(conn)
     .await
+}
+
+// ---------------------------------------------------------------------------------------------
+// Settings
+// ---------------------------------------------------------------------------------------------
+
+/// The nil uuid stands for "no course" in the unique index of `plugins.settings`.
+const NO_COURSE: Uuid = Uuid::nil();
+
+/// A stored value of one setting. For a secret it is the sealed string.
+pub struct StoredSetting {
+    pub key: String,
+    pub value: serde_json::Value,
+}
+
+/// The values stored for the install in one scope: the whole institution (`course_id` is `None`) or
+/// one course.
+pub async fn settings_of(
+    conn: &mut PgConnection,
+    install_id: Uuid,
+    course_id: Option<Uuid>,
+) -> Result<Vec<StoredSetting>, sqlx::Error> {
+    sqlx::query_as!(
+        StoredSetting,
+        "SELECT key, value FROM plugins.settings
+         WHERE install_id = $1 AND COALESCE(course_id, $3) = COALESCE($2, $3)
+         ORDER BY key",
+        install_id,
+        course_id,
+        NO_COURSE
+    )
+    .fetch_all(conn)
+    .await
+}
+
+pub async fn upsert_setting(
+    conn: &mut PgConnection,
+    install_id: Uuid,
+    course_id: Option<Uuid>,
+    key: &str,
+    value: &serde_json::Value,
+) -> Result<(), sqlx::Error> {
+    sqlx::query!(
+        "INSERT INTO plugins.settings (install_id, course_id, key, value)
+         VALUES ($1, $2, $3, $4)
+         ON CONFLICT (install_id, key, (COALESCE(course_id, '00000000-0000-0000-0000-000000000000')))
+         DO UPDATE SET value = $4, updated_at = now()",
+        install_id,
+        course_id,
+        key,
+        value
+    )
+    .execute(conn)
+    .await?;
+    Ok(())
+}
+
+/// Every stored value of the install, in every scope: `(course, key, value)`.
+pub async fn all_settings(
+    conn: &mut PgConnection,
+    install_id: Uuid,
+) -> Result<Vec<(Option<Uuid>, String, serde_json::Value)>, sqlx::Error> {
+    let rows = sqlx::query!(
+        "SELECT course_id, key, value FROM plugins.settings WHERE install_id = $1
+         ORDER BY key, course_id NULLS FIRST",
+        install_id
+    )
+    .fetch_all(conn)
+    .await?;
+    Ok(rows
+        .into_iter()
+        .map(|row| (row.course_id, row.key, row.value))
+        .collect())
+}
+
+/// Whether a value was there to delete.
+pub async fn delete_setting(
+    conn: &mut PgConnection,
+    install_id: Uuid,
+    course_id: Option<Uuid>,
+    key: &str,
+) -> Result<bool, sqlx::Error> {
+    let done = sqlx::query!(
+        "DELETE FROM plugins.settings
+         WHERE install_id = $1 AND key = $3 AND COALESCE(course_id, $4) = COALESCE($2, $4)",
+        install_id,
+        course_id,
+        key,
+        NO_COURSE
+    )
+    .execute(conn)
+    .await?;
+    Ok(done.rows_affected() == 1)
+}
+
+// ---------------------------------------------------------------------------------------------
+// The log of plugin API calls (ADR-0079)
+// ---------------------------------------------------------------------------------------------
+
+pub async fn insert_call(
+    conn: &mut PgConnection,
+    install_id: Uuid,
+    method: &str,
+    route: &str,
+    status: i16,
+    duration_ms: i32,
+) -> Result<(), sqlx::Error> {
+    sqlx::query!(
+        "INSERT INTO plugins.api_calls (id, install_id, method, route, status, duration_ms)
+         VALUES ($1, $2, $3, $4, $5, $6)",
+        Uuid::now_v7(),
+        install_id,
+        method,
+        route,
+        status,
+        duration_ms
+    )
+    .execute(conn)
+    .await?;
+    Ok(())
+}
+
+pub struct CallRow {
+    pub at: DateTime<Utc>,
+    pub method: String,
+    pub route: String,
+    pub status: i16,
+    pub duration_ms: i32,
+}
+
+/// The newest calls of the install since `since`, newest first.
+pub async fn recent_calls(
+    conn: &mut PgConnection,
+    install_id: Uuid,
+    since: DateTime<Utc>,
+    limit: i64,
+) -> Result<Vec<CallRow>, sqlx::Error> {
+    sqlx::query_as!(
+        CallRow,
+        "SELECT at, method, route, status, duration_ms FROM plugins.api_calls
+         WHERE install_id = $1 AND at >= $2 ORDER BY at DESC, id DESC LIMIT $3",
+        install_id,
+        since,
+        limit
+    )
+    .fetch_all(conn)
+    .await
+}
+
+/// How many calls the install made since `since`, by route and answer.
+pub struct CallCount {
+    pub method: String,
+    pub route: String,
+    pub status: i16,
+    pub calls: i64,
+    pub average_ms: i64,
+}
+
+pub async fn call_counts(
+    conn: &mut PgConnection,
+    install_id: Uuid,
+    since: DateTime<Utc>,
+) -> Result<Vec<CallCount>, sqlx::Error> {
+    sqlx::query_as!(
+        CallCount,
+        r#"SELECT method, route, status, count(*) AS "calls!",
+                  COALESCE(avg(duration_ms), 0)::bigint AS "average_ms!"
+           FROM plugins.api_calls WHERE install_id = $1 AND at >= $2
+           GROUP BY method, route, status ORDER BY route, method, status"#,
+        install_id,
+        since
+    )
+    .fetch_all(conn)
+    .await
+}
+
+/// Deletes the lines older than `days`. Returns how many.
+pub async fn prune_calls(conn: &mut PgConnection, days: i32) -> Result<u64, sqlx::Error> {
+    let done = sqlx::query!(
+        "DELETE FROM plugins.api_calls WHERE at < now() - make_interval(days => $1)",
+        days
+    )
+    .execute(conn)
+    .await?;
+    Ok(done.rows_affected())
 }

@@ -2,16 +2,24 @@
 //! The core trusts none of it: an unknown scope, event or slot stops the install, and the message
 //! names the value.
 
-use access::Scope;
+use std::collections::BTreeMap;
+
+use access::{CourseRole, Scope};
+use common::Role;
 use serde::Deserialize;
 
 use crate::PluginsError;
-use crate::model::{API_VERSION, PluginManifest, SLOTS, SUBSCRIBABLE, UiSlot};
+use crate::model::{
+    API_VERSION, COURSE_SEGMENT, PluginManifest, ROUTE_METHODS, RouteSpec, SLOTS, SUBSCRIBABLE,
+    UiSlot, is_plain_segment,
+};
+use crate::settings::{MAX_SETTINGS, SettingSpec, is_key};
 
 const MAX_SUBSCRIPTIONS: usize = 10;
 const MAX_SLOTS: usize = 4;
 const MAX_TITLE_CHARS: usize = 60;
 const MAX_PATH_CHARS: usize = 200;
+const MAX_ROUTES: usize = 20;
 
 /// The manifest as a plugin writes it. Unknown fields are ignored (a plugin may say more about
 /// itself); the known ones are all checked.
@@ -26,6 +34,20 @@ struct Raw {
     scopes: Vec<String>,
     #[serde(default)]
     ui: Vec<RawSlot>,
+    #[serde(default)]
+    settings: BTreeMap<String, serde_json::Value>,
+    #[serde(default)]
+    routes: Vec<RawRoute>,
+}
+
+#[derive(Deserialize)]
+struct RawRoute {
+    method: String,
+    path: String,
+    #[serde(default)]
+    roles: Vec<String>,
+    #[serde(default)]
+    course_roles: Vec<String>,
 }
 
 #[derive(Deserialize)]
@@ -128,13 +150,147 @@ pub fn parse_manifest(bytes: &[u8]) -> Result<PluginManifest, PluginsError> {
             shown(&twice.slot)
         )));
     }
+    let settings = settings(raw.settings)?;
+    let routes = routes(raw.routes)?;
     Ok(PluginManifest {
         id: raw.id,
         version: raw.version,
         subscribes,
         scopes,
         ui,
+        settings,
+        routes,
     })
+}
+
+fn routes(raw: Vec<RawRoute>) -> Result<Vec<RouteSpec>, PluginsError> {
+    if raw.len() > MAX_ROUTES {
+        return Err(invalid(format!(
+            "routes lists more than {MAX_ROUTES} routes"
+        )));
+    }
+    let mut found: Vec<RouteSpec> = Vec::new();
+    for route in raw.into_iter().map(route) {
+        let route = route?;
+        if found
+            .iter()
+            .any(|before| before.method == route.method && before.path == route.path)
+        {
+            return Err(invalid(format!(
+                "route {} {} is declared twice",
+                route.method,
+                shown(&route.path)
+            )));
+        }
+        found.push(route);
+    }
+    Ok(found)
+}
+
+/// A name of a path parameter: lowercase letters and `_`.
+fn is_param(name: &str) -> bool {
+    !name.is_empty()
+        && name.len() <= 20
+        && name.bytes().all(|b| b.is_ascii_lowercase() || b == b'_')
+}
+
+fn route(raw: RawRoute) -> Result<RouteSpec, PluginsError> {
+    let method = raw.method.to_ascii_uppercase();
+    if !ROUTE_METHODS.contains(&method.as_str()) {
+        return Err(invalid(format!(
+            "route method {} is not one of {}",
+            shown(&raw.method),
+            ROUTE_METHODS.join(", ")
+        )));
+    }
+    let path = raw.path;
+    let at = |what: &str| invalid(format!("route {method} {}: {what}", shown(&path)));
+    if !path.starts_with('/') || path.chars().count() > MAX_PATH_CHARS {
+        return Err(at(
+            "the path must start with `/` and be at most 200 characters",
+        ));
+    }
+    // Every segment is a plain name or `{name}`.
+    if path == "/" {
+        return Err(at("the path needs at least one segment"));
+    }
+    let mut names: Vec<&str> = Vec::new();
+    for segment in path.split('/').skip(1) {
+        match segment.strip_prefix('{').and_then(|s| s.strip_suffix('}')) {
+            Some(name) if is_param(name) && !names.contains(&name) => names.push(name),
+            Some(_) => {
+                return Err(at(
+                    "a `{name}` segment holds lowercase letters and `_`, once",
+                ));
+            }
+            None if is_plain_segment(segment) => {}
+            None => {
+                return Err(at(
+                    "a segment holds letters, digits, `.`, `_`, `~` and `-` only",
+                ));
+            }
+        }
+    }
+    if raw.roles.is_empty() {
+        return Err(at("roles must name at least one institution role"));
+    }
+    let mut roles: Vec<Role> = Vec::new();
+    for text in &raw.roles {
+        let role: Role = text.parse().map_err(|_| {
+            at(&format!(
+                "role {} is not admin, teacher or student",
+                shown(text)
+            ))
+        })?;
+        if !roles.contains(&role) {
+            roles.push(role);
+        }
+    }
+    let mut course_roles: Vec<CourseRole> = Vec::new();
+    for text in &raw.course_roles {
+        let role: CourseRole = text.parse().map_err(|_| {
+            at(&format!(
+                "course role {} is not teacher, assistant or student",
+                shown(text)
+            ))
+        })?;
+        if !course_roles.contains(&role) {
+            course_roles.push(role);
+        }
+    }
+    if !course_roles.is_empty() && !names.contains(&COURSE_SEGMENT) {
+        return Err(at("course_roles need a `{course_id}` segment in the path"));
+    }
+    Ok(RouteSpec {
+        method,
+        path,
+        roles,
+        course_roles,
+    })
+}
+
+fn settings(
+    raw: BTreeMap<String, serde_json::Value>,
+) -> Result<BTreeMap<String, SettingSpec>, PluginsError> {
+    if raw.len() > MAX_SETTINGS {
+        return Err(invalid(format!(
+            "settings lists more than {MAX_SETTINGS} settings"
+        )));
+    }
+    raw.into_iter()
+        .map(|(key, spec)| {
+            if !is_key(&key) {
+                return Err(invalid(format!(
+                    "setting {} must be lowercase letters, digits and `_`, start with a letter, and have at most 40 characters",
+                    shown(&key)
+                )));
+            }
+            let spec: SettingSpec = serde_json::from_value(spec)
+                .map_err(|e| invalid(format!("setting `{key}` is not valid ({e})")))?;
+            spec.validate(&key).map_err(invalid)?;
+            Ok((key, spec))
+        })
+        .collect()
 }
 
 fn slot(raw: RawSlot) -> Result<UiSlot, PluginsError> {

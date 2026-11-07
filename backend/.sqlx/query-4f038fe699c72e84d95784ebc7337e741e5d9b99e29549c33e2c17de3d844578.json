@@ -1,0 +1,67 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT method, route, status, count(*) AS \"calls!\",\n                  COALESCE(avg(duration_ms), 0)::bigint AS \"average_ms!\"\n           FROM plugins.api_calls WHERE install_id = $1 AND at >= $2\n           GROUP BY method, route, status ORDER BY route, method, status",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "method",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "plugins.api_calls",
+            "name": "method"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "route",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "plugins.api_calls",
+            "name": "route"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "status",
+        "type_info": "Int2",
+        "origin": {
+          "Table": {
+            "table": "plugins.api_calls",
+            "name": "status"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "calls!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 4,
+        "name": "average_ms!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Timestamptz"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      null,
+      null
+    ]
+  },
+  "hash": "4f038fe699c72e84d95784ebc7337e741e5d9b99e29549c33e2c17de3d844578"
+}

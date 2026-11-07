@@ -248,11 +248,14 @@ async fn add_student(w: &World, email: &str, name: &str, surname: &str) -> Uuid 
     student.id
 }
 
+/// The grades that were published; setting up a course writes other events (assignments, roster).
 async fn event_count(pool: &PgPool) -> i64 {
-    sqlx::query_scalar!(r#"SELECT count(*) AS "n!" FROM events.outbox"#)
-        .fetch_one(pool)
-        .await
-        .unwrap()
+    sqlx::query_scalar!(
+        r#"SELECT count(*) AS "n!" FROM events.outbox WHERE type = 'grade.published'"#
+    )
+    .fetch_one(pool)
+    .await
+    .unwrap()
 }
 
 fn error_fields(response: &Resp) -> Vec<String> {
@@ -574,10 +577,12 @@ async fn publishing_copies_only_what_differs_and_emits_one_event_per_changed_stu
         assert_eq!(cell_of(second)["has_unpublished_changes"], true);
 
         // The events hold ids only.
-        let events = sqlx::query!("SELECT type, version, payload FROM events.outbox")
-            .fetch_all(&w.pool)
-            .await
-            .unwrap();
+        let events = sqlx::query!(
+            "SELECT type, version, payload FROM events.outbox WHERE type = 'grade.published'"
+        )
+        .fetch_all(&w.pool)
+        .await
+        .unwrap();
         assert_eq!(events.len(), 4);
         for event in events {
             assert_eq!(event.r#type, "grade.published");

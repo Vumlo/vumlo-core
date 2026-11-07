@@ -60,10 +60,10 @@ fn api_record(row: AuditRow) -> AuditRecord {
     AuditRecord {
         id: row.id,
         at: row.at,
-        source: if row.source == "cli" {
-            AuditSource::Cli
-        } else {
-            AuditSource::Api
+        source: match row.source.as_str() {
+            "cli" => AuditSource::Cli,
+            "plugin" => AuditSource::Plugin,
+            _ => AuditSource::Api,
         },
         kind: api_kind(&row.kind),
         action: row.action,

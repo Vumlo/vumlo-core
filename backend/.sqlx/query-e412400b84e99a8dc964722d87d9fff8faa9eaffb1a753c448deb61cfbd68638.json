@@ -1,0 +1,19 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO plugins.deliveries (id, install_id, event_id, event_type, data, occurred_at)\n         VALUES ($1, $2, $3, $4, $5, $6)\n         ON CONFLICT (install_id, event_id) DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Jsonb",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "e412400b84e99a8dc964722d87d9fff8faa9eaffb1a753c448deb61cfbd68638"
+}

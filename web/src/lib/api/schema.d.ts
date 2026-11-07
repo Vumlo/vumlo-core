@@ -226,6 +226,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/announcements/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Deletes an announcement. Staff and admins. */
+        delete: operations["delete_announcement"];
+        options?: never;
+        head?: never;
+        /** Changes an announcement. Staff and admins. The plugins are not told. */
+        patch: operations["update_announcement"];
+        trace?: never;
+    };
     "/api/v1/assignments/{id}/grades/publish": {
         parameters: {
             query?: never;
@@ -308,6 +326,23 @@ export interface paths {
          *     can see the assignment.
          */
         post: operations["launch"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/assignments/{id}/plugin-reports": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** What the plugins reported about an assignment, by plugin and key. Staff and admins of its course. */
+        get: operations["list_assignment_reports"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -708,6 +743,27 @@ export interface paths {
         patch: operations["update_course"];
         trace?: never;
     };
+    "/api/v1/courses/{id}/announcements": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The announcements of a course, newest first. Anyone who can see the course. */
+        get: operations["list_announcements"];
+        put?: never;
+        /**
+         * Publishes an announcement to the course at once, and tells the plugins that subscribed to
+         *     `announcement.published`. Staff and admins; not in an archived course.
+         */
+        post: operations["publish_announcement"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/courses/{id}/archive": {
         parameters: {
             query?: never;
@@ -1093,6 +1149,23 @@ export interface paths {
          *     names and groups of classmates and no address.
          */
         get: operations["get_people"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/courses/{id}/plugin-reports": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** What the plugins reported about a course, by plugin and key. Staff and admins of the course. */
+        get: operations["list_course_reports"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1774,6 +1847,226 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/plugin-api/announcements": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The announcements teachers published, by the time they last changed; `updated_since` is that
+         *     time. The scope `announcements:read`. Without `course_id`, those of every course the plugin was
+         *     granted. A plugin learns of a new one from `announcement.published`.
+         */
+        get: operations["list_announcements"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/plugin-api/assignments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The assignments a student could see: open, with their published titles. The scope
+         *     `assignments:read`. Without `course_id`, those of every course the plugin was granted. Sorted by
+         *     the last change; `updated_since` is the time of that change.
+         */
+        get: operations["list_assignments"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/plugin-api/assignments/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** One assignment a student could see. The scope `assignments:read`. */
+        get: operations["get_assignment"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/plugin-api/assignments/{id}/attempts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The submitted attempts at a quiz with their score per question, by the time they were
+         *     submitted; `updated_since` is that time. The scope `quizzes:read`.
+         */
+        get: operations["list_attempts"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/plugin-api/assignments/{id}/quiz": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The questions of a quiz without its answer key. The scope `quizzes:read`. */
+        get: operations["get_quiz"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/plugin-api/assignments/{id}/reports/{key}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * The plugin's report on an assignment under `key`, replacing its earlier one under that key. The
+         *     scope `reports:write`.
+         */
+        put: operations["put_assignment_report"];
+        post?: never;
+        /** Removes the plugin's report on an assignment under `key`. The scope `reports:write`. */
+        delete: operations["delete_assignment_report"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/plugin-api/assignments/{id}/submissions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The submitted attempts of an assignment, without their content, by the time they were
+         *     submitted; `updated_since` is that time. The scope `submissions:read`.
+         */
+        get: operations["list_submissions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/plugin-api/courses/{id}/members": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The people of a course: ids, names and roles, no contact data. The scope `roster:read`. A full
+         *     snapshot sorted by user id: the roster has no change time, so there is no `updated_since`; the
+         *     `enrollment.changed` event says when to read it again.
+         */
+        get: operations["list_members"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/plugin-api/courses/{id}/reports/{key}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * The plugin's report on a course under `key`, replacing its earlier one under that key. The scope
+         *     `reports:write`.
+         */
+        put: operations["put_course_report"];
+        post?: never;
+        /** Removes the plugin's report on a course under `key`. The scope `reports:write`. */
+        delete: operations["delete_course_report"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/plugin-api/grades": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Published grades, never a draft, by the time they were published; `updated_since` is that time.
+         *     The scope `grades:read`. Without `course_id`, those of every course the plugin was granted.
+         */
+        get: operations["list_grades"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/plugin-api/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The plugin's own settings: what an administrator configured, secrets included, with the manifest's
+         *     defaults where nothing was set. The scope `settings:read`. The settings of a course come with
+         *     `course_id` (`404` for a course that is not there). A plugin learns of a change from its `plugin.settings.changed` event.
+         */
+        get: operations["get_settings"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/plugin-api/submissions/{id}": {
         parameters: {
             query?: never;
@@ -1794,7 +2087,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/plugin-api/submissions/{id}/report": {
+    "/api/v1/plugin-api/submissions/{id}/fields": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The values a student gave in a submitted `form`, by field id. The scope `assignments:read`. */
+        get: operations["get_form_answers"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/plugin-api/submissions/{id}/reports/{key}": {
         parameters: {
             query?: never;
             header?: never;
@@ -1803,10 +2113,32 @@ export interface paths {
         };
         get?: never;
         /**
-         * The plugin's report on a submitted attempt, replacing its earlier one. The scope
-         *     `reports:write`. Sending the same report twice leaves one.
+         * The plugin's report on a submitted attempt under `key`, replacing its earlier one under that key.
+         *     The scope `reports:write`. Sending the same report twice leaves one. A plugin keeps at most 20
+         *     keys on a subject.
          */
-        put: operations["put_report"];
+        put: operations["put_submission_report"];
+        post?: never;
+        /** Removes the plugin's report on a submitted attempt under `key`. The scope `reports:write`. */
+        delete: operations["delete_submission_report"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/plugin-api/users/contact": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The email addresses of up to 100 people, for those of them who are in a course the plugin was
+         *     granted. The others are left out, not reported. The scope `users:contact`.
+         */
+        get: operations["get_contacts"];
+        put?: never;
         post?: never;
         delete?: never;
         options?: never;
@@ -1832,6 +2164,67 @@ export interface paths {
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/api/v1/plugins/{plugin_id}/{path}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * A route of a plugin's own server, through the core (ADR-0078). The plugin declares its
+         *     routes and who may call each in its manifest; one that is not declared, or is declared
+         *     for another method, is `404`. The core forwards the call with a signed statement of who
+         *     the caller is (`X-Vumlo-User`, `X-Vumlo-Role`, `X-Vumlo-Course`, `X-Vumlo-Course-Role`,
+         *     `X-Vumlo-Timestamp`, `X-Vumlo-Nonce`, `X-Vumlo-Signature`) and no cookie. The answer of
+         *     the plugin is passed on if it is JSON, text, CSV, iCalendar, PDF or XLSX; any other
+         *     content type, a redirect, or a `5xx` is a `502`.
+         */
+        get: operations["proxy_get"];
+        /**
+         * A route of a plugin's own server, through the core (ADR-0078). The plugin declares its
+         *     routes and who may call each in its manifest; one that is not declared, or is declared
+         *     for another method, is `404`. The core forwards the call with a signed statement of who
+         *     the caller is (`X-Vumlo-User`, `X-Vumlo-Role`, `X-Vumlo-Course`, `X-Vumlo-Course-Role`,
+         *     `X-Vumlo-Timestamp`, `X-Vumlo-Nonce`, `X-Vumlo-Signature`) and no cookie. The answer of
+         *     the plugin is passed on if it is JSON, text, CSV, iCalendar, PDF or XLSX; any other
+         *     content type, a redirect, or a `5xx` is a `502`.
+         */
+        put: operations["proxy_put"];
+        /**
+         * A route of a plugin's own server, through the core (ADR-0078). The plugin declares its
+         *     routes and who may call each in its manifest; one that is not declared, or is declared
+         *     for another method, is `404`. The core forwards the call with a signed statement of who
+         *     the caller is (`X-Vumlo-User`, `X-Vumlo-Role`, `X-Vumlo-Course`, `X-Vumlo-Course-Role`,
+         *     `X-Vumlo-Timestamp`, `X-Vumlo-Nonce`, `X-Vumlo-Signature`) and no cookie. The answer of
+         *     the plugin is passed on if it is JSON, text, CSV, iCalendar, PDF or XLSX; any other
+         *     content type, a redirect, or a `5xx` is a `502`.
+         */
+        post: operations["proxy_post"];
+        /**
+         * A route of a plugin's own server, through the core (ADR-0078). The plugin declares its
+         *     routes and who may call each in its manifest; one that is not declared, or is declared
+         *     for another method, is `404`. The core forwards the call with a signed statement of who
+         *     the caller is (`X-Vumlo-User`, `X-Vumlo-Role`, `X-Vumlo-Course`, `X-Vumlo-Course-Role`,
+         *     `X-Vumlo-Timestamp`, `X-Vumlo-Nonce`, `X-Vumlo-Signature`) and no cookie. The answer of
+         *     the plugin is passed on if it is JSON, text, CSV, iCalendar, PDF or XLSX; any other
+         *     content type, a redirect, or a `5xx` is a `502`.
+         */
+        delete: operations["proxy_delete"];
+        options?: never;
+        head?: never;
+        /**
+         * A route of a plugin's own server, through the core (ADR-0078). The plugin declares its
+         *     routes and who may call each in its manifest; one that is not declared, or is declared
+         *     for another method, is `404`. The core forwards the call with a signed statement of who
+         *     the caller is (`X-Vumlo-User`, `X-Vumlo-Role`, `X-Vumlo-Course`, `X-Vumlo-Course-Role`,
+         *     `X-Vumlo-Timestamp`, `X-Vumlo-Nonce`, `X-Vumlo-Signature`) and no cookie. The answer of
+         *     the plugin is passed on if it is JSON, text, CSV, iCalendar, PDF or XLSX; any other
+         *     content type, a redirect, or a `5xx` is a `502`.
+         */
+        patch: operations["proxy_patch"];
         trace?: never;
     };
     "/api/v1/search": {
@@ -1920,10 +2313,10 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * What the plugins reported about a submitted attempt, by plugin. Staff and admins who may see
-         *     the attempt.
+         * What the plugins reported about a submitted attempt, by plugin and key. Staff and admins who may
+         *     see the attempt.
          */
-        get: operations["list_reports"];
+        get: operations["list_submission_reports"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2031,6 +2424,21 @@ export interface components {
          * @enum {string}
          */
         AllStudents: "all";
+        /** @description Something a teacher told the course. Plain text. */
+        Announcement: {
+            /** Format: uuid */
+            author_id: string;
+            body: string;
+            /** Format: uuid */
+            course_id: string;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: uuid */
+            id: string;
+            title: string;
+            /** Format: date-time */
+            updated_at: string;
+        };
         /** @description Where one installer of the institution's desktop app can be downloaded. */
         AppDownload: {
             platform: components["schemas"]["AppPlatform"];
@@ -2169,7 +2577,7 @@ export interface components {
          * @description Where an audit row was written.
          * @enum {string}
          */
-        AuditSource: "api" | "cli";
+        AuditSource: "api" | "cli" | "plugin";
         /**
          * @description One block. `id` is 1 to 64 characters from `[A-Za-z0-9_-]`, unique in the document and
          *     generated by the client. `props`, `content` and `children` are left out when empty.
@@ -2473,6 +2881,13 @@ export interface components {
         CourseRole: "teacher" | "assistant" | "student";
         /** @enum {string} */
         CourseStatus: "draft" | "published" | "archived";
+        /** @description Publishes an announcement to the course at once. */
+        CreateAnnouncementRequest: {
+            /** @description 1 to 10 000 characters of plain text. */
+            body: string;
+            /** @description 1 to 200 characters after trimming. */
+            title: string;
+        };
         CreateCourseRequest: {
             /**
              * Format: uuid
@@ -3243,6 +3658,24 @@ export interface components {
             /** @description Pass as `cursor` to get the next page; `null` on the last page. */
             next_cursor?: string | null;
         };
+        Page_Announcement: {
+            items: {
+                /** Format: uuid */
+                author_id: string;
+                body: string;
+                /** Format: uuid */
+                course_id: string;
+                /** Format: date-time */
+                created_at: string;
+                /** Format: uuid */
+                id: string;
+                title: string;
+                /** Format: date-time */
+                updated_at: string;
+            }[];
+            /** @description Pass as `cursor` to get the next page; `null` on the last page. */
+            next_cursor?: string | null;
+        };
         Page_AuditRecord: {
             items: {
                 /** @description A dotted verb such as `course.owner.transfer`. */
@@ -3380,6 +3813,109 @@ export interface components {
             /** @description Pass as `cursor` to get the next page; `null` on the last page. */
             next_cursor?: string | null;
         };
+        Page_PluginAssignment: {
+            items: {
+                /** Format: uuid */
+                course_id: string;
+                /** Format: date-time */
+                due_at?: string | null;
+                /**
+                 * @description The fields of a `form` (`id`, `type`, `label`, `help`, `required`, `options`, `rules`); absent
+                 *     for the other types.
+                 */
+                fields?: Record<string, never>[] | null;
+                /** Format: uuid */
+                id: string;
+                /** @description `text`, `no_submission`, `quiz`, `form` or `file`. */
+                kind: string;
+                /** @description A decimal number as text. */
+                max_points: string;
+                title: string;
+                /**
+                 * Format: date-time
+                 * @description When the assignment, its title or its settings last changed.
+                 */
+                updated_at: string;
+            }[];
+            /** @description Pass as `cursor` to get the next page; `null` on the last page. */
+            next_cursor?: string | null;
+        };
+        Page_PluginAttempt: {
+            items: {
+                /** Format: int32 */
+                attempt: number;
+                /** Format: uuid */
+                id: string;
+                /** @description The score of each question by question id, as decimal text. */
+                scores: Record<string, never>;
+                /**
+                 * Format: date-time
+                 * @description When the attempt was first saved as a draft.
+                 */
+                started_at: string;
+                /** Format: uuid */
+                student_id: string;
+                /** Format: date-time */
+                submitted_at: string;
+            }[];
+            /** @description Pass as `cursor` to get the next page; `null` on the last page. */
+            next_cursor?: string | null;
+        };
+        Page_PluginGrade: {
+            items: {
+                /** Format: uuid */
+                assignment_id: string;
+                /** Format: uuid */
+                course_id: string;
+                max_points: string;
+                /** Format: date-time */
+                published_at: string;
+                /**
+                 * Format: uuid
+                 * @description Who published the grade; `null` for a grade the system published.
+                 */
+                published_by?: string | null;
+                /** @description A decimal number as text; `null` when only feedback was published. */
+                score?: string | null;
+                /** Format: uuid */
+                student_id: string;
+            }[];
+            /** @description Pass as `cursor` to get the next page; `null` on the last page. */
+            next_cursor?: string | null;
+        };
+        Page_PluginMember: {
+            items: {
+                name: string;
+                role: components["schemas"]["CourseRole"];
+                /** @description `direct`, or `group` when the student is on the roster through a linked group. */
+                source: string;
+                surname: string;
+                /** Format: uuid */
+                user_id: string;
+            }[];
+            /** @description Pass as `cursor` to get the next page; `null` on the last page. */
+            next_cursor?: string | null;
+        };
+        Page_PluginSubmissionItem: {
+            items: {
+                /** Format: int32 */
+                attempt: number;
+                /**
+                 * Format: date-time
+                 * @description When the grade of this student for the assignment was published; `null` while it is not.
+                 */
+                graded_at?: string | null;
+                /** Format: uuid */
+                id: string;
+                is_late: boolean;
+                /** Format: uuid */
+                student_id: string;
+                /** Format: date-time */
+                submitted_at: string;
+            }[];
+            /** @description Pass as `cursor` to get the next page; `null` on the last page. */
+            next_cursor?: string | null;
+        };
         Page_Session: {
             items: {
                 /** Format: date-time */
@@ -3483,9 +4019,114 @@ export interface components {
             /** Format: uuid */
             user_id: string;
         };
-        /** @description The report of one plugin on one submitted attempt, for the staff who may see the attempt. */
+        /** @description An assignment as a student can see it: open, with its published title. */
+        PluginAssignment: {
+            /** Format: uuid */
+            course_id: string;
+            /** Format: date-time */
+            due_at?: string | null;
+            /**
+             * @description The fields of a `form` (`id`, `type`, `label`, `help`, `required`, `options`, `rules`); absent
+             *     for the other types.
+             */
+            fields?: Record<string, never>[] | null;
+            /** Format: uuid */
+            id: string;
+            /** @description `text`, `no_submission`, `quiz`, `form` or `file`. */
+            kind: string;
+            /** @description A decimal number as text. */
+            max_points: string;
+            title: string;
+            /**
+             * Format: date-time
+             * @description When the assignment, its title or its settings last changed.
+             */
+            updated_at: string;
+        };
+        /** @description A submitted attempt at a quiz. */
+        PluginAttempt: {
+            /** Format: int32 */
+            attempt: number;
+            /** Format: uuid */
+            id: string;
+            /** @description The score of each question by question id, as decimal text. */
+            scores: Record<string, never>;
+            /**
+             * Format: date-time
+             * @description When the attempt was first saved as a draft.
+             */
+            started_at: string;
+            /** Format: uuid */
+            student_id: string;
+            /** Format: date-time */
+            submitted_at: string;
+        };
+        PluginContact: {
+            email: string;
+            /** Format: uuid */
+            user_id: string;
+        };
+        PluginContacts: {
+            /** @description Those of the ids who are in a course the plugin reaches. The others are left out. */
+            items: components["schemas"]["PluginContact"][];
+        };
+        /** @description The values a student gave in a `form`, by field id. */
+        PluginFormAnswers: {
+            answers: Record<string, never>;
+            /** Format: uuid */
+            assignment_id: string;
+            /** Format: uuid */
+            course_id: string;
+            /** Format: uuid */
+            student_id: string;
+            /** Format: uuid */
+            submission_id: string;
+        };
+        /** @description A published grade. A draft is never here. */
+        PluginGrade: {
+            /** Format: uuid */
+            assignment_id: string;
+            /** Format: uuid */
+            course_id: string;
+            max_points: string;
+            /** Format: date-time */
+            published_at: string;
+            /**
+             * Format: uuid
+             * @description Who published the grade; `null` for a grade the system published.
+             */
+            published_by?: string | null;
+            /** @description A decimal number as text; `null` when only feedback was published. */
+            score?: string | null;
+            /** Format: uuid */
+            student_id: string;
+        };
+        PluginMember: {
+            name: string;
+            role: components["schemas"]["CourseRole"];
+            /** @description `direct`, or `group` when the student is on the roster through a linked group. */
+            source: string;
+            surname: string;
+            /** Format: uuid */
+            user_id: string;
+        };
+        /**
+         * @description The questions of a quiz as a student sees them: no `correct`, `answer`, `tolerance`,
+         *     `accepted`, `explanation`, `partial_credit` or `grading_notes`.
+         */
+        PluginQuiz: {
+            /** Format: uuid */
+            assignment_id: string;
+            config: Record<string, never>;
+            /** Format: uuid */
+            course_id: string;
+            max_points: string;
+        };
+        /** @description A report of one plugin on a submitted attempt, an assignment or a course, for the staff who may see it. */
         PluginReport: {
             data: Record<string, never>;
+            /** @description The name the plugin gave this report: it keeps one report per key on a subject. */
+            key: string;
             /** @description The id the plugin gave in its manifest. */
             plugin_id: string;
             summary: string;
@@ -3494,6 +4135,17 @@ export interface components {
         };
         PluginReports: {
             items: components["schemas"]["PluginReport"][];
+        };
+        /**
+         * @description The settings of a plugin as an administrator configured them, with the defaults of its manifest
+         *     where nothing was set. A setting with neither is not in `values`.
+         */
+        PluginSettings: {
+            /**
+             * @description Setting key to value: a string, a number, a boolean or a list. Secrets are in clear: the
+             *     plugin is who they were entered for.
+             */
+            values: Record<string, never>;
         };
         /** @description A page that an enabled plugin offers in a slot. */
         PluginSlot: {
@@ -3521,11 +4173,30 @@ export interface components {
              *     `{"files": [...], "comment"?}` for a file.
              */
             content: Record<string, never>;
+            /** Format: uuid */
+            course_id: string;
             /**
              * Format: uuid
              * @description The id the `submission.submitted` event carries as `submission_id`.
              */
             id: string;
+            /** Format: uuid */
+            student_id: string;
+            /** Format: date-time */
+            submitted_at: string;
+        };
+        /** @description A submitted attempt in the list of an assignment, without its content. */
+        PluginSubmissionItem: {
+            /** Format: int32 */
+            attempt: number;
+            /**
+             * Format: date-time
+             * @description When the grade of this student for the assignment was published; `null` while it is not.
+             */
+            graded_at?: string | null;
+            /** Format: uuid */
+            id: string;
+            is_late: boolean;
             /** Format: uuid */
             student_id: string;
             /** Format: date-time */
@@ -3564,7 +4235,10 @@ export interface components {
         PutMemberRequest: {
             role: components["schemas"]["CourseRole"];
         };
-        /** @description What a plugin says about one submitted attempt. It replaces the plugin's earlier report on it. */
+        /**
+         * @description What a plugin says about a submitted attempt, an assignment or a course. It replaces the plugin's
+         *     earlier report on the subject under the same key.
+         */
         PutReportRequest: {
             /** @description What a program may want: a JSON object of at most 16 KiB. */
             data: Record<string, never>;
@@ -3896,6 +4570,11 @@ export interface components {
          * @enum {string}
          */
         UnpublishedReason: "draft" | "edits";
+        /** @description Changes an announcement. A field that is absent stays. Nothing is sent to the plugins. */
+        UpdateAnnouncementRequest: {
+            body?: string | null;
+            title?: string | null;
+        };
         /** @description Only the fields present change. */
         UpdateCourseInfoRequest: {
             /** @description At most 32 characters after trimming; empty clears the code. */
@@ -4699,6 +5378,135 @@ export interface operations {
             };
         };
     };
+    delete_announcement: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Announcement id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not logged in */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The caller may not write content in this course */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description No such announcement, or not visible to the caller */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The course is archived */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    update_announcement: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Announcement id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateAnnouncementRequest"];
+            };
+        };
+        responses: {
+            /** @description Changed */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Announcement"];
+                };
+            };
+            /** @description Not logged in */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The caller may not write content in this course */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description No such announcement, or not visible to the caller */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The course is archived */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Invalid title or text */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
     publish_grades: {
         parameters: {
             query?: never;
@@ -4937,6 +5745,56 @@ export interface operations {
             };
             /** @description No plugin id */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    list_assignment_reports: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description An assignment */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The reports, by plugin and key */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PluginReports"];
+                };
+            };
+            /** @description Not logged in */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The caller may see the assignment but not its submissions */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description No such assignment, or not visible to the caller */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -6145,6 +7003,132 @@ export interface operations {
             };
         };
     };
+    list_announcements: {
+        parameters: {
+            query?: {
+                cursor?: string;
+                /** @description Page size, 1 to 100 (default 50). */
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                /** @description Course id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A page of announcements */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Page_Announcement"];
+                };
+            };
+            /** @description Not logged in */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description No such course, or not visible to the caller */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Invalid cursor */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    publish_announcement: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Course id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateAnnouncementRequest"];
+            };
+        };
+        responses: {
+            /** @description Published */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Announcement"];
+                };
+            };
+            /** @description Not logged in */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The caller may not write content in this course */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description No such course, or not visible to the caller */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The course is archived */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Invalid title or text */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
     archive_course: {
         parameters: {
             query?: never;
@@ -7341,6 +8325,56 @@ export interface operations {
             };
             /** @description Not logged in */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description No such course, or not visible to the caller */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    list_course_reports: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A course */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The reports, by plugin and key */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PluginReports"];
+                };
+            };
+            /** @description Not logged in */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The caller may see the course but not its submissions */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -9502,6 +10536,796 @@ export interface operations {
             };
         };
     };
+    list_announcements: {
+        parameters: {
+            query?: {
+                /** @description One course. Without it, every course the plugin was granted. */
+                course_id?: string;
+                cursor?: string;
+                /** @description Page size, 1 to 100 (default 50). */
+                limit?: number;
+                /** @description Only announcements published or changed at or after this time (RFC 3339). */
+                updated_since?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A page of announcements */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Page_Announcement"];
+                };
+            };
+            /** @description No token, or one that is unknown or disabled */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The plugin was not granted `announcements:read`, or not the course */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description `course_id` names no course */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description A cursor or a time that is not valid */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    list_assignments: {
+        parameters: {
+            query?: {
+                /** @description One course. Without it, every course the plugin was granted. */
+                course_id?: string;
+                cursor?: string;
+                /** @description Page size, 1 to 100 (default 50). */
+                limit?: number;
+                /** @description Only assignments, titles or settings changed at or after this time (RFC 3339). */
+                updated_since?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A page of assignments */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Page_PluginAssignment"];
+                };
+            };
+            /** @description No token, or one that is unknown or disabled */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The plugin was not granted `assignments:read`, or not the course */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description `course_id` names no course */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description A cursor or a time that is not valid */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    get_assignment: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The `assignment_id` of an event */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The assignment */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PluginAssignment"];
+                };
+            };
+            /** @description No token, or one that is unknown or disabled */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The plugin was not granted `assignments:read`, or not the course */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description No such assignment, or none a student could see */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    list_attempts: {
+        parameters: {
+            query?: {
+                cursor?: string;
+                /** @description Page size, 1 to 100 (default 50). */
+                limit?: number;
+                /**
+                 * @description Only what changed at or after this time (RFC 3339), so a plugin can catch up after events it
+                 *     missed. What counts as a change is said on each list.
+                 */
+                updated_since?: string;
+            };
+            header?: never;
+            path: {
+                /** @description A quiz */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A page of attempts */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Page_PluginAttempt"];
+                };
+            };
+            /** @description No token, or one that is unknown or disabled */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The plugin was not granted `quizzes:read`, or not the course */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description No such quiz */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description A cursor or a time that is not valid */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    get_quiz: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A quiz */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The questions */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PluginQuiz"];
+                };
+            };
+            /** @description No token, or one that is unknown or disabled */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The plugin was not granted `quizzes:read`, or not the course */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description No such quiz */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    put_assignment_report: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description An assignment */
+                id: string;
+                /** @description The name of the report: lowercase letters, digits, `_`, `-` */
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PutReportRequest"];
+            };
+        };
+        responses: {
+            /** @description The report is stored */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description No token, or one that is unknown or disabled */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The plugin was not granted `reports:write`, or not the course */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description No such assignment */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The key, the summary or the data is not valid, or the plugin keeps the most reports it may */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    delete_assignment_report: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description An assignment */
+                id: string;
+                /** @description The name of the report */
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The report is gone */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description No token, or one that is unknown or disabled */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The plugin was not granted `reports:write`, or not the course */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description No such assignment, or no report under that key */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The key is not valid */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    list_submissions: {
+        parameters: {
+            query?: {
+                cursor?: string;
+                /** @description Page size, 1 to 100 (default 50). */
+                limit?: number;
+                /**
+                 * @description Only what changed at or after this time (RFC 3339), so a plugin can catch up after events it
+                 *     missed. What counts as a change is said on each list.
+                 */
+                updated_since?: string;
+            };
+            header?: never;
+            path: {
+                /** @description An assignment */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A page of attempts */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Page_PluginSubmissionItem"];
+                };
+            };
+            /** @description No token, or one that is unknown or disabled */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The plugin was not granted `submissions:read`, or not the course */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description No such assignment */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description A cursor or a time that is not valid */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    list_members: {
+        parameters: {
+            query?: {
+                /** @description Only people with this role in the course. */
+                role?: components["schemas"]["CourseRole"];
+                cursor?: string;
+                /** @description Page size, 1 to 100 (default 50). */
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                /** @description A course */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A page of people */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Page_PluginMember"];
+                };
+            };
+            /** @description No token, or one that is unknown or disabled */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The plugin was not granted `roster:read`, or not the course */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description No such course */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description A cursor that is not valid */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    put_course_report: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A course */
+                id: string;
+                /** @description The name of the report: lowercase letters, digits, `_`, `-` */
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PutReportRequest"];
+            };
+        };
+        responses: {
+            /** @description The report is stored */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description No token, or one that is unknown or disabled */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The plugin was not granted `reports:write`, or not the course */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description No such course */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The key, the summary or the data is not valid, or the plugin keeps the most reports it may */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    delete_course_report: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A course */
+                id: string;
+                /** @description The name of the report */
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The report is gone */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description No token, or one that is unknown or disabled */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The plugin was not granted `reports:write`, or not the course */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description No such course, or no report under that key */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The key is not valid */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    list_grades: {
+        parameters: {
+            query?: {
+                course_id?: string;
+                assignment_id?: string;
+                cursor?: string;
+                /** @description Page size, 1 to 100 (default 50). */
+                limit?: number;
+                /** @description Only grades published at or after this time (RFC 3339). */
+                updated_since?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A page of grades */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Page_PluginGrade"];
+                };
+            };
+            /** @description No token, or one that is unknown or disabled */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The plugin was not granted `grades:read`, or not the course */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description `course_id` or `assignment_id` names nothing */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description A cursor or a time that is not valid */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    get_settings: {
+        parameters: {
+            query?: {
+                /**
+                 * @description Also the settings that are per course, for this course. Without it only the settings of the
+                 *     whole institution are returned.
+                 */
+                course_id?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The values */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PluginSettings"];
+                };
+            };
+            /** @description No token, or one that is unknown or disabled */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The plugin was not granted `settings:read` */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description `course_id` names no course */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
     get_submission: {
         parameters: {
             query?: never;
@@ -9532,7 +11356,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["ProblemDetails"];
                 };
             };
-            /** @description The plugin was not granted `submissions:read` */
+            /** @description The plugin was not granted `submissions:read`, or not the course */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -9552,13 +11376,65 @@ export interface operations {
             };
         };
     };
-    put_report: {
+    get_form_answers: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The `submission_id` of an event */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The values */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PluginFormAnswers"];
+                };
+            };
+            /** @description No token, or one that is unknown or disabled */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The plugin was not granted `assignments:read`, or not the course */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description No such submitted attempt, or not at a form */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    put_submission_report: {
         parameters: {
             query?: never;
             header?: never;
             path: {
                 /** @description The `submission_id` of the event */
                 id: string;
+                /** @description The name of the report: lowercase letters, digits, `_`, `-` */
+                key: string;
             };
             cookie?: never;
         };
@@ -9584,7 +11460,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["ProblemDetails"];
                 };
             };
-            /** @description The plugin was not granted `reports:write` */
+            /** @description The plugin was not granted `reports:write`, or not the course */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -9602,7 +11478,116 @@ export interface operations {
                     "application/problem+json": components["schemas"]["ProblemDetails"];
                 };
             };
-            /** @description The summary or the data is not valid */
+            /** @description The key, the summary or the data is not valid, or the plugin keeps the most reports it may */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    delete_submission_report: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The `submission_id` of the event */
+                id: string;
+                /** @description The name of the report */
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The report is gone */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description No token, or one that is unknown or disabled */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The plugin was not granted `reports:write`, or not the course */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description No such submitted attempt, or no report under that key */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The key is not valid */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    get_contacts: {
+        parameters: {
+            query: {
+                /** @description User ids, separated by commas: at most 100. */
+                ids: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The addresses */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PluginContacts"];
+                };
+            };
+            /** @description No token, or one that is unknown or disabled */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The plugin was not granted `users:contact` */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description `ids` is not a list of at most 100 user ids */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -9645,6 +11630,391 @@ export interface operations {
             };
             /** @description No such slot */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    proxy_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The id of the plugin */
+                plugin_id: string;
+                /** @description The route on the plugin's server, without its leading slash */
+                path: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The plugin's answer (any 2xx or 4xx it gave) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not logged in */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The route is not for this caller's role, or the plugin does not reach the course */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description No such plugin, route or course, or the course is not visible to the caller */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The body is more than 10 MiB */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The plugin could not be reached or answered something the core does not pass on */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The plugin took more than 30 seconds */
+            504: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    proxy_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The id of the plugin */
+                plugin_id: string;
+                /** @description The route on the plugin's server, without its leading slash */
+                path: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The plugin's answer (any 2xx or 4xx it gave) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not logged in */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The route is not for this caller's role, or the plugin does not reach the course */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description No such plugin, route or course, or the course is not visible to the caller */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The body is more than 10 MiB */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The plugin could not be reached or answered something the core does not pass on */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The plugin took more than 30 seconds */
+            504: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    proxy_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The id of the plugin */
+                plugin_id: string;
+                /** @description The route on the plugin's server, without its leading slash */
+                path: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The plugin's answer (any 2xx or 4xx it gave) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not logged in */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The route is not for this caller's role, or the plugin does not reach the course */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description No such plugin, route or course, or the course is not visible to the caller */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The body is more than 10 MiB */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The plugin could not be reached or answered something the core does not pass on */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The plugin took more than 30 seconds */
+            504: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    proxy_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The id of the plugin */
+                plugin_id: string;
+                /** @description The route on the plugin's server, without its leading slash */
+                path: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The plugin's answer (any 2xx or 4xx it gave) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not logged in */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The route is not for this caller's role, or the plugin does not reach the course */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description No such plugin, route or course, or the course is not visible to the caller */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The body is more than 10 MiB */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The plugin could not be reached or answered something the core does not pass on */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The plugin took more than 30 seconds */
+            504: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    proxy_patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The id of the plugin */
+                plugin_id: string;
+                /** @description The route on the plugin's server, without its leading slash */
+                path: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The plugin's answer (any 2xx or 4xx it gave) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not logged in */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The route is not for this caller's role, or the plugin does not reach the course */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description No such plugin, route or course, or the course is not visible to the caller */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The body is more than 10 MiB */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The plugin could not be reached or answered something the core does not pass on */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The plugin took more than 30 seconds */
+            504: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -10000,7 +12370,7 @@ export interface operations {
             };
         };
     };
-    list_reports: {
+    list_submission_reports: {
         parameters: {
             query?: never;
             header?: never;
@@ -10012,7 +12382,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description The reports, by plugin */
+            /** @description The reports, by plugin and key */
             200: {
                 headers: {
                     [name: string]: unknown;

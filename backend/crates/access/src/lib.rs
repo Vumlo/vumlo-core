@@ -10,7 +10,11 @@ mod test_support;
 
 pub use actor::{Actor, PendingActor};
 pub use extract::{ActorSource, Authenticated};
-pub use plugin::{AuthenticatedPlugin, PluginCaller, PluginSource, Scope, authorize_plugin};
+pub use plugin::{
+    AuthenticatedPlugin, CourseScope, PluginCaller, PluginRoute, PluginSource, PluginUser, Scope,
+    authorize_plugin, authorize_plugin_course, authorize_plugin_route, plugin_course_filter,
+    plugin_user,
+};
 
 use common::{ApiError, Role, text_enum};
 

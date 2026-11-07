@@ -9,10 +9,15 @@ use super::model::{
     Membership, Person, RosterEntry, TemplateSummary,
 };
 mod admin;
+mod announcements;
 mod cards;
 pub use admin::{
     admin_courses, linked_courses_of_group, owned_courses, regular_courses_per_term,
     studied_courses, taught_courses,
+};
+pub use announcements::{
+    delete as delete_announcement, find as find_announcement, insert as insert_announcement,
+    list as list_announcements, update as update_announcement,
 };
 pub use cards::{
     card_courses, staff_next_deadline, staff_todo_counts, student_next, student_progress,
@@ -111,6 +116,15 @@ pub async fn set_owner(
                      status AS "status: CourseStatus", owner_id, term_id, created_at"#,
         course_id,
         owner_id
+    )
+    .fetch_one(conn)
+    .await
+}
+
+pub async fn course_exists(conn: &mut PgConnection, course_id: Uuid) -> Result<bool, sqlx::Error> {
+    sqlx::query_scalar!(
+        r#"SELECT EXISTS (SELECT 1 FROM teaching.courses WHERE id = $1) AS "exists!""#,
+        course_id
     )
     .fetch_one(conn)
     .await
@@ -767,6 +781,17 @@ pub async fn list_exclusions(
 }
 
 /// Would a linked group put the user on the roster, ignoring a direct membership and exclusions?
+/// The students a link brings onto the roster of its course.
+pub async fn link_users(conn: &mut PgConnection, link_id: Uuid) -> Result<Vec<Uuid>, sqlx::Error> {
+    sqlx::query_scalar!(
+        r#"SELECT user_id AS "user_id!" FROM teaching.group_roster_links
+           WHERE link_id = $1 ORDER BY user_id"#,
+        link_id
+    )
+    .fetch_all(conn)
+    .await
+}
+
 pub async fn in_group_roster(
     conn: &mut PgConnection,
     course_id: Uuid,

@@ -18,7 +18,7 @@ use access::Actor;
 use access::{self, AccessError, Action, group_role_allowed};
 use auth::{self, AuthError};
 use common::{Page, PageParams};
-use events::{self, AuditEntry, EventsError};
+use events::{self, AuditEntry, Event, EventsError};
 use vumlo_config::InstitutionMode;
 
 #[derive(Debug, thiserror::Error)]
@@ -108,6 +108,26 @@ async fn audit(
         },
     )
     .await?;
+    Ok(())
+}
+
+/// Tells `learning` that these users came or went in a group or one of its subgroups, so that it can
+/// tell the plugins which rosters changed (ADR-0075). Nothing is sent for an empty list.
+async fn members_changed(
+    conn: &mut PgConnection,
+    group_id: Uuid,
+    user_ids: &[Uuid],
+) -> Result<(), OrgError> {
+    if !user_ids.is_empty() {
+        events::emit(
+            conn,
+            Event::GroupMembersChanged {
+                group_id,
+                user_ids: user_ids.to_vec(),
+            },
+        )
+        .await?;
+    }
     Ok(())
 }
 
@@ -455,6 +475,7 @@ pub async fn add_group_members(
         .collect();
     check_new_members(conn, user_ids, &members).await?;
     let added = repo::insert_group_members(conn, group_id, &distinct(user_ids)).await?;
+    members_changed(conn, group_id, &added).await?;
     if !added.is_empty() {
         audit(
             conn,
@@ -492,6 +513,7 @@ pub async fn replace_group_members(
     let leaving: Vec<Uuid> = members.difference(&wanted).copied().collect();
     let removed = repo::delete_group_members(conn, group_id, &leaving).await?;
     let added = repo::insert_group_members(conn, group_id, &distinct(user_ids)).await?;
+    members_changed(conn, group_id, &[added.clone(), removed.clone()].concat()).await?;
     if !added.is_empty() || !removed.is_empty() {
         audit(
             conn,
@@ -519,6 +541,7 @@ pub async fn remove_group_members(
         .await?
         .ok_or(OrgError::GroupNotFound)?;
     let removed = repo::delete_group_members(conn, group_id, &distinct(user_ids)).await?;
+    members_changed(conn, group_id, &removed).await?;
     if !removed.is_empty() {
         audit(
             conn,
@@ -547,6 +570,7 @@ pub async fn remove_group_member(
     if repo::delete_group_member(conn, group_id, user_id).await? == 0 {
         return Err(OrgError::MemberNotFound);
     }
+    members_changed(conn, group_id, &[user_id]).await?;
     audit(
         conn,
         actor,
@@ -699,6 +723,7 @@ pub async fn add_subgroup_members(
     let added =
         repo::insert_subgroup_members(conn, subgroup_id, subgroup.group_id, &distinct(user_ids))
             .await?;
+    members_changed(conn, subgroup.group_id, &added).await?;
     if !added.is_empty() {
         audit(
             conn,
@@ -720,10 +745,11 @@ pub async fn remove_subgroup_member(
     user_id: Uuid,
 ) -> Result<(), OrgError> {
     access::authorize(actor, Action::ManageGroups)?;
-    lock_subgroup(conn, subgroup_id).await?;
+    let subgroup = lock_subgroup(conn, subgroup_id).await?;
     if repo::delete_subgroup_member(conn, subgroup_id, user_id).await? == 0 {
         return Err(OrgError::MemberNotFound);
     }
+    members_changed(conn, subgroup.group_id, &[user_id]).await?;
     audit(
         conn,
         actor,

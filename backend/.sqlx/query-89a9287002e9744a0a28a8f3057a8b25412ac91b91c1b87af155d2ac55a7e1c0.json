@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO plugins.settings (install_id, course_id, key, value)\n         VALUES ($1, $2, $3, $4)\n         ON CONFLICT (install_id, key, (COALESCE(course_id, '00000000-0000-0000-0000-000000000000')))\n         DO UPDATE SET value = $4, updated_at = now()",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Jsonb"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "89a9287002e9744a0a28a8f3057a8b25412ac91b91c1b87af155d2ac55a7e1c0"
+}

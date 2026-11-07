@@ -6,6 +6,7 @@
 //! specific action decide between going ahead and 403.
 
 mod admin;
+mod announcements;
 mod cards;
 mod info;
 
@@ -15,6 +16,9 @@ use uuid::Uuid;
 
 pub use admin::{
     admin_courses, linked_courses_of_group, regular_courses_per_term, user_course_facts,
+};
+pub use announcements::{
+    delete_announcement, list_announcements, publish_announcement, update_announcement,
 };
 pub use cards::{course_cards, course_scope, student_courses};
 pub use info::{
@@ -37,7 +41,7 @@ use access::{
 };
 use auth::{self, AuthError, UserStatus};
 use common::{Page, PageParams};
-use events::{self, AuditEntry, EventsError};
+use events::{self, AuditEntry, Event, EventsError};
 use org::{self, GroupOption, OrgError};
 
 #[derive(Debug, thiserror::Error)]
@@ -62,6 +66,9 @@ pub enum TeachingError {
     LinkNotFound,
     #[error("exclusion not found")]
     ExclusionNotFound,
+    /// No such announcement, or its course is not one the actor may see (ADR-0076).
+    #[error("announcement not found")]
+    AnnouncementNotFound,
     /// The `group_id` of a new link names no group.
     #[error("group not found")]
     GroupNotFound,
@@ -244,6 +251,12 @@ pub async fn create_course(
     .await
 }
 
+/// Whether there is such a course, for a caller that is not a person and so has no view of it to
+/// ask for (a plugin, ADR-0072). It reveals nothing but that.
+pub async fn course_exists(conn: &mut PgConnection, course_id: Uuid) -> Result<bool, sqlx::Error> {
+    repo::course_exists(conn, course_id).await
+}
+
 pub async fn get_course(
     conn: &mut PgConnection,
     actor: &Actor,
@@ -373,6 +386,7 @@ pub async fn put_member(
     }
     repo::upsert_membership(conn, course_id, user_id, role).await?;
     repo::delete_exclusion(conn, course_id, user_id).await?;
+    enrollment_changed(conn, course_id, [user_id]).await?;
     events::audit_admin(
         conn,
         actor,
@@ -385,6 +399,19 @@ pub async fn put_member(
     )
     .await?;
     Ok(membership(MemberSource::Direct))
+}
+
+/// Tells the plugins that the place of these people on the roster of the course may have changed
+/// (ADR-0075).
+async fn enrollment_changed(
+    conn: &mut PgConnection,
+    course_id: Uuid,
+    users: impl IntoIterator<Item = Uuid>,
+) -> Result<(), EventsError> {
+    for user_id in users {
+        events::emit(conn, Event::EnrollmentChanged { course_id, user_id }).await?;
+    }
+    Ok(())
 }
 
 /// Does the user own a course? An owner cannot become a student (ADR-0037).
@@ -401,6 +428,7 @@ pub async fn drop_teacher_memberships(
     user_id: Uuid,
 ) -> Result<(), TeachingError> {
     for course_id in repo::delete_teacher_memberships(conn, user_id).await? {
+        enrollment_changed(conn, course_id, [user_id]).await?;
         events::audit(
             conn,
             actor,
@@ -441,6 +469,7 @@ pub async fn transfer_ownership(
     if user.role == common::Role::Teacher {
         repo::upsert_membership(conn, course_id, new_owner_id, CourseRole::Teacher).await?;
         repo::delete_exclusion(conn, course_id, new_owner_id).await?;
+        enrollment_changed(conn, course_id, [new_owner_id]).await?;
     }
     let updated = repo::set_owner(conn, course_id, new_owner_id).await?;
     events::audit(
@@ -492,6 +521,7 @@ pub async fn remove_member(
     if excluded {
         repo::insert_exclusion(conn, course_id, user_id, actor.user_id()).await?;
     }
+    enrollment_changed(conn, course_id, [user_id]).await?;
     events::audit_admin(
         conn,
         actor,
@@ -609,6 +639,8 @@ pub async fn link_group(
             .ok_or(TeachingError::LinkNotFound)?;
         return Ok((existing, false));
     };
+    let brought = repo::link_users(conn, link.id).await?;
+    enrollment_changed(conn, course_id, brought).await?;
     events::audit_admin(
         conn,
         actor,
@@ -631,9 +663,12 @@ pub async fn unlink_group(
 ) -> Result<(), TeachingError> {
     let (_, access) = load(conn, actor, course_id, true).await?;
     access::authorize(actor, Action::ChangeGroupLinks(access))?;
+    // Read before the link goes: the view of its students is empty after.
+    let leaving = repo::link_users(conn, link_id).await?;
     let link = repo::delete_link(conn, course_id, link_id)
         .await?
         .ok_or(TeachingError::LinkNotFound)?;
+    enrollment_changed(conn, course_id, leaving).await?;
     events::audit_admin(
         conn,
         actor,
@@ -688,6 +723,7 @@ pub async fn restore_exclusion(
     if repo::delete_exclusion(conn, course_id, user_id).await? == 0 {
         return Err(TeachingError::ExclusionNotFound);
     }
+    enrollment_changed(conn, course_id, [user_id]).await?;
     events::audit_admin(
         conn,
         actor,

@@ -1,0 +1,92 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id, student_id, attempt AS \"attempt!\",\n                  auto_scores AS \"auto_scores: Json<Map<String, Value>>\",\n                  created_at, submitted_at AS \"submitted_at!\"\n           FROM assessment.submissions\n           WHERE assignment_id = $1 AND status = 'submitted'\n             AND ($2::timestamptz IS NULL OR submitted_at >= $2)\n             AND ($3::timestamptz IS NULL OR (submitted_at, id) > ($3, $4))\n           ORDER BY submitted_at, id\n           LIMIT $5",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "assessment.submissions",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "student_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "assessment.submissions",
+            "name": "student_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "attempt!",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "assessment.submissions",
+            "name": "attempt"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "auto_scores: Json<Map<String, Value>>",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "assessment.submissions",
+            "name": "auto_scores"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "assessment.submissions",
+            "name": "created_at"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "submitted_at!",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "assessment.submissions",
+            "name": "submitted_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Timestamptz",
+        "Timestamptz",
+        "Uuid",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      true,
+      false,
+      true
+    ]
+  },
+  "hash": "d9dcc26d9296fe152be80e14b2c7928e99766aa873bee33bb3965a4e94c40b50"
+}

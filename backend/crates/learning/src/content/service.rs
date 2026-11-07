@@ -32,7 +32,7 @@ use crate::gradebook::{self, GradebookError};
 use crate::teaching::{self, TeachingError};
 use access::Actor;
 use access::{self, AccessError, Action, CourseAccess, CourseStatus, Release};
-use events::{self, AuditEntry, EventsError};
+use events::{self, AuditEntry, Event, EventsError};
 use vumlo_config::GradingScale;
 
 /// The most points one assignment can be worth on the `twelve` scale (ADR-0022).
@@ -710,6 +710,7 @@ pub async fn publish_module(
         let items = repo::publish_draft_items_below(conn, id).await?;
         for item in &items {
             sync_published_files(conn, item).await?;
+            announce_created(conn, item).await?;
         }
         changed |= submodules + items.len() as u64 > 0;
     }
@@ -1067,6 +1068,22 @@ async fn create(
     Ok(item)
 }
 
+/// An assignment that has just become visible to students is news to the plugins (ADR-0075). Any
+/// other item is not.
+async fn announce_created(conn: &mut PgConnection, item: &Item) -> Result<(), ContentError> {
+    if item.kind == ItemKind::Assignment {
+        events::emit(
+            conn,
+            Event::AssignmentCreated {
+                course_id: item.course_id,
+                assignment_id: item.id,
+            },
+        )
+        .await?;
+    }
+    Ok(())
+}
+
 /// The profiles the document editor enforces, for building its toolbar. Any role may ask.
 pub fn editor_profiles<'a>(
     actor: &Actor,
@@ -1137,6 +1154,16 @@ pub async fn publish_revision(
         .await?
         .ok_or(ContentError::ItemNotFound)?;
     sync_published_files(conn, &item).await?;
+    if item.kind == ItemKind::Assignment {
+        events::emit(
+            conn,
+            Event::AssignmentUpdated {
+                course_id: item.course_id,
+                assignment_id: item.id,
+            },
+        )
+        .await?;
+    }
     audit(
         conn,
         actor,
@@ -1511,6 +1538,8 @@ pub async fn update_item(
         usable_files(conn, actor, id, &refs).await?;
     }
     let mut settings = None;
+    // The deadline before this update, when the update can change it.
+    let mut was_due = None;
     if is_assignment && patch.touches_assignment() {
         let points_change = patch.max_points.is_some() || patch.is_bonus.is_some();
         if points_change && rules.scale == GradingScale::Hundred {
@@ -1524,6 +1553,7 @@ pub async fn update_item(
         let current = repo::lock_assignment(conn, id)
             .await?
             .ok_or(ContentError::ItemNotFound)?;
+        was_due = Some(current.settings.due_at);
         if !patch.settings.is_empty() {
             settings = Some(
                 current
@@ -1629,6 +1659,29 @@ pub async fn update_item(
     if patch.config.is_some() && item.published.is_some() {
         // Students read the config as it is, so a published item's images follow it at once.
         sync_published_files(conn, &item).await?;
+    }
+    // Students see an assignment that is published; a change to a draft is not news (ADR-0075).
+    if item.status == ItemStatus::Published && is_assignment && patch.touches_assignment() {
+        let (course_id, assignment_id) = (item.course_id, id);
+        events::emit(
+            conn,
+            Event::AssignmentUpdated {
+                course_id,
+                assignment_id,
+            },
+        )
+        .await?;
+        let now_due = item.assignment.as_ref().and_then(|a| a.settings.due_at);
+        if was_due.is_some_and(|before| before != now_due) {
+            events::emit(
+                conn,
+                Event::AssignmentDeadlineChanged {
+                    course_id,
+                    assignment_id,
+                },
+            )
+            .await?;
+        }
     }
     audit(
         conn,
@@ -1751,6 +1804,7 @@ pub async fn publish_item(
     match repo::publish_item(conn, id).await? {
         Some(item) => {
             sync_published_files(conn, &item).await?;
+            announce_created(conn, &item).await?;
             let item = with_assignment(conn, item).await?;
             audit(
                 conn,

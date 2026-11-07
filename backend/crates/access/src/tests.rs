@@ -967,7 +967,21 @@ fn an_institution_student_is_never_a_course_teacher_or_owner() {
 }
 
 fn plugin(scopes: &[Scope]) -> PluginCaller {
-    PluginCaller::new(Uuid::now_v7(), "test".to_owned(), scopes.to_vec())
+    PluginCaller::new(
+        Uuid::now_v7(),
+        "test".to_owned(),
+        scopes.to_vec(),
+        CourseScope::All,
+    )
+}
+
+fn plugin_in(scopes: &[Scope], courses: &[Uuid]) -> PluginCaller {
+    PluginCaller::new(
+        Uuid::now_v7(),
+        "test".to_owned(),
+        scopes.to_vec(),
+        CourseScope::Only(courses.to_vec()),
+    )
 }
 
 #[test]
@@ -989,9 +1003,157 @@ fn scopes_have_the_names_the_manifest_and_the_cli_use() {
     for (text, scope) in [
         ("submissions:read", Scope::SubmissionsRead),
         ("reports:write", Scope::ReportsWrite),
+        ("settings:read", Scope::SettingsRead),
+        ("assignments:read", Scope::AssignmentsRead),
+        ("roster:read", Scope::RosterRead),
+        ("grades:read", Scope::GradesRead),
+        ("quizzes:read", Scope::QuizzesRead),
+        ("users:contact", Scope::UsersContact),
+        ("announcements:read", Scope::AnnouncementsRead),
     ] {
         assert_eq!(text.parse::<Scope>(), Ok(scope));
         assert_eq!(scope.as_str(), text);
     }
     assert!("submissions:write".parse::<Scope>().is_err());
+}
+
+#[test]
+fn a_plugin_reaches_only_the_courses_it_was_granted() {
+    let (mine, other) = (Uuid::now_v7(), Uuid::now_v7());
+    let one = plugin_in(&[Scope::GradesRead], &[mine]);
+    assert_eq!(
+        authorize_plugin_course(&one, Scope::GradesRead, mine),
+        Ok(())
+    );
+    assert_eq!(
+        authorize_plugin_course(&one, Scope::GradesRead, other),
+        Err(AccessError::Denied)
+    );
+    // The scope is checked too: a course alone grants nothing.
+    assert_eq!(
+        authorize_plugin_course(&one, Scope::RosterRead, mine),
+        Err(AccessError::Denied)
+    );
+    let all = plugin(&[Scope::GradesRead]);
+    assert_eq!(
+        authorize_plugin_course(&all, Scope::GradesRead, other),
+        Ok(())
+    );
+    let none = plugin_in(&[Scope::GradesRead], &[]);
+    assert_eq!(
+        authorize_plugin_course(&none, Scope::GradesRead, mine),
+        Err(AccessError::Denied)
+    );
+}
+
+#[test]
+fn a_list_is_about_the_requested_course_or_every_course_the_plugin_reaches() {
+    let (a, b) = (Uuid::now_v7(), Uuid::now_v7());
+    let scoped = plugin_in(&[Scope::RosterRead], &[a, b]);
+    assert_eq!(
+        plugin_course_filter(&scoped, Scope::RosterRead, None),
+        Ok(Some(vec![a, b]))
+    );
+    assert_eq!(
+        plugin_course_filter(&scoped, Scope::RosterRead, Some(a)),
+        Ok(Some(vec![a]))
+    );
+    assert_eq!(
+        plugin_course_filter(&scoped, Scope::RosterRead, Some(Uuid::now_v7())),
+        Err(AccessError::Denied)
+    );
+    assert_eq!(
+        plugin_course_filter(&scoped, Scope::GradesRead, None),
+        Err(AccessError::Denied)
+    );
+    let all = plugin(&[Scope::RosterRead]);
+    assert_eq!(
+        plugin_course_filter(&all, Scope::RosterRead, None),
+        Ok(None)
+    );
+}
+
+fn route<'a>(roles: &'a [Role], course_roles: &'a [CourseRole]) -> PluginRoute<'a> {
+    PluginRoute {
+        roles,
+        course_roles,
+    }
+}
+
+#[test]
+fn a_plugin_route_is_open_to_the_institution_roles_it_lists_and_no_others() {
+    let open = route(&[Role::Teacher], &[]);
+    assert_eq!(
+        authorize_plugin_route(&actor(Role::Teacher), open, None),
+        Ok(())
+    );
+    // An administrator is let in only by name.
+    for role in [Role::Admin, Role::Student] {
+        assert_eq!(
+            authorize_plugin_route(&actor(role), open, None),
+            Err(AccessError::Denied)
+        );
+    }
+    let nobody = route(&[], &[]);
+    for role in [Role::Admin, Role::Teacher, Role::Student] {
+        assert_eq!(
+            authorize_plugin_route(&actor(role), nobody, None),
+            Err(AccessError::Denied)
+        );
+    }
+}
+
+#[test]
+fn a_plugin_route_with_course_roles_asks_for_one_in_that_course() {
+    let staff = route(
+        &[Role::Admin, Role::Teacher, Role::Student],
+        &[Teacher, Assistant],
+    );
+    let teacher = actor(Role::Teacher);
+    assert_eq!(
+        authorize_plugin_route(&teacher, staff, Some(member(Teacher))),
+        Ok(())
+    );
+    assert_eq!(
+        authorize_plugin_route(&teacher, staff, Some(member(Assistant))),
+        Ok(())
+    );
+    assert_eq!(
+        authorize_plugin_route(&teacher, staff, Some(owner())),
+        Ok(())
+    );
+    // A student of the course, a stranger, and a call with no course are refused.
+    assert_eq!(
+        authorize_plugin_route(&actor(Role::Student), staff, Some(member(Student))),
+        Err(AccessError::Denied)
+    );
+    assert_eq!(
+        authorize_plugin_route(&teacher, staff, Some(non_member())),
+        Err(AccessError::Denied)
+    );
+    assert_eq!(
+        authorize_plugin_route(&teacher, staff, None),
+        Err(AccessError::Denied)
+    );
+    // An institution student is never a course teacher, whatever the roster says (ADR-0037).
+    assert_eq!(
+        authorize_plugin_route(&actor(Role::Student), staff, Some(member(Teacher))),
+        Err(AccessError::Denied)
+    );
+    // An administrator who is listed runs every course without a membership.
+    assert_eq!(
+        authorize_plugin_route(&actor(Role::Admin), staff, Some(non_member())),
+        Ok(())
+    );
+    assert_eq!(
+        authorize_plugin_route(&actor(Role::Admin), staff, None),
+        Ok(())
+    );
+}
+
+#[test]
+fn the_user_a_plugin_is_told_of_is_the_actor_and_their_institution_role() {
+    let teacher = actor(Role::Teacher);
+    let user = plugin_user(&teacher);
+    assert_eq!((user.id, user.role), (teacher.user_id(), Role::Teacher));
 }

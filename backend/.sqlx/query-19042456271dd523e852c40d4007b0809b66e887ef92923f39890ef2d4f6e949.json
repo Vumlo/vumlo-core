@@ -1,0 +1,71 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id AS install_id, plugin_id, scopes AS \"scopes!\", all_courses,\n                  ARRAY(SELECT course_id FROM plugins.install_courses\n                        WHERE install_id = plugin_installs.id) AS \"courses!\"\n           FROM plugins.plugin_installs\n           WHERE token_hash = $1 AND status = 'enabled'",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "install_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "plugins.plugin_installs",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "plugin_id",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "plugins.plugin_installs",
+            "name": "plugin_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "scopes!",
+        "type_info": "TextArray",
+        "origin": {
+          "Table": {
+            "table": "plugins.plugin_installs",
+            "name": "scopes"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "all_courses",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "plugins.plugin_installs",
+            "name": "all_courses"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "courses!",
+        "type_info": "UuidArray",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Bytea"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      null
+    ]
+  },
+  "hash": "19042456271dd523e852c40d4007b0809b66e887ef92923f39890ef2d4f6e949"
+}

@@ -9,8 +9,20 @@ pub enum OutboundError {
     Build(String),
     #[error("request failed: {0}")]
     Request(String),
+    #[error("the request timed out")]
+    Timeout,
     #[error("the response is larger than {limit} bytes")]
     TooLarge { limit: usize },
+}
+
+/// What came back from [`OutboundClient::request`]: the status, the two headers a caller may pass on,
+/// and the body.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Reply {
+    pub status: u16,
+    pub content_type: Option<String>,
+    pub content_disposition: Option<String>,
+    pub body: Vec<u8>,
 }
 
 pub struct OutboundClient {
@@ -62,15 +74,48 @@ impl OutboundClient {
         self.read(request).await
     }
 
+    /// Sends `method` to `url` with `headers` and `body`; returns the status, the content type and
+    /// disposition, and at most `max_response_bytes` of the body. Nothing is followed and nothing
+    /// is logged.
+    pub async fn request(
+        &self,
+        method: &str,
+        url: &str,
+        headers: &[(&str, &str)],
+        body: Vec<u8>,
+    ) -> Result<Reply, OutboundError> {
+        let method = reqwest::Method::from_bytes(method.as_bytes())
+            .map_err(|_| OutboundError::Request("not an HTTP method".to_owned()))?;
+        let mut request = self.client.request(method, url);
+        if !body.is_empty() {
+            request = request.body(body);
+        }
+        for (name, value) in headers {
+            request = request.header(*name, *value);
+        }
+        self.read_reply(request).await
+    }
+
     async fn read(
         &self,
         request: reqwest::RequestBuilder,
     ) -> Result<(u16, Vec<u8>), OutboundError> {
-        let mut response = request
-            .send()
-            .await
-            .map_err(|e| OutboundError::Request(without_url(e)))?;
+        let reply = self.read_reply(request).await?;
+        Ok((reply.status, reply.body))
+    }
+
+    async fn read_reply(&self, request: reqwest::RequestBuilder) -> Result<Reply, OutboundError> {
+        let mut response = request.send().await.map_err(failure)?;
         let status = response.status().as_u16();
+        let header = |name| {
+            response
+                .headers()
+                .get(name)
+                .and_then(|value| value.to_str().ok())
+                .map(str::to_owned)
+        };
+        let content_type = header(reqwest::header::CONTENT_TYPE);
+        let content_disposition = header(reqwest::header::CONTENT_DISPOSITION);
         if response
             .content_length()
             .is_some_and(|len| len > self.max_response_bytes as u64)
@@ -80,11 +125,7 @@ impl OutboundClient {
             });
         }
         let mut body = Vec::new();
-        while let Some(chunk) = response
-            .chunk()
-            .await
-            .map_err(|e| OutboundError::Request(without_url(e)))?
-        {
+        while let Some(chunk) = response.chunk().await.map_err(failure)? {
             if body.len() + chunk.len() > self.max_response_bytes {
                 return Err(OutboundError::TooLarge {
                     limit: self.max_response_bytes,
@@ -92,7 +133,12 @@ impl OutboundClient {
             }
             body.extend_from_slice(&chunk);
         }
-        Ok((status, body))
+        Ok(Reply {
+            status,
+            content_type,
+            content_disposition,
+            body,
+        })
     }
 
     /// Whether something answers at `url`: the status of a GET, with the body thrown away. For
@@ -105,6 +151,14 @@ impl OutboundClient {
             .await
             .map_err(|e| OutboundError::Request(without_url(e)))?;
         Ok(response.status().as_u16())
+    }
+}
+
+fn failure(error: reqwest::Error) -> OutboundError {
+    if error.is_timeout() {
+        OutboundError::Timeout
+    } else {
+        OutboundError::Request(without_url(error))
     }
 }
 

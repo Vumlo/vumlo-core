@@ -1,6 +1,9 @@
 use serde_json::json;
 
 use super::*;
+use crate::settings::SettingScope;
+use access::CourseRole;
+use common::Role;
 
 fn parse(value: serde_json::Value) -> Result<PluginManifest, PluginsError> {
     parse_manifest(value.to_string().as_bytes())
@@ -129,5 +132,132 @@ fn a_plugin_offers_one_page_in_a_slot() {
 fn a_long_value_is_cut_in_the_message() {
     let mut value = hello();
     value["scopes"] = json!(["x".repeat(500)]);
-    assert!(message(value).len() < 200);
+    // The message names the value cut short, then the scopes there are: it does not grow with the value.
+    let text = message(value);
+    assert!(!text.contains(&"x".repeat(50)), "{text}");
+    assert!(text.len() < 300, "{text}");
+}
+
+#[test]
+fn the_settings_of_a_manifest_are_read_with_their_defaults_and_scopes() {
+    let mut value = hello();
+    value["settings"] = json!({
+        "unit": {"type": "string", "enum": ["words", "characters"], "default": "words"},
+        "max_words": {"type": "number", "minimum": 0, "scope": "course"},
+        "api_token": {"type": "string", "secret": true, "description": "Its key"},
+        "tags": {"type": "array", "items": {"type": "string"}}
+    });
+    let manifest = parse(value).unwrap();
+    assert_eq!(manifest.settings.len(), 4);
+    assert_eq!(manifest.settings["unit"].default, Some(json!("words")));
+    assert_eq!(manifest.settings["max_words"].scope, SettingScope::Course);
+    assert!(manifest.settings["api_token"].secret);
+    assert!(parse(hello()).unwrap().settings.is_empty());
+}
+
+#[test]
+fn a_setting_that_is_not_valid_stops_the_install_and_is_named() {
+    for (settings, part) in [
+        (json!({"Bad-Key": {"type": "string"}}), "`Bad-Key`"),
+        (json!({"a": {"type": "object"}}), "setting `a` is not valid"),
+        (json!({"a": {"type": "string", "pattern": "x"}}), "pattern"),
+        (
+            json!({"a": {"type": "string", "secret": true, "default": "x"}}),
+            "no default",
+        ),
+        (json!({"a": "string"}), "setting `a` is not valid"),
+    ] {
+        let mut value = hello();
+        value["settings"] = settings.clone();
+        let text = message(value);
+        assert!(text.contains(part), "{settings}: {text}");
+    }
+    let mut many = hello();
+    many["settings"] = (0..41)
+        .map(|n| (format!("s{n}"), json!({"type": "boolean"})))
+        .collect::<serde_json::Map<_, _>>()
+        .into();
+    assert!(message(many).contains("more than 40"));
+}
+
+fn with_routes(routes: serde_json::Value) -> serde_json::Value {
+    let mut value = hello();
+    value["routes"] = routes;
+    value
+}
+
+#[test]
+fn the_routes_of_a_manifest_are_read_with_their_roles() {
+    let manifest = parse(with_routes(json!([
+        {"method": "get", "path": "/api/summary/{course_id}",
+         "roles": ["admin", "teacher", "teacher"], "course_roles": ["teacher", "assistant"]},
+        {"method": "POST", "path": "/api/echo", "roles": ["student"]},
+    ])))
+    .unwrap();
+    assert_eq!(manifest.routes.len(), 2);
+    let first = &manifest.routes[0];
+    assert_eq!(first.method, "GET", "the method is upper case");
+    assert_eq!(first.roles, [Role::Admin, Role::Teacher], "once each");
+    assert_eq!(
+        first.course_roles,
+        [CourseRole::Teacher, CourseRole::Assistant]
+    );
+    assert!(manifest.routes[1].course_roles.is_empty());
+    assert!(parse(hello()).unwrap().routes.is_empty());
+}
+
+#[test]
+fn a_route_that_is_not_safe_or_not_clear_stops_the_install() {
+    let route = |method: &str,
+                 path: &str,
+                 roles: serde_json::Value,
+                 course_roles: serde_json::Value| {
+        json!([{"method": method, "path": path, "roles": roles, "course_roles": course_roles}])
+    };
+    let bad = [
+        route("TRACE", "/a", json!(["admin"]), json!([])),
+        route("GET", "a", json!(["admin"]), json!([])),
+        route("GET", "/", json!(["admin"]), json!([])),
+        route("GET", "/a/", json!(["admin"]), json!([])),
+        route("GET", "/a//b", json!(["admin"]), json!([])),
+        route("GET", "/a/../b", json!(["admin"]), json!([])),
+        route("GET", "/a/./b", json!(["admin"]), json!([])),
+        route("GET", "/a%2fb", json!(["admin"]), json!([])),
+        route("GET", "/a?x=1", json!(["admin"]), json!([])),
+        route("GET", "/a b", json!(["admin"]), json!([])),
+        route("GET", "/{Course}", json!(["admin"]), json!([])),
+        route("GET", "/{a}/{a}", json!(["admin"]), json!([])),
+        route("GET", "/{}", json!(["admin"]), json!([])),
+        route("GET", "/x{a}", json!(["admin"]), json!([])),
+        route("GET", "/a", json!([]), json!([])),
+        route("GET", "/a", json!(["owner"]), json!([])),
+        route("GET", "/a", json!(["admin"]), json!(["teacher"])),
+        route("GET", "/c/{course_id}", json!(["admin"]), json!(["boss"])),
+        route(
+            "GET",
+            &format!("/{}", "a".repeat(201)),
+            json!(["admin"]),
+            json!([]),
+        ),
+    ];
+    for routes in bad {
+        assert!(parse(with_routes(routes.clone())).is_err(), "{routes}");
+    }
+    let twice = json!([
+        {"method": "GET", "path": "/a", "roles": ["admin"]},
+        {"method": "get", "path": "/a", "roles": ["teacher"]},
+    ]);
+    assert!(message(with_routes(twice)).contains("declared twice"));
+    // The same path with another method is another route.
+    assert!(
+        parse(with_routes(json!([
+            {"method": "GET", "path": "/a", "roles": ["admin"]},
+            {"method": "POST", "path": "/a", "roles": ["admin"]},
+        ])))
+        .is_ok()
+    );
+    let many: Vec<_> = (0..21)
+        .map(|n| json!({"method": "GET", "path": format!("/r{n}"), "roles": ["admin"]}))
+        .collect();
+    assert!(message(with_routes(json!(many))).contains("more than 20"));
 }

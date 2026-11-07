@@ -3,6 +3,7 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 
+use chrono::{DateTime, Utc};
 use uuid::Uuid;
 
 /// One audited action. `meta` holds ids and roles only, never personal data (AGENTS §7).
@@ -17,7 +18,7 @@ pub struct AuditEntry {
 
 /// A domain event for the outbox (ADR-0007). Payloads hold ids only: consumers fetch details
 /// through the API. Each type is a public contract: add fields, never change their meaning.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Event {
     /// A grade was published to a student (ADR-0028).
     GradePublished {
@@ -37,6 +38,48 @@ pub enum Event {
     EmailVerificationRequested { user_id: Uuid },
     /// A password reset was asked for this user; the handler mints the token and sends the link.
     PasswordResetRequested { user_id: Uuid },
+    /// An administrator changed or reset a setting of a plugin (ADR-0072). Only that plugin is
+    /// sent it. No key and no value: the plugin reads its settings again. `course_id` is `None`
+    /// for an institution-wide setting.
+    PluginSettingsChanged {
+        install_id: Uuid,
+        course_id: Option<Uuid>,
+    },
+    /// An assignment became visible to students for the first time (ADR-0075).
+    AssignmentCreated {
+        course_id: Uuid,
+        assignment_id: Uuid,
+    },
+    /// A published assignment changed in a way students see: its configuration, points, settings
+    /// or a published revision (ADR-0075).
+    AssignmentUpdated {
+        course_id: Uuid,
+        assignment_id: Uuid,
+    },
+    /// The deadline of a published assignment was set, moved or cleared. An update as well, so
+    /// `assignment.updated` is sent with it (ADR-0075).
+    AssignmentDeadlineChanged {
+        course_id: Uuid,
+        assignment_id: Uuid,
+    },
+    /// Someone's place on the roster of a course may have changed: added, removed, a role changed,
+    /// a group linked or unlinked, a member of a linked group added or removed (ADR-0075).
+    EnrollmentChanged { course_id: Uuid, user_id: Uuid },
+    /// A student submitted an attempt at a quiz; sent with `submission.submitted` (ADR-0075).
+    QuizAttemptSubmitted {
+        course_id: Uuid,
+        assignment_id: Uuid,
+        student_id: Uuid,
+        submission_id: Uuid,
+    },
+    /// A teacher published an announcement in a course (ADR-0076).
+    AnnouncementPublished {
+        course_id: Uuid,
+        announcement_id: Uuid,
+    },
+    /// Users were added to or removed from a group or one of its subgroups. Internal: `learning`
+    /// turns it into `enrollment.changed` for the courses that use the group (ADR-0075).
+    GroupMembersChanged { group_id: Uuid, user_ids: Vec<Uuid> },
 }
 
 impl Event {
@@ -47,6 +90,14 @@ impl Event {
             Self::SubmissionSubmitted { .. } => "submission.submitted",
             Self::EmailVerificationRequested { .. } => "user.verification_requested",
             Self::PasswordResetRequested { .. } => "user.password_reset_requested",
+            Self::PluginSettingsChanged { .. } => "plugin.settings.changed",
+            Self::AssignmentCreated { .. } => "assignment.created",
+            Self::AssignmentUpdated { .. } => "assignment.updated",
+            Self::AssignmentDeadlineChanged { .. } => "assignment.deadline_changed",
+            Self::EnrollmentChanged { .. } => "enrollment.changed",
+            Self::QuizAttemptSubmitted { .. } => "quiz.attempt_submitted",
+            Self::AnnouncementPublished { .. } => "announcement.published",
+            Self::GroupMembersChanged { .. } => "group.members_changed",
         }
     }
 
@@ -56,7 +107,15 @@ impl Event {
             Self::GradePublished { .. }
             | Self::SubmissionSubmitted { .. }
             | Self::EmailVerificationRequested { .. }
-            | Self::PasswordResetRequested { .. } => 1,
+            | Self::PasswordResetRequested { .. }
+            | Self::PluginSettingsChanged { .. }
+            | Self::AssignmentCreated { .. }
+            | Self::AssignmentUpdated { .. }
+            | Self::AssignmentDeadlineChanged { .. }
+            | Self::EnrollmentChanged { .. }
+            | Self::QuizAttemptSubmitted { .. }
+            | Self::AnnouncementPublished { .. }
+            | Self::GroupMembersChanged { .. } => 1,
         }
     }
 
@@ -86,6 +145,43 @@ impl Event {
             | Self::PasswordResetRequested { user_id } => {
                 serde_json::json!({ "user_id": user_id })
             }
+            Self::PluginSettingsChanged {
+                install_id,
+                course_id,
+            } => serde_json::json!({ "install_id": install_id, "course_id": course_id }),
+            Self::AssignmentCreated {
+                course_id,
+                assignment_id,
+            }
+            | Self::AssignmentUpdated {
+                course_id,
+                assignment_id,
+            }
+            | Self::AssignmentDeadlineChanged {
+                course_id,
+                assignment_id,
+            } => serde_json::json!({ "course_id": course_id, "assignment_id": assignment_id }),
+            Self::EnrollmentChanged { course_id, user_id } => {
+                serde_json::json!({ "course_id": course_id, "user_id": user_id })
+            }
+            Self::QuizAttemptSubmitted {
+                course_id,
+                assignment_id,
+                student_id,
+                submission_id,
+            } => serde_json::json!({
+                "course_id": course_id,
+                "assignment_id": assignment_id,
+                "student_id": student_id,
+                "submission_id": submission_id,
+            }),
+            Self::AnnouncementPublished {
+                course_id,
+                announcement_id,
+            } => serde_json::json!({ "course_id": course_id, "announcement_id": announcement_id }),
+            Self::GroupMembersChanged { group_id, user_ids } => {
+                serde_json::json!({ "group_id": group_id, "user_ids": user_ids })
+            }
         }
     }
 }
@@ -97,6 +193,8 @@ pub struct OutboxEvent {
     pub kind: String,
     pub version: i32,
     pub payload: serde_json::Value,
+    /// When the transaction that wrote the event began: the time the change happened.
+    pub occurred_at: DateTime<Utc>,
 }
 
 /// Why a handler failed. Stored in `events.outbox.last_error`, so it must hold no secret and no
