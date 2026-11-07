@@ -6,10 +6,10 @@ use std::future::Future;
 
 use axum::extract::FromRequestParts;
 use axum::http::request::Parts;
-use common::{ApiError, text_enum};
+use common::{ApiError, Role, text_enum};
 use uuid::Uuid;
 
-use crate::AccessError;
+use crate::{AccessError, Actor, CourseAccess, CourseRole};
 
 /// What an administrator may grant a plugin. A scope is the whole of what one kind of call may do.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -184,6 +184,56 @@ pub fn plugin_course_filter(
         }
         (None, CourseScope::All) => Ok(None),
         (None, CourseScope::Only(courses)) => Ok(Some(courses.clone())),
+    }
+}
+
+/// Who asks a plugin's own server for something, as the core tells it (ADR-0078): the user and their
+/// institution role. The role is read here, in `access`, and nowhere else.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PluginUser {
+    pub id: Uuid,
+    pub role: Role,
+}
+
+pub fn plugin_user(actor: &Actor) -> PluginUser {
+    PluginUser {
+        id: actor.user_id(),
+        role: actor.role(),
+    }
+}
+
+/// Who may use a route a plugin declared (ADR-0078).
+#[derive(Debug, Clone, Copy)]
+pub struct PluginRoute<'a> {
+    /// The institution roles that may call it. An administrator is let in only when `admin` is here.
+    pub roles: &'a [Role],
+    /// The roles in the course named by the route's `{course_id}` that may call it; empty for any.
+    /// An administrator who is allowed by `roles` is not asked for one: administrators run every
+    /// course without a membership.
+    pub course_roles: &'a [CourseRole],
+}
+
+/// Allows the call of a plugin route by `actor`. `course` is how they relate to the course in the
+/// path, when the route has one. Deny by default: a role not listed, and a course role that is not
+/// held, are `Denied`.
+pub fn authorize_plugin_route(
+    actor: &Actor,
+    route: PluginRoute<'_>,
+    course: Option<CourseAccess>,
+) -> Result<(), AccessError> {
+    let role = actor.role();
+    if !route.roles.contains(&role) {
+        return Err(AccessError::Denied);
+    }
+    if route.course_roles.is_empty() || role == Role::Admin {
+        return Ok(());
+    }
+    let held = course
+        .map(|access| access.for_actor(actor))
+        .and_then(|access| access.role);
+    match held {
+        Some(held) if route.course_roles.contains(&held) => Ok(()),
+        _ => Err(AccessError::Denied),
     }
 }
 

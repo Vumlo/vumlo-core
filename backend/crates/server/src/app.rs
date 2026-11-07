@@ -45,6 +45,8 @@ const DB_ACQUIRE_TIMEOUT: Duration = Duration::from_secs(5);
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 /// An upload or a download of a file up to `files.max_size` over a slow link.
 const FILE_REQUEST_TIMEOUT: Duration = Duration::from_secs(600);
+/// A call through the core to a plugin's server: its own limit is 30 s, so this is the margin.
+const PROXY_REQUEST_TIMEOUT: Duration = Duration::from_secs(45);
 /// Room for a 1 MiB document (ADR-0025) and the rest of the request around it.
 pub(crate) const MAX_BODY_BYTES: usize = 2 * 1024 * 1024;
 
@@ -296,6 +298,18 @@ pub fn router(state: AppState) -> Result<Router, SetupError> {
             StatusCode::REQUEST_TIMEOUT,
             FILE_REQUEST_TIMEOUT,
         ));
+    // The calls people make to a plugin's own server: a plugin may be sent more and take longer
+    // than the rest of the API, and an answer is not a document, so these skip the layers that
+    // buffer and tag one.
+    openapi.merge(plugins::proxy_openapi());
+    let proxy_router = Router::<AppState>::new()
+        .nest("/api/v1", plugins::proxy_router())
+        .with_state(state.clone())
+        .layer(RequestBodyLimitLayer::new(plugins::PROXY_MAX_REQUEST_BYTES))
+        .layer(TimeoutLayer::with_status_code(
+            StatusCode::REQUEST_TIMEOUT,
+            PROXY_REQUEST_TIMEOUT,
+        ));
     let spec = openapi.clone();
     let config = state.config.clone();
     let idempotency = state.clone();
@@ -319,6 +333,7 @@ pub fn router(state: AppState) -> Result<Router, SetupError> {
             REQUEST_TIMEOUT,
         ))
         .merge(files_router)
+        .merge(proxy_router)
         .layer(
             TraceLayer::new_for_http()
                 .make_span_with(|request: &axum::http::Request<_>| {

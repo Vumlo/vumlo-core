@@ -794,6 +794,13 @@ async fn the_list_of_operations_is_the_api() {
             "GET /plugin-api/grades",
             "GET /plugin-api/submissions/{id}/fields",
             "GET /plugin-api/users/contact",
+            // The routes of a plugin's own server: who may call each is in its manifest, and
+            // `tests/plugin_routes.rs` checks every answer.
+            "GET /plugins/{plugin_id}/{path}",
+            "POST /plugins/{plugin_id}/{path}",
+            "PUT /plugins/{plugin_id}/{path}",
+            "PATCH /plugins/{plugin_id}/{path}",
+            "DELETE /plugins/{plugin_id}/{path}",
             "GET /plugin-slots",
             "POST /assignments/{id}/plugin-launch",
             "GET /health",

@@ -178,3 +178,189 @@ fn a_sealed_value_that_was_changed_cut_or_never_sealed_does_not_open() {
         assert!(open(&key(), id, "api_token", &bad).is_err(), "{bad}");
     }
 }
+
+fn ids() -> (Uuid, Uuid, Uuid) {
+    (
+        Uuid::parse_str("018f0000-0000-7000-8000-000000000003").unwrap(),
+        Uuid::parse_str("018f0000-0000-7000-8000-000000000004").unwrap(),
+        Uuid::parse_str("018f0000-0000-7000-8000-000000000005").unwrap(),
+    )
+}
+
+fn call<'a>() -> ProxyClaims<'a> {
+    let (user, course, nonce) = ids();
+    ProxyClaims {
+        method: "POST",
+        target: "/hello/api/echo?x=1",
+        user,
+        role: "teacher",
+        course: Some(course),
+        course_role: Some("assistant"),
+        nonce,
+        timestamp: 1_700_000_000,
+    }
+}
+
+#[test]
+fn the_signature_of_a_proxied_call_is_the_one_the_example_plugin_computes() {
+    // Computed with Python's `hmac` from the lines of the doc comment of `proxy_signature`; the
+    // example plugin checks the same vector.
+    assert_eq!(
+        proxy_signature("test-secret", &call(), br#"{"a":1}"#).unwrap(),
+        "sha256=f0550504dfb2f66b16d94c999990f57b5b6c5c1d5ac69cc62076cca03e7da247"
+    );
+    let (user, _, nonce) = ids();
+    let none = ProxyClaims {
+        method: "GET",
+        target: "/api/summary/x",
+        role: "admin",
+        course: None,
+        course_role: None,
+        user,
+        nonce,
+        timestamp: 1_700_000_000,
+    };
+    assert_eq!(
+        proxy_signature("test-secret", &none, b"").unwrap(),
+        "sha256=ef8d29b012c338515b63f520e73271e65d0728cd654bc54006d906800dd845a6"
+    );
+}
+
+#[test]
+fn a_proxied_call_cannot_be_changed_in_any_part_without_changing_its_signature() {
+    let body: &[u8] = br#"{"a":1}"#;
+    let base = proxy_signature("test-secret", &call(), body).unwrap();
+    let other = Uuid::now_v7();
+    let changed: Vec<(&str, String)> = vec![
+        ("secret", proxy_signature("other", &call(), body).unwrap()),
+        (
+            "body",
+            proxy_signature("test-secret", &call(), b"{}").unwrap(),
+        ),
+        (
+            "method",
+            proxy_signature(
+                "test-secret",
+                &ProxyClaims {
+                    method: "PUT",
+                    ..call()
+                },
+                body,
+            )
+            .unwrap(),
+        ),
+        (
+            "target",
+            proxy_signature(
+                "test-secret",
+                &ProxyClaims {
+                    target: "/hello/api/echo?x=2",
+                    ..call()
+                },
+                body,
+            )
+            .unwrap(),
+        ),
+        (
+            "user",
+            proxy_signature(
+                "test-secret",
+                &ProxyClaims {
+                    user: other,
+                    ..call()
+                },
+                body,
+            )
+            .unwrap(),
+        ),
+        (
+            "role",
+            proxy_signature(
+                "test-secret",
+                &ProxyClaims {
+                    role: "admin",
+                    ..call()
+                },
+                body,
+            )
+            .unwrap(),
+        ),
+        (
+            "course",
+            proxy_signature(
+                "test-secret",
+                &ProxyClaims {
+                    course: Some(other),
+                    ..call()
+                },
+                body,
+            )
+            .unwrap(),
+        ),
+        (
+            "no course",
+            proxy_signature(
+                "test-secret",
+                &ProxyClaims {
+                    course: None,
+                    ..call()
+                },
+                body,
+            )
+            .unwrap(),
+        ),
+        (
+            "course role",
+            proxy_signature(
+                "test-secret",
+                &ProxyClaims {
+                    course_role: Some("teacher"),
+                    ..call()
+                },
+                body,
+            )
+            .unwrap(),
+        ),
+        (
+            "nonce",
+            proxy_signature(
+                "test-secret",
+                &ProxyClaims {
+                    nonce: other,
+                    ..call()
+                },
+                body,
+            )
+            .unwrap(),
+        ),
+        (
+            "time",
+            proxy_signature(
+                "test-secret",
+                &ProxyClaims {
+                    timestamp: 1_700_000_001,
+                    ..call()
+                },
+                body,
+            )
+            .unwrap(),
+        ),
+    ];
+    for (what, signature) in changed {
+        assert_ne!(base, signature, "{what} is not covered by the signature");
+    }
+}
+
+#[test]
+fn a_signed_event_a_launch_token_and_a_proxied_call_are_not_one_another() {
+    // The same secret signs all three. A proxied call whose canonical text were an event body, or the
+    // other way round, must not verify as the other: the first line of the canonical text differs.
+    let body = b"x";
+    let proxied = proxy_signature("s", &call(), body).unwrap();
+    let canonical_as_event = format!("vumlo-proxy\n{}", call().nonce);
+    assert_ne!(
+        proxied,
+        sign("s", 1_700_000_000, canonical_as_event.as_bytes()).unwrap()
+    );
+    assert_ne!(proxied, sign("s", 1_700_000_000, body).unwrap());
+}

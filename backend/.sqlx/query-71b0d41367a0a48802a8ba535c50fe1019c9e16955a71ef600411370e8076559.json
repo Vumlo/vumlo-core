@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT id, plugin_id, version, base_url,\n                  subscribes AS \"subscribes!\", requested_scopes AS \"requested_scopes!\",\n                  scopes AS \"scopes!\", all_courses,\n                  ARRAY(SELECT course_id FROM plugins.install_courses\n                        WHERE install_id = plugin_installs.id) AS \"courses!\",\n                  ui_slots, settings, secret_version,\n                  status AS \"status: InstallStatus\", created_at\n           FROM plugins.plugin_installs WHERE plugin_id = $1",
+  "query": "SELECT id, plugin_id, version, base_url,\n                  subscribes AS \"subscribes!\", requested_scopes AS \"requested_scopes!\",\n                  scopes AS \"scopes!\", all_courses,\n                  ARRAY(SELECT course_id FROM plugins.install_courses\n                        WHERE install_id = plugin_installs.id) AS \"courses!\",\n                  ui_slots, settings, routes, secret_version,\n                  status AS \"status: InstallStatus\", created_at\n           FROM plugins.plugin_installs ORDER BY plugin_id",
   "describe": {
     "columns": [
       {
@@ -121,6 +121,17 @@
       },
       {
         "ordinal": 11,
+        "name": "routes",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "plugins.plugin_installs",
+            "name": "routes"
+          }
+        }
+      },
+      {
+        "ordinal": 12,
         "name": "secret_version",
         "type_info": "Int4",
         "origin": {
@@ -131,7 +142,7 @@
         }
       },
       {
-        "ordinal": 12,
+        "ordinal": 13,
         "name": "status: InstallStatus",
         "type_info": "Text",
         "origin": {
@@ -142,7 +153,7 @@
         }
       },
       {
-        "ordinal": 13,
+        "ordinal": 14,
         "name": "created_at",
         "type_info": "Timestamptz",
         "origin": {
@@ -154,9 +165,7 @@
       }
     ],
     "parameters": {
-      "Left": [
-        "Text"
-      ]
+      "Left": []
     },
     "nullable": [
       false,
@@ -172,8 +181,9 @@
       false,
       false,
       false,
+      false,
       false
     ]
   },
-  "hash": "235e90943bb9b2ecedc5fb3cf4fecd1a1b04e7d3d96869c640997c260615495e"
+  "hash": "71b0d41367a0a48802a8ba535c50fe1019c9e16955a71ef600411370e8076559"
 }

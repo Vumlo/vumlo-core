@@ -17,7 +17,7 @@ use sqlx::migrate::Migrator;
 
 pub use manifest::{Manifest, Permission, schema_of};
 pub use order::{OrderError, init_order};
-pub use outbound::{OutboundClient, OutboundError};
+pub use outbound::{OutboundClient, OutboundError, Reply};
 pub use registrar::{Job, Registered, Registrar};
 pub use state::{DynActorSource, Institution, ModuleState, NoActors};
 

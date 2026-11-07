@@ -2166,6 +2166,67 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/plugins/{plugin_id}/{path}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * A route of a plugin's own server, through the core (ADR-0078). The plugin declares its
+         *     routes and who may call each in its manifest; one that is not declared, or is declared
+         *     for another method, is `404`. The core forwards the call with a signed statement of who
+         *     the caller is (`X-Vumlo-User`, `X-Vumlo-Role`, `X-Vumlo-Course`, `X-Vumlo-Course-Role`,
+         *     `X-Vumlo-Timestamp`, `X-Vumlo-Nonce`, `X-Vumlo-Signature`) and no cookie. The answer of
+         *     the plugin is passed on if it is JSON, text, CSV, iCalendar, PDF or XLSX; any other
+         *     content type, a redirect, or a `5xx` is a `502`.
+         */
+        get: operations["proxy_get"];
+        /**
+         * A route of a plugin's own server, through the core (ADR-0078). The plugin declares its
+         *     routes and who may call each in its manifest; one that is not declared, or is declared
+         *     for another method, is `404`. The core forwards the call with a signed statement of who
+         *     the caller is (`X-Vumlo-User`, `X-Vumlo-Role`, `X-Vumlo-Course`, `X-Vumlo-Course-Role`,
+         *     `X-Vumlo-Timestamp`, `X-Vumlo-Nonce`, `X-Vumlo-Signature`) and no cookie. The answer of
+         *     the plugin is passed on if it is JSON, text, CSV, iCalendar, PDF or XLSX; any other
+         *     content type, a redirect, or a `5xx` is a `502`.
+         */
+        put: operations["proxy_put"];
+        /**
+         * A route of a plugin's own server, through the core (ADR-0078). The plugin declares its
+         *     routes and who may call each in its manifest; one that is not declared, or is declared
+         *     for another method, is `404`. The core forwards the call with a signed statement of who
+         *     the caller is (`X-Vumlo-User`, `X-Vumlo-Role`, `X-Vumlo-Course`, `X-Vumlo-Course-Role`,
+         *     `X-Vumlo-Timestamp`, `X-Vumlo-Nonce`, `X-Vumlo-Signature`) and no cookie. The answer of
+         *     the plugin is passed on if it is JSON, text, CSV, iCalendar, PDF or XLSX; any other
+         *     content type, a redirect, or a `5xx` is a `502`.
+         */
+        post: operations["proxy_post"];
+        /**
+         * A route of a plugin's own server, through the core (ADR-0078). The plugin declares its
+         *     routes and who may call each in its manifest; one that is not declared, or is declared
+         *     for another method, is `404`. The core forwards the call with a signed statement of who
+         *     the caller is (`X-Vumlo-User`, `X-Vumlo-Role`, `X-Vumlo-Course`, `X-Vumlo-Course-Role`,
+         *     `X-Vumlo-Timestamp`, `X-Vumlo-Nonce`, `X-Vumlo-Signature`) and no cookie. The answer of
+         *     the plugin is passed on if it is JSON, text, CSV, iCalendar, PDF or XLSX; any other
+         *     content type, a redirect, or a `5xx` is a `502`.
+         */
+        delete: operations["proxy_delete"];
+        options?: never;
+        head?: never;
+        /**
+         * A route of a plugin's own server, through the core (ADR-0078). The plugin declares its
+         *     routes and who may call each in its manifest; one that is not declared, or is declared
+         *     for another method, is `404`. The core forwards the call with a signed statement of who
+         *     the caller is (`X-Vumlo-User`, `X-Vumlo-Role`, `X-Vumlo-Course`, `X-Vumlo-Course-Role`,
+         *     `X-Vumlo-Timestamp`, `X-Vumlo-Nonce`, `X-Vumlo-Signature`) and no cookie. The answer of
+         *     the plugin is passed on if it is JSON, text, CSV, iCalendar, PDF or XLSX; any other
+         *     content type, a redirect, or a `5xx` is a `502`.
+         */
+        patch: operations["proxy_patch"];
+        trace?: never;
+    };
     "/api/v1/search": {
         parameters: {
             query?: never;
@@ -11569,6 +11630,391 @@ export interface operations {
             };
             /** @description No such slot */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    proxy_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The id of the plugin */
+                plugin_id: string;
+                /** @description The route on the plugin's server, without its leading slash */
+                path: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The plugin's answer (any 2xx or 4xx it gave) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not logged in */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The route is not for this caller's role, or the plugin does not reach the course */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description No such plugin, route or course, or the course is not visible to the caller */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The body is more than 10 MiB */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The plugin could not be reached or answered something the core does not pass on */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The plugin took more than 30 seconds */
+            504: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    proxy_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The id of the plugin */
+                plugin_id: string;
+                /** @description The route on the plugin's server, without its leading slash */
+                path: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The plugin's answer (any 2xx or 4xx it gave) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not logged in */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The route is not for this caller's role, or the plugin does not reach the course */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description No such plugin, route or course, or the course is not visible to the caller */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The body is more than 10 MiB */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The plugin could not be reached or answered something the core does not pass on */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The plugin took more than 30 seconds */
+            504: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    proxy_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The id of the plugin */
+                plugin_id: string;
+                /** @description The route on the plugin's server, without its leading slash */
+                path: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The plugin's answer (any 2xx or 4xx it gave) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not logged in */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The route is not for this caller's role, or the plugin does not reach the course */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description No such plugin, route or course, or the course is not visible to the caller */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The body is more than 10 MiB */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The plugin could not be reached or answered something the core does not pass on */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The plugin took more than 30 seconds */
+            504: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    proxy_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The id of the plugin */
+                plugin_id: string;
+                /** @description The route on the plugin's server, without its leading slash */
+                path: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The plugin's answer (any 2xx or 4xx it gave) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not logged in */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The route is not for this caller's role, or the plugin does not reach the course */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description No such plugin, route or course, or the course is not visible to the caller */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The body is more than 10 MiB */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The plugin could not be reached or answered something the core does not pass on */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The plugin took more than 30 seconds */
+            504: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    proxy_patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The id of the plugin */
+                plugin_id: string;
+                /** @description The route on the plugin's server, without its leading slash */
+                path: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The plugin's answer (any 2xx or 4xx it gave) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not logged in */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The route is not for this caller's role, or the plugin does not reach the course */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description No such plugin, route or course, or the course is not visible to the caller */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The body is more than 10 MiB */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The plugin could not be reached or answered something the core does not pass on */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The plugin took more than 30 seconds */
+            504: {
                 headers: {
                     [name: string]: unknown;
                 };

@@ -1,12 +1,13 @@
 //! SQL only. Every function takes the connection it runs on and never begins a transaction. This
 //! crate reads and writes the schema `plugins` and nothing else.
 
-use access::{CourseScope, Scope};
+use access::{CourseRole, CourseScope, Scope};
 use chrono::{DateTime, Utc};
+use common::Role;
 use sqlx::PgConnection;
 use uuid::Uuid;
 
-use crate::model::{Install, InstallStatus, ReportSubject, UiSlot};
+use crate::model::{Install, InstallStatus, ReportSubject, RouteSpec, UiSlot};
 use crate::settings::SettingSpec;
 
 /// The columns of `plugin_installs`, as the database holds them.
@@ -22,6 +23,7 @@ struct InstallRow {
     courses: Vec<Uuid>,
     ui_slots: serde_json::Value,
     settings: serde_json::Value,
+    routes: serde_json::Value,
     secret_version: i32,
     status: InstallStatus,
     created_at: DateTime<Utc>,
@@ -40,6 +42,53 @@ fn ui_of(value: &serde_json::Value) -> Vec<UiSlot> {
                 slot: text(entry, "slot")?,
                 title: text(entry, "title")?,
                 path: text(entry, "path")?,
+            })
+        })
+        .collect()
+}
+
+/// The routes in `routes`. They were checked when the plugin was installed; an entry that does not
+/// read back is left out, so it is a route nobody may call.
+pub(crate) fn routes_of(value: &serde_json::Value) -> Vec<RouteSpec> {
+    let text = |entry: &serde_json::Value, key: &str| entry[key].as_str().map(str::to_owned);
+    let list = |entry: &serde_json::Value, key: &str| -> Vec<String> {
+        entry[key]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(|v| v.as_str().map(str::to_owned))
+            .collect()
+    };
+    value
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|entry| {
+            Some(RouteSpec {
+                method: text(entry, "method")?,
+                path: text(entry, "path")?,
+                roles: list(entry, "roles")
+                    .iter()
+                    .filter_map(|r| r.parse::<Role>().ok())
+                    .collect(),
+                course_roles: list(entry, "course_roles")
+                    .iter()
+                    .filter_map(|r| r.parse::<CourseRole>().ok())
+                    .collect(),
+            })
+        })
+        .collect()
+}
+
+pub(crate) fn routes_json(routes: &[RouteSpec]) -> serde_json::Value {
+    routes
+        .iter()
+        .map(|route| {
+            serde_json::json!({
+                "method": route.method,
+                "path": route.path,
+                "roles": route.roles.iter().map(|r| r.as_str()).collect::<Vec<_>>(),
+                "course_roles": route.course_roles.iter().map(|r| r.as_str()).collect::<Vec<_>>(),
             })
         })
         .collect()
@@ -65,6 +114,7 @@ impl From<InstallRow> for Install {
             ui: ui_of(&row.ui_slots),
             // Checked when the plugin was installed; one that does not read back declares nothing.
             settings: serde_json::from_value(row.settings).unwrap_or_default(),
+            routes: routes_of(&row.routes),
             secret_version: row.secret_version,
             status: row.status,
             created_at: row.created_at,
@@ -101,6 +151,7 @@ pub struct NewInstall<'a> {
     pub scopes: &'a [String],
     pub courses: &'a CourseScope,
     pub ui_slots: serde_json::Value,
+    pub routes: serde_json::Value,
     pub settings: &'a std::collections::BTreeMap<String, SettingSpec>,
     pub token_hash: &'a [u8],
 }
@@ -112,8 +163,8 @@ pub async fn insert_install(
     sqlx::query!(
         "INSERT INTO plugins.plugin_installs
              (id, plugin_id, version, base_url, api, subscribes, requested_scopes, scopes,
-              ui_slots, settings, token_hash, all_courses)
-         VALUES ($1, $2, $3, $4, '1', $5, $6, $7, $8, $9, $10, $11)",
+              ui_slots, settings, token_hash, all_courses, routes)
+         VALUES ($1, $2, $3, $4, '1', $5, $6, $7, $8, $9, $10, $11, $12)",
         new.id,
         new.plugin_id,
         new.version,
@@ -124,7 +175,8 @@ pub async fn insert_install(
         new.ui_slots,
         serde_json::to_value(new.settings).unwrap_or_default(),
         new.token_hash,
-        matches!(new.courses, CourseScope::All)
+        matches!(new.courses, CourseScope::All),
+        new.routes
     )
     .execute(&mut *conn)
     .await?;
@@ -176,7 +228,7 @@ pub async fn find_install(
                   scopes AS "scopes!", all_courses,
                   ARRAY(SELECT course_id FROM plugins.install_courses
                         WHERE install_id = plugin_installs.id) AS "courses!",
-                  ui_slots, settings, secret_version,
+                  ui_slots, settings, routes, secret_version,
                   status AS "status: InstallStatus", created_at
            FROM plugins.plugin_installs WHERE plugin_id = $1"#,
         plugin_id
@@ -194,7 +246,7 @@ pub async fn list_installs(conn: &mut PgConnection) -> Result<Vec<Install>, sqlx
                   scopes AS "scopes!", all_courses,
                   ARRAY(SELECT course_id FROM plugins.install_courses
                         WHERE install_id = plugin_installs.id) AS "courses!",
-                  ui_slots, settings, secret_version,
+                  ui_slots, settings, routes, secret_version,
                   status AS "status: InstallStatus", created_at
            FROM plugins.plugin_installs ORDER BY plugin_id"#
     )

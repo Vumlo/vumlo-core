@@ -11,6 +11,7 @@ mod delivery;
 mod error;
 mod manifest;
 mod model;
+mod proxy;
 mod repo;
 mod routes;
 mod secret;
@@ -28,8 +29,11 @@ pub use model::{
     API_VERSION, Install, InstallStatus, InstallSummary, Installed, PluginManifest, PluginToken,
     ReportSubject, SLOTS, SUBSCRIBABLE, UiSlot,
 };
+pub use proxy::{
+    MAX_REQUEST_BYTES as PROXY_MAX_REQUEST_BYTES, openapi as proxy_openapi, router as proxy_router,
+};
 pub use routes::router;
-pub use secret::{SecretError, SecretKey, derive_secret, sign};
+pub use secret::{ProxyClaims, SecretError, SecretKey, derive_secret, proxy_signature, sign};
 pub use service::{
     SettingView, assignment_reports, check_base_url, course_reports, delete_report, fan_out,
     fetch_manifest, get, get_setting, grant, install, list, list_settings, put_report, remove,

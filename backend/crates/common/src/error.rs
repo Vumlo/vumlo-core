@@ -157,9 +157,17 @@ impl IntoResponse for ApiError {
     }
 }
 
+/// Put in the extensions of a response to keep [`problem_details`] from rewriting it: the answer
+/// of a plugin's own server to a person (ADR-0078) is the plugin's to give, errors included.
+#[derive(Debug, Clone, Copy)]
+pub struct PassThrough;
+
 /// Rewrites error responses that did not come from `ApiError` (framework and tower layers)
 /// into Problem Details. `Retry-After` survives the rewrite.
 pub async fn problem_details(response: Response) -> Response {
+    if response.extensions().get::<PassThrough>().is_some() {
+        return response;
+    }
     let status = response.status();
     let is_error = status.is_client_error() || status.is_server_error();
     let is_problem = response

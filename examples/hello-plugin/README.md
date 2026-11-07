@@ -56,3 +56,18 @@ plugin of your own:
 the web app loads its list of pages (a tab that is still open can no longer get a launch token).
 
 `python3 plugin.py --check-vector` checks its signature and launch-token code against the vectors the core's tests use.
+
+## Routes for people
+
+The manifest also declares two `routes`: `GET /api/summary/{course_id}` (teachers and administrators; and in the course
+only its teacher or assistants) and `POST /api/echo` (anyone signed in). A person reaches them through the core at
+`/api/v1/plugins/hello/api/summary/<course id>` with their ordinary session ([ADR-0078](../../docs/decisions/done.md)).
+The plugin never sees the session; the core tells it who the person is in headers it signs with the webhook secret:
+
+    X-Vumlo-User, X-Vumlo-Role, X-Vumlo-Course, X-Vumlo-Course-Role, X-Vumlo-Timestamp, X-Vumlo-Nonce, X-Vumlo-Signature
+
+`check_proxy` in `plugin.py` is the whole check: the signature (it covers the user, the role, the course, the
+request-target and the body), a timestamp within five minutes, and a nonce it has not seen. A plugin that skips any of
+the three can be fooled by someone who sends its port a request of their own, or by a captured call sent again. What
+the plugin answers must be JSON, text, CSV, iCalendar, PDF or XLSX: the core serves it from its own origin and passes
+on nothing that could run in a browser.

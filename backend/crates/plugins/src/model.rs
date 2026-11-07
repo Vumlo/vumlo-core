@@ -3,11 +3,11 @@
 use std::collections::BTreeMap;
 use std::fmt;
 
-use access::{CourseScope, Scope};
+use access::{CourseRole, CourseScope, Scope};
 use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use chrono::{DateTime, Utc};
-use common::text_enum;
+use common::{Role, text_enum};
 use rand::Rng;
 use sha2::{Digest, Sha256};
 use uuid::Uuid;
@@ -80,6 +80,68 @@ pub struct UiSlot {
     pub path: String,
 }
 
+/// A route of the plugin's own server that people reach through the core (ADR-0078), as its manifest
+/// declared it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RouteSpec {
+    /// `GET`, `POST`, `PUT`, `PATCH` or `DELETE`.
+    pub method: String,
+    /// Starts with `/`; a segment is a name, or `{name}` for any one segment. `{course_id}` is a
+    /// course the core resolves.
+    pub path: String,
+    /// The institution roles that may call it.
+    pub roles: Vec<Role>,
+    /// The roles in the course of `{course_id}` that may call it; empty: any.
+    pub course_roles: Vec<CourseRole>,
+}
+
+/// The methods a route may declare.
+pub const ROUTE_METHODS: [&str; 5] = ["GET", "POST", "PUT", "PATCH", "DELETE"];
+
+/// The segment of a route path that names a course.
+pub const COURSE_SEGMENT: &str = "course_id";
+
+/// A literal segment, or the value of a parameter, is made of these and is not `.` or `..`: nothing a
+/// plugin's server could read as a way up or out of the route that was checked.
+pub fn is_plain_segment(segment: &str) -> bool {
+    !segment.is_empty()
+        && segment != "."
+        && segment != ".."
+        && segment
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'~' | b'-'))
+}
+
+impl RouteSpec {
+    /// The values of the parameters when `path` (the part of the address after the plugin's id)
+    /// is this route's, else `None`. Every segment of `path` is plain.
+    pub fn matches<'p>(&self, path: &'p str) -> Option<Vec<(&str, &'p str)>> {
+        let mut params = Vec::new();
+        let mut wanted = self.path.split('/');
+        let mut given = path.split('/');
+        loop {
+            match (wanted.next(), given.next()) {
+                (None, None) => return Some(params),
+                (Some(want), Some(have)) => {
+                    // The path starts with `/`, so the first segment of both is empty.
+                    if want.is_empty() && have.is_empty() {
+                        continue;
+                    }
+                    if !is_plain_segment(have) {
+                        return None;
+                    }
+                    match want.strip_prefix('{').and_then(|w| w.strip_suffix('}')) {
+                        Some(name) => params.push((name, have)),
+                        None if want == have => {}
+                        None => return None,
+                    }
+                }
+                _ => return None,
+            }
+        }
+    }
+}
+
 /// What `GET {base}/manifest` says, checked.
 #[derive(Debug, Clone, PartialEq)]
 pub struct PluginManifest {
@@ -90,6 +152,8 @@ pub struct PluginManifest {
     pub ui: Vec<UiSlot>,
     /// What an administrator may configure, by key (checked).
     pub settings: BTreeMap<String, SettingSpec>,
+    /// The routes of its own server people reach through the core (checked).
+    pub routes: Vec<RouteSpec>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -116,6 +180,8 @@ pub struct Install {
     pub ui: Vec<UiSlot>,
     /// The settings the plugin declared, as its manifest said (checked when it was installed).
     pub settings: BTreeMap<String, SettingSpec>,
+    /// The routes the plugin declared (checked when it was installed).
+    pub routes: Vec<RouteSpec>,
     pub secret_version: i32,
     pub status: InstallStatus,
     pub created_at: DateTime<Utc>,

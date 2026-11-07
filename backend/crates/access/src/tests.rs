@@ -1072,3 +1072,88 @@ fn a_list_is_about_the_requested_course_or_every_course_the_plugin_reaches() {
         Ok(None)
     );
 }
+
+fn route<'a>(roles: &'a [Role], course_roles: &'a [CourseRole]) -> PluginRoute<'a> {
+    PluginRoute {
+        roles,
+        course_roles,
+    }
+}
+
+#[test]
+fn a_plugin_route_is_open_to_the_institution_roles_it_lists_and_no_others() {
+    let open = route(&[Role::Teacher], &[]);
+    assert_eq!(
+        authorize_plugin_route(&actor(Role::Teacher), open, None),
+        Ok(())
+    );
+    // An administrator is let in only by name.
+    for role in [Role::Admin, Role::Student] {
+        assert_eq!(
+            authorize_plugin_route(&actor(role), open, None),
+            Err(AccessError::Denied)
+        );
+    }
+    let nobody = route(&[], &[]);
+    for role in [Role::Admin, Role::Teacher, Role::Student] {
+        assert_eq!(
+            authorize_plugin_route(&actor(role), nobody, None),
+            Err(AccessError::Denied)
+        );
+    }
+}
+
+#[test]
+fn a_plugin_route_with_course_roles_asks_for_one_in_that_course() {
+    let staff = route(
+        &[Role::Admin, Role::Teacher, Role::Student],
+        &[Teacher, Assistant],
+    );
+    let teacher = actor(Role::Teacher);
+    assert_eq!(
+        authorize_plugin_route(&teacher, staff, Some(member(Teacher))),
+        Ok(())
+    );
+    assert_eq!(
+        authorize_plugin_route(&teacher, staff, Some(member(Assistant))),
+        Ok(())
+    );
+    assert_eq!(
+        authorize_plugin_route(&teacher, staff, Some(owner())),
+        Ok(())
+    );
+    // A student of the course, a stranger, and a call with no course are refused.
+    assert_eq!(
+        authorize_plugin_route(&actor(Role::Student), staff, Some(member(Student))),
+        Err(AccessError::Denied)
+    );
+    assert_eq!(
+        authorize_plugin_route(&teacher, staff, Some(non_member())),
+        Err(AccessError::Denied)
+    );
+    assert_eq!(
+        authorize_plugin_route(&teacher, staff, None),
+        Err(AccessError::Denied)
+    );
+    // An institution student is never a course teacher, whatever the roster says (ADR-0037).
+    assert_eq!(
+        authorize_plugin_route(&actor(Role::Student), staff, Some(member(Teacher))),
+        Err(AccessError::Denied)
+    );
+    // An administrator who is listed runs every course without a membership.
+    assert_eq!(
+        authorize_plugin_route(&actor(Role::Admin), staff, Some(non_member())),
+        Ok(())
+    );
+    assert_eq!(
+        authorize_plugin_route(&actor(Role::Admin), staff, None),
+        Ok(())
+    );
+}
+
+#[test]
+fn the_user_a_plugin_is_told_of_is_the_actor_and_their_institution_role() {
+    let teacher = actor(Role::Teacher);
+    let user = plugin_user(&teacher);
+    assert_eq!((user.id, user.role), (teacher.user_id(), Role::Teacher));
+}

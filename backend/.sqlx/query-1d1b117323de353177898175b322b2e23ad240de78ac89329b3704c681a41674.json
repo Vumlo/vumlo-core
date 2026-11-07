@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT id, plugin_id, version, base_url,\n                  subscribes AS \"subscribes!\", requested_scopes AS \"requested_scopes!\",\n                  scopes AS \"scopes!\", all_courses,\n                  ARRAY(SELECT course_id FROM plugins.install_courses\n                        WHERE install_id = plugin_installs.id) AS \"courses!\",\n                  ui_slots, settings, secret_version,\n                  status AS \"status: InstallStatus\", created_at\n           FROM plugins.plugin_installs ORDER BY plugin_id",
+  "query": "SELECT id, plugin_id, version, base_url,\n                  subscribes AS \"subscribes!\", requested_scopes AS \"requested_scopes!\",\n                  scopes AS \"scopes!\", all_courses,\n                  ARRAY(SELECT course_id FROM plugins.install_courses\n                        WHERE install_id = plugin_installs.id) AS \"courses!\",\n                  ui_slots, settings, routes, secret_version,\n                  status AS \"status: InstallStatus\", created_at\n           FROM plugins.plugin_installs WHERE plugin_id = $1",
   "describe": {
     "columns": [
       {
@@ -121,6 +121,17 @@
       },
       {
         "ordinal": 11,
+        "name": "routes",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "plugins.plugin_installs",
+            "name": "routes"
+          }
+        }
+      },
+      {
+        "ordinal": 12,
         "name": "secret_version",
         "type_info": "Int4",
         "origin": {
@@ -131,7 +142,7 @@
         }
       },
       {
-        "ordinal": 12,
+        "ordinal": 13,
         "name": "status: InstallStatus",
         "type_info": "Text",
         "origin": {
@@ -142,7 +153,7 @@
         }
       },
       {
-        "ordinal": 13,
+        "ordinal": 14,
         "name": "created_at",
         "type_info": "Timestamptz",
         "origin": {
@@ -154,7 +165,9 @@
       }
     ],
     "parameters": {
-      "Left": []
+      "Left": [
+        "Text"
+      ]
     },
     "nullable": [
       false,
@@ -170,8 +183,9 @@
       false,
       false,
       false,
+      false,
       false
     ]
   },
-  "hash": "f0c4f9123b49b9512cbd8f3443f58aada623ca234b199a2663e3837854d91abc"
+  "hash": "1d1b117323de353177898175b322b2e23ad240de78ac89329b3704c681a41674"
 }

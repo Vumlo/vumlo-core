@@ -25,6 +25,13 @@ And a page for the tab "Words" on an assignment:
                    the staff of the course, nothing for a student. CORS, because the frame's origin
                    is `null`.
 
+And two routes for people, through the core (ADR-0078), at /api/v1/plugins/hello/api/...:
+
+  GET  /api/summary/{course_id}   teachers of the course; how many works were submitted
+  POST /api/echo                  anyone signed in; says what the core told it about the call
+  The core signs who the person is (X-Vumlo-* headers); `check_proxy` verifies the signature, the time
+  and the nonce. The session never reaches this server.
+
 Environment:
   PORT                  where to listen on 127.0.0.1 (0: pick a free port and print it)
   PUBLIC_URL            where the core reaches this plugin; the page may call only this (default:
@@ -56,6 +63,19 @@ MANIFEST = {
     "subscribes": ["submission.submitted", "plugin.settings.changed"],
     "scopes": ["submissions:read", "reports:write", "settings:read", "assignments:read"],
     "ui": [{"slot": "assignment.tab", "title": "Words", "path": "/ui/words"}],
+    # Routes of this server that people reach through the core, at /api/v1/plugins/hello/<path>
+    # (ADR-0078). The core checks the person's session and the roles below, and signs who they are.
+    "routes": [
+        # Staff of a course, and administrators: what this plugin has seen. `{course_id}` is a course.
+        {
+            "method": "GET",
+            "path": "/api/summary/{course_id}",
+            "roles": ["admin", "teacher"],
+            "course_roles": ["teacher", "assistant"],
+        },
+        # Anyone signed in: says what the core told it about the call.
+        {"method": "POST", "path": "/api/echo", "roles": ["admin", "teacher", "student"]},
+    ],
     # What an administrator may configure (a subset of JSON Schema; `secret: true` would be for a token).
     "settings": {
         "unit": {
@@ -133,6 +153,63 @@ def launch_claims(secret, token, now=None):
         return claims
     except (ValueError, KeyError, TypeError):
         return None
+
+
+# The nonces of calls through the core that were taken, with the time; a call is taken once.
+proxy_nonces = {}
+MAX_NONCES = 10000
+
+
+def proxy_signature(secret, timestamp, method, target, user, role, course, course_role, nonce, body):
+    """The signature of a call the core forwarded: the HMAC-SHA256 of `timestamp + "." + canonical`, where
+    canonical joins these with newlines: `vumlo-proxy`, the nonce, the method, the request-target
+    (path and query, as received), the user, their role, the course and their role in it (`-` for
+    none), and the hex SHA-256 of the body."""
+    canonical = "\n".join([
+        "vumlo-proxy", nonce, method, target, user, role, course or "-", course_role or "-",
+        hashlib.sha256(body).hexdigest(),
+    ])
+    message = str(timestamp).encode() + b"." + canonical.encode()
+    return "sha256=" + hmac.new(secret.encode(), message, hashlib.sha256).hexdigest()
+
+
+def check_proxy(secret, method, target, headers, body, now=None):
+    """`(claims, None)` for a call the core forwarded and that is fresh and new, else `(None, (status, why))`.
+
+    Three things are checked, and all three matter: the signature (it covers the user, the role, the
+    course, the target and the body, so none can be changed on the way), the time (a captured call is
+    refused after five minutes) and the nonce (and inside five minutes, a second time)."""
+    if not secret:
+        return None, (503, "no webhook secret configured")
+    now = now if now is not None else time.time()
+    try:
+        timestamp = int(headers.get("X-Vumlo-Timestamp", ""))
+    except ValueError:
+        return None, (401, "bad timestamp")
+    if abs(now - timestamp) > MAX_AGE_SECONDS:
+        return None, (401, "stale timestamp")
+    claims = {
+        "user": headers.get("X-Vumlo-User", ""),
+        "role": headers.get("X-Vumlo-Role", ""),
+        "course": headers.get("X-Vumlo-Course") or None,
+        "course_role": headers.get("X-Vumlo-Course-Role") or None,
+    }
+    nonce = headers.get("X-Vumlo-Nonce", "")
+    expected = proxy_signature(
+        secret, timestamp, method, target, claims["user"], claims["role"], claims["course"],
+        claims["course_role"], nonce, body,
+    )
+    if not nonce or not hmac.compare_digest(expected, headers.get("X-Vumlo-Signature", "")):
+        return None, (401, "bad signature")
+    with seen_lock:
+        for old in [n for n, at in proxy_nonces.items() if now - at > 2 * MAX_AGE_SECONDS]:
+            del proxy_nonces[old]
+        if nonce in proxy_nonces:
+            return None, (401, "a call seen before")
+        if len(proxy_nonces) >= MAX_NONCES:
+            return None, (503, "too many calls to tell apart")
+        proxy_nonces[nonce] = now
+    return claims, None
 
 
 def count_text(node, measure):
@@ -314,9 +391,33 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def reply_api(self, body=b""):
+        """A route people reach through the core. Who they are is only what the core signed."""
+        claims, refused = check_proxy(SECRET, self.command, self.path, self.headers, body)
+        if refused:
+            return self.reply(refused[0], {"error": refused[1]})
+        path = self.path.split("?")[0]
+        if self.command == "GET" and path.startswith("/api/summary/"):
+            if claims["course"] != path.rsplit("/", 1)[1]:
+                return self.reply(400, {"error": "not the course the core named"})
+            with seen_lock:
+                works = sum(total["submissions"] for total in stats.values())
+            return self.reply(200, {**claims, "works": works})
+        if self.command == "POST" and path == "/api/echo":
+            return self.reply(200, {
+                **claims,
+                "body_sha256": hashlib.sha256(body).hexdigest(),
+                "body_bytes": len(body),
+                # What the core did not pass on: a cookie, an authorization, a header of the caller's.
+                "headers": sorted(name.lower() for name in self.headers.keys()),
+            })
+        self.reply(404, {"error": "not found"})
+
     def do_GET(self):
         if self.path == "/manifest":
             self.reply(200, MANIFEST)
+        elif self.path.startswith("/api/"):
+            self.reply_api()
         elif self.path == "/ui/words":
             self.reply_page()
         elif self.path == "/ui/data":
@@ -346,9 +447,11 @@ class Handler(BaseHTTPRequestHandler):
         ])
 
     def do_POST(self):
+        body = self.rfile.read(int(self.headers.get("Content-Length", "0")))
+        if self.path.startswith("/api/"):
+            return self.reply_api(body)
         if self.path != "/events":
             return self.reply(404, {"error": "not found"})
-        body = self.rfile.read(int(self.headers.get("Content-Length", "0")))
         refused = check(SECRET, self.headers, body)
         if refused:
             return self.reply(refused[0], {"error": refused[1]})
@@ -397,6 +500,29 @@ def check_vector():
     # The signature of an event over the same bytes is not a token.
     as_event = hmac.new(b"test-secret", b"1700000000." + payload.encode(), hashlib.sha256).hexdigest()
     assert launch_claims("test-secret", payload + "." + as_event, now=1700000010) is None, "an event passed as a token"
+    # A call the core forwarded (backend/crates/plugins, secret tests): signed, fresh, and taken once.
+    user, course = "018f0000-0000-7000-8000-000000000003", "018f0000-0000-7000-8000-000000000004"
+    nonce = "018f0000-0000-7000-8000-000000000005"
+    body = b'{"a":1}'
+    expected = "sha256=f0550504dfb2f66b16d94c999990f57b5b6c5c1d5ac69cc62076cca03e7da247"
+    assert proxy_signature("test-secret", 1700000000, "POST", "/hello/api/echo?x=1", user, "teacher", course,
+                           "assistant", nonce, body) == expected, "the proxy signature differs from the core's"
+    sent = {"X-Vumlo-Timestamp": "1700000000", "X-Vumlo-User": user, "X-Vumlo-Role": "teacher",
+            "X-Vumlo-Course": course, "X-Vumlo-Course-Role": "assistant", "X-Vumlo-Nonce": nonce,
+            "X-Vumlo-Signature": expected}
+    taken, refused = check_proxy("test-secret", "POST", "/hello/api/echo?x=1", sent, body, now=1700000000)
+    assert refused is None and taken["course_role"] == "assistant", refused
+    assert check_proxy("test-secret", "POST", "/hello/api/echo?x=1", sent, body, now=1700000001)[1] == (401, "a call seen before")
+    proxy_nonces.clear()
+    assert check_proxy("test-secret", "POST", "/hello/api/echo?x=1", sent, body, now=1700000000 + MAX_AGE_SECONDS + 1)[1] == (401, "stale timestamp")
+    for what, changed in [
+        ("the role", ("X-Vumlo-Role", "admin")), ("the user", ("X-Vumlo-User", course)),
+        ("the course", ("X-Vumlo-Course", user)), ("the nonce", ("X-Vumlo-Nonce", user)),
+    ]:
+        assert check_proxy("test-secret", "POST", "/hello/api/echo?x=1", {**sent, changed[0]: changed[1]}, body, now=1700000000)[1] == (401, "bad signature"), what
+    assert check_proxy("test-secret", "POST", "/hello/api/echo?x=1", sent, b'{"a":2}', now=1700000000)[1] == (401, "bad signature"), "the body"
+    assert check_proxy("test-secret", "POST", "/hello/api/echo?x=2", sent, body, now=1700000000)[1] == (401, "bad signature"), "the target"
+    assert check_proxy("test-secret", "GET", "/hello/api/echo?x=1", sent, body, now=1700000000)[1] == (401, "bad signature"), "the method"
     print("ok")
 
 

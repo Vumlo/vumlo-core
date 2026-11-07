@@ -1,11 +1,13 @@
 //! What the plugin API needs from the application: the pool, and the key that signs events.
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use access::{AuthenticatedPlugin, PluginSource};
 use axum::http::header::AUTHORIZATION;
 use axum::http::request::Parts;
 use common::ApiError;
+use module_api::OutboundClient;
 use sqlx::PgPool;
 use vumlo_config::Settings;
 
@@ -18,13 +20,25 @@ pub struct PluginsState {
     pub db: PgPool,
     /// `None` while `plugins.secret_key` is not set: no plugin is installed or sent anything then.
     pub key: Option<Arc<SecretKey>>,
+    /// Carries the calls people make to a plugin's own server (ADR-0078). `None` if it could not be
+    /// built, which answers those calls `503`.
+    pub proxy: Option<Arc<OutboundClient>>,
 }
+
+const PROXY_CONNECT: Duration = Duration::from_secs(3);
+/// A call to a plugin's server that takes longer is a `504`.
+const PROXY_TOTAL: Duration = Duration::from_secs(30);
+/// The most a plugin's answer may hold.
+pub const PROXY_MAX_RESPONSE_BYTES: usize = 20 * 1024 * 1024;
 
 impl PluginsState {
     pub fn new(db: PgPool, config: &Settings) -> Self {
         Self {
             db,
             key: SecretKey::from_config(&config.plugins.secret_key).map(Arc::new),
+            proxy: OutboundClient::new(PROXY_CONNECT, PROXY_TOTAL, PROXY_MAX_RESPONSE_BYTES, 0)
+                .ok()
+                .map(Arc::new),
         }
     }
 }

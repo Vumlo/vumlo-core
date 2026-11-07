@@ -14,7 +14,7 @@ use chacha20poly1305::aead::{Aead, Payload};
 use chacha20poly1305::{XChaCha20Poly1305, XNonce};
 use hmac::{Hmac, KeyInit, Mac};
 use rand::Rng;
-use sha2::Sha256;
+use sha2::{Digest, Sha256};
 use uuid::Uuid;
 use vumlo_config::Secret;
 
@@ -178,6 +178,50 @@ pub fn launch_token(secret: &str, claims: &LaunchClaims<'_>) -> Result<String, S
     mac.update(b"vumlo-launch.");
     mac.update(body.as_bytes());
     Ok(format!("{body}.{}", hex(&mac.finalize().into_bytes())))
+}
+
+/// What the core tells the plugin's server about a call a person made through it (ADR-0078).
+pub struct ProxyClaims<'a> {
+    pub method: &'a str,
+    /// The request-target the plugin receives: path and query, as sent.
+    pub target: &'a str,
+    pub user: Uuid,
+    /// The institution role of the user.
+    pub role: &'a str,
+    pub course: Option<Uuid>,
+    /// The role of the user in `course`, when they have one.
+    pub course_role: Option<&'a str>,
+    /// Fresh for every request; the plugin refuses one it has seen.
+    pub nonce: Uuid,
+    /// Unix seconds; the plugin refuses a call more than 300 seconds off.
+    pub timestamp: i64,
+}
+
+/// The value of `X-Vumlo-Signature` of a proxied call: `sha256=` and the hex HMAC-SHA256, under the
+/// plugin's secret, of `timestamp + "." + canonical`, where canonical is these lines joined by `\n`:
+/// `vumlo-proxy`, nonce, method, target, user, role, course (`-` for none), course role (`-` for
+/// none) and the hex SHA-256 of the body. The first line keeps it apart from an event and a launch
+/// token, which are signed with the same secret; every other line is what the call is about, so none
+/// of it can be changed on the way.
+pub fn proxy_signature(
+    secret: &str,
+    claims: &ProxyClaims<'_>,
+    body: &[u8],
+) -> Result<String, SecretError> {
+    let canonical = format!(
+        "vumlo-proxy\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}",
+        claims.nonce,
+        claims.method,
+        claims.target,
+        claims.user,
+        claims.role,
+        claims
+            .course
+            .map_or_else(|| "-".to_owned(), |c| c.to_string()),
+        claims.course_role.unwrap_or("-"),
+        hex(&Sha256::digest(body)),
+    );
+    sign(secret, claims.timestamp, canonical.as_bytes())
 }
 
 #[cfg(test)]

@@ -106,3 +106,62 @@ fn the_events_a_plugin_may_subscribe_to_are_events_that_exist_and_hold_ids_only(
         ]
     );
 }
+
+#[test]
+fn a_route_matches_a_path_of_plain_segments_and_names_its_parameters() {
+    let route = |path: &str| crate::model::RouteSpec {
+        method: "GET".to_owned(),
+        path: path.to_owned(),
+        roles: vec![],
+        course_roles: vec![],
+    };
+    let r = route("/api/summary/{course_id}");
+    assert_eq!(
+        r.matches("/api/summary/abc-1"),
+        Some(vec![("course_id", "abc-1")])
+    );
+    assert_eq!(
+        route("/a/{x}/b/{y}").matches("/a/1/b/2"),
+        Some(vec![("x", "1"), ("y", "2")])
+    );
+    assert_eq!(route("/a").matches("/a"), Some(vec![]));
+    for path in [
+        "/api/summary",
+        "/api/summary/",
+        "/api/summary/a/b",
+        "/api/other/a",
+        "/api/summary/..",
+        "/api/summary/.",
+        "/api/summary/a%2fb",
+        "/api/summary/a b",
+        "/api/summary/a;b",
+        "//api/summary/a",
+        "api/summary/a",
+    ] {
+        assert_eq!(r.matches(path), None, "{path}");
+    }
+    // A literal is exact, also in case.
+    assert_eq!(route("/Api").matches("/api"), None);
+}
+
+#[test]
+fn a_segment_is_plain_when_it_cannot_climb_or_escape() {
+    use crate::model::is_plain_segment;
+    for ok in [
+        "a",
+        "A1",
+        "a.b",
+        "a_b",
+        "a~b",
+        "a-b",
+        "...x",
+        "018f0000-0000-7000-8000-000000000003",
+    ] {
+        assert!(is_plain_segment(ok), "{ok}");
+    }
+    for bad in [
+        "", ".", "..", "a/b", "a%2e", "a b", "a?b", "a#b", "a\\b", "é", "a;b", "a:b",
+    ] {
+        assert!(!is_plain_segment(bad), "{bad}");
+    }
+}

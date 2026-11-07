@@ -102,6 +102,7 @@ pub async fn install(
             scopes: &scope_names(&granted),
             courses,
             ui_slots: Value::Array(ui),
+            routes: repo::routes_json(&manifest.routes),
             settings: &manifest.settings,
             token_hash: &token.hash(),
         },
