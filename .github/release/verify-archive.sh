@@ -34,7 +34,7 @@ step "1. verify and unpack"
 sha256sum --check --ignore-missing SHA256SUMS
 tar xzf "vumlo-$version-source.tar.gz"
 cd "vumlo-$version"
-for unwanted in .github docs/decisions backend/crates/server/tests backend/crates/modules backend/crates/test-support ARCHITECTURE.md AGENTS.md; do
+for unwanted in .github docs/decisions backend/crates/server/tests backend/crates/modules backend/crates/test-support ARCHITECTURE.md docs/PLAN.md CLAUDE.md AGENTS.md; do
     [ ! -e "$unwanted" ] || { echo "the archive contains $unwanted" >&2; exit 1; }
 done
 # No crate ships its tests or the test harness: every `tests.rs` is deleted, and a `mod tests;` declaration
