@@ -1,0 +1,67 @@
+/* The Buddy (ADR-0070, ADR-0071). Theme tokens only: scripts/check-colors.mjs refuses a colour literal. */
+.fab {
+  position: fixed; right: var(--space-5); bottom: var(--space-6); z-index: 30;
+  display: flex; align-items: center; justify-content: center; width: 56px; height: 56px; padding: 0;
+  border: 0; border-radius: 50%; background: var(--accent); color: var(--accent-text); box-shadow: var(--shadow); cursor: pointer;
+  transition: filter var(--dur-micro) var(--ease-out);
+}
+.fab:hover { filter: brightness(1.12); }
+.fab:active { filter: brightness(0.9); }
+
+.dock { position: fixed; right: var(--space-5); bottom: calc(var(--space-6) + 68px); z-index: 30; width: min(400px, calc(100vw - 2 * var(--space-5))); height: min(640px, calc(100dvh - 140px)); }
+
+.page { max-width: 760px; height: calc(100dvh - 120px); margin: 0 auto; padding: var(--space-4); }
+
+.panel {
+  display: flex; flex-direction: column; width: 100%; height: 100%; min-height: 0; overflow: hidden;
+  border-radius: var(--radius-card); background: var(--surface); color: var(--text);
+  box-shadow: 0 0 0 1px var(--border-strong), var(--shadow);
+}
+.head { display: flex; align-items: center; gap: var(--space-2); padding: var(--space-3) var(--space-3) var(--space-3) var(--space-4); border-bottom: 1px solid var(--border); }
+.title { margin: 0; font-size: 16px; font-weight: 600; }
+.grow { flex: 1 1 0; }
+
+.notice { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-3) var(--space-4); background: var(--sunken); font-size: 14px; }
+.notice p { flex: 1 1 0; margin: 0; }
+
+.log { flex: 1 1 0; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-4); }
+.message {
+  max-width: 85%; margin: 0; padding: var(--space-2) var(--space-3); border-radius: var(--radius-card);
+  background: var(--sunken); white-space: pre-wrap; overflow-wrap: anywhere; font-size: 15px; line-height: 1.45;
+}
+.message[data-role="user"] { align-self: flex-end; background: var(--accent); color: var(--accent-text); }
+.message[data-quiet] { color: var(--muted); }
+
+.empty { margin: auto 0; text-align: center; }
+.chips { display: flex; flex-wrap: wrap; justify-content: center; gap: var(--space-2); margin-top: var(--space-3); }
+.chip {
+  min-height: 40px; padding: 0 var(--space-4); border: 0; border-radius: var(--radius-pill);
+  background: var(--sunken); color: var(--text); font-size: 14px; cursor: pointer;
+}
+.chip:hover { background: var(--hover); }
+
+.error { margin: 0; padding: var(--space-2) var(--space-4); background: var(--danger-soft); color: var(--danger); font-size: 14px; }
+
+.composer { display: flex; align-items: flex-end; gap: var(--space-2); padding: var(--space-3); border-top: 1px solid var(--border); }
+.input { flex: 1 1 0; min-width: 0; resize: none; }
+
+/* A change the Buddy prepared: nothing happens until "Confirm". */
+.proposal { align-self: stretch; padding: var(--space-3); border-radius: var(--radius-card); background: var(--surface); box-shadow: inset 0 0 0 1.5px var(--accent); }
+.proposalText { margin: 0; font-size: 15px; font-weight: 600; line-height: 1.4; overflow-wrap: anywhere; }
+.proposalNote { margin: var(--space-1) 0 0; color: var(--muted); font-size: 14px; overflow-wrap: anywhere; }
+.preview {
+  margin: var(--space-2) 0 0; padding: var(--space-2) var(--space-3); max-height: 220px; overflow: auto; border-radius: var(--radius-card);
+  background: var(--sunken); color: var(--text); font: inherit; font-size: 13px; line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere;
+}
+.password { display: block; margin: var(--space-2) 0 0; padding: var(--space-3); border: 1px dashed var(--border-strong); border-radius: var(--radius-card); background: var(--sunken); font-family: var(--font-mono), ui-monospace, monospace; font-size: 16px; text-align: center; overflow-wrap: anywhere; user-select: all; }
+.proposalActions { display: flex; gap: var(--space-2); margin-top: var(--space-3); }
+.settled { align-self: stretch; margin: 0; color: var(--muted); font-size: 14px; overflow-wrap: anywhere; }
+.settled[data-state="done"] { color: var(--text); }
+
+/* On a phone the panel is the whole screen, above the tab bar. */
+@media (max-width: 720px) {
+  .fab { right: var(--space-4); bottom: 84px; }
+  .dock { inset: 0; z-index: 40; width: auto; height: auto; }
+  .dock .panel { border-radius: 0; box-shadow: none; }
+  .page { height: calc(100dvh - 140px); padding: var(--space-2); }
+}

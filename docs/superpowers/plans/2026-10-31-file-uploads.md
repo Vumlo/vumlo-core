@@ -8,7 +8,7 @@
 
 **Tech Stack:** Rust (axum 0.8, sqlx, `object_store` 0.14, `sha2`), Next.js 16 / React 19, Tauri 2.12.
 
-**Spec:** `docs/superpowers/specs/2026-10-31-file-uploads-design.md`. Decision record: `docs/decisions/0069-file-storage.md`.
+**Spec:** `docs/superpowers/specs/2026-10-31-file-uploads-design.md`. Decision record: `docs/decisions/done.md`.
 
 ## Global Constraints
 
@@ -171,7 +171,7 @@ Each line below has its test in the named task.
 
 **Files:**
 - Create: `desktop/src/files.rs`, `desktop/src/files/tests.rs`
-- Modify: `desktop/src/lib.rs` (register commands and the URI scheme), `desktop/src/api.rs`, `desktop/src/core.rs` (a binary request path next to the JSON one), `desktop/tauri.conf.json` (CSP `img-src`/`frame-src` gain `vumlo-file:`), `docs/decisions/0061-desktop-native-extras.md` (amend: the two commands and the scheme)
+- Modify: `desktop/src/lib.rs` (register commands and the URI scheme), `desktop/src/api.rs`, `desktop/src/core.rs` (a binary request path next to the JSON one), `desktop/tauri.conf.json` (CSP `img-src`/`frame-src` gain `vumlo-file:`), `docs/decisions/done.md` (amend: the two commands and the scheme)
 
 **Interfaces:**
 - Produces: `#[tauri::command] async fn upload_file(core, target: String, name: String, mime: String, bytes: Vec<u8>) -> Result<FileRef, String>`; `#[tauri::command] async fn open_file(app, core, id: String) -> Result<OpenOutcome, String>` where `enum OpenOutcome { Opened, Revealed, SavedOnly }`; `fn unique_path(dir: &Path, name: &str) -> PathBuf` (`name.pdf`, `name (1).pdf`, ...); `fn safe_name(raw: &str) -> String`; `fn opens_directly(name: &str) -> bool` (allowlist: pdf, doc, docx, odt, rtf, txt, md, ppt, pptx, odp, xls, xlsx, ods, csv, png, jpg, jpeg, gif, webp, mp3, wav, mp4, webm, mov, zip, 7z, tar, gz; case-insensitive; **allowlist, so unknown is false**).
@@ -190,7 +190,7 @@ Each line below has its test in the named task.
 
 **Files:**
 - Create: `backend/migrations/NNNN_item_kind_file.sql` (extend the CHECK on `content.items.kind`)
-- Modify: `backend/crates/learning/src/content/{model.rs, service.rs, repo.rs, routes.rs}`, `backend/crates/api-types/src/lib.rs` (create-item request gains `kind`), `backend/crates/server/tests/content.rs`, `docs/decisions/0024-item-kinds.md` (note: built, kind field), `web` openapi + `gen:api`
+- Modify: `backend/crates/learning/src/content/{model.rs, service.rs, repo.rs, routes.rs}`, `backend/crates/api-types/src/lib.rs` (create-item request gains `kind`), `backend/crates/server/tests/content.rs`, `docs/decisions/in-progress.md` (note: built, kind field), `web` openapi + `gen:api`
 
 **Interfaces:**
 - Consumes: Task 4 `ensure_usable`, `replace_item_files`.
@@ -225,7 +225,7 @@ Each line below has its test in the named task.
 
 **Files:**
 - Create: `backend/crates/learning/src/content/types/file.rs`, `types/file/tests.rs`
-- Modify: `backend/crates/learning/src/content/{model.rs (BuiltinType::File and every match arm, error text at the line that lists the types), types/mod.rs}`, `api-types` doc strings that list the types, `content/routes.rs` doc strings, `docs/decisions/0023-default-assignment-types.md`, `0008` if it lists built types
+- Modify: `backend/crates/learning/src/content/{model.rs (BuiltinType::File and every match arm, error text at the line that lists the types), types/mod.rs}`, `api-types` doc strings that list the types, `content/routes.rs` doc strings, `docs/decisions/done.md`, `0008` if it lists built types
 
 **Interfaces:**
 - Produces: `BuiltinType::File`; config `{ "max_files": 1..=20 (default 5), "accept"?: [".pdf", ...] }` (lowercase, leading dot, at most 30 entries); content `{ "files": [uuid], "comment"?: document }`; `validate_submission(Stage::Draft)`: `files.len() <= max_files`, duplicates refused, every file's cleaned extension in `accept` when set (case-insensitive), `comment` valid in the `student` profile; `Stage::Submit` additionally at least one file; `auto_grade` none; `claims` lists the file ids.
@@ -288,7 +288,7 @@ Each line below has its test in the named task.
 ### Task 15: `image` and `file` blocks in documents
 
 **Files:**
-- Modify: `backend/crates/api-types/src/document.rs` (`Block::Image { file_id, alt, caption }`, `Block::File { file_id }`; `Feature::Image`, `Feature::File`), `backend/crates/learning/src/content/document/{parse.rs, profile.rs, text.rs, mod.rs}`, `content/service.rs` and `assessment/service.rs` (collect ids from the document for the reference rewrites), `server/tests/content.rs`, `docs/decisions/0025-block-documents.md`, `0027-*.md`, `ARCHITECTURE.md` (Known limits line about empty documents), `web` openapi + `gen:api`
+- Modify: `backend/crates/api-types/src/document.rs` (`Block::Image { file_id, alt, caption }`, `Block::File { file_id }`; `Feature::Image`, `Feature::File`), `backend/crates/learning/src/content/document/{parse.rs, profile.rs, text.rs, mod.rs}`, `content/service.rs` and `assessment/service.rs` (collect ids from the document for the reference rewrites), `server/tests/content.rs`, `docs/decisions/done.md`, `0027-*.md`, `ARCHITECTURE.md` (Known limits line about empty documents), `web` openapi + `gen:api`
 
 **Interfaces:**
 - Consumes: `ensure_usable`, `replace_item_files`, `replace_submission_files`.
@@ -317,7 +317,7 @@ Each line below has its test in the named task.
 ### Task 17: Documentation and final checks
 
 **Files:**
-- Modify: `docs/decisions/0014-core-libraries.md` (confirm the `object_store` features used), `docs/decisions/0023`, `0024`, `0025`, `0027`, `0061` (amend lines pointing at ADR-0069 where Tasks 8, 9, 11, 15 did not already), `README.md` or the deployment doc (reverse proxy body size, back up the files directory or bucket separately from `db backup`), `web/API_GAPS.md` (remove entries the real endpoints now cover)
+- Modify: `docs/decisions/done.md` (confirm the `object_store` features used), `docs/decisions/0023`, `0024`, `0025`, `0027`, `0061` (amend lines pointing at ADR-0069 where Tasks 8, 9, 11, 15 did not already), `README.md` or the deployment doc (reverse proxy body size, back up the files directory or bucket separately from `db backup`), `web/API_GAPS.md` (remove entries the real endpoints now cover)
 
 - [ ] **Step 1: Check** each ADR named in ADR-0069's `Amends:` line has an "Amended by ADR-0069" note, and each sentence the new behaviour makes false ("must be empty for now" for images, "needs the files module") is fixed.
 - [ ] **Step 2: Run** every definition-of-done command for backend, web and desktop (Global Constraints). Expected: all pass.

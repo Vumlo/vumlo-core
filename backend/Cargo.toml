@@ -77,6 +77,8 @@ test-support = { path = "crates/test-support" }
 vumlo-config = { path = "crates/config" }
 # The test-only module (feature `dummy` of server and vumlo-cli); never in a default build.
 vumlo-module-dummy = { path = "crates/modules/dummy" }
+# The Buddy (feature `ai_agent` of server and vumlo-cli, ADR-0070).
+vumlo-module-ai-agent = { path = "crates/modules/ai_agent" }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

@@ -93,7 +93,7 @@ Plugins and optional modules, a redesigned web app, and a page for grading.
 
 ### Added
 
-- **Plugins** ([ADR-0066](docs/decisions/0066-modules-and-plugins.md)): external HTTP services in any language that the core
+- **Plugins** ([ADR-0066](docs/decisions/done.md)): external HTTP services in any language that the core
   does not trust. `vumlo-cli plugin install|list|grant|disable|enable|remove`; the core sends the events a plugin subscribed to
   (`submission.submitted`, `grade.published`), signed with `X-Vumlo-Timestamp` and `X-Vumlo-Signature`, and the plugin calls
   `/api/v1/plugin-api/*` with its token, where every call needs a scope (`submissions:read`, `reports:write`). Staff read what
@@ -117,8 +117,8 @@ Plugins and optional modules, a redesigned web app, and a page for grading.
 ### Changed
 
 - **The web app is redesigned** in a new visual system, and the teacher's course screens are recomposed. Formulas are drawn
-  by KaTeX ([ADR-0068](docs/decisions/0068-formulas-are-drawn-by-katex.md)).
-- **Optional modules are a `Module` trait** ([ADR-0066](docs/decisions/0066-modules-and-plugins.md)): a manifest (id, version,
+  by KaTeX ([ADR-0068](docs/decisions/done.md)).
+- **Optional modules are a `Module` trait** ([ADR-0066](docs/decisions/done.md)): a manifest (id, version,
   `requires`, permissions, settings), migrations, and `register` for routes, event handlers and background jobs; they start in
   the order of their `requires`. Module routes moved to `/api/v1/modules/{id}/...` and sign in like the core's, with permissions
   decided by `access`. A module's tables are in the schema `mod_<id>` with its history in `mod_<id>._sqlx_migrations`.
@@ -126,7 +126,7 @@ Plugins and optional modules, a redesigned web app, and a page for grading.
   whether it is on or off. Several event handlers may listen to one event type. The only module in the tree is still the
   test-only `dummy`, so a release installation has nothing to migrate; a fork with its own module has to port it to the trait.
 
-- **The backend is one crate per layer** ([ADR-0065](docs/decisions/0065-layered-crates.md)): `server` → `learning` → `org`
+- **The backend is one crate per layer** ([ADR-0065](docs/decisions/done.md)): `server` → `learning` → `org`
   → `auth` → `events` → `access` → `common`, so the compiler refuses a call from a lower layer to a higher one. The HTTP API,
   its OpenAPI document, the configuration and the commands are unchanged. For a build from source: the library crate `server`
   no longer holds the modules (`server::identity` is the crate `auth`, `server::policy` is `access`), and the database harness

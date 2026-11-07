@@ -176,14 +176,19 @@ async fn modules_list_shows_the_core_modules_and_the_optional_ones() {
         let value: Value = serde_json::from_str(&out.stdout).unwrap();
         assert_eq!(value["core"].as_array().unwrap().len(), 9);
         assert!(value["core"].as_array().unwrap().contains(&json!("auth")));
-        #[cfg(not(feature = "dummy"))]
-        assert_eq!(
-            value["optional"],
-            json!({}),
-            "a default build has no optional modules"
-        );
-        #[cfg(feature = "dummy")]
-        assert_eq!(value["optional"]["dummy"], "disabled");
+        // Exactly the modules this build contains, each off until the configuration turns it on;
+        // a default build has none.
+        let compiled: &[&str] = &[
+            #[cfg(feature = "dummy")]
+            "dummy",
+            #[cfg(feature = "ai_agent")]
+            "ai_agent",
+        ];
+        let optional = value["optional"].as_object().unwrap();
+        assert_eq!(optional.len(), compiled.len(), "{optional:?}");
+        for name in compiled {
+            assert_eq!(optional[*name], "disabled", "{name}");
+        }
     })
     .await;
 }

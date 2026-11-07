@@ -1,6 +1,6 @@
 # hello-plugin
 
-The smallest plugin of Vumlo ([ADR-0066](../../docs/decisions/0066-modules-and-plugins.md)): a Python
+The smallest plugin of Vumlo ([ADR-0066](../../docs/decisions/done.md)): a Python
 file with no dependencies. For every submitted work it counts the words and posts a report that
 staff read at `GET /api/v1/submissions/{id}/plugin-reports`.
 

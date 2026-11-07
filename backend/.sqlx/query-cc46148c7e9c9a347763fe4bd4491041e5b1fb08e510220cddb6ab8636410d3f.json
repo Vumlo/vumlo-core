@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE mod_ai_agent.proposals SET status = 'rejected', decided_at = now()\n         WHERE id = $1 AND user_id = $2 AND status = 'pending'\n         RETURNING id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "mod_ai_agent.proposals",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "cc46148c7e9c9a347763fe4bd4491041e5b1fb08e510220cddb6ab8636410d3f"
+}

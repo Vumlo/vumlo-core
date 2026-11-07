@@ -117,6 +117,39 @@ fn module_settings_are_checked_and_a_secret_in_the_file_is_refused() {
 }
 
 #[test]
+fn an_int_setting_takes_a_whole_number_and_nothing_else() {
+    const SPEC: &[ModuleSpec] = &[ModuleSpec {
+        name: "counted",
+        requires: &[],
+        web: false,
+        settings: &[SettingSpec {
+            key: "cap",
+            kind: SettingKind::Int,
+            required: false,
+        }],
+    }];
+    let with = |v: serde_json::Value| {
+        resolve(
+            &entries(&[("counted", table(&[("enabled", true.into()), ("cap", v)]))]),
+            &no_env(),
+            SPEC,
+        )
+    };
+    assert_eq!(
+        with(50.into()).unwrap().get("counted").unwrap().settings["cap"],
+        50
+    );
+    for bad in [(-1).into(), 1.5.into(), "50".into(), true.into()] {
+        let e = with(bad).unwrap_err();
+        assert!(
+            e.iter()
+                .any(|m| m.contains("modules.counted.cap must be a whole number")),
+            "{e:?}"
+        );
+    }
+}
+
+#[test]
 fn a_module_secret_comes_from_its_environment_variable() {
     let env = BTreeMap::from([("VUMLO_DUMMY_API_KEY".to_owned(), "k".to_owned())]);
     let m = resolve(

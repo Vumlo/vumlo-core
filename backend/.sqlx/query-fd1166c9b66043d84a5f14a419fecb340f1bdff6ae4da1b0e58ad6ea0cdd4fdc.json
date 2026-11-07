@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM mod_ai_agent.usage WHERE day < current_date - 2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "fd1166c9b66043d84a5f14a419fecb340f1bdff6ae4da1b0e58ad6ea0cdd4fdc"
+}

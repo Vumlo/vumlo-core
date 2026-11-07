@@ -111,6 +111,16 @@ mode = "university"
 # and switched on here; `vumlo-cli modules list` shows which this build has. Off by default.
 # [modules]
 # some-module = true
+#
+# The Buddy, a chat helper (feature `ai_agent`; the key is VUMLO_AI_AGENT_API_KEY in the environment). See docs/install.md.
+# [modules.ai_agent]
+# enabled = true
+# endpoint = "https://api.openai.com/v1"
+# model = "gpt-4o-mini"
+# roles = "teacher,admin"   # student, teacher, admin
+# daily_cap = 100           # messages per person per day; 0 = no limit
+# retention_days = 30
+# notice = "Your messages are sent to Example AI."
 
 # The desktop app (docs/desktop.md). Its links look like vumlo-ucu://course?id=...; the scheme is "vumlo-" and
 # the short name in ASCII letters and digits unless you name one. Two institutions' apps on one computer

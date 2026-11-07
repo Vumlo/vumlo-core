@@ -542,3 +542,40 @@ fn a_config_or_document_the_parser_cannot_read_is_an_error_not_no_files() {
     let body = body_of(json!({"description": {"v": 2}}));
     assert!(referenced_file_ids(ItemKind::File, &body, None).is_err());
 }
+
+#[tokio::test]
+async fn set_due_at_changes_the_deadline_and_nothing_else_and_only_for_staff() {
+    db_test(async |pool| {
+        let course = course(pool).await;
+        let id = course.committed("20", false).await;
+        let due = "2030-05-01T10:00:00Z".parse::<DateTime<Utc>>().unwrap();
+        let before = course.assignment(id).await;
+
+        let mut tx = course.pool.begin().await.unwrap();
+        set_due_at(&mut tx, &course.owner, id, Some(due))
+            .await
+            .unwrap();
+        tx.commit().await.unwrap();
+        let after = course.assignment(id).await;
+        assert_eq!(after.settings.due_at, Some(due));
+        assert_eq!(after.settings.on_deadline, Some(OnDeadline::KeepDraft));
+        assert_eq!(after.settings.accept_late, Some(false));
+        assert_eq!(after.max_points, before.max_points);
+        assert_eq!(after.is_bonus, before.is_bonus);
+
+        let mut tx = course.pool.begin().await.unwrap();
+        set_due_at(&mut tx, &course.owner, id, None).await.unwrap();
+        tx.commit().await.unwrap();
+        let cleared = course.assignment(id).await.settings;
+        assert_eq!(
+            (cleared.due_at, cleared.on_deadline, cleared.accept_late),
+            (None, None, None)
+        );
+
+        // Someone who is not on the course cannot see the item, let alone change it.
+        let stranger = Actor::for_tests(Uuid::now_v7(), Role::Student, Uuid::now_v7());
+        let mut tx = course.pool.begin().await.unwrap();
+        assert!(set_due_at(&mut tx, &stranger, id, Some(due)).await.is_err());
+    })
+    .await;
+}

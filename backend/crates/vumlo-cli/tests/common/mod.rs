@@ -15,18 +15,24 @@ use vumlo_config::{FileSource, Settings, Sources};
 #[allow(unused_imports)]
 pub use test_support::{bare_db_test, db_test};
 
+/// The optional modules this build contains: one line per Cargo feature, as in `src/runtime.rs`.
+fn compiled_modules() -> Vec<&'static dyn module_api::Module> {
+    vec![
+        #[cfg(feature = "dummy")]
+        vumlo_module_dummy::module(),
+        #[cfg(feature = "ai_agent")]
+        vumlo_module_ai_agent::module(),
+    ]
+}
+
 /// Applies the migrations of the optional modules this build contains. `db_test` only migrates
 /// the core, and the CLI treats a database with a module migration pending as not ready.
 pub async fn migrate_modules(pool: &PgPool) {
-    #[cfg(feature = "dummy")]
-    vumlo_module_dummy::module()
-        .migrations()
-        .expect("the dummy module has migrations")
-        .run(pool)
-        .await
-        .expect("the module's migrations");
-    #[cfg(not(feature = "dummy"))]
-    let _ = pool;
+    for module in compiled_modules() {
+        if let Some(migrator) = module.migrations() {
+            migrator.run(pool).await.expect("the module's migrations");
+        }
+    }
 }
 
 pub const ORIGIN: &str = "https://lms.test";
@@ -166,10 +172,10 @@ fn run_binary(dir: &Path, args: &[String], stdin: Option<&str>, env: &[(String, 
 
 /// The specs of the modules this build contains.
 fn vumlo_cli_specs() -> Vec<vumlo_config::ModuleSpec> {
-    #[cfg(feature = "dummy")]
-    return vec![vumlo_module_dummy::module().manifest().spec()];
-    #[cfg(not(feature = "dummy"))]
-    return Vec::new();
+    compiled_modules()
+        .iter()
+        .map(|m| m.manifest().spec())
+        .collect()
 }
 
 /// The settings `CONFIG` gives for the database `url`: what the real server would load.

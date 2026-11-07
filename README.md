@@ -56,7 +56,7 @@ one, and reminds them before work is due ([docs/desktop.md](docs/desktop.md)).
 **Plugins and modules** extend it without a fork. A plugin is an HTTP service in any language that Vumlo does not trust:
 it is told about events (a submission arrived, a grade was published) and may read what its scopes allow and show its own
 page in a tab of an assignment. An example is in [examples/hello-plugin](examples/hello-plugin); the design is
-[ADR-0066](docs/decisions/0066-modules-and-plugins.md).
+[ADR-0066](docs/decisions/done.md).
 
 ## Install
 
@@ -97,7 +97,7 @@ is no import from another system. Some of these could be built as plugins; none 
 
 ## Development
 
-[docs/development.md](docs/development.md) has the setup, and [AGENTS.md](AGENTS.md) holds the rules for changes. Releases
+[docs/development.md](docs/development.md) has the setup, and [CLAUDE.md](CLAUDE.md) holds the rules for changes. Releases
 are described in [RELEASING.md](RELEASING.md).
 
 ## Licence

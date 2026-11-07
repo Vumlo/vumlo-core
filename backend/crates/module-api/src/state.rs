@@ -8,7 +8,7 @@ use access::{Action, Actor, ActorSource, Authenticated};
 use axum::http::request::Parts;
 use common::ApiError;
 use sqlx::PgPool;
-use vumlo_config::ResolvedModule;
+use vumlo_config::{EditorSettings, GradingScale, ResolvedModule};
 
 use crate::Manifest;
 
@@ -41,12 +41,22 @@ impl DynActorSource for NoActors {
     }
 }
 
+/// What a module may know of the institution's configuration: the rules the core applies when it
+/// writes content, so a module's calls into `learning` apply the same ones (ADR-0070). Nothing
+/// secret: the rest of the configuration stays with the core.
+#[derive(Debug, Clone)]
+pub struct Institution {
+    pub grading_scale: GradingScale,
+    pub editor: Arc<EditorSettings>,
+}
+
 /// The state of a module's router, handlers, jobs and subcommand. It implements [`ActorSource`], so
 /// the `access::Actor` extractor works in a module's routes.
 #[derive(Clone)]
 pub struct ModuleState {
     pub db: PgPool,
     pub settings: Arc<ResolvedModule>,
+    pub institution: Institution,
     manifest: &'static Manifest,
     actors: Arc<dyn DynActorSource>,
 }
@@ -57,10 +67,12 @@ impl ModuleState {
         db: PgPool,
         settings: ResolvedModule,
         actors: Arc<dyn DynActorSource>,
+        institution: Institution,
     ) -> Self {
         Self {
             db,
             settings: Arc::new(settings),
+            institution,
             manifest,
             actors,
         }

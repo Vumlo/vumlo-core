@@ -21,7 +21,8 @@ use super::document::{
 use super::model::{
     Assignment, AssignmentType, BuiltinType, ContentModule, ContentSubModule, ContentTitle, Hit,
     HitKind, Item, ItemFacts, ItemKind, ItemPatch, ItemStatus, MaxPoints, ModelError, Module,
-    ModulePatch, MyWork, OpenedAssignment, Revision, SettingProblem, WorkEntry, WorkFacts,
+    ModulePatch, MyWork, OnDeadline, OpenedAssignment, Revision, SettingProblem, SettingsPatch,
+    WorkEntry, WorkFacts,
 };
 use super::repo::{self, ItemRow, ModuleRow};
 use super::types::form;
@@ -1639,6 +1640,47 @@ pub async fn update_item(
     )
     .await?;
     Ok(item)
+}
+
+/// Sets (`Some`) or clears (`None`) the deadline of an assignment. A deadline comes with `on_deadline`
+/// and `accept_late`, so an assignment that has none yet gets the editor's own defaults (keep the
+/// draft, no late work) and one that has them keeps what was chosen; clearing the deadline clears
+/// the three with `late_until`. It is `update_item` for what a module (ADR-0070) can change without
+/// the configuration: the patch touches neither points nor a document, so the grading scale and the
+/// editor profiles that `update_item` reads for those are never consulted.
+pub async fn set_due_at(
+    conn: &mut PgConnection,
+    actor: &Actor,
+    id: Uuid,
+    due_at: Option<DateTime<Utc>>,
+) -> Result<Item, ContentError> {
+    let item = get_item(conn, actor, id).await?;
+    let current = item.assignment.as_ref().map(|a| &a.settings);
+    let mut settings = SettingsPatch {
+        due_at: Some(due_at),
+        ..SettingsPatch::default()
+    };
+    if due_at.is_some() {
+        if current.is_none_or(|s| s.on_deadline.is_none()) {
+            settings.on_deadline = Some(Some(OnDeadline::KeepDraft.as_str().to_owned()));
+        }
+        if current.is_none_or(|s| s.accept_late.is_none()) {
+            settings.accept_late = Some(Some(false));
+        }
+    } else {
+        settings.on_deadline = Some(None);
+        settings.accept_late = Some(None);
+        settings.late_until = Some(None);
+    }
+    let rules = ItemRules {
+        scale: GradingScale::Twelve,
+        profiles: &EffectiveProfiles::unrestricted(),
+    };
+    let patch = ItemPatch {
+        settings,
+        ..ItemPatch::default()
+    };
+    update_item(conn, actor, rules, id, patch).await
 }
 
 pub async fn delete_item(
