@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT status AS \"s!\" FROM content.modules WHERE course_id = $1 AND title = 'Unit 2'",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "s!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "content.modules",
+            "name": "status"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "3de75abe5c23c878beb076efd89837a2d59dcb4970fc6019b9a0d029d2d79bee"
+}

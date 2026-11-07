@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE mod_ai_agent.proposals SET status = 'failed', decided_at = now()\n         WHERE id = $1 AND user_id = $2 AND status = 'pending'",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "458da5c646e3263f9d7ba5ca0be3dd6e84da4485e12a8dd5ba6a64275c803fcf"
+}

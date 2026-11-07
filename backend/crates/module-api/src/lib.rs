@@ -19,7 +19,7 @@ pub use manifest::{Manifest, Permission, schema_of};
 pub use order::{OrderError, init_order};
 pub use outbound::{OutboundClient, OutboundError};
 pub use registrar::{Job, Registered, Registrar};
-pub use state::{DynActorSource, ModuleState, NoActors};
+pub use state::{DynActorSource, Institution, ModuleState, NoActors};
 
 pub type BoxFuture<T> = std::pin::Pin<Box<dyn std::future::Future<Output = T> + Send>>;
 

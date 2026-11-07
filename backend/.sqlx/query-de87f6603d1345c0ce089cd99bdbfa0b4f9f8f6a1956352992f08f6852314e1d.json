@@ -1,0 +1,21 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT coalesce(string_agg(content, ' '), '') AS \"t!\" FROM mod_ai_agent.messages",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "t!",
+        "type_info": "Text",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "de87f6603d1345c0ce089cd99bdbfa0b4f9f8f6a1956352992f08f6852314e1d"
+}

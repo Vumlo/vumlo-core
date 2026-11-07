@@ -1,0 +1,21 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT coalesce(string_agg(args || facts, ' '), '') AS \"t!\" FROM mod_ai_agent.proposals",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "t!",
+        "type_info": "Text",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "e1081cbe8b987bddfe1b3e5f11f9955f68d9a7f60434e903ad2deb38196c8398"
+}

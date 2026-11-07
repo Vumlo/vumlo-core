@@ -5,7 +5,7 @@
 use std::sync::Arc;
 
 use events::Handlers;
-use module_api::{Module, ModuleState, OrderError, Registered, Registrar, init_order};
+use module_api::{Institution, Module, ModuleState, OrderError, Registered, Registrar, init_order};
 use sqlx::migrate::Migrator;
 use vumlo_config::ModuleSpec;
 
@@ -16,6 +16,8 @@ pub fn compiled() -> Vec<&'static dyn Module> {
     vec![
         #[cfg(feature = "dummy")]
         vumlo_module_dummy::module(),
+        #[cfg(feature = "ai_agent")]
+        vumlo_module_ai_agent::module(),
     ]
 }
 
@@ -61,6 +63,10 @@ pub(crate) fn active(app: &AppState) -> Vec<Active> {
                 app.db.clone(),
                 app.config.module_state.get(id).cloned().unwrap_or_default(),
                 Arc::new(app.clone()),
+                Institution {
+                    grading_scale: app.config.institution.grading_scale,
+                    editor: Arc::new(app.config.editor.clone()),
+                },
             );
             let mut registrar = Registrar::new(state.clone());
             module.register(&mut registrar);
