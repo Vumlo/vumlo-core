@@ -164,9 +164,23 @@ fn retryable(status: u16) -> bool {
     status == 408 || status == 429 || status >= 500
 }
 
-/// The `GET`s worth keeping. Sign-in and health are about the moment, not the person's data.
+/// The `GET`s worth keeping. Sign-in and health are about the moment, not the person's data, and the
+/// Buddy's chat (ADR-0070) is private and deleted by the server after a while, so no copy of it stays
+/// on the disk: offline, the Buddy is simply not there.
 fn cacheable(path: &str) -> bool {
-    !path.starts_with("/auth/") && !path.starts_with("/health")
+    !path.starts_with("/auth/")
+        && !path.starts_with("/health")
+        && !path.starts_with("/modules/ai_agent/")
+}
+
+/// How long a call may take. A page of JSON is quick; a message to the Buddy waits for a language model
+/// that may think for minutes, and a call that ran out of time would look like a lost connection.
+pub fn timeout_for(path: &str) -> Duration {
+    if path.starts_with("/modules/ai_agent/messages") {
+        Duration::from_secs(600)
+    } else {
+        Duration::from_secs(30)
+    }
 }
 
 /// `1970-01-01T00:00:00Z` for unix milliseconds. The queue shows a draft's save time before the server has
@@ -365,7 +379,10 @@ impl Core {
         headers: &[(&str, &str)],
     ) -> Result<Wire, reqwest::Error> {
         let method = reqwest::Method::from_bytes(method.as_bytes()).unwrap_or(reqwest::Method::GET);
-        let mut builder = self.http.request(method, format!("{}{path}", self.api_url));
+        let mut builder = self
+            .http
+            .request(method, format!("{}{path}", self.api_url))
+            .timeout(timeout_for(path));
         if let Some(token) = self.token.get() {
             builder = builder.bearer_auth(token);
         }
