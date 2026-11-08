@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT course_id AS \"course_id!\" FROM (\n               SELECT course_id FROM teaching.memberships WHERE user_id = $1\n               UNION\n               SELECT r.course_id FROM teaching.group_roster r\n               WHERE r.user_id = $1\n                 AND NOT EXISTS (SELECT 1 FROM teaching.course_exclusions e\n                                 WHERE e.course_id = r.course_id AND e.user_id = $1)\n           ) t",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "course_id!",
+        "type_info": "Uuid",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "27e5782bb95087f6643dd3fcdb445b70e79f1c0d0316c51af8a80ff99af1ced4"
+}

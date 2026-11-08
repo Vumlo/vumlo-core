@@ -427,14 +427,15 @@ pub async fn owns_courses(conn: &mut PgConnection, user_id: Uuid) -> Result<bool
 
 /// Deletes the user's `teacher` memberships, for the role change that follows in the same
 /// transaction, and audits each one (ADR-0037). Acts for the admin who changes the role: the
-/// caller has authorized `ManageUsers`.
+/// caller has authorized `ManageUsers`. Returns the courses they were in, for
+/// [`user_standing_changed`].
 pub async fn drop_teacher_memberships(
     conn: &mut PgConnection,
     actor: &Actor,
     user_id: Uuid,
-) -> Result<(), TeachingError> {
-    for course_id in repo::delete_teacher_memberships(conn, user_id).await? {
-        enrollment_changed(conn, course_id, [user_id]).await?;
+) -> Result<Vec<Uuid>, TeachingError> {
+    let courses = repo::delete_teacher_memberships(conn, user_id).await?;
+    for &course_id in &courses {
         events::audit(
             conn,
             actor,
@@ -446,6 +447,23 @@ pub async fn drop_teacher_memberships(
             },
         )
         .await?;
+    }
+    Ok(courses)
+}
+
+/// Tells the plugins that a user's role or status changed, in every course whose roster they are
+/// on, or were on before this change (`left`: courses the change took them off, which no query
+/// can find any more). A disabled student leaves every roster and a role change moves a person
+/// between the roster of a group and that of a membership (ADR-0075).
+pub async fn user_standing_changed(
+    conn: &mut PgConnection,
+    user_id: Uuid,
+    left: Vec<Uuid>,
+) -> Result<(), TeachingError> {
+    let mut courses: std::collections::BTreeSet<Uuid> = left.into_iter().collect();
+    courses.extend(repo::courses_with_user(conn, user_id).await?);
+    for course_id in courses {
+        enrollment_changed(conn, course_id, [user_id]).await?;
     }
     Ok(())
 }

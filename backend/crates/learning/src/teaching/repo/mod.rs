@@ -88,6 +88,27 @@ pub async fn owns_courses(conn: &mut PgConnection, user_id: Uuid) -> Result<bool
     .await
 }
 
+/// The courses whose roster the user is on, or could be on: a membership, or a linked group that
+/// has them and no exclusion. Their place there depends on their role and status (ADR-0075).
+pub async fn courses_with_user(
+    conn: &mut PgConnection,
+    user_id: Uuid,
+) -> Result<Vec<Uuid>, sqlx::Error> {
+    sqlx::query_scalar!(
+        r#"SELECT course_id AS "course_id!" FROM (
+               SELECT course_id FROM teaching.memberships WHERE user_id = $1
+               UNION
+               SELECT r.course_id FROM teaching.group_roster r
+               WHERE r.user_id = $1
+                 AND NOT EXISTS (SELECT 1 FROM teaching.course_exclusions e
+                                 WHERE e.course_id = r.course_id AND e.user_id = $1)
+           ) t"#,
+        user_id
+    )
+    .fetch_all(conn)
+    .await
+}
+
 /// Deletes the tombstones older than `days` (ADR-0081). Returns how many.
 pub async fn prune_tombstones(conn: &mut PgConnection, days: i32) -> Result<u64, sqlx::Error> {
     let done = sqlx::query!(
