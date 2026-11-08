@@ -6,7 +6,7 @@
     "license": {
       "name": ""
     },
-    "version": "0.3.0"
+    "version": "0.4.1"
   },
   "paths": {
     "/api/v1/admin/audit": {
@@ -9842,6 +9842,7 @@
           "plugin-routes"
         ],
         "summary": "A route of a plugin's own server, through the core (ADR-0078). The plugin declares its\nroutes and who may call each in its manifest; one that is not declared, or is declared\nfor another method, is `404`. The core forwards the call with a signed statement of who\nthe caller is (`X-Vumlo-User`, `X-Vumlo-Role`, `X-Vumlo-Course`, `X-Vumlo-Course-Role`,\n`X-Vumlo-Timestamp`, `X-Vumlo-Nonce`, `X-Vumlo-Signature`) and no cookie. The answer of\nthe plugin is passed on if it is JSON, text, CSV, iCalendar, PDF or XLSX; any other\ncontent type, a redirect, or a `5xx` is a `502`.",
+        "description": "A route the plugin declared with `auth = \"none\"` (ADR-0080) is for anyone: it needs no\nsession, only answers `GET`, and the core checks nothing about the caller. The call is\nforwarded without `X-Vumlo-User`, `-Role`, `-Course` and `-Course-Role`, with\n`X-Vumlo-Anonymous: 1`, and the signature says that nobody signed in. The plugin checks\nits own token. Every public route has an allowance of calls shared by all who call it;\nover it is `429` with `Retry-After`.",
         "operationId": "proxy_get",
         "parameters": [
           {
@@ -9868,7 +9869,7 @@
             "description": "The plugin's answer (any 2xx or 4xx it gave)"
           },
           "401": {
-            "description": "Not logged in",
+            "description": "Not logged in (a public route needs no session)",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -9907,6 +9908,16 @@
               }
             }
           },
+          "429": {
+            "description": "A public route was called more than its allowance",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
           "502": {
             "description": "The plugin could not be reached or answered something the core does not pass on",
             "content": {
@@ -9929,6 +9940,7 @@
           }
         },
         "security": [
+          {},
           {
             "cookie": []
           },
@@ -9942,6 +9954,7 @@
           "plugin-routes"
         ],
         "summary": "A route of a plugin's own server, through the core (ADR-0078). The plugin declares its\nroutes and who may call each in its manifest; one that is not declared, or is declared\nfor another method, is `404`. The core forwards the call with a signed statement of who\nthe caller is (`X-Vumlo-User`, `X-Vumlo-Role`, `X-Vumlo-Course`, `X-Vumlo-Course-Role`,\n`X-Vumlo-Timestamp`, `X-Vumlo-Nonce`, `X-Vumlo-Signature`) and no cookie. The answer of\nthe plugin is passed on if it is JSON, text, CSV, iCalendar, PDF or XLSX; any other\ncontent type, a redirect, or a `5xx` is a `502`.",
+        "description": "A route the plugin declared with `auth = \"none\"` (ADR-0080) is for anyone: it needs no\nsession, only answers `GET`, and the core checks nothing about the caller. The call is\nforwarded without `X-Vumlo-User`, `-Role`, `-Course` and `-Course-Role`, with\n`X-Vumlo-Anonymous: 1`, and the signature says that nobody signed in. The plugin checks\nits own token. Every public route has an allowance of calls shared by all who call it;\nover it is `429` with `Retry-After`.",
         "operationId": "proxy_put",
         "parameters": [
           {
@@ -9968,7 +9981,7 @@
             "description": "The plugin's answer (any 2xx or 4xx it gave)"
           },
           "401": {
-            "description": "Not logged in",
+            "description": "Not logged in (a public route needs no session)",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -10007,6 +10020,16 @@
               }
             }
           },
+          "429": {
+            "description": "A public route was called more than its allowance",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
           "502": {
             "description": "The plugin could not be reached or answered something the core does not pass on",
             "content": {
@@ -10029,6 +10052,7 @@
           }
         },
         "security": [
+          {},
           {
             "cookie": []
           },
@@ -10042,6 +10066,7 @@
           "plugin-routes"
         ],
         "summary": "A route of a plugin's own server, through the core (ADR-0078). The plugin declares its\nroutes and who may call each in its manifest; one that is not declared, or is declared\nfor another method, is `404`. The core forwards the call with a signed statement of who\nthe caller is (`X-Vumlo-User`, `X-Vumlo-Role`, `X-Vumlo-Course`, `X-Vumlo-Course-Role`,\n`X-Vumlo-Timestamp`, `X-Vumlo-Nonce`, `X-Vumlo-Signature`) and no cookie. The answer of\nthe plugin is passed on if it is JSON, text, CSV, iCalendar, PDF or XLSX; any other\ncontent type, a redirect, or a `5xx` is a `502`.",
+        "description": "A route the plugin declared with `auth = \"none\"` (ADR-0080) is for anyone: it needs no\nsession, only answers `GET`, and the core checks nothing about the caller. The call is\nforwarded without `X-Vumlo-User`, `-Role`, `-Course` and `-Course-Role`, with\n`X-Vumlo-Anonymous: 1`, and the signature says that nobody signed in. The plugin checks\nits own token. Every public route has an allowance of calls shared by all who call it;\nover it is `429` with `Retry-After`.",
         "operationId": "proxy_post",
         "parameters": [
           {
@@ -10068,7 +10093,7 @@
             "description": "The plugin's answer (any 2xx or 4xx it gave)"
           },
           "401": {
-            "description": "Not logged in",
+            "description": "Not logged in (a public route needs no session)",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -10107,6 +10132,16 @@
               }
             }
           },
+          "429": {
+            "description": "A public route was called more than its allowance",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
           "502": {
             "description": "The plugin could not be reached or answered something the core does not pass on",
             "content": {
@@ -10129,6 +10164,7 @@
           }
         },
         "security": [
+          {},
           {
             "cookie": []
           },
@@ -10142,6 +10178,7 @@
           "plugin-routes"
         ],
         "summary": "A route of a plugin's own server, through the core (ADR-0078). The plugin declares its\nroutes and who may call each in its manifest; one that is not declared, or is declared\nfor another method, is `404`. The core forwards the call with a signed statement of who\nthe caller is (`X-Vumlo-User`, `X-Vumlo-Role`, `X-Vumlo-Course`, `X-Vumlo-Course-Role`,\n`X-Vumlo-Timestamp`, `X-Vumlo-Nonce`, `X-Vumlo-Signature`) and no cookie. The answer of\nthe plugin is passed on if it is JSON, text, CSV, iCalendar, PDF or XLSX; any other\ncontent type, a redirect, or a `5xx` is a `502`.",
+        "description": "A route the plugin declared with `auth = \"none\"` (ADR-0080) is for anyone: it needs no\nsession, only answers `GET`, and the core checks nothing about the caller. The call is\nforwarded without `X-Vumlo-User`, `-Role`, `-Course` and `-Course-Role`, with\n`X-Vumlo-Anonymous: 1`, and the signature says that nobody signed in. The plugin checks\nits own token. Every public route has an allowance of calls shared by all who call it;\nover it is `429` with `Retry-After`.",
         "operationId": "proxy_delete",
         "parameters": [
           {
@@ -10168,7 +10205,7 @@
             "description": "The plugin's answer (any 2xx or 4xx it gave)"
           },
           "401": {
-            "description": "Not logged in",
+            "description": "Not logged in (a public route needs no session)",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -10207,6 +10244,16 @@
               }
             }
           },
+          "429": {
+            "description": "A public route was called more than its allowance",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
           "502": {
             "description": "The plugin could not be reached or answered something the core does not pass on",
             "content": {
@@ -10229,6 +10276,7 @@
           }
         },
         "security": [
+          {},
           {
             "cookie": []
           },
@@ -10242,6 +10290,7 @@
           "plugin-routes"
         ],
         "summary": "A route of a plugin's own server, through the core (ADR-0078). The plugin declares its\nroutes and who may call each in its manifest; one that is not declared, or is declared\nfor another method, is `404`. The core forwards the call with a signed statement of who\nthe caller is (`X-Vumlo-User`, `X-Vumlo-Role`, `X-Vumlo-Course`, `X-Vumlo-Course-Role`,\n`X-Vumlo-Timestamp`, `X-Vumlo-Nonce`, `X-Vumlo-Signature`) and no cookie. The answer of\nthe plugin is passed on if it is JSON, text, CSV, iCalendar, PDF or XLSX; any other\ncontent type, a redirect, or a `5xx` is a `502`.",
+        "description": "A route the plugin declared with `auth = \"none\"` (ADR-0080) is for anyone: it needs no\nsession, only answers `GET`, and the core checks nothing about the caller. The call is\nforwarded without `X-Vumlo-User`, `-Role`, `-Course` and `-Course-Role`, with\n`X-Vumlo-Anonymous: 1`, and the signature says that nobody signed in. The plugin checks\nits own token. Every public route has an allowance of calls shared by all who call it;\nover it is `429` with `Retry-After`.",
         "operationId": "proxy_patch",
         "parameters": [
           {
@@ -10268,7 +10317,7 @@
             "description": "The plugin's answer (any 2xx or 4xx it gave)"
           },
           "401": {
-            "description": "Not logged in",
+            "description": "Not logged in (a public route needs no session)",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -10307,6 +10356,16 @@
               }
             }
           },
+          "429": {
+            "description": "A public route was called more than its allowance",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
           "502": {
             "description": "The plugin could not be reached or answered something the core does not pass on",
             "content": {
@@ -10329,6 +10388,7 @@
           }
         },
         "security": [
+          {},
           {
             "cookie": []
           },

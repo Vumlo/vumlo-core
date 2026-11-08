@@ -59,8 +59,8 @@ the web app loads its list of pages (a tab that is still open can no longer get 
 
 ## Routes for people
 
-The manifest also declares two `routes`: `GET /api/summary/{course_id}` (teachers and administrators; and in the course
-only its teacher or assistants) and `POST /api/echo` (anyone signed in). A person reaches them through the core at
+The manifest also declares three `routes`: `GET /api/summary/{course_id}` (teachers and administrators; and in the course
+only its teacher or assistants) `POST /api/echo` (anyone signed in) and `GET /api/feed/{feed}` (anyone, see below). A person reaches them through the core at
 `/api/v1/plugins/hello/api/summary/<course id>` with their ordinary session ([ADR-0078](../../docs/decisions/done.md)).
 The plugin never sees the session; the core tells it who the person is in headers it signs with the webhook secret:
 
@@ -71,3 +71,13 @@ request-target and the body), a timestamp within five minutes, and a nonce it ha
 the three can be fooled by someone who sends its port a request of their own, or by a captured call sent again. What
 the plugin answers must be JSON, text, CSV, iCalendar, PDF or XLSX: the core serves it from its own origin and passes
 on nothing that could run in a browser.
+
+### A public route
+
+`GET /api/feed/{feed}?token=` declares `"auth": "none"` ([ADR-0080](../../docs/decisions/done.md)): a calendar app can
+fetch it with a URL alone, so there is no session. The core still signs the call, but as one that nobody made as a
+person: it sends `X-Vumlo-Anonymous: 1` and no user, role or course, and the signature has `none` where a person's
+call has `session` (`check_proxy` returns `user: None`). What the core cannot know is whether the caller may have this
+feed, so the plugin checks its own token (`feed_token`: only this server can make one) and answers `404` for any other.
+The core limits how often a public route may be called, for everyone together, so a leaked URL cannot be turned into a
+flood against the plugin.

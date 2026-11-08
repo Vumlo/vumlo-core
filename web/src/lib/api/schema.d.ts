@@ -2181,6 +2181,12 @@ export interface paths {
          *     `X-Vumlo-Timestamp`, `X-Vumlo-Nonce`, `X-Vumlo-Signature`) and no cookie. The answer of
          *     the plugin is passed on if it is JSON, text, CSV, iCalendar, PDF or XLSX; any other
          *     content type, a redirect, or a `5xx` is a `502`.
+         * @description A route the plugin declared with `auth = "none"` (ADR-0080) is for anyone: it needs no
+         *     session, only answers `GET`, and the core checks nothing about the caller. The call is
+         *     forwarded without `X-Vumlo-User`, `-Role`, `-Course` and `-Course-Role`, with
+         *     `X-Vumlo-Anonymous: 1`, and the signature says that nobody signed in. The plugin checks
+         *     its own token. Every public route has an allowance of calls shared by all who call it;
+         *     over it is `429` with `Retry-After`.
          */
         get: operations["proxy_get"];
         /**
@@ -2191,6 +2197,12 @@ export interface paths {
          *     `X-Vumlo-Timestamp`, `X-Vumlo-Nonce`, `X-Vumlo-Signature`) and no cookie. The answer of
          *     the plugin is passed on if it is JSON, text, CSV, iCalendar, PDF or XLSX; any other
          *     content type, a redirect, or a `5xx` is a `502`.
+         * @description A route the plugin declared with `auth = "none"` (ADR-0080) is for anyone: it needs no
+         *     session, only answers `GET`, and the core checks nothing about the caller. The call is
+         *     forwarded without `X-Vumlo-User`, `-Role`, `-Course` and `-Course-Role`, with
+         *     `X-Vumlo-Anonymous: 1`, and the signature says that nobody signed in. The plugin checks
+         *     its own token. Every public route has an allowance of calls shared by all who call it;
+         *     over it is `429` with `Retry-After`.
          */
         put: operations["proxy_put"];
         /**
@@ -2201,6 +2213,12 @@ export interface paths {
          *     `X-Vumlo-Timestamp`, `X-Vumlo-Nonce`, `X-Vumlo-Signature`) and no cookie. The answer of
          *     the plugin is passed on if it is JSON, text, CSV, iCalendar, PDF or XLSX; any other
          *     content type, a redirect, or a `5xx` is a `502`.
+         * @description A route the plugin declared with `auth = "none"` (ADR-0080) is for anyone: it needs no
+         *     session, only answers `GET`, and the core checks nothing about the caller. The call is
+         *     forwarded without `X-Vumlo-User`, `-Role`, `-Course` and `-Course-Role`, with
+         *     `X-Vumlo-Anonymous: 1`, and the signature says that nobody signed in. The plugin checks
+         *     its own token. Every public route has an allowance of calls shared by all who call it;
+         *     over it is `429` with `Retry-After`.
          */
         post: operations["proxy_post"];
         /**
@@ -2211,6 +2229,12 @@ export interface paths {
          *     `X-Vumlo-Timestamp`, `X-Vumlo-Nonce`, `X-Vumlo-Signature`) and no cookie. The answer of
          *     the plugin is passed on if it is JSON, text, CSV, iCalendar, PDF or XLSX; any other
          *     content type, a redirect, or a `5xx` is a `502`.
+         * @description A route the plugin declared with `auth = "none"` (ADR-0080) is for anyone: it needs no
+         *     session, only answers `GET`, and the core checks nothing about the caller. The call is
+         *     forwarded without `X-Vumlo-User`, `-Role`, `-Course` and `-Course-Role`, with
+         *     `X-Vumlo-Anonymous: 1`, and the signature says that nobody signed in. The plugin checks
+         *     its own token. Every public route has an allowance of calls shared by all who call it;
+         *     over it is `429` with `Retry-After`.
          */
         delete: operations["proxy_delete"];
         options?: never;
@@ -2223,6 +2247,12 @@ export interface paths {
          *     `X-Vumlo-Timestamp`, `X-Vumlo-Nonce`, `X-Vumlo-Signature`) and no cookie. The answer of
          *     the plugin is passed on if it is JSON, text, CSV, iCalendar, PDF or XLSX; any other
          *     content type, a redirect, or a `5xx` is a `502`.
+         * @description A route the plugin declared with `auth = "none"` (ADR-0080) is for anyone: it needs no
+         *     session, only answers `GET`, and the core checks nothing about the caller. The call is
+         *     forwarded without `X-Vumlo-User`, `-Role`, `-Course` and `-Course-Role`, with
+         *     `X-Vumlo-Anonymous: 1`, and the signature says that nobody signed in. The plugin checks
+         *     its own token. Every public route has an allowance of calls shared by all who call it;
+         *     over it is `429` with `Retry-After`.
          */
         patch: operations["proxy_patch"];
         trace?: never;
@@ -11660,7 +11690,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Not logged in */
+            /** @description Not logged in (a public route needs no session) */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -11689,6 +11719,15 @@ export interface operations {
             };
             /** @description The body is more than 10 MiB */
             413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description A public route was called more than its allowance */
+            429: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -11737,7 +11776,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Not logged in */
+            /** @description Not logged in (a public route needs no session) */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -11766,6 +11805,15 @@ export interface operations {
             };
             /** @description The body is more than 10 MiB */
             413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description A public route was called more than its allowance */
+            429: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -11814,7 +11862,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Not logged in */
+            /** @description Not logged in (a public route needs no session) */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -11843,6 +11891,15 @@ export interface operations {
             };
             /** @description The body is more than 10 MiB */
             413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description A public route was called more than its allowance */
+            429: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -11891,7 +11948,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Not logged in */
+            /** @description Not logged in (a public route needs no session) */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -11920,6 +11977,15 @@ export interface operations {
             };
             /** @description The body is more than 10 MiB */
             413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description A public route was called more than its allowance */
+            429: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -11968,7 +12034,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Not logged in */
+            /** @description Not logged in (a public route needs no session) */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -11997,6 +12063,15 @@ export interface operations {
             };
             /** @description The body is more than 10 MiB */
             413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description A public route was called more than its allowance */
+            429: {
                 headers: {
                     [name: string]: unknown;
                 };

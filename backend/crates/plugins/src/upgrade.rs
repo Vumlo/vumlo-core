@@ -11,7 +11,7 @@ use sqlx::PgConnection;
 use uuid::Uuid;
 
 use crate::PluginsError;
-use crate::model::{Install, PluginManifest};
+use crate::model::{Install, PluginManifest, RouteAuth};
 use crate::repo::{self, ManifestUpdate, scope_names};
 use crate::service;
 
@@ -70,7 +70,11 @@ fn sorted_scopes(scopes: &[Scope]) -> Vec<Scope> {
 
 /// What `manifest` would change about `install`.
 pub fn plan(install: &Install, manifest: &PluginManifest) -> UpgradePlan {
-    let key = |r: &crate::model::RouteSpec| format!("{} {}", r.method, r.path);
+    // A route that becomes public is a route that was removed and added again: it is listed twice.
+    let key = |r: &crate::model::RouteSpec| match r.auth {
+        RouteAuth::None => format!("{} {} (public)", r.method, r.path),
+        RouteAuth::Session => format!("{} {}", r.method, r.path),
+    };
     let old_routes: Vec<_> = install.routes.iter().map(key).collect();
     let new_routes: Vec<_> = manifest.routes.iter().map(key).collect();
     let routes_changed = manifest

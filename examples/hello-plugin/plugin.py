@@ -29,6 +29,9 @@ And two routes for people, through the core (ADR-0078), at /api/v1/plugins/hello
 
   GET  /api/summary/{course_id}   teachers of the course; how many works were submitted
   POST /api/echo                  anyone signed in; says what the core told it about the call
+  GET  /api/feed/{feed}?token=    a public route (`auth: "none"`): an iCalendar feed that anyone with the
+                                  URL may fetch. The core signs that the caller is anonymous; the token
+                                  in the URL is this server's to check (`feed_token`).
   The core signs who the person is (X-Vumlo-* headers); `check_proxy` verifies the signature, the time
   and the nonce. The session never reaches this server.
 
@@ -55,6 +58,7 @@ import time
 import urllib.error
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from urllib.parse import parse_qs, urlsplit
 
 MANIFEST = {
     "id": "hello",
@@ -75,6 +79,9 @@ MANIFEST = {
         },
         # Anyone signed in: says what the core told it about the call.
         {"method": "POST", "path": "/api/echo", "roles": ["admin", "teacher", "student"]},
+        # Nobody is signed in (ADR-0080): a calendar feed that a calendar app fetches with a URL alone.
+        # The core only signs that the caller is anonymous; this server checks the token in the URL.
+        {"method": "GET", "path": "/api/feed/{feed}", "auth": "none"},
     ],
     # What an administrator may configure (a subset of JSON Schema; `secret: true` would be for a token).
     "settings": {
@@ -163,11 +170,12 @@ MAX_NONCES = 10000
 def proxy_signature(secret, timestamp, method, target, user, role, course, course_role, nonce, body):
     """The signature of a call the core forwarded: the HMAC-SHA256 of `timestamp + "." + canonical`, where
     canonical joins these with newlines: `vumlo-proxy`, the nonce, the method, the request-target
-    (path and query, as received), the user, their role, the course and their role in it (`-` for
-    none), and the hex SHA-256 of the body."""
+    (path and query, as received), `session` or `none`, the user, their role, the course and their role
+    in it (`-` for none), and the hex SHA-256 of the body. `user` is None for a call to a public route:
+    nobody signed in, so the lines are `none`, `-` and `-`."""
     canonical = "\n".join([
-        "vumlo-proxy", nonce, method, target, user, role, course or "-", course_role or "-",
-        hashlib.sha256(body).hexdigest(),
+        "vumlo-proxy", nonce, method, target, "none" if user is None else "session", user or "-",
+        role or "-", course or "-", course_role or "-", hashlib.sha256(body).hexdigest(),
     ])
     message = str(timestamp).encode() + b"." + canonical.encode()
     return "sha256=" + hmac.new(secret.encode(), message, hashlib.sha256).hexdigest()
@@ -188,9 +196,12 @@ def check_proxy(secret, method, target, headers, body, now=None):
         return None, (401, "bad timestamp")
     if abs(now - timestamp) > MAX_AGE_SECONDS:
         return None, (401, "stale timestamp")
+    # `X-Vumlo-Anonymous` is only a hint: what is signed is `none`, so a call that left it out, or put
+    # it in, does not verify as the other kind.
+    anonymous = headers.get("X-Vumlo-Anonymous") is not None
     claims = {
-        "user": headers.get("X-Vumlo-User", ""),
-        "role": headers.get("X-Vumlo-Role", ""),
+        "user": None if anonymous else headers.get("X-Vumlo-User", ""),
+        "role": None if anonymous else headers.get("X-Vumlo-Role", ""),
         "course": headers.get("X-Vumlo-Course") or None,
         "course_role": headers.get("X-Vumlo-Course-Role") or None,
     }
@@ -210,6 +221,11 @@ def check_proxy(secret, method, target, headers, body, now=None):
             return None, (503, "too many calls to tell apart")
         proxy_nonces[nonce] = now
     return claims, None
+
+
+def feed_token(feed):
+    """The token in the URL of a feed: only this server can make one, so the URL is the credential."""
+    return signature(SECRET, "0", feed.encode())[len("sha256="):][:32]
 
 
 def count_text(node, measure):
@@ -397,6 +413,22 @@ class Handler(BaseHTTPRequestHandler):
         if refused:
             return self.reply(refused[0], {"error": refused[1]})
         path = self.path.split("?")[0]
+        if self.command == "GET" and path.startswith("/api/feed/"):
+            # Public: the core knows nothing about the caller, so the token is the whole check.
+            if claims["user"] is not None:
+                return self.reply(400, {"error": "a feed is a public route"})
+            feed = path.rsplit("/", 1)[1]
+            token = parse_qs(urlsplit(self.path).query).get("token", [""])[0]
+            if not hmac.compare_digest(feed_token(feed), token):
+                return self.reply(404, {"error": "not found"})
+            body = ("BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//hello//EN\r\nEND:VCALENDAR\r\n").encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "text/calendar; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            return self.wfile.write(body)
+        if claims["user"] is None:
+            return self.reply(401, {"error": "sign in"})
         if self.command == "GET" and path.startswith("/api/summary/"):
             if claims["course"] != path.rsplit("/", 1)[1]:
                 return self.reply(400, {"error": "not the course the core named"})
@@ -504,7 +536,7 @@ def check_vector():
     user, course = "018f0000-0000-7000-8000-000000000003", "018f0000-0000-7000-8000-000000000004"
     nonce = "018f0000-0000-7000-8000-000000000005"
     body = b'{"a":1}'
-    expected = "sha256=f0550504dfb2f66b16d94c999990f57b5b6c5c1d5ac69cc62076cca03e7da247"
+    expected = "sha256=b44aaebf5b3727dcdaee5f5de6da4e02eb960d31f16ed99ab83df89c45fa3d39"
     assert proxy_signature("test-secret", 1700000000, "POST", "/hello/api/echo?x=1", user, "teacher", course,
                            "assistant", nonce, body) == expected, "the proxy signature differs from the core's"
     sent = {"X-Vumlo-Timestamp": "1700000000", "X-Vumlo-User": user, "X-Vumlo-Role": "teacher",
@@ -523,6 +555,20 @@ def check_vector():
     assert check_proxy("test-secret", "POST", "/hello/api/echo?x=1", sent, b'{"a":2}', now=1700000000)[1] == (401, "bad signature"), "the body"
     assert check_proxy("test-secret", "POST", "/hello/api/echo?x=2", sent, body, now=1700000000)[1] == (401, "bad signature"), "the target"
     assert check_proxy("test-secret", "GET", "/hello/api/echo?x=1", sent, body, now=1700000000)[1] == (401, "bad signature"), "the method"
+    # A call to a public route: nobody signed in. The signature says so (`none`), so the same bytes
+    # with a user and a role, or a person's call with the anonymous marker, do not verify.
+    anon_sig = "sha256=4a7ce61d44771dc438866c26db839b3513e197e8a9c846ba489bb2340cccc978"
+    target = "/hello/api/feed/f?token=t"
+    assert proxy_signature("test-secret", 1700000000, "GET", target, None, None, None, None, nonce, b"") == anon_sig, "the anonymous signature differs from the core's"
+    anon = {"X-Vumlo-Timestamp": "1700000000", "X-Vumlo-Anonymous": "1", "X-Vumlo-Nonce": nonce, "X-Vumlo-Signature": anon_sig}
+    taken, refused = check_proxy("test-secret", "GET", target, anon, b"", now=1700000000)
+    assert refused is None and taken["user"] is None, refused
+    proxy_nonces.clear()
+    forged = {**anon, "X-Vumlo-User": user, "X-Vumlo-Role": "admin"}
+    del forged["X-Vumlo-Anonymous"]
+    assert check_proxy("test-secret", "GET", target, forged, b"", now=1700000000)[1] == (401, "bad signature"), "a user added to an anonymous call"
+    proxy_nonces.clear()
+    assert check_proxy("test-secret", "GET", "/hello/api/echo?x=1", {**sent, "X-Vumlo-Anonymous": "1"}, body, now=1700000000)[1] == (401, "bad signature"), "a person's call passed off as anonymous"
     print("ok")
 
 

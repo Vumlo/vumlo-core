@@ -80,16 +80,28 @@ pub struct UiSlot {
     pub path: String,
 }
 
+/// Who a route of the plugin lets in (ADR-0080).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RouteAuth {
+    /// A person signed in to the core, and the roles the route lists. The default.
+    Session,
+    /// Anyone, with no session. The core checks nothing about the caller: the plugin checks its own
+    /// token.
+    None,
+}
+text_enum!(RouteAuth { Session => "session", None => "none" });
+
 /// A route of the plugin's own server that people reach through the core (ADR-0078), as its manifest
 /// declared it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RouteSpec {
-    /// `GET`, `POST`, `PUT`, `PATCH` or `DELETE`.
+    /// `GET`, `POST`, `PUT`, `PATCH` or `DELETE`; a public route is `GET` only.
     pub method: String,
+    pub auth: RouteAuth,
     /// Starts with `/`; a segment is a name, or `{name}` for any one segment. `{course_id}` is a
     /// course the core resolves.
     pub path: String,
-    /// The institution roles that may call it.
+    /// The institution roles that may call it; none for a public route.
     pub roles: Vec<Role>,
     /// The roles in the course of `{course_id}` that may call it; empty: any.
     pub course_roles: Vec<CourseRole>,

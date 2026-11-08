@@ -11,6 +11,7 @@ use module_api::OutboundClient;
 use sqlx::PgPool;
 use vumlo_config::Settings;
 
+use crate::limiter::RouteLimiter;
 use crate::model::PluginToken;
 use crate::repo::{self, course_scope, scopes_of};
 use crate::secret::SecretKey;
@@ -23,6 +24,8 @@ pub struct PluginsState {
     /// Carries the calls people make to a plugin's own server (ADR-0078). `None` if it could not be
     /// built, which answers those calls `503`.
     pub proxy: Option<Arc<OutboundClient>>,
+    /// The allowance of each public route of a plugin (ADR-0080).
+    pub public_routes: Arc<RouteLimiter>,
 }
 
 const PROXY_CONNECT: Duration = Duration::from_secs(3);
@@ -39,6 +42,10 @@ impl PluginsState {
             proxy: OutboundClient::new(PROXY_CONNECT, PROXY_TOTAL, PROXY_MAX_RESPONSE_BYTES, 0)
                 .ok()
                 .map(Arc::new),
+            public_routes: Arc::new(RouteLimiter::new(
+                config.plugins.public_route_burst,
+                config.plugins.public_route_requests_per_second,
+            )),
         }
     }
 }

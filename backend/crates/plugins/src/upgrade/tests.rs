@@ -118,6 +118,20 @@ async fn the_plan_names_what_changed_and_what_needs_approving() {
 }
 
 #[tokio::test]
+async fn a_route_that_turns_public_is_shown_as_gone_and_new_so_that_it_is_not_missed() {
+    db_test(async |pool| {
+        let first = installed(&pool).await.install;
+        let mut open = v1();
+        open["routes"] = serde_json::json!([{"method": "GET", "path": "/api/a", "auth": "none"}]);
+        let plan = plan(&first, &manifest(&open));
+        assert_eq!(plan.routes_removed, ["GET /api/a"]);
+        assert_eq!(plan.routes_added, ["GET /api/a (public)"]);
+        assert!(!plan.is_empty());
+    })
+    .await;
+}
+
+#[tokio::test]
 async fn an_upgrade_follows_the_manifest_and_grants_only_what_was_approved() {
     db_test(async |pool| {
         let before = installed(&pool).await;
