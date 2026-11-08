@@ -209,7 +209,13 @@ impl AppState {
         self.plugins
             .key
             .as_deref()
-            .map(|key| plugins::Deliverer::new(key.clone(), self.config.plugins.call_log_days))
+            .map(|key| {
+                plugins::Deliverer::new(
+                    key.clone(),
+                    self.config.plugins.call_log_days,
+                    self.config.plugins.tombstone_days,
+                )
+            })
             .transpose()
     }
 }

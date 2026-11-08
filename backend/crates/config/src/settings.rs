@@ -284,6 +284,9 @@ pub struct PluginsSettings {
     pub public_route_requests_per_second: u32,
     /// Days the log of a plugin's calls is kept (`vumlo-cli plugin calls`).
     pub call_log_days: u32,
+    /// Days a plugin can ask what was deleted (ADR-0081). A plugin that was away longer reads the
+    /// list again in full.
+    pub tombstone_days: u32,
 }
 
 impl Default for PluginsSettings {
@@ -295,6 +298,7 @@ impl Default for PluginsSettings {
             public_route_burst: 10,
             public_route_requests_per_second: 2,
             call_log_days: 30,
+            tombstone_days: 30,
         }
     }
 }

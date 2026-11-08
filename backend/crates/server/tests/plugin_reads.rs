@@ -850,3 +850,296 @@ async fn a_page_is_launched_only_for_an_assignment_in_a_course_the_plugin_reache
     })
     .await;
 }
+
+// ---------------------------------------------------------------------------------------------
+// ADR-0081: what was deleted
+// ---------------------------------------------------------------------------------------------
+
+/// `deleted_since` an hour ago, as a query string.
+fn since_an_hour_ago() -> String {
+    since(chrono::Duration::hours(1))
+}
+
+fn since(ago: chrono::Duration) -> String {
+    format!(
+        "deleted_since={}",
+        (chrono::Utc::now() - ago).to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
+    )
+}
+
+impl World {
+    async fn announce(&self, course: Uuid, title: &str) -> Uuid {
+        id_of(
+            &self
+                .env
+                .ok(
+                    "POST",
+                    &self.teacher.token,
+                    &format!("/courses/{course}/announcements"),
+                    Some(json!({"title": title, "body": "text"})),
+                    201,
+                )
+                .await,
+        )
+    }
+}
+
+#[tokio::test]
+async fn a_deleted_assignment_or_announcement_is_listed_with_when_it_went_and_nothing_else_is() {
+    db_test(async |pool| {
+        let w = world(pool).await;
+        let all = w.everything().await;
+        let published = w.text(w.module).await;
+        let kept = w.text(w.module).await;
+        let draft = w.item(w.module, "text", json!({}), "10", false).await;
+        let lecture = id_of(
+            &w.env
+                .ok(
+                    "POST",
+                    &w.teacher.token,
+                    &format!("/modules/{}/items", w.module),
+                    Some(json!({"kind": "text", "title": "Lecture", "body": doc("hi")})),
+                    201,
+                )
+                .await,
+        );
+        let announcement = w.announce(w.course, "gone").await;
+        let remaining = w.announce(w.course, "stays").await;
+        let q = since_an_hour_ago();
+        for path in ["/assignments/deleted", "/announcements/deleted"] {
+            assert!(
+                items(&w.get(&all, &format!("{path}?{q}")).await).is_empty(),
+                "nothing was deleted yet: {path}"
+            );
+        }
+
+        for path in [
+            format!("/items/{published}"),
+            format!("/items/{draft}"),
+            format!("/items/{lecture}"),
+            format!("/announcements/{announcement}"),
+        ] {
+            w.env.ok("DELETE", &w.teacher.token, &path, None, 204).await;
+        }
+        // Only the published assignment: a draft was never shown, a text that is no assignment is no
+        // assignment, and what stays is not there.
+        let gone = items(&w.get(&all, &format!("/assignments/deleted?{q}")).await);
+        assert_eq!(ids(&gone, "id"), [published.to_string()]);
+        assert_eq!(gone[0]["course_id"], json!(w.course));
+        let went_at: chrono::DateTime<chrono::Utc> =
+            gone[0]["deleted_at"].as_str().unwrap().parse().unwrap();
+        assert!((chrono::Utc::now() - went_at).num_seconds().abs() < 60);
+        let gone = items(&w.get(&all, &format!("/announcements/deleted?{q}")).await);
+        assert_eq!(ids(&gone, "id"), [announcement.to_string()]);
+        let _ = (kept, remaining);
+
+        // It is a list from a time: later than the deletion, it is empty.
+        let later = format!(
+            "deleted_since={}",
+            (chrono::Utc::now() + chrono::Duration::minutes(5))
+                .to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
+        );
+        assert!(items(&w.get(&all, &format!("/assignments/deleted?{later}")).await).is_empty());
+        // And it says no more than that: no title, no body.
+        assert_eq!(
+            gone[0]
+                .as_object()
+                .unwrap()
+                .keys()
+                .cloned()
+                .collect::<Vec<_>>(),
+            ["course_id", "deleted_at", "id"]
+        );
+        // No store, like every answer to a plugin.
+        let response = w.get(&all, &format!("/assignments/deleted?{q}")).await;
+        assert_eq!(response.header("cache-control"), "no-store");
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn a_course_that_is_deleted_takes_its_assignments_and_announcements_with_it_into_the_list() {
+    db_test(async |pool| {
+        let w = world(pool).await;
+        let all = w.everything().await;
+        let only_a = w
+            .install("only-a", &Scope::ALL, CourseScope::Only(vec![w.course]))
+            .await;
+        let in_b = w.text(w.other_module).await;
+        let in_a = w.text(w.module).await;
+        let note_b = w.announce(w.other_course, "b").await;
+        // The course holds no submitted work, so it can be deleted.
+        w.env
+            .ok(
+                "DELETE",
+                &w.teacher.token,
+                &format!("/courses/{}", w.other_course),
+                None,
+                204,
+            )
+            .await;
+        let q = since_an_hour_ago();
+
+        // The plugin that reaches every course hears of both, though the course is gone, and asking
+        // for it by id is not a 404.
+        let list = items(
+            &w.get(
+                &all,
+                &format!("/assignments/deleted?{q}&course_id={}", w.other_course),
+            )
+            .await,
+        );
+        assert_eq!(ids(&list, "id"), [in_b.to_string()]);
+        assert_eq!(list[0]["course_id"], json!(w.other_course));
+        let list = items(&w.get(&all, &format!("/announcements/deleted?{q}")).await);
+        assert_eq!(ids(&list, "id"), [note_b.to_string()]);
+        // The plugin that was granted the other course does not, whether it names the course or not.
+        w.get(
+            &only_a,
+            &format!("/assignments/deleted?{q}&course_id={}", w.other_course),
+        )
+        .await
+        .problem(403);
+        assert!(items(&w.get(&only_a, &format!("/assignments/deleted?{q}")).await).is_empty());
+        assert!(items(&w.get(&only_a, &format!("/announcements/deleted?{q}")).await).is_empty());
+        let _ = in_a;
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn an_assignment_with_work_cannot_be_deleted_so_it_is_never_in_the_list() {
+    db_test(async |pool| {
+        let w = world(pool).await;
+        let all = w.everything().await;
+        let worked = w.text(w.module).await;
+        w.submit_text(&w.s1, worked, "handed in").await;
+        let q = since_an_hour_ago();
+
+        // Work that was handed in keeps the assignment: attempts and grades are never deleted, so
+        // there is no list of deleted attempts or grades.
+        w.env
+            .call(
+                "DELETE",
+                &w.teacher.token,
+                &format!("/items/{worked}"),
+                None,
+            )
+            .await
+            .problem(409);
+        assert!(items(&w.get(&all, &format!("/assignments/deleted?{q}")).await).is_empty());
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn the_deleted_lists_need_their_scope_a_time_a_valid_cursor_and_a_time_the_core_still_keeps()
+{
+    db_test(async |pool| {
+        let w = world(pool).await;
+        let nothing = w.install("nothing", &[], CourseScope::All).await;
+        let assignments_only = w
+            .install("assign", &[Scope::AssignmentsRead], CourseScope::All)
+            .await;
+        let q = since_an_hour_ago();
+        // The scope of the thing that was deleted, before anything else.
+        for path in ["/assignments/deleted", "/announcements/deleted"] {
+            w.get(&nothing, &format!("{path}?{q}")).await.problem(403);
+        }
+        assert_eq!(
+            w.get(&assignments_only, &format!("/assignments/deleted?{q}"))
+                .await
+                .status,
+            200
+        );
+        w.get(&assignments_only, &format!("/announcements/deleted?{q}"))
+            .await
+            .problem(403);
+
+        let all = w.everything().await;
+        // The time is not optional, and a cursor must be one the core gave.
+        assert_eq!(w.get(&all, "/assignments/deleted").await.status, 422);
+        assert_eq!(
+            w.get(&all, "/assignments/deleted?deleted_since=yesterday")
+                .await
+                .status,
+            422
+        );
+        assert_eq!(
+            w.get(&all, &format!("/assignments/deleted?{q}&cursor=junk"))
+                .await
+                .status,
+            422
+        );
+        // Further back than the 30 days the core keeps: `410`, so the plugin reads the list in full.
+        let old = since(chrono::Duration::days(31));
+        for path in ["/assignments/deleted", "/announcements/deleted"] {
+            w.get(&all, &format!("{path}?{old}")).await.problem(410);
+        }
+        let within = since(chrono::Duration::days(29));
+        assert_eq!(
+            w.get(&all, &format!("/assignments/deleted?{within}"))
+                .await
+                .status,
+            200
+        );
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn deletions_page_by_the_time_they_happened_and_are_forgotten_after_their_retention() {
+    db_test(async |pool| {
+        let w = world(pool).await;
+        let all = w.everything().await;
+        let mut gone = Vec::new();
+        for title in ["one", "two", "three"] {
+            let id = w.announce(w.course, title).await;
+            w.env
+                .ok(
+                    "DELETE",
+                    &w.teacher.token,
+                    &format!("/announcements/{id}"),
+                    None,
+                    204,
+                )
+                .await;
+            gone.push(id.to_string());
+        }
+        let q = since_an_hour_ago();
+        let first = w
+            .get(&all, &format!("/announcements/deleted?{q}&limit=2"))
+            .await;
+        let next = first.json()["next_cursor"].as_str().unwrap().to_owned();
+        let mut seen = ids(&items(&first), "id");
+        assert_eq!(seen.len(), 2);
+        let second = w
+            .get(
+                &all,
+                &format!("/announcements/deleted?{q}&limit=2&cursor={next}"),
+            )
+            .await;
+        assert!(second.json()["next_cursor"].is_null());
+        seen.extend(ids(&items(&second), "id"));
+        // All three, once each, in the order they went (ids are v7, so they sort the same way).
+        assert_eq!(seen, gone);
+
+        // The worker forgets what is older than `plugins.tombstone_days`; one row is made old.
+        sqlx::query(
+            "UPDATE teaching.tombstones SET deleted_at = now() - interval '40 days' WHERE id = $1::uuid",
+        )
+        .bind(&gone[0])
+        .execute(&w.state.db)
+        .await
+        .unwrap();
+        let deliverer = w
+            .state
+            .plugin_deliverer()
+            .unwrap()
+            .expect("the plugin key is set");
+        assert_eq!(deliverer.prune(&w.state.db).await.unwrap(), 1);
+        let rest = items(&w.get(&all, &format!("/announcements/deleted?{q}")).await);
+        assert_eq!(ids(&rest, "id"), gone[1..]);
+    })
+    .await;
+}

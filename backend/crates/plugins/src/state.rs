@@ -26,6 +26,8 @@ pub struct PluginsState {
     pub proxy: Option<Arc<OutboundClient>>,
     /// The allowance of each public route of a plugin (ADR-0080).
     pub public_routes: Arc<RouteLimiter>,
+    /// Days what was deleted can be asked for (ADR-0081).
+    pub tombstone_days: u32,
 }
 
 const PROXY_CONNECT: Duration = Duration::from_secs(3);
@@ -46,6 +48,7 @@ impl PluginsState {
                 config.plugins.public_route_burst,
                 config.plugins.public_route_requests_per_second,
             )),
+            tombstone_days: config.plugins.tombstone_days,
         }
     }
 }

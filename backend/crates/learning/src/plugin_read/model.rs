@@ -203,3 +203,11 @@ pub struct PluginAnnouncement {
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
+
+/// Something a plugin was shown that was deleted since (ADR-0081).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PluginDeletion {
+    pub id: Uuid,
+    pub course_id: Uuid,
+    pub deleted_at: DateTime<Utc>,
+}

@@ -88,6 +88,17 @@ pub async fn owns_courses(conn: &mut PgConnection, user_id: Uuid) -> Result<bool
     .await
 }
 
+/// Deletes the tombstones older than `days` (ADR-0081). Returns how many.
+pub async fn prune_tombstones(conn: &mut PgConnection, days: i32) -> Result<u64, sqlx::Error> {
+    let done = sqlx::query!(
+        "DELETE FROM teaching.tombstones WHERE deleted_at < now() - make_interval(days => $1)",
+        days
+    )
+    .execute(conn)
+    .await?;
+    Ok(done.rows_affected())
+}
+
 /// Deletes every `teacher` membership of the user and returns the courses they were in.
 pub async fn delete_teacher_memberships(
     conn: &mut PgConnection,

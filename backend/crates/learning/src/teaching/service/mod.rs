@@ -414,6 +414,12 @@ async fn enrollment_changed(
     Ok(())
 }
 
+/// Forgets what was deleted more than `days` ago (ADR-0081). Authorizes nothing: the delivery worker
+/// of the plugins calls it, and nobody acts through it.
+pub async fn prune_tombstones(conn: &mut PgConnection, days: i32) -> Result<u64, TeachingError> {
+    Ok(repo::prune_tombstones(conn, days).await?)
+}
+
 /// Does the user own a course? An owner cannot become a student (ADR-0037).
 pub async fn owns_courses(conn: &mut PgConnection, user_id: Uuid) -> Result<bool, TeachingError> {
     Ok(repo::owns_courses(conn, user_id).await?)

@@ -7,6 +7,7 @@ use std::time::Duration;
 
 use chrono::Utc;
 use events::{MAX_ATTEMPTS, backoff};
+use learning::teaching;
 use module_api::OutboundClient;
 use serde_json::json;
 use sqlx::PgPool;
@@ -32,25 +33,34 @@ pub struct Deliverer {
     client: OutboundClient,
     /// Days the log of plugin API calls is kept (ADR-0079).
     log_days: u32,
+    /// Days what was deleted is kept (ADR-0081).
+    tombstone_days: u32,
 }
 
 impl Deliverer {
-    pub fn new(key: SecretKey, log_days: u32) -> Result<Self, PluginsError> {
+    pub fn new(key: SecretKey, log_days: u32, tombstone_days: u32) -> Result<Self, PluginsError> {
         let client = OutboundClient::new(CONNECT, TOTAL, MAX_RESPONSE_BYTES, 0)
             .map_err(|e| PluginsError::Fetch(e.to_string()))?;
         Ok(Self {
             key,
             client,
             log_days,
+            tombstone_days,
         })
     }
 
-    /// Deletes the log lines older than the retention. There is no scheduler yet (ADR-0007), so the
-    /// worker that already wakes every few seconds does it, about once an hour.
+    /// Deletes the log lines and the tombstones older than their retention. There is no scheduler
+    /// yet (ADR-0007), so the worker that already wakes every few seconds does it, about once an
+    /// hour. Returns how many rows went.
     pub async fn prune(&self, pool: &PgPool) -> Result<u64, PluginsError> {
         let mut conn = pool.acquire().await?;
         let days = i32::try_from(self.log_days).unwrap_or(i32::MAX);
-        Ok(repo::prune_calls(&mut conn, days).await?)
+        let calls = repo::prune_calls(&mut conn, days).await?;
+        let days = i32::try_from(self.tombstone_days).unwrap_or(i32::MAX);
+        let tombstones = teaching::prune_tombstones(&mut conn, days)
+            .await
+            .map_err(PluginsError::Teaching)?;
+        Ok(calls + tombstones)
     }
 
     /// Claims one batch and sends each delivery. A 2xx answer is delivered; anything else, and a

@@ -324,6 +324,12 @@ fn validate(settings: &mut Settings) -> Vec<String> {
             1,
             3650,
         ),
+        (
+            "plugins.tombstone_days",
+            settings.plugins.tombstone_days,
+            1,
+            3650,
+        ),
     ] {
         if !(low..=high).contains(&value) {
             errors.push(format!("{name} must be between {low} and {high}"));
