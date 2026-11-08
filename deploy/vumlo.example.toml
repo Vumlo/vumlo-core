@@ -143,4 +143,8 @@ video_providers = ["youtube", "vimeo"]
 # What one plugin token may do to the plugin API (ADR-0079). Every token has an allowance of its own.
 api_burst = 100                # calls in a burst (1..=100000)
 api_requests_per_second = 20   # calls given back per second (1..=10000)
+# What one public route of a plugin (`auth = "none"`, ADR-0080) may be called, by everyone together.
+public_route_burst = 10              # calls in a burst (1..=100000)
+public_route_requests_per_second = 2 # calls given back per second (1..=10000)
 call_log_days = 30             # days `vumlo-cli plugin calls` can look back (1..=3650)
+tombstone_days = 30            # days a plugin can ask what was deleted; longer away, it reads the lists in full (ADR-0081, 1..=3650)

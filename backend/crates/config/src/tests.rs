@@ -1007,6 +1007,51 @@ fn an_env_file_has_pairs_comments_quotes_and_export() {
 }
 
 #[test]
+fn how_long_a_plugin_can_ask_what_was_deleted_has_a_default_and_bounds() {
+    assert_eq!(build(VALID, &[]).unwrap().plugins.tombstone_days, 30);
+    let set = build(&format!("{VALID}\n[plugins]\ntombstone_days = 7\n"), &[]).unwrap();
+    assert_eq!(set.plugins.tombstone_days, 7);
+    for line in ["tombstone_days = 0", "tombstone_days = 4000"] {
+        let e = build(&format!("{VALID}\n[plugins]\n{line}\n"), &[])
+            .unwrap_err()
+            .to_string();
+        assert!(e.contains("plugins.tombstone_days"), "{line}: {e}");
+    }
+}
+
+#[test]
+fn the_allowance_of_a_public_plugin_route_has_defaults_and_bounds() {
+    let defaults = build(VALID, &[]).unwrap().plugins;
+    assert_eq!(
+        (
+            defaults.public_route_burst,
+            defaults.public_route_requests_per_second
+        ),
+        (10, 2)
+    );
+    let toml = format!(
+        "{VALID}\n[plugins]\npublic_route_burst = 4\npublic_route_requests_per_second = 1\n"
+    );
+    let set = build(&toml, &[]).unwrap().plugins;
+    assert_eq!(
+        (set.public_route_burst, set.public_route_requests_per_second),
+        (4, 1)
+    );
+    for (line, key) in [
+        ("public_route_burst = 0", "plugins.public_route_burst"),
+        (
+            "public_route_requests_per_second = 0",
+            "plugins.public_route_requests_per_second",
+        ),
+    ] {
+        let e = build(&format!("{VALID}\n[plugins]\n{line}\n"), &[])
+            .unwrap_err()
+            .to_string();
+        assert!(e.contains(key), "{line}: {e}");
+    }
+}
+
+#[test]
 fn the_plugin_api_allowance_and_the_call_log_have_defaults_and_bounds() {
     let defaults = build(VALID, &[]).unwrap().plugins;
     assert_eq!(

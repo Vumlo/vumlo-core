@@ -69,7 +69,7 @@ fn key() -> SecretKey {
 }
 
 fn deliverer() -> Deliverer {
-    Deliverer::new(key(), 30).unwrap()
+    Deliverer::new(key(), 30, 30).unwrap()
 }
 
 /// Installs `hello` at `base` and owes it one `submission.submitted` event.

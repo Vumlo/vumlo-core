@@ -277,8 +277,16 @@ pub struct PluginsSettings {
     pub api_burst: u32,
     /// Calls per second one plugin token gets back after a burst.
     pub api_requests_per_second: u32,
+    /// Calls to one public route of a plugin (`auth = "none"`) in a burst (ADR-0080). Every route of
+    /// every plugin has an allowance of its own, shared by whoever calls it.
+    pub public_route_burst: u32,
+    /// Calls per second one public route gets back after a burst.
+    pub public_route_requests_per_second: u32,
     /// Days the log of a plugin's calls is kept (`vumlo-cli plugin calls`).
     pub call_log_days: u32,
+    /// Days a plugin can ask what was deleted (ADR-0081). A plugin that was away longer reads the
+    /// list again in full.
+    pub tombstone_days: u32,
 }
 
 impl Default for PluginsSettings {
@@ -287,7 +295,10 @@ impl Default for PluginsSettings {
             secret_key: Secret::default(),
             api_burst: 100,
             api_requests_per_second: 20,
+            public_route_burst: 10,
+            public_route_requests_per_second: 2,
             call_log_days: 30,
+            tombstone_days: 30,
         }
     }
 }

@@ -6,7 +6,7 @@
     "license": {
       "name": ""
     },
-    "version": "0.3.0"
+    "version": "0.4.1"
   },
   "paths": {
     "/api/v1/admin/audit": {
@@ -8323,6 +8323,113 @@
         ]
       }
     },
+    "/api/v1/plugin-api/announcements/deleted": {
+      "get": {
+        "tags": [
+          "plugin-api"
+        ],
+        "summary": "The announcements that were deleted, by the time they went (ADR-0081). The scope\n`announcements:read`. Kept `plugins.tombstone_days` days.",
+        "operationId": "deleted_announcements",
+        "parameters": [
+          {
+            "name": "deleted_since",
+            "in": "query",
+            "description": "Only what was deleted at or after this time (RFC 3339). The time of the last item of the\nprevious read is a good one: the list is inclusive, and reading an id twice does no harm.\nNot older than `plugins.tombstone_days`: a plugin that was away longer is told `410`.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "course_id",
+            "in": "query",
+            "description": "One course. Without it, every course the plugin was granted. A course that is itself gone\nis not a `404`: what was deleted with it is listed.",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Page size, 1 to 100 (default 50).",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A page of deletions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_PluginDeletion"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No token, or one that is unknown or disabled",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The plugin was not granted `announcements:read`, or not the course",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "`deleted_since` is older than the core keeps",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "A cursor or a time that is not valid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "plugin": []
+          }
+        ]
+      }
+    },
     "/api/v1/plugin-api/assignments": {
       "get": {
         "tags": [
@@ -8404,6 +8511,113 @@
           },
           "404": {
             "description": "`course_id` names no course",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "A cursor or a time that is not valid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "plugin": []
+          }
+        ]
+      }
+    },
+    "/api/v1/plugin-api/assignments/deleted": {
+      "get": {
+        "tags": [
+          "plugin-api"
+        ],
+        "summary": "The published assignments that were deleted, by the time they went (ADR-0081). The scope\n`assignments:read`. A draft that was deleted was never shown and is not here; an assignment that\nmerely stops being visible to students is not a deletion either (it stops being listed, and its\nid is `404`). Only an\nassignment without submitted work or grades can be deleted. Kept `plugins.tombstone_days` days.",
+        "operationId": "deleted_assignments",
+        "parameters": [
+          {
+            "name": "deleted_since",
+            "in": "query",
+            "description": "Only what was deleted at or after this time (RFC 3339). The time of the last item of the\nprevious read is a good one: the list is inclusive, and reading an id twice does no harm.\nNot older than `plugins.tombstone_days`: a plugin that was away longer is told `410`.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "course_id",
+            "in": "query",
+            "description": "One course. Without it, every course the plugin was granted. A course that is itself gone\nis not a `404`: what was deleted with it is listed.",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Page size, 1 to 100 (default 50).",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A page of deletions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_PluginDeletion"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No token, or one that is unknown or disabled",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The plugin was not granted `assignments:read`, or not the course",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "`deleted_since` is older than the core keeps",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -9842,6 +10056,7 @@
           "plugin-routes"
         ],
         "summary": "A route of a plugin's own server, through the core (ADR-0078). The plugin declares its\nroutes and who may call each in its manifest; one that is not declared, or is declared\nfor another method, is `404`. The core forwards the call with a signed statement of who\nthe caller is (`X-Vumlo-User`, `X-Vumlo-Role`, `X-Vumlo-Course`, `X-Vumlo-Course-Role`,\n`X-Vumlo-Timestamp`, `X-Vumlo-Nonce`, `X-Vumlo-Signature`) and no cookie. The answer of\nthe plugin is passed on if it is JSON, text, CSV, iCalendar, PDF or XLSX; any other\ncontent type, a redirect, or a `5xx` is a `502`.",
+        "description": "A route the plugin declared with `auth = \"none\"` (ADR-0080) is for anyone: it needs no\nsession, only answers `GET`, and the core checks nothing about the caller. The call is\nforwarded without `X-Vumlo-User`, `-Role`, `-Course` and `-Course-Role`, with\n`X-Vumlo-Anonymous: 1`, and the signature says that nobody signed in. The plugin checks\nits own token. Every public route has an allowance of calls shared by all who call it;\nover it is `429` with `Retry-After`.",
         "operationId": "proxy_get",
         "parameters": [
           {
@@ -9868,7 +10083,7 @@
             "description": "The plugin's answer (any 2xx or 4xx it gave)"
           },
           "401": {
-            "description": "Not logged in",
+            "description": "Not logged in (a public route needs no session)",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -9907,6 +10122,16 @@
               }
             }
           },
+          "429": {
+            "description": "A public route was called more than its allowance",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
           "502": {
             "description": "The plugin could not be reached or answered something the core does not pass on",
             "content": {
@@ -9929,6 +10154,7 @@
           }
         },
         "security": [
+          {},
           {
             "cookie": []
           },
@@ -9942,6 +10168,7 @@
           "plugin-routes"
         ],
         "summary": "A route of a plugin's own server, through the core (ADR-0078). The plugin declares its\nroutes and who may call each in its manifest; one that is not declared, or is declared\nfor another method, is `404`. The core forwards the call with a signed statement of who\nthe caller is (`X-Vumlo-User`, `X-Vumlo-Role`, `X-Vumlo-Course`, `X-Vumlo-Course-Role`,\n`X-Vumlo-Timestamp`, `X-Vumlo-Nonce`, `X-Vumlo-Signature`) and no cookie. The answer of\nthe plugin is passed on if it is JSON, text, CSV, iCalendar, PDF or XLSX; any other\ncontent type, a redirect, or a `5xx` is a `502`.",
+        "description": "A route the plugin declared with `auth = \"none\"` (ADR-0080) is for anyone: it needs no\nsession, only answers `GET`, and the core checks nothing about the caller. The call is\nforwarded without `X-Vumlo-User`, `-Role`, `-Course` and `-Course-Role`, with\n`X-Vumlo-Anonymous: 1`, and the signature says that nobody signed in. The plugin checks\nits own token. Every public route has an allowance of calls shared by all who call it;\nover it is `429` with `Retry-After`.",
         "operationId": "proxy_put",
         "parameters": [
           {
@@ -9968,7 +10195,7 @@
             "description": "The plugin's answer (any 2xx or 4xx it gave)"
           },
           "401": {
-            "description": "Not logged in",
+            "description": "Not logged in (a public route needs no session)",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -10007,6 +10234,16 @@
               }
             }
           },
+          "429": {
+            "description": "A public route was called more than its allowance",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
           "502": {
             "description": "The plugin could not be reached or answered something the core does not pass on",
             "content": {
@@ -10029,6 +10266,7 @@
           }
         },
         "security": [
+          {},
           {
             "cookie": []
           },
@@ -10042,6 +10280,7 @@
           "plugin-routes"
         ],
         "summary": "A route of a plugin's own server, through the core (ADR-0078). The plugin declares its\nroutes and who may call each in its manifest; one that is not declared, or is declared\nfor another method, is `404`. The core forwards the call with a signed statement of who\nthe caller is (`X-Vumlo-User`, `X-Vumlo-Role`, `X-Vumlo-Course`, `X-Vumlo-Course-Role`,\n`X-Vumlo-Timestamp`, `X-Vumlo-Nonce`, `X-Vumlo-Signature`) and no cookie. The answer of\nthe plugin is passed on if it is JSON, text, CSV, iCalendar, PDF or XLSX; any other\ncontent type, a redirect, or a `5xx` is a `502`.",
+        "description": "A route the plugin declared with `auth = \"none\"` (ADR-0080) is for anyone: it needs no\nsession, only answers `GET`, and the core checks nothing about the caller. The call is\nforwarded without `X-Vumlo-User`, `-Role`, `-Course` and `-Course-Role`, with\n`X-Vumlo-Anonymous: 1`, and the signature says that nobody signed in. The plugin checks\nits own token. Every public route has an allowance of calls shared by all who call it;\nover it is `429` with `Retry-After`.",
         "operationId": "proxy_post",
         "parameters": [
           {
@@ -10068,7 +10307,7 @@
             "description": "The plugin's answer (any 2xx or 4xx it gave)"
           },
           "401": {
-            "description": "Not logged in",
+            "description": "Not logged in (a public route needs no session)",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -10107,6 +10346,16 @@
               }
             }
           },
+          "429": {
+            "description": "A public route was called more than its allowance",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
           "502": {
             "description": "The plugin could not be reached or answered something the core does not pass on",
             "content": {
@@ -10129,6 +10378,7 @@
           }
         },
         "security": [
+          {},
           {
             "cookie": []
           },
@@ -10142,6 +10392,7 @@
           "plugin-routes"
         ],
         "summary": "A route of a plugin's own server, through the core (ADR-0078). The plugin declares its\nroutes and who may call each in its manifest; one that is not declared, or is declared\nfor another method, is `404`. The core forwards the call with a signed statement of who\nthe caller is (`X-Vumlo-User`, `X-Vumlo-Role`, `X-Vumlo-Course`, `X-Vumlo-Course-Role`,\n`X-Vumlo-Timestamp`, `X-Vumlo-Nonce`, `X-Vumlo-Signature`) and no cookie. The answer of\nthe plugin is passed on if it is JSON, text, CSV, iCalendar, PDF or XLSX; any other\ncontent type, a redirect, or a `5xx` is a `502`.",
+        "description": "A route the plugin declared with `auth = \"none\"` (ADR-0080) is for anyone: it needs no\nsession, only answers `GET`, and the core checks nothing about the caller. The call is\nforwarded without `X-Vumlo-User`, `-Role`, `-Course` and `-Course-Role`, with\n`X-Vumlo-Anonymous: 1`, and the signature says that nobody signed in. The plugin checks\nits own token. Every public route has an allowance of calls shared by all who call it;\nover it is `429` with `Retry-After`.",
         "operationId": "proxy_delete",
         "parameters": [
           {
@@ -10168,7 +10419,7 @@
             "description": "The plugin's answer (any 2xx or 4xx it gave)"
           },
           "401": {
-            "description": "Not logged in",
+            "description": "Not logged in (a public route needs no session)",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -10207,6 +10458,16 @@
               }
             }
           },
+          "429": {
+            "description": "A public route was called more than its allowance",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
           "502": {
             "description": "The plugin could not be reached or answered something the core does not pass on",
             "content": {
@@ -10229,6 +10490,7 @@
           }
         },
         "security": [
+          {},
           {
             "cookie": []
           },
@@ -10242,6 +10504,7 @@
           "plugin-routes"
         ],
         "summary": "A route of a plugin's own server, through the core (ADR-0078). The plugin declares its\nroutes and who may call each in its manifest; one that is not declared, or is declared\nfor another method, is `404`. The core forwards the call with a signed statement of who\nthe caller is (`X-Vumlo-User`, `X-Vumlo-Role`, `X-Vumlo-Course`, `X-Vumlo-Course-Role`,\n`X-Vumlo-Timestamp`, `X-Vumlo-Nonce`, `X-Vumlo-Signature`) and no cookie. The answer of\nthe plugin is passed on if it is JSON, text, CSV, iCalendar, PDF or XLSX; any other\ncontent type, a redirect, or a `5xx` is a `502`.",
+        "description": "A route the plugin declared with `auth = \"none\"` (ADR-0080) is for anyone: it needs no\nsession, only answers `GET`, and the core checks nothing about the caller. The call is\nforwarded without `X-Vumlo-User`, `-Role`, `-Course` and `-Course-Role`, with\n`X-Vumlo-Anonymous: 1`, and the signature says that nobody signed in. The plugin checks\nits own token. Every public route has an allowance of calls shared by all who call it;\nover it is `429` with `Retry-After`.",
         "operationId": "proxy_patch",
         "parameters": [
           {
@@ -10268,7 +10531,7 @@
             "description": "The plugin's answer (any 2xx or 4xx it gave)"
           },
           "401": {
-            "description": "Not logged in",
+            "description": "Not logged in (a public route needs no session)",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -10307,6 +10570,16 @@
               }
             }
           },
+          "429": {
+            "description": "A public route was called more than its allowance",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
           "502": {
             "description": "The plugin could not be reached or answered something the core does not pass on",
             "content": {
@@ -10329,6 +10602,7 @@
           }
         },
         "security": [
+          {},
           {
             "cookie": []
           },
@@ -15714,6 +15988,47 @@
           }
         }
       },
+      "Page_PluginDeletion": {
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "description": "Something that was shown to a plugin and has been deleted.",
+              "required": [
+                "id",
+                "course_id",
+                "deleted_at"
+              ],
+              "properties": {
+                "course_id": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "deleted_at": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "id": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            }
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Pass as `cursor` to get the next page; `null` on the last page."
+          }
+        }
+      },
       "Page_PluginGrade": {
         "type": "object",
         "required": [
@@ -16342,6 +16657,29 @@
               "$ref": "#/components/schemas/PluginContact"
             },
             "description": "Those of the ids who are in a course the plugin reaches. The others are left out."
+          }
+        }
+      },
+      "PluginDeletion": {
+        "type": "object",
+        "description": "Something that was shown to a plugin and has been deleted.",
+        "required": [
+          "id",
+          "course_id",
+          "deleted_at"
+        ],
+        "properties": {
+          "course_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "deleted_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
           }
         }
       },

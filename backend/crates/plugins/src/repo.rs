@@ -7,7 +7,7 @@ use common::Role;
 use sqlx::PgConnection;
 use uuid::Uuid;
 
-use crate::model::{Install, InstallStatus, ReportSubject, RouteSpec, UiSlot};
+use crate::model::{Install, InstallStatus, ReportSubject, RouteAuth, RouteSpec, UiSlot};
 use crate::settings::SettingSpec;
 
 /// The columns of `plugin_installs`, as the database holds them.
@@ -66,6 +66,9 @@ pub(crate) fn routes_of(value: &serde_json::Value) -> Vec<RouteSpec> {
         .filter_map(|entry| {
             Some(RouteSpec {
                 method: text(entry, "method")?,
+                // Written before ADR-0080: no `auth` is a route for people who are signed in. One
+                // that does not read back is left out.
+                auth: text(entry, "auth").map_or(Some(RouteAuth::Session), |a| a.parse().ok())?,
                 path: text(entry, "path")?,
                 roles: list(entry, "roles")
                     .iter()
@@ -86,6 +89,7 @@ pub(crate) fn routes_json(routes: &[RouteSpec]) -> serde_json::Value {
         .map(|route| {
             serde_json::json!({
                 "method": route.method,
+                "auth": route.auth.as_str(),
                 "path": route.path,
                 "roles": route.roles.iter().map(|r| r.as_str()).collect::<Vec<_>>(),
                 "course_roles": route.course_roles.iter().map(|r| r.as_str()).collect::<Vec<_>>(),

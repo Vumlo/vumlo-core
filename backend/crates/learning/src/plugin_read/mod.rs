@@ -9,14 +9,14 @@ mod repo;
 mod service;
 
 pub use model::{
-    Cursor, PluginAnnouncement, PluginAssignment, PluginAttempt, PluginContact, PluginFormAnswers,
-    PluginGrade, PluginList, PluginMember, PluginPage, PluginQuiz, PluginSubmission,
-    PluginSubmissionRow,
+    Cursor, PluginAnnouncement, PluginAssignment, PluginAttempt, PluginContact, PluginDeletion,
+    PluginFormAnswers, PluginGrade, PluginList, PluginMember, PluginPage, PluginQuiz,
+    PluginSubmission, PluginSubmissionRow,
 };
 pub use service::{
-    PluginReadError, announcements, assignment, assignments, attempts, contacts, form_answers,
-    grades, members, quiz, reportable_assignment, reportable_course, reportable_submission,
-    submission, submissions,
+    Deleted, PluginReadError, announcements, assignment, assignments, attempts, contacts, deleted,
+    form_answers, grades, members, quiz, reportable_assignment, reportable_course,
+    reportable_submission, submission, submissions,
 };
 
 #[cfg(test)]

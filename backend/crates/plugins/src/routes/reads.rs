@@ -6,14 +6,16 @@ use access::{PluginCaller, PluginSource};
 use api_types::{
     Announcement, MAX_CONTACT_IDS, Page, PluginAnnouncementsQuery, PluginAssignment,
     PluginAssignmentsQuery, PluginAttempt, PluginContact, PluginContactQuery, PluginContacts,
-    PluginFormAnswers, PluginGrade, PluginGradesQuery, PluginListQuery, PluginMember,
-    PluginMembersQuery, PluginQuiz, PluginSubmission, PluginSubmissionItem, ProblemDetails,
+    PluginDeletedQuery, PluginDeletion, PluginFormAnswers, PluginGrade, PluginGradesQuery,
+    PluginListQuery, PluginMember, PluginMembersQuery, PluginQuiz, PluginSubmission,
+    PluginSubmissionItem, ProblemDetails,
 };
 use axum::Json;
 use axum::extract::{FromRef, Path, State};
 use axum::http::{HeaderName, HeaderValue};
+use chrono::{Duration, Utc};
 use common::{ApiError, ValidQuery};
-use learning::plugin_read::{self, PluginList, PluginPage};
+use learning::plugin_read::{self, Deleted, PluginList, PluginPage};
 use utoipa_axum::router::OpenApiRouter;
 use utoipa_axum::routes;
 use uuid::Uuid;
@@ -28,7 +30,9 @@ where
 {
     OpenApiRouter::new()
         .routes(routes!(list_announcements))
+        .routes(routes!(deleted_announcements))
         .routes(routes!(list_assignments))
+        .routes(routes!(deleted_assignments))
         .routes(routes!(get_assignment))
         .routes(routes!(get_form_answers))
         .routes(routes!(get_submission))
@@ -507,4 +511,94 @@ async fn list_announcements(
         created_at: a.created_at,
         updated_at: a.updated_at,
     }))
+}
+
+/// Reads what was deleted, or says `410` if the plugin asks about a time the core no longer keeps.
+async fn deleted(
+    caller: PluginCaller,
+    state: PluginsState,
+    what: Deleted,
+    query: PluginDeletedQuery,
+) -> Reply<Page<PluginDeletion>> {
+    let page_params = PluginPage::new(query.cursor.as_deref(), query.limit)?;
+    let kept_since = Utc::now() - Duration::days(i64::from(state.tombstone_days));
+    if query.deleted_since < kept_since {
+        return Err(ApiError::Gone(
+            "what was deleted that long ago is no longer kept; read the list again in full",
+        ));
+    }
+    let mut conn = state.db.acquire().await.map_err(db)?;
+    let list = plugin_read::deleted(
+        &mut conn,
+        &caller,
+        what,
+        query.course_id,
+        query.deleted_since,
+        page_params,
+    )
+    .await?;
+    reply(page(list, |d| PluginDeletion {
+        id: d.id,
+        course_id: d.course_id,
+        deleted_at: d.deleted_at,
+    }))
+}
+
+/// The published assignments that were deleted, by the time they went (ADR-0081). The scope
+/// `assignments:read`. A draft that was deleted was never shown and is not here; an assignment that
+/// merely stops being visible to students is not a deletion either (it stops being listed, and its
+/// id is `404`). Only an
+/// assignment without submitted work or grades can be deleted. Kept `plugins.tombstone_days` days.
+#[utoipa::path(
+    get,
+    path = "/plugin-api/assignments/deleted",
+    tag = "plugin-api",
+    security(("plugin" = [])),
+    params(PluginDeletedQuery),
+    responses(
+        (status = 200, description = "A page of deletions", body = Page<PluginDeletion>),
+        (status = 401, description = "No token, or one that is unknown or disabled",
+            body = ProblemDetails, content_type = "application/problem+json"),
+        (status = 403, description = "The plugin was not granted `assignments:read`, or not the course",
+            body = ProblemDetails, content_type = "application/problem+json"),
+        (status = 410, description = "`deleted_since` is older than the core keeps",
+            body = ProblemDetails, content_type = "application/problem+json"),
+        (status = 422, description = "A cursor or a time that is not valid", body = ProblemDetails,
+            content_type = "application/problem+json"),
+    )
+)]
+async fn deleted_assignments(
+    caller: PluginCaller,
+    State(state): State<PluginsState>,
+    ValidQuery(query): ValidQuery<PluginDeletedQuery>,
+) -> Reply<Page<PluginDeletion>> {
+    deleted(caller, state, Deleted::Assignments, query).await
+}
+
+/// The announcements that were deleted, by the time they went (ADR-0081). The scope
+/// `announcements:read`. Kept `plugins.tombstone_days` days.
+#[utoipa::path(
+    get,
+    path = "/plugin-api/announcements/deleted",
+    tag = "plugin-api",
+    security(("plugin" = [])),
+    params(PluginDeletedQuery),
+    responses(
+        (status = 200, description = "A page of deletions", body = Page<PluginDeletion>),
+        (status = 401, description = "No token, or one that is unknown or disabled",
+            body = ProblemDetails, content_type = "application/problem+json"),
+        (status = 403, description = "The plugin was not granted `announcements:read`, or not the course",
+            body = ProblemDetails, content_type = "application/problem+json"),
+        (status = 410, description = "`deleted_since` is older than the core keeps",
+            body = ProblemDetails, content_type = "application/problem+json"),
+        (status = 422, description = "A cursor or a time that is not valid", body = ProblemDetails,
+            content_type = "application/problem+json"),
+    )
+)]
+async fn deleted_announcements(
+    caller: PluginCaller,
+    State(state): State<PluginsState>,
+    ValidQuery(query): ValidQuery<PluginDeletedQuery>,
+) -> Reply<Page<PluginDeletion>> {
+    deleted(caller, state, Deleted::Announcements, query).await
 }

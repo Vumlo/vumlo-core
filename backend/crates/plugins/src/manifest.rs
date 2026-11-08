@@ -10,8 +10,8 @@ use serde::Deserialize;
 
 use crate::PluginsError;
 use crate::model::{
-    API_VERSION, COURSE_SEGMENT, PluginManifest, ROUTE_METHODS, RouteSpec, SLOTS, SUBSCRIBABLE,
-    UiSlot, is_plain_segment,
+    API_VERSION, COURSE_SEGMENT, PluginManifest, ROUTE_METHODS, RouteAuth, RouteSpec, SLOTS,
+    SUBSCRIBABLE, UiSlot, is_plain_segment,
 };
 use crate::settings::{MAX_SETTINGS, SettingSpec, is_key};
 
@@ -44,6 +44,8 @@ struct Raw {
 struct RawRoute {
     method: String,
     path: String,
+    #[serde(default)]
+    auth: Option<String>,
     #[serde(default)]
     roles: Vec<String>,
     #[serde(default)]
@@ -231,6 +233,32 @@ fn route(raw: RawRoute) -> Result<RouteSpec, PluginsError> {
             }
         }
     }
+    let auth = match raw.auth.as_deref() {
+        None => RouteAuth::Session,
+        Some(text) => text
+            .parse()
+            .map_err(|_| at(&format!("auth {} is not session or none", shown(text))))?,
+    };
+    if auth == RouteAuth::None {
+        // Nobody is signed in, so there is no role to ask for and no course to resolve; and a call
+        // that anyone may make must not change anything.
+        if method != "GET" {
+            return Err(at("a public route (`auth = \"none\"`) is GET only"));
+        }
+        if !raw.roles.is_empty() || !raw.course_roles.is_empty() {
+            return Err(at("a public route has no roles"));
+        }
+        if names.contains(&COURSE_SEGMENT) {
+            return Err(at("a public route has no `{course_id}` segment"));
+        }
+        return Ok(RouteSpec {
+            method,
+            auth,
+            path,
+            roles: Vec::new(),
+            course_roles: Vec::new(),
+        });
+    }
     if raw.roles.is_empty() {
         return Err(at("roles must name at least one institution role"));
     }
@@ -263,6 +291,7 @@ fn route(raw: RawRoute) -> Result<RouteSpec, PluginsError> {
     }
     Ok(RouteSpec {
         method,
+        auth,
         path,
         roles,
         course_roles,

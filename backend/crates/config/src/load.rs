@@ -307,8 +307,26 @@ fn validate(settings: &mut Settings) -> Vec<String> {
             10_000,
         ),
         (
+            "plugins.public_route_burst",
+            settings.plugins.public_route_burst,
+            1,
+            100_000,
+        ),
+        (
+            "plugins.public_route_requests_per_second",
+            settings.plugins.public_route_requests_per_second,
+            1,
+            10_000,
+        ),
+        (
             "plugins.call_log_days",
             settings.plugins.call_log_days,
+            1,
+            3650,
+        ),
+        (
+            "plugins.tombstone_days",
+            settings.plugins.tombstone_days,
             1,
             3650,
         ),

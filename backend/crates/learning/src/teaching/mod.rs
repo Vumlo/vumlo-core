@@ -15,9 +15,9 @@ pub use service::{
     TeachingError, admin_courses, course_access, course_cards, course_exists, course_scope,
     create_course, drop_teacher_memberships, get_course, group_options, link_group,
     linked_courses_of_group, list_exclusions, list_links, list_members, list_my_courses,
-    owns_courses, publish_course, put_member, regular_courses_per_term, remove_member,
-    restore_exclusion, student_courses, transfer_ownership, unlink_group, update_course,
-    user_course_facts,
+    owns_courses, prune_tombstones, publish_course, put_member, regular_courses_per_term,
+    remove_member, restore_exclusion, student_courses, transfer_ownership, unlink_group,
+    update_course, user_course_facts, user_standing_changed,
 };
 
 // Archives a course for the tests of `learning::files`.

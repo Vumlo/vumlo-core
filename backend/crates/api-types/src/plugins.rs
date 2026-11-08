@@ -329,5 +329,33 @@ pub struct PluginAnnouncementsQuery {
     pub updated_since: Option<DateTime<Utc>>,
 }
 
+/// What was deleted in a course or in every course the plugin reaches (ADR-0081).
+#[derive(Debug, Clone, Serialize, Deserialize, Validate, IntoParams)]
+#[into_params(parameter_in = Query)]
+pub struct PluginDeletedQuery {
+    /// Only what was deleted at or after this time (RFC 3339). The time of the last item of the
+    /// previous read is a good one: the list is inclusive, and reading an id twice does no harm.
+    /// Not older than `plugins.tombstone_days`: a plugin that was away longer is told `410`.
+    #[garde(skip)]
+    pub deleted_since: DateTime<Utc>,
+    /// One course. Without it, every course the plugin was granted. A course that is itself gone
+    /// is not a `404`: what was deleted with it is listed.
+    #[garde(skip)]
+    pub course_id: Option<Uuid>,
+    #[garde(inner(length(min = 1, max = 100)))]
+    pub cursor: Option<String>,
+    /// Page size, 1 to 100 (default 50).
+    #[garde(inner(range(min = 1, max = 100)))]
+    pub limit: Option<u32>,
+}
+
+/// Something that was shown to a plugin and has been deleted.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct PluginDeletion {
+    pub id: Uuid,
+    pub course_id: Uuid,
+    pub deleted_at: DateTime<Utc>,
+}
+
 #[cfg(test)]
 mod tests;

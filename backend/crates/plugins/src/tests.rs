@@ -111,6 +111,7 @@ fn the_events_a_plugin_may_subscribe_to_are_events_that_exist_and_hold_ids_only(
 fn a_route_matches_a_path_of_plain_segments_and_names_its_parameters() {
     let route = |path: &str| crate::model::RouteSpec {
         method: "GET".to_owned(),
+        auth: crate::model::RouteAuth::Session,
         path: path.to_owned(),
         roles: vec![],
         course_roles: vec![],

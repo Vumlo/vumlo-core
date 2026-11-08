@@ -163,8 +163,13 @@ struct World {
 }
 
 async fn world(pool: PgPool) -> World {
+    world_with(pool, |_| {}).await
+}
+
+async fn world_with(pool: PgPool, tune: impl FnOnce(&mut vumlo_config::Settings)) -> World {
     let mut settings = test_settings();
     settings.plugins.secret_key = Secret::new(KEY);
+    tune(&mut settings);
     let (base, state) = spawn_app(pool.clone(), settings).await;
     let env = Env {
         http: common::Http::new(&base),
@@ -487,8 +492,7 @@ async fn every_call_is_signed_over_what_it_is_and_carries_a_nonce_nobody_has_use
                 &ProxyClaims {
                     method: method.as_str(),
                     target,
-                    user,
-                    role: &role,
+                    caller: Some(plugins::ProxyCaller { user, role: &role }),
                     course,
                     course_role: course_role.as_deref(),
                     nonce,
@@ -538,8 +542,10 @@ async fn the_example_plugin_refuses_a_call_that_is_old_forged_or_seen_before() {
                     &ProxyClaims {
                         method: "POST",
                         target,
-                        user,
-                        role: signed_role,
+                        caller: Some(plugins::ProxyCaller {
+                            user,
+                            role: signed_role,
+                        }),
                         course: None,
                         course_role: None,
                         nonce,
@@ -799,6 +805,278 @@ async fn a_call_with_a_session_cookie_is_checked_for_where_it_came_from_like_any
         let seen = recorder.seen.lock().unwrap().clone();
         let headers = &seen.iter().find(|c| c.1 != "/manifest").unwrap().2;
         assert!(headers.get("cookie").is_none() && headers.get("authorization").is_none());
+    })
+    .await;
+}
+
+// ---------------------------------------------------------------------------------------------
+// ADR-0080: public routes
+// ---------------------------------------------------------------------------------------------
+
+fn public_manifest() -> Value {
+    json!({"id": "pub", "version": "1", "api": "1", "routes": [
+        {"method": "GET", "path": "/feed/{name}", "auth": "none"},
+        {"method": "GET", "path": "/other", "auth": "none"},
+        {"method": "GET", "path": "/private", "roles": ["admin", "teacher", "student"]},
+    ]})
+}
+
+/// What the plugin was sent, apart from the fetch of its manifest.
+fn calls_seen(recorder: &Recorder) -> Vec<Seen> {
+    recorder
+        .seen
+        .lock()
+        .unwrap()
+        .iter()
+        .filter(|call| call.1 != "/manifest")
+        .cloned()
+        .collect()
+}
+
+#[tokio::test]
+async fn a_public_route_is_called_with_no_session_and_the_plugin_is_told_nobody_signed_in() {
+    db_test(async |pool| {
+        let w = world(pool).await;
+        let (url, recorder) = recording_server(public_manifest()).await;
+        let installed = w.install(&url, CourseScope::All).await;
+
+        let response = w.call(None, "GET", "pub/feed/abc?token=t&x=1").await;
+        assert_eq!(
+            response.status,
+            200,
+            "{}",
+            String::from_utf8_lossy(&response.body)
+        );
+        let seen = calls_seen(&recorder);
+        assert_eq!(seen.len(), 1);
+        let (method, target, headers, body) = &seen[0];
+        assert_eq!(
+            (method, target.as_str()),
+            (&Method::GET, "/feed/abc?token=t&x=1")
+        );
+        let get = |name: &str| headers.get(name).map(|v| v.to_str().unwrap().to_owned());
+        // It is told there is nobody, and no person: not a user, a role or a course.
+        assert_eq!(get("x-vumlo-anonymous").as_deref(), Some("1"));
+        for never in [
+            "x-vumlo-user",
+            "x-vumlo-role",
+            "x-vumlo-course",
+            "x-vumlo-course-role",
+            "cookie",
+            "authorization",
+        ] {
+            assert!(get(never).is_none(), "{never} was sent");
+        }
+        // The signature covers that nobody signed in: it is the one for `caller: None`...
+        let nonce: Uuid = get("x-vumlo-nonce").unwrap().parse().unwrap();
+        let timestamp: i64 = get("x-vumlo-timestamp").unwrap().parse().unwrap();
+        let claims = |caller| ProxyClaims {
+            method: "GET",
+            target,
+            caller,
+            course: None,
+            course_role: None,
+            nonce,
+            timestamp,
+        };
+        assert_eq!(
+            get("x-vumlo-signature").unwrap(),
+            proxy_signature(&installed.secret, &claims(None), body).unwrap()
+        );
+        // ...and not the one a person's call would have, whoever they are.
+        let as_person = proxy_signature(
+            &installed.secret,
+            &claims(Some(plugins::ProxyCaller {
+                user: w.admin.id,
+                role: "admin",
+            })),
+            body,
+        )
+        .unwrap();
+        assert_ne!(get("x-vumlo-signature").unwrap(), as_person);
+
+        // A person who happens to be signed in is just as anonymous on it: their session and
+        // anything they wrote in `X-Vumlo-*` stay with the core.
+        let response = common::Http::new(&w.env.base)
+            .get("/plugins/pub/feed/abc")
+            .bearer(&w.admin.token)
+            .header("cookie", "vumlo_session=SECRET-SESSION")
+            .header("x-vumlo-user", &w.admin.id.to_string())
+            .header("x-vumlo-role", "admin")
+            .send()
+            .await;
+        assert_eq!(response.status, 200);
+        let seen = calls_seen(&recorder);
+        let headers = &seen[1].2;
+        assert_eq!(headers.get("x-vumlo-anonymous").unwrap(), "1");
+        for never in ["x-vumlo-user", "x-vumlo-role", "cookie", "authorization"] {
+            assert!(headers.get(never).is_none(), "{never} was sent");
+        }
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn only_a_route_that_says_so_is_public_and_a_public_route_is_get_only() {
+    db_test(async |pool| {
+        let w = world(pool).await;
+        let (url, recorder) = recording_server(public_manifest()).await;
+        w.install(&url, CourseScope::All).await;
+
+        // The route that did not say `auth = "none"` still asks for a session...
+        w.call(None, "GET", "pub/private").await.problem(401);
+        assert_eq!(
+            w.call(Some(&w.student), "GET", "pub/private").await.status,
+            200
+        );
+        // ...and what is not there is a `401` for a stranger, as it was before routes could be public.
+        w.call(None, "GET", "pub/nothing").await.problem(401);
+        w.call(None, "GET", "nobody/feed/x").await.problem(401);
+        // Another method of a public path is not a route.
+        w.call(None, "POST", "pub/feed/abc").await.problem(401);
+        w.call(None, "DELETE", "pub/feed/abc").await.problem(401);
+        assert_eq!(
+            calls_seen(&recorder).len(),
+            1,
+            "only the call of the student"
+        );
+
+        // A plugin that is off serves nothing, public or not.
+        let mut conn = w.state.db.acquire().await.unwrap();
+        plugins::set_status(&mut conn, "pub", plugins::InstallStatus::Disabled)
+            .await
+            .unwrap();
+        drop(conn);
+        w.call(None, "GET", "pub/feed/abc").await.problem(401);
+        w.call(Some(&w.admin), "GET", "pub/feed/abc")
+            .await
+            .problem(404);
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn a_public_route_keeps_the_restrictions_on_what_the_plugin_answers() {
+    db_test(async |pool| {
+        let w = world(pool).await;
+        let (url, recorder) = recording_server(public_manifest()).await;
+        w.install(&url, CourseScope::All).await;
+        let set = |status: u16, content_type: Option<&'static str>, body: &[u8]| {
+            *recorder.reply.lock().unwrap() = (status, content_type, body.to_vec(), Vec::new());
+        };
+
+        set(200, Some("text/calendar"), b"BEGIN:VCALENDAR");
+        let response = w.call(None, "GET", "pub/feed/abc").await;
+        assert_eq!(response.status, 200);
+        assert_eq!(response.header("content-type"), "text/calendar");
+        assert_eq!(response.header("cache-control"), "no-store");
+        assert_eq!(response.header("x-content-type-options"), "nosniff");
+        assert!(
+            response
+                .header("content-security-policy")
+                .contains("sandbox")
+        );
+        // A page is no more welcome for a stranger than for a person: it would run on the core's origin.
+        for content_type in [Some("text/html"), Some("image/svg+xml"), None] {
+            set(200, content_type, b"<script>alert(1)</script>");
+            let response = w.call(None, "GET", "pub/feed/abc").await;
+            assert_eq!(response.status, 502, "{content_type:?}");
+            assert!(!String::from_utf8_lossy(&response.body).contains("script"));
+        }
+        set(500, Some("application/json"), b"{}");
+        assert_eq!(w.call(None, "GET", "pub/feed/abc").await.status, 502);
+        // The plugin's own 404 is its to say: that is how it refuses a token it does not know.
+        set(
+            404,
+            Some("application/json"),
+            br#"{"error":"no such feed"}"#,
+        );
+        let response = w.call(None, "GET", "pub/feed/abc").await;
+        assert_eq!(
+            (response.status, response.body.as_slice()),
+            (404, br#"{"error":"no such feed"}"#.as_slice())
+        );
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn a_public_route_has_an_allowance_of_its_own_that_everyone_who_calls_it_shares() {
+    db_test(async |pool| {
+        let w = world_with(pool, |settings| {
+            settings.plugins.public_route_burst = 3;
+            settings.plugins.public_route_requests_per_second = 1;
+        })
+        .await;
+        let (url, recorder) = recording_server(public_manifest()).await;
+        w.install(&url, CourseScope::All).await;
+
+        for _ in 0..3 {
+            assert_eq!(w.call(None, "GET", "pub/feed/abc").await.status, 200);
+        }
+        // The fourth is turned away, with when to come back; it never reaches the plugin. Another
+        // address (the same route) and a person who is signed in do not help.
+        let refused = w.call(None, "GET", "pub/feed/other-name").await;
+        refused.problem(429);
+        assert!(!refused.header("retry-after").is_empty());
+        assert_eq!(
+            w.call(Some(&w.admin), "GET", "pub/feed/abc").await.status,
+            429
+        );
+        assert_eq!(calls_seen(&recorder).len(), 3);
+        // Another public route has its own allowance, and a route for people has none of this kind.
+        assert_eq!(w.call(None, "GET", "pub/other").await.status, 200);
+        for _ in 0..6 {
+            assert_eq!(
+                w.call(Some(&w.student), "GET", "pub/private").await.status,
+                200
+            );
+        }
+        // It comes back with time.
+        tokio::time::sleep(std::time::Duration::from_millis(1100)).await;
+        assert_eq!(w.call(None, "GET", "pub/feed/abc").await.status, 200);
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn the_example_plugin_serves_a_feed_to_anyone_with_its_token_and_to_nobody_without() {
+    db_test(async |pool| {
+        let w = world(pool).await;
+        let (installed, _plugin) = w.example(CourseScope::All).await;
+        // The plugin's own token: the first 32 hex digits of the signature of `0.<feed>`.
+        let feed = "teacher-1";
+        let token =
+            &plugins::sign(&installed.secret, 0, feed.as_bytes()).unwrap()["sha256=".len()..][..32];
+
+        let response = w
+            .call(None, "GET", &format!("hello/api/feed/{feed}?token={token}"))
+            .await;
+        assert_eq!(
+            response.status,
+            200,
+            "{}",
+            String::from_utf8_lossy(&response.body)
+        );
+        assert_eq!(
+            response.header("content-type"),
+            "text/calendar; charset=utf-8"
+        );
+        assert!(String::from_utf8_lossy(&response.body).starts_with("BEGIN:VCALENDAR"));
+        // The core signed that nobody is there, and the plugin accepted it. The token is its check.
+        for address in [
+            format!("hello/api/feed/{feed}?token={}", "0".repeat(32)),
+            format!("hello/api/feed/{feed}"),
+        ] {
+            let refused = w.call(None, "GET", &address).await;
+            assert_eq!(refused.status, 404, "{address}");
+            assert_eq!(refused.json()["error"], "not found");
+        }
+        // The routes for people on the same server are still for people.
+        w.call(None, "GET", &format!("hello/api/summary/{}", w.course))
+            .await
+            .problem(401);
+        w.call(None, "POST", "hello/api/echo").await.problem(401);
     })
     .await;
 }

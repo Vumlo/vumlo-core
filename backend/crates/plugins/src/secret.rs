@@ -180,14 +180,21 @@ pub fn launch_token(secret: &str, claims: &LaunchClaims<'_>) -> Result<String, S
     Ok(format!("{body}.{}", hex(&mac.finalize().into_bytes())))
 }
 
-/// What the core tells the plugin's server about a call a person made through it (ADR-0078).
+/// The person behind a call that needed a session (ADR-0078).
+#[derive(Debug, Clone, Copy)]
+pub struct ProxyCaller<'a> {
+    pub user: Uuid,
+    /// The institution role of the user.
+    pub role: &'a str,
+}
+
+/// What the core tells the plugin's server about a call made through it (ADR-0078, ADR-0080).
 pub struct ProxyClaims<'a> {
     pub method: &'a str,
     /// The request-target the plugin receives: path and query, as sent.
     pub target: &'a str,
-    pub user: Uuid,
-    /// The institution role of the user.
-    pub role: &'a str,
+    /// Who signed in; `None` for a call to a public route, which anyone may make.
+    pub caller: Option<ProxyCaller<'a>>,
     pub course: Option<Uuid>,
     /// The role of the user in `course`, when they have one.
     pub course_role: Option<&'a str>,
@@ -199,22 +206,26 @@ pub struct ProxyClaims<'a> {
 
 /// The value of `X-Vumlo-Signature` of a proxied call: `sha256=` and the hex HMAC-SHA256, under the
 /// plugin's secret, of `timestamp + "." + canonical`, where canonical is these lines joined by `\n`:
-/// `vumlo-proxy`, nonce, method, target, user, role, course (`-` for none), course role (`-` for
-/// none) and the hex SHA-256 of the body. The first line keeps it apart from an event and a launch
+/// `vumlo-proxy`, nonce, method, target, `session` or `none` (the caller signed in, or nobody did),
+/// user, role, course (`-` for none), course role (`-` for none) and the hex SHA-256 of the body. For
+/// `none` the user and the role are `-`. The first line keeps it apart from an event and a launch
 /// token, which are signed with the same secret; every other line is what the call is about, so none
-/// of it can be changed on the way.
+/// of it can be changed on the way, and a call made by anyone cannot be passed off as one made by a
+/// person or the other way round.
 pub fn proxy_signature(
     secret: &str,
     claims: &ProxyClaims<'_>,
     body: &[u8],
 ) -> Result<String, SecretError> {
+    let (auth, user, role) = match claims.caller {
+        Some(caller) => ("session", caller.user.to_string(), caller.role),
+        None => ("none", "-".to_owned(), "-"),
+    };
     let canonical = format!(
-        "vumlo-proxy\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}",
+        "vumlo-proxy\n{}\n{}\n{}\n{auth}\n{user}\n{role}\n{}\n{}\n{}",
         claims.nonce,
         claims.method,
         claims.target,
-        claims.user,
-        claims.role,
         claims
             .course
             .map_or_else(|| "-".to_owned(), |c| c.to_string()),

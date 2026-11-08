@@ -1868,6 +1868,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/plugin-api/announcements/deleted": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The announcements that were deleted, by the time they went (ADR-0081). The scope
+         *     `announcements:read`. Kept `plugins.tombstone_days` days.
+         */
+        get: operations["deleted_announcements"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/plugin-api/assignments": {
         parameters: {
             query?: never;
@@ -1881,6 +1901,29 @@ export interface paths {
          *     the last change; `updated_since` is the time of that change.
          */
         get: operations["list_assignments"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/plugin-api/assignments/deleted": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The published assignments that were deleted, by the time they went (ADR-0081). The scope
+         *     `assignments:read`. A draft that was deleted was never shown and is not here; an assignment that
+         *     merely stops being visible to students is not a deletion either (it stops being listed, and its
+         *     id is `404`). Only an
+         *     assignment without submitted work or grades can be deleted. Kept `plugins.tombstone_days` days.
+         */
+        get: operations["deleted_assignments"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2181,6 +2224,12 @@ export interface paths {
          *     `X-Vumlo-Timestamp`, `X-Vumlo-Nonce`, `X-Vumlo-Signature`) and no cookie. The answer of
          *     the plugin is passed on if it is JSON, text, CSV, iCalendar, PDF or XLSX; any other
          *     content type, a redirect, or a `5xx` is a `502`.
+         * @description A route the plugin declared with `auth = "none"` (ADR-0080) is for anyone: it needs no
+         *     session, only answers `GET`, and the core checks nothing about the caller. The call is
+         *     forwarded without `X-Vumlo-User`, `-Role`, `-Course` and `-Course-Role`, with
+         *     `X-Vumlo-Anonymous: 1`, and the signature says that nobody signed in. The plugin checks
+         *     its own token. Every public route has an allowance of calls shared by all who call it;
+         *     over it is `429` with `Retry-After`.
          */
         get: operations["proxy_get"];
         /**
@@ -2191,6 +2240,12 @@ export interface paths {
          *     `X-Vumlo-Timestamp`, `X-Vumlo-Nonce`, `X-Vumlo-Signature`) and no cookie. The answer of
          *     the plugin is passed on if it is JSON, text, CSV, iCalendar, PDF or XLSX; any other
          *     content type, a redirect, or a `5xx` is a `502`.
+         * @description A route the plugin declared with `auth = "none"` (ADR-0080) is for anyone: it needs no
+         *     session, only answers `GET`, and the core checks nothing about the caller. The call is
+         *     forwarded without `X-Vumlo-User`, `-Role`, `-Course` and `-Course-Role`, with
+         *     `X-Vumlo-Anonymous: 1`, and the signature says that nobody signed in. The plugin checks
+         *     its own token. Every public route has an allowance of calls shared by all who call it;
+         *     over it is `429` with `Retry-After`.
          */
         put: operations["proxy_put"];
         /**
@@ -2201,6 +2256,12 @@ export interface paths {
          *     `X-Vumlo-Timestamp`, `X-Vumlo-Nonce`, `X-Vumlo-Signature`) and no cookie. The answer of
          *     the plugin is passed on if it is JSON, text, CSV, iCalendar, PDF or XLSX; any other
          *     content type, a redirect, or a `5xx` is a `502`.
+         * @description A route the plugin declared with `auth = "none"` (ADR-0080) is for anyone: it needs no
+         *     session, only answers `GET`, and the core checks nothing about the caller. The call is
+         *     forwarded without `X-Vumlo-User`, `-Role`, `-Course` and `-Course-Role`, with
+         *     `X-Vumlo-Anonymous: 1`, and the signature says that nobody signed in. The plugin checks
+         *     its own token. Every public route has an allowance of calls shared by all who call it;
+         *     over it is `429` with `Retry-After`.
          */
         post: operations["proxy_post"];
         /**
@@ -2211,6 +2272,12 @@ export interface paths {
          *     `X-Vumlo-Timestamp`, `X-Vumlo-Nonce`, `X-Vumlo-Signature`) and no cookie. The answer of
          *     the plugin is passed on if it is JSON, text, CSV, iCalendar, PDF or XLSX; any other
          *     content type, a redirect, or a `5xx` is a `502`.
+         * @description A route the plugin declared with `auth = "none"` (ADR-0080) is for anyone: it needs no
+         *     session, only answers `GET`, and the core checks nothing about the caller. The call is
+         *     forwarded without `X-Vumlo-User`, `-Role`, `-Course` and `-Course-Role`, with
+         *     `X-Vumlo-Anonymous: 1`, and the signature says that nobody signed in. The plugin checks
+         *     its own token. Every public route has an allowance of calls shared by all who call it;
+         *     over it is `429` with `Retry-After`.
          */
         delete: operations["proxy_delete"];
         options?: never;
@@ -2223,6 +2290,12 @@ export interface paths {
          *     `X-Vumlo-Timestamp`, `X-Vumlo-Nonce`, `X-Vumlo-Signature`) and no cookie. The answer of
          *     the plugin is passed on if it is JSON, text, CSV, iCalendar, PDF or XLSX; any other
          *     content type, a redirect, or a `5xx` is a `502`.
+         * @description A route the plugin declared with `auth = "none"` (ADR-0080) is for anyone: it needs no
+         *     session, only answers `GET`, and the core checks nothing about the caller. The call is
+         *     forwarded without `X-Vumlo-User`, `-Role`, `-Course` and `-Course-Role`, with
+         *     `X-Vumlo-Anonymous: 1`, and the signature says that nobody signed in. The plugin checks
+         *     its own token. Every public route has an allowance of calls shared by all who call it;
+         *     over it is `429` with `Retry-After`.
          */
         patch: operations["proxy_patch"];
         trace?: never;
@@ -3861,6 +3934,18 @@ export interface components {
             /** @description Pass as `cursor` to get the next page; `null` on the last page. */
             next_cursor?: string | null;
         };
+        Page_PluginDeletion: {
+            items: {
+                /** Format: uuid */
+                course_id: string;
+                /** Format: date-time */
+                deleted_at: string;
+                /** Format: uuid */
+                id: string;
+            }[];
+            /** @description Pass as `cursor` to get the next page; `null` on the last page. */
+            next_cursor?: string | null;
+        };
         Page_PluginGrade: {
             items: {
                 /** Format: uuid */
@@ -4069,6 +4154,15 @@ export interface components {
         PluginContacts: {
             /** @description Those of the ids who are in a course the plugin reaches. The others are left out. */
             items: components["schemas"]["PluginContact"][];
+        };
+        /** @description Something that was shown to a plugin and has been deleted. */
+        PluginDeletion: {
+            /** Format: uuid */
+            course_id: string;
+            /** Format: date-time */
+            deleted_at: string;
+            /** Format: uuid */
+            id: string;
         };
         /** @description The values a student gave in a `form`, by field id. */
         PluginFormAnswers: {
@@ -10600,6 +10694,77 @@ export interface operations {
             };
         };
     };
+    deleted_announcements: {
+        parameters: {
+            query: {
+                /**
+                 * @description Only what was deleted at or after this time (RFC 3339). The time of the last item of the
+                 *     previous read is a good one: the list is inclusive, and reading an id twice does no harm.
+                 *     Not older than `plugins.tombstone_days`: a plugin that was away longer is told `410`.
+                 */
+                deleted_since: string;
+                /**
+                 * @description One course. Without it, every course the plugin was granted. A course that is itself gone
+                 *     is not a `404`: what was deleted with it is listed.
+                 */
+                course_id?: string;
+                cursor?: string;
+                /** @description Page size, 1 to 100 (default 50). */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A page of deletions */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Page_PluginDeletion"];
+                };
+            };
+            /** @description No token, or one that is unknown or disabled */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The plugin was not granted `announcements:read`, or not the course */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description `deleted_since` is older than the core keeps */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description A cursor or a time that is not valid */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
     list_assignments: {
         parameters: {
             query?: {
@@ -10646,6 +10811,77 @@ export interface operations {
             };
             /** @description `course_id` names no course */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description A cursor or a time that is not valid */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    deleted_assignments: {
+        parameters: {
+            query: {
+                /**
+                 * @description Only what was deleted at or after this time (RFC 3339). The time of the last item of the
+                 *     previous read is a good one: the list is inclusive, and reading an id twice does no harm.
+                 *     Not older than `plugins.tombstone_days`: a plugin that was away longer is told `410`.
+                 */
+                deleted_since: string;
+                /**
+                 * @description One course. Without it, every course the plugin was granted. A course that is itself gone
+                 *     is not a `404`: what was deleted with it is listed.
+                 */
+                course_id?: string;
+                cursor?: string;
+                /** @description Page size, 1 to 100 (default 50). */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A page of deletions */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Page_PluginDeletion"];
+                };
+            };
+            /** @description No token, or one that is unknown or disabled */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The plugin was not granted `assignments:read`, or not the course */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description `deleted_since` is older than the core keeps */
+            410: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -11660,7 +11896,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Not logged in */
+            /** @description Not logged in (a public route needs no session) */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -11689,6 +11925,15 @@ export interface operations {
             };
             /** @description The body is more than 10 MiB */
             413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description A public route was called more than its allowance */
+            429: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -11737,7 +11982,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Not logged in */
+            /** @description Not logged in (a public route needs no session) */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -11766,6 +12011,15 @@ export interface operations {
             };
             /** @description The body is more than 10 MiB */
             413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description A public route was called more than its allowance */
+            429: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -11814,7 +12068,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Not logged in */
+            /** @description Not logged in (a public route needs no session) */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -11843,6 +12097,15 @@ export interface operations {
             };
             /** @description The body is more than 10 MiB */
             413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description A public route was called more than its allowance */
+            429: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -11891,7 +12154,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Not logged in */
+            /** @description Not logged in (a public route needs no session) */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -11920,6 +12183,15 @@ export interface operations {
             };
             /** @description The body is more than 10 MiB */
             413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description A public route was called more than its allowance */
+            429: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -11968,7 +12240,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Not logged in */
+            /** @description Not logged in (a public route needs no session) */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -11997,6 +12269,15 @@ export interface operations {
             };
             /** @description The body is more than 10 MiB */
             413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description A public route was called more than its allowance */
+            429: {
                 headers: {
                     [name: string]: unknown;
                 };

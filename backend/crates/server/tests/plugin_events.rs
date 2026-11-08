@@ -477,6 +477,120 @@ async fn the_roster_changes_of_a_course_are_announced_one_person_at_a_time() {
     .await;
 }
 
+/// The courses an `enrollment.changed` of `user` names, sorted.
+fn courses_of(
+    events: &[(String, Value, chrono::DateTime<chrono::Utc>)],
+    user: Uuid,
+) -> Vec<String> {
+    let mut courses: Vec<String> = data(events, "enrollment.changed")
+        .iter()
+        .filter(|d| d["user_id"] == json!(user))
+        .map(|d| d["course_id"].as_str().unwrap().to_owned())
+        .collect();
+    courses.sort();
+    courses
+}
+
+#[tokio::test]
+async fn a_change_of_a_users_status_or_role_is_announced_for_every_roster_they_are_on() {
+    db_test(async |pool| {
+        let w = world(pool).await;
+        w.plugin("p", &ALL_EVENTS, CourseScope::All).await;
+        // The student is a member of two courses; another student is on the first only through a
+        // group; a second teacher teaches the first.
+        let (second, _) = w.env.course(&w.teacher, &[&w.student]).await;
+        let group = w.group("7-A").await;
+        w.env
+            .ok(
+                "POST",
+                &w.admin.token,
+                &format!("/groups/{group}/members"),
+                Some(json!({"user_ids": [w.other_student.id]})),
+                200,
+            )
+            .await;
+        w.env
+            .ok(
+                "POST",
+                &w.teacher.token,
+                &format!("/courses/{}/groups", w.course),
+                Some(json!({"group_id": group, "subgroup_id": null})),
+                201,
+            )
+            .await;
+        let colleague = w.env.user("colleague@x.edu", Role::Teacher).await;
+        w.env
+            .ok(
+                "PUT",
+                &w.teacher.token,
+                &format!("/courses/{}/members/{}", w.course, colleague.id),
+                Some(json!({"role": "teacher"})),
+                200,
+            )
+            .await;
+        let both = {
+            let mut both = vec![w.course.to_string(), second.to_string()];
+            both.sort();
+            both
+        };
+        let patch = async |user: Uuid, body: Value| {
+            w.env
+                .ok(
+                    "PATCH",
+                    &w.admin.token,
+                    &format!("/admin/users/{user}"),
+                    Some(body),
+                    200,
+                )
+                .await;
+        };
+        w.forget().await;
+
+        // A new name moves nobody, and neither does saying what is already so.
+        patch(w.student.id, json!({"name": "Anna"})).await;
+        patch(w.student.id, json!({"status": "active"})).await;
+        assert!(w.kinds("p").await.is_empty());
+
+        // A disabled student leaves every roster; an enabled one comes back to each.
+        patch(w.student.id, json!({"status": "disabled"})).await;
+        assert_eq!(courses_of(&w.owed("p").await, w.student.id), both);
+        w.forget().await;
+        patch(w.student.id, json!({"status": "active"})).await;
+        assert_eq!(courses_of(&w.owed("p").await, w.student.id), both);
+        w.forget().await;
+
+        // The same for a student who is on a roster through a group alone.
+        patch(w.other_student.id, json!({"status": "disabled"})).await;
+        let events = w.owed("p").await;
+        assert_eq!(
+            courses_of(&events, w.other_student.id),
+            [w.course.to_string()]
+        );
+        // Only people of the change, and ids only.
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].1.as_object().unwrap().len(), 2);
+        w.forget().await;
+
+        // A group brings students only: a student who becomes a teacher leaves it.
+        patch(w.other_student.id, json!({"status": "active"})).await;
+        w.forget().await;
+        patch(w.other_student.id, json!({"role": "teacher"})).await;
+        assert_eq!(
+            courses_of(&w.owed("p").await, w.other_student.id),
+            [w.course.to_string()]
+        );
+        w.forget().await;
+
+        // A teacher who becomes a student stops teaching: the membership that goes is announced once,
+        // not twice.
+        patch(colleague.id, json!({"role": "student"})).await;
+        let events = w.owed("p").await;
+        assert_eq!(courses_of(&events, colleague.id), [w.course.to_string()]);
+        assert_eq!(events.len(), 1, "{events:?}");
+    })
+    .await;
+}
+
 #[tokio::test]
 async fn a_linked_group_announces_its_students_when_linked_unlinked_and_when_it_changes() {
     db_test(async |pool| {

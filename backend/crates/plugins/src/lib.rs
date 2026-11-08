@@ -9,6 +9,7 @@
 
 mod delivery;
 mod error;
+mod limiter;
 mod manifest;
 mod model;
 mod proxy;
@@ -28,14 +29,16 @@ pub use error::PluginsError;
 pub use manifest::parse_manifest;
 pub use model::{
     API_VERSION, Install, InstallStatus, InstallSummary, Installed, PluginManifest, PluginToken,
-    ReportSubject, SLOTS, SUBSCRIBABLE, UiSlot,
+    ReportSubject, RouteAuth, RouteSpec, SLOTS, SUBSCRIBABLE, UiSlot,
 };
 pub use proxy::{
     MAX_REQUEST_BYTES as PROXY_MAX_REQUEST_BYTES, openapi as proxy_openapi, router as proxy_router,
 };
 pub use repo::{CallCount, CallRow};
 pub use routes::router;
-pub use secret::{ProxyClaims, SecretError, SecretKey, derive_secret, proxy_signature, sign};
+pub use secret::{
+    ProxyCaller, ProxyClaims, SecretError, SecretKey, derive_secret, proxy_signature, sign,
+};
 pub use service::{
     CallReport, SettingView, assignment_reports, calls, check_base_url, course_reports,
     delete_report, fan_out, fetch_manifest, get, get_setting, grant, install, list, list_settings,

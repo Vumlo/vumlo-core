@@ -12,7 +12,8 @@ use org;
 
 /// Changes a user's name, role or status. Disabling also deletes all their sessions. The last
 /// active admin can be neither demoted nor disabled, and a teacher or admin who becomes a student
-/// must not own a course and stops being a course teacher everywhere (ADR-0037).
+/// must not own a course and stops being a course teacher everywhere (ADR-0037). A change of role or
+/// status tells the plugins which rosters it touches (`enrollment.changed`, ADR-0075).
 pub async fn update_user(
     conn: &mut PgConnection,
     actor: &Actor,
@@ -25,11 +26,18 @@ pub async fn update_user(
     // so the check sees it; a refusal rolls the UPDATE back.
     let demoted = applied.user().role == Role::Student
         && matches!(applied.previous().role, Role::Teacher | Role::Admin);
+    let mut left = Vec::new();
     if demoted {
         if teaching::owns_courses(conn, user_id).await? {
             return Err(LearningError::OwnsCourses);
         }
-        teaching::drop_teacher_memberships(conn, actor, user_id).await?;
+        left = teaching::drop_teacher_memberships(conn, actor, user_id).await?;
+    }
+    // A role or a status decides who is on a roster (a disabled student is not, a group brings only
+    // students), so the plugins are told, course by course. A new name changes no roster.
+    let (before, now) = (applied.previous(), applied.user());
+    if before.role != now.role || before.status != now.status {
+        teaching::user_standing_changed(conn, user_id, left).await?;
     }
     Ok(applied.audit(conn, actor).await?)
 }

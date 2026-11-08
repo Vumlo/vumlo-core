@@ -13,9 +13,9 @@ use sqlx::PgConnection;
 use uuid::Uuid;
 
 use super::model::{
-    Cursor, PluginAnnouncement, PluginAssignment, PluginAttempt, PluginContact, PluginFormAnswers,
-    PluginGrade, PluginList, PluginMember, PluginPage, PluginQuiz, PluginSubmission,
-    PluginSubmissionRow,
+    Cursor, PluginAnnouncement, PluginAssignment, PluginAttempt, PluginContact, PluginDeletion,
+    PluginFormAnswers, PluginGrade, PluginList, PluginMember, PluginPage, PluginQuiz,
+    PluginSubmission, PluginSubmissionRow,
 };
 use super::repo::{self, After, AssignmentRow};
 use crate::content::{AssignmentType, BuiltinType};
@@ -406,4 +406,41 @@ pub async fn announcements(
     Ok(PluginList::from_rows(rows, page.limit, |a| {
         by_time(a.updated_at, a.id)
     }))
+}
+
+/// What was deleted, of the kind the scope reads (ADR-0081): `assignments:read` for assignments,
+/// `announcements:read` for announcements. A course that is itself gone has no row to find, so a
+/// `course_id` that names nothing is an empty list and not a `404`; the grant is still checked.
+pub async fn deleted(
+    conn: &mut PgConnection,
+    caller: &PluginCaller,
+    what: Deleted,
+    course_id: Option<Uuid>,
+    since: DateTime<Utc>,
+    page: PluginPage,
+) -> Result<PluginList<PluginDeletion>, PluginReadError> {
+    let (scope, kind) = match what {
+        Deleted::Assignments => (Scope::AssignmentsRead, "assignment"),
+        Deleted::Announcements => (Scope::AnnouncementsRead, "announcement"),
+    };
+    let only = plugin_course_filter(caller, scope, course_id)?;
+    let rows = repo::deletions(
+        conn,
+        kind,
+        only.as_deref(),
+        since,
+        &After::from(page.after),
+        limit(&page),
+    )
+    .await?;
+    Ok(PluginList::from_rows(rows, page.limit, |d| {
+        by_time(d.deleted_at, d.id)
+    }))
+}
+
+/// What a plugin asks to be told was deleted.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Deleted {
+    Assignments,
+    Announcements,
 }

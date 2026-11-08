@@ -192,8 +192,10 @@ fn call<'a>() -> ProxyClaims<'a> {
     ProxyClaims {
         method: "POST",
         target: "/hello/api/echo?x=1",
-        user,
-        role: "teacher",
+        caller: Some(ProxyCaller {
+            user,
+            role: "teacher",
+        }),
         course: Some(course),
         course_role: Some("assistant"),
         nonce,
@@ -207,22 +209,38 @@ fn the_signature_of_a_proxied_call_is_the_one_the_example_plugin_computes() {
     // example plugin checks the same vector.
     assert_eq!(
         proxy_signature("test-secret", &call(), br#"{"a":1}"#).unwrap(),
-        "sha256=f0550504dfb2f66b16d94c999990f57b5b6c5c1d5ac69cc62076cca03e7da247"
+        "sha256=b44aaebf5b3727dcdaee5f5de6da4e02eb960d31f16ed99ab83df89c45fa3d39"
     );
     let (user, _, nonce) = ids();
     let none = ProxyClaims {
         method: "GET",
         target: "/api/summary/x",
-        role: "admin",
+        caller: Some(ProxyCaller {
+            user,
+            role: "admin",
+        }),
         course: None,
         course_role: None,
-        user,
         nonce,
         timestamp: 1_700_000_000,
     };
     assert_eq!(
         proxy_signature("test-secret", &none, b"").unwrap(),
-        "sha256=ef8d29b012c338515b63f520e73271e65d0728cd654bc54006d906800dd845a6"
+        "sha256=c4e553deaf5580300420b744170981ed9f596adcaae94581419ccd2642e87595"
+    );
+    // Nobody signed in: a public route. The same vector is in the example plugin.
+    let anonymous = ProxyClaims {
+        method: "GET",
+        target: "/hello/api/feed/f?token=t",
+        caller: None,
+        course: None,
+        course_role: None,
+        nonce,
+        timestamp: 1_700_000_000,
+    };
+    assert_eq!(
+        proxy_signature("test-secret", &anonymous, b"").unwrap(),
+        "sha256=4a7ce61d44771dc438866c26db839b3513e197e8a9c846ba489bb2340cccc978"
     );
 }
 
@@ -266,7 +284,22 @@ fn a_proxied_call_cannot_be_changed_in_any_part_without_changing_its_signature()
             proxy_signature(
                 "test-secret",
                 &ProxyClaims {
-                    user: other,
+                    caller: Some(ProxyCaller {
+                        user: other,
+                        role: "teacher",
+                    }),
+                    ..call()
+                },
+                body,
+            )
+            .unwrap(),
+        ),
+        (
+            "nobody signed in",
+            proxy_signature(
+                "test-secret",
+                &ProxyClaims {
+                    caller: None,
                     ..call()
                 },
                 body,
@@ -278,7 +311,10 @@ fn a_proxied_call_cannot_be_changed_in_any_part_without_changing_its_signature()
             proxy_signature(
                 "test-secret",
                 &ProxyClaims {
-                    role: "admin",
+                    caller: Some(ProxyCaller {
+                        user: ids().0,
+                        role: "admin",
+                    }),
                     ..call()
                 },
                 body,

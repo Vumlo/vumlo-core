@@ -204,6 +204,33 @@ fn the_routes_of_a_manifest_are_read_with_their_roles() {
     );
     assert!(manifest.routes[1].course_roles.is_empty());
     assert!(parse(hello()).unwrap().routes.is_empty());
+    // Without `auth` a route is for people who are signed in.
+    assert!(manifest.routes.iter().all(|r| r.auth == RouteAuth::Session));
+}
+
+#[test]
+fn a_route_may_be_public_and_then_it_is_get_only_with_no_roles_and_no_course() {
+    let manifest = parse(with_routes(json!([
+        {"method": "get", "path": "/calendar/{feed}", "auth": "none"},
+        {"method": "GET", "path": "/s", "auth": "session", "roles": ["admin"]},
+    ])))
+    .unwrap();
+    let public = &manifest.routes[0];
+    assert_eq!(public.auth, RouteAuth::None);
+    assert!(public.roles.is_empty() && public.course_roles.is_empty());
+    assert_eq!(manifest.routes[1].auth, RouteAuth::Session);
+    for bad in [
+        json!({"method": "GET", "path": "/a", "auth": "anyone"}),
+        json!({"method": "GET", "path": "/a", "auth": "none", "roles": ["admin"]}),
+        json!({"method": "GET", "path": "/a", "auth": "none", "course_roles": ["teacher"]}),
+        json!({"method": "GET", "path": "/a/{course_id}", "auth": "none"}),
+        json!({"method": "POST", "path": "/a", "auth": "none"}),
+        json!({"method": "DELETE", "path": "/a", "auth": "none"}),
+        // A session route still needs its roles.
+        json!({"method": "GET", "path": "/a", "auth": "session"}),
+    ] {
+        assert!(parse(with_routes(json!([bad.clone()]))).is_err(), "{bad}");
+    }
 }
 
 #[test]

@@ -7,7 +7,9 @@ use sqlx::PgConnection;
 use sqlx::types::Json;
 use uuid::Uuid;
 
-use super::model::{Cursor, PluginAnnouncement, PluginContact, PluginGrade, PluginMember};
+use super::model::{
+    Cursor, PluginAnnouncement, PluginContact, PluginDeletion, PluginGrade, PluginMember,
+};
 
 /// A list resumed after `cursor`; `at` is `None` for the first page.
 pub struct After {
@@ -362,6 +364,37 @@ pub async fn announcements(
              AND ($3::timestamptz IS NULL OR (a.updated_at, a.id) > ($3, $4))
            ORDER BY a.updated_at, a.id
            LIMIT $5"#,
+        only,
+        since,
+        after.at,
+        after.a,
+        limit
+    )
+    .fetch_all(conn)
+    .await
+}
+
+/// What of `kind` was deleted at or after `since` in the courses in `only` (`None`: every course),
+/// by the time it went. Only what a plugin could have been shown is there (ADR-0081).
+pub async fn deletions(
+    conn: &mut PgConnection,
+    kind: &str,
+    only: Option<&[Uuid]>,
+    since: DateTime<Utc>,
+    after: &After,
+    limit: i64,
+) -> Result<Vec<PluginDeletion>, sqlx::Error> {
+    sqlx::query_as!(
+        PluginDeletion,
+        r#"SELECT id, course_id, deleted_at
+           FROM teaching.tombstones
+           WHERE kind = $1
+             AND ($2::uuid[] IS NULL OR course_id = ANY($2))
+             AND deleted_at >= $3
+             AND ($4::timestamptz IS NULL OR (deleted_at, id) > ($4, $5))
+           ORDER BY deleted_at, id
+           LIMIT $6"#,
+        kind,
         only,
         since,
         after.at,
