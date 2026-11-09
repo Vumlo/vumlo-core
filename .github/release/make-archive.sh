@@ -5,9 +5,10 @@
 #
 # What is in the archive is the allowlist below, nothing else: what an administrator needs to
 # build and run Vumlo. Not in it: tests, ADRs, CI files, AGENTS.md, the development compose file,
-# and the unfinished or test-only modules. Removing the test-only module `dummy` changes the
-# manifests, so the archive carries generated ones (see "release manifests"); the result is
-# built from scratch by verify-archive.sh before anything is published.
+# and the test-only module `dummy`. The optional modules that are real (`ai_agent`) ship, so that
+# an installation can switch them on (`npx create-vumlo` lists backend/crates/modules). Removing
+# `dummy` changes the manifests, so the archive carries generated ones (see "release manifests");
+# the result is built from scratch by verify-archive.sh before anything is published.
 set -euo pipefail
 
 version="${1:?usage: make-archive.sh <version> <output-dir>}"
@@ -33,7 +34,8 @@ git archive --format=tar "--prefix=$name/" HEAD -- "${allow[@]}" | tar -x -C "$w
 # --- what is left out of the directories above ----------------------------------------------------
 rm -rf \
     "$stage"/backend/crates/*/tests \
-    "$stage"/backend/crates/modules \
+    "$stage"/backend/crates/modules/*/tests \
+    "$stage"/backend/crates/modules/dummy \
     "$stage"/backend/crates/test-support \
     "$stage"/web/e2e "$stage"/web/playwright.config.ts "$stage"/web/src/modules/dummy \
     "$stage"/web/AGENTS.md "$stage"/web/API_GAPS.md "$stage"/web/pnpm-lock.yaml
@@ -45,9 +47,10 @@ find "$stage/desktop" -type f \( -name tests.rs -o -name '*.test.mjs' \) -delete
 find "$stage/desktop" -type d -empty -delete
 
 # --- release manifests ----------------------------------------------------------------------------
-# The test-only module `dummy` is a workspace member, an optional dependency and a feature of
-# `server` and `vumlo-cli`, and a line of each module list. None of that ships.
-sed -i -e '/crates\/modules/d' -e '/dummy/d' "$stage/backend/Cargo.toml"
+# The test-only module `dummy` is a workspace dependency, an optional dependency and a feature of
+# `server` and `vumlo-cli`, and a line of each module list. None of that ships. (It is a workspace
+# member only through the `crates/modules/*` glob, which stays: it now matches the real modules.)
+sed -i -e '/dummy/d' "$stage/backend/Cargo.toml"
 sed -i -e '/dummy/d' "$stage/backend/crates/server/Cargo.toml" "$stage/backend/crates/vumlo-cli/Cargo.toml" \
     "$stage/backend/crates/config/Cargo.toml"
 sed -i -e '/feature = "dummy"/d' -e '/vumlo_module_dummy/d' \
@@ -55,12 +58,14 @@ sed -i -e '/feature = "dummy"/d' -e '/vumlo_module_dummy/d' \
 # The test harness is a crate of its own and a dev-dependency of every crate that tests against a
 # database: its member line, its workspace dependency and each dev-dependency on it go.
 sed -i -e '/crates\/test-support/d' -e '/^test-support[ .=]/d' "$stage/backend/Cargo.toml" \
-    "$stage"/backend/crates/*/Cargo.toml
+    "$stage"/backend/crates/*/Cargo.toml "$stage"/backend/crates/modules/*/Cargo.toml
 # The offline query data of the module's own queries.
 { grep -rl 'dummy\.' "$stage/backend/.sqlx" || true; } | xargs -r rm -f
 
 # Cargo.lock: let cargo drop the module's entries and nothing else. Any other change is a mistake.
 (cd "$stage/backend" && cargo metadata --format-version 1 >/dev/null)
+# The workspace must resolve against that lockfile as it is now, `ai_agent` included.
+(cd "$stage/backend" && cargo metadata --format-version 1 --locked >/dev/null)
 if diff <(git show HEAD:backend/Cargo.lock) "$stage/backend/Cargo.lock" | grep -q '^>'; then
     echo "make-archive: Cargo.lock gained lines; only removals are expected" >&2
     exit 1
