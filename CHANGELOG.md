@@ -10,6 +10,8 @@ must do, in order, besides getting the new release. See [RELEASING.md](RELEASING
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-11-10
+
 ### Added
 
 - **`enrollment.changed` follows a person's role and status** (ADR-0082). When an administrator changes a user's role or disables or enables them, a plugin subscribed to it is sent one event for each course whose roster that touches, as it already was for a change of a course membership. Before, it had to read the roster again to find out.
@@ -306,7 +308,8 @@ There is nothing to upgrade from; follow [docs/install.md](docs/install.md).
 - Any optional module, and an end-user CLI (ADR-0055).
 - Published container images: the images are built on your server from the archive.
 
-[Unreleased]: https://github.com/Vumlo/vumlo-core/compare/v0.4.1...HEAD
+[Unreleased]: https://github.com/Vumlo/vumlo-core/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/Vumlo/vumlo-core/compare/v0.4.1...v0.5.0
 [0.4.1]: https://github.com/Vumlo/vumlo-core/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/Vumlo/vumlo-core/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/Vumlo/vumlo-core/compare/v0.2.2...v0.3.0
