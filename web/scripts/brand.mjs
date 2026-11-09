@@ -55,7 +55,7 @@ if (!existsSync(configFile)) {
 
 const config = JSON.parse(readFileSync(configFile, "utf8"));
 if (config.version === "dev" && !optional) {
-  console.error(`brand: ${configFile} is the stand-in \`pnpm dev\` made. ${missing.slice("brand: ".length)}`);
+  console.error(`brand: ${configFile} is the stand-in that \`pnpm dev\` made, not a real configuration. Run \`vumlo-cli brand apply\` first.`);
   process.exit(1);
 }
 
