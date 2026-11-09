@@ -106,6 +106,9 @@ mode = "university"
 # short_name = "Example"   # 1-50 characters; default: name
 # language = "en"          # "en" | "uk"; default "en"
 # time_zone = "Europe/Kyiv" # an IANA zone name; default "UTC"
+# The colour of the web app (ADR-0083): "violet" | "blue" | "teal" | "green" | "orange" | "red".
+# Changing it means `vumlo-cli brand apply` and a web rebuild.
+# accent = "violet"
 
 # Optional add-on modules (ADR-0054). Each is compiled in with a Cargo feature of the same name
 # and switched on here; `vumlo-cli modules list` shows which this build has. Off by default.

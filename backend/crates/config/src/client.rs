@@ -8,7 +8,7 @@ use schemars::JsonSchema;
 use serde::Serialize;
 
 use crate::modules::ModuleStatus;
-use crate::settings::{FileBackend, GradingScale, Language, Settings};
+use crate::settings::{Accent, FileBackend, GradingScale, Language, Settings};
 
 #[derive(Debug, Clone, Serialize, JsonSchema)]
 pub struct ClientConfig {
@@ -59,6 +59,8 @@ pub struct PublicInstitution {
     /// An IANA zone name, e.g. `Europe/Kyiv`.
     pub time_zone: String,
     pub grading_scale: GradingScale,
+    /// The colour of the web app; the web app sets `data-accent` from it.
+    pub accent: Accent,
 }
 
 impl ClientConfig {
@@ -77,6 +79,7 @@ impl ClientConfig {
                     language: institution.language,
                     time_zone: institution.time_zone.name().to_owned(),
                     grading_scale: institution.grading_scale,
+                    accent: institution.accent,
                 },
                 files: PublicFiles {
                     storage: settings.files.storage,
