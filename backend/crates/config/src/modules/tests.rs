@@ -181,6 +181,42 @@ fn endpoints_need_https_and_no_credentials() {
     assert!(check_endpoint("http://127.0.0.1:1/x", true).is_ok());
     assert!(check_endpoint("http://[::1]:1/x", true).is_ok());
     assert!(check_endpoint("http://example.com", true).is_err());
+    assert!(
+        check_endpoint("http://plugin-text-metrics:8000", true).is_err(),
+        "the general endpoint check does not take a container name"
+    );
+}
+
+#[test]
+fn a_plugin_may_be_reached_over_http_by_the_name_of_a_container() {
+    for ok in [
+        "https://plugin.example.com",
+        "http://localhost:8000",
+        "http://[::1]:8000",
+        "http://plugin-text-metrics:8000",
+        "http://plugin_text:8000/base",
+        "http://core",
+    ] {
+        assert!(check_plugin_endpoint(ok).is_ok(), "{ok}");
+    }
+    for bad in [
+        "http://plugin.example.com:8000",
+        "http://plugin-text-metrics.:8000",
+        "http://10.0.0.5:8000",
+        "http://127:8000",
+        "http://2130706433",
+        "http://0x7f.1",
+        "http://[fe80::1]:8000",
+        "http://-x:8000",
+        "http://plug in:8000",
+        "http://user@plugin-text-metrics:8000",
+        "http://plugin-text-metrics:8000/x?k=1",
+        "ftp://plugin-text-metrics",
+    ] {
+        assert!(check_plugin_endpoint(bad).is_err(), "{bad}");
+    }
+    let too_long = format!("http://a{}", "b".repeat(63));
+    assert!(check_plugin_endpoint(&too_long).is_err());
 }
 
 #[test]

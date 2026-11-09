@@ -31,10 +31,11 @@ const MANIFEST_CONNECT: Duration = Duration::from_secs(3);
 const MANIFEST_TOTAL: Duration = Duration::from_secs(5);
 const MANIFEST_MAX_BYTES: usize = 64 * 1024;
 
-/// A base URL the core will call: `https://`, or `http://` for a service on this machine. No
-/// credentials, query or fragment (`vumlo_config::check_endpoint`). A trailing `/` is dropped.
+/// A base URL the core will call: `https://`, or `http://` for a service on this machine or a container
+/// beside the core (`http://plugin-name:8000`). No credentials, query or fragment
+/// (`vumlo_config::check_plugin_endpoint`). A trailing `/` is dropped.
 pub fn check_base_url(url: &str) -> Result<String, PluginsError> {
-    vumlo_config::check_endpoint(url, true).map_err(PluginsError::BaseUrl)?;
+    vumlo_config::check_plugin_endpoint(url).map_err(PluginsError::BaseUrl)?;
     Ok(url.trim_end_matches('/').to_owned())
 }
 

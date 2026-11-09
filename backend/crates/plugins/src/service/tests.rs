@@ -61,7 +61,7 @@ fn event(kind: &str) -> OutboxEvent {
 }
 
 #[test]
-fn a_base_url_is_https_or_http_on_this_machine_and_carries_nothing_else() {
+fn a_base_url_is_https_or_http_on_this_machine_or_a_container_and_carries_nothing_else() {
     assert_eq!(
         check_base_url("https://tools.example.edu/p/").unwrap(),
         "https://tools.example.edu/p"
@@ -73,6 +73,11 @@ fn a_base_url_is_https_or_http_on_this_machine_and_carries_nothing_else() {
     assert_eq!(
         check_base_url("http://localhost:9000/").unwrap(),
         "http://localhost:9000"
+    );
+    assert_eq!(
+        check_base_url("http://plugin-text-metrics:8000/").unwrap(),
+        "http://plugin-text-metrics:8000",
+        "the name of a container beside the core"
     );
     for bad in [
         "http://tools.example.edu",
