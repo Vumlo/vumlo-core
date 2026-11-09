@@ -1,12 +1,11 @@
 // Builds the installers of an institution's desktop app (ADR-0056, docs/desktop.md):
 //
-//   node scripts/build.mjs [--generated <dir>] [--skip-web] [-- <arguments for `tauri build`>]
+//   node scripts/build.mjs [--skip-web] [-- <arguments for `tauri build`>]
 //
 // It takes the web app's static export (built here unless --skip-web), the names, scheme and server address
-// from the client config that `vumlo-cli brand apply` generated, makes the installer icons from the generated
-// logo, and runs `tauri build`. The generated directory is, in order: --generated, $VUMLO_GENERATED_DIR,
-// ../.vumlo/generated next to vumlo.toml. The installers are copied to desktop/dist/ as `<scheme>_<version>_<arch>.<ext>`,
-// for example `vumlo-ucu_0.2.1_amd64.deb`.
+// from web/src/generated/client-config.json, and makes the installer icons from web/public/brand/icon-1024.png;
+// `vumlo-cli brand apply` wrote both into web/. Then it runs `tauri build`. The installers are copied to
+// desktop/dist/ as `<scheme>_<version>_<arch>.<ext>`, for example `vumlo-ucu_0.2.1_amd64.deb`.
 import { spawnSync } from "node:child_process";
 import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
@@ -25,10 +24,10 @@ const option = (name) => {
   return at >= 0 ? own[at + 1] : undefined;
 };
 
-const generated = resolve(option("--generated") ?? process.env.VUMLO_GENERATED_DIR ?? join(desktop, "..", ".vumlo", "generated"));
-const configFile = join(generated, "client-config.json");
-if (!existsSync(configFile)) {
-  console.error(`desktop: ${generated} has no client-config.json. Run \`vumlo-cli brand apply\` first (the build reads only that directory).`);
+const configFile = join(web, "src", "generated", "client-config.json");
+const logo = join(web, "public", "brand", "icon-1024.png");
+if (!existsSync(configFile) || !existsSync(logo)) {
+  console.error(`desktop: ${configFile} or ${logo} is missing. Run \`vumlo-cli brand apply\` first (the build reads only what it writes into web/).`);
   process.exit(1);
 }
 const client = JSON.parse(readFileSync(configFile, "utf8"));
@@ -48,7 +47,6 @@ const run = (label, command, commandArgs, options = {}) => {
 if (!own.includes("--skip-web")) {
   run("building the web app for the desktop", process.execPath, [join(web, "scripts", "build-desktop.mjs")], {
     cwd: web,
-    env: { ...process.env, VUMLO_GENERATED_DIR: generated },
   });
 }
 if (!existsSync(join(web, "out", "index.html"))) {
@@ -61,7 +59,7 @@ rmSync(gen, { recursive: true, force: true });
 mkdirSync(gen, { recursive: true });
 
 const tauri = join(dirname(createRequire(import.meta.url).resolve("@tauri-apps/cli/package.json")), "tauri.js");
-run("making the installer icons from the Vumlo logo", process.execPath, [tauri, "icon", join(generated, "icon-1024.png"), "--output", join(gen, "icons")], { cwd: desktop });
+run("making the installer icons from the Vumlo logo", process.execPath, [tauri, "icon", logo, "--output", join(gen, "icons")], { cwd: desktop });
 
 const config = tauriConfigFor(client, { frontendDist: join(web, "out"), iconDir: "gen/icons", desktopTemplate: join(desktop, "desktop-template.desktop") });
 writeFileSync(join(gen, "tauri.conf.json"), JSON.stringify(config, null, 2) + "\n");

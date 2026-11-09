@@ -41,7 +41,7 @@ services:
     <<: *backend
     entrypoint: ["vumlo-cli"]
     command: ["db", "migrate"]
-    # The files it writes in the repository (.vumlo/generated) belong to you, not to a stranger.
+    # The files it writes in the repository (web/src/generated, web/public/brand) belong to you, not to a stranger.
     user: "${VUMLO_UID:-1000}:${VUMLO_GID:-1000}"
     working_dir: /srv/vumlo
     volumes:

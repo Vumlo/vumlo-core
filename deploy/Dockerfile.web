@@ -1,5 +1,5 @@
-# The web app, built from what `vumlo-cli brand apply` generated (.vumlo/generated/): run
-# `./vumlo brand apply` before building this image, and again whenever vumlo.toml changes.
+# The web app, built from what `vumlo-cli brand apply` wrote into web/ (web/src/generated and web/public/brand):
+# run `./vumlo brand apply` before building this image, and again whenever vumlo.toml changes.
 #
 # Build from the repository root:
 #   docker build -f deploy/Dockerfile.web -t vumlo-web .
@@ -8,9 +8,8 @@ FROM node:24-slim AS build
 WORKDIR /src
 COPY web/package.json web/package-lock.json web/.npmrc ./web/
 RUN cd web && npm ci
+# The configuration the web build reads (ADR-0054) is inside web/ already: src/generated and public/brand.
 COPY web ./web
-# The only configuration the web build reads (ADR-0054).
-COPY .vumlo/generated ./.vumlo/generated
 # Where the web app reaches the core. Next.js bakes the rewrite of /api/v1 in at build time.
 ARG VUMLO_API_ORIGIN=http://core:8080
 ENV VUMLO_API_ORIGIN=${VUMLO_API_ORIGIN}

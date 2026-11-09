@@ -18,13 +18,14 @@ env:
   # Where vumlo-core is: "vendor/vumlo-core" in a repository that vendors a release (as vumlo-ucu does), "." in a
   # fork of vumlo-core itself.
   CORE_DIR: vendor/vumlo-core
-  # Your configuration, from the root of the repository. Its `.vumlo/generated` is read from beside it.
+  # Your configuration, from the root of the repository. Its `web.dir` must be the web/ of $CORE_DIR (the default
+  # `web` when this is a fork of vumlo-core itself): `brand apply` writes the branding there.
   CONFIG: vumlo.toml
 
 jobs:
-  # The branding every installer takes its names, scheme, server address and icon from. If `.vumlo/generated` is
-  # committed beside the configuration (as vumlo-ucu does for its web app) it is used as it is; otherwise it is made
-  # here by `vumlo-cli brand apply`.
+  # The branding every installer takes its names, scheme, server address and icon from: web/src/generated and
+  # web/public/brand. If they are committed (as vumlo-ucu does for its web app) they are used as they are; otherwise
+  # they are made here by `vumlo-cli brand apply`.
   branding:
     runs-on: ubuntu-latest
     steps:
@@ -33,24 +34,25 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: ${{ env.CORE_DIR }}/backend
-      - name: The generated directory
+      - name: The branding in web/
         env:
           SQLX_OFFLINE: "true"
           # `brand apply` loads the whole configuration, which wants the database address; it never connects.
           DATABASE_URL: postgres://ci:ci@localhost:5432/ci
         run: |
-          generated="$(dirname "$CONFIG")/.vumlo/generated"
-          if [ -f "$generated/client-config.json" ]; then
-            echo "using the committed $generated"
+          web="$CORE_DIR/web"
+          if [ -f "$web/src/generated/client-config.json" ] && [ -f "$web/public/brand/icon-1024.png" ]; then
+            echo "using the committed branding in $web"
           else
             (cd "$CORE_DIR/backend" && cargo run -q -p vumlo-cli -- --config "$GITHUB_WORKSPACE/$CONFIG" brand apply)
           fi
-          mkdir -p branding && cp -r "$generated/." branding/
-          cat branding/client-config.json
+          cat "$web/src/generated/client-config.json"
       - uses: actions/upload-artifact@v7
         with:
           name: branding
-          path: branding
+          path: |
+            ${{ env.CORE_DIR }}/web/src/generated
+            ${{ env.CORE_DIR }}/web/public/brand
           if-no-files-found: error
 
   installers:
@@ -83,10 +85,11 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libgtk-3-dev patchelf
+      # The artifact holds src/generated and public/brand, relative to web/.
       - uses: actions/download-artifact@v8
         with:
           name: branding
-          path: branding
+          path: ${{ env.CORE_DIR }}/web
 
       # Signing is for whoever has the certificates. Each block runs only when its secrets exist, and says so.
       - name: Sign for macOS, if there is a certificate
@@ -148,7 +151,7 @@ jobs:
           if [ -n "${WINDOWS_THUMBPRINT:-}" ]; then
             args+=(--config "{\"bundle\":{\"windows\":{\"certificateThumbprint\":\"$WINDOWS_THUMBPRINT\",\"digestAlgorithm\":\"sha256\",\"timestampUrl\":\"http://timestamp.digicert.com\"}}}")
           fi
-          node "$CORE_DIR/desktop/scripts/build.mjs" --generated branding -- "${args[@]}"
+          node "$CORE_DIR/desktop/scripts/build.mjs" -- "${args[@]}"
       - name: Collect the installers
         run: |
           mkdir -p out
