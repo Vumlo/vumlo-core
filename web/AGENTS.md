@@ -15,11 +15,13 @@ Next.js (App Router), React, TypeScript, CSS Modules. pnpm.
     pnpm gen:api       # web/openapi.json -> src/lib/api/schema.d.ts
 
 ## Branding and optional modules (ADR-0054)
-The web build takes its configuration from one place: `.vumlo/generated/` (next to `vumlo.toml`),
-written by `vumlo-cli brand apply`. `scripts/brand.mjs` copies it into `public/brand/` (icons,
-manifest, logo), `src/generated/` (`client-config.json` and its types) and `src/modules/enabled.ts`
-(the UI of the optional modules that are on). All three are generated and gitignored. `typecheck` and
-`build` stop with a clear message if the directory is missing; `dev` and `dev:mock` use a stand-in.
+The web build takes its configuration from two directories that `vumlo-cli brand apply` writes straight into
+`web/`: `src/generated/` (`client-config.json` and its types) and `public/brand/` (icons, manifest, logo).
+`scripts/brand.mjs` only reads `src/generated/client-config.json` and writes `src/modules/enabled.ts` (the UI of
+the optional modules that are on). All three are generated and gitignored. `typecheck` and `build` stop with a
+clear message if `client-config.json` is missing (or is the stand-in); `dev` and `dev:mock` make a stand-in.
+The colour is `institution.accent` (violet, blue, teal, green, orange, red): `app/layout.tsx` sets `data-accent`
+on the root element from `clientConfig`, and `styles/tokens.css` maps it to the one `--hue` the palette follows.
 
 - Read the institution's public settings from `src/lib/clientConfig.ts`. Never read `vumlo.toml`, and
   never add a key to the web build that is not in `client-config.json`.
