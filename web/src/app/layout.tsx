@@ -3,6 +3,7 @@ import { JetBrains_Mono, Onest } from "next/font/google";
 import { Suspense, type ReactNode } from "react";
 import { MockProvider } from "@/mocks/MockProvider";
 import { appName } from "@/lib/appName";
+import { clientConfig } from "@/lib/clientConfig";
 import { PageTitle } from "@/components/PageTitle";
 import { LanguageProvider } from "@/lib/i18n";
 import { ThemeProvider, themeInitScript } from "@/lib/theme";
@@ -29,7 +30,7 @@ export const viewport: Viewport = { width: "device-width", initialScale: 1 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="en" className={`${onest.variable} ${mono.variable}`} suppressHydrationWarning>
+    <html lang="en" className={`${onest.variable} ${mono.variable}`} data-accent={clientConfig.public.institution.accent} suppressHydrationWarning>
       <head>
         <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
       </head>
