@@ -48,6 +48,15 @@ pub fn check(options: &Options) -> anyhow::Result<bool> {
     }
 }
 
+/// Prints the JSON Schema of `vumlo.toml`. Needs no configuration.
+pub fn schema() -> anyhow::Result<()> {
+    println!(
+        "{}",
+        serde_json::to_string_pretty(vumlo_config::settings_schema())?
+    );
+    Ok(())
+}
+
 /// Prints the effective configuration as JSON. Secrets show as `<redacted>`; `--public` prints
 /// exactly what `client-config.json` carries.
 pub fn show(options: &Options, public: bool) -> anyhow::Result<()> {

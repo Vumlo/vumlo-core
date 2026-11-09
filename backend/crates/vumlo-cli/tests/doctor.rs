@@ -292,7 +292,7 @@ async fn an_unhealthy_core_fails() {
 async fn the_web_build_must_be_newer_than_the_last_brand_apply() {
     db_test(async |pool| {
         let env = Env::new(&pool);
-        let generated = env.path(".vumlo/generated");
+        let generated = env.path("web/src/generated");
         std::fs::create_dir_all(&generated).unwrap();
         std::fs::write(generated.join("client-config.json"), "{}").unwrap();
         let build = env.path("web/.next");

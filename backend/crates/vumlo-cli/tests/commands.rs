@@ -165,6 +165,25 @@ async fn config_show_redacts_secrets_and_public_shows_only_public_keys() {
     .await;
 }
 
+#[tokio::test]
+async fn config_schema_prints_the_json_schema_of_the_configuration() {
+    db_test(async |pool| {
+        let env = Env::new(&pool);
+
+        let out = env.run(&["config", "schema"]).await;
+
+        assert!(out.ok, "{}", out.stderr);
+        let schema: Value = serde_json::from_str(&out.stdout).unwrap();
+        assert!(
+            schema["properties"]["institution"].is_object()
+                || schema["$defs"]["InstitutionSection"].is_object(),
+            "{}",
+            out.stdout
+        );
+    })
+    .await;
+}
+
 // --- modules, version -------------------------------------------------------------------------
 
 #[tokio::test]

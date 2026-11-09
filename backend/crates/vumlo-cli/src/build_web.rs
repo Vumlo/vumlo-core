@@ -26,8 +26,6 @@ pub async fn run(options: &Options, dry_run: bool) -> anyhow::Result<()> {
              (`docker compose build web`, see docs/install.md)"
         );
     }
-    let generated = std::path::absolute(brand::generated_dir(settings))
-        .context("cannot resolve the generated directory")?;
     let install = !web.join("node_modules").is_dir();
 
     brand::apply(options, dry_run)?;
@@ -40,9 +38,9 @@ pub async fn run(options: &Options, dry_run: bool) -> anyhow::Result<()> {
     }
     if install {
         let lock = web.join("package-lock.json").is_file();
-        npm_in(&web, &generated, if lock { &["ci"] } else { &["install"] })?;
+        npm_in(&web, if lock { &["ci"] } else { &["install"] })?;
     }
-    npm_in(&web, &generated, &["run", "build"])?;
+    npm_in(&web, &["run", "build"])?;
     println!(
         "the web app is built in {}; restart the web service",
         web.display()
@@ -50,13 +48,11 @@ pub async fn run(options: &Options, dry_run: bool) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Runs npm in `web`, with the generated directory named in the environment (scripts/brand.mjs
-/// reads it) and the output going straight to the terminal.
-fn npm_in(web: &Path, generated: &Path, args: &[&str]) -> anyhow::Result<()> {
+/// Runs npm in `web`, the output going straight to the terminal.
+fn npm_in(web: &Path, args: &[&str]) -> anyhow::Result<()> {
     let status = Command::new("npm")
         .args(args)
         .current_dir(web)
-        .env("VUMLO_GENERATED_DIR", generated)
         .status()
         .context("cannot run npm")?;
     if !status.success() {
