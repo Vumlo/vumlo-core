@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE mail.messages SET to_address = NULL, to_name = NULL WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "402df41e752e4bd6b1038af5238f6477add1d7feb18373a72bb670b66e71a353"
+}

@@ -4637,6 +4637,7 @@ dependencies = [
  "common",
  "db",
  "image",
+ "mail",
  "module-api",
  "plugins",
  "reqwest 0.12.28",
