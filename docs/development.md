@@ -107,7 +107,7 @@ keeps its database; the next run drops the ones older than an hour. Building wit
 
 ### Where code and tests go (ADR-0065)
 
-The backend is one crate per layer: `server` → `learning` → `org` → `auth` → `files` → `events` → `access` → `common`.
+The backend is one crate per layer: `server` → `learning` → `org` → `auth` → `mail` → `files` → `events` → `access` → `common` (`mail`: ADR-0084, in progress).
 Code goes in the lowest crate that owns the data it uses. A feature that needs the data of two layers is a
 function in `learning`, which may call all the others; a lower crate never calls a higher one, and Cargo
 refuses it. A unit test is in the `tests.rs` beside its source file and runs with `cargo test -p <crate>`;
