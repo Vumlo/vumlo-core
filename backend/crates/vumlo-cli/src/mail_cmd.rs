@@ -9,14 +9,22 @@ use mail::{Filter, JournalEntry, MessageState, RetryScope};
 use serde_json::{Value, json};
 use sqlx::PgPool;
 use uuid::Uuid;
-use vumlo_config::{Options, Settings};
+use vumlo_config::{MailTransport, Options, Settings};
 
 use crate::runtime;
 
 /// The most message ids an audit row names; the count is always exact.
 const AUDITED_IDS: usize = 200;
 /// The longest subject `list` prints.
-const SUBJECT_COLUMNS: usize = 50;
+const SUBJECT_COLUMNS: usize = 60;
+
+/// `smtp` or `file`: which transport `[mail]` names, if it is set.
+fn transport_of(settings: &Settings) -> Option<&'static str> {
+    settings.mail.as_ref().map(|mail| match mail.transport {
+        MailTransport::Smtp { .. } => "smtp",
+        MailTransport::File { .. } => "file",
+    })
+}
 
 async fn ready(settings: &Settings) -> anyhow::Result<PgPool> {
     let pool = runtime::connect(settings).await?;
@@ -46,6 +54,7 @@ pub async fn status(options: &Options, as_json: bool) -> anyhow::Result<()> {
             "{}",
             serde_json::to_string_pretty(&json!({
                 "configured": loaded.settings.mail.is_some(),
+                "transport": transport_of(&loaded.settings),
                 "pending": status.pending,
                 "sent_24h": status.sent_24h,
                 "dead_24h": status.dead_24h,
@@ -57,8 +66,9 @@ pub async fn status(options: &Options, as_json: bool) -> anyhow::Result<()> {
         );
         return Ok(());
     }
-    if loaded.settings.mail.is_none() {
-        println!("[mail] is not configured: nothing is sent, and plugin mail is refused");
+    match transport_of(&loaded.settings) {
+        Some(transport) => println!("transport      {transport}"),
+        None => println!("[mail] is not configured: nothing is sent, and plugin mail is refused"),
     }
     println!("pending        {}", status.pending);
     match status.oldest_pending {

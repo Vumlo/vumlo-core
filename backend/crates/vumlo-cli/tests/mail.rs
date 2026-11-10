@@ -129,6 +129,16 @@ async fn status_and_list_show_the_journal_and_never_an_address() {
             (Some(1), Some(2))
         );
 
+        assert!(status.stdout.contains("not configured"), "{}", status.stdout);
+        assert_eq!(value["transport"], Value::Null);
+        let with_mail = Env::with_config(
+            &pool,
+            &format!("{}\n[mail]\nfrom = \"no-reply@lms.test\"\ntransport = {{ kind = \"file\", dir = \"mail\" }}\n", common::CONFIG),
+        );
+        let configured = with_mail.run(&["mail", "status"]).await;
+        assert!(configured.ok, "{}", configured.stderr);
+        assert!(configured.stdout.contains("transport      file"), "{}", configured.stdout);
+
         let list = env.run(&["mail", "list"]).await;
         assert!(list.ok, "{}", list.stderr);
         for needle in [
