@@ -6,6 +6,11 @@ on:
   pull_request:
   workflow_call:
 
+# A new push to a pull request replaces the run in progress. Anything else (the release gate) has a group of its own.
+concurrency:
+  group: ci-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 env:
   CARGO_TERM_COLOR: always
   DATABASE_URL: postgres://vumlo:vumlo@localhost:5432/vumlo

@@ -42,10 +42,33 @@ jobs:
     if: needs.version.outputs.release == 'true'
     uses: ./.github/workflows/ci.yml
 
-  # The archive, as a stranger gets it, built from scratch and run (docs/install.md, followed); then the release,
-  # which creates the tag on the commit that was checked.
-  release:
-    needs: [version, gate]
+  # The archive, as a stranger gets it, built from scratch and run (docs/install.md, followed). It does not depend on
+  # the CI checks, so it runs beside them; nothing is published until both have passed (`publish`).
+  archive:
+    needs: version
+    if: needs.version.outputs.release == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - run: .github/release/make-archive.sh "${VERSION}" dist
+      - run: .github/release/verify-archive.sh dist "${VERSION}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist
+          if-no-files-found: error
+          retention-days: 1
+
+  # The release, which creates the tag on the commit that was checked. Only when the CI checks and the proof that the
+  # archive builds and runs have both passed.
+  publish:
+    needs: [version, gate, archive]
     if: needs.version.outputs.release == 'true'
     runs-on: ubuntu-latest
     permissions:
@@ -56,8 +79,10 @@ jobs:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
-      - run: .github/release/make-archive.sh "${VERSION}" dist
-      - run: .github/release/verify-archive.sh dist "${VERSION}"
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist
       - name: The changelog entry is the release notes
         run: |
           awk -v v="${VERSION}" '/^## \[/ { on = index($0, "[" v "]") == 4; next } /^\[[^]]+\]: / { on = 0 } on' CHANGELOG.md > notes.md
