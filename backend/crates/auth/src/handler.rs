@@ -1,24 +1,38 @@
-//! The outbox handlers of `auth` (ADR-0045, ADR-0046): mint the token in a short transaction,
-//! then send the mail, with no transaction open.
+//! The outbox handlers of `auth` (ADR-0045, ADR-0046, ADR-0084): mint the token and queue the mail in
+//! one short transaction. The mail layer sends it later; nothing here touches a transport.
 
-use std::sync::Arc;
-
-use serde::Deserialize;
+use mail::{AccountMail, Address, Body, Kind, Subject};
 use sqlx::PgPool;
 use uuid::Uuid;
 
 use super::model::TokenPurpose;
 use super::service;
-use crate::mail::{MailError, Mailer};
 use events::{HandlerError, HandlerFuture, Handlers, OutboxEvent};
-use vumlo_config::Language;
+use serde::Deserialize;
+use vumlo_config::{Language, Settings};
 
 /// What the handlers need besides the pool.
 #[derive(Clone)]
 pub struct MailContext {
-    pub mailer: Arc<Mailer>,
     pub language: Language,
     pub institution_name: String,
+    /// Where the links in the mails point: `mail.link_base`, else `server.public_origin`.
+    pub link_base: String,
+}
+
+impl MailContext {
+    pub fn new(config: &Settings) -> Self {
+        let link_base = config
+            .mail
+            .as_ref()
+            .and_then(|mail| mail.link_base.clone())
+            .unwrap_or_else(|| config.server.public_origin.clone());
+        Self {
+            language: config.institution.language,
+            institution_name: config.institution.name.clone(),
+            link_base,
+        }
+    }
 }
 
 pub fn event_handlers(pool: PgPool, context: MailContext) -> Handlers {
@@ -52,24 +66,25 @@ async fn deliver(
     let payload: Payload = serde_json::from_value(event.payload.clone())
         .map_err(|_| HandlerError("the payload has no user_id".to_owned()))?;
     let database = |_| HandlerError("the database is not available".to_owned());
-    let minted = {
-        let mut tx = pool.begin().await.map_err(database)?;
-        let minted = service::mint_email_token(&mut tx, payload.user_id, purpose)
-            .await
-            .map_err(|_| HandlerError("cannot mint the token".to_owned()))?;
-        tx.commit().await.map_err(database)?;
-        minted
-    };
-    let Some(minted) = minted else {
+    let mut tx = pool.begin().await.map_err(database)?;
+    // A rerun of the event must not mint a second token: the first mail is queued already.
+    if mail::origin_queued(&mut tx, event.id)
+        .await
+        .map_err(|_| HandlerError("cannot read the mail queue".to_owned()))?
+    {
+        return Ok(());
+    }
+    let Some(minted) = service::mint_email_token(&mut tx, payload.user_id, purpose)
+        .await
+        .map_err(|_| HandlerError("cannot mint the token".to_owned()))?
+    else {
         return Ok(());
     };
     let path = match purpose {
         TokenPurpose::Verify => "/verify-email",
         TokenPurpose::Reset => "/reset-password",
     };
-    let link = context
-        .mailer
-        .link(&format!("{path}?token={}", minted.token.expose()));
+    let link = format!("{}{path}?token={}", context.link_base, minted.token.expose());
     let (subject, body) = text(
         purpose,
         context.language,
@@ -77,25 +92,27 @@ async fn deliver(
         &context.institution_name,
         &link,
     );
-    context
-        .mailer
-        .send(
-            &format!("{} {}", minted.name, minted.surname),
-            &minted.email,
-            subject,
-            body,
-        )
-        .await
-        .map_err(|error| {
-            // The transport's own text can name the address, so only the kind of failure is kept.
-            HandlerError(
-                match error {
-                    MailError::Send(_) => "the mail server did not accept the message",
-                    _ => "the message could not be built",
-                }
-                .to_owned(),
-            )
-        })
+    let unfit = |_| HandlerError("the message does not fit the mail queue".to_owned());
+    let kind = match purpose {
+        TokenPurpose::Verify => "verify-email",
+        TokenPurpose::Reset => "password-reset",
+    };
+    mail::enqueue_account(
+        &mut tx,
+        AccountMail {
+            origin_id: event.id,
+            kind: Kind::parse(kind).map_err(unfit)?,
+            user_id: payload.user_id,
+            name: format!("{} {}", minted.name, minted.surname),
+            address: Address::parse(&minted.email).map_err(unfit)?,
+            subject: Subject::parse(subject).map_err(unfit)?,
+            body: Body::parse(&body).map_err(unfit)?,
+        },
+    )
+    .await
+    .map_err(|_| HandlerError("cannot queue the message".to_owned()))?;
+    tx.commit().await.map_err(database)?;
+    Ok(())
 }
 
 /// The subject and the plain-text body of a mail, in the institution's language.

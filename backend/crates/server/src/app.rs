@@ -28,9 +28,9 @@ use utoipa_scalar::{Scalar, Servable};
 use crate::health;
 use access::{self, ActorSource, PluginSource};
 use auth::{self, AuthState, SetupError};
-use auth::{MailError, Mailer};
 use common::{ApiError, problem_details};
 use events::Handlers;
+use mail::{MailError, MailState, Mailer};
 use learning::assessment;
 use learning::content::{self, EditorConfigError, EffectiveProfiles};
 use learning::gradebook;
@@ -57,11 +57,21 @@ pub struct AppState {
     pub db: PgPool,
     pub config: Arc<Settings>,
     pub auth: AuthState,
+    pub mail: MailState,
+    /// The transport and what the mail worker needs besides it; `None` without `[mail]`.
+    pub mailer: Option<Arc<Mailer>>,
+    pub mail_context: Option<mail::Context>,
     pub org: OrgState,
     pub learning: LearningState,
     pub plugins: PluginsState,
     /// The optional modules compiled in, each after the ones it requires.
     pub modules: Arc<Vec<&'static dyn module_api::Module>>,
+}
+
+impl FromRef<AppState> for MailState {
+    fn from_ref(state: &AppState) -> Self {
+        state.mail.clone()
+    }
 }
 
 impl FromRef<AppState> for AuthState {
@@ -138,6 +148,10 @@ impl AppState {
             .as_ref()
             .map(|mail| Mailer::new(mail, &config.server.public_origin).map(Arc::new))
             .transpose()?;
+        let mail_context = config.mail.as_ref().map(|mail| {
+            mail::Context::new(mail, config.institution.language, &config.institution.name)
+        });
+        let mail_state = MailState::new(db.clone(), &config);
         let google = config
             .auth
             .google
@@ -160,9 +174,11 @@ impl AppState {
                 db: db.clone(),
                 config: config.clone(),
                 hashing: Arc::new(hashing),
-                mailer,
                 google,
             },
+            mail: mail_state,
+            mailer,
+            mail_context,
             org: OrgState {
                 db: db.clone(),
                 config: config.clone(),
@@ -185,14 +201,10 @@ impl AppState {
     /// deliver by hand with `events::process_once`.
     pub fn event_handlers(&self) -> Handlers {
         let mut handlers = Handlers::default();
-        if let Some(mailer) = &self.auth.mailer {
+        if self.config.mail.is_some() {
             handlers = handlers.merge(auth::event_handlers(
                 self.db.clone(),
-                auth::MailContext {
-                    mailer: mailer.clone(),
-                    language: self.config.institution.language,
-                    institution_name: self.config.institution.name.clone(),
-                },
+                auth::MailContext::new(&self.config),
             ));
         }
         // Without `plugins.secret_key` no plugin can be installed, so there is nobody to owe.
@@ -201,6 +213,12 @@ impl AppState {
         }
         handlers = handlers.merge(learning::event_handlers(self.db.clone()));
         handlers.merge(crate::modules::event_handlers(self))
+    }
+
+    /// The mail worker (ADR-0084), to run until the process ends; `None` without `[mail]`.
+    pub fn mail_worker(&self) -> Option<impl Future<Output = ()> + Send + 'static> {
+        let (mailer, context) = (self.mailer.clone()?, self.mail_context.clone()?);
+        Some(mail::run_worker(self.db.clone(), mailer, context))
     }
 
     /// Sends the events plugins are owed until the process ends. `None` while
@@ -276,6 +294,7 @@ pub fn router(state: AppState) -> Result<Router, SetupError> {
                 .routes(routes!(health::health))
                 .routes(routes!(health::meta))
                 .merge(identity)
+                .merge(mail::router())
                 .merge(teaching::router())
                 .merge(learning::people::router())
                 .merge(learning::groups::router())

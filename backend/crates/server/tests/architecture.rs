@@ -53,48 +53,55 @@ const UNITS: &[Unit] = &[
         schema: Some("files"),
         layer: 3,
     },
+    // Outgoing mail (ADR-0084): below `auth`, so it reads nothing of it; callers pass the addresses.
+    Unit {
+        name: "mail",
+        dir: "mail/src",
+        schema: Some("mail"),
+        layer: 4,
+    },
     Unit {
         name: "auth",
         dir: "auth/src",
         schema: Some("auth"),
-        layer: 4,
+        layer: 5,
     },
     Unit {
         name: "org",
         dir: "org/src",
         schema: Some("org"),
-        layer: 5,
+        layer: 6,
     },
     Unit {
         name: "teaching",
         dir: "learning/src/teaching",
         schema: Some("teaching"),
-        layer: 6,
+        layer: 7,
     },
     Unit {
         name: "content",
         dir: "learning/src/content",
         schema: Some("content"),
-        layer: 6,
+        layer: 7,
     },
     Unit {
         name: "assessment",
         dir: "learning/src/assessment",
         schema: Some("assessment"),
-        layer: 6,
+        layer: 7,
     },
     Unit {
         name: "gradebook",
         dir: "learning/src/gradebook",
         schema: Some("gradebook"),
-        layer: 6,
+        layer: 7,
     },
     // The flows above those four (a person with their courses, the audit report, ...): no schema.
     Unit {
         name: "learning",
         dir: "learning/src",
         schema: None,
-        layer: 6,
+        layer: 7,
     },
     // The plugins (ADR-0066) sit on `learning` and write only the schema `plugins`. They read the
     // submissions of `assessment` through its public functions, never its tables.
@@ -102,14 +109,14 @@ const UNITS: &[Unit] = &[
         name: "plugins",
         dir: "plugins/src",
         schema: Some("plugins"),
-        layer: 7,
+        layer: 8,
     },
     // The composition root and the middleware that has a table of its own.
     Unit {
         name: "server",
         dir: "server/src",
         schema: Some("idempotency"),
-        layer: 8,
+        layer: 9,
     },
 ];
 
