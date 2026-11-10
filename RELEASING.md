@@ -9,15 +9,19 @@ What is published is a **source archive**, `vumlo-X.Y.Z-source.tar.gz`, with `SH
 the GitHub Release. Administrators install from it ([docs/install.md](docs/install.md)); they never
 clone this repository.
 
-1. Branch from `main`. Set the new version in all the places (a test fails if they differ):
-   `[workspace.package] version` in `backend/Cargo.toml`, `"version"` in `web/package.json` and in
-   `desktop/package.json`, `version` in the `[package]` of `desktop/Cargo.toml` (then `cargo update --workspace` in
-   `desktop/` as well), and the default of `VUMLO_VERSION` (twice) in `deploy/compose.yaml`. Run `cargo update --workspace` in
-   `backend/` so `Cargo.lock` follows.
-2. In `CHANGELOG.md` move the `[Unreleased]` entries under `## [X.Y.Z] - YYYY-MM-DD`, write the
-   **Upgrade notes** (a new `config_version`, a manual step, the migrations that run), and update the
-   links at the bottom. If the archive's contents change (a new directory an administrator needs),
-   change the allowlist in `.github/release/make-archive.sh`.
+1. Branch from `main`. Run `node .github/release/set-version.mjs X.Y.Z`. It sets the version in every place (a test fails
+   if they differ): `[workspace.package] version` in `backend/Cargo.toml` (the one the rest follows), `"version"` in
+   `web/package.json` and `desktop/package.json` and their lockfiles, `version` in the `[package]` of `desktop/Cargo.toml`, the
+   default of `VUMLO_VERSION` (twice) in `deploy/compose.yaml`, and both `Cargo.lock` files. It also opens the changelog entry
+   (step 2). A new place that carries the version is added to that script.
+2. In `CHANGELOG.md` move the `[Unreleased]` entries under the `## [X.Y.Z] - YYYY-MM-DD` heading the script made (its compare
+   links are made too), and write the **Upgrade notes** (a new `config_version`, a manual step, the migrations that run). If the
+   archive's contents change (a new directory an administrator needs), change the allowlist in `.github/release/make-archive.sh`.
+
+   What follows a release by itself: the docs and the version shown on the landing site (fetched from the newest release when it
+   is built), the demo (`Follow the core release` there opens a pull request that moves its `VERSION`) and `npx create-vumlo`
+   (it downloads the newest release). Only the deploys of the landing site and the demo, and `npm publish` of a new
+   `create-vumlo`, are by hand.
 3. Run the checks of `CLAUDE.md` §14, and `.github/release/make-archive.sh X.Y.Z /tmp/dist` followed by
    `.github/release/verify-archive.sh /tmp/dist X.Y.Z` (it needs Docker and takes a while). Merge the
    branch once CI is green.
