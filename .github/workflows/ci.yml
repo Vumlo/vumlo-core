@@ -6,12 +6,49 @@ on:
   pull_request:
   workflow_call:
 
+# A new push to a pull request replaces the run in progress. Anything else (the release gate) has a group of its own.
+concurrency:
+  group: ci-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 env:
   CARGO_TERM_COLOR: always
   DATABASE_URL: postgres://vumlo:vumlo@localhost:5432/vumlo
 
 jobs:
+  # A pull request that touches nothing a job reads does not run it (a change to the docs does not build the backend).
+  # Anything else, the release gate included, runs every job.
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      backend: ${{ steps.f.outputs.backend }}
+      web: ${{ steps.f.outputs.web }}
+      desktop: ${{ steps.f.outputs.desktop }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - id: f
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE: ${{ github.base_ref }}
+        run: |
+          files=""
+          if [ "$EVENT" = pull_request ]; then files="$(git diff --name-only "origin/$BASE...HEAD")"; fi
+          hit() { [ "$EVENT" != pull_request ] || printf '%s\n' "$files" | grep -qE "$1"; }
+          # What each job reads. The backend tests also read the versions in web/ and desktop/, deploy/ and the logo.
+          ci='^\.github/workflows/ci\.yml$'
+          {
+            hit "$ci|^(backend|brand|deploy)/|^web/package\.json$|^desktop/(package\.json|Cargo\.toml)$|^rust-toolchain" && echo backend=true || echo backend=false
+            hit "$ci|^(web|backend|brand)/|^deploy/(vumlo\.example\.toml|env\.example)$" && echo web=true || echo web=false
+            hit "$ci|^(desktop|web|backend|brand)/|^deploy/(vumlo\.example\.toml|env\.example)$" && echo desktop=true || echo desktop=false
+          } >> "$GITHUB_OUTPUT"
+          cat "$GITHUB_OUTPUT"
+
   check:
+    name: check${{ matrix.label }}
+    needs: changes
+    if: needs.changes.outputs.backend == 'true'
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -22,7 +59,12 @@ jobs:
         # The optional modules (ADR-0054) are Cargo features. Every feature set is built and
         # tested: none, then each module alone, then all together. The only module today is the
         # test-only `dummy`, so "alone" and "all" are the same row; a new module adds rows.
-        features: ["", "dummy"]
+        # The tests also run with 16 threads (CLAUDE.md §14), which finds tests that depend on timing under load; that
+        # does not depend on the feature set, so it is a row of its own beside the others and not a second pass in each.
+        include:
+          - { label: "", features: "", threads: "" }
+          - { label: " (dummy)", features: "dummy", threads: "" }
+          - { label: " (16 threads)", features: "", threads: "16" }
     services:
       postgres:
         image: postgres:18
@@ -43,7 +85,7 @@ jobs:
         with:
           workspaces: backend
           cache-bin: true
-          key: ${{ matrix.features }}
+          key: ${{ matrix.features }}-${{ matrix.threads }}
       - name: Install sqlx-cli
         run: cargo install sqlx-cli --no-default-features --features postgres,rustls --locked
       - name: Run migrations
@@ -58,18 +100,25 @@ jobs:
             psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -q -c "CREATE SCHEMA IF NOT EXISTS mod_$id"
             for file in "$dir"/*.sql; do psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -q -f "$file"; done
           done
-      - run: cargo fmt --all --check
-      - run: cargo clippy --workspace --all-targets --features "${{ matrix.features }}" -- -D warnings
-      - run: cargo test --workspace --features "${{ matrix.features }}"
-      - run: cargo test --workspace --features "${{ matrix.features }}" -- --test-threads=16
+      - if: matrix.threads == ''
+        run: cargo fmt --all --check
+      - if: matrix.threads == ''
+        run: cargo clippy --workspace --all-targets --features "${{ matrix.features }}" -- -D warnings
+      - if: matrix.threads == ''
+        run: cargo test --workspace --features "${{ matrix.features }}"
+      - if: matrix.threads == '16'
+        run: cargo test --workspace --features "${{ matrix.features }}" -- --test-threads=16
       # --all-features: the same answer in every row, so it runs in one.
       - name: The offline query data covers every feature set
-        if: matrix.features == ''
+        if: matrix.features == '' && matrix.threads == ''
         run: cargo sqlx prepare --workspace --check -- --all-targets --all-features
       - name: Build offline, tests included
+        if: matrix.threads == ''
         run: SQLX_OFFLINE=true cargo check --workspace --all-targets --features "${{ matrix.features }}"
 
   web:
+    needs: changes
+    if: needs.changes.outputs.web == 'true'
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -101,6 +150,8 @@ jobs:
   # the whole path from vumlo.toml to a program, without the installer (that is for the institution's own workflow,
   # desktop/release/desktop-release.yml).
   desktop:
+    needs: changes
+    if: needs.changes.outputs.desktop == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
