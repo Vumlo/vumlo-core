@@ -796,6 +796,13 @@ async fn the_list_of_operations_is_the_api() {
             "GET /plugin-api/grades",
             "GET /plugin-api/submissions/{id}/fields",
             "GET /plugin-api/users/contact",
+            "POST /plugin-api/mail",
+            // The opt-out and opt-in links of a mail take a signed token and no session: the
+            // token is the whole check, and `tests/plugin_mail.rs` tries a token we did not make.
+            "GET /mail/opt-out/{token}",
+            "POST /mail/opt-out/{token}",
+            "GET /mail/opt-in/{token}",
+            "POST /mail/opt-in/{token}",
             // The routes of a plugin's own server: who may call each is in its manifest, and
             // `tests/plugin_routes.rs` checks every answer.
             "GET /plugins/{plugin_id}/{path}",
