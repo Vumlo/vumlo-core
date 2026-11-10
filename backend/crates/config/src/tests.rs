@@ -727,6 +727,55 @@ fn a_bad_mail_section_stops_the_server_and_names_the_key() {
 }
 
 #[test]
+fn the_mail_limits_have_defaults_and_are_checked_against_their_ranges() {
+    let mail = build(&format!("{VALID}{MAIL_FILE}"), &[])
+        .unwrap()
+        .mail
+        .unwrap();
+    assert_eq!(
+        (
+            mail.plugin_hourly_calls,
+            mail.recipient_daily,
+            mail.max_audience,
+            mail.retention_days,
+            mail.journal_days
+        ),
+        (500, 20, 2000, 30, 180)
+    );
+    // Appending a line would land in [mail.transport], so the keys come through the environment.
+    let with = |key: &str, value: &str| build(&format!("{VALID}{MAIL_FILE}"), &[(key, value)]);
+    let ok = with("VUMLO__MAIL__MAX_AUDIENCE", "10000")
+        .unwrap()
+        .mail
+        .unwrap();
+    assert_eq!(ok.max_audience, 10_000);
+    for (key, value, name) in [
+        (
+            "VUMLO__MAIL__PLUGIN_HOURLY_CALLS",
+            "0",
+            "mail.plugin_hourly_calls",
+        ),
+        (
+            "VUMLO__MAIL__PLUGIN_HOURLY_CALLS",
+            "100001",
+            "mail.plugin_hourly_calls",
+        ),
+        (
+            "VUMLO__MAIL__RECIPIENT_DAILY",
+            "1001",
+            "mail.recipient_daily",
+        ),
+        ("VUMLO__MAIL__MAX_AUDIENCE", "0", "mail.max_audience"),
+        ("VUMLO__MAIL__RETENTION_DAYS", "3651", "mail.retention_days"),
+        // The journal is kept at least as long as the addresses.
+        ("VUMLO__MAIL__JOURNAL_DAYS", "29", "mail.journal_days"),
+    ] {
+        let e = with(key, value).unwrap_err().to_string();
+        assert!(e.contains(name), "{key}={value}: {e}");
+    }
+}
+
+#[test]
 fn public_origin_loses_the_trailing_slash_and_rejects_paths() {
     assert_eq!(
         build(VALID, &[]).unwrap().server.public_origin,

@@ -62,11 +62,17 @@ max_concurrent_hashes = 8          # password hashes and checks at once, ~19 MiB
 # The client secret is VUMLO__AUTH__GOOGLE__CLIENT_SECRET in the environment, not a key here.
 # redirect_uri = "https://lms.example.edu/auth/google/callback"   # the callback page of the web app
 
-# Outgoing mail (ADR-0045): the links of self-registration and password reset. Without this section
-# both are off (404). Sent by the outbox worker, never inside a request.
+# Outgoing mail (ADR-0084 to ADR-0086): the links of self-registration and password reset, and the
+# mail plugins with the scope mail:send send. Without this section register and reset are off (404)
+# and plugins get 503. Every mail is a row sent by the mail worker, never inside a request.
 # [mail]
 # from = "Vumlo <no-reply@example.edu>"
 # link_base = "https://lms.example.edu"  # where the links point; default server.public_origin
+# plugin_hourly_calls = 500              # 1 to 100000: accepted mail calls one plugin may make in an hour
+# recipient_daily = 20                   # 1 to 1000: plugin messages one person may get in 24 hours
+# max_audience = 2000                    # 1 to 10000: the most people one call may address (more is 422)
+# retention_days = 30                    # 1 to 3650: days an address is kept after a plugin message ends
+# journal_days = 180                     # retention_days to 3650: days the journal (vumlo-cli mail list) is kept
 # [mail.transport]
 # kind = "smtp"                          # "smtp" | "file"
 # host = "smtp.example.edu"
