@@ -33,6 +33,9 @@ pub enum Scope {
     UsersContact,
     /// Read the announcements of the courses it reaches (ADR-0076).
     AnnouncementsRead,
+    /// Send plain-text mail, in the institution's name, to people of the courses it reaches
+    /// (ADR-0085). It never sees an address.
+    MailSend,
 }
 text_enum!(Scope {
     SubmissionsRead => "submissions:read",
@@ -44,10 +47,11 @@ text_enum!(Scope {
     QuizzesRead => "quizzes:read",
     UsersContact => "users:contact",
     AnnouncementsRead => "announcements:read",
+    MailSend => "mail:send",
 });
 
 impl Scope {
-    pub const ALL: [Scope; 9] = [
+    pub const ALL: [Scope; 10] = [
         Scope::SubmissionsRead,
         Scope::ReportsWrite,
         Scope::SettingsRead,
@@ -57,6 +61,7 @@ impl Scope {
         Scope::QuizzesRead,
         Scope::UsersContact,
         Scope::AnnouncementsRead,
+        Scope::MailSend,
     ];
 }
 
