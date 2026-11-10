@@ -319,6 +319,8 @@ pub struct InstitutionSettings {
     /// The institution's IANA time zone, checked at startup (ADR-0044).
     #[serde(serialize_with = "serialize_time_zone")]
     pub time_zone: chrono_tz::Tz,
+    /// The colour of the web app: one hue of a fixed set, `violet` by default.
+    pub accent: Accent,
     /// Chosen before the first start and fixed for the life of the installation (ADR-0031).
     pub mode: InstitutionMode,
     /// The grading scale that applies: `institution.grading_scale` when set, else the one the
@@ -350,6 +352,8 @@ pub struct InstitutionSection {
     language: Option<String>,
     #[schemars(extend("x-visibility" = "public"))]
     time_zone: Option<String>,
+    #[schemars(extend("x-visibility" = "public"))]
+    accent: Option<String>,
 }
 
 impl TryFrom<InstitutionSection> for InstitutionSettings {
@@ -393,11 +397,21 @@ impl TryFrom<InstitutionSection> for InstitutionSettings {
                 )
             })?,
         };
+        let accent = match section.accent {
+            None => Accent::Violet,
+            Some(text) => text.parse().map_err(|_| {
+                format!(
+                    "institution.accent \"{text}\" is not valid: set it to one of {}",
+                    Accent::NAMES.join(", ")
+                )
+            })?,
+        };
         Ok(Self {
             name: section.name,
             short_name,
             language,
             time_zone,
+            accent,
             mode,
             grading_scale: section.grading_scale.unwrap_or(implied),
         })
@@ -413,6 +427,33 @@ pub enum Language {
 }
 
 text_enum!(Language { En => "en", Uk => "uk" });
+
+/// The colour of the web app (ADR-0083, which brings back what ADR-0054 removed). The web app maps each name to a
+/// hue in `styles/tokens.css`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum Accent {
+    Violet,
+    Blue,
+    Teal,
+    Green,
+    Orange,
+    Red,
+}
+
+text_enum!(Accent {
+    Violet => "violet",
+    Blue => "blue",
+    Teal => "teal",
+    Green => "green",
+    Orange => "orange",
+    Red => "red",
+});
+
+impl Accent {
+    /// Every name, for messages.
+    pub const NAMES: [&'static str; 6] = ["violet", "blue", "teal", "green", "orange", "red"];
+}
 
 /// What kind of institution this installation serves (ADR-0002, ADR-0031).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, JsonSchema)]

@@ -9,9 +9,9 @@ use server::app::{self, AppState};
 use sqlx::PgPool;
 use tokio::net::TcpListener;
 use vumlo_config::{
-    AuthSettings, CliSettings, DatabaseSettings, DesktopSettings, EditorSettings, FilesSettings,
-    GradingScale, InstitutionMode, InstitutionSettings, Language, LogFormat, LogSettings, Modules,
-    PluginsSettings, Secret, ServerSettings, Settings, WebSettings,
+    Accent, AuthSettings, CliSettings, DatabaseSettings, DesktopSettings, EditorSettings,
+    FilesSettings, GradingScale, InstitutionMode, InstitutionSettings, Language, LogFormat,
+    LogSettings, Modules, PluginsSettings, Secret, ServerSettings, Settings, WebSettings,
 };
 
 // The per-test database harness (ADR-0036).
@@ -70,6 +70,7 @@ pub fn test_settings() -> Settings {
             short_name: "Test".to_owned(),
             language: Language::En,
             time_zone: chrono_tz::UTC,
+            accent: Accent::Violet,
             mode: InstitutionMode::University,
             grading_scale: GradingScale::Hundred,
         },

@@ -13,9 +13,11 @@ There are two ways to run it. Pick one:
   (or copy), systemd for the services and Caddy for TLS.
 
 `npx create-vumlo` does the first two steps of the Docker path for you: it downloads the newest release, checks it
-against its `SHA256SUMS`, keeps only the parts you pick (web app, desktop app), asks for the institution's name, mode,
-address and who may sign up, and writes `vumlo.toml` and `.env` (with a generated database password). It then prints the
-commands of step 3. It needs Node 20 or newer. Nothing in it is required: the steps below do the same by hand.
+against its `SHA256SUMS`, keeps only the parts you pick (web app, desktop app, optional modules, plugins), asks for the
+institution's name, short name, colour, mode, address and who may sign up, and writes `vumlo.toml` and `.env` (with a
+generated database password). It then prints the commands of step 3. It needs Node 20 or newer. Nothing in it is
+required: the steps below do the same by hand. Later, `npx create-vumlo update`, run inside the installation, updates it
+in place (see [Upgrading](#upgrading)).
 
 Everything that follows is for one institution per installation. The institution's mode, `school` or
 `university`, is chosen before the first start and cannot be changed afterwards.
@@ -83,13 +85,14 @@ binary. Edit the two files:
 
 The release ships with the name "Vumlo". Set `institution.name` and `institution.short_name` to your
 institution's: the web app and the desktop app are then called "Vumlo | Short name". The logo is
-always Vumlo's (`brand/vumlo-mark.png` and `brand/vumlo-logo.png`); it is not configurable.
+always Vumlo's (`brand/vumlo-mark.png` and `brand/vumlo-logo.png`); it is not configurable. The colour is:
+`institution.accent` is `violet` (the default), `blue`, `teal`, `green`, `orange` or `red`.
 
 ### 3. Build and start
 
 ```sh
 ./vumlo config check                                  # every problem, or "configuration OK"
-./vumlo brand apply                                   # writes .vumlo/generated/: the web build reads only this
+./vumlo brand apply                                   # writes web/src/generated and web/public/brand: the web build reads only these
 
 export COMPOSE_FILE=deploy/compose.yaml COMPOSE_ENV_FILES=.env
 docker compose build                                  # core, worker and the web app, from this directory
@@ -116,24 +119,32 @@ reason.
 
 To change the configuration later: edit `vumlo.toml`, `./vumlo config check`,
 `./vumlo brand apply`, then `docker compose up -d --build` (the web image is rebuilt from the new
-`.vumlo/generated`).
+`web/src/generated` and `web/public/brand`, which `brand apply` wrote).
 
 ### Upgrading
 
-Read the **Upgrade notes** of every release between yours and the new one in `CHANGELOG.md`. Then:
+Read the **Upgrade notes** of every release between yours and the new one in `CHANGELOG.md`. Then, inside the
+installation:
 
 ```sh
-sha256sum --check --ignore-missing SHA256SUMS && tar xzf vumlo-0.2.0-source.tar.gz
-cp -a vumlo-0.1.0/vumlo.toml vumlo-0.1.0/.env vumlo-0.1.0/brand vumlo-0.2.0/   # your files
-cp -a vumlo-0.1.0/backups vumlo-0.2.0/ 2>/dev/null || true
-cd vumlo-0.2.0
+npx create-vumlo update         # downloads the newest release, checks it, replaces the code in place
 ./vumlo config check            # a new config_version or key is listed here
 deploy/update.sh --docker       # brand apply, build, back up, stop, migrate, start, doctor
 ```
 
+`npx create-vumlo update` copies the files of the old release it replaces into
+`backups/vumlo-<old version>-files.tar.gz` first, so an edit you made to `web/` is not lost. It never touches
+`vumlo.toml`, `.env`, `backups/` or `plugins/`, and it keeps what you had left out (no `web/` stays without one).
+Without Node: download `vumlo-<version>-source.tar.gz` and `SHA256SUMS`, check them with
+`sha256sum --check --ignore-missing SHA256SUMS`, unpack the archive, and copy its files over the installation, except
+the four above.
+
 `update.sh` stops at the first failure and never migrates before the backup exists (see
 [Upgrades](#upgrades) for what it does). The database lives in a Docker volume that does not depend on
-the directory, so the new directory finds the old data. Keep the old directory until `doctor` is green.
+the directory. If `plugins/compose.yaml` exists (`npx create-vumlo` writes it when you pick plugins), `./vumlo` and
+`update.sh` start and rebuild the plugin containers with the rest. A plugin in a container is installed with
+`./vumlo plugin install http://plugin-<name>:8000`: a host name without a dot may use `http://`, because it cannot
+name a host on the public internet.
 
 ### Demo data
 
@@ -413,7 +424,8 @@ open. A person's chat, and the changes it prepared, are readable by nobody else 
 | `config show [--public]` | the effective configuration, secrets redacted |
 | `modules list [--json]` | the core modules and the optional ones with their state |
 | `module <name> ...` | the subcommands a module brings, while it is on |
-| `brand apply [--dry-run]` | regenerates `.vumlo/generated/` from the configuration |
+| `brand apply [--dry-run]` | regenerates `web/src/generated/` and `web/public/brand/` from the configuration (nothing to do without a web app) |
+| `config schema` | prints the JSON Schema of `vumlo.toml` |
 | `build web [--dry-run]` | `brand apply`, then the web build |
 | `db status` | what is applied and pending; non-zero if the schema is newer than the binary |
 | `db backup [--output FILE]` | a `pg_dump` of the database, read back with `pg_restore`; never overwrites |

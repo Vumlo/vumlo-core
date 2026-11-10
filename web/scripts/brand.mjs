@@ -1,58 +1,61 @@
-// Takes what `vumlo-cli brand apply` generated (.vumlo/generated/, next to vumlo.toml) into the web
-// app, and nothing else: the web build reads no configuration of its own (ADR-0054).
+// Prepares the web build from what `vumlo-cli brand apply` wrote into this directory (ADR-0054, ADR-0083), and nothing
+// else: the web build reads no configuration of its own.
 //
-//   public/brand/             the Vumlo logo, favicon, icons and manifest (served as /brand/...)
-//   src/generated/            client-config.json and its TypeScript types
-//   src/modules/enabled.ts    imports the UI of the modules that are on, so only those are bundled
+//   src/generated/client-config.json   written by `brand apply`, with its TypeScript types beside it
+//   public/brand/                      written by `brand apply`: the Vumlo logo, favicon, icons and manifest
+//   src/modules/enabled.ts             written here: imports the UI of the modules that are on, so only those are bundled
 //
-// Without --optional a missing generated directory stops the build. `pnpm dev` passes --optional
-// and gets a neutral stand-in, so the app still runs against the mock API without the CLI.
-import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+// Without --optional a missing client-config.json stops the build. `pnpm dev` passes --optional and gets a neutral
+// stand-in (marked version "dev"), so the app still runs against the mock API without the CLI. A build refuses the stand-in.
+import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const web = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const generated = resolve(process.env.VUMLO_GENERATED_DIR ?? join(web, "..", ".vumlo", "generated"));
 const optional = process.argv.includes("--optional");
 
 const brand = join(web, "public", "brand");
 const outDir = join(web, "src", "generated");
+const configFile = join(outDir, "client-config.json");
 const registry = join(web, "src", "modules", "enabled.ts");
 
-rmSync(brand, { recursive: true, force: true });
-mkdirSync(brand, { recursive: true });
-mkdirSync(outDir, { recursive: true });
+const missing = `brand: ${configFile} not found. Run \`vumlo-cli brand apply\` first (the web build reads only what it writes).`;
 
-let config;
-if (existsSync(join(generated, "client-config.json"))) {
-  config = JSON.parse(readFileSync(join(generated, "client-config.json"), "utf8"));
-  cpSync(join(generated, "client-config.json"), join(outDir, "client-config.json"));
-  cpSync(join(generated, "client-config.d.ts"), join(outDir, "client-config.d.ts"));
-  for (const name of readdirSync(generated)) {
-    // icon-1024.png is for the installers of the desktop app (desktop/scripts/build.mjs); the web app does not serve it.
-    if (name === "client-config.json" || name === "client-config.d.ts" || name === "vumlo.schema.json" || name === "icon-1024.png") continue;
-    cpSync(join(generated, name), join(brand, name));
+if (!existsSync(configFile)) {
+  if (!optional) {
+    console.error(missing);
+    process.exit(1);
   }
-} else if (optional) {
-  console.warn(`brand: ${generated} not found; using a stand-in (run \`vumlo-cli brand apply\` for the real one)`);
-  config = {
-    version: "dev",
-    api_url: "/api/v1",
-    public: {
-      server: { public_origin: "http://localhost:3000" },
-      institution: { name: "Vumlo", short_name: "Vumlo", language: "en", time_zone: "UTC", grading_scale: "hundred" },
-    },
-    modules: {},
-    web_modules: [],
-    desktop: { url_scheme: "vumlo" },
-  };
-  writeFileSync(join(outDir, "client-config.json"), JSON.stringify(config, null, 2) + "\n");
+  console.warn("brand: no client-config.json; using a stand-in (run `vumlo-cli brand apply` for the real one)");
+  mkdirSync(outDir, { recursive: true });
+  mkdirSync(brand, { recursive: true });
+  writeFileSync(
+    configFile,
+    JSON.stringify(
+      {
+        version: "dev",
+        api_url: "/api/v1",
+        public: {
+          server: { public_origin: "http://localhost:3000" },
+          institution: { name: "Vumlo", short_name: "Vumlo", language: "en", time_zone: "UTC", grading_scale: "hundred", accent: "violet" },
+        },
+        modules: {},
+        web_modules: [],
+        desktop: { url_scheme: "vumlo" },
+      },
+      null,
+      2,
+    ) + "\n",
+  );
+  writeFileSync(join(outDir, "client-config.d.ts"), "export type ClientConfig = any;\n");
   // The real files come from `brand apply`, which scales the Vumlo mark. For `dev` the mark itself stands in for each icon
   // (the .ico is a PNG under that name, which browsers accept).
-  for (const name of ["icon-192.png", "icon-512.png", "apple-touch-icon.png", "favicon.ico"]) cpSync(join(web, "..", "brand", "vumlo-mark.png"), join(brand, name));
-  writeFileSync(join(outDir, "client-config.d.ts"), "export type ClientConfig = any;\n");
-} else {
-  console.error(`brand: ${generated} not found. Run \`vumlo-cli brand apply\` first (the web build reads only that directory).`);
+  for (const name of ["icon-192.png", "icon-512.png", "apple-touch-icon.png", "favicon.ico"]) copyFileSync(join(web, "..", "brand", "vumlo-mark.png"), join(brand, name));
+}
+
+const config = JSON.parse(readFileSync(configFile, "utf8"));
+if (config.version === "dev" && !optional) {
+  console.error(`brand: ${configFile} is the stand-in that \`pnpm dev\` made, not a real configuration. Run \`vumlo-cli brand apply\` first.`);
   process.exit(1);
 }
 
@@ -79,4 +82,4 @@ names.forEach((name, i) => lines.push(`  ${JSON.stringify(name)}: Module${i},`))
 lines.push("};", "", `export const launchers: ComponentType[] = [${launchers.join(", ")}];`, "");
 mkdirSync(dirname(registry), { recursive: true });
 writeFileSync(registry, lines.join("\n"));
-console.log(`brand: ${existsSync(join(generated, "client-config.json")) ? "took" : "stood in for"} ${generated}; modules in the bundle: ${names.join(", ") || "none"}`);
+console.log(`brand: ${config.version === "dev" ? "stood in for the client config" : "took " + configFile}; modules in the bundle: ${names.join(", ") || "none"}`);

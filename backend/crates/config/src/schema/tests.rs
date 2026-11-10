@@ -14,6 +14,7 @@ fn the_public_keys_are_the_institution_profile_the_origin_and_the_file_limits() 
         [
             "files.max_size",
             "files.storage",
+            "institution.accent",
             "institution.grading_scale",
             "institution.language",
             "institution.name",
@@ -53,12 +54,12 @@ fn a_secret_is_read_from_the_environment_under_a_predictable_name() {
 fn unknown_keys_are_found_at_any_depth_and_map_entries_are_known() {
     let value = serde_json::json!({
         "server": {"public_origin": "https://x.test", "nope": 1},
-        "institution": {"accent": "teal"},
+        "institution": {"logo": "logo.png"},
         "editor": {"profiles": {"student": {"features": []}}},
         "modules": {"anything": {"goes": true}},
         "mail": {"transport": {"kind": "smtp", "host": "h", "password": "p"}},
     });
-    assert_eq!(unknown_keys(&value), ["institution.accent", "server.nope"]);
+    assert_eq!(unknown_keys(&value), ["institution.logo", "server.nope"]);
 }
 
 #[test]

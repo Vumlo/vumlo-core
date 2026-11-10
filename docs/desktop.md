@@ -51,28 +51,29 @@ An installer is built on the system it is for. From the directory of this releas
 core is vendored: `vendor/vumlo-core`):
 
 ```sh
-./vumlo brand apply                         # writes .vumlo/generated next to vumlo.toml
+./vumlo brand apply                         # writes web/src/generated and web/public/brand
 cd web && npm ci && cd ../desktop && npm ci
 node scripts/build.mjs -- --bundles deb,appimage      # Linux; nsis on Windows, dmg on macOS
 ```
 
-`scripts/build.mjs` builds the web app as a static export, makes the icons from the Vumlo logo, writes the
+`scripts/build.mjs` reads `web/src/generated/client-config.json` and `web/public/brand/icon-1024.png` (both written
+by `brand apply`; a desktop-only installation keeps `web/` for this), builds the web app as a static export,
+makes the icons from the Vumlo logo, writes the
 configuration of the installer (`desktop/gen/`) and runs `tauri build`. The installers are in
 `desktop/dist/`, named `<scheme>_<version>_<arch>.<ext>`, for example `vumlo-ucu_0.2.1_amd64.deb`. It warns, before the long part, if the server address is `http` or
-`localhost`, or the scheme is plain `vumlo`. If your configuration is not beside `desktop/`, give the
-generated directory: `node scripts/build.mjs --generated /path/to/.vumlo/generated`.
+`localhost`, or the scheme is plain `vumlo`.
 
 ## Build it with GitHub Actions
 
 Copy `desktop/release/desktop-release.yml` to `.github/workflows/desktop-release.yml` of the repository that has
 your `vumlo.toml` (a GitHub fork of vumlo-core, or a repository that vendors a release as `vendor/vumlo-core`),
-and set `CORE_DIR` and `CONFIG` at the top. Push a tag:
+and set `CORE_DIR` and `CONFIG` at the top (`web.dir` of the configuration must be the `web/` of `CORE_DIR`). Push a tag:
 
 ```sh
 git tag desktop-v1.0.0 && git push origin desktop-v1.0.0
 ```
 
-The workflow makes the branding once (or uses a committed `.vumlo/generated`), builds the installers on Linux,
+The workflow makes the branding once (or uses a committed `web/src/generated` and `web/public/brand`), builds the installers on Linux,
 Windows and macOS (Apple silicon and Intel), and puts them with a `SHA256SUMS` in a **draft** release. Open it,
 try an installer, and publish. "Run workflow" builds them without a release.
 

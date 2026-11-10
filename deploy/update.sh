@@ -54,7 +54,11 @@ case "$mode" in
         ;;
     --docker)
         cd "$(dirname "$0")/.."
-        export COMPOSE_FILE=deploy/compose.yaml COMPOSE_ENV_FILES=.env
+        # plugins/compose.yaml (made by `npx create-vumlo`) adds the plugin containers; its paths are read from
+        # deploy/, the folder of the first file.
+        COMPOSE_FILE=deploy/compose.yaml
+        if [ -f plugins/compose.yaml ]; then COMPOSE_FILE="$COMPOSE_FILE:plugins/compose.yaml"; fi
+        export COMPOSE_FILE COMPOSE_ENV_FILES=.env
         VUMLO_UID="$(id -u)"
         VUMLO_GID="$(id -g)"
         export VUMLO_UID VUMLO_GID

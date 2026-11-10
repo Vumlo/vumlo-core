@@ -7,8 +7,8 @@ use std::path::Path;
 
 use common::{Env, db_test};
 
-/// A directory with an `npm` that appends its arguments, the working directory and the generated
-/// directory it was told about to `calls.log`, and exits with `exit_code`.
+/// A directory with an `npm` that appends its arguments and the working directory to
+/// `calls.log`, and exits with `exit_code`.
 fn fake_npm(dir: &Path, exit_code: i32) -> String {
     std::fs::create_dir_all(dir).unwrap();
     let script = dir.join("npm");
@@ -16,7 +16,7 @@ fn fake_npm(dir: &Path, exit_code: i32) -> String {
         &script,
         format!(
             "#!/bin/sh\n[ \"$1\" = \"--version\" ] && echo 10.0.0 && exit 0\n\
-             echo \"$* | $(basename \"$(pwd)\") | $VUMLO_GENERATED_DIR\" >> \"{}/calls.log\"\n\
+             echo \"$* | $(basename \"$(pwd)\")\" >> \"{}/calls.log\"\n\
              exit {exit_code}\n",
             dir.display()
         ),
@@ -40,7 +40,7 @@ fn calls(dir: &Path) -> Vec<String> {
 }
 
 #[tokio::test]
-async fn it_applies_the_branding_then_installs_and_builds_with_the_generated_directory() {
+async fn it_applies_the_branding_then_installs_and_builds() {
     db_test(async |pool| {
         let env = Env::new(&pool);
         web_app(&env);
@@ -57,14 +57,11 @@ async fn it_applies_the_branding_then_installs_and_builds_with_the_generated_dir
 
         assert!(out.ok, "{}", out.stderr);
         assert!(
-            env.path(".vumlo/generated/client-config.json").exists(),
+            env.path("web/src/generated/client-config.json").exists(),
             "brand apply ran first"
         );
         let log = calls(&bin);
-        assert_eq!(log.len(), 2, "{log:?}");
-        let generated = std::path::absolute(env.path(".vumlo/generated")).unwrap();
-        assert_eq!(log[0], format!("install | web | {}", generated.display()));
-        assert_eq!(log[1], format!("run build | web | {}", generated.display()));
+        assert_eq!(log, ["install | web", "run build | web"]);
     })
     .await;
 }
@@ -135,7 +132,7 @@ async fn without_npm_it_says_so_before_writing_anything() {
 
         assert!(!out.ok);
         assert!(out.stderr.contains("npm was not found"), "{}", out.stderr);
-        assert!(!env.path(".vumlo").exists());
+        assert!(!env.path("web/src/generated").exists());
     })
     .await;
 }
@@ -169,7 +166,7 @@ async fn it_needs_the_web_app_and_a_dry_run_does_nothing() {
             dry.stdout
         );
         assert!(calls(&bin).is_empty());
-        assert!(!env.path(".vumlo").exists());
+        assert!(!env.path("web/src/generated").exists());
     })
     .await;
 }

@@ -11,6 +11,7 @@ fn the_client_config_types_describe_every_field() {
         "max_size: number;",
         "language: \"en\" | \"uk\";",
         "grading_scale: \"twelve\" | \"hundred\";",
+        "accent: \"violet\" | \"blue\" | \"teal\" | \"green\" | \"orange\" | \"red\";",
         "modules: { [name: string]: \"enabled\" | \"disabled\" | \"unavailable\" };",
         "web_modules: (string)[];",
     ] {

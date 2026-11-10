@@ -69,11 +69,15 @@ npx create-vumlo
 ```
 
 It downloads the newest release and checks it against the release's `SHA256SUMS`, asks for the name of your institution,
-its address, who may sign up and a few other things, and writes `vumlo.toml` and `.env` with a generated database
-password. Then it prints the handful of commands that build and start Vumlo. The guide to what follows, with TLS, mail,
-upgrades and backups, is [docs/install.md](docs/install.md). Without Node, or on a plain Linux server without Docker, the
-same guide has the manual steps: download the archive from the [releases](https://github.com/Vumlo/vumlo-core/releases),
-verify it, unpack it.
+its short name, its colour, its address, who may sign up, which parts you want (web app, desktop app, optional modules,
+plugins) and a few other things, and writes `vumlo.toml` and `.env` with a generated database password. Then it prints the
+handful of commands that build and start Vumlo. The guide to what follows, with TLS, mail, upgrades and backups, is
+[docs/install.md](docs/install.md). Without Node, or on a plain Linux server without Docker, the same guide has the
+manual steps: download the archive from the [releases](https://github.com/Vumlo/vumlo-core/releases), verify it, unpack it.
+
+To update, run `npx create-vumlo update` inside the installation, read the **Upgrade notes** of the new release in
+`CHANGELOG.md`, and run `deploy/update.sh --docker`. The update replaces the code in place, backs up the files it
+replaces into `backups/`, and never touches `vumlo.toml`, `.env`, `backups/` or `plugins/`.
 
 To look around an installation before you add real people: `./vumlo seed --demo`.
 

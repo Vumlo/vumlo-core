@@ -1,43 +1,46 @@
 /* The only place colours are written. Components refer to them as var(--name).
-   Ultraviolet: paper and ink share one violet hue; a surface is a step to the next paper, never a border. */
+   Paper and ink share one hue, --hue (ADR-0083); a surface is a step to the next paper, never a border.
+   The institution picks the hue with `institution.accent`: the root element gets data-accent, and the rules at the
+   end of this file set --hue. Violet (290) is the default. ok, danger and file keep their own hues. */
 :root {
+  --hue: 290;
   color-scheme: light;
-  --bg: oklch(96% 0.014 300);
-  --surface: oklch(92.5% 0.028 300);
-  --sunken: oklch(89.5% 0.034 300);
-  --hover: oklch(86.5% 0.04 300);
-  --border: oklch(84% 0.04 300);
-  --border-strong: oklch(58% 0.09 295);
-  --text: oklch(18% 0.02 300);
-  --brand-ink: oklch(33% 0.06 280);
-  --muted: oklch(42% 0.05 300);
-  --accent: oklch(50% 0.25 290);
-  --accent-text: oklch(98% 0.01 300);
-  --accent-fg: oklch(43% 0.22 290);
-  --accent-soft: oklch(86% 0.08 295);
-  /* Lecture and assignment stay apart by tone, not by a second hue: violet for what is read, ink for what is handed in. */
-  --lec-tile: oklch(86% 0.08 295);
-  --lec-fg: oklch(40% 0.22 290);
-  --asg-tile: oklch(32% 0.04 295);
-  --asg-fg: oklch(95% 0.02 300);
-  --asg-row: oklch(93.5% 0.024 300);
-  --asg-text: oklch(28% 0.03 300);
+  --bg: oklch(96% 0.014 calc(var(--hue) + 10));
+  --surface: oklch(92.5% 0.028 calc(var(--hue) + 10));
+  --sunken: oklch(89.5% 0.034 calc(var(--hue) + 10));
+  --hover: oklch(86.5% 0.04 calc(var(--hue) + 10));
+  --border: oklch(84% 0.04 calc(var(--hue) + 10));
+  --border-strong: oklch(58% 0.09 calc(var(--hue) + 5));
+  --text: oklch(18% 0.02 calc(var(--hue) + 10));
+  --brand-ink: oklch(33% 0.06 calc(var(--hue) - 10));
+  --muted: oklch(42% 0.05 calc(var(--hue) + 10));
+  --accent: oklch(50% 0.25 var(--hue));
+  --accent-text: oklch(98% 0.01 calc(var(--hue) + 10));
+  --accent-fg: oklch(43% 0.22 var(--hue));
+  --accent-soft: oklch(86% 0.08 calc(var(--hue) + 5));
+  /* Lecture and assignment stay apart by tone, not by a second hue: the accent for what is read, ink for what is handed in. */
+  --lec-tile: oklch(86% 0.08 calc(var(--hue) + 5));
+  --lec-fg: oklch(40% 0.22 var(--hue));
+  --asg-tile: oklch(32% 0.04 calc(var(--hue) + 5));
+  --asg-fg: oklch(95% 0.02 calc(var(--hue) + 10));
+  --asg-row: oklch(93.5% 0.024 calc(var(--hue) + 10));
+  --asg-text: oklch(28% 0.03 calc(var(--hue) + 10));
   --file-tile: oklch(88% 0.06 200);
   --file-fg: oklch(38% 0.09 205);
   --ok-soft: oklch(89% 0.07 160);
   --ok-fg: oklch(36% 0.1 160);
   --danger: oklch(48% 0.2 27);
   --danger-soft: oklch(90% 0.05 20);
-  --shadow: 0 1px 2px oklch(18% 0.02 300 / 0.06);
-  --ring: oklch(50% 0.25 290);
-  --input-bg: oklch(98.5% 0.008 300);
-  --raised: oklch(98.5% 0.008 300);
-  --code-bg: oklch(94% 0.02 300);
-  --code-kw: oklch(43% 0.22 290);
+  --shadow: 0 1px 2px oklch(18% 0.02 calc(var(--hue) + 10) / 0.06);
+  --ring: oklch(50% 0.25 var(--hue));
+  --input-bg: oklch(98.5% 0.008 calc(var(--hue) + 10));
+  --raised: oklch(98.5% 0.008 calc(var(--hue) + 10));
+  --code-bg: oklch(94% 0.02 calc(var(--hue) + 10));
+  --code-kw: oklch(43% 0.22 var(--hue));
   --code-num: oklch(42% 0.14 27);
-  --sel-bg: oklch(84% 0.1 295);
-  --video-bg: oklch(18% 0.02 300);
-  --video-fg: oklch(98% 0.01 300);
+  --sel-bg: oklch(84% 0.1 calc(var(--hue) + 5));
+  --video-bg: oklch(18% 0.02 calc(var(--hue) + 10));
+  --video-fg: oklch(98% 0.01 calc(var(--hue) + 10));
   --video-ctrl: oklch(100% 0 0 / 0.16);
   /* Accent choices of the institution (Admin, Institution). Preview swatches only. */
   --swatch-indigo: oklch(50% 0.25 290);
@@ -45,8 +48,8 @@
   --swatch-crimson: oklch(50% 0.2 20);
   --swatch-forest: oklch(46% 0.12 145);
   --swatch-plum: oklch(46% 0.17 330);
-  --overlay: oklch(14% 0.03 290 / 0.5);
-  --popover-shadow: 0 12px 32px oklch(18% 0.05 290 / 0.2);
+  --overlay: oklch(14% 0.03 var(--hue) / 0.5);
+  --popover-shadow: 0 12px 32px oklch(18% 0.05 var(--hue) / 0.2);
 
   /* Scale: a 4px grid, one radius per nesting level, two durations. */
   --space-1: 4px; --space-2: 8px; --space-3: 12px; --space-4: 16px; --space-5: 20px; --space-6: 24px; --space-8: 32px; --space-10: 40px;
@@ -59,25 +62,25 @@
 
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --bg: oklch(23% 0.024 290);
-  --surface: oklch(29.5% 0.03 290);
-  --sunken: oklch(33.5% 0.034 290);
-  --hover: oklch(38% 0.038 290);
-  --border: oklch(42% 0.04 290);
-  --border-strong: oklch(60% 0.08 292);
-  --text: oklch(95% 0.02 300);
-  --brand-ink: oklch(92% 0.03 290);
-  --muted: oklch(76% 0.05 300);
-  --accent: oklch(56% 0.25 290);
-  --accent-text: oklch(98% 0.01 300);
-  --accent-fg: oklch(78% 0.14 292);
-  --accent-soft: oklch(36% 0.1 292);
-  --lec-tile: oklch(38% 0.1 292);
-  --lec-fg: oklch(80% 0.13 292);
-  --asg-tile: oklch(42% 0.04 290);
-  --asg-fg: oklch(95% 0.02 300);
-  --asg-row: oklch(31% 0.032 290);
-  --asg-text: oklch(88% 0.04 300);
+  --bg: oklch(23% 0.024 var(--hue));
+  --surface: oklch(29.5% 0.03 var(--hue));
+  --sunken: oklch(33.5% 0.034 var(--hue));
+  --hover: oklch(38% 0.038 var(--hue));
+  --border: oklch(42% 0.04 var(--hue));
+  --border-strong: oklch(60% 0.08 calc(var(--hue) + 2));
+  --text: oklch(95% 0.02 calc(var(--hue) + 10));
+  --brand-ink: oklch(92% 0.03 var(--hue));
+  --muted: oklch(76% 0.05 calc(var(--hue) + 10));
+  --accent: oklch(56% 0.25 var(--hue));
+  --accent-text: oklch(98% 0.01 calc(var(--hue) + 10));
+  --accent-fg: oklch(78% 0.14 calc(var(--hue) + 2));
+  --accent-soft: oklch(36% 0.1 calc(var(--hue) + 2));
+  --lec-tile: oklch(38% 0.1 calc(var(--hue) + 2));
+  --lec-fg: oklch(80% 0.13 calc(var(--hue) + 2));
+  --asg-tile: oklch(42% 0.04 var(--hue));
+  --asg-fg: oklch(95% 0.02 calc(var(--hue) + 10));
+  --asg-row: oklch(31% 0.032 var(--hue));
+  --asg-text: oklch(88% 0.04 calc(var(--hue) + 10));
   --file-tile: oklch(38% 0.06 205);
   --file-fg: oklch(84% 0.09 200);
   --ok-soft: oklch(36% 0.07 160);
@@ -85,21 +88,28 @@
   --danger: oklch(74% 0.16 22);
   --danger-soft: oklch(36% 0.07 22);
   --shadow: none;
-  --ring: oklch(68% 0.22 290);
-  --input-bg: oklch(20% 0.024 290);
-  --raised: oklch(35% 0.038 290);
-  --code-bg: oklch(21% 0.026 290);
-  --code-kw: oklch(78% 0.14 292);
+  --ring: oklch(68% 0.22 var(--hue));
+  --input-bg: oklch(20% 0.024 var(--hue));
+  --raised: oklch(35% 0.038 var(--hue));
+  --code-bg: oklch(21% 0.026 var(--hue));
+  --code-kw: oklch(78% 0.14 calc(var(--hue) + 2));
   --code-num: oklch(80% 0.12 60);
-  --sel-bg: oklch(44% 0.12 292);
-  --video-bg: oklch(10% 0.02 290);
-  --video-fg: oklch(98% 0.01 300);
+  --sel-bg: oklch(44% 0.12 calc(var(--hue) + 2));
+  --video-bg: oklch(10% 0.02 var(--hue));
+  --video-fg: oklch(98% 0.01 calc(var(--hue) + 10));
   --video-ctrl: oklch(100% 0 0 / 0.16);
   --swatch-indigo: oklch(68% 0.2 290);
   --swatch-teal: oklch(76% 0.11 190);
   --swatch-crimson: oklch(72% 0.16 20);
   --swatch-forest: oklch(76% 0.13 145);
   --swatch-plum: oklch(72% 0.15 330);
-  --overlay: oklch(5% 0.02 290 / 0.65);
+  --overlay: oklch(5% 0.02 var(--hue) / 0.65);
   --popover-shadow: 0 12px 32px oklch(0% 0 0 / 0.5);
 }
+
+/* The institution's accent (`institution.accent`, set on <html> as data-accent). Violet is the default above. */
+:root[data-accent="blue"] { --hue: 255; }
+:root[data-accent="teal"] { --hue: 195; }
+:root[data-accent="green"] { --hue: 145; }
+:root[data-accent="orange"] { --hue: 55; }
+:root[data-accent="red"] { --hue: 15; }

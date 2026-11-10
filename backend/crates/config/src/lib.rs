@@ -17,7 +17,7 @@ pub use load::{
 };
 pub use modules::{
     ModuleEntry, ModuleSpec, ModuleStatus, Modules, RESERVED_KEYS, ResolvedModule, SettingKind,
-    SettingSpec, check_endpoint, resolve as resolve_modules,
+    SettingSpec, check_endpoint, check_plugin_endpoint, resolve as resolve_modules,
 };
 pub use schema::{Visibility, env_name, public_paths, secret_paths, settings_schema};
 pub use settings::*;

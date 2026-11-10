@@ -108,6 +108,8 @@ enum ConfigCommand {
         #[arg(long)]
         public: bool,
     },
+    /// Print the JSON Schema of `vumlo.toml` (for an editor).
+    Schema,
 }
 
 #[derive(Subcommand)]
@@ -251,9 +253,10 @@ enum SettingsCommand {
 
 #[derive(Subcommand)]
 enum BrandCommand {
-    /// Regenerate `.vumlo/generated/` from the configuration: client-config.json and its types,
-    /// the manifest, the Vumlo logo, the favicon and the app icons. Starts from scratch
-    /// every time. Then rebuild the web app and restart.
+    /// Regenerate the branding inside the web app from the configuration: `src/generated/`
+    /// (client-config.json and its types) and `public/brand/` (the manifest, the Vumlo logo, the
+    /// favicon and the app icons). Starts from scratch every time. Does nothing without a web
+    /// app. Then rebuild the web app and restart.
     Apply {
         /// Say what would be written, write nothing.
         #[arg(long)]
@@ -337,6 +340,7 @@ async fn run(cli: Cli) -> anyhow::Result<bool> {
         Command::Init { dir, dry_run } => init::run(&dir, dry_run)?,
         Command::Config(ConfigCommand::Check) => return config_cmd::check(&options),
         Command::Config(ConfigCommand::Show { public }) => config_cmd::show(&options, public)?,
+        Command::Config(ConfigCommand::Schema) => config_cmd::schema()?,
         Command::Modules(ModulesCommand::List { json }) => modules_cmd::list(&options, json)?,
         Command::Module { name, args } => modules_cmd::run_module(&options, &name, &args).await?,
         Command::Plugin(command) => match command {

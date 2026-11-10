@@ -347,6 +347,28 @@ fn value_ok(kind: SettingKind, value: &serde_json::Value) -> Result<(), &'static
 /// `https://host[:port][/path]` without credentials. `http://` is accepted for `localhost`,
 /// `127.0.0.1` and `[::1]` only, and only with the explicit flag.
 pub fn check_endpoint(value: &str, allow_insecure_http: bool) -> Result<(), String> {
+    check(value, allow_insecure_http, false)
+}
+
+/// The base URL of a plugin: as `check_endpoint(value, true)`, and `http://` is also accepted for a
+/// single-label host such as `http://plugin-text-metrics:8000`, the name of a container beside the core
+/// (ADR-0083). Such a name has no dot, so it cannot name a host on the public internet; it resolves
+/// only on the network the core runs in. An IP address other than loopback is still refused.
+pub fn check_plugin_endpoint(value: &str) -> Result<(), String> {
+    check(value, true, true)
+}
+
+/// A name with no dot that starts with a letter: `plugin-text-metrics`, not `10`, `0x7f` or `a.b`.
+/// (A bare number is an IPv4 address to the resolver, so it is not a service name.)
+fn is_service_name(host: &str) -> bool {
+    host.len() <= 63
+        && host.starts_with(|c: char| c.is_ascii_alphabetic())
+        && host
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+}
+
+fn check(value: &str, allow_insecure_http: bool, allow_service_name: bool) -> Result<(), String> {
     let (scheme, rest) = value
         .split_once("://")
         .ok_or_else(|| format!("\"{value}\" must be an https:// URL"))?;
@@ -369,11 +391,17 @@ pub fn check_endpoint(value: &str, allow_insecure_http: bool) -> Result<(), Stri
         "https" => Ok(()),
         "http" => {
             let local = matches!(host, "localhost" | "127.0.0.1" | "::1");
-            if local && allow_insecure_http {
+            if (local || allow_service_name && is_service_name(host)) && allow_insecure_http {
                 Ok(())
             } else if local {
                 Err(
                     "uses http://: set allow_insecure_http = true to allow it for localhost"
+                        .to_owned(),
+                )
+            } else if allow_service_name {
+                Err(
+                    "must use https:// (http:// is allowed for localhost and for the name of \
+                     a container, such as http://plugin-name:8000)"
                         .to_owned(),
                 )
             } else {

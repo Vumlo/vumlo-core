@@ -34,7 +34,7 @@ step "1. verify and unpack"
 sha256sum --check --ignore-missing SHA256SUMS
 tar xzf "vumlo-$version-source.tar.gz"
 cd "vumlo-$version"
-for unwanted in .github docs/decisions backend/crates/server/tests backend/crates/modules backend/crates/test-support ARCHITECTURE.md docs/PLAN.md CLAUDE.md AGENTS.md; do
+for unwanted in .github docs/decisions backend/crates/server/tests backend/crates/modules/dummy backend/crates/test-support ARCHITECTURE.md docs/PLAN.md CLAUDE.md AGENTS.md; do
     [ ! -e "$unwanted" ] || { echo "the archive contains $unwanted" >&2; exit 1; }
 done
 # No crate ships its tests or the test harness: every `tests.rs` is deleted, and a `mod tests;` declaration
@@ -43,7 +43,7 @@ leftover="$(find backend/crates -type f \( -name tests.rs -o -name content_tests
 [ -z "$leftover" ] || { echo "the archive contains test files:" >&2; echo "$leftover" >&2; exit 1; }
 leftover="$(find backend/crates -type d \( -name tests -o -name test-support \) -print)"
 [ -z "$leftover" ] || { echo "the archive contains test directories:" >&2; echo "$leftover" >&2; exit 1; }
-for wanted in vumlo vumlo.toml.example docs/install.md docs/desktop.md docs/img/student-course.png CHANGELOG.md brand/vumlo-mark.png brand/vumlo-logo.png deploy/compose.yaml backend/.sqlx desktop/scripts/build.mjs desktop/release/desktop-release.yml desktop/Cargo.lock; do
+for wanted in vumlo vumlo.toml.example docs/install.md docs/desktop.md docs/img/student-course.png CHANGELOG.md brand/vumlo-mark.png brand/vumlo-logo.png deploy/compose.yaml backend/.sqlx backend/crates/modules/ai_agent desktop/scripts/build.mjs desktop/release/desktop-release.yml desktop/Cargo.lock; do
     [ -e "$wanted" ] || { echo "the archive lacks $wanted" >&2; exit 1; }
 done
 
@@ -61,8 +61,9 @@ sed -i 's/^name = "Vumlo"/name = "Verification University"/' vumlo.toml
 step "3. config check, brand apply"
 ./vumlo config check
 ./vumlo brand apply
-grep -q 'Verification University' .vumlo/generated/client-config.json
-[ -s .vumlo/generated/favicon.ico ]
+grep -q 'Verification University' web/src/generated/client-config.json
+[ -s web/public/brand/favicon.ico ]
+[ ! -e .vumlo ]
 
 step "4. build"
 ./vumlo version

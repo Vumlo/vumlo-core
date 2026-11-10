@@ -328,13 +328,25 @@ fn an_unknown_key_is_an_error_that_names_it() {
 }
 
 #[test]
-fn the_accent_is_gone_and_the_error_says_so() {
+fn the_accent_is_violet_by_default_one_of_six_names_and_nothing_else() {
+    assert_eq!(
+        build(VALID, &[]).unwrap().institution.accent,
+        Accent::Violet
+    );
+    for name in Accent::NAMES {
+        let toml = VALID.replace(
+            "mode = \"university\"",
+            &format!("mode = \"university\"\naccent = \"{name}\""),
+        );
+        assert_eq!(build(&toml, &[]).unwrap().institution.accent.as_str(), name);
+    }
     let toml = VALID.replace(
         "mode = \"university\"",
-        "mode = \"university\"\naccent = \"teal\"",
+        "mode = \"university\"\naccent = \"#ff0000\"",
     );
     let e = build(&toml, &[]).unwrap_err().to_string();
     assert!(e.contains("institution.accent"), "{e}");
+    assert!(e.contains("violet"), "the message lists the choices: {e}");
 }
 
 #[test]

@@ -480,16 +480,15 @@ async fn plugins(settings: &Settings, pool: Option<&PgPool>) -> Check {
 
 /// The web build must be newer than the last `brand apply`: the build reads what it generated.
 fn web_build(settings: &Settings) -> Check {
-    let generated = settings
-        .base_dir
-        .join(".vumlo/generated/client-config.json");
-    let build_id = runtime::from_config_dir(settings, &settings.web.dir).join(".next/BUILD_ID");
+    let web = runtime::from_config_dir(settings, &settings.web.dir);
+    let generated = web.join("src/generated/client-config.json");
+    let build_id = web.join(".next/BUILD_ID");
     let modified = |path: &Path| std::fs::metadata(path).and_then(|m| m.modified()).ok();
     let Some(branded) = modified(&generated) else {
         return Check::new(
             "web build",
             Warn,
-            "`vumlo-cli brand apply` has not been run (no .vumlo/generated/client-config.json)",
+            "`vumlo-cli brand apply` has not been run (no web/src/generated/client-config.json)",
         );
     };
     let Some(built) = modified(&build_id) else {

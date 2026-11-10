@@ -1,11 +1,12 @@
 //! `vumlo-cli brand apply`: everything the web build takes from the installation's configuration.
 //!
-//! It writes `.vumlo/generated/` next to `vumlo.toml`, from scratch every time: the public part of
-//! the configuration as `client-config.json` and its TypeScript types, the JSON Schema of
-//! `vumlo.toml`, the web manifest, and the favicon and the app icons made from the Vumlo mark.
-//! The logo is Vumlo's, the same in every installation (ADR-0054, amended). The web build reads
-//! only this directory. Nothing here is served at run time: changing the configuration means
-//! `brand apply`, a web rebuild and a restart.
+//! It writes straight into the web app (`web.dir`), from scratch every time: the public part of
+//! the configuration as `src/generated/client-config.json` and its TypeScript types, and in
+//! `public/brand/` the web manifest, the favicon and the app icons made from the Vumlo mark.
+//! The logo is Vumlo's, the same in every installation (ADR-0054, amended). The web build and
+//! the desktop build read only these files. Nothing here is served at run time: changing the
+//! configuration means `brand apply`, a web rebuild and a restart. An installation without a web
+//! app (backend only) has nothing to brand.
 
 use std::io::Cursor;
 use std::path::Path;
@@ -25,30 +26,48 @@ const LOGO: &[u8] = include_bytes!("../../../../brand/vumlo-mark.png");
 /// Every icon is scaled from this one. 1024 is what the desktop app's installer icons are made from (ADR-0062).
 const MASTER: u32 = 1024;
 
-/// The files of `.vumlo/generated/`, by name, ready to write.
+/// The files of one directory, by name, ready to write.
 pub type Files = Vec<(String, Vec<u8>)>;
+
+/// What `brand apply` writes: the client config for the web app's source, and the public assets.
+pub struct Generated {
+    /// `<web>/src/generated/`
+    pub client: Files,
+    /// `<web>/public/brand/`
+    pub brand: Files,
+}
 
 pub fn apply(options: &Options, dry_run: bool) -> anyhow::Result<()> {
     let loaded = runtime::load(options)?;
     let settings = &loaded.settings;
-    let files = generate(settings)?;
-    let out = generated_dir(settings);
-    if dry_run {
-        for (name, bytes) in &files {
-            println!("would write  {name} ({} bytes)", bytes.len());
-        }
-        println!("into {}", out.display());
+    let web = runtime::from_config_dir(settings, &settings.web.dir);
+    if !web.join("package.json").is_file() {
+        println!(
+            "brand has nothing to do: {} has no web app (a backend-only installation)",
+            web.display()
+        );
         return Ok(());
     }
-    write_tree(&out, &files)?;
-    println!("wrote {} files to {}", files.len(), out.display());
+    let generated = generate(settings)?;
+    let targets = [
+        (web.join("src/generated"), &generated.client),
+        (web.join("public/brand"), &generated.brand),
+    ];
+    if dry_run {
+        for (out, files) in &targets {
+            for (name, bytes) in *files {
+                println!("would write  {name} ({} bytes)", bytes.len());
+            }
+            println!("into {}", out.display());
+        }
+        return Ok(());
+    }
+    for (out, files) in &targets {
+        write_tree(out, files)?;
+        println!("wrote {} files to {}", files.len(), out.display());
+    }
     println!("Next: rebuild the web app (`vumlo-cli build web`) and restart.");
     Ok(())
-}
-
-/// Where the generated files go: next to the config file.
-pub fn generated_dir(settings: &Settings) -> std::path::PathBuf {
-    settings.base_dir.join(".vumlo/generated")
 }
 
 /// The name of the app: "Vumlo | Northfield", or just "Vumlo" when the short name is Vumlo itself.
@@ -62,21 +81,18 @@ fn app_name(settings: &Settings) -> String {
 }
 
 /// The generated files, deterministic: the same configuration gives the same bytes.
-pub fn generate(settings: &Settings) -> anyhow::Result<Files> {
+pub fn generate(settings: &Settings) -> anyhow::Result<Generated> {
+    let client_config = ClientConfig::new(settings, VERSION);
+    let client: Files = vec![
+        ("client-config.json".into(), pretty(&json!(client_config))?),
+        (
+            "client-config.d.ts".into(),
+            vumlo_config::client_config_types()
+                .map_err(|e| anyhow::anyhow!("cannot generate the TypeScript types: {e}"))?
+                .into_bytes(),
+        ),
+    ];
     let mut files: Files = Vec::new();
-
-    let client = ClientConfig::new(settings, VERSION);
-    files.push(("client-config.json".into(), pretty(&json!(client))?));
-    files.push((
-        "client-config.d.ts".into(),
-        vumlo_config::client_config_types()
-            .map_err(|e| anyhow::anyhow!("cannot generate the TypeScript types: {e}"))?
-            .into_bytes(),
-    ));
-    files.push((
-        "vumlo.schema.json".into(),
-        pretty(vumlo_config::settings_schema())?,
-    ));
 
     let icons: Vec<serde_json::Value> = [("icon-192.png", 192), ("icon-512.png", 512)]
         .iter()
@@ -106,7 +122,10 @@ pub fn generate(settings: &Settings) -> anyhow::Result<Files> {
         png(&on_white(&scaled(&master, 180)))?,
     ));
     files.push(("favicon.ico".into(), favicon(&master)?));
-    Ok(files)
+    Ok(Generated {
+        client,
+        brand: files,
+    })
 }
 
 fn pretty(value: &serde_json::Value) -> anyhow::Result<Vec<u8>> {
@@ -183,12 +202,10 @@ fn favicon(master: &RgbaImage) -> anyhow::Result<Vec<u8>> {
 /// Replaces `out` with exactly `files`: they are written next to it first, so a failure half way
 /// leaves the previous directory as it was.
 pub fn write_tree(out: &Path, files: &Files) -> anyhow::Result<()> {
-    let parent = out
-        .parent()
-        .context("the generated directory has no parent")?;
+    let parent = out.parent().context("the output directory has no parent")?;
     std::fs::create_dir_all(parent)
         .with_context(|| format!("cannot create {}", parent.display()))?;
-    let staging = parent.join("generated.tmp");
+    let staging = out.with_extension("tmp");
     if staging.exists() {
         std::fs::remove_dir_all(&staging)
             .with_context(|| format!("cannot clear {}", staging.display()))?;

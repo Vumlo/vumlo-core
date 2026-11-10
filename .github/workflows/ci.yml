@@ -48,6 +48,16 @@ jobs:
         run: cargo install sqlx-cli --no-default-features --features postgres,rustls --locked
       - name: Run migrations
         run: cargo sqlx migrate run
+      # `sqlx::query!` of a module is checked against this database, and every module is a workspace member whatever
+      # the feature set, so its tables must exist. The module's own migrator (schema `mod_<id>`) is the Rust code the
+      # check is compiling; here the files are applied directly.
+      - name: Create the tables of the modules
+        run: |
+          for dir in crates/modules/*/migrations; do
+            id="$(basename "$(dirname "$dir")")"
+            psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -q -c "CREATE SCHEMA IF NOT EXISTS mod_$id"
+            for file in "$dir"/*.sql; do psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -q -f "$file"; done
+          done
       - run: cargo fmt --all --check
       - run: cargo clippy --workspace --all-targets --features "${{ matrix.features }}" -- -D warnings
       - run: cargo test --workspace --features "${{ matrix.features }}"
