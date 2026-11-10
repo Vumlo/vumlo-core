@@ -1,0 +1,83 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT p.id AS \"user_id!\", p.name AS \"name!\", p.surname AS \"surname!\", p.email,\n                  (p.status = 'active') AS \"active!\", p.email_verified AS \"verified!\"\n           FROM auth.people p WHERE p.id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "user_id!",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "auth.people",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "name!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "auth.people",
+            "name": "name"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "surname!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "auth.people",
+            "name": "surname"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "email",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "auth.people",
+            "name": "email"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "active!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 5,
+        "name": "verified!",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "auth.people",
+            "name": "email_verified"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      true,
+      true,
+      true,
+      true,
+      null,
+      true
+    ]
+  },
+  "hash": "5c78a3c36a51a262dd2737f5bc9829a1f11427c26b862e75a160e6183cf3e8aa"
+}

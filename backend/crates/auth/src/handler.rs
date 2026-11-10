@@ -84,7 +84,11 @@ async fn deliver(
         TokenPurpose::Verify => "/verify-email",
         TokenPurpose::Reset => "/reset-password",
     };
-    let link = format!("{}{path}?token={}", context.link_base, minted.token.expose());
+    let link = format!(
+        "{}{path}?token={}",
+        context.link_base,
+        minted.token.expose()
+    );
     let (subject, body) = text(
         purpose,
         context.language,

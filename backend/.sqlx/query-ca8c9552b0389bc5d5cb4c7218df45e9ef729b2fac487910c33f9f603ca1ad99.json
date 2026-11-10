@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT EXISTS (SELECT 1 FROM mail.messages WHERE origin_id = $1) AS \"queued!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "queued!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "ca8c9552b0389bc5d5cb4c7218df45e9ef729b2fac487910c33f9f603ca1ad99"
+}

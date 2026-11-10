@@ -1,0 +1,30 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT user_id FROM mail.opt_outs\n         WHERE plugin_id = $1 AND kind = $2 AND user_id = ANY($3)",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "user_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "mail.opt_outs",
+            "name": "user_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "UuidArray"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "8d1dda29015f3ec90627850a1a8fbee9bd4497d685fc1b1919d3a5dae9324924"
+}

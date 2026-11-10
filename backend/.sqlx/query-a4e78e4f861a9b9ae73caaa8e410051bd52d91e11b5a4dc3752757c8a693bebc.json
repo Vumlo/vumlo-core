@@ -1,0 +1,25 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT EXISTS (SELECT 1 FROM mail.opt_outs\n                          WHERE user_id = $1 AND plugin_id = $2 AND kind = $3) AS \"out!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "out!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "a4e78e4f861a9b9ae73caaa8e410051bd52d91e11b5a4dc3752757c8a693bebc"
+}

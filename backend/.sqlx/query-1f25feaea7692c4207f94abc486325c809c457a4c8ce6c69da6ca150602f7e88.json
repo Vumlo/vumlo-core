@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO mail.opt_outs (user_id, plugin_id, kind) VALUES ($1, $2, $3)\n         ON CONFLICT DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "1f25feaea7692c4207f94abc486325c809c457a4c8ce6c69da6ca150602f7e88"
+}

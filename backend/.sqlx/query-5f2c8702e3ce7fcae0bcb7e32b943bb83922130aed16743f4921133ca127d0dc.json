@@ -1,0 +1,26 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT to_address AS \"to_address!\" FROM mail.messages ORDER BY to_address",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "to_address!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "mail.messages",
+            "name": "to_address"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "5f2c8702e3ce7fcae0bcb7e32b943bb83922130aed16743f4921133ca127d0dc"
+}

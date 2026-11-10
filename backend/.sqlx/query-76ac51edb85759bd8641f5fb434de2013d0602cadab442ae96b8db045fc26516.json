@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM mail.signing_key",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "76ac51edb85759bd8641f5fb434de2013d0602cadab442ae96b8db045fc26516"
+}

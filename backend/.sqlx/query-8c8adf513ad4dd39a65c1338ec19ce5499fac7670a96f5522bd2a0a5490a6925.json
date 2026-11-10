@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM mail.batches WHERE created_at < now() - make_interval(days => $1)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "8c8adf513ad4dd39a65c1338ec19ce5499fac7670a96f5522bd2a0a5490a6925"
+}

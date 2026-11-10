@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO mail.signing_key (key) VALUES ($1) ON CONFLICT (id) DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Bytea"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "9953dda03ce700a4a4d8c8689057b3368c5e58c77dd342e4a876cb681b3afb26"
+}

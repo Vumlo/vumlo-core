@@ -16,6 +16,7 @@ common.workspace = true
 events.workspace = true
 hmac.workspace = true
 learning.workspace = true
+mail.workspace = true
 # Only for `OutboundClient`, the one way the program makes outgoing requests (ADR-0054).
 module-api.workspace = true
 rand.workspace = true

@@ -187,7 +187,8 @@ pub async fn grant(
 }
 
 /// A disabled plugin's token stops working at once, it is sent no event, and the deliveries it was
-/// owed wait until it is enabled again.
+/// owed wait until it is enabled again. Its mail that is still queued is cancelled in the same
+/// transaction and does not come back when it is enabled (ADR-0085).
 pub async fn set_status(
     conn: &mut PgConnection,
     plugin_id: &str,
@@ -195,13 +196,18 @@ pub async fn set_status(
 ) -> Result<Install, PluginsError> {
     let install = get(conn, plugin_id).await?;
     repo::set_status(conn, install.id, status).await?;
+    if status == InstallStatus::Disabled {
+        mail::cancel_pending(conn, plugin_id).await?;
+    }
     get(conn, plugin_id).await
 }
 
-/// Deletes the install, its pending deliveries and its reports. Returns what was removed.
+/// Deletes the install, its pending deliveries and its reports, and cancels the mail it still has
+/// queued. Returns what was removed.
 pub async fn remove(conn: &mut PgConnection, plugin_id: &str) -> Result<Install, PluginsError> {
     let install = get(conn, plugin_id).await?;
     repo::delete_install(conn, install.id).await?;
+    mail::cancel_pending(conn, plugin_id).await?;
     Ok(install)
 }
 
@@ -629,6 +635,46 @@ async fn audit_report(
     )
     .await?;
     Ok(())
+}
+
+/// Queues a plugin's mail and records that it did (ADR-0085, ADR-0079): the audit row names the plugin,
+/// the batch, the target ids and the numbers by reason, never a subject, a text or an address.
+/// `target` is the ids the caller addressed, as JSON. A refused call (a limit) writes no row.
+pub async fn send_mail(
+    conn: &mut PgConnection,
+    caller: &PluginCaller,
+    limits: &mail::Limits,
+    mut message: mail::PluginMail,
+    target: Value,
+) -> Result<mail::PluginOutcome, PluginsError> {
+    access::authorize_plugin(caller, Scope::MailSend)?;
+    message.plugin_id = caller.plugin_id().to_owned();
+    let kind = message.kind.as_str().to_owned();
+    let outcome = mail::enqueue_plugin(conn, limits, message).await?;
+    events::audit_plugin(
+        conn,
+        caller.install_id(),
+        caller.plugin_id(),
+        events::AuditEntry {
+            action: "plugin.mail.send",
+            resource_type: "mail_batch",
+            resource_id: outcome.batch_id,
+            meta: json!({
+                "kind": kind,
+                "to": target,
+                "accepted": outcome.accepted,
+                "skipped": {
+                    "opted_out": outcome.skipped.opted_out,
+                    "no_address": outcome.skipped.no_address,
+                    "duplicate": outcome.skipped.duplicate,
+                    "disabled": outcome.skipped.disabled,
+                    "rate_limited": outcome.skipped.rate_limited,
+                },
+            }),
+        },
+    )
+    .await?;
+    Ok(outcome)
 }
 
 /// Removes the plugin's report under `key`; `ReportGone` when it keeps none.

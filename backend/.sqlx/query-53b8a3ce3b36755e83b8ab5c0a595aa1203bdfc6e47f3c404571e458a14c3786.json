@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM mail.dedupe WHERE at < now() - make_interval(days => $1)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "53b8a3ce3b36755e83b8ab5c0a595aa1203bdfc6e47f3c404571e458a14c3786"
+}

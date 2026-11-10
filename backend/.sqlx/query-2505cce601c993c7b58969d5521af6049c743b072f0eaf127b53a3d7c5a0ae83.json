@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE mail.messages\n         SET last_error = $2, run_after = now() + make_interval(secs => $3)\n         WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Float8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "2505cce601c993c7b58969d5521af6049c743b072f0eaf127b53a3d7c5a0ae83"
+}

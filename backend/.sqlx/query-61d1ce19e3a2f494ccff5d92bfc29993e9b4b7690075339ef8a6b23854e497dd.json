@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO mail.opt_outs (user_id, plugin_id, kind) VALUES ($1, 'p', 'deadline_changed')",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "61d1ce19e3a2f494ccff5d92bfc29993e9b4b7690075339ef8a6b23854e497dd"
+}

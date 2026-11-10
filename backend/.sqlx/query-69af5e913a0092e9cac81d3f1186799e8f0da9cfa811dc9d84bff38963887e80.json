@@ -1,0 +1,26 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT body FROM mail.batches",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "body",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "mail.batches",
+            "name": "body"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "69af5e913a0092e9cac81d3f1186799e8f0da9cfa811dc9d84bff38963887e80"
+}

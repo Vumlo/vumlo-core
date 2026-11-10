@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE mail.batches SET created_at = now() - make_interval(days => $1)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "19a4b982109809980bcaad8301fa7b3d9ec75cdd6e10ffe8c5311acba476b963"
+}

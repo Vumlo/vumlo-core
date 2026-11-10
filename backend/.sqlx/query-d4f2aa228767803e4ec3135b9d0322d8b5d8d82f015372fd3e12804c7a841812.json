@@ -1,0 +1,71 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT state, attempts, last_error, to_address IS NOT NULL AS \"has_address!\",\n                  COALESCE(erase_at > now() + interval '1 day', false) AS \"erase_in_future!\",\n                  run_after > now() AS \"retry_in_future!\"\n           FROM mail.messages",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "state",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "mail.messages",
+            "name": "state"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "attempts",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "mail.messages",
+            "name": "attempts"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "last_error",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "mail.messages",
+            "name": "last_error"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "has_address!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 4,
+        "name": "erase_in_future!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 5,
+        "name": "retry_in_future!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "d4f2aa228767803e4ec3135b9d0322d8b5d8d82f015372fd3e12804c7a841812"
+}
