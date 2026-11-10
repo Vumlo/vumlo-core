@@ -10,6 +10,15 @@ must do, in order, besides getting the new release. See [RELEASING.md](RELEASING
 
 ## [Unreleased]
 
+### Added
+
+- **A mail layer** (ADR-0084). All outgoing mail is a row of the new schema `mail`, one per recipient, queued in the transaction of whatever asked for it and sent by a mail worker (in `serve` and in `worker`) within a few seconds. A transient failure is retried with a growing delay; a permanent one, or a message a day old, is a `dead` row. The address is copied into the row and erased `mail.retention_days` (30) after the message ends, at once for account mail. Verification and password-reset mail go through it with the same text as before. `[mail]` gained `plugin_hourly_calls` (500), `recipient_daily` (20), `max_audience` (2000), `retention_days` (30) and `journal_days` (180).
+- **Plugins can send mail** (ADR-0085). A new scope `mail:send` and `POST /plugin-api/mail`: one person (who must be on the roster of a course the plugin reaches) or a course audience (`students`, `teachers` with assistants, `all`), plain text, with a `kind` for opt-out, an optional `link_path` and `dedupe_key`. The plugin never sees an address. Only active people with a verified address are mailed; the answer counts who was skipped and why. Limits answer `429` with `Retry-After`; an audience over `mail.max_audience` is `422`; without `[mail]` the route is `503`. Each accepted call is in the audit log (ids and counts, never text), and disabling or removing a plugin cancels its queued mail.
+- **One-click opt-out** (ADR-0086). Every plugin mail has a footer naming the plugin and a link that turns off that kind of mail from that plugin for that person (`GET|POST /api/v1/mail/opt-out/{token}`, no sign-in; `…/opt-in/{token}` undoes it), and the `List-Unsubscribe` headers of RFC 8058. Account mail has no opt-out.
+- **`vumlo-cli mail status|list|retry`** (ADR-0087): the queue and the delivery journal, by id and never with an address, and a way to put dead messages back (`mail retry <id> | --dead [--plugin ID] [--dry-run]`, audited).
+
+**Upgrade notes.** Run `db migrate`: migration `0047_mail.sql` adds the schema `mail` and a column to the view `auth.people`. There is no down migration, so to go back restore the backup taken before it (an older binary refuses a database that is ahead of it). Nothing in `vumlo.toml` has to change; the new `[mail]` keys have defaults. A plugin that was granted nothing new cannot send mail: grant `mail:send` with `vumlo-cli plugin grant`. Verification and reset mail are now sent by the mail worker, which `serve` and `worker` start whenever `[mail]` is set; a failed send is a `dead` row in `vumlo-cli mail list` instead of a dead letter of the outbox.
+
 ## [0.5.0] - 2026-11-10
 
 ### Added

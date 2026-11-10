@@ -314,6 +314,30 @@ again, or restore the backup. For Docker the same script is `deploy/update.sh --
 `doctor` fails when the CLI, the server and the web app are not the same release, so a half-finished
 upgrade does not go unnoticed.
 
+## Mail
+
+The optional `[mail]` section of `vumlo.toml` (ADR-0084 to ADR-0087) turns on every mail the server sends:
+the links of self-registration and password reset, and the messages plugins with the scope `mail:send` write
+to the people of their courses. Without it register and reset are `404`, and a plugin that tries to send gets `503`.
+
+| Key | Default | Meaning |
+|---|---|---|
+| `from` | none | the sender, `name@example.edu` or `Vumlo <no-reply@example.edu>` |
+| `link_base` | `server.public_origin` | where links in mails point |
+| `transport.kind` | none | `smtp` (`host`, `port`, `tls`, `username`; the password is `VUMLO__MAIL__TRANSPORT__PASSWORD`) or `file` (`dir`, for a test) |
+| `plugin_hourly_calls` | 500 | accepted mail calls one plugin may make in an hour (1 to 100000) |
+| `recipient_daily` | 20 | plugin messages one person may get in 24 hours (1 to 1000); account mail does not count |
+| `max_audience` | 2000 | the most people one call may address (1 to 10000); a larger audience is refused with `422` |
+| `retention_days` | 30 | days an address is kept after a plugin message ends; account mail is erased at once (1 to 3650) |
+| `journal_days` | 180 | days the journal of messages is kept (`retention_days` to 3650) |
+
+Every message is a row, sent by the mail worker (in `serve` and in `worker`) a few seconds after it was queued,
+and retried with a growing delay; one that fails for good, or is a day old, is a `dead` row, and
+`vumlo-cli mail status`, `mail list` and `mail retry` show and requeue them (see [Commands](#commands)). The journal
+shows a person by id and never prints an address. Every plugin mail ends with a footer and a link with which the
+person turns off that kind of mail from that plugin, and carries the `List-Unsubscribe` headers, so a mail client
+offers its own button; they need no sign-in.
+
 ## Uploaded files
 
 Teachers attach files to content and students hand in files (ADR-0069). The bytes are not in PostgreSQL;
@@ -432,11 +456,14 @@ open. A person's chat, and the changes it prepared, are readable by nobody else 
 | `db migrate [--dry-run]` | applies pending migrations; refuses a schema newer than the binary |
 | `admin create <email> --name --surname` | creates an administrator; the password is asked for or read from `--password-stdin`, never an argument |
 | `seed --demo [--yes] [--dry-run]` | demo data for an empty installation |
+| `mail status [--json]` | what waits in the mail queue, what was sent and what failed in the last 24 hours, the transport |
+| `mail list [--state --plugin --kind --user --hours --limit --json]` | the messages, newest first; no address is printed |
+| `mail retry <id> \| --dead [--plugin ID] [--dry-run]` | puts dead messages back in the queue (one whose address was already erased is only listed) |
 | `doctor [--json]` | checks everything, changes nothing, non-zero if a check fails |
 | `version` | the release, the config version and the modules compiled in |
 
 Every command that changes the database writes `events.audit_log` (no actor, source `cli`): `db migrate`,
-`admin create` and `seed --demo`. The audit log is readable by administrators in the web app.
+`admin create`, `seed --demo` and `mail retry`. The audit log is readable by administrators in the web app.
 
 ## When `doctor` fails
 

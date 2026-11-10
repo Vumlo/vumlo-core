@@ -20,8 +20,8 @@ Each layer is a crate, and a crate depends only on the ones below it. Cargo enfo
       -> modules/*  optional crates behind Cargo features, built on module-api (ADR-0066)
       -> learning   teaching, content, assessment, gradebook, and the flows that need several of them
       -> org        terms, groups, subgroups, the installation record
-      -> auth       users, sessions, sign-in, account value types, the text of its mails (the mailer, until ADR-0084 is built)
-      -> mail       outgoing mail: the queue, the worker, opt-outs, the transport; cannot read auth (ADR-0084, in progress)
+      -> auth       users, sessions, sign-in, account value types, the text of its mails (it queues them in mail)
+      -> mail       outgoing mail: the queue, the worker, opt-outs, the transport; cannot read auth (ADR-0084)
       -> files      stored bytes and their description: the files table and the storage backend (ADR-0069)
       -> events     audit writes, the outbox and its worker
       -> access     Actor and authorize

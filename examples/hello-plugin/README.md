@@ -81,3 +81,24 @@ call has `session` (`check_proxy` returns `user: None`). What the core cannot kn
 feed, so the plugin checks its own token (`feed_token`: only this server can make one) and answers `404` for any other.
 The core limits how often a public route may be called, for everyone together, so a leaked URL cannot be turned into a
 flood against the plugin.
+
+## Mail
+
+This example sends none, but a plugin granted `mail:send` ([ADR-0085](../../docs/decisions/done.md)) writes to people of
+the courses it reaches without ever seeing an address. It names them by id and sends plain text:
+
+    POST /api/v1/plugin-api/mail          Authorization: Bearer <token>
+    {"to": {"course_id": "<uuid>", "audience": "students"},      // or {"user_id": "<uuid>"}; audience: students | teachers | all
+     "kind": "deadline_changed",                                   // a slug of at most 40 characters: people opt out per plugin and kind
+     "subject": "The deadline moved", "text": "It is now Friday.",
+     "link_path": "/courses/<id>",                                 // optional: a path, the core makes it a link
+     "dedupe_key": "assignment-7-2026-11-20"}                      // optional: the same key is accepted once per person in 30 days
+
+The answer is `202 {"accepted": 12, "skipped": 3, "skipped_reasons": {"opted_out": 1, "no_address": 1, "duplicate": 0,
+"disabled": 0, "rate_limited": 1}}`: it means queued, not delivered (the mail worker sends within seconds). Always send a
+`dedupe_key` when a retry is possible, since a plugin that repeats a call after a `5xx` would otherwise mail twice.
+The mail comes from the institution's `mail.from`, ends with a footer that names the plugin and a one-click opt-out link
+for that `kind`, and a person who followed it is counted in `opted_out` from then on. Limits, all `429` with
+`Retry-After`: `mail.plugin_hourly_calls` calls an hour for the plugin, and `mail.recipient_daily` messages a day for
+one person (inside an audience that person is skipped instead). An audience of more than `mail.max_audience` people is
+`422` on `to`: split it, or ask the administrator to raise the key. Without `[mail]` in `vumlo.toml` the route is `503`.
