@@ -10,9 +10,13 @@ must do, in order, besides getting the new release. See [RELEASING.md](RELEASING
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-11-11
+
 ### Added
 
 - **A "Plugin reports" panel in the web app** (ADR-0088). Teachers and admins see what plugins reported (ADR-0077) under a submitted attempt in the grading view, on the assignment page and on the course page. A report shows its summary and, when the plugin follows the display convention (`data.display`: `level`, `title`, a table of up to 200 rows, up to 20 facts, `links`), a badge, a title, an accessible table that scrolls on a narrow screen, figures and download buttons. Everything is shown as text; a link is followed only if it points into the same plugin's routes (`/api/v1/plugins/<id>/...`); numbers use the viewer's language; a report without a valid `display` shows the summary and its data folded away. Students never see the panel and their browser does not ask. English and Ukrainian.
+
+**Upgrade notes.** Rebuild the web image (the panel is in the web app). No migrations, no new `config_version`, no change to the API or to `vumlo.toml`.
 
 ## [0.5.0] - 2026-11-10
 
@@ -312,7 +316,8 @@ There is nothing to upgrade from; follow [docs/install.md](docs/install.md).
 - Any optional module, and an end-user CLI (ADR-0055).
 - Published container images: the images are built on your server from the archive.
 
-[Unreleased]: https://github.com/Vumlo/vumlo-core/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/Vumlo/vumlo-core/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/Vumlo/vumlo-core/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/Vumlo/vumlo-core/compare/v0.4.1...v0.5.0
 [0.4.1]: https://github.com/Vumlo/vumlo-core/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/Vumlo/vumlo-core/compare/v0.3.0...v0.4.0
