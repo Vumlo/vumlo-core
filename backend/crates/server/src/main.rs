@@ -97,6 +97,7 @@ async fn run(cli: Cli) -> anyhow::Result<()> {
             tracing::info!(modules = ?started, plugins = deliverer.is_some(), "worker running");
             tokio::select! {
                 () = events::run_worker(state.db.clone(), state.event_handlers()) => {}
+                () = run_mail(state.mail_worker()) => {}
                 () = learning::files::run_sweeper(state.db.clone(), state.learning.files.clone()) => {}
                 () = run_plugin_delivery(deliverer, state.db.clone()) => {}
                 () = shutdown => {}
@@ -108,6 +109,9 @@ async fn run(cli: Cli) -> anyhow::Result<()> {
             prepare_database(&state.db, &state.config).await?;
             if !no_worker {
                 tokio::spawn(events::run_worker(state.db.clone(), state.event_handlers()));
+                if let Some(mail_worker) = state.mail_worker() {
+                    tokio::spawn(mail_worker);
+                }
                 tokio::spawn(learning::files::run_sweeper(
                     state.db.clone(),
                     state.learning.files.clone(),
@@ -174,6 +178,15 @@ async fn run(cli: Cli) -> anyhow::Result<()> {
 async fn run_plugin_delivery(deliverer: Option<plugins::Deliverer>, pool: PgPool) {
     match deliverer {
         Some(deliverer) => deliverer.run(pool).await,
+        None => std::future::pending().await,
+    }
+}
+
+/// Sends the mail queue, or waits for ever without `[mail]`, so the worker's `select!` has one arm
+/// either way (ADR-0084).
+async fn run_mail(worker: Option<impl std::future::Future<Output = ()>>) {
+    match worker {
+        Some(worker) => worker.await,
         None => std::future::pending().await,
     }
 }

@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE mail.dedupe SET at = now() - interval '31 days'",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "6efaf34d22421a381c2384edc578d1c30a170d07d38af47aef05e1e9adb3587e"
+}

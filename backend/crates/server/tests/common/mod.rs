@@ -113,6 +113,24 @@ pub async fn spawn_app(db: PgPool, settings: Settings) -> (String, AppState) {
     (format!("http://{addr}"), state)
 }
 
+/// Delivers by hand what the workers would: the outbox first (the handlers queue the mail), then
+/// the mail queue into the mailbox directory (ADR-0084).
+pub async fn deliver(state: &AppState) {
+    ::events::process_once(&state.db, &state.event_handlers())
+        .await
+        .expect("deliver the outbox");
+    deliver_mail(state).await;
+}
+
+/// Sends what is queued in the mail layer, without touching the outbox.
+pub async fn deliver_mail(state: &AppState) {
+    if let (Some(mailer), Some(context)) = (&state.mailer, &state.mail_context) {
+        ::mail::process_once(&state.db, mailer, context)
+            .await
+            .expect("deliver the mail queue");
+    }
+}
+
 /// A directory the file mail transport writes to (ADR-0045). Removed when dropped.
 pub struct Mailbox {
     dir: std::path::PathBuf,
@@ -129,13 +147,12 @@ impl Mailbox {
     pub fn settings(&self) -> Settings {
         let mut settings = test_settings();
         settings.auth.allowed_domains = vec!["lms.test".to_owned()];
-        settings.mail = Some(vumlo_config::MailSettings {
-            from: "Vumlo <no-reply@lms.test>".to_owned(),
-            link_base: None,
-            transport: vumlo_config::MailTransport::File {
+        settings.mail = Some(vumlo_config::MailSettings::new(
+            "Vumlo <no-reply@lms.test>",
+            vumlo_config::MailTransport::File {
                 dir: self.dir.clone(),
             },
-        });
+        ));
         settings
     }
 

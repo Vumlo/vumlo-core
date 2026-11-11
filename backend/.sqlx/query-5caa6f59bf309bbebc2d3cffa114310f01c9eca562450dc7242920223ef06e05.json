@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE mail.messages SET run_after = now()",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "5caa6f59bf309bbebc2d3cffa114310f01c9eca562450dc7242920223ef06e05"
+}

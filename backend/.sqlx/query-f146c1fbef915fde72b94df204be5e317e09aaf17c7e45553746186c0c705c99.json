@@ -1,0 +1,56 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT\n             count(*) FILTER (WHERE state = 'pending') AS \"pending!\",\n             count(*) FILTER (WHERE state = 'sent' AND finished_at > now() - interval '24 hours') AS \"sent_24h!\",\n             count(*) FILTER (WHERE state = 'dead' AND finished_at > now() - interval '24 hours') AS \"dead_24h!\",\n             count(*) FILTER (WHERE state = 'cancelled' AND finished_at > now() - interval '24 hours') AS \"cancelled_24h!\",\n             count(*) FILTER (WHERE state = 'dead') AS \"dead_now!\",\n             min(created_at) FILTER (WHERE state = 'pending') AS oldest_pending\n           FROM mail.messages",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "pending!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "sent_24h!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 2,
+        "name": "dead_24h!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 3,
+        "name": "cancelled_24h!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 4,
+        "name": "dead_now!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 5,
+        "name": "oldest_pending",
+        "type_info": "Timestamptz",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "f146c1fbef915fde72b94df204be5e317e09aaf17c7e45553746186c0c705c99"
+}

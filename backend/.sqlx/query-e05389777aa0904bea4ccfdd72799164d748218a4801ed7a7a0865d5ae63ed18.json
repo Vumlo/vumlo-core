@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE mail.messages SET state = 'dead', finished_at = now(), attempts = 5,\n                last_error = 'smtp 451' WHERE id = ANY($1)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "UuidArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "e05389777aa0904bea4ccfdd72799164d748218a4801ed7a7a0865d5ae63ed18"
+}

@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE mail.messages SET expires_at = now() - interval '1 minute'\n             WHERE plugin_id IS NULL",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "a945de5cee5e445432802f81068054cea6d3031abc3c05b180ee7b8cd5c81acd"
+}

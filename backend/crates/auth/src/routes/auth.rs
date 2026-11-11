@@ -163,7 +163,8 @@ pub async fn register(
     Extension(throttle): Extension<Arc<MailThrottle>>,
     ValidJson(request): ValidJson<RegisterRequest>,
 ) -> Result<StatusCode, ApiError> {
-    if state.mailer.is_none() {
+    // Without `[mail]` nothing can send the link (ADR-0084).
+    if state.config.mail.is_none() {
         return Err(ApiError::NotFound);
     }
     throttle_mail(&throttle, &request.email)?;
@@ -254,7 +255,7 @@ pub async fn request_password_reset(
     Extension(throttle): Extension<Arc<MailThrottle>>,
     ValidJson(request): ValidJson<PasswordResetRequest>,
 ) -> Result<StatusCode, ApiError> {
-    if state.mailer.is_none() {
+    if state.config.mail.is_none() {
         return Err(ApiError::NotFound);
     }
     throttle_mail(&throttle, &request.email)?;

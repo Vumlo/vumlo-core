@@ -1,0 +1,45 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT plugin_id, kind, count(*) AS \"count!\"\n           FROM mail.messages WHERE state = 'dead'\n           GROUP BY plugin_id, kind ORDER BY count(*) DESC, plugin_id, kind",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "plugin_id",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "mail.messages",
+            "name": "plugin_id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "kind",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "mail.messages",
+            "name": "kind"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "count!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      true,
+      false,
+      null
+    ]
+  },
+  "hash": "76adb8a9fd95c483f8ef0e3d609c0f7494f174bb62abb58528a9fcc9a5e84858"
+}

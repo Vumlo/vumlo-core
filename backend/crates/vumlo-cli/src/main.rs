@@ -13,6 +13,7 @@ mod config_cmd;
 mod db_cmd;
 mod doctor;
 mod init;
+mod mail_cmd;
 mod modules_cmd;
 mod plugin_cmd;
 mod runtime;
@@ -65,6 +66,9 @@ enum Command {
     /// External plugins (ADR-0066): services that receive events and call the plugin API.
     #[command(subcommand)]
     Plugin(PluginCommand),
+    /// Outgoing mail (ADR-0087): the queue and the delivery journal. No address is ever printed.
+    #[command(subcommand)]
+    Mail(MailCommand),
     /// What the web build takes from the institution's configuration.
     #[command(subcommand)]
     Brand(BrandCommand),
@@ -117,6 +121,53 @@ enum ModulesCommand {
     List {
         #[arg(long)]
         json: bool,
+    },
+}
+
+#[derive(Subcommand)]
+enum MailCommand {
+    /// What waits in the queue, what was sent in the last 24 hours, and what failed for good.
+    Status {
+        #[arg(long)]
+        json: bool,
+    },
+    /// The messages, newest first: id, time, state, attempts, plugin, kind, person (by id) and subject.
+    List {
+        /// `pending`, `sent`, `dead` or `cancelled`.
+        #[arg(long)]
+        state: Option<String>,
+        /// Only mail of this plugin.
+        #[arg(long)]
+        plugin: Option<String>,
+        /// Only this kind of mail (`verification`, `password_reset`, or a plugin's kind).
+        #[arg(long)]
+        kind: Option<String>,
+        /// Only mail to this user id.
+        #[arg(long)]
+        user: Option<uuid::Uuid>,
+        /// Only the last N hours.
+        #[arg(long)]
+        hours: Option<u32>,
+        #[arg(long, default_value_t = 50)]
+        limit: u32,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Put dead messages back in the queue: one by id, or every dead one with `--dead`. A message
+    /// whose address was already erased cannot be sent again and is only listed.
+    Retry {
+        /// The message to put back.
+        #[arg(required_unless_present = "dead", conflicts_with = "dead")]
+        id: Option<uuid::Uuid>,
+        /// Every dead message.
+        #[arg(long)]
+        dead: bool,
+        /// With `--dead`: only this plugin's.
+        #[arg(long, requires = "dead")]
+        plugin: Option<String>,
+        /// Say what would be put back, change nothing.
+        #[arg(long)]
+        dry_run: bool,
     },
 }
 
@@ -343,6 +394,38 @@ async fn run(cli: Cli) -> anyhow::Result<bool> {
         Command::Config(ConfigCommand::Schema) => config_cmd::schema()?,
         Command::Modules(ModulesCommand::List { json }) => modules_cmd::list(&options, json)?,
         Command::Module { name, args } => modules_cmd::run_module(&options, &name, &args).await?,
+        Command::Mail(command) => match command {
+            MailCommand::Status { json } => mail_cmd::status(&options, json).await?,
+            MailCommand::List {
+                state,
+                plugin,
+                kind,
+                user,
+                hours,
+                limit,
+                json,
+            } => {
+                mail_cmd::list(
+                    &options,
+                    mail_cmd::ListArgs {
+                        state,
+                        plugin,
+                        kind,
+                        user,
+                        hours,
+                        limit,
+                        as_json: json,
+                    },
+                )
+                .await?
+            }
+            MailCommand::Retry {
+                id,
+                dead: _,
+                plugin,
+                dry_run,
+            } => mail_cmd::retry(&options, id, plugin, dry_run).await?,
+        },
         Command::Plugin(command) => match command {
             PluginCommand::Install {
                 base_url,

@@ -1,0 +1,144 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "WITH due AS (\n               SELECT id FROM mail.messages\n               WHERE state = 'pending' AND run_after <= now()\n               ORDER BY run_after, id LIMIT $1 FOR UPDATE SKIP LOCKED\n           ), claimed AS (\n               UPDATE mail.messages m\n               SET attempts = m.attempts + 1, run_after = now() + make_interval(secs => $2)\n               FROM due WHERE m.id = due.id\n               RETURNING m.id, m.batch_id, m.user_id, m.plugin_id, m.kind, m.to_address, m.to_name,\n                         m.attempts, m.expires_at <= now() AS expired, m.run_after\n           )\n           SELECT c.id AS \"id!\", c.user_id AS \"user_id!\", c.plugin_id, c.kind AS \"kind!\",\n                  c.to_address, c.to_name, c.attempts AS \"attempts!\", c.expired AS \"expired!\",\n                  b.subject, b.body, b.link_path\n           FROM claimed c JOIN mail.batches b ON b.id = c.batch_id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id!",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "mail.messages",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "user_id!",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "mail.messages",
+            "name": "user_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "plugin_id",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "mail.messages",
+            "name": "plugin_id"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "kind!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "mail.messages",
+            "name": "kind"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "to_address",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "mail.messages",
+            "name": "to_address"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "to_name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "mail.messages",
+            "name": "to_name"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "attempts!",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "mail.messages",
+            "name": "attempts"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "expired!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 8,
+        "name": "subject",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "mail.batches",
+            "name": "subject"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "body",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "mail.batches",
+            "name": "body"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "link_path",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "mail.batches",
+            "name": "link_path"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Float8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      false,
+      true,
+      true,
+      false,
+      null,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "c52889affc5d573f5b51568138f8e36408dc34c70096b0a9fbd5a7aca109e462"
+}

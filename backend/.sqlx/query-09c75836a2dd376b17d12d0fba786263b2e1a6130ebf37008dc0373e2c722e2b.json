@@ -1,0 +1,20 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO mail.messages (id, batch_id, user_id, kind, to_address, to_name, origin_id)\n         VALUES ($1, $2, $3, $4, $5, $6, $7)\n         ON CONFLICT (origin_id) DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Text",
+        "Text",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "09c75836a2dd376b17d12d0fba786263b2e1a6130ebf37008dc0373e2c722e2b"
+}

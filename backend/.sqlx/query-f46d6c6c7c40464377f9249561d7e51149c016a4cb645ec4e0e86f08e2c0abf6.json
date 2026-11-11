@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE mail.messages SET erase_at = now() - interval '1 second'\n             WHERE id = (SELECT id FROM mail.messages LIMIT 1)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "f46d6c6c7c40464377f9249561d7e51149c016a4cb645ec4e0e86f08e2c0abf6"
+}

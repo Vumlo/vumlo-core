@@ -359,3 +359,78 @@ pub struct PluginDeletion {
 
 #[cfg(test)]
 mod tests;
+
+/// Which people of a course a plugin's mail is for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum MailAudience {
+    Students,
+    /// Teachers and assistants: the staff who grade.
+    Teachers,
+    All,
+}
+
+/// Who a plugin's mail is for: one person, or a course audience.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(untagged, deny_unknown_fields)]
+pub enum MailTarget {
+    /// One person, who must be on the roster of a course the plugin reaches.
+    User { user_id: Uuid },
+    /// The people of one course the plugin reaches.
+    Course {
+        course_id: Uuid,
+        audience: MailAudience,
+    },
+}
+
+/// One call to send plain-text mail in the institution's name (ADR-0085). The plugin never sees an
+/// address. The footer, the opt-out link and the sender are added by the core.
+#[derive(Debug, Clone, Serialize, Deserialize, Validate, ToSchema)]
+pub struct SendMailRequest {
+    #[garde(skip)]
+    pub to: MailTarget,
+    /// A slug of at most 40 characters (`^[a-z][a-z0-9_-]*$`): groups mails for opt-out and
+    /// statistics. A person opts out per plugin and kind.
+    #[garde(length(chars, min = 1, max = 40))]
+    pub kind: String,
+    /// 1 to 200 characters, one line.
+    #[garde(length(chars, min = 1, max = 200))]
+    pub subject: String,
+    /// Plain text, 1 to 20000 characters.
+    #[garde(length(chars, min = 1, max = 20000))]
+    pub text: String,
+    /// A path into the web app that starts with one `/` (at most 500 characters). The core makes
+    /// it an absolute link.
+    #[garde(inner(length(chars, min = 1, max = 500)))]
+    #[serde(default)]
+    pub link_path: Option<String>,
+    /// At most 100 characters. The same plugin, key and person is accepted once in 30 days, so a
+    /// plugin that retries should always send one.
+    #[garde(inner(length(chars, min = 1, max = 100)))]
+    #[serde(default)]
+    pub dedupe_key: Option<String>,
+}
+
+/// Why people were not mailed. All five are always present.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct SkippedReasons {
+    /// The person turned this kind of mail from this plugin off.
+    pub opted_out: u32,
+    /// The person has no verified address.
+    pub no_address: u32,
+    /// The same `dedupe_key` was accepted for them in the last 30 days.
+    pub duplicate: u32,
+    /// The person's account is disabled.
+    pub disabled: u32,
+    /// The person already got the most plugin mail allowed in 24 hours (`mail.recipient_daily`).
+    pub rate_limited: u32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct SendMailResponse {
+    /// People a message was queued for.
+    pub accepted: u32,
+    /// People of the target who were not mailed.
+    pub skipped: u32,
+    pub skipped_reasons: SkippedReasons,
+}

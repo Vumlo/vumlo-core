@@ -1,0 +1,31 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO mail.dedupe (plugin_id, dedupe_key, user_id)\n           SELECT $1, $2, u FROM UNNEST($3::uuid[]) AS u\n           ON CONFLICT (plugin_id, dedupe_key, user_id) DO UPDATE SET at = now()\n             WHERE mail.dedupe.at < now() - make_interval(days => $4)\n           RETURNING user_id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "user_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "mail.dedupe",
+            "name": "user_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "UuidArray",
+        "Int4"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "436a448ce1faf6605da1b3614e1d352855d1c04218008c420985e02c0c9be051"
+}

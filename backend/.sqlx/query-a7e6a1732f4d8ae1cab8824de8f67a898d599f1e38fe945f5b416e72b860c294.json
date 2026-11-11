@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE mail.messages SET to_address = NULL, to_name = NULL\n         WHERE to_address IS NOT NULL AND erase_at IS NOT NULL AND erase_at <= now()",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "a7e6a1732f4d8ae1cab8824de8f67a898d599f1e38fe945f5b416e72b860c294"
+}

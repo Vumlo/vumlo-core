@@ -28,6 +28,9 @@ pub struct PluginsState {
     pub public_routes: Arc<RouteLimiter>,
     /// Days what was deleted can be asked for (ADR-0081).
     pub tombstone_days: u32,
+    /// Where a plugin's mail is queued and under which limits; unconfigured without `[mail]`
+    /// (ADR-0085).
+    pub mail: mail::MailState,
 }
 
 const PROXY_CONNECT: Duration = Duration::from_secs(3);
@@ -39,7 +42,7 @@ pub const PROXY_MAX_RESPONSE_BYTES: usize = 20 * 1024 * 1024;
 impl PluginsState {
     pub fn new(db: PgPool, config: &Settings) -> Self {
         Self {
-            db,
+            db: db.clone(),
             key: SecretKey::from_config(&config.plugins.secret_key).map(Arc::new),
             proxy: OutboundClient::new(PROXY_CONNECT, PROXY_TOTAL, PROXY_MAX_RESPONSE_BYTES, 0)
                 .ok()
@@ -49,6 +52,7 @@ impl PluginsState {
                 config.plugins.public_route_requests_per_second,
             )),
             tombstone_days: config.plugins.tombstone_days,
+            mail: mail::MailState::new(db.clone(), config),
         }
     }
 }

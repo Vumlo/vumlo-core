@@ -13,9 +13,9 @@ use sqlx::PgConnection;
 use uuid::Uuid;
 
 use super::model::{
-    Cursor, PluginAnnouncement, PluginAssignment, PluginAttempt, PluginContact, PluginDeletion,
-    PluginFormAnswers, PluginGrade, PluginList, PluginMember, PluginPage, PluginQuiz,
-    PluginSubmission, PluginSubmissionRow,
+    Cursor, MailAudience, MailPerson, MailRecipients, MailTarget, PluginAnnouncement,
+    PluginAssignment, PluginAttempt, PluginContact, PluginDeletion, PluginFormAnswers, PluginGrade,
+    PluginList, PluginMember, PluginPage, PluginQuiz, PluginSubmission, PluginSubmissionRow,
 };
 use super::repo::{self, After, AssignmentRow};
 use crate::content::{AssignmentType, BuiltinType};
@@ -30,6 +30,9 @@ pub enum PluginReadError {
     Forbidden(#[from] AccessError),
     #[error("not found")]
     NotFound,
+    /// The audience of a mail is larger than `mail.max_audience`.
+    #[error("the audience has more than {max} people")]
+    AudienceTooLarge { max: u32 },
     #[error(transparent)]
     Db(#[from] sqlx::Error),
 }
@@ -39,6 +42,13 @@ impl From<PluginReadError> for ApiError {
         match error {
             PluginReadError::Forbidden(e) => e.into(),
             PluginReadError::NotFound => Self::NotFound,
+            // A retry can never succeed, so this is not a `429` (ADR-0085).
+            PluginReadError::AudienceTooLarge { max } => Self::invalid_field(
+                "to",
+                format!(
+                    "this audience has more than {max} people; send to a smaller group, or ask the administrator to raise mail.max_audience"
+                ),
+            ),
             PluginReadError::Db(e) => Self::from_db("learning", &e),
         }
     }
@@ -380,6 +390,67 @@ pub async fn contacts(
 ) -> Result<Vec<PluginContact>, PluginReadError> {
     let only = plugin_course_filter(caller, Scope::UsersContact, None)?;
     Ok(repo::contacts(conn, ids, only.as_deref()).await?)
+}
+
+/// The people a plugin's mail is for (scope `mail:send`, ADR-0085). One `user_id` must be on the
+/// roster of a course the plugin reaches (`404` for a user nobody knows, `403` for one outside the
+/// grant); a `course_id` must be one it reaches. Only active people with a verified address are
+/// returned; the rest are counted. More than `max_audience` people is an error and nothing is
+/// returned: the roster is read one row past the limit to tell.
+pub async fn mail_recipients(
+    conn: &mut PgConnection,
+    caller: &PluginCaller,
+    target: MailTarget,
+    max_audience: u32,
+) -> Result<MailRecipients, PluginReadError> {
+    let rows = match target {
+        MailTarget::User(user_id) => {
+            let only = plugin_course_filter(caller, Scope::MailSend, None)?;
+            let person = repo::mail_person(conn, user_id)
+                .await?
+                .ok_or(PluginReadError::NotFound)?;
+            if !repo::on_roster(conn, user_id, only.as_deref()).await? {
+                return Err(AccessError::Denied.into());
+            }
+            vec![person]
+        }
+        MailTarget::Course {
+            course_id,
+            audience,
+        } => {
+            authorize_plugin_course(caller, Scope::MailSend, course_id)?;
+            course_must_exist(conn, course_id).await?;
+            let roles: &[&str] = match audience {
+                MailAudience::Students => &["student"],
+                MailAudience::Teachers => &["teacher", "assistant"],
+                MailAudience::All => &["student", "teacher", "assistant"],
+            };
+            let roles: Vec<String> = roles.iter().map(|role| (*role).to_owned()).collect();
+            let rows =
+                repo::mail_audience(conn, course_id, &roles, i64::from(max_audience) + 1).await?;
+            if rows.len() > max_audience as usize {
+                return Err(PluginReadError::AudienceTooLarge { max: max_audience });
+            }
+            rows
+        }
+    };
+    let mut recipients = MailRecipients {
+        people: Vec::new(),
+        no_address: 0,
+        disabled: 0,
+    };
+    for row in rows {
+        match (row.active, row.verified, row.email) {
+            (false, _, _) => recipients.disabled += 1,
+            (true, true, Some(email)) => recipients.people.push(MailPerson {
+                user_id: row.user_id,
+                name: format!("{} {}", row.name, row.surname),
+                email,
+            }),
+            (true, _, _) => recipients.no_address += 1,
+        }
+    }
+    Ok(recipients)
 }
 
 /// The announcements of one course or of every course the plugin reaches, changed at or after
