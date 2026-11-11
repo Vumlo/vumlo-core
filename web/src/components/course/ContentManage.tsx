@@ -22,6 +22,7 @@ import { CourseOutline } from "./CourseOutline";
 import { translate } from "@/lib/i18n/core";
 import type { MessageKey } from "@/lib/i18n/core";
 import type { IconName } from "@/components/Icon";
+import { PluginReports } from "@/components/PluginReports";
 import { useT } from "@/lib/i18n";
 import s from "./ContentManage.module.css";
 import c from "./Course.module.css";
@@ -273,6 +274,8 @@ export function ContentManage({ courseId }: { courseId: string }) {
               {info.data?.description && <p className="muted" style={{ fontSize: 13 }}>{info.data.description}</p>}
             </aside>
           </div>
+          {/* This screen is the staff's; a student gets StudentContent and never asks for the reports. */}
+          <PluginReports subject="courses" id={courseId} />
         </div>
       </div>
 
