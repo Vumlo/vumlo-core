@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT EXISTS (SELECT 1 FROM teaching.effective_members m\n                          WHERE m.user_id = $1 AND ($2::uuid[] IS NULL OR m.course_id = ANY($2))) AS \"on!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "on!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "UuidArray"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "2bcb1c10a34df11d1e9e7a125ffb3ae1875860733395529a2ad6584629b86844"
+}

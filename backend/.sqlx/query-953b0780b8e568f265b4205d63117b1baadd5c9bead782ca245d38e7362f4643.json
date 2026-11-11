@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE mail.messages\n         SET state = 'pending', attempts = 0, run_after = now(),\n             expires_at = now() + interval '24 hours',\n             finished_at = NULL, erase_at = NULL, last_error = NULL\n         WHERE state = 'dead' AND to_address IS NOT NULL AND id = ANY($1)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "UuidArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "953b0780b8e568f265b4205d63117b1baadd5c9bead782ca245d38e7362f4643"
+}

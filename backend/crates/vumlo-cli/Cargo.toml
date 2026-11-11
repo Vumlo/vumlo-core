@@ -25,6 +25,7 @@ clap.workspace = true
 common.workspace = true
 db.workspace = true
 image.workspace = true
+mail.workspace = true
 module-api.workspace = true
 plugins.workspace = true
 reqwest.workspace = true

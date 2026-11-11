@@ -27,6 +27,7 @@ async fn migrations_create_exactly_the_module_schemas() {
                 "files",
                 "gradebook",
                 "idempotency",
+                "mail",
                 "org",
                 "plugins",
                 "teaching"

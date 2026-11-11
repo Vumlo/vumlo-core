@@ -345,6 +345,72 @@ pub async fn contacts(
     .await
 }
 
+/// A person as the mail needs to know them.
+pub struct MailRow {
+    pub user_id: Uuid,
+    pub name: String,
+    pub surname: String,
+    pub email: Option<String>,
+    pub active: bool,
+    pub verified: bool,
+}
+
+/// One person by id, whether or not they are on a roster.
+pub async fn mail_person(
+    conn: &mut PgConnection,
+    user_id: Uuid,
+) -> Result<Option<MailRow>, sqlx::Error> {
+    sqlx::query_as!(
+        MailRow,
+        r#"SELECT p.id AS "user_id!", p.name AS "name!", p.surname AS "surname!", p.email,
+                  (p.status = 'active') AS "active!", p.email_verified AS "verified!"
+           FROM auth.people p WHERE p.id = $1"#,
+        user_id
+    )
+    .fetch_optional(conn)
+    .await
+}
+
+/// Whether the person is on the roster of a course of `only` (`None`: any course).
+pub async fn on_roster(
+    conn: &mut PgConnection,
+    user_id: Uuid,
+    only: Option<&[Uuid]>,
+) -> Result<bool, sqlx::Error> {
+    sqlx::query_scalar!(
+        r#"SELECT EXISTS (SELECT 1 FROM teaching.effective_members m
+                          WHERE m.user_id = $1 AND ($2::uuid[] IS NULL OR m.course_id = ANY($2))) AS "on!""#,
+        user_id,
+        only
+    )
+    .fetch_one(conn)
+    .await
+}
+
+/// The people of a course in `roles`, at most `limit` of them, by user id.
+pub async fn mail_audience(
+    conn: &mut PgConnection,
+    course_id: Uuid,
+    roles: &[String],
+    limit: i64,
+) -> Result<Vec<MailRow>, sqlx::Error> {
+    sqlx::query_as!(
+        MailRow,
+        r#"SELECT p.id AS "user_id!", p.name AS "name!", p.surname AS "surname!", p.email,
+                  (p.status = 'active') AS "active!", p.email_verified AS "verified!"
+           FROM teaching.effective_members m
+           JOIN auth.people p ON p.id = m.user_id
+           WHERE m.course_id = $1 AND m.role = ANY($2)
+           ORDER BY p.id
+           LIMIT $3"#,
+        course_id,
+        roles,
+        limit
+    )
+    .fetch_all(conn)
+    .await
+}
+
 /// The announcements of the courses in `only` (`None`: every course), by the time they last changed.
 pub async fn announcements(
     conn: &mut PgConnection,

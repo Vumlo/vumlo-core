@@ -33,6 +33,7 @@ db.workspace = true
 events.workspace = true
 files.workspace = true
 learning.workspace = true
+mail.workspace = true
 module-api.workspace = true
 org.workspace = true
 plugins.workspace = true

@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM mail.opt_outs WHERE user_id = $1 AND plugin_id = $2 AND kind = $3",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "b269cde2a2f28d6e0dfde2a3f257562d985e17d28b1d7a38be4d58728797fef8"
+}

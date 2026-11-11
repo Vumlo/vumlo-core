@@ -1,8 +1,8 @@
-//! Users, login identities, sessions and the mail that goes with them (ADR-0003, ADR-0017).
+//! Users, login identities, sessions and the text of the mails that go with them (ADR-0003,
+//! ADR-0017). The mails are queued in the `mail` layer, which sends them (ADR-0084).
 
 mod google;
 mod handler;
-mod mail;
 mod model;
 mod repo;
 mod routes;
@@ -13,7 +13,6 @@ mod test_support;
 
 pub use google::{Google, GoogleSetupError};
 pub use handler::{MailContext, event_handlers};
-pub use mail::{MailError, Mailer};
 pub use model::{
     Email, EmailToken, HashedPassword, ModelError, NewSession, NewUser, Password, PasswordPolicy,
     PersonName, SessionInfo, SessionKind, SessionToken, TemporaryPassword, TokenPurpose, User,

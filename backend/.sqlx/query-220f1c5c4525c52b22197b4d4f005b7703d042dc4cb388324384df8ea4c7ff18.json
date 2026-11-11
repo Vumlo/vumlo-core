@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE mail.batches b SET subject = NULL, body = NULL, link_path = NULL\n         WHERE (b.subject IS NOT NULL OR b.body IS NOT NULL OR b.link_path IS NOT NULL)\n           AND NOT EXISTS (SELECT 1 FROM mail.messages m\n                           WHERE m.batch_id = b.id AND m.to_address IS NOT NULL)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "220f1c5c4525c52b22197b4d4f005b7703d042dc4cb388324384df8ea4c7ff18"
+}

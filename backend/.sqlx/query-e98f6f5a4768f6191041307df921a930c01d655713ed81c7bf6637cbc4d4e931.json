@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE mail.messages SET to_address = 'not an address'",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "e98f6f5a4768f6191041307df921a930c01d655713ed81c7bf6637cbc4d4e931"
+}

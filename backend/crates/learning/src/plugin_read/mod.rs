@@ -9,13 +9,13 @@ mod repo;
 mod service;
 
 pub use model::{
-    Cursor, PluginAnnouncement, PluginAssignment, PluginAttempt, PluginContact, PluginDeletion,
-    PluginFormAnswers, PluginGrade, PluginList, PluginMember, PluginPage, PluginQuiz,
-    PluginSubmission, PluginSubmissionRow,
+    Cursor, MailAudience, MailPerson, MailRecipients, MailTarget, PluginAnnouncement,
+    PluginAssignment, PluginAttempt, PluginContact, PluginDeletion, PluginFormAnswers, PluginGrade,
+    PluginList, PluginMember, PluginPage, PluginQuiz, PluginSubmission, PluginSubmissionRow,
 };
 pub use service::{
     Deleted, PluginReadError, announcements, assignment, assignments, attempts, contacts, deleted,
-    form_answers, grades, members, quiz, reportable_assignment, reportable_course,
+    form_answers, grades, mail_recipients, members, quiz, reportable_assignment, reportable_course,
     reportable_submission, submission, submissions,
 };
 

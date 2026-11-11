@@ -1555,6 +1555,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/mail/opt-in/{token}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Undoes an opt-out made with the same token. */
+        get: operations["opt_in_get"];
+        put?: never;
+        /** The same as `GET /mail/opt-in/{token}`. */
+        post: operations["opt_in_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/mail/opt-out/{token}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Stops the messages of one kind from one plugin for the person the link was made for.
+         * @description The link is signed and never expires. A mail scanner that opens links will opt people out, and
+         *     the answer holds the link that undoes it.
+         */
+        get: operations["opt_out_get"];
+        put?: never;
+        /** The one-click form of the opt-out (RFC 8058): the same as `GET`. */
+        post: operations["opt_out_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/me": {
         parameters: {
             query?: never;
@@ -2083,6 +2123,34 @@ export interface paths {
         get: operations["list_grades"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/plugin-api/mail": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Sends plain-text mail in the institution's name to one person or to a course audience. The
+         *     scope `mail:send`. The mail comes from `mail.from`, ends with a footer that names the plugin and
+         *     gives a one-click opt-out per `kind`, and is sent within seconds by the mail worker, so `202`
+         *     means queued, not delivered. A person who opted out, has no verified address, has a disabled
+         *     account, already got this `dedupe_key`, or already got `mail.recipient_daily` plugin messages in
+         *     24 hours is skipped and counted in `skipped_reasons`.
+         * @description Limits: `mail.plugin_hourly_calls` accepted calls per plugin per hour and `mail.recipient_daily`
+         *     messages per person per day are `429` with `Retry-After` (for an audience the daily limit skips
+         *     the person instead); an audience of more than `mail.max_audience` people is `422` on `to` and
+         *     queues nothing.
+         */
+        post: operations["send_mail"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3560,6 +3628,20 @@ export interface components {
         };
         /** @description `client = web` returns the user (the token is in the cookie); `client = app` returns the token too. */
         LoginResponse: components["schemas"]["AppLoginResponse"] | components["schemas"]["User"];
+        /**
+         * @description Which people of a course a plugin's mail is for.
+         * @enum {string}
+         */
+        MailAudience: "students" | "teachers" | "all";
+        /** @description Who a plugin's mail is for: one person, or a course audience. */
+        MailTarget: {
+            /** Format: uuid */
+            user_id: string;
+        } | {
+            audience: components["schemas"]["MailAudience"];
+            /** Format: uuid */
+            course_id: string;
+        };
         /** @description Makes a template from a course. */
         MakeTemplateRequest: {
             /** @description The template's title; the course's own when absent. */
@@ -4474,6 +4556,45 @@ export interface components {
             items: components["schemas"]["SearchHit"][];
             next_cursor?: string | null;
         };
+        /**
+         * @description One call to send plain-text mail in the institution's name (ADR-0085). The plugin never sees an
+         *     address. The footer, the opt-out link and the sender are added by the core.
+         */
+        SendMailRequest: {
+            /**
+             * @description At most 100 characters. The same plugin, key and person is accepted once in 30 days, so a
+             *     plugin that retries should always send one.
+             */
+            dedupe_key?: string | null;
+            /**
+             * @description A slug of at most 40 characters (`^[a-z][a-z0-9_-]*$`): groups mails for opt-out and
+             *     statistics. A person opts out per plugin and kind.
+             */
+            kind: string;
+            /**
+             * @description A path into the web app that starts with one `/` (at most 500 characters). The core makes
+             *     it an absolute link.
+             */
+            link_path?: string | null;
+            /** @description 1 to 200 characters, one line. */
+            subject: string;
+            /** @description Plain text, 1 to 20000 characters. */
+            text: string;
+            to: components["schemas"]["MailTarget"];
+        };
+        SendMailResponse: {
+            /**
+             * Format: int32
+             * @description People a message was queued for.
+             */
+            accepted: number;
+            /**
+             * Format: int32
+             * @description People of the target who were not mailed.
+             */
+            skipped: number;
+            skipped_reasons: components["schemas"]["SkippedReasons"];
+        };
         Session: {
             /** Format: date-time */
             created_at: string;
@@ -4497,6 +4618,34 @@ export interface components {
         SetAppDownloadsRequest: {
             /** @description At most one link per platform, each at most 2048 characters of an `https` address. */
             downloads: components["schemas"]["AppDownload"][];
+        };
+        /** @description Why people were not mailed. All five are always present. */
+        SkippedReasons: {
+            /**
+             * Format: int32
+             * @description The person's account is disabled.
+             */
+            disabled: number;
+            /**
+             * Format: int32
+             * @description The same `dedupe_key` was accepted for them in the last 30 days.
+             */
+            duplicate: number;
+            /**
+             * Format: int32
+             * @description The person has no verified address.
+             */
+            no_address: number;
+            /**
+             * Format: int32
+             * @description The person turned this kind of mail from this plugin off.
+             */
+            opted_out: number;
+            /**
+             * Format: int32
+             * @description The person already got the most plugin mail allowed in 24 hours (`mail.recipient_daily`).
+             */
+            rate_limited: number;
         };
         /** @description The source of a formula or a diagram, as plain text. The server never renders it. */
         SourceProps: {
@@ -9937,6 +10086,134 @@ export interface operations {
             };
         };
     };
+    opt_in_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The token of the opt-out link */
+                token: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Opted in again */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/plain": string;
+                };
+            };
+            /** @description Not a link this server made */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": unknown;
+                };
+            };
+        };
+    };
+    opt_in_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The token of the opt-out link */
+                token: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Opted in again */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/plain": string;
+                };
+            };
+            /** @description Not a link this server made */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": unknown;
+                };
+            };
+        };
+    };
+    opt_out_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The signed token from the footer of a mail */
+                token: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Opted out */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/plain": string;
+                };
+            };
+            /** @description Not a link this server made */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": unknown;
+                };
+            };
+        };
+    };
+    opt_out_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The signed token from the footer of a mail */
+                token: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Opted out */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/plain": string;
+                };
+            };
+            /** @description Not a link this server made */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": unknown;
+                };
+            };
+        };
+    };
     get_me: {
         parameters: {
             query?: never;
@@ -11500,6 +11777,84 @@ export interface operations {
             };
             /** @description A cursor or a time that is not valid */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    send_mail: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SendMailRequest"];
+            };
+        };
+        responses: {
+            /** @description Queued */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SendMailResponse"];
+                };
+            };
+            /** @description No token, or one that is unknown or disabled */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The plugin was not granted `mail:send`, or the person or course is outside the courses it reaches */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description No such person or course */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description A field is not valid, or the audience is larger than `mail.max_audience` */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The plugin made too many calls this hour, or the person got too much mail today. `Retry-After` says when to try again. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description `[mail]` is not configured on this server */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };

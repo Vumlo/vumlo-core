@@ -192,6 +192,50 @@ pub struct PluginContact {
     pub email: String,
 }
 
+/// Which people of a course a plugin's mail is for (ADR-0085).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MailAudience {
+    Students,
+    /// Teachers and assistants: the staff who grade.
+    Teachers,
+    All,
+}
+
+/// Who a plugin's mail is for: one person on the roster of a course it reaches, or a course.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MailTarget {
+    User(Uuid),
+    Course {
+        course_id: Uuid,
+        audience: MailAudience,
+    },
+}
+
+/// A person who can be mailed. The plugin never sees the address: the mail layer gets it.
+#[derive(Clone, PartialEq, Eq)]
+pub struct MailPerson {
+    pub user_id: Uuid,
+    pub name: String,
+    pub email: String,
+}
+
+// An address and a name are personal data: never in a log line.
+impl std::fmt::Debug for MailPerson {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "MailPerson({})", self.user_id)
+    }
+}
+
+/// The people a plugin's mail goes to, and how many of the target it cannot reach.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MailRecipients {
+    pub people: Vec<MailPerson>,
+    /// Active people without a verified address.
+    pub no_address: u32,
+    /// People whose account is disabled.
+    pub disabled: u32,
+}
+
 /// An announcement of a course the plugin reaches.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PluginAnnouncement {

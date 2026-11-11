@@ -63,6 +63,8 @@ pub enum PluginsError {
     #[error(transparent)]
     Events(#[from] events::EventsError),
     #[error(transparent)]
+    Mail(#[from] mail::MailError),
+    #[error(transparent)]
     Db(#[from] sqlx::Error),
 }
 
@@ -77,6 +79,7 @@ impl From<PluginsError> for ApiError {
             | PluginsError::ReportGone
             | PluginsError::CourseGone => Self::NotFound,
             PluginsError::TooManyReports(_) => Self::invalid_field("key", error.to_string()),
+            PluginsError::Mail(error) => error.into(),
             PluginsError::Db(error) => Self::from_db("plugins", &error),
             // The rest happen at install time, in the CLI, and never in a request.
             other => {

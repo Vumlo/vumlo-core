@@ -25,6 +25,7 @@ use crate::service;
 use crate::state::PluginsState;
 
 mod guard;
+mod mail;
 mod reads;
 mod reports;
 
@@ -42,6 +43,7 @@ where
     // belongs to, which is what the limiter counts by.
     let plugin_api = OpenApiRouter::new()
         .merge(reads::router())
+        .merge(mail::router())
         .merge(reports::plugin_router())
         .routes(routes!(get_settings));
     let plugin_api = guard::limit(plugin_api, settings)?.layer(

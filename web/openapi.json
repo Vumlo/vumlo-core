@@ -6,7 +6,7 @@
     "license": {
       "name": ""
     },
-    "version": "0.4.1"
+    "version": "0.5.0"
   },
   "paths": {
     "/api/v1/admin/audit": {
@@ -7242,6 +7242,155 @@
         ]
       }
     },
+    "/api/v1/mail/opt-in/{token}": {
+      "get": {
+        "tags": [
+          "mail"
+        ],
+        "summary": "Undoes an opt-out made with the same token.",
+        "operationId": "opt_in_get",
+        "parameters": [
+          {
+            "name": "token",
+            "in": "path",
+            "description": "The token of the opt-out link",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Opted in again",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not a link this server made",
+            "content": {
+              "application/problem+json": {}
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "mail"
+        ],
+        "summary": "The same as `GET /mail/opt-in/{token}`.",
+        "operationId": "opt_in_post",
+        "parameters": [
+          {
+            "name": "token",
+            "in": "path",
+            "description": "The token of the opt-out link",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Opted in again",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not a link this server made",
+            "content": {
+              "application/problem+json": {}
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/mail/opt-out/{token}": {
+      "get": {
+        "tags": [
+          "mail"
+        ],
+        "summary": "Stops the messages of one kind from one plugin for the person the link was made for.",
+        "description": "The link is signed and never expires. A mail scanner that opens links will opt people out, and\nthe answer holds the link that undoes it.",
+        "operationId": "opt_out_get",
+        "parameters": [
+          {
+            "name": "token",
+            "in": "path",
+            "description": "The signed token from the footer of a mail",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Opted out",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not a link this server made",
+            "content": {
+              "application/problem+json": {}
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "mail"
+        ],
+        "summary": "The one-click form of the opt-out (RFC 8058): the same as `GET`.",
+        "operationId": "opt_out_post",
+        "parameters": [
+          {
+            "name": "token",
+            "in": "path",
+            "description": "The signed token from the footer of a mail",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Opted out",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not a link this server made",
+            "content": {
+              "application/problem+json": {}
+            }
+          }
+        }
+      }
+    },
     "/api/v1/me": {
       "get": {
         "tags": [
@@ -9535,6 +9684,103 @@
           },
           "422": {
             "description": "A cursor or a time that is not valid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "plugin": []
+          }
+        ]
+      }
+    },
+    "/api/v1/plugin-api/mail": {
+      "post": {
+        "tags": [
+          "plugin-api"
+        ],
+        "summary": "Sends plain-text mail in the institution's name to one person or to a course audience. The\nscope `mail:send`. The mail comes from `mail.from`, ends with a footer that names the plugin and\ngives a one-click opt-out per `kind`, and is sent within seconds by the mail worker, so `202`\nmeans queued, not delivered. A person who opted out, has no verified address, has a disabled\naccount, already got this `dedupe_key`, or already got `mail.recipient_daily` plugin messages in\n24 hours is skipped and counted in `skipped_reasons`.",
+        "description": "Limits: `mail.plugin_hourly_calls` accepted calls per plugin per hour and `mail.recipient_daily`\nmessages per person per day are `429` with `Retry-After` (for an audience the daily limit skips\nthe person instead); an audience of more than `mail.max_audience` people is `422` on `to` and\nqueues nothing.",
+        "operationId": "send_mail",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SendMailRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "Queued",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SendMailResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No token, or one that is unknown or disabled",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The plugin was not granted `mail:send`, or the person or course is outside the courses it reaches",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such person or course",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "A field is not valid, or the audience is larger than `mail.max_audience`",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "The plugin made too many calls this hour, or the person got too much mail today. `Retry-After` says when to try again.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "`[mail]` is not configured on this server",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -14915,6 +15161,50 @@
         ],
         "description": "`client = web` returns the user (the token is in the cookie); `client = app` returns the token too."
       },
+      "MailAudience": {
+        "type": "string",
+        "description": "Which people of a course a plugin's mail is for.",
+        "enum": [
+          "students",
+          "teachers",
+          "all"
+        ]
+      },
+      "MailTarget": {
+        "oneOf": [
+          {
+            "type": "object",
+            "description": "One person, who must be on the roster of a course the plugin reaches.",
+            "required": [
+              "user_id"
+            ],
+            "properties": {
+              "user_id": {
+                "type": "string",
+                "format": "uuid"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "The people of one course the plugin reaches.",
+            "required": [
+              "course_id",
+              "audience"
+            ],
+            "properties": {
+              "audience": {
+                "$ref": "#/components/schemas/MailAudience"
+              },
+              "course_id": {
+                "type": "string",
+                "format": "uuid"
+              }
+            }
+          }
+        ],
+        "description": "Who a plugin's mail is for: one person, or a course audience."
+      },
       "MakeTemplateRequest": {
         "type": "object",
         "description": "Makes a template from a course.",
@@ -17461,6 +17751,72 @@
           }
         }
       },
+      "SendMailRequest": {
+        "type": "object",
+        "description": "One call to send plain-text mail in the institution's name (ADR-0085). The plugin never sees an\naddress. The footer, the opt-out link and the sender are added by the core.",
+        "required": [
+          "to",
+          "kind",
+          "subject",
+          "text"
+        ],
+        "properties": {
+          "dedupe_key": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "At most 100 characters. The same plugin, key and person is accepted once in 30 days, so a\nplugin that retries should always send one."
+          },
+          "kind": {
+            "type": "string",
+            "description": "A slug of at most 40 characters (`^[a-z][a-z0-9_-]*$`): groups mails for opt-out and\nstatistics. A person opts out per plugin and kind."
+          },
+          "link_path": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "A path into the web app that starts with one `/` (at most 500 characters). The core makes\nit an absolute link."
+          },
+          "subject": {
+            "type": "string",
+            "description": "1 to 200 characters, one line."
+          },
+          "text": {
+            "type": "string",
+            "description": "Plain text, 1 to 20000 characters."
+          },
+          "to": {
+            "$ref": "#/components/schemas/MailTarget"
+          }
+        }
+      },
+      "SendMailResponse": {
+        "type": "object",
+        "required": [
+          "accepted",
+          "skipped",
+          "skipped_reasons"
+        ],
+        "properties": {
+          "accepted": {
+            "type": "integer",
+            "format": "int32",
+            "description": "People a message was queued for.",
+            "minimum": 0
+          },
+          "skipped": {
+            "type": "integer",
+            "format": "int32",
+            "description": "People of the target who were not mailed.",
+            "minimum": 0
+          },
+          "skipped_reasons": {
+            "$ref": "#/components/schemas/SkippedReasons"
+          }
+        }
+      },
       "Session": {
         "type": "object",
         "required": [
@@ -17525,6 +17881,49 @@
               "$ref": "#/components/schemas/AppDownload"
             },
             "description": "At most one link per platform, each at most 2048 characters of an `https` address."
+          }
+        }
+      },
+      "SkippedReasons": {
+        "type": "object",
+        "description": "Why people were not mailed. All five are always present.",
+        "required": [
+          "opted_out",
+          "no_address",
+          "duplicate",
+          "disabled",
+          "rate_limited"
+        ],
+        "properties": {
+          "disabled": {
+            "type": "integer",
+            "format": "int32",
+            "description": "The person's account is disabled.",
+            "minimum": 0
+          },
+          "duplicate": {
+            "type": "integer",
+            "format": "int32",
+            "description": "The same `dedupe_key` was accepted for them in the last 30 days.",
+            "minimum": 0
+          },
+          "no_address": {
+            "type": "integer",
+            "format": "int32",
+            "description": "The person has no verified address.",
+            "minimum": 0
+          },
+          "opted_out": {
+            "type": "integer",
+            "format": "int32",
+            "description": "The person turned this kind of mail from this plugin off.",
+            "minimum": 0
+          },
+          "rate_limited": {
+            "type": "integer",
+            "format": "int32",
+            "description": "The person already got the most plugin mail allowed in 24 hours (`mail.recipient_daily`).",
+            "minimum": 0
           }
         }
       },

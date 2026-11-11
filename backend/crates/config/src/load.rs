@@ -334,6 +334,29 @@ fn validate(settings: &mut Settings) -> Vec<String> {
         }
     }
     errors.extend(files_problems(&settings.files));
+    if let Some(mail) = &settings.mail {
+        for (name, value, low, high) in [
+            (
+                "mail.plugin_hourly_calls",
+                mail.plugin_hourly_calls,
+                1,
+                100_000,
+            ),
+            ("mail.recipient_daily", mail.recipient_daily, 1, 1000),
+            ("mail.max_audience", mail.max_audience, 1, 10_000),
+            ("mail.retention_days", mail.retention_days, 1, 3650),
+            (
+                "mail.journal_days",
+                mail.journal_days,
+                mail.retention_days.max(1),
+                3650,
+            ),
+        ] {
+            if !(low..=high).contains(&value) {
+                errors.push(format!("{name} must be between {low} and {high}"));
+            }
+        }
+    }
     let auth = &settings.auth;
     if !(8..=128).contains(&auth.password_min_length) {
         errors.push("auth.password_min_length must be between 8 and 128".to_owned());

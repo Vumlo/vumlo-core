@@ -4,18 +4,10 @@
 mod common;
 
 use ::common::Role;
-use ::events;
-use common::{Http, Mailbox, PASSWORD, db_test, seed_and_login, seed_user, spawn_app};
+use common::{Http, Mailbox, PASSWORD, db_test, deliver, seed_and_login, seed_user, spawn_app};
 use sqlx::PgPool;
 
 const NEW_PASSWORD: &str = "a different sturdy passphrase 7";
-
-/// Delivers the outbox with the handlers of the running app.
-async fn deliver(state: &server::app::AppState) {
-    events::process_once(&state.db, &state.event_handlers())
-        .await
-        .expect("deliver");
-}
 
 fn register_body(email: &str) -> serde_json::Value {
     serde_json::json!({"name": "Maya", "surname": "Okafor", "email": email})

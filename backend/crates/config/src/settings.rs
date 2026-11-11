@@ -524,6 +524,57 @@ pub struct MailSettings {
     #[serde(default)]
     pub link_base: Option<String>,
     pub transport: MailTransport,
+    /// Calls to `POST /plugin-api/mail` one plugin may make in an hour (ADR-0085), 1 to 100000.
+    #[serde(default = "default_plugin_hourly_calls")]
+    pub plugin_hourly_calls: u32,
+    /// Plugin messages one person may get in 24 hours (ADR-0085), 1 to 1000.
+    #[serde(default = "default_recipient_daily")]
+    pub recipient_daily: u32,
+    /// The most people one call may address (ADR-0085), 1 to 10000.
+    #[serde(default = "default_max_audience")]
+    pub max_audience: u32,
+    /// Days after a message ends that its address and name are kept (ADR-0084), 1 to 3650.
+    #[serde(default = "default_mail_retention_days")]
+    pub retention_days: u32,
+    /// Days the journal of messages is kept (ADR-0084), `retention_days` to 3650.
+    #[serde(default = "default_mail_journal_days")]
+    pub journal_days: u32,
+}
+
+fn default_plugin_hourly_calls() -> u32 {
+    500
+}
+
+fn default_recipient_daily() -> u32 {
+    20
+}
+
+fn default_max_audience() -> u32 {
+    2000
+}
+
+fn default_mail_retention_days() -> u32 {
+    30
+}
+
+fn default_mail_journal_days() -> u32 {
+    180
+}
+
+impl MailSettings {
+    /// A section with the defaults of every limit.
+    pub fn new(from: impl Into<String>, transport: MailTransport) -> Self {
+        Self {
+            from: from.into(),
+            link_base: None,
+            transport,
+            plugin_hourly_calls: default_plugin_hourly_calls(),
+            recipient_daily: default_recipient_daily(),
+            max_audience: default_max_audience(),
+            retention_days: default_mail_retention_days(),
+            journal_days: default_mail_journal_days(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]

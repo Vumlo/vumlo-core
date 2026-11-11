@@ -1,0 +1,20 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO mail.messages (id, batch_id, user_id, plugin_id, kind, to_address, to_name)\n         SELECT m.id, $1, m.user_id, $2, $3, m.address, m.name\n         FROM UNNEST($4::uuid[], $5::uuid[], $6::text[], $7::text[]) AS m(id, user_id, address, name)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text",
+        "UuidArray",
+        "UuidArray",
+        "TextArray",
+        "TextArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "8f4df5715cb1ec03887bd9c0928092d3c9fdcd23ddb87691bd8db24d7443fae7"
+}
