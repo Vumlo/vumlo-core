@@ -10,6 +10,7 @@ import type { Attempt, Document, Item } from "@/lib/api/types";
 import { weekdayDate, timeOf } from "@/lib/format";
 import { useT } from "@/lib/i18n";
 import { autoResult } from "@/lib/grading";
+import { PluginReports } from "@/components/PluginReports";
 import { FilePreview } from "./FilePreview";
 import s from "./GradeWorkspace.module.css";
 
@@ -38,6 +39,8 @@ export function SubmissionView({ item, attempts }: { item: Item; attempts: Attem
         </div>
       )}
       <Body item={item} attempt={shown} />
+      {/* Only the grading workspace shows this, and it is for staff. */}
+      <PluginReports key={shown.id} subject="submissions" id={shown.id} />
     </div>
   );
 }

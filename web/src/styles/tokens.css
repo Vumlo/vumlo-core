@@ -31,6 +31,8 @@
   --ok-fg: oklch(36% 0.1 160);
   --danger: oklch(48% 0.2 27);
   --danger-soft: oklch(90% 0.05 20);
+  --warn-fg: oklch(40% 0.1 70);
+  --warn-soft: oklch(90% 0.08 85);
   --shadow: 0 1px 2px oklch(18% 0.02 calc(var(--hue) + 10) / 0.06);
   --ring: oklch(50% 0.25 var(--hue));
   --input-bg: oklch(98.5% 0.008 calc(var(--hue) + 10));
@@ -87,6 +89,8 @@
   --ok-fg: oklch(82% 0.13 160);
   --danger: oklch(74% 0.16 22);
   --danger-soft: oklch(36% 0.07 22);
+  --warn-fg: oklch(85% 0.12 85);
+  --warn-soft: oklch(38% 0.07 75);
   --shadow: none;
   --ring: oklch(68% 0.22 var(--hue));
   --input-bg: oklch(20% 0.024 var(--hue));

@@ -3,6 +3,8 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { CourseOutline } from "@/components/course/CourseOutline";
+import { useCourseAccess } from "@/components/course/useCourseAccess";
+import { PluginReports } from "@/components/PluginReports";
 import { useContentTree, useCourse, useCourseInfo, useItemMeta } from "@/lib/api/hooks/courses";
 import { findItem } from "@/lib/course";
 import { useT } from "@/lib/i18n";
@@ -29,6 +31,10 @@ export function ItemFrame({ courseId, itemId, children, focus = false, keepOutli
   const tab = useItemTab();
   const tabs = found?.item.kind === "assignment" && !focus ? pluginSlots : [];
   const openTab = tabs.find((slot) => slot.plugin_id === tab);
+  // What plugins reported about this assignment: for staff only, so a student's browser never asks.
+  const { staff } = useCourseAccess(courseId);
+  const reports = staff && found?.item.kind === "assignment" && !focus ? <PluginReports subject="assignments" id={itemId} /> : null;
+  const page = (ctx: { crumbs: ReactNode }) => <>{children(ctx)}{reports}</>;
   const crumbs = (
     <nav aria-label={t("common.breadcrumb")} className="crumbs">
       <Link href={courseHref(courseId)}>{info.data?.code ?? t("search.kind.course")}</Link>
@@ -42,14 +48,14 @@ export function ItemFrame({ courseId, itemId, children, focus = false, keepOutli
         {(!focus || keepOutline) && tree.data && <CourseOutline courseId={courseId} tree={tree.data} meta={meta.data?.items ?? {}} code={info.data?.code} title={course.data?.title} currentItemId={itemId} />}
         <div className={s.main} style={focus ? { maxWidth: "none" } : undefined}>
           {tabs.length === 0 ? (
-            children({ crumbs })
+            page({ crumbs })
           ) : (
             <>
               <PluginTabs courseId={courseId} itemId={itemId} slots={tabs} current={openTab?.plugin_id ?? ""} />
               {openTab && <h2 className={s.pluginHeading}>{openTab.title}</h2>}
               {openTab && <PluginFrame key={openTab.plugin_id} assignmentId={itemId} slot={openTab} />}
               {/* Kept mounted while a plugin tab is open, so a student's unsent draft is not lost. */}
-              <div hidden={openTab !== undefined}>{children({ crumbs })}</div>
+              <div hidden={openTab !== undefined}>{page({ crumbs })}</div>
             </>
           )}
         </div>
