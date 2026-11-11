@@ -10,6 +10,8 @@ must do, in order, besides getting the new release. See [RELEASING.md](RELEASING
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-11-11
+
 ### Added
 
 - **A mail layer** (ADR-0084). All outgoing mail is a row of the new schema `mail`, one per recipient, queued in the transaction of whatever asked for it and sent by a mail worker (in `serve` and in `worker`) within a few seconds. A transient failure is retried with a growing delay; a permanent one, or a message a day old, is a `dead` row. The address is copied into the row and erased `mail.retention_days` (30) after the message ends, at once for account mail. Verification and password-reset mail go through it with the same text as before. `[mail]` gained `plugin_hourly_calls` (500), `recipient_daily` (20), `max_audience` (2000), `retention_days` (30) and `journal_days` (180).
@@ -18,7 +20,7 @@ must do, in order, besides getting the new release. See [RELEASING.md](RELEASING
 - **`vumlo-cli mail status|list|retry`** (ADR-0087): the queue and the delivery journal, by id and never with an address, and a way to put dead messages back (`mail retry <id> | --dead [--plugin ID] [--dry-run]`, audited).
 - **A "Plugin reports" panel in the web app** (ADR-0088). Teachers and admins see what plugins reported (ADR-0077) under a submitted attempt in the grading view, on the assignment page and on the course page. A report shows its summary and, when the plugin follows the display convention (`data.display`: `level`, `title`, a table of up to 200 rows, up to 20 facts, `links`), a badge, a title, an accessible table that scrolls on a narrow screen, figures and download buttons. Everything is shown as text; a link is followed only if it points into the same plugin's routes (`/api/v1/plugins/<id>/...`); numbers use the viewer's language; a report without a valid `display` shows the summary and its data folded away. Students never see the panel and their browser does not ask. English and Ukrainian.
 
-**Upgrade notes.** Run `db migrate`: migration `0047_mail.sql` adds the schema `mail` and a column to the view `auth.people`. There is no down migration, so to go back restore the backup taken before it (an older binary refuses a database that is ahead of it). Nothing in `vumlo.toml` has to change; the new `[mail]` keys have defaults. A plugin that was granted nothing new cannot send mail: grant `mail:send` with `vumlo-cli plugin grant`. Verification and reset mail are now sent by the mail worker, which `serve` and `worker` start whenever `[mail]` is set; a failed send is a `dead` row in `vumlo-cli mail list` instead of a dead letter of the outbox.
+**Upgrade notes.** Rebuild the web image (the reports panel is in the web app). Run `db migrate`: migration `0047_mail.sql` adds the schema `mail` and a column to the view `auth.people`. There is no down migration, so to go back restore the backup taken before it (an older binary refuses a database that is ahead of it). Nothing in `vumlo.toml` has to change; the new `[mail]` keys have defaults. A plugin that was granted nothing new cannot send mail: grant `mail:send` with `vumlo-cli plugin grant`. Verification and reset mail are now sent by the mail worker, which `serve` and `worker` start whenever `[mail]` is set; a failed send is a `dead` row in `vumlo-cli mail list` instead of a dead letter of the outbox.
 
 ## [0.5.0] - 2026-11-10
 
@@ -318,7 +320,8 @@ There is nothing to upgrade from; follow [docs/install.md](docs/install.md).
 - Any optional module, and an end-user CLI (ADR-0055).
 - Published container images: the images are built on your server from the archive.
 
-[Unreleased]: https://github.com/Vumlo/vumlo-core/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/Vumlo/vumlo-core/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/Vumlo/vumlo-core/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/Vumlo/vumlo-core/compare/v0.4.1...v0.5.0
 [0.4.1]: https://github.com/Vumlo/vumlo-core/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/Vumlo/vumlo-core/compare/v0.3.0...v0.4.0
