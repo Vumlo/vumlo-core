@@ -49,6 +49,12 @@ test("the configuration for the installer carries the institution's names, schem
   assert.deepEqual(buildEnvFor(client), { VUMLO_API_URL: "https://lms.ucu.edu.ua/api/v1", VUMLO_URL_SCHEME: "vumlo-ucu" });
 });
 
+test("the web build is given as a path, never as something Tauri would read as a URL (Windows installers embedded nothing)", () => {
+  const options = { iconDir: "gen/icons", desktopTemplate: "/src/desktop/desktop-template.desktop" };
+  assert.equal(tauriConfigFor(client, { ...options, frontendDist: "../web/out" }).build.frontendDist, "../web/out");
+  assert.throws(() => tauriConfigFor(client, { ...options, frontendDist: "D:\\a\\vumlo\\desktop\\..\\web\\out" }), /read as a URL/);
+});
+
 test("a build that would be wrong for other people is warned about", () => {
   assert.deepEqual(warningsFor(client), []);
   const local = { ...client, api_url: "http://localhost:3000/api/v1", desktop: { url_scheme: "vumlo" } };
