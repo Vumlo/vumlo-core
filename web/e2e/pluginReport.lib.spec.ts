@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { formatCell, isPluginPath, MAX_FACTS, MAX_ROWS, MAX_TITLE, parseDisplay } from "../src/lib/pluginReport";
+import { clip, formatCell, isPluginPath, MAX_COLUMNS, MAX_FACTS, MAX_RAW, MAX_ROWS, MAX_TEXT, MAX_TITLE, parseDisplay, rawJson } from "../src/lib/pluginReport";
 
 // The display convention v1 (lib/pluginReport.ts): what is shown, what is left out, what makes it fall back.
 
@@ -142,5 +142,112 @@ test.describe("formatCell", () => {
     expect(formatCell(1234.5, "en-GB")).toBe("1,234.5");
     // Ukrainian groups with a no-break space and uses a comma for the decimals.
     expect(formatCell(1234.5, "uk-UA").replace(/\s/g, " ")).toBe("1 234,5");
+  });
+});
+
+// Hostile input: the parser must never throw, and must bound what it hands to the renderer.
+test.describe("hostile reports", () => {
+  test("script and markup in any string stay plain strings", () => {
+    const evil = `<script>alert(1)</script><img src=x onerror=alert(2)>`;
+    const d = show({
+      title: evil,
+      table: { columns: [evil], rows: [[evil]] },
+      facts: [{ label: evil, value: evil }],
+      links: [{ title: evil, path: `/api/v1/plugins/${ID}/x` }],
+    });
+    expect(d?.title).toBe(evil);
+    expect(d?.table?.rows[0]).toEqual([evil]);
+    expect(d?.links[0]?.title).toBe(evil);
+  });
+
+  test("javascript:, data:, protocol-relative and other-plugin links are all dropped", () => {
+    const paths = [
+      "javascript:alert(1)", " javascript:alert(1)", "JaVaScRiPt:alert(1)", "data:text/html,<script>1</script>",
+      "//evil.example/x", "/\\evil.example", "/api/v1/plugins/other/x", "/api/v1/plugins/../other/x",
+      `/api/v1/plugins/${ID}/\tjavascript:alert(1)`, `/api/v1/plugins/${ID}/%2e%2e/other/x`,
+    ];
+    const d = show({ links: paths.map((path) => ({ title: "go", path })) });
+    expect(d?.links).toEqual([]);
+  });
+
+  test("10 000 rows: 200 are kept, the rest is counted", () => {
+    const rows = Array.from({ length: 10_000 }, (_, i) => [`s${i}`, i]);
+    const t = show({ table: { columns: ["a", "b"], rows } })?.table;
+    expect(t?.rows).toHaveLength(MAX_ROWS);
+    expect(t?.hidden).toBe(10_000 - MAX_ROWS);
+  });
+
+  test("a table of 10 000 columns is invalid, not rendered", () => {
+    const columns = Array.from({ length: 10_000 }, (_, i) => `c${i}`);
+    expect(show({ table: { columns, rows: [] } })).toBeNull();
+    expect(show({ table: { columns: columns.slice(0, MAX_COLUMNS), rows: [] } })).not.toBeNull();
+  });
+
+  test("huge strings are cut to MAX_TEXT, by code points", () => {
+    const huge = "x".repeat(5_000_000);
+    const d = show({
+      table: { columns: [huge], rows: [[huge]] },
+      facts: [{ label: huge, value: huge }],
+      links: [{ title: huge, path: `/api/v1/plugins/${ID}/x` }],
+    });
+    for (const s of [d!.table!.columns[0]!, d!.table!.rows[0]![0] as string, d!.facts[0]!.label, d!.facts[0]!.value as string, d!.links[0]!.title]) {
+      expect(s).toHaveLength(MAX_TEXT + 1);
+      expect(s.endsWith("…")).toBe(true);
+    }
+    // An emoji on the cut is not split into half a surrogate pair.
+    const cut = clip("😀".repeat(10), 3);
+    expect(cut).toBe("😀😀😀…");
+    expect(clip("short", 10)).toBe("short");
+  });
+
+  test("garbage of every type in display never throws and gives null or a valid display", () => {
+    const garbage: unknown[] = [
+      null, undefined, true, 0, -1, "", "x", [], [[]], {}, { a: { b: { c: [] } } }, [null], Symbol.iterator.toString(),
+      { __proto__: { level: "alert" } }, JSON.parse('{"__proto__": {"level": "alert"}}'), JSON.parse('{"constructor": 1}'),
+    ];
+    for (const g of garbage) {
+      for (const field of ["level", "title", "table", "facts", "links"]) {
+        expect(() => show({ [field]: g })).not.toThrow();
+      }
+      expect(() => parseDisplay(ID, { display: g })).not.toThrow();
+      expect(() => parseDisplay(ID, g)).not.toThrow();
+    }
+    // Inherited properties do not count as the report's own.
+    expect(show(JSON.parse('{"__proto__": {"level": "alert"}}'))?.level).toBe("info");
+  });
+
+  test("a display nested 100 000 levels deep does not blow the stack, and the raw view is empty or cut", () => {
+    let deep: unknown = "end";
+    for (let i = 0; i < 100_000; i++) deep = [deep];
+    expect(() => show({ table: deep })).not.toThrow();
+    expect(show({ table: deep })).toBeNull();
+    expect(() => rawJson({ display: { table: deep } })).not.toThrow();
+    expect(rawJson({ display: { table: deep } }).length).toBeLessThanOrEqual(MAX_RAW + 1);
+  });
+
+  test("a circular value does not throw in rawJson", () => {
+    const a: Record<string, unknown> = {};
+    a.self = a;
+    expect(rawJson(a)).toBe("");
+  });
+
+  test("the raw view is cut", () => {
+    const out = rawJson({ big: "y".repeat(1_000_000) });
+    expect(out.length).toBe(MAX_RAW + 1);
+  });
+
+  test("negative, zero, huge, tiny and non-finite numbers", () => {
+    expect(formatCell(-1234.5, "en-GB")).toBe("-1,234.5");
+    expect(formatCell(0, "en-GB")).toBe("0");
+    expect(() => formatCell(-0, "en-GB")).not.toThrow();
+    expect(() => formatCell(1e308, "en-GB")).not.toThrow();
+    expect(() => formatCell(5e-324, "uk-UA")).not.toThrow();
+    expect(formatCell(0.1 + 0.2, "en-GB")).toBe("0.3");
+    // JSON cannot carry NaN or Infinity (they become null); a value that still gets here makes the table invalid.
+    for (const bad of [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY, null]) {
+      expect(show({ table: { columns: ["a"], rows: [[bad]] } })).toBeNull();
+      expect(show({ facts: [{ label: "a", value: bad }] })).toBeNull();
+    }
+    expect(show({ table: { columns: ["a"], rows: [[-5], [-0.5], [-1e21]] } })?.table?.rows).toEqual([[-5], [-0.5], [-1e21]]);
   });
 });

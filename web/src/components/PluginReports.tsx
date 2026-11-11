@@ -8,7 +8,7 @@ import type { PluginReport } from "@/lib/api/types";
 import { dateTime } from "@/lib/format";
 import { useT } from "@/lib/i18n";
 import { locale } from "@/lib/i18n/core";
-import { formatCell, parseDisplay, rawJson } from "@/lib/pluginReport";
+import { clip, formatCell, MAX_SUMMARY, parseDisplay, rawJson } from "@/lib/pluginReport";
 import s from "./PluginReports.module.css";
 
 /**
@@ -60,7 +60,7 @@ function Report({ report }: { report: PluginReport }) {
         {display && <span className={s.badge} data-level={display.level}>{t(`plugin.reports.level.${display.level}`)}</span>}
       </div>
       <p className={s.meta}>{t("plugin.reports.meta", { plugin: report.plugin_id, key: report.key, time: dateTime(report.updated_at) })}</p>
-      <p className={s.summary}>{report.summary}</p>
+      <p className={s.summary}>{typeof report.summary === "string" ? clip(report.summary, MAX_SUMMARY) : ""}</p>
 
       {display && display.facts.length > 0 && (
         <dl className={s.facts} aria-label={t("plugin.reports.facts")}>

@@ -45,8 +45,49 @@ const forAssignment = (): PluginReport[] => [
   report("quiz-item-analysis", "broken", "Analysis is not ready.", { display: { table: { columns: ["A", "B"], rows: [[1]] } } }),
 ];
 
+const flagged = () => {
+  try {
+    return localStorage.getItem("vumlo.mock.hostileReports") === "1";
+  } catch {
+    return false;
+  }
+};
+
+const XSS =`<script>window.__xss = 1</script><img src=x onerror="window.__xss = 2">`;
+
+/** Reports a hostile or broken plugin could write (the panel must show them as text and not fall over). */
+const hostile = (courseId: string): PluginReport[] => {
+  let deep: unknown = "end";
+  for (let i = 0; i < 200; i++) deep = { a: [deep] };
+  return [
+    report("hostile-html", "html", XSS, {
+      display: {
+        level: "alert",
+        title: XSS,
+        table: { columns: [XSS], rows: [[XSS], [-12.5], [-0]] },
+        facts: [{ label: XSS, value: XSS }, { label: "Negative", value: -1234.5 }],
+        links: [
+          { title: "Script", path: "javascript:window.__xss = 3" },
+          { title: "Other plugin", path: `/api/v1/plugins/gradebook-export/export/${courseId}/csv` },
+          { title: "Host", path: "//evil.example/x" },
+          { title: "Mine", path: "/api/v1/plugins/hostile-html/export" },
+        ],
+      },
+    }),
+    report("hostile-big", "big", "s".repeat(300_000), {
+      display: {
+        title: "Big",
+        table: { columns: ["n", "text"], rows: Array.from({ length: 10_000 }, (_, i) => [i, i === 0 ? "w".repeat(500_000) : "ok"]) },
+      },
+    }),
+    report("hostile-deep", "deep", "Nested garbage.", { display: { level: deep, table: deep, facts: deep }, deep }),
+  ];
+};
+
 /** One course: links to an export, and a table longer than the 200 rows the panel shows. */
 const forCourse = (courseId: string): PluginReport[] => [
+  // Only for the tests of the panel, which set this key (e2e/pluginReports.hostile.spec.ts).
+  ...(flagged() ? hostile(courseId) : []),
   report("gradebook-export", "gradebook", "The gradebook is ready for download.", {
     display: {
       level: "ok",
