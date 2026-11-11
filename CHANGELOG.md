@@ -10,6 +10,14 @@ must do, in order, besides getting the new release. See [RELEASING.md](RELEASING
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-11-11
+
+### Fixed
+
+- **The Windows installer of the desktop app opened a blank "file not found" page** (`ERR_FILE_NOT_FOUND`). `desktop/scripts/build.mjs` gave Tauri the web build as an absolute path, and Tauri reads a string that can be a URL as one: on Windows `D:\a\web\out` is the URL `d:\a\web\out`, so nothing was embedded and the window opened that "address". The path is now relative to `desktop/` with slashes, as in `tauri.conf.json`, and the configuration refuses a value that would be read as a URL. Linux and macOS installers were not affected.
+
+**Upgrade notes.** Nothing to change on the server: no migration, no configuration key, and the server, the web app and `vumlo-cli` are unchanged. Only the desktop app is: build a new installer (`node scripts/build.mjs`, or the `desktop-v*` workflow) for Windows and publish its address again; people install it over the old one.
+
 ## [0.6.0] - 2026-11-11
 
 ### Added
@@ -320,7 +328,8 @@ There is nothing to upgrade from; follow [docs/install.md](docs/install.md).
 - Any optional module, and an end-user CLI (ADR-0055).
 - Published container images: the images are built on your server from the archive.
 
-[Unreleased]: https://github.com/Vumlo/vumlo-core/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/Vumlo/vumlo-core/compare/v0.6.1...HEAD
+[0.6.1]: https://github.com/Vumlo/vumlo-core/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/Vumlo/vumlo-core/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/Vumlo/vumlo-core/compare/v0.4.1...v0.5.0
 [0.4.1]: https://github.com/Vumlo/vumlo-core/compare/v0.4.0...v0.4.1
