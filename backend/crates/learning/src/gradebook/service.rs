@@ -18,6 +18,7 @@ use sqlx::PgConnection;
 use sqlx::types::Decimal;
 use uuid::Uuid;
 
+use super::export;
 use super::layout;
 use super::model::{
     Cell, Feedback, FeedbackInput, FieldProblem, GradeInput, GradebookPage, GradebookRow,
@@ -76,6 +77,9 @@ pub enum GradebookError {
     Teaching(TeachingError),
     #[error(transparent)]
     Events(#[from] EventsError),
+    /// The workbook could not be written (ADR-0090).
+    #[error("the workbook could not be written")]
+    Export(#[from] rust_xlsxwriter::XlsxError),
     #[error(transparent)]
     Db(#[from] sqlx::Error),
 }
@@ -628,6 +632,56 @@ pub async fn purge_module(conn: &mut PgConnection, module_id: Uuid) -> Result<u6
     }
     Ok(repo::purge_module(conn, module_id).await?)
 }
+
+/// The gradebook of a course as a workbook, with the course title for its file name. Staff and
+/// admins; the published marks only (ADR-0090). Read from one snapshot: the caller opens a
+/// read-only `REPEATABLE READ` transaction, as for the gradebook page.
+pub async fn export(
+    conn: &mut PgConnection,
+    actor: &Actor,
+    with_totals: bool,
+    course_id: Uuid,
+) -> Result<(String, Vec<u8>), GradebookError> {
+    // The columns and the layout come with every page and are the same in all of them.
+    let columns;
+    let layout;
+    let mut rows = Vec::new();
+    let mut after = None;
+    loop {
+        let page = gradebook(
+            conn,
+            actor,
+            with_totals,
+            course_id,
+            PageParams {
+                after,
+                limit: EXPORT_PAGE,
+            },
+        )
+        .await?;
+        rows.extend(page.rows);
+        match page.next {
+            Some(next) => after = Some(next),
+            None => {
+                columns = page.columns;
+                layout = page.layout;
+                break;
+            }
+        }
+    }
+    let title = teaching::get_course(conn, actor, course_id)
+        .await
+        .map_err(|error| match error {
+            TeachingError::CourseNotFound => GradebookError::CourseNotFound,
+            other => GradebookError::Teaching(other),
+        })?
+        .title;
+    let table = export::table(&columns, layout.as_ref(), &rows);
+    Ok((title, export::workbook(&table)?))
+}
+
+/// Students read per page when the gradebook is exported.
+const EXPORT_PAGE: u32 = 200;
 
 /// Copies how the marks of `from` add up (target, pass mark, layout, groups, placements) into the
 /// copy `to` of the course, for the modules and assignments in `ids`. The caller has authorized

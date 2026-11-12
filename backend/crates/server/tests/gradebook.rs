@@ -1955,6 +1955,47 @@ async fn the_regular_points_of_a_course_may_pass_the_target_and_the_total_is_cut
 }
 
 #[tokio::test]
+async fn the_gradebook_is_exported_as_a_workbook_for_staff_only() {
+    db_test(async |pool| {
+        let w = world(pool).await;
+        let a = open_worth(&w, "A", "10").await;
+        mark(&w, a, "9").await;
+        let path = format!("/courses/{}/gradebook/export.xlsx", w.course);
+
+        for token in [&w.owner.token, &w.assistant.token, &w.admin.token] {
+            let r = call(&w.http, "GET", Some(token), &path, None).await;
+            assert_eq!(r.status, 200);
+            assert_eq!(&r.body[..2], b"PK", "a workbook is a zip archive");
+            assert_eq!(
+                r.headers["content-type"],
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            );
+            assert!(
+                r.headers["content-disposition"]
+                    .to_str()
+                    .unwrap()
+                    .starts_with("attachment;")
+            );
+            assert_eq!(r.headers["cache-control"], "private, no-store");
+        }
+        assert_eq!(
+            call(&w.http, "GET", Some(&w.student.token), &path, None)
+                .await
+                .status,
+            403
+        );
+        assert_eq!(
+            call(&w.http, "GET", Some(&w.outsider.token), &path, None)
+                .await
+                .status,
+            404
+        );
+        assert_eq!(call(&w.http, "GET", None, &path, None).await.status, 401);
+    })
+    .await;
+}
+
+#[tokio::test]
 async fn a_course_made_from_a_template_keeps_the_target_the_groups_and_what_sits_in_them() {
     db_test(async |pool| {
         let w = world(pool).await;

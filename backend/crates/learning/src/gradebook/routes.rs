@@ -12,6 +12,8 @@ use api_types::{
 use axum::Json;
 use axum::extract::FromRef;
 use axum::extract::{Path, State};
+use axum::http::{HeaderValue, header};
+use axum::response::{IntoResponse, Response};
 use serde_json::Value;
 use sqlx::types::Decimal;
 use utoipa_axum::router::OpenApiRouter;
@@ -21,6 +23,7 @@ use uuid::Uuid;
 use super::model::{self, ColumnStatus, FeedbackInput, GradeInput, Students};
 use super::service::{self, GradebookError};
 use crate::LearningState;
+use crate::files;
 use access::Actor;
 use common::PageParams;
 use common::{ApiError, ValidJson, ValidQuery};
@@ -37,6 +40,7 @@ where
         .routes(routes!(save_grade))
         .routes(routes!(publish_grades))
         .routes(routes!(get_gradebook))
+        .routes(routes!(export_gradebook))
         .routes(routes!(get_my_grades))
         .routes(routes!(get_grade_history))
         .routes(routes!(get_teaching))
@@ -82,6 +86,10 @@ impl From<GradebookError> for ApiError {
                 Self::Conflict("the student is no longer on the roster, their grades are read-only")
             }
             GradebookError::Events(e) => e.into(),
+            GradebookError::Export(e) => {
+                tracing::error!(error = %e, "the gradebook workbook could not be written");
+                Self::Internal
+            }
             GradebookError::Db(e) => Self::from_db("gradebook", &e),
         }
     }
@@ -277,6 +285,53 @@ async fn get_gradebook(
         next_cursor: result.next.map(|id| id.to_string()),
     }))
 }
+
+/// The gradebook of a course as an Excel workbook, for staff and admins: published marks only, with
+/// a subtotal per group and the course total (ADR-0090).
+#[utoipa::path(
+    get,
+    path = "/courses/{id}/gradebook/export.xlsx",
+    tag = "gradebook",
+    security(("cookie" = []), ("bearer" = [])),
+    params(("id" = Uuid, Path, description = "Course id")),
+    responses(
+        (status = 200, description = "The workbook", content_type = XLSX, body = Vec<u8>),
+        (status = 401, description = "Not logged in", body = ProblemDetails,
+            content_type = "application/problem+json"),
+        (status = 403, description = "The caller may see the course but not its gradebook",
+            body = ProblemDetails, content_type = "application/problem+json"),
+        (status = 404, description = "No such course, or not visible to the caller",
+            body = ProblemDetails, content_type = "application/problem+json"),
+    )
+)]
+async fn export_gradebook(
+    State(state): State<LearningState>,
+    actor: Actor,
+    Path(course_id): Path<Uuid>,
+) -> Result<Response, ApiError> {
+    let mut tx = state.db.begin().await.map_err(GradebookError::from)?;
+    sqlx::query!("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
+        .execute(&mut *tx)
+        .await
+        .map_err(GradebookError::from)?;
+    let with_totals = state.config.institution.grading_scale == vumlo_config::GradingScale::Hundred;
+    let (title, bytes) = service::export(&mut tx, &actor, with_totals, course_id).await?;
+    let mut response = bytes.into_response();
+    let headers = response.headers_mut();
+    headers.insert(header::CONTENT_TYPE, HeaderValue::from_static(XLSX));
+    headers.insert(
+        header::CONTENT_DISPOSITION,
+        files::disposition(&format!("Gradebook {title}.xlsx"), false),
+    );
+    // Marks of students: nothing keeps a copy.
+    headers.insert(
+        header::CACHE_CONTROL,
+        HeaderValue::from_static("private, no-store"),
+    );
+    Ok(response)
+}
+
+const XLSX: &str = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 
 /// The caller's published grades in a course, in course tree order. Students only.
 ///
