@@ -4,7 +4,7 @@ import { api, type Page } from "../client";
 import { localToIso } from "../../format";
 import { useQuery } from "../../query";
 import type { MyWork, SearchHit, TeachingOverview } from "../types";
-import type { MyGrades } from "../types";
+import type { MyGrades, MyGradeSummary } from "../types";
 
 /** One call for every assignment of every course with the caller's status (ADR-0052). */
 export function useMyWork() {
@@ -18,6 +18,11 @@ export function useMyWork() {
 /** Published grades only; a student never receives draft fields (root AGENTS.md section 6). */
 export function useMyGrades(courseId: string | null) {
   return useQuery<MyGrades>(courseId ? `/courses/${courseId}/my-grades` : null, () => api.get<MyGrades>(`/courses/${courseId}/my-grades`));
+}
+
+/** What the caller's published marks add up to: total, groups and pass (ADR-0089). */
+export function useMyGradeSummary(courseId: string | null) {
+  return useQuery<MyGradeSummary>(courseId ? `/courses/${courseId}/my-grade-summary` : null, () => api.get<MyGradeSummary>(`/courses/${courseId}/my-grade-summary`));
 }
 
 /** The cross-course grading queue and the teacher home feed (ADR-0052). */

@@ -62,7 +62,7 @@ export function useGradebook(courseId: string | null) {
       items.push(...page.items);
       cursor = page.next_cursor;
     }
-    return { columns: first.columns, items, next_cursor: null };
+    return { columns: first.columns, items, layout: first.layout, next_cursor: null };
   });
 }
 
@@ -84,7 +84,7 @@ export function useSaveGrade(assignmentId: string) {
 
 export function usePublishGrades(assignmentId: string) {
   return useMutation(async (students: "all" | string[]) => {
-    const r = await api.post<{ published: number }>(`/assignments/${assignmentId}/grades/publish`, { students });
+    const r = await api.post<{ published: string[] }>(`/assignments/${assignmentId}/grades/publish`, { students });
     invalidate("/courses/");
     invalidate("/me/");
     invalidate(`/assignments/${assignmentId}`);
@@ -111,7 +111,7 @@ export function usePublishAllDrafts() {
   return useMutation(async (assignmentIds: string[]) => {
     let published = 0;
     try {
-      for (const id of assignmentIds) published += (await api.post<{ published: number }>(`/assignments/${id}/grades/publish`, { students: "all" })).published;
+      for (const id of assignmentIds) published += (await api.post<{ published: string[] }>(`/assignments/${id}/grades/publish`, { students: "all" })).published.length;
     } finally {
       // Also when one assignment failed: the ones before it are published, and the screen must show that.
       invalidate("/courses/");

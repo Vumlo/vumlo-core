@@ -14,6 +14,8 @@ import { allItems } from "@/lib/course";
 import { dayLabel, dueLabel, initials, plural } from "@/lib/format";
 import { cellState, matchesStatus, type StatusFilter } from "@/lib/grading";
 import { CourseHeader } from "./CourseHeader";
+import { GradebookStructure } from "./GradebookStructure";
+import { wholePoints } from "@/lib/points";
 import { useT } from "@/lib/i18n";
 import s from "./Gradebook.module.css";
 import { gradeHref, itemHref } from "@/lib/routes";
@@ -34,6 +36,9 @@ export function Gradebook({ courseId }: { courseId: string }) {
   const [status, setStatus] = useState<StatusFilter>("all");
   const [lateOnly, setLateOnly] = useState(false);
   const [asking, setAsking] = useState(false);
+  const [mode, setMode] = useState<"grade" | "structure">("grade");
+  const layout = book.data?.layout;
+  const groupTitle = (c: GradebookColumn) => (layout?.settings.layout === "custom" ? (layout.groups.find((g) => g.key === c.group)?.title ?? t("gs.notSorted")) : null);
 
   const items = tree.data ? allItems(tree.data) : [];
   const groupOf = useMemo(() => new Map((people.data?.people ?? []).map((p) => [p.user_id, p.group ?? t("people.direct")])), [people.data, t]);
@@ -71,6 +76,20 @@ export function Gradebook({ courseId }: { courseId: string }) {
   return (
     <div className="container">
       <CourseHeader courseId={courseId} />
+      <div className={s.bar}>
+        <div className={s.modes} role="group" aria-label={t("gs.modes")}>
+          <button type="button" aria-pressed={mode === "grade"} onClick={() => setMode("grade")}>{t("gs.modeGrade")}</button>
+          <button type="button" aria-pressed={mode === "structure"} onClick={() => setMode("structure")}>{t("gs.modeStructure")}</button>
+        </div>
+        {mode === "grade" && layout && (layout.setup.unsorted > 0 || !layout.setup.reaches_target) && (
+          <span className={s.setup} role="status">
+            {layout.setup.unsorted > 0 && t("gs.unsorted", { n: layout.setup.unsorted })}
+            {!layout.setup.reaches_target && t("gs.reachShort", { possible: wholePoints(layout.setup.possible), target: wholePoints(layout.setup.target) })}
+            <button type="button" className="btn" onClick={() => setMode("structure")}>{t("gs.fixInStructure")}</button>
+          </span>
+        )}
+      </div>
+      {mode === "structure" ? <GradebookStructure courseId={courseId} /> : <>
       <div className={s.bar}>
         <label className="search" style={{ flex: "0 1 260px", background: "var(--surface)" }}>
           <Icon name="search" size={16} />
@@ -114,10 +133,13 @@ export function Gradebook({ courseId }: { courseId: string }) {
             <div role="grid" aria-label={t("nav.grades")} className={s.grid}>
               <div role="row" className={`${s.row} ${s.head}`}>
                 <div role="columnheader" className={s.name} style={{ fontSize: 13, fontWeight: 500, color: "var(--muted)" }}>{t("grading.student")}</div>
+                {layout && <div role="columnheader" className={s.total} style={{ fontSize: 13, fontWeight: 500, color: "var(--muted)" }}>{t("gs.total")}<span className={s.totalNote}>/ {wholePoints(layout.settings.target)}</span></div>}
                 {visibleCols.map((c) => {
                   const n = note(c);
+                  const tag = groupTitle(c);
                   return (
                     <div key={c.assignment_id} role="columnheader" className={s.col}>
+                      {tag && <span className={s.groupTag}>{tag}</span>}
                       <Link href={itemHref(courseId, c.assignment_id)}>{c.title}</Link>
                       <span className={s.colMeta}>{t("gb.colOut", { max: c.max_points })}</span>
                       <span className={s.colNote} data-tone={n.tone}>{n.text}</span>
@@ -134,6 +156,18 @@ export function Gradebook({ courseId }: { courseId: string }) {
                       {r.former && <span className="muted" style={{ display: "block", fontSize: 12 }}>{t("gb.leftLocked")}</span>}
                     </span>
                   </div>
+                  {layout && (
+                    <div role="gridcell" className={s.total}>
+                      {r.totals ? (
+                        <>
+                          <span className={s.totalValue}>{r.totals.published.total}</span>
+                          {r.totals.published.earned !== r.totals.published.total && <span className={s.totalNote}>{t("gs.earned", { n: r.totals.published.earned })}</span>}
+                          {r.totals.published.passed !== null && <span className={s.totalNote}>{t(r.totals.published.passed ? "gs.passed" : "gs.failed")}</span>}
+                          {r.totals.draft.total !== r.totals.published.total && <span className={s.draft} style={{ alignSelf: "flex-start" }}>{t("gs.draftTotal", { n: r.totals.draft.total })}</span>}
+                        </>
+                      ) : null}
+                    </div>
+                  )}
                   {visibleCols.map((c) => {
                     const { st, cell } = state(r, c);
                     const label = `${r.name} ${r.surname}, ${c.title}, ${st === "pub" ? t("gb.aPub", { score: cell?.published_score ?? "" }) : st === "draft" ? t("gb.aDraft", { score: cell?.draft_score ?? "" }) : st === "grade" ? t("gb.aGrade") : t("gb.aNone")}${r.former ? `, ${t("gb.aLocked")}` : ""}`;
@@ -155,6 +189,7 @@ export function Gradebook({ courseId }: { courseId: string }) {
           </div>
         </div>
       )}
+      </>}
     </div>
   );
 }

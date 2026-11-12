@@ -29,3 +29,12 @@
 .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); }
 .avatar { flex: none; display: flex; align-items: center; justify-content: center; width: 30px; height: 30px; border-radius: 50%; background: var(--hover); color: var(--muted); font-size: 12px; font-weight: 600; }
 .none { display: block; width: 12px; height: 1px; background: var(--border-strong); }
+.total { flex: 0 0 132px; display: flex; flex-direction: column; justify-content: center; gap: 2px; padding: 8px 12px; border-left: 1px solid var(--border); }
+.totalValue { font-weight: 600; }
+.totalNote { font-size: 12px; color: var(--muted); }
+.modes { display: inline-flex; gap: 4px; padding: 4px; border-radius: var(--radius-pill); background: var(--sunken); }
+.modes button { min-height: 32px; padding: 0 14px; border: 0; border-radius: var(--radius-pill); background: transparent; color: var(--muted); font-size: 14px; font-weight: 500; }
+.modes button[aria-pressed="true"] { background: var(--surface); color: var(--text); }
+.modes button:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+.setup { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 13px; color: var(--danger); }
+.groupTag { display: block; font-size: 11px; font-weight: 500; letter-spacing: 0.02em; text-transform: uppercase; color: var(--muted); }

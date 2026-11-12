@@ -889,6 +889,110 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/courses/{id}/gradebook/groups": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Adds a group of the teacher's own, with the assignments to put in it. Staff and admins. */
+        post: operations["post_group"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/courses/{id}/gradebook/groups/{key}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Replaces the rules of a group. Staff and admins.
+         * @description `key` is the top-level module in the `course` layout (its title is the module's, so a `title`
+         *     is refused) and the group in the `custom` one.
+         */
+        put: operations["put_group"];
+        post?: never;
+        /**
+         * Removes a group of the teacher's own (its assignments go back to "Not sorted"), or, in the
+         *     `course` layout, clears the rules of a module. Staff and admins.
+         */
+        delete: operations["delete_group"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/courses/{id}/gradebook/placement": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Puts assignments in a group of the teacher's own, or back in "Not sorted". Staff and admins.
+         *     Only in the `custom` layout: in `course` an assignment is where its module is (`409`).
+         */
+        put: operations["put_placement"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/courses/{id}/gradebook/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Replaces the target, the pass mark and the layout of a course. Staff and admins; not in an
+         *     archived course; `409` on the twelve-point scale.
+         * @description The layout can be switched back and forth: nothing of the other layout is deleted.
+         */
+        put: operations["put_settings"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/courses/{id}/gradebook/structure": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The settings, the groups, every assignment with its group, the setup status and the proposed
+         *     groups: what the Structure mode of the gradebook shows. Staff and admins.
+         * @description There is no structure on the twelve-point scale: the answer is `409`.
+         */
+        get: operations["get_structure"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/courses/{id}/group-options": {
         parameters: {
             query?: never;
@@ -1086,6 +1190,27 @@ export interface paths {
          *     rewritten to 1..n in one transaction.
          */
         put: operations["reorder_modules"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/courses/{id}/my-grade-summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * What the caller's published marks add up to in a course: the total against the target, each
+         *     group with its rules, and which marks count. Students only; built from published values and
+         *     from assignments the caller may see now, never from a draft.
+         */
+        get: operations["get_my_summary"];
+        put?: never;
         post?: never;
         delete?: never;
         options?: never;
@@ -3081,6 +3206,11 @@ export interface components {
             temporary_password: string;
             user: components["schemas"]["User"];
         };
+        /** @description The key of a new group. */
+        CreatedGradebookGroup: {
+            /** Format: uuid */
+            key: string;
+        };
         /** @description An assignment due from now on. */
         Deadline: components["schemas"]["CourseRef"] & {
             /** Format: uuid */
@@ -3278,12 +3408,98 @@ export interface components {
         GradebookColumn: {
             /** Format: uuid */
             assignment_id: string;
+            /**
+             * Format: uuid
+             * @description The `key` of the group the assignment is counted in (ADR-0089); `null` when it is in none
+             *     ("Not sorted"). Absent from a twelve-point installation, which has no groups.
+             */
+            group?: string | null;
             is_bonus: boolean;
             /** @description A decimal string with exactly two decimals, e.g. `"20.00"`. */
             max_points: string;
             /** @description The item's status, so staff can tell a draft column from a published one. */
             status: components["schemas"]["ContentStatus"];
             title: string;
+        };
+        /** @description A group of assignments and its rules (ADR-0089). */
+        GradebookGroup: {
+            /**
+             * Format: int32
+             * @description Only the best K marks count; `null` = all of them.
+             */
+            best_k?: number | null;
+            /** @description True = extra: adds to the total, not to what a student can still reach. */
+            bonus: boolean;
+            /** @description The most the group adds to the total, a decimal string; `null` = no cap. */
+            cap?: string | null;
+            /** @description False = practice: graded and shown, not part of the total. */
+            counts: boolean;
+            /**
+             * Format: uuid
+             * @description The top-level module's id in the `course` layout, the group's own id in the `custom` one.
+             */
+            key: string;
+            title: string;
+        };
+        /**
+         * @description The rules of a group, and its title when it is one of the teacher's own. A `PUT` replaces the
+         *     rules, so every key has its default when absent.
+         */
+        GradebookGroupInput: {
+            /** @description Only when creating: assignments to put in the new group, at most 500. */
+            assignments?: string[];
+            /**
+             * Format: int32
+             * @description From 1 to 1000; `null` = all marks count.
+             */
+            best_k?: number | null;
+            /** @description True = extra. Default false; a practice group cannot be bonus. */
+            bonus?: boolean;
+            /** @description The most the group adds to the total, a decimal string above 0; `null` = no cap. */
+            cap?: string | null;
+            /** @description False = practice. Default true. */
+            counts?: boolean;
+            /** @description 1 to 200 characters; required to create a group, refused for a module's group. */
+            title?: string | null;
+        };
+        /** @description What one group of one student adds up to, for the staff table. */
+        GradebookGroupResult: {
+            /** @description The cap cut the sum. */
+            capped: boolean;
+            /** @description Assignments left out by the "best K" rule. */
+            dropped: string[];
+            /**
+             * Format: uuid
+             * @description The group's `key`; `null` for the assignments that are in no group.
+             */
+            key?: string | null;
+            total: string;
+        };
+        /**
+         * @description Where a course's groups come from (ADR-0089).
+         * @enum {string}
+         */
+        GradebookLayout: "course" | "custom";
+        /** @description How a course turns points into a result, the same for every student (ADR-0089). */
+        GradebookLayoutView: {
+            /** @description The groups in the order they are shown. */
+            groups: components["schemas"]["GradebookGroup"][];
+            possible: string;
+            settings: components["schemas"]["GradebookSettings"];
+            setup: components["schemas"]["GradebookSetup"];
+        };
+        /** @description What one student's marks add up to. */
+        GradebookOutcome: {
+            /**
+             * @description Every point earned, before the target cuts it (116 when the target is 100); the same as
+             *     `total` when it is not more than the target.
+             */
+            earned: string;
+            groups: components["schemas"]["GradebookGroupResult"][];
+            /** @description `null` when the course has no pass mark. */
+            passed?: boolean | null;
+            /** @description The final total, never more than the target; a decimal string with two decimals. */
+            total: string;
         };
         /**
          * @description A page of the staff gradebook, paged by student (ADR-0018). `columns` is the same on every
@@ -3292,8 +3508,19 @@ export interface components {
         GradebookPage: {
             columns: components["schemas"]["GradebookColumn"][];
             items: components["schemas"]["GradebookRow"][];
+            layout?: components["schemas"]["GradebookLayoutView"] | null;
             /** @description Pass as `cursor` to get the next page; `null` on the last page. */
             next_cursor?: string | null;
+        };
+        /** @description Puts assignments in a group of the teacher's own, or in none. */
+        GradebookPlacement: {
+            /** @description At most 500, each once, all assignments of the course. */
+            assignments: string[];
+            /**
+             * Format: uuid
+             * @description A group's key; `null` puts them back in "Not sorted".
+             */
+            group?: string | null;
         };
         /** @description One student of the gradebook with their cells. */
         GradebookRow: {
@@ -3311,8 +3538,57 @@ export interface components {
             former?: boolean;
             name: string;
             surname: string;
+            totals?: components["schemas"]["GradebookTotals"] | null;
             /** Format: uuid */
             user_id: string;
+        };
+        /** @description What a course counts toward (ADR-0089). */
+        GradebookSettings: {
+            layout: components["schemas"]["GradebookLayout"];
+            /** @description The mark that passes, a decimal string from 0 to the target; `null` or absent = none. */
+            pass_mark?: string | null;
+            /** @description The points that make a full result, a decimal string above 0, at most 9999; usually `"100"`. */
+            target: string;
+        };
+        /** @description What is left to do before the gradebook is in order. */
+        GradebookSetup: {
+            /** @description Keys of the groups that have no assignment. */
+            empty_groups: string[];
+            /** @description What a student can reach, bonus left out; a decimal string with two decimals. */
+            possible: string;
+            /** @description What a student can reach is at least the target. */
+            reaches_target: boolean;
+            target: string;
+            /**
+             * Format: int32
+             * @description Assignments in no group, in the `custom` layout.
+             */
+            unsorted: number;
+        };
+        /** @description Everything the Structure mode shows (ADR-0089). Staff and admins. */
+        GradebookStructure: {
+            /** @description Every assignment of the course in tree order, each with its group. */
+            columns: components["schemas"]["GradebookColumn"][];
+            /**
+             * @description In the `custom` layout every group, empty ones included; in `course` the modules that have
+             *     an assignment.
+             */
+            groups: components["schemas"]["GradebookGroup"][];
+            possible: string;
+            settings: components["schemas"]["GradebookSettings"];
+            setup: components["schemas"]["GradebookSetup"];
+            /** @description Only in the `custom` layout, only for assignments in no group. */
+            suggestions: components["schemas"]["GradebookSuggestion"][];
+        };
+        /** @description A proposed group: assignments whose titles share a stem. */
+        GradebookSuggestion: {
+            assignments: string[];
+            title: string;
+        };
+        /** @description A student's total from the published slots, and from the drafts. Staff only. */
+        GradebookTotals: {
+            draft: components["schemas"]["GradebookOutcome"];
+            published: components["schemas"]["GradebookOutcome"];
         };
         /**
          * @description How points relate to the grade (ADR-0022).
@@ -3716,6 +3992,26 @@ export interface components {
             /** @description A decimal string with exactly two decimals, or `null` if only feedback was published. */
             score?: string | null;
             title: string;
+        };
+        /** @description What the caller's published marks add up to, from published slots only (ADR-0089). */
+        MyGradeSummary: {
+            /**
+             * @description Every point earned, before the target cuts it: a student with 116 of a target of 100 has a
+             *     `total` of 100 and `earned` of 116.
+             */
+            earned: string;
+            /** @description The groups with something to show, in order. Assignments in no group are in `loose`. */
+            groups: components["schemas"]["SummaryGroup"][];
+            /** @description Assignments the student may see that are in no group; each counts as a plain one. */
+            loose: string[];
+            /** @description What those add up to. */
+            loose_total: string;
+            /** @description `null` when the course has no pass mark. */
+            passed?: boolean | null;
+            possible: string;
+            settings: components["schemas"]["GradebookSettings"];
+            /** @description The final total, never more than the target. */
+            total: string;
         };
         /**
          * @description The published grades of the caller in one course, in course tree order. Not paged: a course
@@ -4708,6 +5004,16 @@ export interface components {
         SubmissionsPage: {
             items: components["schemas"]["SubmissionRow"][];
             next_cursor?: string | null;
+        };
+        /** @description A group of one student with what it adds up to (ADR-0089). */
+        SummaryGroup: components["schemas"]["GradebookGroup"] & {
+            /** @description The assignments of the group the student may see, in course order. */
+            assignments: string[];
+            capped: boolean;
+            /** @description Left out by the "best K" rule. */
+            dropped: string[];
+            possible: string;
+            total: string;
         };
         TableProps: {
             header_row: boolean;
@@ -7701,6 +8007,410 @@ export interface operations {
             };
         };
     };
+    post_group: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Course id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GradebookGroupInput"];
+            };
+        };
+        responses: {
+            /** @description The key of the new group */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreatedGradebookGroup"];
+                };
+            };
+            /** @description Not logged in */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The caller may see the course but not change it */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description No such course, or not visible to the caller */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The twelve-point scale has no course total */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Invalid title, rules or assignments */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    put_group: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Course id */
+                id: string;
+                /** @description A module (layout `course`) or a group (layout `custom`) */
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GradebookGroupInput"];
+            };
+        };
+        responses: {
+            /** @description Saved */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not logged in */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The caller may see the course but not change it */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description No such course or group */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The twelve-point scale has no course total */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Invalid title or rules */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    delete_group: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Course id */
+                id: string;
+                /** @description A module (layout `course`) or a group (layout `custom`) */
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Removed */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not logged in */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The caller may see the course but not change it */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description No such course or group */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The twelve-point scale has no course total */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    put_placement: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Course id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GradebookPlacement"];
+            };
+        };
+        responses: {
+            /** @description Placed */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not logged in */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The caller may see the course but not change it */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description No such course or group */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The course is not in the custom layout, or is on the twelve-point scale */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Not assignments of this course */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    put_settings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Course id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GradebookSettings"];
+            };
+        };
+        responses: {
+            /** @description The settings */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GradebookSettings"];
+                };
+            };
+            /** @description Not logged in */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The caller may see the course but not change it */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description No such course, or not visible to the caller */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The twelve-point scale has no course total */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Invalid `target` or `pass_mark` */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    get_structure: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Course id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The structure */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GradebookStructure"];
+                };
+            };
+            /** @description Not logged in */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The caller may see the course but not its gradebook */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description No such course, or not visible to the caller */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The twelve-point scale has no course total */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
     group_options: {
         parameters: {
             query?: {
@@ -8423,6 +9133,65 @@ export interface operations {
             };
             /** @description ids are not exactly the current siblings, or the parent is not a top-level module of this course */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    get_my_summary: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Course id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The summary */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MyGradeSummary"];
+                };
+            };
+            /** @description Not logged in */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The caller is not a student of the course */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description No such course, or not visible to the caller */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The twelve-point scale has no course total */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

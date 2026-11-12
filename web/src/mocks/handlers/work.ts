@@ -1,18 +1,49 @@
 import { http, HttpResponse } from "msw";
 import { MOCK_NOW } from "@/lib/clock";
 import { isoToLocal } from "@/lib/format";
-import { toCents } from "@/lib/points";
+import { fromCents, toCents } from "@/lib/points";
 import type { AnswerMap } from "@/lib/api/gaps";
 import type { MyWork, SearchHit, TeachingOverview } from "@/lib/api/types";
 import { answersFromWire, answersToWire } from "@/lib/api/sheetWire";
-import { getDb, uid, type DbSubmission } from "../db";
+import { getDb, uid, type DbItem, type DbSubmission } from "../db";
 import {
   activeStudents, autoScore, canView, checkDocument, checkFileContent, courseById, decimal, dueIn, flatItems, forbidden, formOf, fullName, gradeOf, hasUnpublishedChanges, isPublished, isStaff,
-  itemById, itemVisibleToStudent, memberOf, notFound, paged, problem, quizOf, requireStaff, requireUser, requireView, scoreQuestion, submissionOf, userById, workItem,
+  itemById, itemVisibleToStudent, memberOf, moduleOf, notFound, paged, problem, quizOf, requireStaff, requireUser, requireView, scoreQuestion, submissionOf, userById, workItem,
 } from "../logic";
 import { courseInfo } from "./core";
 
 const A = "/api/v1";
+
+// ---- the course total of ADR-0089 ----
+// The mock knows only the "as the course" layout: a group is a top-level module, nothing is capped or dropped,
+// every assignment counts. The server has the rest; the screens read the same shapes.
+const mockSettings = new Map<string, { target: string; pass_mark: string | null }>();
+const settingsOf = (courseId: string) => ({ ...(mockSettings.get(courseId) ?? { target: "100.00", pass_mark: "60.00" }), layout: "course" as const });
+const topModule = (item: DbItem) => { const m = moduleOf(item); return m.parent_id ?? m.id; };
+
+function mockOutcome(courseId: string, items: DbItem[], score: (id: string) => string | null) {
+  const { target, pass_mark } = settingsOf(courseId);
+  const sums = new Map<string, number>();
+  for (const i of items) sums.set(topModule(i), (sums.get(topModule(i)) ?? 0) + (toCents(score(i.id) ?? "0") || 0));
+  const earned = [...sums.values()].reduce((a, b) => a + b, 0);
+  const total = Math.min(earned, toCents(target));
+  return {
+    total: fromCents(total), earned: fromCents(earned), passed: pass_mark === null ? null : total >= toCents(pass_mark),
+    groups: [...sums].map(([key, c]) => ({ key, total: fromCents(c), capped: false, dropped: [] as string[] })),
+  };
+}
+
+function mockLayout(course: ReturnType<typeof courseById>, items: DbItem[]) {
+  const settings = settingsOf(course.id);
+  const mods = new Map(getDb().modules.map((m) => [m.id, m]));
+  const keys = [...new Set(items.map(topModule))];
+  const groups = keys.map((k) => ({ key: k, title: mods.get(k)?.title ?? "", cap: null, best_k: null, counts: true, bonus: false }));
+  const possible = fromCents(items.filter((i) => !i.assignment!.is_bonus).reduce((a, i) => a + toCents(i.assignment!.max_points), 0));
+  const setup = { unsorted: 0, empty_groups: [] as string[], possible, target: settings.target, reaches_target: toCents(possible) >= toCents(settings.target) };
+  return { settings, groups, possible, setup };
+}
+
+const gradedItems = (course: ReturnType<typeof courseById>, staff: boolean) => flatItems(course, staff).filter((i) => i.assignment && toCents(i.assignment.max_points) > 0);
 
 function assignmentFor(id: string) {
   const item = itemById(id);
@@ -232,6 +263,18 @@ export const workHandlers = [
     });
     return HttpResponse.json({ items });
   }),
+  http.get(`${A}/courses/:id/my-grade-summary`, ({ params }) => {
+    const { course, user } = requireView(String(params.id));
+    const items = gradedItems(course, false);
+    const { settings, groups, possible } = mockLayout(course, items);
+    const published = (id: string) => (isPublished(gradeOf(id, user.id)) ? gradeOf(id, user.id)!.published_score : null);
+    const out = mockOutcome(course.id, items, published);
+    return HttpResponse.json({
+      settings, total: out.total, earned: out.earned, possible, passed: out.passed,
+      groups: groups.map((g) => ({ ...g, total: out.groups.find((x) => x.key === g.key)?.total ?? "0.00", possible: fromCents(items.filter((i) => topModule(i) === g.key && !i.assignment!.is_bonus).reduce((a, i) => a + toCents(i.assignment!.max_points), 0)), capped: false, assignments: items.filter((i) => topModule(i) === g.key).map((i) => i.id), dropped: [] })),
+      loose: [], loose_total: "0.00",
+    });
+  }),
   http.get(`${A}/me/work`, () => {
     const user = requireUser();
     const db = getDb();
@@ -284,13 +327,13 @@ export const workHandlers = [
     const { item, course, user } = staffAssignment(String(params.id));
     const b = (await request.json()) as { students: "all" | string[] };
     const ids = new Set(b.students === "all" ? activeStudents(course.id).map((m) => m.user_id) : b.students);
-    let published = 0;
+    const published: string[] = [];
     for (const g of getDb().grades.filter((x) => x.assignment_id === item.id && ids.has(x.student_id) && hasUnpublishedChanges(x))) {
       if (memberOf(course.id, g.student_id)?.left_on) continue;
       g.published_score = g.draft_score; g.published_feedback = g.draft_feedback;
       g.published_at = g.draft_score === null && g.draft_feedback === null ? null : MOCK_NOW.toISOString();
       g.history.unshift({ action: "publish", score: g.published_score, feedback: g.published_feedback, actor_id: user.id, at: MOCK_NOW.toISOString() });
-      published++;
+      published.push(g.student_id);
     }
     return HttpResponse.json({ published });
   }),
@@ -306,21 +349,44 @@ export const workHandlers = [
   http.get(`${A}/courses/:id/gradebook`, ({ request, params }) => {
     const { course } = requireStaff(String(params.id));
     const db = getDb();
-    const items = flatItems(course, true).filter((i) => i.assignment && toCents(i.assignment.max_points) > 0);
-    const columns = items.map((i) => ({ assignment_id: i.id, title: i.title, max_points: i.assignment!.max_points, is_bonus: i.assignment!.is_bonus, status: i.status }));
+    const items = gradedItems(course, true);
+    const columns = items.map((i) => ({ assignment_id: i.id, title: i.title, max_points: i.assignment!.max_points, is_bonus: i.assignment!.is_bonus, status: i.status, group: topModule(i) }));
     const rows = db.members.filter((m) => m.course_id === course.id && m.role === "student" && (!m.left_on || db.grades.some((g) => g.student_id === m.user_id && items.some((i) => i.id === g.assignment_id)))).map((m) => {
       const u = userById(m.user_id);
       const cells = items.flatMap((i) => {
         const g = gradeOf(i.id, m.user_id);
         return g ? [{ assignment_id: i.id, draft_score: g.draft_score, draft_feedback: g.draft_feedback, published_score: g.published_score, published_feedback: g.published_feedback, has_unpublished_changes: hasUnpublishedChanges(g) }] : [];
       });
-      return { user_id: u.id, name: u.name, surname: u.surname, former: !!m.left_on, cells };
+      const totals = {
+        published: mockOutcome(course.id, items, (id) => gradeOf(id, u.id)?.published_score ?? null),
+        draft: mockOutcome(course.id, items, (id) => gradeOf(id, u.id)?.draft_score ?? gradeOf(id, u.id)?.published_score ?? null),
+      };
+      return { user_id: u.id, name: u.name, surname: u.surname, former: !!m.left_on, cells, totals };
     }).sort((a, b) => a.surname.localeCompare(b.surname) || a.name.localeCompare(b.name));
     const url = new URL(request.url);
     const limit = Math.min(Number(url.searchParams.get("limit") ?? 50) || 50, 200);
     const start = Number(url.searchParams.get("cursor") ?? 0) || 0;
-    return HttpResponse.json({ columns, items: rows.slice(start, start + limit), next_cursor: start + limit < rows.length ? String(start + limit) : null });
+    const { settings, groups, possible, setup } = mockLayout(course, items);
+    return HttpResponse.json({ columns, items: rows.slice(start, start + limit), layout: { settings, groups, possible, setup }, next_cursor: start + limit < rows.length ? String(start + limit) : null });
   }),
+  http.get(`${A}/courses/:id/gradebook/structure`, ({ params }) => {
+    const { course } = requireStaff(String(params.id));
+    const items = gradedItems(course, true);
+    const { settings, groups, possible, setup } = mockLayout(course, items);
+    const columns = items.map((i) => ({ assignment_id: i.id, title: i.title, max_points: i.assignment!.max_points, is_bonus: i.assignment!.is_bonus, status: i.status, group: topModule(i) }));
+    return HttpResponse.json({ settings, groups, columns, possible, setup, suggestions: [] });
+  }),
+  // The target and the pass mark are kept; the layout stays "as the course" in the mock, and group rules and placement are not kept.
+  http.put(`${A}/courses/:id/gradebook/settings`, async ({ request, params }) => {
+    const { course } = requireStaff(String(params.id));
+    const b = (await request.json()) as { target: string; pass_mark?: string | null };
+    mockSettings.set(course.id, { target: decimal(b.target, "target"), pass_mark: b.pass_mark ? decimal(b.pass_mark, "pass_mark") : null });
+    return HttpResponse.json(settingsOf(course.id));
+  }),
+  http.post(`${A}/courses/:id/gradebook/groups`, ({ params }) => { requireStaff(String(params.id)); return HttpResponse.json({ key: uid("group") }, { status: 201 }); }),
+  http.put(`${A}/courses/:id/gradebook/groups/:key`, ({ params }) => { requireStaff(String(params.id)); return new HttpResponse(null, { status: 204 }); }),
+  http.delete(`${A}/courses/:id/gradebook/groups/:key`, ({ params }) => { requireStaff(String(params.id)); return new HttpResponse(null, { status: 204 }); }),
+  http.put(`${A}/courses/:id/gradebook/placement`, ({ params }) => { requireStaff(String(params.id)); return new HttpResponse(null, { status: 204 }); }),
   http.get(`${A}/assignments/:id/responses`, ({ params }) => {
     const { item, course } = staffAssignment(String(params.id));
     if (item.assignment!.type !== "form") throw notFound();
