@@ -13,10 +13,11 @@ use sqlx::PgPool;
 
 use super::*;
 use crate::content::{
-    Assignment, BuiltinType, ContentError, ContentTitle, ItemPatch, ItemRules, MaxPoints,
-    OnDeadline, SettingsPatch, SubmissionSettings,
+    Assignment, BuiltinType, ContentTitle, ItemPatch, ItemRules, MaxPoints, OnDeadline,
+    SettingsPatch, SubmissionSettings,
 };
 use crate::teaching::{self, CourseTitle};
+use crate::{LearningError, items};
 use access::CourseRole;
 use auth::{self, Email, NewUser, PersonName};
 use common::Role;
@@ -212,7 +213,7 @@ impl Fixture {
     fn settings_in_background(
         &self,
         patch: SettingsPatch,
-    ) -> tokio::task::JoinHandle<Result<(), ContentError>> {
+    ) -> tokio::task::JoinHandle<Result<(), LearningError>> {
         let (pool, owner, assignment) = (self.pool.clone(), self.owner.clone(), self.assignment);
         tokio::spawn(async move {
             let mut tx = pool.begin().await.unwrap();
@@ -220,7 +221,7 @@ impl Fixture {
                 settings: patch,
                 ..ItemPatch::default()
             };
-            let result = content::update_item(&mut tx, &owner, rules(), assignment, patch)
+            let result = items::update_item(&mut tx, &owner, rules(), assignment, patch)
                 .await
                 .map(|_| ());
             if result.is_ok() {
@@ -325,7 +326,7 @@ async fn a_submit_waits_for_a_settings_change_and_sees_the_new_window() {
             },
             ..ItemPatch::default()
         };
-        content::update_item(&mut holder, &f.owner, rules(), f.assignment, patch)
+        items::update_item(&mut holder, &f.owner, rules(), f.assignment, patch)
             .await
             .unwrap();
         let submit = f.submit_in_background(now);
@@ -441,11 +442,11 @@ async fn a_draft_save_waits_for_a_submit_and_then_starts_a_new_draft() {
 }
 
 /// Deletes the assignment in its own transaction on a task and commits when it succeeds.
-fn delete_in_background(f: &Fixture) -> tokio::task::JoinHandle<Result<(), ContentError>> {
+fn delete_in_background(f: &Fixture) -> tokio::task::JoinHandle<Result<(), LearningError>> {
     let (pool, owner, assignment) = (f.pool.clone(), f.owner.clone(), f.assignment);
     tokio::spawn(async move {
         let mut tx = pool.begin().await.unwrap();
-        let result = content::delete_item(&mut tx, &owner, assignment).await;
+        let result = items::delete_item(&mut tx, &owner, assignment).await;
         if result.is_ok() {
             tx.commit().await.unwrap();
         }
@@ -482,7 +483,7 @@ async fn a_delete_waits_for_a_submit_and_then_sees_the_attempt() {
 
         let result = delete.await.unwrap();
         assert!(
-            matches!(result, Err(ContentError::HasSubmissions)),
+            matches!(result, Err(LearningError::HasSubmissions)),
             "{result:?}"
         );
         assert_eq!(f.rows("submitted").await, 1);
@@ -501,7 +502,7 @@ async fn a_submit_waits_for_a_delete_and_then_finds_the_assignment_gone() {
         f.save("ready", at(9, 0)).await.unwrap();
 
         let mut first = f.pool.begin().await.unwrap();
-        content::delete_item(&mut first, &f.owner, f.assignment)
+        items::delete_item(&mut first, &f.owner, f.assignment)
             .await
             .unwrap();
         let second = f.submit_in_background(at(9, 1));
@@ -533,7 +534,7 @@ async fn a_draft_save_waits_for_a_delete_and_stores_nothing() {
         let f = fixture(pool, SubmissionSettings::default()).await;
 
         let mut first = f.pool.begin().await.unwrap();
-        content::delete_item(&mut first, &f.owner, f.assignment)
+        items::delete_item(&mut first, &f.owner, f.assignment)
             .await
             .unwrap();
         let save = f.save_in_background("late", at(9, 1));

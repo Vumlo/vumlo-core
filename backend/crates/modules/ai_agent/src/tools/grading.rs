@@ -10,6 +10,7 @@ use chrono::{DateTime, Utc};
 use common::{ApiError, PageParams};
 use learning::content;
 use learning::gradebook::{self, FeedbackInput, GradeInput, Students};
+use learning::items;
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::{Value, json};
 use sqlx::PgConnection;
@@ -150,7 +151,7 @@ impl Write {
         conn: &mut PgConnection,
         actor: &Actor,
     ) -> Result<BTreeMap<&'static str, String>, String> {
-        let item = content::get_item(conn, actor, self.assignment_id())
+        let item = items::get(conn, actor, self.assignment_id())
             .await
             .map_err(|e| explain(&ApiError::from(e)))?;
         let Some(assignment) = &item.assignment else {

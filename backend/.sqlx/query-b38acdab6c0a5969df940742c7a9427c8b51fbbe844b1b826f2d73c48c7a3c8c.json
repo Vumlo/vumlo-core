@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT EXISTS (SELECT 1 FROM content.item_file_list WHERE file_id = $1)\n               OR EXISTS (SELECT 1 FROM assessment.submission_file_list WHERE file_id = $1) AS \"referenced!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "referenced!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "b38acdab6c0a5969df940742c7a9427c8b51fbbe844b1b826f2d73c48c7a3c8c"
+}

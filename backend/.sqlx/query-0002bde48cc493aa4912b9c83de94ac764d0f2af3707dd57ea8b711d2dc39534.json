@@ -1,0 +1,114 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT c.code, c.description, t.name AS \"term_name?\",\n                  u.name AS \"owner_name!\", u.surname AS \"owner_surname!\", u.email AS \"owner_email!\",\n                  c.updated_at,\n                  (SELECT count(*) FROM teaching.effective_members m\n                    WHERE m.course_id = c.id AND m.role = 'student') AS \"student_count!\",\n                  (SELECT count(*) FROM teaching.effective_members m\n                    WHERE m.course_id = c.id AND m.role = 'assistant') AS \"assistant_count!\"\n           FROM teaching.courses c\n           JOIN auth.people u ON u.id = c.owner_id\n           LEFT JOIN org.term_list t ON t.id = c.term_id\n           WHERE c.id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "code",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "teaching.courses",
+            "name": "code"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "description",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "teaching.courses",
+            "name": "description"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "term_name?",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "org.term_list",
+            "name": "name"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "owner_name!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "auth.people",
+            "name": "name"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "owner_surname!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "auth.people",
+            "name": "surname"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "owner_email!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "auth.people",
+            "name": "email"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "updated_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "teaching.courses",
+            "name": "updated_at"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "student_count!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 8,
+        "name": "assistant_count!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      false,
+      null,
+      null
+    ]
+  },
+  "hash": "0002bde48cc493aa4912b9c83de94ac764d0f2af3707dd57ea8b711d2dc39534"
+}

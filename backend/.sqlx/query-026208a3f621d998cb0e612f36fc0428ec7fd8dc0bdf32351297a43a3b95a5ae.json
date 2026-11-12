@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT EXISTS (\n               SELECT 1 FROM assessment.submissions s\n               JOIN content.item_list i ON i.id = s.assignment_id\n               JOIN content.module_list m ON m.id = i.module_id\n               WHERE (m.id = $1 OR m.parent_id = $1) AND s.status = 'submitted'\n           ) AS \"has!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "has!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "026208a3f621d998cb0e612f36fc0428ec7fd8dc0bdf32351297a43a3b95a5ae"
+}

@@ -1,0 +1,54 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT i.id AS \"assignment_id!\", COALESCE(p.id, m.id) AS \"top_module!\",\n                  COALESCE(p.title, m.title) AS \"top_module_title!\", gi.group_id AS \"group_id?\"\n           FROM content.assignment_list a\n           JOIN content.item_list i ON i.id = a.item_id\n           JOIN content.module_list m ON m.id = i.module_id\n           LEFT JOIN content.module_list p ON p.id = m.parent_id\n           LEFT JOIN gradebook.group_items gi ON gi.assignment_id = a.item_id\n           WHERE i.course_id = $1\n           ORDER BY COALESCE(p.position, m.position), m.parent_id NULLS FIRST, m.position,\n                    i.position",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "assignment_id!",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "content.item_list",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "top_module!",
+        "type_info": "Uuid",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 2,
+        "name": "top_module_title!",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 3,
+        "name": "group_id?",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "gradebook.group_items",
+            "name": "group_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      true,
+      null,
+      null,
+      false
+    ]
+  },
+  "hash": "e0c47ca6abc220e657941737bed734d12aa475af64f17fd35fd1a3c744d586da"
+}

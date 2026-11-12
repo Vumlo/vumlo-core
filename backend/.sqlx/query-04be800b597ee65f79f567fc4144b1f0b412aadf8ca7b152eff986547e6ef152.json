@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT submission_id AS \"submission_id!\"\n           FROM assessment.submission_file_list WHERE file_id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "submission_id!",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "assessment.submission_file_list",
+            "name": "submission_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "04be800b597ee65f79f567fc4144b1f0b412aadf8ca7b152eff986547e6ef152"
+}

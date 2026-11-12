@@ -1,0 +1,185 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT i.id AS \"assignment_id!\", i.published_title AS \"title!\",\n                  a.max_points AS \"max_points!\", a.is_bonus AS \"is_bonus!\",\n                  COALESCE(p.id, m.id) AS \"top_module!\",\n                  COALESCE(p.title, m.title) AS \"top_module_title!\",\n                  gi.group_id AS \"group_id?\",\n                  g.published_score AS \"published_score?\",\n                  g.published_feedback AS \"published_feedback?\",\n                  g.published_at AS \"published_at?\",\n                  i.status = 'published' AS \"item_published!\", i.publish_at AS item_publish_at,\n                  m.status = 'published' AS \"module_published!\", m.publish_at AS module_publish_at,\n                  p.status = 'published' AS \"parent_published?\", p.publish_at AS parent_publish_at\n           FROM content.assignment_list a\n           JOIN content.item_list i ON i.id = a.item_id\n           JOIN content.module_list m ON m.id = i.module_id\n           LEFT JOIN content.module_list p ON p.id = m.parent_id\n           LEFT JOIN gradebook.grades g ON g.assignment_id = a.item_id AND g.student_id = $2\n           LEFT JOIN gradebook.group_items gi ON gi.assignment_id = a.item_id\n           WHERE i.course_id = $1\n             AND i.status = 'published' AND (i.publish_at IS NULL OR i.publish_at <= $3)\n             AND m.status = 'published' AND (m.publish_at IS NULL OR m.publish_at <= $3)\n             AND (p.id IS NULL\n                  OR (p.status = 'published' AND (p.publish_at IS NULL OR p.publish_at <= $3)))\n           ORDER BY COALESCE(p.position, m.position), m.parent_id NULLS FIRST, m.position,\n                    i.position",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "assignment_id!",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "content.item_list",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "title!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "content.item_list",
+            "name": "published_title"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "max_points!",
+        "type_info": "Numeric",
+        "origin": {
+          "Table": {
+            "table": "content.assignment_list",
+            "name": "max_points"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "is_bonus!",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "content.assignment_list",
+            "name": "is_bonus"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "top_module!",
+        "type_info": "Uuid",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 5,
+        "name": "top_module_title!",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 6,
+        "name": "group_id?",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "gradebook.group_items",
+            "name": "group_id"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "published_score?",
+        "type_info": "Numeric",
+        "origin": {
+          "Table": {
+            "table": "gradebook.grades",
+            "name": "published_score"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "published_feedback?",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "gradebook.grades",
+            "name": "published_feedback"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "published_at?",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "gradebook.grades",
+            "name": "published_at"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "item_published!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 11,
+        "name": "item_publish_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "content.item_list",
+            "name": "publish_at"
+          }
+        }
+      },
+      {
+        "ordinal": 12,
+        "name": "module_published!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 13,
+        "name": "module_publish_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "content.module_list",
+            "name": "publish_at"
+          }
+        }
+      },
+      {
+        "ordinal": 14,
+        "name": "parent_published?",
+        "type_info": "Bool",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 15,
+        "name": "parent_publish_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "content.module_list",
+            "name": "publish_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Timestamptz"
+      ]
+    },
+    "nullable": [
+      true,
+      true,
+      true,
+      true,
+      null,
+      null,
+      false,
+      true,
+      true,
+      true,
+      null,
+      true,
+      null,
+      true,
+      null,
+      true
+    ]
+  },
+  "hash": "9c02ba223138b44c8dd3ad8f246ca9915b1b0908fa91de9f934776c732ee48db"
+}

@@ -6,7 +6,7 @@ use uuid::Uuid;
 
 use super::model::{
     Candidate, Course, CourseGroupLink, CourseKind, Exclusion, LinkedGroup, MemberSource,
-    Membership, Person, RosterEntry, TemplateSummary,
+    Membership, Person, RosterEntry, TemplateRow,
 };
 mod admin;
 mod announcements;
@@ -19,10 +19,7 @@ pub use announcements::{
     delete as delete_announcement, find as find_announcement, insert as insert_announcement,
     list as list_announcements, update as update_announcement,
 };
-pub use cards::{
-    card_courses, staff_next_deadline, staff_todo_counts, student_next, student_progress,
-    unpublished_items,
-};
+pub use cards::card_courses;
 
 use access::{CourseRole, CourseStatus};
 use common::Role;
@@ -365,8 +362,6 @@ pub struct InfoRow {
     pub updated_at: DateTime<Utc>,
     pub student_count: i64,
     pub assistant_count: i64,
-    /// People off the roster who still have a value or an attempt in the course (ADR-0037).
-    pub former_count: i64,
 }
 
 pub async fn info_row(
@@ -381,20 +376,7 @@ pub async fn info_row(
                   (SELECT count(*) FROM teaching.effective_members m
                     WHERE m.course_id = c.id AND m.role = 'student') AS "student_count!",
                   (SELECT count(*) FROM teaching.effective_members m
-                    WHERE m.course_id = c.id AND m.role = 'assistant') AS "assistant_count!",
-                  (SELECT count(*) FROM auth.people f WHERE f.id IN (
-                       SELECT g.student_id FROM gradebook.grades g
-                       JOIN content.items i ON i.id = g.assignment_id
-                       WHERE i.course_id = c.id
-                         AND (g.draft_score IS NOT NULL OR g.draft_feedback IS NOT NULL
-                              OR g.published_score IS NOT NULL OR g.published_feedback IS NOT NULL)
-                       UNION
-                       SELECT s.student_id FROM assessment.submissions s
-                       JOIN content.items i ON i.id = s.assignment_id
-                       WHERE i.course_id = c.id AND s.status = 'submitted')
-                     AND NOT EXISTS (SELECT 1 FROM teaching.effective_members m
-                                     WHERE m.course_id = c.id AND m.user_id = f.id))
-                      AS "former_count!"
+                    WHERE m.course_id = c.id AND m.role = 'assistant') AS "assistant_count!"
            FROM teaching.courses c
            JOIN auth.people u ON u.id = c.owner_id
            LEFT JOIN org.term_list t ON t.id = c.term_id
@@ -507,15 +489,10 @@ pub async fn list_templates(
     user_id: Uuid,
     after: Option<Uuid>,
     limit: i64,
-) -> Result<Vec<TemplateSummary>, sqlx::Error> {
+) -> Result<Vec<TemplateRow>, sqlx::Error> {
     let rows = sqlx::query!(
         r#"SELECT c.id, c.title, c.status AS "status: CourseStatus", c.owner_id, c.term_id,
-                  c.created_at, c.updated_at,
-                  (SELECT count(*) FROM content.modules WHERE course_id = c.id) AS "sections!",
-                  (SELECT count(*) FROM content.items
-                    WHERE course_id = c.id AND kind = 'text') AS "lectures!",
-                  (SELECT count(*) FROM content.items
-                    WHERE course_id = c.id AND kind = 'assignment') AS "assignments!"
+                  c.created_at, c.updated_at
            FROM teaching.courses c
            WHERE c.kind = 'template'
              AND (c.owner_id = $1
@@ -533,7 +510,7 @@ pub async fn list_templates(
     .await?;
     Ok(rows
         .into_iter()
-        .map(|row| TemplateSummary {
+        .map(|row| TemplateRow {
             course: Course {
                 id: row.id,
                 kind: CourseKind::Template,
@@ -543,9 +520,6 @@ pub async fn list_templates(
                 term_id: row.term_id,
                 created_at: row.created_at,
             },
-            sections: row.sections,
-            lectures: row.lectures,
-            assignments: row.assignments,
             updated_at: row.updated_at,
         })
         .collect())
@@ -588,32 +562,30 @@ pub async fn list_people(
     .await
 }
 
-/// People off the roster who still have a value or an attempt in the course (ADR-0037).
+/// Those of `candidates` who are off the roster: people who still have a value or an attempt in the
+/// course (ADR-0037). The caller says who has one; this says who is no longer on the roster.
+/// Emails are selected only `with_emails`.
 pub async fn list_former(
     conn: &mut PgConnection,
     course_id: Uuid,
+    candidates: &[Uuid],
+    with_emails: bool,
 ) -> Result<Vec<Person>, sqlx::Error> {
     sqlx::query_as!(
         Person,
-        r#"SELECT u.id AS "user_id!", u.name AS "name!", u.surname AS "surname!", u.email AS "email?",
+        r#"SELECT u.id AS "user_id!", u.name AS "name!", u.surname AS "surname!",
+                  CASE WHEN $3 THEN u.email END AS "email?",
                   'student' AS "role!: CourseRole", false AS "is_owner!",
                   'direct' AS "source!: MemberSource", NULL::text AS "group?",
                   true AS "former!"
            FROM auth.people u
-           WHERE u.id IN (
-                   SELECT g.student_id FROM gradebook.grades g
-                   JOIN content.items i ON i.id = g.assignment_id
-                   WHERE i.course_id = $1
-                     AND (g.draft_score IS NOT NULL OR g.draft_feedback IS NOT NULL
-                          OR g.published_score IS NOT NULL OR g.published_feedback IS NOT NULL)
-                   UNION
-                   SELECT s.student_id FROM assessment.submissions s
-                   JOIN content.items i ON i.id = s.assignment_id
-                   WHERE i.course_id = $1 AND s.status = 'submitted')
+           WHERE u.id = ANY($2)
              AND NOT EXISTS (SELECT 1 FROM teaching.effective_members m
                              WHERE m.course_id = $1 AND m.user_id = u.id)
            ORDER BY u.surname, u.name, u.id"#,
-        course_id
+        course_id,
+        candidates,
+        with_emails
     )
     .fetch_all(conn)
     .await

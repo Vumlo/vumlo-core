@@ -1,9 +1,11 @@
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, NaiveDate, Utc};
 use sqlx::types::Decimal;
 use uuid::Uuid;
 
 use super::layout::{GroupDef, Outcome, Settings, Setup};
+use crate::content::{BuiltinType, ItemFacts, MaxPoints};
 use crate::points;
+use crate::teaching::CardCourse;
 use common::text_enum;
 
 const FEEDBACK_MAX_LEN: usize = 4000;
@@ -267,6 +269,129 @@ pub struct MyGrade {
     pub score: Option<Decimal>,
     pub feedback: Option<String>,
     pub published_at: DateTime<Utc>,
+}
+
+/// Where a student stands on an assignment (ADR-0049, point 6).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WorkStatus {
+    NotStarted,
+    Draft,
+    Submitted,
+    Graded,
+    /// The window closed with nothing submitted.
+    Missed,
+    /// In-class work: nothing to submit.
+    InClass,
+}
+text_enum!(WorkStatus {
+    NotStarted => "not_started",
+    Draft => "draft",
+    Submitted => "submitted",
+    Graded => "graded",
+    Missed => "missed",
+    InClass => "in_class",
+});
+
+impl WorkStatus {
+    /// The one rule: a published value wins, then in-class work, then an attempt, then a draft, then
+    /// a closed window, then nothing yet.
+    pub fn of(
+        graded: bool,
+        takes_submissions: bool,
+        attempts: i64,
+        has_draft: bool,
+        closed: bool,
+    ) -> Self {
+        if graded {
+            Self::Graded
+        } else if !takes_submissions {
+            Self::InClass
+        } else if attempts > 0 {
+            Self::Submitted
+        } else if has_draft {
+            Self::Draft
+        } else if closed {
+            Self::Missed
+        } else {
+            Self::NotStarted
+        }
+    }
+}
+
+/// A student's own standing on one assignment. Only published values appear here (AGENTS section 6).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WorkFacts {
+    pub assignment_id: Uuid,
+    pub course_id: Uuid,
+    pub status: WorkStatus,
+    /// The published score; `None` before grades are published.
+    pub score: Option<Decimal>,
+    pub published_at: Option<DateTime<Utc>>,
+    pub draft_saved_at: Option<DateTime<Utc>>,
+    pub attempts_used: i64,
+}
+
+/// What a teacher still has to do on one assignment, over the current students.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StaffFacts {
+    pub assignment_id: Uuid,
+    pub submitted: i64,
+    pub to_grade: i64,
+    pub draft_grades: i64,
+    pub graded_total: i64,
+}
+
+/// The facts of one item that the tree does not carry (ADR-0049, point 5): what `content` knows
+/// of the item, and the standing of a student or the counts for staff (never both).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ItemMeta {
+    pub content: ItemFacts,
+    /// A student's own standing (students only).
+    pub work: Option<WorkFacts>,
+    /// The counts for teachers (staff only).
+    pub staff: Option<StaffFacts>,
+}
+
+/// A student's numbers over the assignments of one course.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Progress {
+    pub course_id: Uuid,
+    pub submitted: i64,
+    pub total: i64,
+    pub graded: i64,
+}
+
+/// What staff still have to do in one course.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TodoCounts {
+    pub course_id: Uuid,
+    pub to_grade: i64,
+    pub draft_grades: i64,
+    /// Some of the draft grades are those of a quiz.
+    pub from_quizzes: bool,
+}
+
+/// A student's work list: the courses and the assignments in them (ADR-0052).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MyWork {
+    pub courses: Vec<CardCourse>,
+    pub items: Vec<WorkEntry>,
+}
+
+/// One assignment on a student's work list, with the student's own standing (ADR-0052).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WorkEntry {
+    pub assignment_id: Uuid,
+    pub course_id: Uuid,
+    pub title: String,
+    pub assignment_type: BuiltinType,
+    pub due_at: Option<DateTime<Utc>>,
+    pub class_on: Option<NaiveDate>,
+    pub max_points: MaxPoints,
+    pub status: WorkStatus,
+    pub score: Option<Decimal>,
+    pub published_at: Option<DateTime<Utc>>,
+    pub draft_saved_at: Option<DateTime<Utc>>,
 }
 
 #[cfg(test)]

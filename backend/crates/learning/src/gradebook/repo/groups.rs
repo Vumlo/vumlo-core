@@ -116,7 +116,7 @@ pub async fn is_top_module(
     module_id: Uuid,
 ) -> Result<bool, sqlx::Error> {
     sqlx::query_scalar!(
-        r#"SELECT EXISTS (SELECT 1 FROM content.modules
+        r#"SELECT EXISTS (SELECT 1 FROM content.module_list
                           WHERE id = $1 AND course_id = $2 AND parent_id IS NULL) AS "top!""#,
         module_id,
         course_id
@@ -240,8 +240,8 @@ pub async fn count_course_assignments(
     ids: &[Uuid],
 ) -> Result<i64, sqlx::Error> {
     sqlx::query_scalar!(
-        r#"SELECT count(*) AS "count!" FROM content.assignments a
-           JOIN content.items i ON i.id = a.item_id
+        r#"SELECT count(*) AS "count!" FROM content.assignment_list a
+           JOIN content.item_list i ON i.id = a.item_id
            WHERE i.course_id = $1 AND a.item_id = ANY($2)"#,
         course_id,
         ids
@@ -343,12 +343,12 @@ pub async fn placements(
 ) -> Result<Vec<Placement>, sqlx::Error> {
     sqlx::query_as!(
         Placement,
-        r#"SELECT i.id AS assignment_id, COALESCE(p.id, m.id) AS "top_module!",
+        r#"SELECT i.id AS "assignment_id!", COALESCE(p.id, m.id) AS "top_module!",
                   COALESCE(p.title, m.title) AS "top_module_title!", gi.group_id AS "group_id?"
-           FROM content.assignments a
-           JOIN content.items i ON i.id = a.item_id
-           JOIN content.modules m ON m.id = i.module_id
-           LEFT JOIN content.modules p ON p.id = m.parent_id
+           FROM content.assignment_list a
+           JOIN content.item_list i ON i.id = a.item_id
+           JOIN content.module_list m ON m.id = i.module_id
+           LEFT JOIN content.module_list p ON p.id = m.parent_id
            LEFT JOIN gradebook.group_items gi ON gi.assignment_id = a.item_id
            WHERE i.course_id = $1
            ORDER BY COALESCE(p.position, m.position), m.parent_id NULLS FIRST, m.position,

@@ -20,17 +20,16 @@ use super::document::{
 };
 use super::model::{
     Access, Assignment, AssignmentType, BuiltinType, ContentModule, ContentSubModule, ContentTitle,
-    FactScope, Hit, HitKind, Item, ItemFacts, ItemKind, ItemPatch, ItemStatus, ItemSummary,
-    MaxPoints, ModelError, Module, ModulePatch, MyWork, OnDeadline, OpenedAssignment, Revision,
-    SettingProblem, SettingsPatch, SourceFact, Standing, WorkEntry, WorkFacts,
+    DraftItem, FactScope, Hit, HitKind, Item, ItemFacts, ItemKind, ItemPatch, ItemStatus,
+    ItemSummary, MaxPoints, ModelError, Module, ModulePatch, NextDeadline, OnDeadline,
+    OpenAssignment, OpenedAssignment, Revision, SettingProblem, SettingsPatch, SourceFact,
+    Standing, SubmissionSettings, TemplateCounts,
 };
 use super::repo::{self, CopiedIds, ItemRow, ModuleRow};
 use super::rules::Node;
 use super::standing;
-use super::types::form;
-use crate::assessment::{self, AssessmentError};
+use super::types::form::{self, Holders};
 use crate::files::{self as file_service, FileError, UsageOwner};
-use crate::gradebook::{self, GradebookError};
 use crate::teaching::{self, TeachingError};
 use access::Actor;
 use access::{self, AccessError, Action, CourseAccess, CourseStatus, Release};
@@ -117,12 +116,6 @@ pub enum ContentError {
     /// `max_points` would drop below a score already given (ADR-0021, ADR-0028).
     #[error("max_points cannot be lowered below a score that was already given")]
     BelowGivenScores,
-    /// The assignment, or an assignment below the module, has a grade (ADR-0028).
-    #[error("it has grades: clear them before deleting")]
-    HasGrades,
-    /// The assignment, or an assignment below the module, has a submitted attempt (ADR-0035).
-    #[error("it has submitted work")]
-    HasSubmissions,
     /// The search text is not 2 to 100 characters (ADR-0052).
     #[error("the search text must be 2 to 100 characters")]
     BadQuery,
@@ -130,10 +123,6 @@ pub enum ContentError {
     /// (ADR-0023, ADR-0050, ADR-0051).
     #[error("the questions or fields cannot change after work was submitted")]
     StructureFrozen,
-    #[error(transparent)]
-    Gradebook(GradebookError),
-    #[error(transparent)]
-    Assessment(AssessmentError),
     #[error(transparent)]
     Teaching(TeachingError),
     #[error(transparent)]
@@ -154,24 +143,6 @@ impl From<sqlx::Error> for ContentError {
         match code.as_deref() {
             Some("23505" | "23503") => Self::Conflict,
             _ => Self::Db(error),
-        }
-    }
-}
-
-impl From<GradebookError> for ContentError {
-    fn from(error: GradebookError) -> Self {
-        match error {
-            GradebookError::HasGrades => Self::HasGrades,
-            other => Self::Gradebook(other),
-        }
-    }
-}
-
-impl From<AssessmentError> for ContentError {
-    fn from(error: AssessmentError) -> Self {
-        match error {
-            AssessmentError::HasSubmissions => Self::HasSubmissions,
-            other => Self::Assessment(other),
         }
     }
 }
@@ -517,7 +488,7 @@ pub async fn get_tree(
 
 /// Whether the actor reads the working copy of a course: drafts, scheduled items and the rules.
 /// Staff do; a student reads what is open to them, and the rules only as where they stand.
-fn sees_drafts(actor: &Actor, access: CourseAccess) -> bool {
+pub fn sees_drafts(actor: &Actor, access: CourseAccess) -> bool {
     access::authorize(actor, Action::ManageContent(access)).is_ok()
 }
 
@@ -688,40 +659,65 @@ pub async fn update_module(
     Ok(module)
 }
 
-/// Deletes the module with its sub-modules and items.
-pub async fn delete_module(
+/// A module the actor may delete, with every assignment below it locked: the state between
+/// [`begin_delete_module`] and [`finish_delete_module`].
+#[derive(Debug)]
+pub struct ModuleDeletion {
+    id: Uuid,
+    course_id: Uuid,
+    parent_id: Option<Uuid>,
+}
+
+impl ModuleDeletion {
+    pub fn id(&self) -> Uuid {
+        self.id
+    }
+}
+
+/// First half of deleting a module with its sub-modules and items: authorizes, then locks every
+/// assignment below it. A grade write in flight holds one of them, so the checks that follow, in
+/// later statements, see its grade (ADR-0028); a submit holds the same row `FOR SHARE`, so an
+/// attempt in flight is committed by then (ADR-0035). The flow (`learning::items::delete_module`)
+/// refuses when grades or attempts exist, purges the empty rows and drafts of the other modules,
+/// and calls [`finish_delete_module`].
+pub async fn begin_delete_module(
     conn: &mut PgConnection,
     actor: &Actor,
     id: Uuid,
-) -> Result<(), ContentError> {
+) -> Result<ModuleDeletion, ContentError> {
     let (row, _) = manage_module(conn, actor, id).await?;
-    // Lock every assignment below first: a grade write in flight holds one of them, so the check
-    // that follows, in a later statement, sees its grade (ADR-0028). The empty rows that are left
-    // go with their history; the grades table has no foreign key to cascade through.
     repo::lock_assignments_below(conn, id).await?;
-    if gradebook::has_grades_in_module(conn, id).await? {
-        return Err(ContentError::HasGrades);
-    }
-    // A submit holds the same row `FOR SHARE`, so an attempt in flight is committed by now
-    // (ADR-0035). Drafts without an attempt go with the module.
-    if assessment::has_submitted_in_module(conn, id).await? {
-        return Err(ContentError::HasSubmissions);
-    }
-    gradebook::purge_module(conn, id).await?;
-    assessment::purge_module(conn, id).await?;
+    Ok(ModuleDeletion {
+        id,
+        course_id: row.module.course_id,
+        parent_id: row.module.parent_id,
+    })
+}
+
+/// Second half: deletes the module and closes the gap in its sequence.
+pub async fn finish_delete_module(
+    conn: &mut PgConnection,
+    actor: &Actor,
+    deletion: ModuleDeletion,
+) -> Result<(), ContentError> {
+    let ModuleDeletion {
+        id,
+        course_id,
+        parent_id,
+    } = deletion;
     // A delete that lost the race to another one found nothing: no answer of success and no
     // audit row for something that did not happen (ADR-0039).
     if repo::delete_module(conn, id).await? == 0 {
         return Err(ContentError::ModuleNotFound);
     }
-    repo::compact_modules(conn, row.module.course_id, row.module.parent_id).await?;
+    repo::compact_modules(conn, course_id, parent_id).await?;
     audit(
         conn,
         actor,
         "content.module.delete",
         "module",
         id,
-        row.module.course_id,
+        course_id,
     )
     .await?;
     Ok(())
@@ -1180,14 +1176,51 @@ pub fn editor_profiles<'a>(
     Ok(profiles)
 }
 
+/// An item as the actor reads it, and what is left to add when it is a form.
+pub struct ItemRead {
+    pub item: Item,
+    /// Set for a form that is open to the reader: its config still wants the facts that only
+    /// `assessment` knows (see [`decorate_form`]).
+    pub form: Option<FormView>,
+}
+
+/// Who reads a form.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FormView {
+    pub staff: bool,
+    pub viewer: Uuid,
+}
+
+/// Adds to the config of a form the facts of ADR-0051 point 5 that `assessment` supplies: which
+/// fields have answers and who holds each exclusive option (staff see who, a student only that it
+/// is taken).
+pub fn decorate_form(
+    item: &mut Item,
+    view: FormView,
+    answered: &HashSet<String>,
+    holders: &Holders,
+) {
+    if let Some(assignment) = &mut item.assignment {
+        form::decorate(
+            &mut assignment.config,
+            answered,
+            holders,
+            view.staff,
+            view.viewer,
+        );
+    }
+}
+
 /// An item as the actor may read it: staff get the working copy and the rule that locks it, a
 /// student the published title and body (ADR-0049) and where they stand on it. An item that a rule
-/// still keeps closed to the student is its title only (ADR-0092).
+/// still keeps closed to the student is its title only (ADR-0092). A form comes back with the
+/// reader in `form`: the flow (`learning::items::get`) asks `assessment` for its facts and
+/// [`decorate_form`] adds them.
 pub async fn get_item(
     conn: &mut PgConnection,
     actor: &Actor,
     id: Uuid,
-) -> Result<Item, ContentError> {
+) -> Result<ItemRead, ContentError> {
     let (row, access) = open_item(conn, actor, id).await?;
     let staff = sees_drafts(actor, access);
     let course_id = row.item.course_id;
@@ -1209,8 +1242,9 @@ pub async fn get_item(
         if let Some(assignment) = &mut item.assignment {
             assignment.config = Map::new();
         }
-        return Ok(item);
+        return Ok(ItemRead { item, form: None });
     }
+    let mut form = None;
     if let Some(assignment) = &mut item.assignment {
         let kind = assignment.assignment_type;
         // A student never receives the answer key (ADR-0023, ADR-0050 point 6).
@@ -1218,17 +1252,13 @@ pub async fn get_item(
             assignment.config = kind.student_config(&assignment.config);
         }
         if kind == BuiltinType::Form {
-            let facts = assessment::form_facts(conn, id, kind, &assignment.config).await?;
-            form::decorate(
-                &mut assignment.config,
-                &facts.answered,
-                &facts.holders,
+            form = Some(FormView {
                 staff,
-                actor.user_id(),
-            );
+                viewer: actor.user_id(),
+            });
         }
     }
-    Ok(item)
+    Ok(ItemRead { item, form })
 }
 
 /// Whether a published item has changes students do not see, and since when they read what they
@@ -1291,9 +1321,10 @@ fn read_minutes(body: &serde_json::Map<String, serde_json::Value>) -> Option<i64
     i64::try_from(words.div_ceil(WORDS_PER_MINUTE).max(1)).ok()
 }
 
-/// The facts of every item of the course that the actor may see (ADR-0049, point 5). Staff get
-/// the counts of what to grade and which items have unpublished changes; a student of the course
-/// gets their own standing. Not paged: a course tree is bounded (ADR-0020).
+/// The facts `content` owns about every item of the course that the actor may see (ADR-0049,
+/// point 5): the reading time, the class day, and for staff which items have unpublished changes.
+/// `gradebook::item_meta` adds the standing and the counts. Not paged: a course tree is bounded
+/// (ADR-0020).
 pub async fn item_meta(
     conn: &mut PgConnection,
     actor: &Actor,
@@ -1341,57 +1372,47 @@ pub async fn item_meta(
                 entry.edited = Some(true);
             }
         }
-        for counts in repo::staff_counts(conn, course_id).await? {
-            if let Some(entry) = facts.get_mut(&counts.assignment_id) {
-                entry.staff = Some(counts);
-            }
-        }
-    } else if access.is_student() {
-        for work in repo::student_work(conn, actor.user_id(), &[course_id], Utc::now()).await? {
-            if let Some(entry) = facts.get_mut(&work.assignment_id) {
-                entry.work = Some(work);
-            }
-        }
     }
     Ok(facts)
 }
 
-/// Every assignment a student can open in their courses with their own standing on it, and the
-/// courses (ADR-0052). Published values only. Not paged: a student has a bounded number of
-/// courses and a course tree is bounded (ADR-0020).
-pub async fn my_work(
+/// The assignments of `course_ids` that students can open at `now` (the item, its module and its
+/// parent are published and released), with their published titles (ADR-0049). The caller has
+/// authorized: it passes the courses the actor studies in.
+pub async fn open_assignments(
     conn: &mut PgConnection,
-    actor: &Actor,
+    course_ids: &[Uuid],
     now: DateTime<Utc>,
-) -> Result<MyWork, ContentError> {
-    let courses = teaching::student_courses(conn, actor).await?;
-    let ids: Vec<Uuid> = courses.iter().map(|card| card.course.id).collect();
-    let standing: HashMap<Uuid, WorkFacts> = repo::student_work(conn, actor.user_id(), &ids, now)
-        .await?
-        .into_iter()
-        .map(|facts| (facts.assignment_id, facts))
-        .collect();
-    let items = repo::open_assignments(conn, &ids, now)
-        .await?
-        .into_iter()
-        .filter_map(|row| {
-            let facts = standing.get(&row.assignment_id)?;
-            Some(WorkEntry {
-                assignment_id: row.assignment_id,
-                course_id: row.course_id,
-                title: row.title,
-                assignment_type: row.assignment_type,
-                due_at: row.due_at,
-                class_on: row.class_on,
-                max_points: row.max_points,
-                status: facts.status,
-                score: facts.score,
-                published_at: facts.published_at,
-                draft_saved_at: facts.draft_saved_at,
-            })
-        })
-        .collect();
-    Ok(MyWork { courses, items })
+) -> Result<Vec<OpenAssignment>, ContentError> {
+    Ok(repo::open_assignments(conn, course_ids, now).await?)
+}
+
+/// What each of `course_ids` holds. The caller has authorized: it passes the templates the actor
+/// may see.
+pub async fn template_counts(
+    conn: &mut PgConnection,
+    course_ids: &[Uuid],
+) -> Result<Vec<TemplateCounts>, ContentError> {
+    Ok(repo::template_counts(conn, course_ids).await?)
+}
+
+/// The draft items inside published modules of `course_ids`, newest change first. The caller has
+/// authorized: it passes the courses the actor works in as staff.
+pub async fn draft_items(
+    conn: &mut PgConnection,
+    course_ids: &[Uuid],
+) -> Result<Vec<DraftItem>, ContentError> {
+    Ok(repo::draft_items(conn, course_ids).await?)
+}
+
+/// The earliest deadline from `now` on of any assignment, per course of `course_ids`. The caller
+/// has authorized: it passes the courses the actor works in as staff.
+pub async fn next_deadlines(
+    conn: &mut PgConnection,
+    course_ids: &[Uuid],
+    now: DateTime<Utc>,
+) -> Result<Vec<NextDeadline>, ContentError> {
+    Ok(repo::next_deadlines(conn, course_ids, now).await?)
 }
 
 const SEARCH_MIN_CHARS: usize = 2;
@@ -1650,25 +1671,88 @@ fn check_points_total(
     }
 }
 
-/// Changes the title, body and/or `publish_at`, and for an assignment its `config`, `max_points`
-/// and `is_bonus`. A change with no fields writes nothing.
+/// What an update of an assignment still has to know from the modules above `content`: whether
+/// work was submitted, and the highest score given. It is read only when
+/// [`ItemUpdate::asks_submissions`] and [`ItemUpdate::asks_scores`] say so; the other field stays at
+/// its default.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct AssignmentFacts {
+    pub has_submissions: bool,
+    pub highest_score: Option<Decimal>,
+}
+
+/// An item update that passed everything `content` can judge by itself, with the assignment row
+/// locked when the update touches points or config: the state between [`begin_update_item`] and
+/// [`finish_update_item`].
+pub struct ItemUpdate {
+    id: Uuid,
+    course_id: Uuid,
+    access: CourseAccess,
+    scale: GradingScale,
+    /// An update of nothing: the item as it is.
+    unchanged: Option<Item>,
+    patch: ItemPatch,
+    is_assignment: bool,
+    body: Option<Map<String, Value>>,
+    settings: Option<SubmissionSettings>,
+    /// The deadline before this update, when the update can change it.
+    was_due: Option<Option<DateTime<Utc>>>,
+    /// The structure of the config changes, which is frozen once work was submitted (ADR-0023).
+    changes_structure: bool,
+    /// The points go down to this: no lower than a score already given (ADR-0021, ADR-0028).
+    lowered_to: Option<MaxPoints>,
+    /// The points go up to this: the grading scale limits them (ADR-0022).
+    raised_to: Option<MaxPoints>,
+}
+
+impl ItemUpdate {
+    /// The update needs `has_submissions` of [`AssignmentFacts`].
+    pub fn asks_submissions(&self) -> bool {
+        self.changes_structure
+    }
+
+    /// The update needs `highest_score` of [`AssignmentFacts`].
+    pub fn asks_scores(&self) -> bool {
+        self.lowered_to.is_some()
+    }
+}
+
+/// First half of changing the title, body and/or `publish_at` of an item, and for an assignment its
+/// `config`, `max_points` and `is_bonus`: authorizes, validates, and takes the assignment row lock
+/// before the facts of other modules are asked, which is a later statement: a grade write holds the
+/// row `FOR SHARE`, so this waits for it and the flow then sees its score. A submission write holds
+/// it the same way, so a submit that began first finishes under the old settings and one that waits
+/// sees the new ones (ADR-0035). The flow (`learning::items::update_item`) reads what the returned
+/// update asks for and calls [`finish_update_item`]. A change with no fields writes nothing.
 ///
 /// The row loaded to authorize may be stale by the time the points lock is granted (READ COMMITTED
 /// lets another writer commit while this one waits). So whether `max_points` is raised, and
 /// whether a bonus becomes regular, is decided on the assignment re-read after the lock is held.
-pub async fn update_item(
+pub async fn begin_update_item(
     conn: &mut PgConnection,
     actor: &Actor,
     rules: ItemRules<'_>,
     id: Uuid,
     mut patch: ItemPatch,
-) -> Result<Item, ContentError> {
+) -> Result<ItemUpdate, ContentError> {
     let (row, access) = manage_item(conn, actor, id).await?;
     let course_id = row.item.course_id;
     if patch.is_empty() {
-        let mut item = row.item;
-        item.access = node_access(conn, actor, access, course_id, Node::Item(id)).await?;
-        return Ok(item);
+        return Ok(ItemUpdate {
+            id,
+            course_id,
+            access,
+            scale: rules.scale,
+            unchanged: Some(row.item),
+            patch,
+            is_assignment: false,
+            body: None,
+            settings: None,
+            was_due: None,
+            changes_structure: false,
+            lowered_to: None,
+            raised_to: None,
+        });
     }
     let is_assignment = row.item.kind == ItemKind::Assignment;
     if !is_assignment && patch.touches_assignment() {
@@ -1696,13 +1780,12 @@ pub async fn update_item(
     let mut settings = None;
     // The deadline before this update, when the update can change it.
     let mut was_due = None;
+    let mut changes_structure = false;
+    let mut lowered_to = None;
+    let mut raised_to = None;
     if is_assignment && patch.touches_assignment() {
         let points_change = patch.max_points.is_some() || patch.is_bonus.is_some();
-        // The row lock comes before the gradebook is asked, which is a later statement: a grade
-        // write holds the row `FOR SHARE`, so this waits for it and then sees its score. A
-        // submission write holds it the same way, so a submit that began first finishes under the
-        // old settings and one that waits sees the new ones (ADR-0035). The current values are
-        // the ones in the locked row.
+        // The current values are the ones in the locked row.
         let current = repo::lock_assignment(conn, id)
             .await?
             .ok_or(ContentError::ItemNotFound)?;
@@ -1738,27 +1821,76 @@ pub async fn update_item(
             }
             check_points_total(kind, config, patch.max_points.unwrap_or(current.max_points))?;
             // The structure is frozen once work was submitted (ADR-0023); the assignment row is
-            // locked, so no submit slips in between this check and the write.
-            if patch.config.is_some()
-                && kind.structure(&current.config) != kind.structure(config)
-                && assessment::has_submitted_for_assignment(conn, id).await?
-            {
-                return Err(ContentError::StructureFrozen);
-            }
+            // locked, so no submit slips in between the flow's check and the write.
+            changes_structure =
+                patch.config.is_some() && kind.structure(&current.config) != kind.structure(config);
         }
         if points_change {
             let points = patch.max_points.unwrap_or(current.max_points);
-            if points.value() < current.max_points.value()
-                && gradebook::max_score(conn, id)
-                    .await?
-                    .is_some_and(|highest| points.value() < highest)
-            {
-                return Err(ContentError::BelowGivenScores);
-            }
-            if points.value() > current.max_points.value() {
-                check_points(rules.scale, points.value(), "max_points")?;
+            if points.value() < current.max_points.value() {
+                lowered_to = Some(points);
+            } else if points.value() > current.max_points.value() {
+                raised_to = Some(points);
             }
         }
+    }
+    Ok(ItemUpdate {
+        id,
+        course_id,
+        access,
+        scale: rules.scale,
+        unchanged: None,
+        patch,
+        is_assignment,
+        body,
+        settings,
+        was_due,
+        changes_structure,
+        lowered_to,
+        raised_to,
+    })
+}
+
+/// Second half: refuses what the facts of the other modules forbid (a changed structure after work
+/// was submitted, points below a score already given, points the grading scale does not allow),
+/// then writes the update.
+pub async fn finish_update_item(
+    conn: &mut PgConnection,
+    actor: &Actor,
+    update: ItemUpdate,
+    facts: AssignmentFacts,
+) -> Result<Item, ContentError> {
+    let ItemUpdate {
+        id,
+        course_id,
+        access,
+        scale,
+        unchanged,
+        patch,
+        is_assignment,
+        body,
+        settings,
+        was_due,
+        changes_structure,
+        lowered_to,
+        raised_to,
+    } = update;
+    if let Some(mut item) = unchanged {
+        item.access = node_access(conn, actor, access, course_id, Node::Item(id)).await?;
+        return Ok(item);
+    }
+    if changes_structure && facts.has_submissions {
+        return Err(ContentError::StructureFrozen);
+    }
+    if let Some(points) = lowered_to
+        && facts
+            .highest_score
+            .is_some_and(|highest| points.value() < highest)
+    {
+        return Err(ContentError::BelowGivenScores);
+    }
+    if let Some(points) = raised_to {
+        check_points(scale, points.value(), "max_points")?;
     }
     let mut item = repo::update_item(
         conn,
@@ -1840,7 +1972,7 @@ pub async fn set_due_at(
     id: Uuid,
     due_at: Option<DateTime<Utc>>,
 ) -> Result<Item, ContentError> {
-    let item = get_item(conn, actor, id).await?;
+    let item = get_item(conn, actor, id).await?.item;
     let current = item.assignment.as_ref().map(|a| &a.settings);
     let mut settings = SettingsPatch {
         due_at: Some(due_at),
@@ -1866,40 +1998,70 @@ pub async fn set_due_at(
         settings,
         ..ItemPatch::default()
     };
-    update_item(conn, actor, rules, id, patch).await
+    // A deadline touches neither points nor config, so nothing is asked of the modules above.
+    let update = begin_update_item(conn, actor, rules, id, patch).await?;
+    finish_update_item(conn, actor, update, AssignmentFacts::default()).await
 }
 
-pub async fn delete_item(
+/// An item the actor may delete, with its assignment row locked if it is an assignment: the state
+/// between [`begin_delete_item`] and [`finish_delete_item`].
+#[derive(Debug)]
+pub struct ItemDeletion {
+    id: Uuid,
+    module_id: Uuid,
+    course_id: Uuid,
+    is_assignment: bool,
+}
+
+impl ItemDeletion {
+    pub fn id(&self) -> Uuid {
+        self.id
+    }
+
+    /// Only an assignment can have grades and attempts that the delete must respect.
+    pub fn is_assignment(&self) -> bool {
+        self.is_assignment
+    }
+}
+
+/// First half of deleting a `text` item or an assignment: authorizes, then locks the assignment
+/// row first, so the checks of the flow (`learning::items::delete_item`), in later statements, see
+/// what a grade write or a submit in flight committed (see [`begin_delete_module`]).
+pub async fn begin_delete_item(
     conn: &mut PgConnection,
     actor: &Actor,
     id: Uuid,
-) -> Result<(), ContentError> {
+) -> Result<ItemDeletion, ContentError> {
     let (row, _) = manage_item(conn, actor, id).await?;
-    if row.item.kind == ItemKind::Assignment {
-        // The row lock first, then the grades in a later statement (see `delete_module`).
+    let is_assignment = row.item.kind == ItemKind::Assignment;
+    if is_assignment {
         repo::lock_assignment(conn, id).await?;
-        if gradebook::has_grades_for_assignment(conn, id).await? {
-            return Err(ContentError::HasGrades);
-        }
-        if assessment::has_submitted_for_assignment(conn, id).await? {
-            return Err(ContentError::HasSubmissions);
-        }
-        gradebook::purge_assignment(conn, id).await?;
-        assessment::purge_assignment(conn, id).await?;
     }
+    Ok(ItemDeletion {
+        id,
+        module_id: row.item.module_id,
+        course_id: row.item.course_id,
+        is_assignment,
+    })
+}
+
+/// Second half: deletes the item and closes the gap in its module.
+pub async fn finish_delete_item(
+    conn: &mut PgConnection,
+    actor: &Actor,
+    deletion: ItemDeletion,
+) -> Result<(), ContentError> {
+    let ItemDeletion {
+        id,
+        module_id,
+        course_id,
+        ..
+    } = deletion;
     if repo::delete_item(conn, id).await? == 0 {
         return Err(ContentError::ItemNotFound);
     }
-    repo::compact_items(conn, row.item.module_id).await?;
-    audit(
-        conn,
-        actor,
-        "content.item.delete",
-        "item",
-        id,
-        row.item.course_id,
-    )
-    .await?;
+    repo::compact_items(conn, module_id).await?;
+    audit(conn, actor, "content.item.delete", "item", id, course_id).await?;
     Ok(())
 }
 

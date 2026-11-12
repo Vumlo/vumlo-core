@@ -12,7 +12,8 @@ use access::Actor;
 use chrono::Utc;
 use common::{ApiError, PageParams};
 use learning::assessment;
-use learning::content::{self, BuiltinType, ItemRules};
+use learning::content::{BuiltinType, ItemRules};
+use learning::items;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 use sqlx::PgConnection;
@@ -114,7 +115,7 @@ impl Write {
                 *assignment_id
             }
         };
-        let item = content::get_item(conn, actor, assignment_id)
+        let item = items::get(conn, actor, assignment_id)
             .await
             .map_err(|e| explain(&ApiError::from(e)))?;
         let is_text = item

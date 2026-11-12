@@ -50,13 +50,13 @@ pub async fn list_audit(
                FROM events.audit_entries l
                LEFT JOIN auth.people a ON a.id = l.actor_id
                LEFT JOIN auth.people ru ON l.resource_type = 'user' AND ru.id = l.resource_id
-               LEFT JOIN teaching.courses rc ON l.resource_type = 'course' AND rc.id = l.resource_id
+               LEFT JOIN teaching.course_list rc ON l.resource_type = 'course' AND rc.id = l.resource_id
                LEFT JOIN org.group_list rg ON l.resource_type = 'group' AND rg.id = l.resource_id
                LEFT JOIN org.subgroup_list rs ON l.resource_type = 'subgroup' AND rs.id = l.resource_id
                LEFT JOIN org.term_list rt ON l.resource_type = 'term' AND rt.id = l.resource_id
-               LEFT JOIN content.items ri
+               LEFT JOIN content.item_list ri
                       ON l.resource_type IN ('item', 'assignment') AND ri.id = l.resource_id
-               LEFT JOIN content.modules rm ON l.resource_type = 'module' AND rm.id = l.resource_id
+               LEFT JOIN content.module_list rm ON l.resource_type = 'module' AND rm.id = l.resource_id
                WHERE l.at >= now() - make_interval(days => $2)
                  AND ($3::uuid IS NULL OR l.id < $3)
            ) log

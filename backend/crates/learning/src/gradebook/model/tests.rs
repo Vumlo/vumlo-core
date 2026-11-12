@@ -5,6 +5,28 @@ fn max(text: &str) -> Decimal {
 }
 
 #[test]
+fn the_status_of_work_follows_one_order_of_rules() {
+    use WorkStatus::*;
+    // (graded, takes_submissions, attempts, draft, closed)
+    let cases = [
+        ((true, true, 2, true, true), Graded),
+        ((true, false, 0, false, false), Graded),
+        ((false, false, 0, false, true), InClass),
+        ((false, true, 1, true, true), Submitted),
+        ((false, true, 0, true, true), Draft),
+        ((false, true, 0, false, true), Missed),
+        ((false, true, 0, false, false), NotStarted),
+    ];
+    for ((graded, takes, attempts, draft, closed), expected) in cases {
+        assert_eq!(
+            WorkStatus::of(graded, takes, attempts, draft, closed),
+            expected,
+            "{graded} {takes} {attempts} {draft} {closed}"
+        );
+    }
+}
+
+#[test]
 fn a_score_is_zero_up_to_max_with_two_decimals() {
     for ok in ["0", "0.00", "0.01", "7.5", "19.99", "20", "20.00"] {
         assert!(Score::parse(ok, max("20")).is_ok(), "{ok}");

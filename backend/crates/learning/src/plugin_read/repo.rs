@@ -45,9 +45,9 @@ pub async fn assignment_header(
     assignment_id: Uuid,
 ) -> Result<Option<(Uuid, String)>, sqlx::Error> {
     let row = sqlx::query!(
-        "SELECT i.course_id, a.type AS kind FROM content.items i
-         JOIN content.assignments a ON a.item_id = i.id
-         WHERE i.id = $1",
+        r#"SELECT i.course_id AS "course_id!", a.type AS "kind!" FROM content.item_list i
+           JOIN content.assignment_list a ON a.item_id = i.id
+           WHERE i.id = $1"#,
         assignment_id
     )
     .fetch_optional(conn)
@@ -75,11 +75,11 @@ pub async fn assignments(
                SELECT i.id, i.course_id, a.type AS kind, i.published_title AS title, a.due_at,
                       a.max_points::text AS max_points, a.config,
                       GREATEST(i.updated_at, a.updated_at) AS updated
-               FROM content.items i
-               JOIN content.assignments a ON a.item_id = i.id
-               JOIN content.modules m ON m.id = i.module_id
-               LEFT JOIN content.modules p ON p.id = m.parent_id
-               JOIN teaching.courses c ON c.id = i.course_id
+               FROM content.item_list i
+               JOIN content.assignment_list a ON a.item_id = i.id
+               JOIN content.module_list m ON m.id = i.module_id
+               LEFT JOIN content.module_list p ON p.id = m.parent_id
+               JOIN teaching.course_list c ON c.id = i.course_id
                WHERE i.status = 'published' AND (i.publish_at IS NULL OR i.publish_at <= now())
                  AND m.status = 'published' AND (m.publish_at IS NULL OR m.publish_at <= now())
                  AND (p.id IS NULL
@@ -133,13 +133,14 @@ pub async fn submitted(
     submission_id: Uuid,
 ) -> Result<Option<SubmittedRow>, sqlx::Error> {
     let row = sqlx::query!(
-        r#"SELECT s.id, i.course_id, s.assignment_id, a.type AS assignment_type, s.student_id,
-                  s.attempt AS "attempt!", s.content AS "content: Json<Map<String, Value>>",
+        r#"SELECT s.id AS "id!", i.course_id AS "course_id!", s.assignment_id AS "assignment_id!",
+                  a.type AS "assignment_type!", s.student_id AS "student_id!",
+                  s.attempt AS "attempt!", s.content AS "content!: Json<Map<String, Value>>",
                   s.submitted_at AS "submitted_at!"
-           FROM assessment.submissions s
-           JOIN content.items i ON i.id = s.assignment_id
-           JOIN content.assignments a ON a.item_id = s.assignment_id
-           WHERE s.id = $1 AND s.status = 'submitted'"#,
+           FROM assessment.submitted_attempts s
+           JOIN content.item_list i ON i.id = s.assignment_id
+           JOIN content.assignment_list a ON a.item_id = s.assignment_id
+           WHERE s.id = $1"#,
         submission_id
     )
     .fetch_optional(conn)
@@ -162,9 +163,9 @@ pub async fn submission_course(
     submission_id: Uuid,
 ) -> Result<Option<Uuid>, sqlx::Error> {
     sqlx::query_scalar!(
-        "SELECT i.course_id FROM assessment.submissions s
-         JOIN content.items i ON i.id = s.assignment_id
-         WHERE s.id = $1 AND s.status = 'submitted'",
+        r#"SELECT i.course_id AS "course_id!" FROM assessment.submitted_attempts s
+           JOIN content.item_list i ON i.id = s.assignment_id
+           WHERE s.id = $1"#,
         submission_id
     )
     .fetch_optional(conn)
@@ -190,12 +191,13 @@ pub async fn submissions(
 ) -> Result<Vec<SubmissionListRow>, sqlx::Error> {
     sqlx::query_as!(
         SubmissionListRow,
-        r#"SELECT s.id, s.student_id, s.attempt AS "attempt!", s.submitted_at AS "submitted_at!",
+        r#"SELECT s.id AS "id!", s.student_id AS "student_id!", s.attempt AS "attempt!",
+                  s.submitted_at AS "submitted_at!",
                   s.is_late AS "is_late!", g.published_at AS graded_at
-           FROM assessment.submissions s
-           LEFT JOIN gradebook.grades g
+           FROM assessment.submitted_attempts s
+           LEFT JOIN gradebook.published_grades g
                   ON g.assignment_id = s.assignment_id AND g.student_id = s.student_id
-           WHERE s.assignment_id = $1 AND s.status = 'submitted'
+           WHERE s.assignment_id = $1
              AND ($2::timestamptz IS NULL OR s.submitted_at >= $2)
              AND ($3::timestamptz IS NULL OR (s.submitted_at, s.id) > ($3, $4))
            ORDER BY s.submitted_at, s.id
@@ -228,11 +230,11 @@ pub async fn attempts(
     limit: i64,
 ) -> Result<Vec<AttemptRow>, sqlx::Error> {
     let rows = sqlx::query!(
-        r#"SELECT id, student_id, attempt AS "attempt!",
+        r#"SELECT id AS "id!", student_id AS "student_id!", attempt AS "attempt!",
                   auto_scores AS "auto_scores: Json<Map<String, Value>>",
-                  created_at, submitted_at AS "submitted_at!"
-           FROM assessment.submissions
-           WHERE assignment_id = $1 AND status = 'submitted'
+                  created_at AS "created_at!", submitted_at AS "submitted_at!"
+           FROM assessment.submitted_attempts
+           WHERE assignment_id = $1
              AND ($2::timestamptz IS NULL OR submitted_at >= $2)
              AND ($3::timestamptz IS NULL OR (submitted_at, id) > ($3, $4))
            ORDER BY submitted_at, id
@@ -270,12 +272,13 @@ pub async fn grades(
 ) -> Result<Vec<PluginGrade>, sqlx::Error> {
     sqlx::query_as!(
         PluginGrade,
-        r#"SELECT i.course_id, g.assignment_id, g.student_id, g.published_score::text AS score,
+        r#"SELECT i.course_id AS "course_id!", g.assignment_id AS "assignment_id!",
+                  g.student_id AS "student_id!", g.published_score::text AS score,
                   a.max_points::text AS "max_points!", g.published_by,
                   g.published_at AS "published_at!"
-           FROM gradebook.grades g
-           JOIN content.items i ON i.id = g.assignment_id
-           JOIN content.assignments a ON a.item_id = g.assignment_id
+           FROM gradebook.published_grades g
+           JOIN content.item_list i ON i.id = g.assignment_id
+           JOIN content.assignment_list a ON a.item_id = g.assignment_id
            WHERE g.published_at IS NOT NULL
              AND ($1::uuid[] IS NULL OR i.course_id = ANY($1))
              AND ($2::uuid IS NULL OR g.assignment_id = $2)
@@ -421,9 +424,11 @@ pub async fn announcements(
 ) -> Result<Vec<PluginAnnouncement>, sqlx::Error> {
     sqlx::query_as!(
         PluginAnnouncement,
-        r#"SELECT a.id, a.course_id, a.author_id, a.title, a.body, a.created_at, a.updated_at
-           FROM teaching.announcements a
-           JOIN teaching.courses c ON c.id = a.course_id
+        r#"SELECT a.id AS "id!", a.course_id AS "course_id!", a.author_id AS "author_id!",
+                  a.title AS "title!", a.body AS "body!", a.created_at AS "created_at!",
+                  a.updated_at AS "updated_at!"
+           FROM teaching.announcement_list a
+           JOIN teaching.course_list c ON c.id = a.course_id
            WHERE c.status <> 'draft'
              AND ($1::uuid[] IS NULL OR a.course_id = ANY($1))
              AND ($2::timestamptz IS NULL OR a.updated_at >= $2)
@@ -452,8 +457,8 @@ pub async fn deletions(
 ) -> Result<Vec<PluginDeletion>, sqlx::Error> {
     sqlx::query_as!(
         PluginDeletion,
-        r#"SELECT id, course_id, deleted_at
-           FROM teaching.tombstones
+        r#"SELECT id AS "id!", course_id AS "course_id!", deleted_at AS "deleted_at!"
+           FROM teaching.tombstone_list
            WHERE kind = $1
              AND ($2::uuid[] IS NULL OR course_id = ANY($2))
              AND deleted_at >= $3

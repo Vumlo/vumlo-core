@@ -23,8 +23,9 @@ struct Unit {
     /// Relative to `backend/crates`. The longest `dir` that contains a file decides its unit.
     dir: &'static str,
     schema: Option<&'static str>,
-    /// Higher layers may use lower ones, never the other way round. The four `learning` modules
-    /// share a layer: they may read one another (ADR-0065).
+    /// Higher layers may use lower ones, never the other way round. Inside `learning` the four
+    /// modules are ordered `teaching < content < assessment < gradebook`, and the flows sit above
+    /// them (ADR-0093).
     layer: u8,
 }
 
@@ -82,26 +83,26 @@ const UNITS: &[Unit] = &[
         name: "content",
         dir: "learning/src/content",
         schema: Some("content"),
-        layer: 7,
+        layer: 8,
     },
     Unit {
         name: "assessment",
         dir: "learning/src/assessment",
         schema: Some("assessment"),
-        layer: 7,
+        layer: 9,
     },
     Unit {
         name: "gradebook",
         dir: "learning/src/gradebook",
         schema: Some("gradebook"),
-        layer: 7,
+        layer: 10,
     },
     // The flows above those four (a person with their courses, the audit report, ...): no schema.
     Unit {
         name: "learning",
         dir: "learning/src",
         schema: None,
-        layer: 7,
+        layer: 11,
     },
     // The plugins (ADR-0066) sit on `learning` and write only the schema `plugins`. They read the
     // submissions of `assessment` through its public functions, never its tables.
@@ -109,14 +110,14 @@ const UNITS: &[Unit] = &[
         name: "plugins",
         dir: "plugins/src",
         schema: Some("plugins"),
-        layer: 8,
+        layer: 12,
     },
     // The composition root and the middleware that has a table of its own.
     Unit {
         name: "server",
         dir: "server/src",
         schema: Some("idempotency"),
-        layer: 9,
+        layer: 13,
     },
 ];
 
@@ -128,7 +129,24 @@ const DECLARED_VIEWS: &[&str] = &[
     "org.group_list",
     "org.subgroup_list",
     "events.audit_entries",
+    "teaching.effective_members",
+    // Between the four modules of `learning` (ADR-0093, migration 0054). Each leaves out what
+    // the readers above must not see: an item's text, a submission's content, a grade's drafts.
+    "teaching.course_list",
+    "teaching.announcement_list",
+    "teaching.tombstone_list",
+    "content.module_list",
+    "content.item_list",
+    "content.assignment_list",
+    "content.item_file_list",
+    "assessment.submission_index",
+    "assessment.submitted_attempts",
+    "assessment.submission_file_list",
+    "gradebook.published_grades",
 ];
+
+/// The four modules of `learning`, lowest first.
+const MODULES: &[&str] = &["teaching", "content", "assessment", "gradebook"];
 
 /// (text no unit but the owner may mention, the unit that owns it)
 const OWNED: &[(&str, &str)] = &[
@@ -314,10 +332,9 @@ fn a_unit_reads_its_own_layer_and_the_declared_views_below_it() {
                 checked += 1;
                 let schema = name.split_once('.').map_or("", |(schema, _)| schema);
                 let allowed = match layer_of_schema(schema) {
-                    None => false,
                     Some(layer) if Some(schema) == unit.schema || layer == unit.layer => true,
                     Some(layer) if layer < unit.layer => DECLARED_VIEWS.contains(&name.as_str()),
-                    Some(_) => false,
+                    _ => false,
                 };
                 if !allowed {
                     found.push(format!(
@@ -337,7 +354,184 @@ fn a_unit_reads_its_own_layer_and_the_declared_views_below_it() {
     assert!(
         found.is_empty(),
         "a unit reads a table of a lower layer that is not a declared view, or one of a higher \
-         layer (ADR-0065; declare a view in a migration and list it in DECLARED_VIEWS):\n{}",
+         layer (ADR-0065, ADR-0093; declare a view in a migration and list it in \
+         DECLARED_VIEWS):\n{}",
+        found.join("\n")
+    );
+}
+
+/// The flows of `learning`, the code above the four modules. A module may not name one either.
+const FLOWS: &[&str] = &[
+    "audit",
+    "courses",
+    "enrollment",
+    "facts",
+    "files",
+    "groups",
+    "items",
+    "people",
+    "plugin_read",
+    "quiz_grade",
+    "reports",
+    "schedule",
+];
+
+/// The flows a module still names, as `(module, flow)`: the file-usage check of `content` and
+/// `assessment` (`learning::files::ensure_usable` reads both of them, so it cannot stay below
+/// them) and the download header of the gradebook export. The split into crates (PR C) has to
+/// resolve each before the dependency becomes a cycle; the list only shrinks.
+const RATCHET_FLOWS: &[(&str, &str)] = &[
+    ("assessment", "files"),
+    ("content", "files"),
+    ("gradebook", "files"),
+];
+
+/// What `text` reaches through `crate::` and `super::`, as `(line of the path, name)`: the first
+/// name of a path, every name in a `{ ... }` group (wrapped over lines or nested), and `*` for a
+/// glob of the crate root. Comments are ignored.
+fn crate_paths(text: &str) -> Vec<(usize, String)> {
+    let code = text
+        .lines()
+        .map(|line| if is_comment(line) { "" } else { line })
+        .collect::<Vec<_>>()
+        .join("\n");
+    let word = |c: char| c.is_ascii_alphanumeric() || c == '_';
+    let mut found = Vec::new();
+    for prefix in ["crate::", "super::"] {
+        for (at, _) in code.match_indices(prefix) {
+            let line = code[..at].matches('\n').count() + 1;
+            let rest = code[at + prefix.len()..].trim_start();
+            if let Some(group) = rest.strip_prefix('{') {
+                let (mut depth, mut end) = (1, group.len());
+                for (i, c) in group.char_indices() {
+                    match c {
+                        '{' => depth += 1,
+                        '}' => depth -= 1,
+                        _ => {}
+                    }
+                    if depth == 0 {
+                        end = i;
+                        break;
+                    }
+                }
+                for name in group[..end].split(|c| !word(c)).filter(|w| !w.is_empty()) {
+                    found.push((line, name.to_owned()));
+                }
+            } else if rest.starts_with('*') {
+                if prefix == "crate::" {
+                    found.push((line, "*".to_owned()));
+                }
+            } else if let Some(name) = rest.split(|c| !word(c)).next().filter(|w| !w.is_empty()) {
+                found.push((line, name.to_owned()));
+            }
+        }
+    }
+    found
+}
+
+/// Every place in the code of one of the four modules that names a module above it, a flow, or
+/// the whole crate root (`crate::*`), as `(unit, name, path:line)`.
+fn calls_upward() -> Vec<(&'static str, String, String)> {
+    let rank = |name: &str| MODULES.iter().position(|m| *m == name);
+    let mut found = Vec::new();
+    for file in source_files().into_iter().filter(|f| !is_test_code(f)) {
+        let unit = unit_of(&file);
+        let Some(own) = rank(unit.name) else { continue };
+        let text = fs::read_to_string(&file).expect("a Rust file is UTF-8");
+        for (line, name) in crate_paths(&text) {
+            let above = rank(&name).is_some_and(|other| other > own);
+            if above || FLOWS.contains(&name.as_str()) || name == "*" {
+                found.push((unit.name, name, format!("{}:{line}", shown(&file))));
+            }
+        }
+    }
+    found
+}
+
+#[test]
+fn the_path_scan_sees_grouped_wrapped_nested_and_glob_imports() {
+    let text = "use crate::content::x;\n\
+                use crate::{\n    assessment,\n    gradebook::{self, y},\n};\n\
+                // use crate::teaching::ignored;\n\
+                use crate::*;\n\
+                use super::service;\n";
+    let named: Vec<(usize, String)> = crate_paths(text);
+    let words = |line: usize| -> Vec<&str> {
+        named
+            .iter()
+            .filter(|(at, _)| *at == line)
+            .map(|(_, word)| word.as_str())
+            .collect()
+    };
+    assert_eq!(words(1), ["content"]);
+    assert!(words(2).contains(&"assessment") && words(2).contains(&"gradebook"));
+    assert!(
+        named.iter().all(|(_, word)| word != "teaching"),
+        "{named:?}"
+    );
+    assert_eq!(
+        words(7),
+        ["*"],
+        "a glob of the crate root hides what it takes"
+    );
+}
+
+#[test]
+fn a_module_calls_only_modules_below_it() {
+    let found: Vec<String> = calls_upward()
+        .into_iter()
+        .filter(|(unit, name, _)| !RATCHET_FLOWS.contains(&(*unit, name.as_str())))
+        .map(|(unit, name, at)| format!("{at}: {unit} names {name}"))
+        .collect();
+    assert!(
+        found.is_empty(),
+        "a module names one above it (teaching < content < assessment < gradebook), a flow of \
+         `learning`, or the crate root as a glob; the call belongs in a flow (ADR-0093):\n{}",
+        found.join("\n")
+    );
+}
+
+#[test]
+fn the_flows_a_module_still_names_are_listed_and_only_those() {
+    let calls = calls_upward();
+    let stale: Vec<String> = RATCHET_FLOWS
+        .iter()
+        .filter(|(unit, flow)| !calls.iter().any(|(u, name, _)| u == unit && name == flow))
+        .map(|(unit, flow)| format!("{unit} no longer names {flow}"))
+        .collect();
+    assert!(
+        stale.is_empty(),
+        "delete these entries from RATCHET_FLOWS in architecture.rs; it only shrinks:\n{}",
+        stale.join("\n")
+    );
+}
+
+#[test]
+fn a_module_never_names_the_schema_of_a_module_above_it() {
+    let mut found = Vec::new();
+    for file in source_files().into_iter().filter(|f| !is_test_code(f)) {
+        let unit = unit_of(&file);
+        if !MODULES.contains(&unit.name) {
+            continue;
+        }
+        let text = fs::read_to_string(&file).expect("a Rust file is UTF-8");
+        for (number, line) in text.lines().enumerate().filter(|(_, l)| !is_comment(l)) {
+            for name in qualified_names(line) {
+                let schema = name.split_once('.').map_or("", |(schema, _)| schema);
+                if layer_of_schema(schema).is_some_and(|layer| layer > unit.layer) {
+                    found.push(format!(
+                        "{}:{}: {name} (in {})",
+                        shown(&file),
+                        number + 1,
+                        unit.name
+                    ));
+                }
+            }
+        }
+    }
+    assert!(
+        found.is_empty(),
+        "a module names a table of a module above it, in any file (ADR-0093):\n{}",
         found.join("\n")
     );
 }

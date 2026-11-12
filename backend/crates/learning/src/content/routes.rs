@@ -4,10 +4,10 @@
 use access::ActorSource;
 use api_types::{
     ContentModule, ContentStatus, ContentSubModule, ContentTree, CourseRef, CreateItemRequest,
-    CreateModuleRequest, EditorProfiles, FieldError, HitKind, HitStatus, Item, ItemMeta,
-    ItemMetaMap, ItemRevision, ItemSummary, Module, MyWork, NewAssignment, ProblemDetails,
-    PublishModuleRequest, ReorderItemsRequest, ReorderModulesRequest, SearchHit as ApiHit,
-    SearchQuery, SearchResults, UpdateItemRequest, UpdateModuleRequest, WorkCourse, WorkItem,
+    CreateModuleRequest, EditorProfiles, FieldError, HitKind, HitStatus, Item, ItemRevision,
+    ItemSummary, Module, NewAssignment, ProblemDetails, PublishModuleRequest, ReorderItemsRequest,
+    ReorderModulesRequest, SearchHit as ApiHit, SearchQuery, SearchResults, UpdateItemRequest,
+    UpdateModuleRequest,
 };
 use axum::Json;
 use axum::extract::FromRef;
@@ -23,7 +23,7 @@ use super::model::{
     SettingsPatch, SubmissionSettings,
 };
 use super::rules::{Condition, Node};
-use super::service::{self, ContentError, ItemRules};
+use super::service::{self, ContentError};
 use crate::LearningState;
 use access::Actor;
 use common::{ApiError, ValidJson, ValidQuery};
@@ -36,17 +36,14 @@ where
     OpenApiRouter::new()
         .routes(routes!(create_module))
         .routes(routes!(get_tree))
-        .routes(routes!(update_module, delete_module))
+        .routes(routes!(update_module))
         .routes(routes!(reorder_modules))
         .routes(routes!(publish_module))
         .routes(routes!(create_item, reorder_items))
-        .routes(routes!(get_item, update_item, delete_item))
         .routes(routes!(publish_item))
         .routes(routes!(mark_done, unmark_done))
         .routes(routes!(get_revision))
         .routes(routes!(publish_revision))
-        .routes(routes!(get_item_meta))
-        .routes(routes!(get_my_work))
         .routes(routes!(search))
         .routes(routes!(get_editor_profiles))
 }
@@ -108,10 +105,6 @@ impl From<ContentError> for ApiError {
             ContentError::ItemNotPublished => {
                 Self::Conflict("the item is a draft: publish it first")
             }
-            ContentError::HasGrades => Self::Conflict("it has grades: clear them before deleting"),
-            ContentError::HasSubmissions => {
-                Self::Conflict("it has submitted work: it cannot be deleted")
-            }
             ContentError::BadQuery => Self::invalid_field("q", "must be 2 to 100 characters"),
             ContentError::StructureFrozen => {
                 Self::Conflict("work was submitted: the questions or fields can no longer change")
@@ -123,8 +116,6 @@ impl From<ContentError> for ApiError {
             ContentError::CompletesItself => Self::Conflict(
                 "an assignment is done when it is submitted or graded, not when it is marked",
             ),
-            ContentError::Gradebook(e) => e.into(),
-            ContentError::Assessment(e) => e.into(),
             ContentError::Teaching(e) => e.into(),
             ContentError::Events(e) => e.into(),
             ContentError::Db(e) => Self::from_db("content", &e),
@@ -279,7 +270,8 @@ fn api_assignment_summary(assignment: model::AssignmentSummary) -> api_types::As
     }
 }
 
-fn api_item(item: model::Item) -> Item {
+/// An item as the API shows it; the flows above `content` that answer with one use it too.
+pub fn api_item(item: model::Item) -> Item {
     let (access_rule, standing) = api_access(item.access);
     Item {
         id: item.id,
@@ -411,14 +403,6 @@ fn domain_assignment(new: NewAssignment) -> Result<model::Assignment, ApiError> 
 }
 
 /// A 422 about the assignment part of a create request names its field under `assignment.`.
-/// What item writes read from the configuration.
-fn rules(state: &LearningState) -> ItemRules<'_> {
-    ItemRules {
-        scale: state.config.institution.grading_scale,
-        profiles: &state.editor,
-    }
-}
-
 fn under_assignment(error: ContentError) -> ApiError {
     // The document, and the file of a `file` item, are the item's own `body`, not part of the
     // assignment object.
@@ -551,38 +535,6 @@ async fn update_module(
     let module = service::update_module(&mut tx, &actor, id, patch).await?;
     tx.commit().await.map_err(ContentError::from)?;
     Ok(Json(api_module(module)))
-}
-
-/// Deletes a module together with its sub-modules and all their items. Drafts of students and
-/// empty grade rows go with it. It is refused (409) when an assignment below has a grade or a
-/// submitted attempt.
-#[utoipa::path(
-    delete,
-    path = "/modules/{id}",
-    tag = "content",
-    security(("cookie" = []), ("bearer" = [])),
-    params(("id" = Uuid, Path, description = "Module id")),
-    responses(
-        (status = 204, description = "Deleted"),
-        (status = 401, description = "Not logged in", body = ProblemDetails,
-            content_type = "application/problem+json"),
-        (status = 403, description = "The caller may not change this course's content",
-            body = ProblemDetails, content_type = "application/problem+json"),
-        (status = 404, description = "No such module, or not visible to the caller",
-            body = ProblemDetails, content_type = "application/problem+json"),
-        (status = 409, description = "An assignment below has a grade or a submitted attempt",
-            body = ProblemDetails, content_type = "application/problem+json"),
-    )
-)]
-async fn delete_module(
-    State(state): State<LearningState>,
-    actor: Actor,
-    Path(id): Path<Uuid>,
-) -> Result<StatusCode, ApiError> {
-    let mut tx = state.db.begin().await.map_err(ContentError::from)?;
-    service::delete_module(&mut tx, &actor, id).await?;
-    tx.commit().await.map_err(ContentError::from)?;
-    Ok(StatusCode::NO_CONTENT)
 }
 
 /// Sets the order of the top-level modules, or of the sub-modules of `parent_id`.
@@ -738,7 +690,7 @@ async fn create_item(
         service::create_file_item(
             &mut tx,
             &actor,
-            rules(&state),
+            state.item_rules(),
             module_id,
             title,
             request.body,
@@ -748,7 +700,7 @@ async fn create_item(
         service::create_item(
             &mut tx,
             &actor,
-            rules(&state),
+            state.item_rules(),
             module_id,
             title,
             request.body,
@@ -795,67 +747,11 @@ async fn reorder_items(
     Ok(StatusCode::NO_CONTENT)
 }
 
-/// One `text` item or assignment with its body (and, for an assignment, its `assignment` part). A
-/// student gets 404 unless the course, every module above it and the item are published and not
-/// scheduled later.
-#[utoipa::path(
-    get,
-    path = "/items/{id}",
-    tag = "content",
-    security(("cookie" = []), ("bearer" = [])),
-    params(("id" = Uuid, Path, description = "Item id")),
-    responses(
-        (status = 200, description = "The item", body = Item),
-        (status = 401, description = "Not logged in", body = ProblemDetails,
-            content_type = "application/problem+json"),
-        (status = 404, description = "No such item, or not visible to the caller",
-            body = ProblemDetails, content_type = "application/problem+json"),
-    )
-)]
-async fn get_item(
-    State(state): State<LearningState>,
-    actor: Actor,
-    Path(id): Path<Uuid>,
-) -> Result<Json<Item>, ApiError> {
-    let mut conn = state.db.acquire().await.map_err(ContentError::from)?;
-    let item = service::get_item(&mut conn, &actor, id).await?;
-    Ok(Json(api_item(item)))
-}
-
-/// Changes an item's title, body and/or `publish_at` (`null` clears it). A `body` replaces the
-/// whole body. The title and body of a published item are a working copy: students keep reading the
-/// published one until `POST /items/{id}/revision/publish` (ADR-0049). An assignment's `config`,
-/// points and deadline settings apply at once.
-///
-/// For an assignment `config`, `max_points` and `is_bonus` may change too; the grading scale
-/// limits apply when `max_points` is raised or a bonus assignment becomes regular. `class_on` is
-/// for `no_submission` assignments. They are rejected for a `text` item. `type` and `kind` cannot change: sending them has no effect.
-#[utoipa::path(
-    patch,
-    path = "/items/{id}",
-    tag = "content",
-    security(("cookie" = []), ("bearer" = [])),
-    params(("id" = Uuid, Path, description = "Item id")),
-    request_body = UpdateItemRequest,
-    responses(
-        (status = 200, description = "The item", body = Item),
-        (status = 401, description = "Not logged in", body = ProblemDetails,
-            content_type = "application/problem+json"),
-        (status = 403, description = "The caller may not change this course's content",
-            body = ProblemDetails, content_type = "application/problem+json"),
-        (status = 404, description = "No such item, or not visible to the caller",
-            body = ProblemDetails, content_type = "application/problem+json"),
-        (status = 422, description = "Invalid title or timestamp, a body that is not a JSON object, assignment fields on a `text` item, an unknown config field, invalid points, or points the grading scale does not allow",
-            body = ProblemDetails, content_type = "application/problem+json"),
-    )
-)]
-async fn update_item(
-    State(state): State<LearningState>,
-    actor: Actor,
-    Path(id): Path<Uuid>,
-    ValidJson(request): ValidJson<UpdateItemRequest>,
-) -> Result<Json<Item>, ApiError> {
-    let patch = ItemPatch {
+/// The patch an update request asks for, parsed. Every field that cannot be parsed is the
+/// client's to fix (422). The route of `PATCH /items/{id}` lives in `learning::items`, which
+/// answers with [`api_item`].
+pub fn item_patch(request: UpdateItemRequest) -> Result<ItemPatch, ApiError> {
+    Ok(ItemPatch {
         title: request.title.as_deref().map(title).transpose()?,
         body: request.body,
         publish_at: request.publish_at,
@@ -876,42 +772,7 @@ async fn update_item(
         },
         class_on: request.class_on,
         access_rule: request.access_rule.map(domain_rule),
-    };
-    let mut tx = state.db.begin().await.map_err(ContentError::from)?;
-    let item = service::update_item(&mut tx, &actor, rules(&state), id, patch).await?;
-    tx.commit().await.map_err(ContentError::from)?;
-    Ok(Json(api_item(item)))
-}
-
-/// Deletes a `text` item or an assignment. Drafts of students and empty grade rows go with an
-/// assignment. It is refused (409) when the assignment has a grade or a submitted attempt.
-#[utoipa::path(
-    delete,
-    path = "/items/{id}",
-    tag = "content",
-    security(("cookie" = []), ("bearer" = [])),
-    params(("id" = Uuid, Path, description = "Item id")),
-    responses(
-        (status = 204, description = "Deleted"),
-        (status = 401, description = "Not logged in", body = ProblemDetails,
-            content_type = "application/problem+json"),
-        (status = 403, description = "The caller may not change this course's content",
-            body = ProblemDetails, content_type = "application/problem+json"),
-        (status = 404, description = "No such item, or not visible to the caller",
-            body = ProblemDetails, content_type = "application/problem+json"),
-        (status = 409, description = "The assignment has a grade or a submitted attempt",
-            body = ProblemDetails, content_type = "application/problem+json"),
-    )
-)]
-async fn delete_item(
-    State(state): State<LearningState>,
-    actor: Actor,
-    Path(id): Path<Uuid>,
-) -> Result<StatusCode, ApiError> {
-    let mut tx = state.db.begin().await.map_err(ContentError::from)?;
-    service::delete_item(&mut tx, &actor, id).await?;
-    tx.commit().await.map_err(ContentError::from)?;
-    Ok(StatusCode::NO_CONTENT)
+    })
 }
 
 /// A student marks a text or file item done (ADR-0092). Marking it again changes nothing. An
@@ -1073,131 +934,6 @@ async fn publish_revision(
     let revision = service::publish_revision(&mut tx, &actor, id).await?;
     tx.commit().await.map_err(ContentError::from)?;
     Ok(Json(api_revision(revision)))
-}
-
-/// Counts are far below `u32::MAX`; a database that disagreed would still not overflow the field.
-fn count(n: i64) -> u32 {
-    u32::try_from(n).unwrap_or(u32::MAX)
-}
-
-fn api_work_status(status: model::WorkStatus) -> api_types::WorkStatus {
-    match status {
-        model::WorkStatus::NotStarted => api_types::WorkStatus::NotStarted,
-        model::WorkStatus::Draft => api_types::WorkStatus::Draft,
-        model::WorkStatus::Submitted => api_types::WorkStatus::Submitted,
-        model::WorkStatus::Graded => api_types::WorkStatus::Graded,
-        model::WorkStatus::Missed => api_types::WorkStatus::Missed,
-        model::WorkStatus::InClass => api_types::WorkStatus::InClass,
-    }
-}
-
-fn api_meta(facts: model::ItemFacts) -> ItemMeta {
-    let mut meta = ItemMeta {
-        read_minutes: facts.read_minutes.map(count),
-        class_on: facts.class_on,
-        edited: facts.edited,
-        ..ItemMeta::default()
-    };
-    if let Some(work) = facts.work {
-        meta.status = Some(api_work_status(work.status));
-        meta.score = work.score.map(|score| format!("{score:.2}"));
-        meta.draft_saved_at = work.draft_saved_at;
-        meta.published_at = work.published_at;
-        meta.attempts_used = Some(count(work.attempts_used));
-    }
-    if let Some(staff) = facts.staff {
-        meta.submitted = Some(count(staff.submitted));
-        meta.to_grade = Some(count(staff.to_grade));
-        meta.draft_grades = Some(count(staff.draft_grades));
-        meta.graded_total = Some(count(staff.graded_total));
-    }
-    meta
-}
-
-/// The facts of every item of the course that the tree does not carry, by item id.
-///
-/// Everyone gets the reading time of a lecture and the class day of in-class work. Staff also get
-/// `edited` and the counts of what to grade; a student gets their own standing, with published
-/// values only.
-#[utoipa::path(
-    get,
-    path = "/courses/{id}/item-meta",
-    tag = "content",
-    security(("cookie" = []), ("bearer" = [])),
-    params(("id" = Uuid, Path, description = "Course id")),
-    responses(
-        (status = 200, description = "The facts by item id", body = ItemMetaMap),
-        (status = 401, description = "Not logged in", body = ProblemDetails,
-            content_type = "application/problem+json"),
-        (status = 404, description = "No such course, or not visible to the caller",
-            body = ProblemDetails, content_type = "application/problem+json"),
-    )
-)]
-async fn get_item_meta(
-    State(state): State<LearningState>,
-    actor: Actor,
-    Path(id): Path<Uuid>,
-) -> Result<Json<ItemMetaMap>, ApiError> {
-    let mut conn = state.db.acquire().await.map_err(ContentError::from)?;
-    let facts = service::item_meta(&mut conn, &actor, id).await?;
-    Ok(Json(ItemMetaMap {
-        items: facts
-            .into_iter()
-            .map(|(id, facts)| (id.to_string(), api_meta(facts)))
-            .collect(),
-    }))
-}
-
-/// Every assignment of the courses the caller studies in, with the caller's own standing on it
-/// (ADR-0052). Only what students can open, with published titles, scores and times.
-#[utoipa::path(
-    get,
-    path = "/me/work",
-    tag = "content",
-    security(("cookie" = []), ("bearer" = [])),
-    responses(
-        (status = 200, description = "The caller's courses and work", body = MyWork),
-        (status = 401, description = "Not logged in", body = ProblemDetails,
-            content_type = "application/problem+json"),
-    )
-)]
-async fn get_my_work(
-    State(state): State<LearningState>,
-    actor: Actor,
-) -> Result<Json<MyWork>, ApiError> {
-    let mut conn = state.db.acquire().await.map_err(ContentError::from)?;
-    let work = service::my_work(&mut conn, &actor, chrono::Utc::now()).await?;
-    Ok(Json(MyWork {
-        courses: work
-            .courses
-            .into_iter()
-            .map(|card| WorkCourse {
-                id: card.course.id,
-                code: card.code,
-                title: card.course.title,
-                term_name: card.term_name,
-                owner_name: card.owner_name,
-                owner_surname: card.owner_surname,
-            })
-            .collect(),
-        items: work
-            .items
-            .into_iter()
-            .map(|entry| WorkItem {
-                assignment_id: entry.assignment_id,
-                course_id: entry.course_id,
-                title: entry.title,
-                assignment_type: entry.assignment_type.as_str().to_owned(),
-                due_at: entry.due_at,
-                class_on: entry.class_on.map(|day| day.to_string()),
-                max_points: entry.max_points.to_string(),
-                status: api_work_status(entry.status),
-                score: entry.score.map(|score| format!("{score:.2}")),
-                published_at: entry.published_at,
-                draft_saved_at: entry.draft_saved_at,
-            })
-            .collect(),
-    }))
 }
 
 /// Courses, lectures and assignments of the caller's courses that contain `q` (2 to 100

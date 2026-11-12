@@ -49,11 +49,17 @@ behind a Cargo feature, and `server` and `vumlo-cli` name it in exactly one plac
 - **Reads across layers:** a layer reads the tables of its own layer, and those of a lower layer **only through a view
   that layer declared** (`auth.people`, `org.term_list`, `org.group_list`, `org.subgroup_list`, `events.audit_entries`,
   and `teaching.effective_members` for the roster). It never names the schema of a higher layer. Inside `learning`
-  the four modules may read one another (the gradebook is a read model over content and assessment). Declaring a view
-  is a migration and a line in `architecture.rs`.
+  the four modules are stacked `teaching < content < assessment < gradebook`, and the same rule holds between them:
+  a module never names the schema or the Rust path of one above it, and reads those below it only through the views
+  they declare (`content.item_list`, `assessment.submission_index`, `assessment.submitted_attempts`,
+  `gradebook.published_grades`, ...; `architecture.rs` fails the build otherwise). A view leaves out what the readers
+  above must not see; sqlx cannot tell that a view column is not null, so a query that returns one writes `"col!"`.
+  Declaring a view is a migration and a line in `architecture.rs`.
 - **What needs the data of several layers is a flow in `learning`**, one service function with one transaction
-  (`learning::people::update_user`), never a call from a lower crate to a higher one. `auth::apply_user_update` is
-  called only from `learning`.
+  (`learning::people::update_user`, `learning::courses::delete`, `learning::items::update_item`), never a call from a
+  lower crate to a higher one. A flow whose first half must lock before the others are asked is a pair
+  `begin_*` / `finish_*` in the owner (`content::begin_delete_item`), with the other modules' answers passed
+  between them. `auth::apply_user_update` is called only from `learning`.
 - SQL lives only in `repo.rs`. HTTP types (`axum`, DTOs) never appear in `service.rs` or `repo.rs`.
   Exception: the block document types of ADR-0025 and ADR-0027 live in `api-types` and `content` uses them directly.
 - A large file becomes a folder (`routes/courses.rs`, `routes/groups.rs`); the module's public surface does not change.

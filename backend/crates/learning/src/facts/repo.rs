@@ -20,16 +20,16 @@ pub async fn sources(
            FROM (
                SELECT s.assignment_id AS item_id, s.student_id, s.submitted_at,
                       NULL::numeric AS published_score
-               FROM assessment.submissions s
+               FROM assessment.submission_index s
                WHERE s.status = 'submitted'
                UNION ALL
                SELECT g.assignment_id, g.student_id, NULL::timestamptz, g.published_score
-               FROM gradebook.grades g
+               FROM gradebook.published_grades g
                WHERE g.published_score IS NOT NULL
            ) found
            WHERE ($1::uuid IS NULL OR item_id = $1) AND ($2::uuid IS NULL OR student_id = $2)
              AND ($3::uuid IS NULL
-                  OR item_id IN (SELECT id FROM content.items WHERE course_id = $3))
+                  OR item_id IN (SELECT id FROM content.item_list WHERE course_id = $3))
            GROUP BY item_id, student_id"#,
         item,
         student,

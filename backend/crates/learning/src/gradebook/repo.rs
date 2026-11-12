@@ -15,7 +15,9 @@ use super::model::{
 use access::Release;
 
 mod groups;
+mod work;
 pub use groups::*;
+pub use work::*;
 
 pub async fn is_student_member(
     conn: &mut PgConnection,
@@ -59,19 +61,20 @@ pub async fn to_grade(
 ) -> Result<Vec<ToGradeRow>, sqlx::Error> {
     sqlx::query_as!(
         ToGradeRow,
-        r#"SELECT s.student_id, u.name AS "student_name!", u.surname AS "student_surname!",
-                  s.assignment_id, i.title AS assignment_title, i.course_id,
+        r#"SELECT s.student_id AS "student_id!", u.name AS "student_name!",
+                  u.surname AS "student_surname!", s.assignment_id AS "assignment_id!",
+                  i.title AS "assignment_title!", i.course_id AS "course_id!",
                   s.submitted_at AS "submitted_at!", s.attempt AS "attempt!", a.max_attempts
-           FROM assessment.submissions s
-           JOIN content.items i ON i.id = s.assignment_id
-           JOIN content.assignments a ON a.item_id = i.id
+           FROM assessment.submission_index s
+           JOIN content.item_list i ON i.id = s.assignment_id
+           JOIN content.assignment_list a ON a.item_id = i.id
            JOIN teaching.effective_members m
              ON m.course_id = i.course_id AND m.user_id = s.student_id AND m.role = 'student'
            JOIN auth.people u ON u.id = s.student_id
            LEFT JOIN gradebook.grades g
              ON g.assignment_id = s.assignment_id AND g.student_id = s.student_id
            WHERE i.course_id = ANY($1) AND s.status = 'submitted' AND g.draft_score IS NULL
-             AND s.attempt = (SELECT max(x.attempt) FROM assessment.submissions x
+             AND s.attempt = (SELECT max(x.attempt) FROM assessment.submission_index x
                               WHERE x.assignment_id = s.assignment_id
                                 AND x.student_id = s.student_id AND x.status = 'submitted')
            ORDER BY s.submitted_at, s.id
@@ -90,11 +93,11 @@ pub async fn unpublished_grades(
 ) -> Result<Vec<UnpublishedRow>, sqlx::Error> {
     sqlx::query_as!(
         UnpublishedRow,
-        r#"SELECT g.assignment_id, i.title AS assignment_title, i.course_id,
+        r#"SELECT g.assignment_id, i.title AS "assignment_title!", i.course_id AS "course_id!",
                   count(*) AS "draft_count!", (a.type = 'quiz') AS "auto_scored!"
            FROM gradebook.grades g
-           JOIN content.items i ON i.id = g.assignment_id
-           JOIN content.assignments a ON a.item_id = i.id
+           JOIN content.item_list i ON i.id = g.assignment_id
+           JOIN content.assignment_list a ON a.item_id = i.id
            JOIN teaching.effective_members m
              ON m.course_id = i.course_id AND m.user_id = g.student_id AND m.role = 'student'
            WHERE i.course_id = ANY($1)
@@ -116,8 +119,9 @@ pub async fn deadlines(
 ) -> Result<Vec<DeadlineRow>, sqlx::Error> {
     sqlx::query_as!(
         DeadlineRow,
-        r#"SELECT a.item_id AS assignment_id, i.title, i.course_id, a.due_at AS "due_at!",
-                  (SELECT count(DISTINCT s.student_id) FROM assessment.submissions s
+        r#"SELECT a.item_id AS "assignment_id!", i.title AS "title!", i.course_id AS "course_id!",
+                  a.due_at AS "due_at!",
+                  (SELECT count(DISTINCT s.student_id) FROM assessment.submission_index s
                    JOIN teaching.effective_members m
                      ON m.course_id = i.course_id AND m.user_id = s.student_id
                     AND m.role = 'student'
@@ -125,8 +129,8 @@ pub async fn deadlines(
                   (SELECT count(*) FROM teaching.effective_members m
                    WHERE m.course_id = i.course_id AND m.role = 'student') AS "total!",
                   (i.status = 'draft') AS "not_open!"
-           FROM content.assignments a
-           JOIN content.items i ON i.id = a.item_id
+           FROM content.assignment_list a
+           JOIN content.item_list i ON i.id = a.item_id
            WHERE i.course_id = ANY($1) AND a.due_at >= $2
            ORDER BY a.due_at, i.id"#,
         course_ids,
@@ -143,17 +147,15 @@ pub async fn unpublished_content(
 ) -> Result<Vec<UnpublishedContentRow>, sqlx::Error> {
     sqlx::query_as!(
         UnpublishedContentRow,
-        r#"SELECT i.id AS item_id, i.title, i.course_id,
+        r#"SELECT i.id AS "item_id!", i.title AS "title!", i.course_id AS "course_id!",
                   (i.status = 'published') AS "edits!"
-           FROM content.items i
-           JOIN content.modules m ON m.id = i.module_id
-           LEFT JOIN content.modules p ON p.id = m.parent_id
+           FROM content.item_list i
+           JOIN content.module_list m ON m.id = i.module_id
+           LEFT JOIN content.module_list p ON p.id = m.parent_id
            WHERE i.course_id = ANY($1)
              AND ((i.status = 'draft' AND m.status = 'published'
                    AND (p.id IS NULL OR p.status = 'published'))
-                  OR (i.status = 'published'
-                      AND (i.title IS DISTINCT FROM i.published_title
-                           OR i.body IS DISTINCT FROM i.published_body)))
+                  OR i.edited)
            ORDER BY i.course_id, i.updated_at DESC, i.id"#,
         course_ids
     )
@@ -379,12 +381,12 @@ pub async fn publish_rows(
 /// its sub-modules, the items of one module by position. The order of `content::repo::tree`.
 pub async fn columns(conn: &mut PgConnection, course_id: Uuid) -> Result<Vec<Column>, sqlx::Error> {
     let rows = sqlx::query!(
-        r#"SELECT i.id AS assignment_id, i.title, a.max_points, a.is_bonus,
-                  i.status AS "status: ColumnStatus"
-           FROM content.assignments a
-           JOIN content.items i ON i.id = a.item_id
-           JOIN content.modules m ON m.id = i.module_id
-           LEFT JOIN content.modules p ON p.id = m.parent_id
+        r#"SELECT i.id AS "assignment_id!", i.title AS "title!", a.max_points AS "max_points!",
+                  a.is_bonus AS "is_bonus!", i.status AS "status!: ColumnStatus"
+           FROM content.assignment_list a
+           JOIN content.item_list i ON i.id = a.item_id
+           JOIN content.module_list m ON m.id = i.module_id
+           LEFT JOIN content.module_list p ON p.id = m.parent_id
            WHERE i.course_id = $1
            ORDER BY COALESCE(p.position, m.position), m.parent_id NULLS FIRST, m.position,
                     i.position"#,
@@ -430,7 +432,7 @@ pub async fn students(
                WHERE course_id = $1 AND role = 'student'
              UNION
                SELECT g.student_id FROM gradebook.grades g
-               JOIN content.items i ON i.id = g.assignment_id
+               JOIN content.item_list i ON i.id = g.assignment_id
                WHERE i.course_id = $1
                  AND (g.draft_score IS NOT NULL OR g.draft_feedback IS NOT NULL
                       OR g.published_score IS NOT NULL OR g.published_feedback IS NOT NULL)
@@ -464,7 +466,7 @@ pub async fn has_grades_of_student(
     sqlx::query_scalar!(
         r#"SELECT EXISTS (
                SELECT 1 FROM gradebook.grades g
-               JOIN content.items i ON i.id = g.assignment_id
+               JOIN content.item_list i ON i.id = g.assignment_id
                WHERE i.course_id = $1 AND g.student_id = $2
                  AND (g.draft_score IS NOT NULL OR g.draft_feedback IS NOT NULL
                       OR g.published_score IS NOT NULL OR g.published_feedback IS NOT NULL)
@@ -486,7 +488,7 @@ pub async fn has_published_grades(
     sqlx::query_scalar!(
         r#"SELECT EXISTS (
                SELECT 1 FROM gradebook.grades g
-               JOIN content.items i ON i.id = g.assignment_id
+               JOIN content.item_list i ON i.id = g.assignment_id
                WHERE i.course_id = $1 AND g.student_id = $2
                  AND (g.published_score IS NOT NULL OR g.published_feedback IS NOT NULL)
            ) AS "has!""#,
@@ -516,7 +518,7 @@ pub async fn cells(
                       IS DISTINCT FROM ROW(g.published_score, g.published_feedback)
                       AS "has_unpublished_changes!"
            FROM gradebook.grades g
-           JOIN content.items i ON i.id = g.assignment_id
+           JOIN content.item_list i ON i.id = g.assignment_id
            WHERE i.course_id = $1 AND g.student_id = ANY($2)"#,
         course_id,
         student_ids
@@ -568,7 +570,8 @@ pub async fn my_assignment_rows(
     open_at: DateTime<Utc>,
 ) -> Result<Vec<MyGradeRow>, sqlx::Error> {
     let rows = sqlx::query!(
-        r#"SELECT i.id AS assignment_id, i.published_title AS "title!", a.max_points, a.is_bonus,
+        r#"SELECT i.id AS "assignment_id!", i.published_title AS "title!",
+                  a.max_points AS "max_points!", a.is_bonus AS "is_bonus!",
                   COALESCE(p.id, m.id) AS "top_module!",
                   COALESCE(p.title, m.title) AS "top_module_title!",
                   gi.group_id AS "group_id?",
@@ -578,10 +581,10 @@ pub async fn my_assignment_rows(
                   i.status = 'published' AS "item_published!", i.publish_at AS item_publish_at,
                   m.status = 'published' AS "module_published!", m.publish_at AS module_publish_at,
                   p.status = 'published' AS "parent_published?", p.publish_at AS parent_publish_at
-           FROM content.assignments a
-           JOIN content.items i ON i.id = a.item_id
-           JOIN content.modules m ON m.id = i.module_id
-           LEFT JOIN content.modules p ON p.id = m.parent_id
+           FROM content.assignment_list a
+           JOIN content.item_list i ON i.id = a.item_id
+           JOIN content.module_list m ON m.id = i.module_id
+           LEFT JOIN content.module_list p ON p.id = m.parent_id
            LEFT JOIN gradebook.grades g ON g.assignment_id = a.item_id AND g.student_id = $2
            LEFT JOIN gradebook.group_items gi ON gi.assignment_id = a.item_id
            WHERE i.course_id = $1
@@ -679,8 +682,8 @@ pub async fn has_grades_in_module(
     sqlx::query_scalar!(
         r#"SELECT EXISTS (
                SELECT 1 FROM gradebook.grades g
-               JOIN content.items i ON i.id = g.assignment_id
-               JOIN content.modules m ON m.id = i.module_id
+               JOIN content.item_list i ON i.id = g.assignment_id
+               JOIN content.module_list m ON m.id = i.module_id
                WHERE (m.id = $1 OR m.parent_id = $1)
                  AND (g.draft_score IS NOT NULL OR g.draft_feedback IS NOT NULL
                       OR g.published_score IS NOT NULL OR g.published_feedback IS NOT NULL)
@@ -698,7 +701,7 @@ pub async fn has_grades_in_course(
     sqlx::query_scalar!(
         r#"SELECT EXISTS (
                SELECT 1 FROM gradebook.grades g
-               JOIN content.items i ON i.id = g.assignment_id
+               JOIN content.item_list i ON i.id = g.assignment_id
                WHERE i.course_id = $1
                  AND (g.draft_score IS NOT NULL OR g.draft_feedback IS NOT NULL
                       OR g.published_score IS NOT NULL OR g.published_feedback IS NOT NULL)
@@ -706,6 +709,24 @@ pub async fn has_grades_in_course(
         course_id
     )
     .fetch_one(conn)
+    .await
+}
+
+/// The students who have a value (a score or feedback, draft or published) in an assignment of
+/// the course.
+pub async fn students_with_values(
+    conn: &mut PgConnection,
+    course_id: Uuid,
+) -> Result<Vec<Uuid>, sqlx::Error> {
+    sqlx::query_scalar!(
+        r#"SELECT DISTINCT g.student_id FROM gradebook.grades g
+           JOIN content.item_list i ON i.id = g.assignment_id
+           WHERE i.course_id = $1
+             AND (g.draft_score IS NOT NULL OR g.draft_feedback IS NOT NULL
+                  OR g.published_score IS NOT NULL OR g.published_feedback IS NOT NULL)"#,
+        course_id
+    )
+    .fetch_all(conn)
     .await
 }
 
@@ -739,8 +760,8 @@ pub async fn purge_assignment(
 pub async fn purge_module(conn: &mut PgConnection, module_id: Uuid) -> Result<u64, sqlx::Error> {
     sqlx::query!(
         "DELETE FROM gradebook.group_items
-         WHERE assignment_id IN (SELECT i.id FROM content.items i
-                                 JOIN content.modules m ON m.id = i.module_id
+         WHERE assignment_id IN (SELECT i.id FROM content.item_list i
+                                 JOIN content.module_list m ON m.id = i.module_id
                                  WHERE m.id = $1 OR m.parent_id = $1)",
         module_id
     )
@@ -754,8 +775,8 @@ pub async fn purge_module(conn: &mut PgConnection, module_id: Uuid) -> Result<u6
     .await?;
     sqlx::query!(
         "DELETE FROM gradebook.grade_history
-         WHERE assignment_id IN (SELECT i.id FROM content.items i
-                                 JOIN content.modules m ON m.id = i.module_id
+         WHERE assignment_id IN (SELECT i.id FROM content.item_list i
+                                 JOIN content.module_list m ON m.id = i.module_id
                                  WHERE m.id = $1 OR m.parent_id = $1)",
         module_id
     )
@@ -763,8 +784,8 @@ pub async fn purge_module(conn: &mut PgConnection, module_id: Uuid) -> Result<u6
     .await?;
     let result = sqlx::query!(
         "DELETE FROM gradebook.grades
-         WHERE assignment_id IN (SELECT i.id FROM content.items i
-                                 JOIN content.modules m ON m.id = i.module_id
+         WHERE assignment_id IN (SELECT i.id FROM content.item_list i
+                                 JOIN content.module_list m ON m.id = i.module_id
                                  WHERE m.id = $1 OR m.parent_id = $1)",
         module_id
     )
@@ -790,14 +811,14 @@ pub async fn purge_course(conn: &mut PgConnection, course_id: Uuid) -> Result<u6
     .await?;
     sqlx::query!(
         "DELETE FROM gradebook.grade_history
-         WHERE assignment_id IN (SELECT id FROM content.items WHERE course_id = $1)",
+         WHERE assignment_id IN (SELECT id FROM content.item_list WHERE course_id = $1)",
         course_id
     )
     .execute(&mut *conn)
     .await?;
     let result = sqlx::query!(
         "DELETE FROM gradebook.grades
-         WHERE assignment_id IN (SELECT id FROM content.items WHERE course_id = $1)",
+         WHERE assignment_id IN (SELECT id FROM content.item_list WHERE course_id = $1)",
         course_id
     )
     .execute(conn)

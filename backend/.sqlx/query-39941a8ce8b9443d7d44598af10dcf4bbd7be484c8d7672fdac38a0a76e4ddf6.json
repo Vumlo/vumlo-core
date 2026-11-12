@@ -1,0 +1,112 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT s.id AS \"id!\", i.course_id AS \"course_id!\", s.assignment_id AS \"assignment_id!\",\n                  a.type AS \"assignment_type!\", s.student_id AS \"student_id!\",\n                  s.attempt AS \"attempt!\", s.content AS \"content!: Json<Map<String, Value>>\",\n                  s.submitted_at AS \"submitted_at!\"\n           FROM assessment.submitted_attempts s\n           JOIN content.item_list i ON i.id = s.assignment_id\n           JOIN content.assignment_list a ON a.item_id = s.assignment_id\n           WHERE s.id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id!",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "assessment.submitted_attempts",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "course_id!",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "content.item_list",
+            "name": "course_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "assignment_id!",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "assessment.submitted_attempts",
+            "name": "assignment_id"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "assignment_type!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "content.assignment_list",
+            "name": "type"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "student_id!",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "assessment.submitted_attempts",
+            "name": "student_id"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "attempt!",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "assessment.submitted_attempts",
+            "name": "attempt"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "content!: Json<Map<String, Value>>",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "assessment.submitted_attempts",
+            "name": "content"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "submitted_at!",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "assessment.submitted_attempts",
+            "name": "submitted_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "39941a8ce8b9443d7d44598af10dcf4bbd7be484c8d7672fdac38a0a76e4ddf6"
+}

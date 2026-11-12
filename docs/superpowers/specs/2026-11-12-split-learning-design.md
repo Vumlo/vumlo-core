@@ -51,6 +51,8 @@ byte-identical after each PR, and no existing test changes its assertions.
   `org`. `points.rs` moves into `content` (used by `content`, `gradebook`, `plugin_read`).
 - `architecture.rs` gets one `Unit` per crate with its own layer number (7 to 11; `plugins` and `server` move up).
   Its source scan also flags `crate::<higher module>::` imports during PR B, before Cargo does the same in PR C.
+  PR B is delivered in two steps: B1 removes every read and call that goes *up* the order (a ratchet list that
+  ended empty, then deleted), B2 declares the views for the reads that go *down* (`RATCHET_DOWN` shrinks to empty).
 - The `learning` error enum wraps the others, as it does for `teaching` today. The error variants `teaching` has for
   `content`, `assessment` and `gradebook` disappear with the upward calls.
 
@@ -65,8 +67,8 @@ Measured on `main` (non-test code): about 150 schema-qualified references cross 
 | `gradebook` | `teaching`, `content`, `assessment` | `effective_members`, `items`, `modules`, `assignments`, `submissions` |
 | `learning` (flows, `plugin_read`, `files`, `audit`) | all four | items, modules, assignments, item and submission files, submissions, announcements, tombstones, grades |
 
-Each becomes a view named for its purpose, declared in migration `0054` and listed in `DECLARED_VIEWS` (about ten).
-The exact set is drawn up by a ratchet script in PR B, which lists every cross-schema reference. Rules:
+Each becomes a view named for its purpose, declared in migration `0054` and listed in `DECLARED_VIEWS` (eleven were
+needed). The set was drawn up from the ratchet in `architecture.rs`, which listed every cross-schema reference. Rules:
 
 - A grades view exposes `published_*` columns only. A reader above `gradebook` cannot select a draft (CLAUDE.md §6).
   Staff reads of drafts go through `gradebook` functions.
@@ -158,8 +160,11 @@ Local checks are targeted (`CARGO_BUILD_JOBS=2`, one command at a time): fmt, cl
   one flow whose route is on the read path of every item; a test per item kind guards it.
 - **The global registry in tests.** Every test process that emits installs the registry once (a `Once` helper per
   crate with a `testing` feature, as `Actor::for_tests` does). A missing install fails loudly, which is the point.
-- **PR B is wide.** About 150 references change shape. The ratchet script lists them first, and the work goes by
-  reader crate, so each commit is green.
+- **PR B is wide.** About 150 references change shape. The ratchet in `architecture.rs` lists them first, and the
+  work goes by reader crate, so each commit is green. B1 (done) moved the read models that sat too low
+  (`/me/work`, the item facts and the figures of the cards into `gradebook`; the draft and deadline queries into
+  `content`) and made flows of everything that called up (`learning::courses`, `learning::items`); B2 declares the
+  views.
 - **PR C is mostly moves.** `git mv` first, edit after; `.sqlx/` is regenerated and checked.
 - **Ordering of subscribers** is registration order. If two subscribers of one event ever depend on each other, that
   is a sign they are one subscriber.

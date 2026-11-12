@@ -5,12 +5,14 @@
 pub mod assessment;
 pub mod audit;
 pub mod content;
+pub mod courses;
 mod enrollment;
 mod error;
 pub mod facts;
 pub mod files;
 pub mod gradebook;
 pub mod groups;
+pub mod items;
 pub mod people;
 pub mod plugin_read;
 mod points;

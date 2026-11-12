@@ -17,8 +17,8 @@ use sqlx::PgConnection;
 use uuid::Uuid;
 
 use super::model::{
-    Attempt, AutoTotal, Draft, DueDraft, FormFacts, MySubmission, QuizResult, Responses,
-    StudentSubmission, Window,
+    Attempt, AutoTotal, Draft, DueDraft, FormFacts, MySubmission, PublishedScore, QuizResult,
+    QuizResultStart, Responses, StudentSubmission, Window,
 };
 use super::repo;
 use crate::content::{
@@ -26,7 +26,6 @@ use crate::content::{
     FileRef, OnDeadline, OpenError, OpenedAssignment, Stage, distinct_ids,
 };
 use crate::files::{FileError, UsageOwner, ensure_usable, first_non_image};
-use crate::gradebook::{self, GradebookError};
 use crate::teaching::TeachingError;
 use access::Actor;
 use access::{self, AccessError, Action};
@@ -85,8 +84,6 @@ pub enum AssessmentError {
     /// before the grade is published (ADR-0050 point 8).
     #[error("nothing to show")]
     NothingToShow,
-    #[error(transparent)]
-    Gradebook(#[from] GradebookError),
     #[error(transparent)]
     Teaching(TeachingError),
     #[error(transparent)]
@@ -635,23 +632,41 @@ pub async fn form_facts(
     Ok(facts)
 }
 
-/// The caller's result of a quiz: their latest attempt, the server's score of each question and the
-/// published grade. Only once a score is published; before that, and for any other type, there is
-/// nothing to show (ADR-0050 point 8).
-pub async fn quiz_result(
+/// First half of the result of a quiz: authorizes the caller as a student who may see their
+/// grades, and locks the assignment so that the config does not change under the result. The
+/// flow (`learning::items::result`) then reads the published grade of the caller from the
+/// gradebook and calls [`finish_quiz_result`] (ADR-0050 point 8).
+pub async fn begin_quiz_result(
     conn: &mut PgConnection,
     actor: &Actor,
     assignment_id: Uuid,
-) -> Result<QuizResult, AssessmentError> {
+) -> Result<QuizResultStart, AssessmentError> {
     let opened = open(conn, actor, assignment_id).await?;
     access::authorize(actor, Action::ViewOwnGrades(opened.access))?;
     if opened.assignment_type != BuiltinType::Quiz {
         return Err(AssessmentError::NothingToShow);
     }
     let assignment = lock(conn, assignment_id).await?;
-    let published = gradebook::published_grade(conn, assignment_id, actor.user_id())
-        .await?
-        .ok_or(AssessmentError::NothingToShow)?;
+    Ok(QuizResultStart {
+        assignment_id,
+        assignment,
+    })
+}
+
+/// The caller's result of a quiz: their latest attempt, the server's score of each question and the
+/// published grade. Only once a score is published; before that there is nothing to show
+/// (ADR-0050 point 8). `published` is what the gradebook published for the caller, if anything.
+pub async fn finish_quiz_result(
+    conn: &mut PgConnection,
+    actor: &Actor,
+    start: QuizResultStart,
+    published: Option<PublishedScore>,
+) -> Result<QuizResult, AssessmentError> {
+    let QuizResultStart {
+        assignment_id,
+        assignment,
+    } = start;
+    let published = published.ok_or(AssessmentError::NothingToShow)?;
     let score = published.score.ok_or(AssessmentError::NothingToShow)?;
     let (attempt, scores) = repo::latest_with_scores(conn, assignment_id, actor.user_id())
         .await?
@@ -855,6 +870,15 @@ pub async fn has_submitted_in_course(
     course_id: Uuid,
 ) -> Result<bool, AssessmentError> {
     Ok(repo::has_submitted_in_course(conn, course_id).await?)
+}
+
+/// The students who submitted an attempt in the course. The caller has authorized (it asks for
+/// the roster page of staff).
+pub async fn students_with_attempts(
+    conn: &mut PgConnection,
+    course_id: Uuid,
+) -> Result<Vec<Uuid>, AssessmentError> {
+    Ok(repo::students_with_attempts(conn, course_id).await?)
 }
 
 /// Deletes the drafts of the assignment, for the delete that follows in the same transaction.

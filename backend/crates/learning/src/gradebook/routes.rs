@@ -29,6 +29,7 @@ use common::PageParams;
 use common::{ApiError, ValidJson, ValidQuery};
 
 mod groups;
+mod work;
 
 pub fn router<S>() -> OpenApiRouter<S>
 where
@@ -37,6 +38,7 @@ where
 {
     OpenApiRouter::new()
         .merge(groups::router())
+        .merge(work::router())
         .routes(routes!(save_grade))
         .routes(routes!(publish_grades))
         .routes(routes!(get_gradebook))
@@ -74,6 +76,7 @@ impl From<GradebookError> for ApiError {
                     .collect(),
             },
             GradebookError::Teaching(e) => e.into(),
+            GradebookError::Content(e) => e.into(),
             GradebookError::HasGrades => Self::Conflict("this has grades"),
             GradebookError::NoSuchGroup => Self::NotFound,
             GradebookError::WrongLayout => {

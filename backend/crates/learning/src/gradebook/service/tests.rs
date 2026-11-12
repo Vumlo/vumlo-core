@@ -16,6 +16,7 @@ use crate::content::{
     ItemRules, MaxPoints, SubmissionSettings,
 };
 use crate::teaching::{self, CourseTitle};
+use crate::{LearningError, items};
 use access::CourseRole;
 use auth::{self, Email, NewUser, PersonName};
 use common::PageParams;
@@ -159,14 +160,13 @@ impl Fixture {
     fn lower_in_background(
         &self,
         points: &'static str,
-    ) -> tokio::task::JoinHandle<Result<(), ContentError>> {
+    ) -> tokio::task::JoinHandle<Result<(), LearningError>> {
         let (pool, owner, assignment) = (self.pool.clone(), self.owner.clone(), self.assignment);
         tokio::spawn(async move {
             let mut tx = pool.begin().await.unwrap();
-            let result =
-                content::update_item(&mut tx, &owner, rules(), assignment, lower_to(points))
-                    .await
-                    .map(|_| ());
+            let result = items::update_item(&mut tx, &owner, rules(), assignment, lower_to(points))
+                .await
+                .map(|_| ());
             if result.is_ok() {
                 tx.commit().await.unwrap();
             }
@@ -175,11 +175,11 @@ impl Fixture {
     }
 
     /// Deletes the assignment in its own transaction on a task and commits when it succeeds.
-    fn delete_in_background(&self) -> tokio::task::JoinHandle<Result<(), ContentError>> {
+    fn delete_in_background(&self) -> tokio::task::JoinHandle<Result<(), LearningError>> {
         let (pool, owner, assignment) = (self.pool.clone(), self.owner.clone(), self.assignment);
         tokio::spawn(async move {
             let mut tx = pool.begin().await.unwrap();
-            let result = content::delete_item(&mut tx, &owner, assignment).await;
+            let result = items::delete_item(&mut tx, &owner, assignment).await;
             if result.is_ok() {
                 tx.commit().await.unwrap();
             }
@@ -328,7 +328,10 @@ async fn a_lowering_waits_for_a_grade_write_and_then_sees_its_score() {
 
         let result = second.await.unwrap();
         assert!(
-            matches!(result, Err(ContentError::BelowGivenScores)),
+            matches!(
+                result,
+                Err(LearningError::Content(ContentError::BelowGivenScores))
+            ),
             "{result:?}"
         );
         assert_eq!(f.max_points().await, "10.00");
@@ -346,7 +349,7 @@ async fn a_grade_write_waits_for_a_lowering_and_is_checked_against_the_new_maxim
         let f = fixture(pool).await;
 
         let mut first = f.pool.begin().await.unwrap();
-        content::update_item(&mut first, &f.owner, rules(), f.assignment, lower_to("5"))
+        items::update_item(&mut first, &f.owner, rules(), f.assignment, lower_to("5"))
             .await
             .unwrap();
         let second = f.save_in_background("8");
@@ -389,7 +392,10 @@ async fn a_delete_waits_for_a_grade_write_and_then_sees_the_grade() {
         first.commit().await.unwrap();
 
         let result = second.await.unwrap();
-        assert!(matches!(result, Err(ContentError::HasGrades)), "{result:?}");
+        assert!(
+            matches!(result, Err(LearningError::HasGrades)),
+            "{result:?}"
+        );
         assert_eq!(f.grades().await, 1);
         assert_eq!(f.assignment_rows().await, 1);
     })
@@ -404,7 +410,7 @@ async fn a_grade_write_waits_for_a_delete_and_then_finds_the_assignment_gone() {
         let f = fixture(pool).await;
 
         let mut first = f.pool.begin().await.unwrap();
-        content::delete_item(&mut first, &f.owner, f.assignment)
+        items::delete_item(&mut first, &f.owner, f.assignment)
             .await
             .unwrap();
         let second = f.save_in_background("8");

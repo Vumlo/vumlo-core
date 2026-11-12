@@ -20,20 +20,18 @@ pub use admin::{
 pub use announcements::{
     delete_announcement, list_announcements, publish_announcement, update_announcement,
 };
-pub use cards::{course_cards, course_scope, student_courses};
+pub use cards::{course_scope, student_courses};
 pub use info::{
-    archive_course, course_candidates, course_info, course_people, create_from_template,
-    delete_course, list_templates, make_template, restore_course, update_course_info,
+    archive_course, begin_delete_course, course_candidates, course_header, course_people,
+    finish_delete_course, former_people, list_templates, new_course_from_template, new_template,
+    restore_course, update_course_info,
 };
 
 use super::model::{
     Course, CourseGroupLink, CourseKind, CourseTitle, CourseUpdate, Exclusion, MemberSource,
-    Membership, ModelError,
+    Membership, ModelError, Publication,
 };
 use super::repo;
-use crate::assessment::AssessmentError;
-use crate::content::ContentError;
-use crate::gradebook::GradebookError;
 use access::Actor;
 use access::{
     self, AccessError, Action, CourseAccess, CourseRole, CourseStatus, course_role_allowed,
@@ -91,18 +89,6 @@ pub enum TeachingError {
     /// The search text of the candidates has fewer than two characters.
     #[error("the search needs at least two characters")]
     QueryTooShort,
-    /// A grade has a value in the course, so it cannot be deleted (ADR-0048).
-    #[error("the course has grades")]
-    HasGrades,
-    /// An attempt was submitted in the course, so it cannot be deleted (ADR-0048).
-    #[error("the course has submitted work")]
-    HasSubmissions,
-    #[error(transparent)]
-    Content(Box<ContentError>),
-    #[error(transparent)]
-    Gradebook(Box<GradebookError>),
-    #[error(transparent)]
-    Assessment(Box<AssessmentError>),
     #[error(transparent)]
     Identity(#[from] AuthError),
     #[error(transparent)]
@@ -306,23 +292,24 @@ pub async fn list_members(
     Ok(Page::from_rows(rows, page.limit, |member| member.user_id))
 }
 
-/// Moves a draft course to published. Publishing a published course changes nothing.
+/// Moves a draft course to published. Publishing a published course changes nothing, and says
+/// so: the flow (`learning::courses::publish`) announces the assignments the course was hiding
+/// only when `Publication::changed` is set (ADR-0091).
 pub async fn publish_course(
     conn: &mut PgConnection,
     actor: &Actor,
     course_id: Uuid,
-) -> Result<Course, TeachingError> {
+) -> Result<Publication, TeachingError> {
     let (course, access) = load(conn, actor, course_id, true).await?;
     access::authorize(actor, Action::PublishCourse(access))?;
     match course.status {
-        CourseStatus::Published => Ok(course),
+        CourseStatus::Published => Ok(Publication {
+            course,
+            changed: false,
+        }),
         CourseStatus::Archived => Err(TeachingError::NotPublishable),
         CourseStatus::Draft => {
             let published = repo::set_published(conn, course_id).await?;
-            // The course was what hid its published assignments from students (ADR-0091).
-            crate::content::announce_visible(conn, chrono::Utc::now(), Some(course_id))
-                .await
-                .map_err(|error| TeachingError::Content(Box::new(error)))?;
             events::audit_admin(
                 conn,
                 actor,
@@ -334,7 +321,10 @@ pub async fn publish_course(
                 },
             )
             .await?;
-            Ok(published)
+            Ok(Publication {
+                course: published,
+                changed: true,
+            })
         }
     }
 }

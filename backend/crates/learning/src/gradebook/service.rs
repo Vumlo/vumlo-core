@@ -28,7 +28,8 @@ use super::model::{
 use super::repo;
 
 mod groups;
-use crate::content::{self, OpenError, OpenedAssignment};
+mod work;
+use crate::content::{self, ContentError, OpenError, OpenedAssignment};
 use crate::teaching::{self, TeachingError};
 use access::Actor;
 use access::{self, AccessError, Action, CourseAccess, CourseRole, CourseStatus};
@@ -38,6 +39,7 @@ pub use groups::{
     GroupInput, SettingsPatch, create_group, delete_group, my_summary, place, save_group,
     structure, update_settings,
 };
+pub use work::{item_meta, my_work, student_next, student_progress, todo_counts};
 
 #[derive(Debug, thiserror::Error)]
 pub enum GradebookError {
@@ -75,6 +77,8 @@ pub enum GradebookError {
     TwelveScale,
     #[error(transparent)]
     Teaching(TeachingError),
+    #[error(transparent)]
+    Content(#[from] ContentError),
     #[error(transparent)]
     Events(#[from] EventsError),
     /// The workbook could not be written (ADR-0090).
@@ -623,6 +627,15 @@ pub async fn has_grades_in_course(
     course_id: Uuid,
 ) -> Result<bool, GradebookError> {
     Ok(repo::has_grades_in_course(conn, course_id).await?)
+}
+
+/// The students who have a score or feedback, draft or published, in the course. The caller has
+/// authorized (it asks for the roster page of staff).
+pub async fn students_with_values(
+    conn: &mut PgConnection,
+    course_id: Uuid,
+) -> Result<Vec<Uuid>, GradebookError> {
+    Ok(repo::students_with_values(conn, course_id).await?)
 }
 
 /// Deletes the empty grade rows of the assignment and their history, for the delete that follows

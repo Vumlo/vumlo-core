@@ -5,8 +5,8 @@
 use access::ActorSource;
 use api_types::{
     Attempt, AttemptsPage, FormResponseRow, FormResponses, LatestAttempt, MySubmission, PageQuery,
-    ProblemDetails, QuizResult, QuizResultQuestion, SaveDraftRequest, StudentName, SubmissionDraft,
-    SubmissionRow, SubmissionStatus, SubmissionsPage,
+    ProblemDetails, SaveDraftRequest, StudentName, SubmissionDraft, SubmissionRow,
+    SubmissionStatus, SubmissionsPage,
 };
 use axum::Json;
 use axum::extract::FromRef;
@@ -35,7 +35,6 @@ where
         .routes(routes!(submit))
         .routes(routes!(list_submissions))
         .routes(routes!(list_student_attempts))
-        .routes(routes!(get_result))
         .routes(routes!(get_responses))
 }
 
@@ -67,7 +66,6 @@ impl From<AssessmentError> for ApiError {
                 Self::Conflict("an exclusive option was taken by someone else")
             }
             AssessmentError::NothingToShow => Self::NotFound,
-            AssessmentError::Gradebook(e) => e.into(),
             AssessmentError::Document(errors) => Self::Unprocessable {
                 detail: "the request has invalid fields".to_owned(),
                 errors: errors.into_field_errors("content"),
@@ -370,54 +368,6 @@ async fn list_student_attempts(
     Ok(Json(AttemptsPage {
         items: attempts.items.into_iter().map(api_attempt).collect(),
         next_cursor: attempts.next.map(|id| id.to_string()),
-    }))
-}
-
-/// The caller's result of a quiz, once their grade is published (ADR-0050 point 8): the published
-/// score and feedback, what the server scored for each question, the caller's answers and, when
-/// the quiz shows its answers, the correct ones. Students of the course only.
-#[utoipa::path(
-    get,
-    path = "/assignments/{id}/result",
-    tag = "assessment",
-    security(("cookie" = []), ("bearer" = [])),
-    params(("id" = Uuid, Path, description = "Assignment id")),
-    responses(
-        (status = 200, description = "The result", body = QuizResult),
-        (status = 401, description = "Not logged in", body = ProblemDetails,
-            content_type = "application/problem+json"),
-        (status = 403, description = "The caller may see the assignment but is not a student of the course",
-            body = ProblemDetails, content_type = "application/problem+json"),
-        (status = 404, description = "No such quiz, not visible to the caller, or no grade published yet",
-            body = ProblemDetails, content_type = "application/problem+json"),
-    )
-)]
-async fn get_result(
-    State(state): State<LearningState>,
-    actor: Actor,
-    Path(assignment_id): Path<Uuid>,
-) -> Result<Json<QuizResult>, ApiError> {
-    let mut conn = state.db.acquire().await.map_err(AssessmentError::from)?;
-    let result = service::quiz_result(&mut conn, &actor, assignment_id).await?;
-    let points = |value: sqlx::types::Decimal| format!("{value:.2}");
-    Ok(Json(QuizResult {
-        score: points(result.score),
-        max_points: points(result.max_points),
-        published_at: result.published_at,
-        feedback: result.feedback,
-        attempt: result.attempt,
-        questions: result
-            .questions
-            .into_iter()
-            .map(|question| QuizResultQuestion {
-                id: question.id,
-                points: points(question.points),
-                got: question.got.map(points),
-                answer: question.answer,
-                correct: question.correct,
-                explanation: question.explanation,
-            })
-            .collect(),
     }))
 }
 
