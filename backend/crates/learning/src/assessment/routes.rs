@@ -52,6 +52,9 @@ impl From<AssessmentError> for ApiError {
             AssessmentError::WindowClosed => Self::Conflict("the submission window is closed"),
             AssessmentError::NoDraft => Self::Conflict("there is no draft to submit"),
             AssessmentError::AttemptLimit => Self::Conflict("the attempt limit is reached"),
+            AssessmentError::Locked => {
+                Self::Conflict("the assignment is locked until its conditions are met")
+            }
             AssessmentError::Concurrent => {
                 Self::Conflict("a concurrent submit took this attempt, retry")
             }

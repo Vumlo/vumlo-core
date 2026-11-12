@@ -19,12 +19,14 @@ use super::document::{
     plain_text, validate_document,
 };
 use super::model::{
-    Assignment, AssignmentType, BuiltinType, ContentModule, ContentSubModule, ContentTitle, Hit,
-    HitKind, Item, ItemFacts, ItemKind, ItemPatch, ItemStatus, MaxPoints, ModelError, Module,
-    ModulePatch, MyWork, OnDeadline, OpenedAssignment, Revision, SettingProblem, SettingsPatch,
-    WorkEntry, WorkFacts,
+    Access, Assignment, AssignmentType, BuiltinType, ContentModule, ContentSubModule, ContentTitle,
+    Hit, HitKind, Item, ItemFacts, ItemKind, ItemPatch, ItemStatus, ItemSummary, MaxPoints,
+    ModelError, Module, ModulePatch, MyWork, OnDeadline, OpenedAssignment, Revision,
+    SettingProblem, SettingsPatch, Standing, WorkEntry, WorkFacts,
 };
 use super::repo::{self, CopiedIds, ItemRow, ModuleRow};
+use super::rules::Node;
+use super::standing;
 use super::types::form;
 use crate::assessment::{self, AssessmentError};
 use crate::files::{self as file_service, FileError, UsageOwner};
@@ -96,6 +98,19 @@ pub enum ContentError {
     /// A revision can only be published for an item that is published (ADR-0049).
     #[error("the item is a draft: publish it first")]
     ItemNotPublished,
+    /// A condition of an access rule is not acceptable (ADR-0092); `field` is its path in the
+    /// request.
+    #[error("the access rule is not valid")]
+    Rule {
+        field: String,
+        message: &'static str,
+    },
+    /// A rule keeps the student from this item until they have done what it asks (ADR-0092).
+    #[error("the item is locked until its conditions are met")]
+    Locked,
+    /// An assignment is done by being submitted or graded, so it takes no mark (ADR-0092).
+    #[error("an assignment is done when it is submitted or graded, not when it is marked")]
+    CompletesItself,
     /// The settings break a rule once the change is applied (ADR-0035); one entry per field.
     #[error("the settings are invalid")]
     Settings(Vec<SettingProblem>),
@@ -246,15 +261,15 @@ async fn open_module(
     Ok((row, access))
 }
 
-/// Loads a module the actor may view and change.
+/// Loads a module the actor may view and change, with their access to its course.
 async fn manage_module(
     conn: &mut PgConnection,
     actor: &Actor,
     id: Uuid,
-) -> Result<ModuleRow, ContentError> {
+) -> Result<(ModuleRow, CourseAccess), ContentError> {
     let (row, access) = open_module(conn, actor, id).await?;
     access::authorize(actor, Action::EditContent(access))?;
-    Ok(row)
+    Ok((row, access))
 }
 
 /// Loads an item the actor may view.
@@ -272,15 +287,15 @@ async fn open_item(
     Ok((row, access))
 }
 
-/// Loads an item the actor may view and change.
+/// Loads an item the actor may view and change, with their access to its course.
 async fn manage_item(
     conn: &mut PgConnection,
     actor: &Actor,
     id: Uuid,
-) -> Result<ItemRow, ContentError> {
+) -> Result<(ItemRow, CourseAccess), ContentError> {
     let (row, access) = open_item(conn, actor, id).await?;
     access::authorize(actor, Action::EditContent(access))?;
-    Ok(row)
+    Ok((row, access))
 }
 
 /// May the actor change the item (`EditContent`)? An item they may not see is `ItemNotFound`; an
@@ -296,19 +311,23 @@ pub async fn authorize_edit_item(
 /// May the actor read the files the published copy (`published`) or the working copy of the item
 /// names (ADR-0069)? The published copy follows `ViewContent`, so a student gets nothing from a
 /// draft, a scheduled item or an unpublished module; the working copy needs `ManageContent`.
-/// An item the actor may not see is `false`, never an error.
+/// An item the actor may not see is `false`, never an error, and so is one that a rule still keeps
+/// from them (ADR-0092).
 pub async fn may_read_item_files(
     conn: &mut PgConnection,
     actor: &Actor,
     item_id: Uuid,
     published: bool,
 ) -> Result<bool, ContentError> {
-    let access = match open_item(conn, actor, item_id).await {
-        Ok((_, access)) => access,
+    let (row, access) = match open_item(conn, actor, item_id).await {
+        Ok(opened) => opened,
         Err(ContentError::ItemNotFound) => return Ok(false),
         Err(other) => return Err(other),
     };
-    Ok(published || access::authorize(actor, Action::ManageContent(access)).is_ok())
+    if is_locked(conn, actor, access, row.item.course_id, item_id).await? {
+        return Ok(false);
+    }
+    Ok(published || sees_drafts(actor, access))
 }
 
 /// The course access of an actor who wants to change the course's content.
@@ -452,9 +471,9 @@ pub async fn course_summary(
     course_id: Uuid,
 ) -> Result<CourseSummary, ContentError> {
     let access = teaching::course_access(conn, actor, course_id).await?;
-    let sees_drafts = access::authorize(actor, Action::ManageContent(access)).is_ok();
+    let staff = sees_drafts(actor, access);
     let (total_points, graded_items, changed_at) =
-        repo::course_summary(conn, course_id, (!sees_drafts).then(Utc::now)).await?;
+        repo::course_summary(conn, course_id, (!staff).then(Utc::now)).await?;
     Ok(CourseSummary {
         total_points,
         graded_items,
@@ -491,9 +510,93 @@ pub async fn get_tree(
     course_id: Uuid,
 ) -> Result<Vec<ContentModule>, ContentError> {
     let access = teaching::course_access(conn, actor, course_id).await?;
+    let mut tree = load_tree(conn, actor, course_id, access).await?;
+    attach_access(conn, actor, access, course_id, &mut tree).await?;
+    Ok(tree)
+}
+
+/// Whether the actor reads the working copy of a course: drafts, scheduled items and the rules.
+/// Staff do; a student reads what is open to them, and the rules only as where they stand.
+fn sees_drafts(actor: &Actor, access: CourseAccess) -> bool {
+    access::authorize(actor, Action::ManageContent(access)).is_ok()
+}
+
+/// Puts on every node of `tree` what its reader is told about the rules (ADR-0092): staff the rule
+/// that locks it, a student where they stand.
+async fn attach_access(
+    conn: &mut PgConnection,
+    actor: &Actor,
+    access: CourseAccess,
+    course_id: Uuid,
+    tree: &mut [ContentModule],
+) -> Result<(), sqlx::Error> {
+    if sees_drafts(actor, access) {
+        let rules = repo::rules_of_course(conn, course_id).await?;
+        standing::attach(tree, |node| standing::staff_access(&rules, node));
+    } else {
+        let standings = standing::student_standings(conn, course_id, actor.user_id(), tree).await?;
+        standing::attach(tree, |node| standing::student_access(&standings, node));
+    }
+    Ok(())
+}
+
+/// What the actor is told about one module or item: the rule that locks it (staff), or where the
+/// student stands on it.
+async fn node_access(
+    conn: &mut PgConnection,
+    actor: &Actor,
+    access: CourseAccess,
+    course_id: Uuid,
+    node: Node,
+) -> Result<Access, sqlx::Error> {
+    if sees_drafts(actor, access) {
+        let rules = repo::rules_of_course(conn, course_id).await?;
+        return Ok(standing::staff_access(&rules, node));
+    }
+    let standings = standings_of(conn, actor, access, course_id).await?;
+    Ok(standing::student_access(&standings, node))
+}
+
+/// Where a student stands on every module and item they can see in the course.
+async fn standings_of(
+    conn: &mut PgConnection,
+    actor: &Actor,
+    access: CourseAccess,
+    course_id: Uuid,
+) -> Result<HashMap<Node, Standing>, sqlx::Error> {
+    let tree = load_tree(conn, actor, course_id, access).await?;
+    standing::student_standings(conn, course_id, actor.user_id(), &tree).await
+}
+
+/// Whether a rule keeps the actor from the item. Never for staff, and never in a course that has
+/// no rules, which is decided by one cheap query.
+async fn is_locked(
+    conn: &mut PgConnection,
+    actor: &Actor,
+    access: CourseAccess,
+    course_id: Uuid,
+    item_id: Uuid,
+) -> Result<bool, sqlx::Error> {
+    if sees_drafts(actor, access) || !repo::course_has_rules(conn, course_id).await? {
+        return Ok(false);
+    }
+    let node = node_access(conn, actor, access, course_id, Node::Item(item_id)).await?;
+    Ok(node
+        .standing
+        .is_some_and(|standing| !standing.locked.is_empty()))
+}
+
+/// The tree of the course as the actor may see it, without what the rules add. Staff see all of
+/// it, a student only what is open to students now.
+async fn load_tree(
+    conn: &mut PgConnection,
+    actor: &Actor,
+    course_id: Uuid,
+    access: CourseAccess,
+) -> Result<Vec<ContentModule>, sqlx::Error> {
     let now = Utc::now();
-    let sees_drafts = access::authorize(actor, Action::ManageContent(access)).is_ok();
-    let rows = repo::tree(conn, course_id, (!sees_drafts).then_some(now)).await?;
+    let staff = sees_drafts(actor, access);
+    let rows = repo::tree(conn, course_id, (!staff).then_some(now)).await?;
 
     let mut top_level = Vec::new();
     let mut submodules_of: HashMap<Uuid, Vec<Module>> = HashMap::new();
@@ -551,11 +654,14 @@ pub async fn update_module(
     id: Uuid,
     patch: ModulePatch,
 ) -> Result<Module, ContentError> {
-    let row = manage_module(conn, actor, id).await?;
+    let (row, access) = manage_module(conn, actor, id).await?;
+    let course_id = row.module.course_id;
     if patch.is_empty() {
-        return Ok(row.module);
+        let mut module = row.module;
+        module.access = node_access(conn, actor, access, course_id, Node::Module(id)).await?;
+        return Ok(module);
     }
-    let module = repo::update_module(
+    let mut module = repo::update_module(
         conn,
         id,
         patch.title.as_ref().map(ContentTitle::as_str),
@@ -565,15 +671,20 @@ pub async fn update_module(
     .await?
     // Deleted while this request waited for the row: it is gone, not a failure (ADR-0039).
     .ok_or(ContentError::ModuleNotFound)?;
+    if let Some(inputs) = &patch.access_rule {
+        let tree = load_tree(conn, actor, course_id, access).await?;
+        standing::set_rule(conn, course_id, Node::Module(id), inputs, &tree).await?;
+    }
     audit(
         conn,
         actor,
         "content.module.update",
         "module",
         id,
-        module.course_id,
+        course_id,
     )
     .await?;
+    module.access = node_access(conn, actor, access, course_id, Node::Module(id)).await?;
     Ok(module)
 }
 
@@ -583,7 +694,7 @@ pub async fn delete_module(
     actor: &Actor,
     id: Uuid,
 ) -> Result<(), ContentError> {
-    let row = manage_module(conn, actor, id).await?;
+    let (row, _) = manage_module(conn, actor, id).await?;
     // Lock every assignment below first: a grade write in flight holds one of them, so the check
     // that follows, in a later statement, sees its grade (ADR-0028). The empty rows that are left
     // go with their history; the grades table has no foreign key to cascade through.
@@ -668,7 +779,7 @@ pub async fn publish_module(
     id: Uuid,
     cascade: bool,
 ) -> Result<Module, ContentError> {
-    let row = manage_module(conn, actor, id).await?;
+    let (row, access) = manage_module(conn, actor, id).await?;
     let published = repo::publish_module(conn, id).await?;
     if published.is_none() && repo::find_module(conn, id).await?.is_none() {
         return Err(ContentError::ModuleNotFound);
@@ -695,7 +806,9 @@ pub async fn publish_module(
         )
         .await?;
     }
-    Ok(published.unwrap_or(row.module))
+    let mut module = published.unwrap_or(row.module);
+    module.access = node_access(conn, actor, access, module.course_id, Node::Module(id)).await?;
+    Ok(module)
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -992,7 +1105,7 @@ async fn create(
     body: Option<Value>,
     mut assignment: Option<Assignment>,
 ) -> Result<Item, ContentError> {
-    let row = manage_module(conn, actor, module_id).await?;
+    let (row, _) = manage_module(conn, actor, module_id).await?;
     let course_id = row.module.course_id;
     if let Some(assignment) = &mut assignment {
         let kind = assignment.assignment_type;
@@ -1067,20 +1180,37 @@ pub fn editor_profiles<'a>(
     Ok(profiles)
 }
 
-/// An item as the actor may read it: staff get the working copy, a student the published title and
-/// body (ADR-0049).
+/// An item as the actor may read it: staff get the working copy and the rule that locks it, a
+/// student the published title and body (ADR-0049) and where they stand on it. An item that a rule
+/// still keeps closed to the student is its title only (ADR-0092).
 pub async fn get_item(
     conn: &mut PgConnection,
     actor: &Actor,
     id: Uuid,
 ) -> Result<Item, ContentError> {
     let (row, access) = open_item(conn, actor, id).await?;
-    let staff = access::authorize(actor, Action::ManageContent(access)).is_ok();
+    let staff = sees_drafts(actor, access);
+    let course_id = row.item.course_id;
     let mut item = if staff {
         row.item
     } else {
         row.item.as_seen_by_students()
     };
+    item.access = node_access(conn, actor, access, course_id, Node::Item(id)).await?;
+    // A locked item is its title and nothing else until the rule is met: no text, no file, no
+    // questions (ADR-0092).
+    if item
+        .access
+        .standing
+        .as_ref()
+        .is_some_and(|standing| !standing.locked.is_empty())
+    {
+        item.body = Map::new();
+        if let Some(assignment) = &mut item.assignment {
+            assignment.config = Map::new();
+        }
+        return Ok(item);
+    }
     if let Some(assignment) = &mut item.assignment {
         let kind = assignment.assignment_type;
         // A student never receives the answer key (ADR-0023, ADR-0050 point 6).
@@ -1120,7 +1250,7 @@ pub async fn publish_revision(
     actor: &Actor,
     id: Uuid,
 ) -> Result<Revision, ContentError> {
-    let row = manage_item(conn, actor, id).await?;
+    let (row, _) = manage_item(conn, actor, id).await?;
     if row.item.status != ItemStatus::Published {
         return Err(ContentError::ItemNotPublished);
     }
@@ -1170,23 +1300,33 @@ pub async fn item_meta(
     course_id: Uuid,
 ) -> Result<HashMap<Uuid, ItemFacts>, ContentError> {
     let access = teaching::course_access(conn, actor, course_id).await?;
-    let staff = access::authorize(actor, Action::ManageContent(access)).is_ok();
+    let staff = sees_drafts(actor, access);
     let tree = get_tree(conn, actor, course_id).await?;
-    let visible: HashSet<Uuid> = tree
+    let items: Vec<&ItemSummary> = tree
         .iter()
         .flat_map(|top| {
             top.items
                 .iter()
                 .chain(top.submodules.iter().flat_map(|s| s.items.iter()))
         })
+        .collect();
+    let mut facts: HashMap<Uuid, ItemFacts> = items
+        .iter()
+        .map(|item| (item.id, ItemFacts::default()))
+        .collect();
+    // How long a text takes to read is a fact about the text: not told of an item still locked.
+    let locked: HashSet<Uuid> = items
+        .iter()
+        .filter(|item| {
+            item.access
+                .standing
+                .as_ref()
+                .is_some_and(|standing| !standing.locked.is_empty())
+        })
         .map(|item| item.id)
         .collect();
-    let mut facts: HashMap<Uuid, ItemFacts> = visible
-        .iter()
-        .map(|id| (*id, ItemFacts::default()))
-        .collect();
     for (id, body) in repo::lecture_bodies(conn, course_id, staff).await? {
-        if let Some(entry) = facts.get_mut(&id) {
+        if let Some(entry) = facts.get_mut(&id).filter(|_| !locked.contains(&id)) {
             entry.read_minutes = read_minutes(&body);
         }
     }
@@ -1369,12 +1509,24 @@ pub async fn search(
         }
         let found =
             repo::search_items(conn, &ids, staff, &pattern, now, SEARCH_LIMIT as i64).await?;
+        let locked = if staff {
+            HashSet::new()
+        } else {
+            locked_items(conn, actor, &ids).await?
+        };
         for item in found {
             let Some(scoped) = scope.iter().find(|s| s.course.course.id == item.course_id) else {
                 continue;
             };
+            // A locked item is its title until its rule is met: its text is neither matched nor
+            // quoted (ADR-0092).
+            if locked.contains(&item.id) && !item.title_match {
+                continue;
+            }
             let mut words = Vec::new();
-            flat_text(&Value::Object(item.body.0), &mut words);
+            if !locked.contains(&item.id) {
+                flat_text(&Value::Object(item.body.0), &mut words);
+            }
             hits.push((
                 item.title_match,
                 Hit {
@@ -1405,6 +1557,31 @@ pub async fn search(
         .take(SEARCH_LIMIT)
         .map(|(_, hit)| hit)
         .collect())
+}
+
+/// The items, among those of the given courses, that a rule keeps from the actor (ADR-0092).
+async fn locked_items(
+    conn: &mut PgConnection,
+    actor: &Actor,
+    course_ids: &[Uuid],
+) -> Result<HashSet<Uuid>, ContentError> {
+    let mut locked = HashSet::new();
+    for &course_id in course_ids {
+        if !repo::course_has_rules(conn, course_id).await? {
+            continue;
+        }
+        let access = teaching::course_access(conn, actor, course_id).await?;
+        let standings = standings_of(conn, actor, access, course_id).await?;
+        locked.extend(
+            standings
+                .into_iter()
+                .filter_map(|(node, standing)| match node {
+                    Node::Item(id) if !standing.locked.is_empty() => Some(id),
+                    _ => None,
+                }),
+        );
+    }
+    Ok(locked)
 }
 
 /// Why [`open_assignment`] gave nothing.
@@ -1438,10 +1615,12 @@ pub async fn open_assignment(
     };
     let view = Path::new(row.module, row.module_parent).view(access, Some(row.item), Utc::now());
     access::authorize(actor, view).map_err(|_| OpenError::NotFound)?;
+    let locked = is_locked(conn, actor, access, row.course_id, assignment_id).await?;
     Ok(OpenedAssignment {
         course_id: row.course_id,
         assignment_type: row.assignment_type,
         access,
+        locked,
     })
 }
 
@@ -1484,9 +1663,12 @@ pub async fn update_item(
     id: Uuid,
     mut patch: ItemPatch,
 ) -> Result<Item, ContentError> {
-    let row = manage_item(conn, actor, id).await?;
+    let (row, access) = manage_item(conn, actor, id).await?;
+    let course_id = row.item.course_id;
     if patch.is_empty() {
-        return Ok(row.item);
+        let mut item = row.item;
+        item.access = node_access(conn, actor, access, course_id, Node::Item(id)).await?;
+        return Ok(item);
     }
     let is_assignment = row.item.kind == ItemKind::Assignment;
     if !is_assignment && patch.touches_assignment() {
@@ -1637,15 +1819,12 @@ pub async fn update_item(
             .await?;
         }
     }
-    audit(
-        conn,
-        actor,
-        "content.item.update",
-        "item",
-        id,
-        item.course_id,
-    )
-    .await?;
+    if let Some(inputs) = &patch.access_rule {
+        let tree = load_tree(conn, actor, course_id, access).await?;
+        standing::set_rule(conn, course_id, Node::Item(id), inputs, &tree).await?;
+    }
+    audit(conn, actor, "content.item.update", "item", id, course_id).await?;
+    item.access = node_access(conn, actor, access, course_id, Node::Item(id)).await?;
     Ok(item)
 }
 
@@ -1695,7 +1874,7 @@ pub async fn delete_item(
     actor: &Actor,
     id: Uuid,
 ) -> Result<(), ContentError> {
-    let row = manage_item(conn, actor, id).await?;
+    let (row, _) = manage_item(conn, actor, id).await?;
     if row.item.kind == ItemKind::Assignment {
         // The row lock first, then the grades in a later statement (see `delete_module`).
         repo::lock_assignment(conn, id).await?;
@@ -1731,7 +1910,7 @@ pub async fn reorder_items(
     module_id: Uuid,
     ids: &[Uuid],
 ) -> Result<(), ContentError> {
-    let row = manage_module(conn, actor, module_id).await?;
+    let (row, _) = manage_module(conn, actor, module_id).await?;
     let current = repo::item_ids(conn, module_id).await?;
     check_order(ids, &current)?;
     let rewritten = repo::reorder_items(conn, module_id, ids).await?;
@@ -1754,8 +1933,8 @@ pub async fn publish_item(
     actor: &Actor,
     id: Uuid,
 ) -> Result<Item, ContentError> {
-    let row = manage_item(conn, actor, id).await?;
-    match repo::publish_item(conn, id).await? {
+    let (row, access) = manage_item(conn, actor, id).await?;
+    let mut item = match repo::publish_item(conn, id).await? {
         Some(item) => {
             sync_published_files(conn, &item).await?;
             announce_visible(conn, Utc::now(), Some(item.course_id)).await?;
@@ -1769,16 +1948,51 @@ pub async fn publish_item(
                 item.course_id,
             )
             .await?;
-            Ok(item)
+            item
         }
         None => {
             // Already published, or deleted while this request waited.
             if repo::find_item(conn, id).await?.is_none() {
                 return Err(ContentError::ItemNotFound);
             }
-            Ok(row.item)
+            row.item
         }
+    };
+    item.access = node_access(conn, actor, access, item.course_id, Node::Item(id)).await?;
+    Ok(item)
+}
+
+/// The student marks a text or file item done (ADR-0092). Marking it again changes nothing. An
+/// assignment takes no mark, it is done by what the student submits or is graded, and an item that
+/// a rule still keeps closed cannot be marked, because the student has not read it.
+pub async fn mark_done(
+    conn: &mut PgConnection,
+    actor: &Actor,
+    id: Uuid,
+) -> Result<(), ContentError> {
+    let (row, access) = open_item(conn, actor, id).await?;
+    access::authorize(actor, Action::MarkDone(access))?;
+    if row.item.kind == ItemKind::Assignment {
+        return Err(ContentError::CompletesItself);
     }
+    if is_locked(conn, actor, access, row.item.course_id, id).await? {
+        return Err(ContentError::Locked);
+    }
+    repo::mark_done(conn, id, actor.user_id()).await?;
+    Ok(())
+}
+
+/// The student takes their mark off an item. With no mark it does nothing. A locked item can lose
+/// its mark: the rule changed after the student marked it.
+pub async fn unmark_done(
+    conn: &mut PgConnection,
+    actor: &Actor,
+    id: Uuid,
+) -> Result<(), ContentError> {
+    let (_, access) = open_item(conn, actor, id).await?;
+    access::authorize(actor, Action::MarkDone(access))?;
+    repo::unmark_done(conn, id, actor.user_id()).await?;
+    Ok(())
 }
 
 #[cfg(test)]

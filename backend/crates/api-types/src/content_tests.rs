@@ -56,6 +56,8 @@ fn a_tree_entry_flattens_the_module_fields() {
         publish_at: None,
         created_at: DateTime::UNIX_EPOCH,
         updated_at: DateTime::UNIX_EPOCH,
+        access_rule: None,
+        standing: None,
     };
     let value = serde_json::to_value(ContentModule {
         module,
@@ -147,6 +149,8 @@ fn a_text_item_serializes_without_an_assignment_key() {
         assignment,
         created_at: DateTime::UNIX_EPOCH,
         updated_at: DateTime::UNIX_EPOCH,
+        access_rule: None,
+        standing: None,
     };
     let text = serde_json::to_value(item(None)).unwrap();
     assert!(text.get("assignment").is_none());
@@ -227,6 +231,8 @@ fn a_tree_summary_without_an_assignment_has_no_key() {
         publish_at: None,
         position: 1,
         assignment: None,
+        access_rule: None,
+        standing: None,
     };
     assert!(
         serde_json::to_value(summary)

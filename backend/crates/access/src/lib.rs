@@ -183,6 +183,10 @@ pub enum Action {
     /// (of an archived one the answer is `Archived`). Whether the course lets the student see the
     /// assignment is `ViewContent`'s business.
     SubmitWork(CourseAccess),
+    /// Mark an item of the course done, or take the mark off (ADR-0092): only a student of a
+    /// published course (of an archived one the answer is `Archived`). Whether the student may see
+    /// the item, and whether a rule has opened it, are not decided here.
+    MarkDone(CourseAccess),
     /// Read one's own draft and attempts (ADR-0035): only a student of a published or archived course.
     ViewOwnSubmission(CourseAccess),
     /// Read the submitted attempts of a course's students (ADR-0035). Staff and admins, any
@@ -246,6 +250,7 @@ impl Action {
             Self::ManageGradebook(access) => Self::ManageGradebook(mine(access)),
             Self::ViewOwnGrades(access) => Self::ViewOwnGrades(mine(access)),
             Self::SubmitWork(access) => Self::SubmitWork(mine(access)),
+            Self::MarkDone(access) => Self::MarkDone(mine(access)),
             Self::ViewOwnSubmission(access) => Self::ViewOwnSubmission(mine(access)),
             Self::ViewSubmissions(access) => Self::ViewSubmissions(mine(access)),
             Self::ManageRoster(access) => Self::ManageRoster(mine(access)),
@@ -281,7 +286,8 @@ impl Action {
             | Self::GradeAssignment(access)
             | Self::PublishGrades(access)
             | Self::ManageGradebook(access)
-            | Self::SubmitWork(access) => Some(access),
+            | Self::SubmitWork(access)
+            | Self::MarkDone(access) => Some(access),
             Self::ManageOwnAccount
             | Self::Module { .. }
             | Self::ManageUsers
@@ -418,6 +424,7 @@ pub fn authorize(actor: &Actor, action: Action) -> Result<(), AccessError> {
         Action::ViewFormerGrades { has_rows } => has_rows,
         Action::ViewOwnGrades(access)
         | Action::SubmitWork(access)
+        | Action::MarkDone(access)
         | Action::ViewOwnSubmission(access) => {
             access.role == Some(CourseRole::Student) && access.status.is_open_to_students()
         }

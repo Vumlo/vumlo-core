@@ -209,10 +209,13 @@ fn restoring_deleting_and_handing_over_still_work_on_an_archived_course() {
 fn a_student_submitting_in_an_archived_course_is_told_it_is_archived_not_refused() {
     let student = actor(Role::Student);
     let archived = access(Some(Student), false, Archived);
-    assert_eq!(
-        authorize(&student, Action::SubmitWork(archived)),
-        Err(AccessError::Archived)
-    );
+    for write in [Action::SubmitWork(archived), Action::MarkDone(archived)] {
+        assert_eq!(
+            authorize(&student, write),
+            Err(AccessError::Archived),
+            "{write:?}"
+        );
+    }
     // Reading their own work and grades there is fine.
     for read in [
         Action::ViewOwnSubmission(archived),
@@ -764,8 +767,12 @@ fn staff_and_admins_read_the_gradebook_in_every_status_and_grade_and_publish_but
 }
 
 #[test]
-fn only_a_student_of_a_published_course_saves_submits_and_reads_their_own_work() {
-    let actions: [fn(CourseAccess) -> Action; 2] = [Action::SubmitWork, Action::ViewOwnSubmission];
+fn only_a_student_of_a_published_course_saves_submits_marks_done_and_reads_their_own_work() {
+    let actions: [fn(CourseAccess) -> Action; 3] = [
+        Action::SubmitWork,
+        Action::MarkDone,
+        Action::ViewOwnSubmission,
+    ];
     for make in actions {
         assert_eq!(
             authorize(

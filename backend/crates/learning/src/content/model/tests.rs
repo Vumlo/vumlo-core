@@ -38,6 +38,7 @@ fn a_revision_knows_what_changed_since_the_item_was_published() {
         published: None,
         created_at: Utc::now(),
         updated_at: Utc::now(),
+        access: Access::default(),
     };
     assert!(
         !item.has_unpublished_changes(),

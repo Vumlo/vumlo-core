@@ -95,6 +95,9 @@ behind a Cargo feature, and `server` and `vumlo-cli` name it in exactly one plac
   student only through `GET /assignments/{id}/result`, after their grade is published and only if
   `show_correct` is on (ADR-0050).
 - A student sees who holds an exclusive option of a `form` only as `taken`, never by name (ADR-0051).
+- A student never receives the body, the questions or the files of an item that an access rule keeps
+  closed, and cannot save, submit or upload to it; a student never receives the rule itself, only
+  where they stand (ADR-0092).
 
 ## 7. Events
 

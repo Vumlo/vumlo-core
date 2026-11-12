@@ -58,6 +58,10 @@ pub enum AssessmentError {
     /// The student has used all their attempts.
     #[error("the attempt limit is reached")]
     AttemptLimit,
+    /// A rule keeps the assignment closed to the student until they meet its conditions
+    /// (ADR-0092).
+    #[error("the assignment is locked until its conditions are met")]
+    Locked,
     /// Another submit of the same student got the attempt number first.
     #[error("a concurrent submit took this attempt")]
     Concurrent,
@@ -145,6 +149,16 @@ fn require_submissions(opened: &OpenedAssignment) -> Result<(), AssessmentError>
     }
 }
 
+/// An assignment that a rule keeps closed takes no work yet: no draft, no submit, no upload
+/// (ADR-0092). Reading and discarding what the student already has stay possible.
+fn require_unlocked(opened: &OpenedAssignment) -> Result<(), AssessmentError> {
+    if opened.locked {
+        Err(AssessmentError::Locked)
+    } else {
+        Ok(())
+    }
+}
+
 /// Takes the assignment row `FOR SHARE` and returns it as it is in the row, with its settings and
 /// `config`. A change of the settings and a delete take the row `FOR UPDATE`, so they wait for
 /// this transaction, and what they committed before is what this reads (ADR-0035 point 12).
@@ -191,6 +205,7 @@ pub async fn save_draft(
     let opened = open(conn, actor, assignment_id).await?;
     access::authorize(actor, Action::SubmitWork(opened.access))?;
     require_submissions(&opened)?;
+    require_unlocked(&opened)?;
     let assignment = lock(conn, assignment_id).await?;
     open_window(&assignment, now)?;
     let valid = assignment
@@ -273,6 +288,7 @@ pub async fn submit(
     let opened = open(conn, actor, assignment_id).await?;
     access::authorize(actor, Action::SubmitWork(opened.access))?;
     require_submissions(&opened)?;
+    require_unlocked(&opened)?;
     submit_for(
         conn,
         actor.user_id(),
@@ -289,7 +305,8 @@ pub async fn submit(
 /// authorizes anyone: the draft is the student's own work, saved by them, and the assignment's
 /// settings are the ones the teacher chose. Every rule of a submit still holds: the student must
 /// be a current student, the draft must pass the document and form rules, and the attempt limit
-/// counts. The attempt is stamped with `due_at`, and is never late.
+/// counts. The attempt is stamped with `due_at`, and is never late. An access rule does not stop
+/// it: the draft was saved while the assignment was open (ADR-0092).
 ///
 /// `AssessmentError::refuses_submit` says which errors mean "this draft cannot be submitted";
 /// `NoDraft` and `NotDue` mean the world changed since the draft was listed.
@@ -744,6 +761,7 @@ pub async fn authorize_submit(
     let opened = open(conn, actor, assignment_id).await?;
     access::authorize(actor, Action::SubmitWork(opened.access))?;
     require_submissions(&opened)?;
+    require_unlocked(&opened)?;
     let assignment = lock(conn, assignment_id).await?;
     open_window(&assignment, now)?;
     let last = repo::last_attempt_number(conn, assignment_id, actor.user_id()).await?;

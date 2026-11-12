@@ -1,0 +1,19 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "WITH module_map AS (\n             SELECT * FROM unnest($2::uuid[], $3::uuid[]) AS t (old_id, new_id)),\n         item_map AS (\n             SELECT * FROM unnest($4::uuid[], $5::uuid[]) AS t (old_id, new_id)),\n         new_modules AS (\n             INSERT INTO content.modules (id, course_id, parent_id, position, title, status)\n             SELECT mm.new_id, $1, pm.new_id, m.position, m.title, 'draft'\n             FROM content.modules m\n             JOIN module_map mm ON mm.old_id = m.id\n             LEFT JOIN module_map pm ON pm.old_id = m.parent_id\n             RETURNING id),\n         new_items AS (\n             INSERT INTO content.items (id, module_id, course_id, position, kind, title, body, status)\n             SELECT im.new_id, mm.new_id, $1, i.position, i.kind, i.title, i.body, 'draft'\n             FROM content.items i\n             JOIN item_map im ON im.old_id = i.id\n             JOIN module_map mm ON mm.old_id = i.module_id\n             RETURNING id),\n         new_files AS (\n             INSERT INTO content.item_files (item_id, file_id, published)\n             SELECT im.new_id, f.file_id, false\n             FROM content.item_files f\n             JOIN item_map im ON im.old_id = f.item_id\n             WHERE NOT f.published\n             RETURNING item_id),\n         new_conditions AS (\n             INSERT INTO content.access_conditions\n                 (id, course_id, item_id, module_id, position, kind, target_item_id,\n                  target_module_id, points)\n             SELECT uuidv7(), $1, owner_item.new_id, owner_module.new_id, c.position, c.kind,\n                    target_item.new_id, target_module.new_id, c.points\n             FROM content.access_conditions c\n             LEFT JOIN item_map owner_item ON owner_item.old_id = c.item_id\n             LEFT JOIN module_map owner_module ON owner_module.old_id = c.module_id\n             LEFT JOIN item_map target_item ON target_item.old_id = c.target_item_id\n             LEFT JOIN module_map target_module ON target_module.old_id = c.target_module_id\n             WHERE c.course_id = $6\n             RETURNING id)\n         INSERT INTO content.assignments (item_id, type, config, max_points, is_bonus, max_attempts)\n         SELECT im.new_id, a.type, a.config, a.max_points, a.is_bonus, a.max_attempts\n         FROM content.assignments a\n         JOIN item_map im ON im.old_id = a.item_id",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "UuidArray",
+        "UuidArray",
+        "UuidArray",
+        "UuidArray",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "e7de2109ee2a2a7cfeee8824fc569281ab4cd755df562b2bb8e8a6130b40cc54"
+}

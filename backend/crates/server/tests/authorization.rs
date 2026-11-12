@@ -197,6 +197,9 @@ fn operations(c: &Ctx, other_user: Uuid) -> Vec<Call> {
             Some(json!({"max_points": "11"})),
         ),
         call("POST", format!("/items/{}/publish", c.text), None),
+        // A student's own mark that an item is done (ADR-0092).
+        call("PUT", format!("/items/{}/completion", c.text), None),
+        call("DELETE", format!("/items/{}/completion", c.text), None),
         call("DELETE", format!("/items/{}", c.text), None),
         call("GET", format!("/courses/{}/gradebook", c.course), None),
         call("GET", format!("/courses/{}/my-grades", c.course), None),
@@ -608,6 +611,8 @@ async fn no_operation_answers_a_caller_who_may_not_use_it() {
             ];
             (method == "GET" && reads.iter().any(|read| read == path))
                 || path.contains("/submission/")
+                // A student marks an item of the course done, and takes the mark off again.
+                || (matches!(method, "PUT" | "DELETE") && path.ends_with("/completion"))
                 // A student may add a file to the assignment they submit to.
                 || (method == "POST" && path.starts_with("/files?for=assignment:"))
         };

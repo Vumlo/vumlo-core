@@ -19,6 +19,7 @@ mod home;
 mod items;
 mod org;
 mod plugins;
+mod rules;
 
 pub use admin::*;
 pub use announcements::*;
@@ -32,6 +33,7 @@ pub use home::*;
 pub use items::*;
 pub use org::*;
 pub use plugins::*;
+pub use rules::*;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct HealthResponse {
@@ -516,6 +518,13 @@ pub struct Module {
     pub publish_at: Option<DateTime<Utc>>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+    /// Staff only (ADR-0092): the rule that locks the module and what is in it. Absent when it has
+    /// none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub access_rule: Option<AccessRule>,
+    /// Students only (ADR-0092): where they stand on the module.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub standing: Option<Standing>,
 }
 
 /// The assignment part of an item of kind `assignment` (ADR-0021).
@@ -588,6 +597,13 @@ pub struct Item {
     pub assignment: Option<Assignment>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+    /// Staff only (ADR-0092): the rule that locks the item. Absent when it has none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub access_rule: Option<AccessRule>,
+    /// Students only (ADR-0092): where they stand. While `standing.locked` is not empty, `body` is
+    /// empty and so is the assignment's `config`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub standing: Option<Standing>,
 }
 
 /// An item in the course tree: everything but the body.
@@ -602,6 +618,12 @@ pub struct ItemSummary {
     /// Present for items of kind `assignment`, absent for `text` items.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub assignment: Option<AssignmentSummary>,
+    /// Staff only (ADR-0092): the rule that locks the item. Absent when it has none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub access_rule: Option<AccessRule>,
+    /// Students only (ADR-0092): where they stand.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub standing: Option<Standing>,
 }
 
 /// A sub-module with its items.
@@ -655,6 +677,11 @@ pub struct UpdateModuleRequest {
     #[schema(value_type = Option<DateTime<Utc>>)]
     #[garde(skip)]
     pub publish_at: Option<Option<DateTime<Utc>>>,
+    /// Omit to keep the rule, `null` to remove it, a rule to replace it (ADR-0092).
+    #[serde(default, deserialize_with = "set_or_clear")]
+    #[schema(value_type = Option<AccessRule>)]
+    #[garde(skip)]
+    pub access_rule: Option<Option<AccessRule>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Validate, ToSchema)]
@@ -782,6 +809,11 @@ pub struct UpdateItemRequest {
     #[schema(value_type = Option<DateTime<Utc>>)]
     #[garde(skip)]
     pub publish_at: Option<Option<DateTime<Utc>>>,
+    /// Omit to keep the rule, `null` to remove it, a rule to replace it (ADR-0092).
+    #[serde(default, deserialize_with = "set_or_clear")]
+    #[schema(value_type = Option<AccessRule>)]
+    #[garde(skip)]
+    pub access_rule: Option<Option<AccessRule>>,
     /// Assignments only: replaces the config. Omit to keep it.
     #[schema(value_type = Option<Object>)]
     #[garde(skip)]

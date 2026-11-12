@@ -1,0 +1,88 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT item_id, module_id, kind, target_item_id, target_module_id,\n                  points AS \"points: Decimal\"\n           FROM content.access_conditions\n           WHERE course_id = $1\n           ORDER BY position, id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "item_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "content.access_conditions",
+            "name": "item_id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "module_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "content.access_conditions",
+            "name": "module_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "kind",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "content.access_conditions",
+            "name": "kind"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "target_item_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "content.access_conditions",
+            "name": "target_item_id"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "target_module_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "content.access_conditions",
+            "name": "target_module_id"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "points: Decimal",
+        "type_info": "Numeric",
+        "origin": {
+          "Table": {
+            "table": "content.access_conditions",
+            "name": "points"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      true,
+      true,
+      false,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "3665131793b05cad16eabe53d68a4ca5e1ed8dc0b3f9550fc51ad98b3c6f887d"
+}

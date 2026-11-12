@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM content.access_conditions\n         WHERE item_id IS NOT DISTINCT FROM $1 AND module_id IS NOT DISTINCT FROM $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "5a99c4812bc6789020603cdb784f622ecaa749e0a971b40b496467a653d4c85d"
+}

@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM content.completions WHERE item_id = $1 AND student_id = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "f32ddd13b50212ea6d7dab4d4ea145a255e3a144117802d0c0b9f1f2c089afba"
+}
