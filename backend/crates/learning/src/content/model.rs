@@ -12,6 +12,7 @@ use uuid::Uuid;
 use super::document::{
     DocumentErrors, EffectiveProfiles, FileRef, file_refs_of, validate_document_within,
 };
+use super::rules::Condition;
 use super::types::{AutoGrade, Claims, Stage, ValidContent, file, form, quiz};
 use crate::points;
 use access::{CourseAccess, Release};
@@ -600,7 +601,52 @@ pub struct OpenedAssignment {
     pub course_id: Uuid,
     pub assignment_type: BuiltinType,
     pub access: CourseAccess,
+    /// A rule keeps this student from working on it yet (ADR-0092). Never true for staff.
+    pub locked: bool,
 }
+
+/// What the rules of a course say about one module or item, as the reader may be told (ADR-0092).
+/// Staff read the rule that locks the node; a student reads where they stand. The two never mix.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Access {
+    /// The conditions that lock the node, all of which must hold. Staff only; empty for none.
+    pub rule: Vec<Condition>,
+    /// Where the student stands. Students only.
+    pub standing: Option<Standing>,
+}
+
+/// Where a student stands on a module or an item.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Standing {
+    /// Finished: marked by the student, submitted or graded, or every item of the module is.
+    pub done: bool,
+    /// What still keeps the node closed. Empty when it is open.
+    pub locked: Vec<Unmet>,
+}
+
+/// A condition that does not hold yet, with the title of what it names when the student can see it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Unmet {
+    pub condition: Condition,
+    pub title: Option<String>,
+}
+
+/// What a client sends as one condition of a rule (ADR-0092). It is checked by the service, which
+/// knows the course, and turned into a [`Condition`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ConditionInput {
+    pub kind: ConditionKind,
+    pub item_id: Option<Uuid>,
+    pub module_id: Option<Uuid>,
+    pub points: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ConditionKind {
+    Completed,
+    ScoreAtLeast,
+}
+text_enum!(ConditionKind { Completed => "completed", ScoreAtLeast => "score_at_least" });
 
 /// A top-level module (`parent_id` is `None`) or a sub-module.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -614,6 +660,7 @@ pub struct Module {
     pub publish_at: Option<DateTime<Utc>>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+    pub access: Access,
 }
 
 impl Module {
@@ -646,6 +693,7 @@ pub struct Item {
     pub published: Option<PublishedSlot>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+    pub access: Access,
 }
 
 /// The title and body of an item as its students read them (ADR-0049).
@@ -691,6 +739,7 @@ pub struct ItemSummary {
     pub publish_at: Option<DateTime<Utc>>,
     pub position: i32,
     pub assignment: Option<AssignmentSummary>,
+    pub access: Access,
 }
 
 impl ItemSummary {
@@ -715,16 +764,18 @@ pub struct ContentModule {
     pub items: Vec<ItemSummary>,
 }
 
-/// A change to a module. `publish_at`: `None` leaves it, `Some(None)` clears it.
+/// A change to a module. `publish_at`: `None` leaves it, `Some(None)` clears it. `access_rule`:
+/// `None` leaves the rule, `Some` replaces it with these conditions, and `Some(vec![])` removes it.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ModulePatch {
     pub title: Option<ContentTitle>,
     pub publish_at: Option<Option<DateTime<Utc>>>,
+    pub access_rule: Option<Vec<ConditionInput>>,
 }
 
 impl ModulePatch {
     pub fn is_empty(&self) -> bool {
-        self.title.is_none() && self.publish_at.is_none()
+        self.title.is_none() && self.publish_at.is_none() && self.access_rule.is_none()
     }
 }
 
@@ -742,6 +793,8 @@ pub struct ItemPatch {
     pub settings: SettingsPatch,
     /// `Some(None)` clears the class day. Only an in-class assignment has one.
     pub class_on: Option<Option<NaiveDate>>,
+    /// `None` leaves the rule, `Some` replaces it with these conditions, `Some(vec![])` removes it.
+    pub access_rule: Option<Vec<ConditionInput>>,
 }
 
 impl ItemPatch {
@@ -749,6 +802,7 @@ impl ItemPatch {
         self.title.is_none()
             && self.body.is_none()
             && self.publish_at.is_none()
+            && self.access_rule.is_none()
             && !self.touches_assignment()
     }
 

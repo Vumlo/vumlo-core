@@ -5,7 +5,9 @@ mod document;
 mod model;
 mod repo;
 mod routes;
+mod rules;
 mod service;
+mod standing;
 mod types;
 
 pub use document::{
@@ -13,20 +15,22 @@ pub use document::{
     limits, plain_text, validate_document, validate_document_within,
 };
 pub use model::{
-    Assignment, AssignmentSummary, AssignmentType, BuiltinType, ContentModule, ContentSubModule,
-    ContentTitle, Hit, HitKind, Item, ItemKind, ItemPatch, ItemStatus, ItemSummary, MaxPoints,
-    ModelError, Module, ModulePatch, ModuleStatus, MyWork, OnDeadline, OpenedAssignment,
-    SettingProblem, SettingsPatch, SubmissionSettings, editor_features,
+    Access, Assignment, AssignmentSummary, AssignmentType, BuiltinType, ConditionInput,
+    ConditionKind, ContentModule, ContentSubModule, ContentTitle, Hit, HitKind, Item, ItemKind,
+    ItemPatch, ItemStatus, ItemSummary, MaxPoints, ModelError, Module, ModulePatch, ModuleStatus,
+    MyWork, OnDeadline, OpenedAssignment, SettingProblem, SettingsPatch, Standing,
+    SubmissionSettings, Unmet, editor_features,
 };
 pub use repo::CopiedIds;
 pub use routes::router;
+pub use rules::{Condition, Node};
 pub use service::{
     ContentError, CourseSummary, ItemRules, OpenError, announce_visible, authorize_edit_item,
     copy_course_content, course_summary, create_file_item, create_item, create_module, delete_item,
     delete_module, editor_profiles, get_item, get_revision, get_tree, item_meta,
-    lock_assignment_shared, lock_course_assignments, may_read_item_files, my_work, open_assignment,
-    publish_item, publish_module, publish_revision, reorder_items, reorder_modules, search,
-    set_due_at, update_item, update_module,
+    lock_assignment_shared, lock_course_assignments, mark_done, may_read_item_files, my_work,
+    open_assignment, publish_item, publish_module, publish_revision, reorder_items,
+    reorder_modules, search, set_due_at, unmark_done, update_item, update_module,
 };
 pub use types::file::check_names as check_file_names;
 pub use types::form::Holders;

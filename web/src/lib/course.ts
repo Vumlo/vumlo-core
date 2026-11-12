@@ -1,7 +1,8 @@
 import { dueLabel, relative, shortDay } from "./format";
 import { translate, translatePlural } from "./i18n/core";
 import type { MessageKey } from "./i18n/core";
-import type { CardTodo, WorkStatus } from "./api/types";
+import type { CardTodo, Standing, UnmetCondition, WorkStatus } from "./api/types";
+import { wholePoints } from "./points";
 import type { ContentModule, ContentSubModule, ContentTree, CourseInfo, ItemMeta, ItemSummary, LinkedGroup } from "./api/types";
 
 /** The owner as a person's name; `null` until the header is loaded. */
@@ -21,6 +22,20 @@ export function todoText(todo: CardTodo): string {
 /** A linked group as the lists show it: the group, and the subgroup after a slash. */
 export const linkedGroupName = (g: Pick<LinkedGroup, "group_name" | "subgroup_name">): string =>
   g.subgroup_name ? `${g.group_name} / ${g.subgroup_name}` : g.group_name;
+
+/** Whether a rule still keeps the student from a module or an item (ADR-0092). Staff have no standing. */
+export const isLocked = (node: { standing?: Standing | null }): boolean => (node.standing?.locked.length ?? 0) > 0;
+
+/** Whether the student has finished it: marked, submitted or graded, or every item of the module. */
+export const isDone = (node: { standing?: Standing | null }): boolean => node.standing?.done === true;
+
+/** What one condition that does not hold yet asks of the student, in words. */
+export function unmetText(unmet: UnmetCondition): string {
+  const { condition, title } = unmet;
+  const what = title ?? translate("rule.unknownTarget");
+  if (condition.kind === "score_at_least") return translate("rule.scoreAtLeast", { points: wholePoints(condition.points ?? "0"), title: what });
+  return translate(condition.module_id ? "rule.finishModule" : "rule.finishItem", { title: what });
+}
 
 export type Section = (ContentModule | ContentSubModule) & { depth: 0 | 1 };
 

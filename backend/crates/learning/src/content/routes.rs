@@ -18,9 +18,11 @@ use utoipa_axum::routes;
 use uuid::Uuid;
 
 use super::model::{
-    self, AssignmentType, BuiltinType, ContentTitle, ItemKind, ItemPatch, ItemStatus, MaxPoints,
-    ModelError, ModulePatch, ModuleStatus, OnDeadline, SettingsPatch, SubmissionSettings,
+    self, AssignmentType, BuiltinType, ConditionInput, ConditionKind, ContentTitle, ItemKind,
+    ItemPatch, ItemStatus, MaxPoints, ModelError, ModulePatch, ModuleStatus, OnDeadline,
+    SettingsPatch, SubmissionSettings,
 };
+use super::rules::{Condition, Node};
 use super::service::{self, ContentError, ItemRules};
 use crate::LearningState;
 use access::Actor;
@@ -40,6 +42,7 @@ where
         .routes(routes!(create_item, reorder_items))
         .routes(routes!(get_item, update_item, delete_item))
         .routes(routes!(publish_item))
+        .routes(routes!(mark_done, unmark_done))
         .routes(routes!(get_revision))
         .routes(routes!(publish_revision))
         .routes(routes!(get_item_meta))
@@ -113,6 +116,13 @@ impl From<ContentError> for ApiError {
             ContentError::StructureFrozen => {
                 Self::Conflict("work was submitted: the questions or fields can no longer change")
             }
+            ContentError::Rule { ref field, message } => Self::invalid_field(field, message),
+            ContentError::Locked => {
+                Self::Conflict("the item is locked until its conditions are met")
+            }
+            ContentError::CompletesItself => Self::Conflict(
+                "an assignment is done when it is submitted or graded, not when it is marked",
+            ),
             ContentError::Gradebook(e) => e.into(),
             ContentError::Assessment(e) => e.into(),
             ContentError::Teaching(e) => e.into(),
@@ -153,6 +163,7 @@ fn domain_kind(kind: api_types::ItemKind) -> ItemKind {
 }
 
 fn api_module(module: model::Module) -> Module {
+    let (access_rule, standing) = api_access(module.access);
     Module {
         id: module.id,
         course_id: module.course_id,
@@ -163,7 +174,74 @@ fn api_module(module: model::Module) -> Module {
         publish_at: module.publish_at,
         created_at: module.created_at,
         updated_at: module.updated_at,
+        access_rule,
+        standing,
     }
+}
+
+fn api_condition(condition: &Condition) -> api_types::Condition {
+    let (kind, item_id, module_id, points) = match condition {
+        Condition::Completed(Node::Item(item)) => {
+            (api_types::ConditionKind::Completed, Some(*item), None, None)
+        }
+        Condition::Completed(Node::Module(module)) => (
+            api_types::ConditionKind::Completed,
+            None,
+            Some(*module),
+            None,
+        ),
+        Condition::ScoreAtLeast { assignment, points } => (
+            api_types::ConditionKind::ScoreAtLeast,
+            Some(*assignment),
+            None,
+            Some(format!("{points:.2}")),
+        ),
+    };
+    api_types::Condition {
+        kind,
+        item_id,
+        module_id,
+        points,
+    }
+}
+
+/// What the reader is told about the rules of a node: the rule for staff, where they stand for a
+/// student. A node without a rule has none to show.
+fn api_access(
+    access: model::Access,
+) -> (Option<api_types::AccessRule>, Option<api_types::Standing>) {
+    let rule = (!access.rule.is_empty()).then(|| api_types::AccessRule {
+        all: access.rule.iter().map(api_condition).collect(),
+    });
+    let standing = access.standing.map(|standing| api_types::Standing {
+        done: standing.done,
+        locked: standing
+            .locked
+            .into_iter()
+            .map(|unmet| api_types::UnmetCondition {
+                condition: api_condition(&unmet.condition),
+                title: unmet.title,
+            })
+            .collect(),
+    });
+    (rule, standing)
+}
+
+/// The conditions a client sent; no rule, or `null`, is none.
+fn domain_rule(rule: Option<api_types::AccessRule>) -> Vec<ConditionInput> {
+    rule.map(|rule| rule.all)
+        .unwrap_or_default()
+        .into_iter()
+        .map(|condition| ConditionInput {
+            kind: match condition.kind {
+                api_types::ConditionKind::Completed => ConditionKind::Completed,
+                api_types::ConditionKind::ScoreAtLeast => ConditionKind::ScoreAtLeast,
+            },
+            item_id: condition.item_id,
+            module_id: condition.module_id,
+            points: condition.points,
+        })
+        .collect()
 }
 
 fn api_assignment(assignment: model::Assignment) -> api_types::Assignment {
@@ -202,6 +280,7 @@ fn api_assignment_summary(assignment: model::AssignmentSummary) -> api_types::As
 }
 
 fn api_item(item: model::Item) -> Item {
+    let (access_rule, standing) = api_access(item.access);
     Item {
         id: item.id,
         module_id: item.module_id,
@@ -215,10 +294,13 @@ fn api_item(item: model::Item) -> Item {
         assignment: item.assignment.map(api_assignment),
         created_at: item.created_at,
         updated_at: item.updated_at,
+        access_rule,
+        standing,
     }
 }
 
 fn api_summary(item: model::ItemSummary) -> ItemSummary {
+    let (access_rule, standing) = api_access(item.access);
     ItemSummary {
         id: item.id,
         kind: api_kind(item.kind),
@@ -227,6 +309,8 @@ fn api_summary(item: model::ItemSummary) -> ItemSummary {
         publish_at: item.publish_at,
         position: item.position,
         assignment: item.assignment.map(api_assignment_summary),
+        access_rule,
+        standing,
     }
 }
 
@@ -461,6 +545,7 @@ async fn update_module(
     let patch = ModulePatch {
         title: request.title.as_deref().map(title).transpose()?,
         publish_at: request.publish_at,
+        access_rule: request.access_rule.map(domain_rule),
     };
     let mut tx = state.db.begin().await.map_err(ContentError::from)?;
     let module = service::update_module(&mut tx, &actor, id, patch).await?;
@@ -790,6 +875,7 @@ async fn update_item(
             max_attempts: request.max_attempts,
         },
         class_on: request.class_on,
+        access_rule: request.access_rule.map(domain_rule),
     };
     let mut tx = state.db.begin().await.map_err(ContentError::from)?;
     let item = service::update_item(&mut tx, &actor, rules(&state), id, patch).await?;
@@ -824,6 +910,68 @@ async fn delete_item(
 ) -> Result<StatusCode, ApiError> {
     let mut tx = state.db.begin().await.map_err(ContentError::from)?;
     service::delete_item(&mut tx, &actor, id).await?;
+    tx.commit().await.map_err(ContentError::from)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// A student marks a text or file item done (ADR-0092). Marking it again changes nothing. An
+/// assignment is done by being submitted or graded and takes no mark (409), and neither does an
+/// item that a rule still keeps closed (409).
+#[utoipa::path(
+    put,
+    path = "/items/{id}/completion",
+    tag = "content",
+    security(("cookie" = []), ("bearer" = [])),
+    params(("id" = Uuid, Path, description = "Item id")),
+    responses(
+        (status = 204, description = "Marked done"),
+        (status = 401, description = "Not logged in", body = ProblemDetails,
+            content_type = "application/problem+json"),
+        (status = 403, description = "The caller is not a student of the course",
+            body = ProblemDetails, content_type = "application/problem+json"),
+        (status = 404, description = "No such item, or not visible to the caller",
+            body = ProblemDetails, content_type = "application/problem+json"),
+        (status = 409, description = "An assignment, a locked item, or an archived course",
+            body = ProblemDetails, content_type = "application/problem+json"),
+    )
+)]
+async fn mark_done(
+    State(state): State<LearningState>,
+    actor: Actor,
+    Path(id): Path<Uuid>,
+) -> Result<StatusCode, ApiError> {
+    let mut tx = state.db.begin().await.map_err(ContentError::from)?;
+    service::mark_done(&mut tx, &actor, id).await?;
+    tx.commit().await.map_err(ContentError::from)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// A student takes their mark off an item (ADR-0092). With no mark it does nothing.
+#[utoipa::path(
+    delete,
+    path = "/items/{id}/completion",
+    tag = "content",
+    security(("cookie" = []), ("bearer" = [])),
+    params(("id" = Uuid, Path, description = "Item id")),
+    responses(
+        (status = 204, description = "The item is not marked done"),
+        (status = 401, description = "Not logged in", body = ProblemDetails,
+            content_type = "application/problem+json"),
+        (status = 403, description = "The caller is not a student of the course",
+            body = ProblemDetails, content_type = "application/problem+json"),
+        (status = 404, description = "No such item, or not visible to the caller",
+            body = ProblemDetails, content_type = "application/problem+json"),
+        (status = 409, description = "The course is archived", body = ProblemDetails,
+            content_type = "application/problem+json"),
+    )
+)]
+async fn unmark_done(
+    State(state): State<LearningState>,
+    actor: Actor,
+    Path(id): Path<Uuid>,
+) -> Result<StatusCode, ApiError> {
+    let mut tx = state.db.begin().await.map_err(ContentError::from)?;
+    service::unmark_done(&mut tx, &actor, id).await?;
     tx.commit().await.map_err(ContentError::from)?;
     Ok(StatusCode::NO_CONTENT)
 }

@@ -1,6 +1,21 @@
 {
   "components": {
     "schemas": {
+      "AccessRule": {
+        "description": "What locks a module or an item: every condition must hold. A rule on a module also locks the\nitems and sub-modules in it. At most 10 conditions; none removes the rule.",
+        "properties": {
+          "all": {
+            "items": {
+              "$ref": "#/components/schemas/Condition"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "all"
+        ],
+        "type": "object"
+      },
       "AddMembersRequest": {
         "properties": {
           "user_ids": {
@@ -1152,6 +1167,45 @@
           "source"
         ],
         "type": "object"
+      },
+      "Condition": {
+        "description": "One condition of a rule.\n\n`completed` names an item (`item_id`) or a module (`module_id`), not both. An assignment is done\nwhen the student has submitted it or has a published score; a text or file item, when the\nstudent marks it (`PUT /items/{id}/completion`); a module, when it has items the student can see\nand all of them are done.\n\n`score_at_least` names an assignment (`item_id`) and `points`, a decimal string above 0, at most\nwhat the assignment is worth.",
+        "properties": {
+          "item_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "kind": {
+            "$ref": "#/components/schemas/ConditionKind"
+          },
+          "module_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "points": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "type": "object"
+      },
+      "ConditionKind": {
+        "enum": [
+          "completed",
+          "score_at_least"
+        ],
+        "type": "string"
       },
       "ContentModule": {
         "allOf": [
@@ -3174,6 +3228,17 @@
       "Item": {
         "description": "A `text` item, an assignment or a `file` item. `body` is a JSON object; for an assignment it holds\nthe instructions, for a `file` item `{file_id?, description?}`: the uploaded file (absent while\nthe item is a draft without one) and a document that describes it.",
         "properties": {
+          "access_rule": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/AccessRule",
+                "description": "Staff only (ADR-0092): the rule that locks the item. Absent when it has none."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "assignment": {
             "oneOf": [
               {
@@ -3217,6 +3282,17 @@
             "type": [
               "string",
               "null"
+            ]
+          },
+          "standing": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Standing",
+                "description": "Students only (ADR-0092): where they stand. While `standing.locked` is not empty, `body` is\nempty and so is the assignment's `config`."
+              },
+              {
+                "type": "null"
+              }
             ]
           },
           "status": {
@@ -3406,6 +3482,17 @@
       "ItemSummary": {
         "description": "An item in the course tree: everything but the body.",
         "properties": {
+          "access_rule": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/AccessRule",
+                "description": "Staff only (ADR-0092): the rule that locks the item. Absent when it has none."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "assignment": {
             "oneOf": [
               {
@@ -3433,6 +3520,17 @@
             "type": [
               "string",
               "null"
+            ]
+          },
+          "standing": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Standing",
+                "description": "Students only (ADR-0092): where they stand."
+              },
+              {
+                "type": "null"
+              }
             ]
           },
           "status": {
@@ -3777,6 +3875,17 @@
       "Module": {
         "description": "A top-level module or a sub-module (ADR-0020).",
         "properties": {
+          "access_rule": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/AccessRule",
+                "description": "Staff only (ADR-0092): the rule that locks the module and what is in it. Absent when it has\nnone."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "course_id": {
             "format": "uuid",
             "type": "string"
@@ -3808,6 +3917,17 @@
             "type": [
               "string",
               "null"
+            ]
+          },
+          "standing": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Standing",
+                "description": "Students only (ADR-0092): where they stand on the module."
+              },
+              {
+                "type": "null"
+              }
             ]
           },
           "status": {
@@ -6495,6 +6615,27 @@
         ],
         "type": "object"
       },
+      "Standing": {
+        "description": "Where a student stands on a module or an item. Students only; staff are never locked.",
+        "properties": {
+          "done": {
+            "description": "Finished: marked by the student, submitted or graded, or every item of the module is.",
+            "type": "boolean"
+          },
+          "locked": {
+            "description": "What still keeps it closed. Empty when it is open. A locked item reads as its title only:\nan empty `body` and no questions.",
+            "items": {
+              "$ref": "#/components/schemas/UnmetCondition"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "done",
+          "locked"
+        ],
+        "type": "object"
+      },
       "StudentName": {
         "description": "A student of the course, named.",
         "properties": {
@@ -6961,6 +7102,25 @@
         ],
         "type": "object"
       },
+      "UnmetCondition": {
+        "description": "A condition that does not hold yet.",
+        "properties": {
+          "condition": {
+            "$ref": "#/components/schemas/Condition"
+          },
+          "title": {
+            "description": "The title of what the condition names, when the student can see it; `null` for something\nthey cannot, so that a draft is not given away.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "condition"
+        ],
+        "type": "object"
+      },
       "UnpublishedContent": {
         "allOf": [
           {
@@ -7099,6 +7259,17 @@
               "null"
             ]
           },
+          "access_rule": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/AccessRule",
+                "description": "Omit to keep the rule, `null` to remove it, a rule to replace it (ADR-0092)."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "body": {
             "oneOf": [
               {
@@ -7189,6 +7360,17 @@
       },
       "UpdateModuleRequest": {
         "properties": {
+          "access_rule": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/AccessRule",
+                "description": "Omit to keep the rule, `null` to remove it, a rule to replace it (ADR-0092)."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "publish_at": {
             "description": "Omit to keep, `null` to clear, a timestamp to set.",
             "format": "date-time",
@@ -7592,7 +7774,7 @@
       "name": ""
     },
     "title": "Vumlo API",
-    "version": "0.6.0"
+    "version": "0.6.1"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -15313,6 +15495,152 @@
           }
         ],
         "summary": "Changes an item's title, body and/or `publish_at` (`null` clears it). A `body` replaces the\nwhole body. The title and body of a published item are a working copy: students keep reading the\npublished one until `POST /items/{id}/revision/publish` (ADR-0049). An assignment's `config`,\npoints and deadline settings apply at once.",
+        "tags": [
+          "content"
+        ]
+      }
+    },
+    "/api/v1/items/{id}/completion": {
+      "delete": {
+        "operationId": "unmark_done",
+        "parameters": [
+          {
+            "description": "Item id",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "The item is not marked done"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Not logged in"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "The caller is not a student of the course"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "No such item, or not visible to the caller"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "The course is archived"
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          },
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "A student takes their mark off an item (ADR-0092). With no mark it does nothing.",
+        "tags": [
+          "content"
+        ]
+      },
+      "put": {
+        "operationId": "mark_done",
+        "parameters": [
+          {
+            "description": "Item id",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Marked done"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Not logged in"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "The caller is not a student of the course"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "No such item, or not visible to the caller"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "An assignment, a locked item, or an archived course"
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          },
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "A student marks a text or file item done (ADR-0092). Marking it again changes nothing. An\nassignment is done by being submitted or graded and takes no mark (409), and neither does an\nitem that a rule still keeps closed (409).",
         "tags": [
           "content"
         ]

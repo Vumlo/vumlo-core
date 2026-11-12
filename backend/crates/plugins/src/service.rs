@@ -536,8 +536,8 @@ pub async fn slots(conn: &mut PgConnection, slot: &str) -> Result<Vec<SlotPage>,
 
 /// A token for the page of `plugin_id` in the tab of `assignment_id`, for someone who can see that
 /// assignment. Everything that is not found is the same `NotFound`: the assignment (or a draft, or
-/// one in a course the caller cannot see), an unknown or disabled plugin, and one that offers no
-/// tab.
+/// one in a course the caller cannot see, or one a rule still keeps closed to them), an unknown or
+/// disabled plugin, and one that offers no tab.
 pub async fn launch(
     conn: &mut PgConnection,
     actor: &Actor,
@@ -554,6 +554,10 @@ pub async fn launch(
             OpenError::Teaching(error) => PluginsError::Teaching(error),
             OpenError::Db(error) => PluginsError::Db(error),
         })?;
+    // An assignment that a rule keeps closed has no page for the student yet (ADR-0092).
+    if opened.locked {
+        return Err(not_found());
+    }
     let install = repo::find_install(conn, plugin_id)
         .await?
         .filter(|install| install.status == InstallStatus::Enabled)

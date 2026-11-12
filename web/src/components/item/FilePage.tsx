@@ -11,6 +11,7 @@ import { dayLong } from "@/lib/format";
 import { openFile, sizeLabel } from "@/lib/files";
 import { useT } from "@/lib/i18n";
 import { notice } from "@/lib/notice";
+import { DoneButton } from "./DoneButton";
 import { ItemFrame, PreviewBanner } from "./ItemFrame";
 import s from "./Item.module.css";
 
@@ -61,6 +62,7 @@ export function FilePage({ item, courseId, staff }: { item: Item; courseId: stri
             ) : (
               <p className="muted" style={{ marginTop: 24 }}>{t("fe.noFile")}</p>
             )}
+            {!staff && <DoneButton item={item} courseId={courseId} />}
           </article>
         </div>
       )}

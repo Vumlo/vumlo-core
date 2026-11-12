@@ -9,10 +9,11 @@ use uuid::Uuid;
 use sqlx::types::Decimal;
 
 use super::model::{
-    Assignment, AssignmentSummary, AssignmentType, BuiltinType, Item, ItemKind, ItemStatus,
+    Access, Assignment, AssignmentSummary, AssignmentType, BuiltinType, Item, ItemKind, ItemStatus,
     ItemSummary, MaxPoints, Module, ModuleStatus, OnDeadline, PublishedSlot, StaffFacts,
     SubmissionSettings, WorkFacts, WorkStatus,
 };
+use super::rules::{Condition, Facts, Node, Rules};
 use access::Release;
 
 type Body = Json<Map<String, Value>>;
@@ -35,6 +36,36 @@ pub struct TreeRow {
     pub module: Module,
     pub parent: Option<Release>,
     pub item: Option<ItemSummary>,
+}
+
+/// The columns of `content.modules`, as the queries that return a whole module give them.
+struct RawModule {
+    id: Uuid,
+    course_id: Uuid,
+    parent_id: Option<Uuid>,
+    position: i32,
+    title: String,
+    status: ModuleStatus,
+    publish_at: Option<DateTime<Utc>>,
+    created_at: DateTime<Utc>,
+    updated_at: DateTime<Utc>,
+}
+
+impl From<RawModule> for Module {
+    fn from(raw: RawModule) -> Self {
+        Self {
+            id: raw.id,
+            course_id: raw.course_id,
+            parent_id: raw.parent_id,
+            position: raw.position,
+            title: raw.title,
+            status: raw.status,
+            publish_at: raw.publish_at,
+            created_at: raw.created_at,
+            updated_at: raw.updated_at,
+            access: Access::default(),
+        }
+    }
 }
 
 struct RawItem {
@@ -87,6 +118,7 @@ impl From<RawItem> for Item {
             ),
             created_at: raw.created_at,
             updated_at: raw.updated_at,
+            access: Access::default(),
         }
     }
 }
@@ -145,7 +177,7 @@ pub async fn insert_module(
     title: &str,
 ) -> Result<Module, sqlx::Error> {
     sqlx::query_as!(
-        Module,
+        RawModule,
         r#"INSERT INTO content.modules (id, course_id, parent_id, position, title)
            VALUES ($1, $2, $3::uuid,
                    COALESCE((SELECT max(position) FROM content.modules
@@ -160,6 +192,7 @@ pub async fn insert_module(
     )
     .fetch_one(conn)
     .await
+    .map(Module::from)
 }
 
 pub async fn find_module(
@@ -188,6 +221,7 @@ pub async fn find_module(
             publish_at: row.publish_at,
             created_at: row.created_at,
             updated_at: row.updated_at,
+            access: Access::default(),
         },
         parent: release(row.parent_status, row.parent_publish_at),
     }))
@@ -201,8 +235,8 @@ pub async fn update_module(
     set_publish_at: bool,
     publish_at: Option<DateTime<Utc>>,
 ) -> Result<Option<Module>, sqlx::Error> {
-    sqlx::query_as!(
-        Module,
+    let raw = sqlx::query_as!(
+        RawModule,
         r#"UPDATE content.modules
            SET title = COALESCE($2::text, title),
                publish_at = CASE WHEN $3 THEN $4::timestamptz ELSE publish_at END,
@@ -216,7 +250,8 @@ pub async fn update_module(
         publish_at
     )
     .fetch_optional(conn)
-    .await
+    .await?;
+    Ok(raw.map(Module::from))
 }
 
 pub async fn delete_module(conn: &mut PgConnection, id: Uuid) -> Result<u64, sqlx::Error> {
@@ -305,8 +340,8 @@ pub async fn publish_module(
     conn: &mut PgConnection,
     id: Uuid,
 ) -> Result<Option<Module>, sqlx::Error> {
-    sqlx::query_as!(
-        Module,
+    let raw = sqlx::query_as!(
+        RawModule,
         r#"UPDATE content.modules SET status = 'published', updated_at = now()
            WHERE id = $1 AND status = 'draft'
            RETURNING id, course_id, parent_id, position, title,
@@ -314,7 +349,8 @@ pub async fn publish_module(
         id
     )
     .fetch_optional(conn)
-    .await
+    .await?;
+    Ok(raw.map(Module::from))
 }
 
 pub async fn publish_draft_submodules(
@@ -451,6 +487,7 @@ pub async fn find_item(conn: &mut PgConnection, id: Uuid) -> Result<Option<ItemR
             ),
             created_at: row.created_at,
             updated_at: row.updated_at,
+            access: Access::default(),
         },
         module: Release {
             published: row.module_status == ModuleStatus::Published,
@@ -672,6 +709,7 @@ pub async fn tree(
                 publish_at: row.publish_at,
                 created_at: row.created_at,
                 updated_at: row.updated_at,
+                access: Access::default(),
             },
             parent: release(row.parent_status, row.parent_publish_at),
             item: match (row.item_id, row.item_kind, row.item_title, row.item_status) {
@@ -697,6 +735,7 @@ pub async fn tree(
                         class_on: None,
                     }
                     .summary(),
+                    access: Access::default(),
                 }),
                 _ => None,
             },
@@ -961,8 +1000,9 @@ pub async fn course_summary(
 
 /// Copies the whole tree of `from` into `to` (ADR-0048): modules, sub-modules, items and
 /// assignments, all as drafts. One statement gives every module and item a new id, so a failure
-/// leaves nothing half copied. What is not copied: publication (`publish_at`), deadlines, the late
-/// rule and anything a student or a grader produced.
+/// leaves nothing half copied. The access rules are copied and point at the copies (ADR-0092).
+/// What is not copied: publication (`publish_at`), deadlines, the late rule and anything a student
+/// or a grader produced.
 pub async fn copy_course(
     conn: &mut PgConnection,
     from: Uuid,
@@ -1013,7 +1053,20 @@ pub async fn copy_course(
              FROM content.item_files f
              JOIN item_map im ON im.old_id = f.item_id
              WHERE NOT f.published
-             RETURNING item_id)
+             RETURNING item_id),
+         new_conditions AS (
+             INSERT INTO content.access_conditions
+                 (id, course_id, item_id, module_id, position, kind, target_item_id,
+                  target_module_id, points)
+             SELECT uuidv7(), $1, owner_item.new_id, owner_module.new_id, c.position, c.kind,
+                    target_item.new_id, target_module.new_id, c.points
+             FROM content.access_conditions c
+             LEFT JOIN item_map owner_item ON owner_item.old_id = c.item_id
+             LEFT JOIN module_map owner_module ON owner_module.old_id = c.module_id
+             LEFT JOIN item_map target_item ON target_item.old_id = c.target_item_id
+             LEFT JOIN module_map target_module ON target_module.old_id = c.target_module_id
+             WHERE c.course_id = $6
+             RETURNING id)
          INSERT INTO content.assignments (item_id, type, config, max_points, is_bonus, max_attempts)
          SELECT im.new_id, a.type, a.config, a.max_points, a.is_bonus, a.max_attempts
          FROM content.assignments a
@@ -1022,7 +1075,8 @@ pub async fn copy_course(
         &module_old,
         &module_new,
         &item_old,
-        &item_new
+        &item_new,
+        from
     )
     .execute(conn)
     .await?;
@@ -1364,6 +1418,206 @@ pub async fn replace_item_files(
         item_id,
         published,
         ids
+    )
+    .execute(conn)
+    .await?;
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------------------------
+// Access rules and completion (ADR-0092)
+// ---------------------------------------------------------------------------------------------
+
+/// The rules of a course: the conditions of every module and item that has any, each node's in the
+/// order the teacher gave them.
+pub async fn rules_of_course(
+    conn: &mut PgConnection,
+    course_id: Uuid,
+) -> Result<Rules, sqlx::Error> {
+    let rows = sqlx::query!(
+        r#"SELECT item_id, module_id, kind, target_item_id, target_module_id,
+                  points AS "points: Decimal"
+           FROM content.access_conditions
+           WHERE course_id = $1
+           ORDER BY position, id"#,
+        course_id
+    )
+    .fetch_all(conn)
+    .await?;
+    let mut rules = Rules::new();
+    for row in rows {
+        // The CHECK constraints allow no other shape; a row that breaks them is not skipped,
+        // because a lost condition would open what it locked.
+        let corrupt = || sqlx::Error::Decode("an access condition breaks its constraints".into());
+        let owner = match (row.item_id, row.module_id) {
+            (Some(item), None) => Node::Item(item),
+            (None, Some(module)) => Node::Module(module),
+            _ => return Err(corrupt()),
+        };
+        let target = match (row.target_item_id, row.target_module_id) {
+            (Some(item), None) => Node::Item(item),
+            (None, Some(module)) => Node::Module(module),
+            _ => return Err(corrupt()),
+        };
+        let condition = match (row.kind.as_str(), target, row.points) {
+            ("completed", target, None) => Condition::Completed(target),
+            ("score_at_least", Node::Item(assignment), Some(points)) => {
+                Condition::ScoreAtLeast { assignment, points }
+            }
+            _ => return Err(corrupt()),
+        };
+        rules.entry(owner).or_default().push(condition);
+    }
+    Ok(rules)
+}
+
+/// Whether any module or item of the course has a rule. The cheap question that lets a course
+/// without rules skip everything else.
+pub async fn course_has_rules(
+    conn: &mut PgConnection,
+    course_id: Uuid,
+) -> Result<bool, sqlx::Error> {
+    sqlx::query_scalar!(
+        r#"SELECT EXISTS (SELECT 1 FROM content.access_conditions WHERE course_id = $1) AS "has!""#,
+        course_id
+    )
+    .fetch_one(conn)
+    .await
+}
+
+/// Serializes the writers of a course's rules until the transaction ends. A cycle is a property of
+/// all the rules together, so two teachers who each add an acceptable rule could close one between
+/// them; the second waits here and then checks against the first's rule.
+pub async fn lock_rules(conn: &mut PgConnection, course_id: Uuid) -> Result<(), sqlx::Error> {
+    sqlx::query!(
+        "SELECT pg_advisory_xact_lock(hashtextextended('rules:' || $1::text, 0))",
+        course_id.to_string()
+    )
+    .execute(conn)
+    .await?;
+    Ok(())
+}
+
+/// Makes `conditions` the rule of `owner`, in that order; none removes the rule.
+pub async fn replace_rule(
+    conn: &mut PgConnection,
+    course_id: Uuid,
+    owner: Node,
+    conditions: &[Condition],
+) -> Result<(), sqlx::Error> {
+    let (item_id, module_id) = match owner {
+        Node::Item(item) => (Some(item), None),
+        Node::Module(module) => (None, Some(module)),
+    };
+    sqlx::query!(
+        "DELETE FROM content.access_conditions
+         WHERE item_id IS NOT DISTINCT FROM $1 AND module_id IS NOT DISTINCT FROM $2",
+        item_id,
+        module_id
+    )
+    .execute(&mut *conn)
+    .await?;
+    for (index, condition) in conditions.iter().enumerate() {
+        let (kind, target, points) = match condition {
+            Condition::Completed(target) => ("completed", *target, None),
+            Condition::ScoreAtLeast { assignment, points } => {
+                ("score_at_least", Node::Item(*assignment), Some(*points))
+            }
+        };
+        let (target_item, target_module) = match target {
+            Node::Item(item) => (Some(item), None),
+            Node::Module(module) => (None, Some(module)),
+        };
+        sqlx::query!(
+            "INSERT INTO content.access_conditions
+                 (id, course_id, item_id, module_id, position, kind, target_item_id,
+                  target_module_id, points)
+             VALUES (uuidv7(), $1, $2, $3, $4, $5, $6, $7, $8)",
+            course_id,
+            item_id,
+            module_id,
+            i32::try_from(index + 1).unwrap_or(i32::MAX),
+            kind,
+            target_item,
+            target_module,
+            points
+        )
+        .execute(&mut *conn)
+        .await?;
+    }
+    Ok(())
+}
+
+/// What the student has done in the course: the items that are done, and the published score of
+/// each assignment that has one. An assignment is done once an attempt is submitted or a score is
+/// published; any other item, once the student marked it.
+pub async fn facts(
+    conn: &mut PgConnection,
+    course_id: Uuid,
+    student_id: Uuid,
+) -> Result<Facts, sqlx::Error> {
+    let done = sqlx::query_scalar!(
+        r#"SELECT i.id AS "id!" FROM content.items i
+           WHERE i.course_id = $1
+             AND (EXISTS (SELECT 1 FROM content.completions c
+                          WHERE c.item_id = i.id AND c.student_id = $2)
+                  OR EXISTS (SELECT 1 FROM assessment.submissions s
+                             WHERE s.assignment_id = i.id AND s.student_id = $2
+                               AND s.status = 'submitted')
+                  OR EXISTS (SELECT 1 FROM gradebook.grades g
+                             WHERE g.assignment_id = i.id AND g.student_id = $2
+                               AND g.published_score IS NOT NULL))"#,
+        course_id,
+        student_id
+    )
+    .fetch_all(&mut *conn)
+    .await?;
+    let scores = sqlx::query!(
+        r#"SELECT g.assignment_id, g.published_score AS "score!: Decimal"
+           FROM gradebook.grades g
+           JOIN content.items i ON i.id = g.assignment_id
+           WHERE i.course_id = $1 AND g.student_id = $2 AND g.published_score IS NOT NULL"#,
+        course_id,
+        student_id
+    )
+    .fetch_all(conn)
+    .await?;
+    Ok(Facts {
+        done_items: done.into_iter().collect(),
+        scores: scores
+            .into_iter()
+            .map(|row| (row.assignment_id, row.score))
+            .collect(),
+    })
+}
+
+/// Records that the student marked the item done. Marking it again changes nothing.
+pub async fn mark_done(
+    conn: &mut PgConnection,
+    item_id: Uuid,
+    student_id: Uuid,
+) -> Result<(), sqlx::Error> {
+    sqlx::query!(
+        "INSERT INTO content.completions (item_id, student_id) VALUES ($1, $2)
+         ON CONFLICT DO NOTHING",
+        item_id,
+        student_id
+    )
+    .execute(conn)
+    .await?;
+    Ok(())
+}
+
+/// Takes the student's mark off the item. With no mark it does nothing.
+pub async fn unmark_done(
+    conn: &mut PgConnection,
+    item_id: Uuid,
+    student_id: Uuid,
+) -> Result<(), sqlx::Error> {
+    sqlx::query!(
+        "DELETE FROM content.completions WHERE item_id = $1 AND student_id = $2",
+        item_id,
+        student_id
     )
     .execute(conn)
     .await?;

@@ -61,6 +61,12 @@ export type Assignment = Omit<S["Assignment"], "config"> & { config: Cfg };
 /** The generated `config` is `Record<string, never>`; a type's config is any JSON object. */
 export type Item = Omit<S["Item"], "assignment"> & { assignment?: Assignment };
 export type ItemSummary = S["ItemSummary"];
+/** What locks a module or an item; every condition must hold (ADR-0092). */
+export type AccessRule = S["AccessRule"];
+export type RuleCondition = S["Condition"];
+/** Where a student stands on a module or an item (ADR-0092). */
+export type Standing = S["Standing"];
+export type UnmetCondition = S["UnmetCondition"];
 export type AssignmentSummary = S["AssignmentSummary"];
 export type ContentTree = S["ContentTree"];
 export type ContentModule = S["ContentModule"];

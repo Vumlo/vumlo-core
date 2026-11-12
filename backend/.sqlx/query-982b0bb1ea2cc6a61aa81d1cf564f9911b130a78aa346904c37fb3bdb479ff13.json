@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT i.id AS \"id!\" FROM content.items i\n           WHERE i.course_id = $1\n             AND (EXISTS (SELECT 1 FROM content.completions c\n                          WHERE c.item_id = i.id AND c.student_id = $2)\n                  OR EXISTS (SELECT 1 FROM assessment.submissions s\n                             WHERE s.assignment_id = i.id AND s.student_id = $2\n                               AND s.status = 'submitted')\n                  OR EXISTS (SELECT 1 FROM gradebook.grades g\n                             WHERE g.assignment_id = i.id AND g.student_id = $2\n                               AND g.published_score IS NOT NULL))",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id!",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "content.items",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "982b0bb1ea2cc6a61aa81d1cf564f9911b130a78aa346904c37fb3bdb479ff13"
+}

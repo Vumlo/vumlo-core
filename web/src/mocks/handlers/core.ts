@@ -509,6 +509,9 @@ export const coreHandlers = [
     item.last_published_at ??= MOCK_NOW.toISOString();
     return HttpResponse.json(itemFor(item, true));
   }),
+  // The mock API keeps no rules and no marks (ADR-0092): every item is open, and a mark is accepted.
+  http.put(`${A}/items/:id/completion`, () => new HttpResponse(null, { status: 204 })),
+  http.delete(`${A}/items/:id/completion`, () => new HttpResponse(null, { status: 204 })),
   http.get(`${A}/items/:id/revision`, ({ params }) => {
     const item = itemById(String(params.id));
     requireStaff(item.course_id);
