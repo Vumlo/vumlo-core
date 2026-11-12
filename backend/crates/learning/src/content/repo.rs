@@ -546,6 +546,45 @@ pub async fn publish_item(conn: &mut PgConnection, id: Uuid) -> Result<Option<It
     Ok(raw.map(Item::from))
 }
 
+/// Marks the published assignments that students can see at `now` and that were never announced,
+/// and answers them as `(assignment id, course id)` (ADR-0091). Visible is the rule of `tree`: the
+/// course is published and so are the module and its parent, and no `publish_at` on the path lies
+/// after `now`. `SKIP LOCKED` leaves a row another transaction is publishing to that transaction.
+/// With `course_id`, only that course.
+pub async fn claim_unannounced(
+    conn: &mut PgConnection,
+    now: DateTime<Utc>,
+    course_id: Option<Uuid>,
+) -> Result<Vec<(Uuid, Uuid)>, sqlx::Error> {
+    let rows = sqlx::query!(
+        r#"UPDATE content.items
+           SET announced_at = $1
+           WHERE id IN (
+               SELECT i.id
+               FROM content.items i
+               JOIN content.modules m ON m.id = i.module_id
+               LEFT JOIN content.modules p ON p.id = m.parent_id
+               JOIN teaching.courses c ON c.id = i.course_id
+               WHERE i.kind = 'assignment' AND i.status = 'published' AND i.announced_at IS NULL
+                 AND ($2::uuid IS NULL OR i.course_id = $2)
+                 AND c.kind = 'regular' AND c.status = 'published'
+                 AND (i.publish_at IS NULL OR i.publish_at <= $1)
+                 AND m.status = 'published' AND (m.publish_at IS NULL OR m.publish_at <= $1)
+                 AND (p.id IS NULL
+                      OR (p.status = 'published' AND (p.publish_at IS NULL OR p.publish_at <= $1)))
+               FOR UPDATE OF i SKIP LOCKED)
+           RETURNING id, course_id"#,
+        now,
+        course_id
+    )
+    .fetch_all(conn)
+    .await?;
+    Ok(rows
+        .into_iter()
+        .map(|row| (row.id, row.course_id))
+        .collect())
+}
+
 /// Publishes the working title and body of a published item (ADR-0049). `None` when the item is
 /// a draft or gone.
 pub async fn publish_revision(

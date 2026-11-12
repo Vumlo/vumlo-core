@@ -55,6 +55,10 @@ impl From<AssessmentError> for ApiError {
             AssessmentError::Concurrent => {
                 Self::Conflict("a concurrent submit took this attempt, retry")
             }
+            // Only the scheduler asks for an auto-submit, so no route can see this.
+            AssessmentError::NotDue => {
+                Self::Conflict("the assignment is not due for an auto-submit")
+            }
             AssessmentError::HasSubmissions => Self::Conflict("it has submitted work"),
             AssessmentError::OptionTaken => {
                 Self::Conflict("an exclusive option was taken by someone else")

@@ -679,10 +679,11 @@ pub async fn publish_module(
         let items = repo::publish_draft_items_below(conn, id).await?;
         for item in &items {
             sync_published_files(conn, item).await?;
-            announce_created(conn, item).await?;
         }
         changed |= submodules + items.len() as u64 > 0;
     }
+    // Also without `cascade`: the module may be what hid assignments that were published already.
+    announce_visible(conn, Utc::now(), Some(row.module.course_id)).await?;
     if changed {
         audit(
             conn,
@@ -851,8 +852,13 @@ async fn usable_files(
     owner: Uuid,
     refs: &[FileRef],
 ) -> Result<(), ContentError> {
-    match file_service::ensure_usable(conn, actor, &UsageOwner::Item(owner), &distinct_ids(refs))
-        .await
+    match file_service::ensure_usable(
+        conn,
+        actor.user_id(),
+        &UsageOwner::Item(owner),
+        &distinct_ids(refs),
+    )
+    .await
     {
         Ok(()) => {}
         Err(FileError::Unusable { id }) => {
@@ -1028,20 +1034,28 @@ async fn create(
     Ok(item)
 }
 
-/// An assignment that has just become visible to students is news to the plugins (ADR-0075). Any
-/// other item is not.
-async fn announce_created(conn: &mut PgConnection, item: &Item) -> Result<(), ContentError> {
-    if item.kind == ItemKind::Assignment {
+/// Tells the plugins (`assignment.created`, ADR-0075) of every published assignment that students
+/// can see at `now` and that was not announced yet, in the transaction of whatever made it
+/// visible, and returns how many. A publish route calls it for its own course; the scheduler calls
+/// it for all courses, which catches a `publish_at` that has passed (ADR-0091). Each assignment is
+/// announced once, whichever of them gets there first.
+pub async fn announce_visible(
+    conn: &mut PgConnection,
+    now: DateTime<Utc>,
+    course_id: Option<Uuid>,
+) -> Result<usize, ContentError> {
+    let claimed = repo::claim_unannounced(conn, now, course_id).await?;
+    for &(assignment_id, course_id) in &claimed {
         events::emit(
             conn,
             Event::AssignmentCreated {
-                course_id: item.course_id,
-                assignment_id: item.id,
+                course_id,
+                assignment_id,
             },
         )
         .await?;
     }
-    Ok(())
+    Ok(claimed.len())
 }
 
 /// The profiles the document editor enforces, for building its toolbar. Any role may ask.
@@ -1744,7 +1758,7 @@ pub async fn publish_item(
     match repo::publish_item(conn, id).await? {
         Some(item) => {
             sync_published_files(conn, &item).await?;
-            announce_created(conn, &item).await?;
+            announce_visible(conn, Utc::now(), Some(item.course_id)).await?;
             let item = with_assignment(conn, item).await?;
             audit(
                 conn,

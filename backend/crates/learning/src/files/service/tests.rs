@@ -466,7 +466,7 @@ async fn usable(
     ids: &[Uuid],
 ) -> Result<(), FileError> {
     let mut conn = f.pool.acquire().await.unwrap();
-    ensure_usable(&mut conn, actor, &owner, ids).await
+    ensure_usable(&mut conn, actor.user_id(), &owner, ids).await
 }
 
 #[tokio::test]

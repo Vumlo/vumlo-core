@@ -99,6 +99,7 @@ async fn run(cli: Cli) -> anyhow::Result<()> {
                 () = events::run_worker(state.db.clone(), state.event_handlers()) => {}
                 () = run_mail(state.mail_worker()) => {}
                 () = learning::files::run_sweeper(state.db.clone(), state.learning.files.clone()) => {}
+                () = learning::schedule::run_scheduler(state.db.clone(), state.learning.editor.clone()) => {}
                 () = run_plugin_delivery(deliverer, state.db.clone()) => {}
                 () = shutdown => {}
             }
@@ -115,6 +116,10 @@ async fn run(cli: Cli) -> anyhow::Result<()> {
                 tokio::spawn(learning::files::run_sweeper(
                     state.db.clone(),
                     state.learning.files.clone(),
+                ));
+                tokio::spawn(learning::schedule::run_scheduler(
+                    state.db.clone(),
+                    state.learning.editor.clone(),
                 ));
                 let started = modules::spawn_workers(&state);
                 let deliverer = state

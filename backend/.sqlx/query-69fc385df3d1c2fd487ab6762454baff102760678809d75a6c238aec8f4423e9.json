@@ -1,0 +1,41 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE content.items\n           SET announced_at = $1\n           WHERE id IN (\n               SELECT i.id\n               FROM content.items i\n               JOIN content.modules m ON m.id = i.module_id\n               LEFT JOIN content.modules p ON p.id = m.parent_id\n               JOIN teaching.courses c ON c.id = i.course_id\n               WHERE i.kind = 'assignment' AND i.status = 'published' AND i.announced_at IS NULL\n                 AND ($2::uuid IS NULL OR i.course_id = $2)\n                 AND c.kind = 'regular' AND c.status = 'published'\n                 AND (i.publish_at IS NULL OR i.publish_at <= $1)\n                 AND m.status = 'published' AND (m.publish_at IS NULL OR m.publish_at <= $1)\n                 AND (p.id IS NULL\n                      OR (p.status = 'published' AND (p.publish_at IS NULL OR p.publish_at <= $1)))\n               FOR UPDATE OF i SKIP LOCKED)\n           RETURNING id, course_id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "content.items",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "course_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "content.items",
+            "name": "course_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Timestamptz",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "69fc385df3d1c2fd487ab6762454baff102760678809d75a6c238aec8f4423e9"
+}

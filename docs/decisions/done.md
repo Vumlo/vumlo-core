@@ -75,6 +75,7 @@ Accepted and built. Short form: the full texts of ADR-0001 to ADR-0069 are in gi
 - ADR-0015 — The gradebook is its own module (now inside `learning`).
 - ADR-0028 — Gradebook grades, publishing and read models.
 - ADR-0030 — The assignment-row lock covers deletes; the gradebook may ask teaching for course access.
+- ADR-0035 — Submission drafts, attempts and deadlines: drafts, numbered attempts, lateness, the submission window, and `on_deadline = auto_submit`, which the scheduler carries out (0091).
 
 ## API conventions
 - ADR-0018 — Validation errors are `422` with `errors[{field, message}]`; cursor pagination.
@@ -87,6 +88,7 @@ Accepted and built. Short form: the full texts of ADR-0001 to ADR-0069 are in gi
 
 ## Events and mail
 - ADR-0045 — The outbox worker (lease, backoff, dead letters) and mail delivery.
+- ADR-0091 — A scheduler in the worker (`learning::schedule`, every 30 s, in `serve` and `worker`), two jobs, each marked on its row so it is safe twice and from two workers. (1) `assignment.created` is sent when students can first see a published assignment (the course, the module path and the item are published and no `publish_at` lies ahead), not when it is published: `content.items.announced_at` is set by `content::announce_visible`, which the publish routes of an item, a module (also without `cascade`) and a course call for their course, and the scheduler calls for all of them; this also fixes the silent gaps (a course publish, a module publish without cascade) and replaces the `item.published` event of ADR-0010, which nothing consumed. (2) `on_deadline = auto_submit`: once `due_at` has passed, a draft that existed at `due_at` in a published course, of a current student, is submitted by the same code as a student's submit (`assessment::auto_submit`, same locks, same checks, a quiz is graded), stamped with `due_at`, never late; a draft the submit refuses (blank, a required field missing, the attempt limit, a student who left) is kept and marked `auto_submit_skipped_at`, so it is tried once. Migration `0049`. Not built: the cleanup jobs of ADR-0007.
 
 ## Web and desktop
 - ADR-0042 — Web: Next.js, client-rendered, typed hooks over a generated API schema.

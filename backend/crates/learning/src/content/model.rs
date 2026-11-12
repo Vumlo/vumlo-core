@@ -396,8 +396,8 @@ impl AssignmentType for BuiltinType {
     }
 }
 
-/// What happens to a draft at `due_at` (ADR-0011). `AutoSubmit` is stored and validated and does
-/// nothing until the background worker exists (ADR-0035).
+/// What happens to a draft at `due_at` (ADR-0011). `AutoSubmit` is carried out by the scheduler
+/// (`learning::schedule`, ADR-0091).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OnDeadline {
     KeepDraft,
