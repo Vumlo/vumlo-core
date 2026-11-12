@@ -377,7 +377,7 @@ async fn my_work(
     actor: &Actor,
     now: DateTime<Utc>,
 ) -> Result<Value, String> {
-    let work = content::my_work(conn, actor, now)
+    let work = gradebook::my_work(conn, actor, now)
         .await
         .map_err(|e| unavailable("my_work", e))?;
     Ok(json!({

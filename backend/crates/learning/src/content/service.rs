@@ -21,8 +21,8 @@ use super::document::{
 use super::model::{
     Access, Assignment, AssignmentType, BuiltinType, ContentModule, ContentSubModule, ContentTitle,
     FactScope, Hit, HitKind, Item, ItemFacts, ItemKind, ItemPatch, ItemStatus, ItemSummary,
-    MaxPoints, ModelError, Module, ModulePatch, MyWork, OnDeadline, OpenedAssignment, Revision,
-    SettingProblem, SettingsPatch, SourceFact, Standing, WorkEntry, WorkFacts,
+    MaxPoints, ModelError, Module, ModulePatch, OnDeadline, OpenAssignment, OpenedAssignment,
+    Revision, SettingProblem, SettingsPatch, SourceFact, Standing,
 };
 use super::repo::{self, CopiedIds, ItemRow, ModuleRow};
 use super::rules::Node;
@@ -131,9 +131,9 @@ pub enum ContentError {
     #[error("the questions or fields cannot change after work was submitted")]
     StructureFrozen,
     #[error(transparent)]
-    Gradebook(GradebookError),
+    Gradebook(Box<GradebookError>),
     #[error(transparent)]
-    Assessment(AssessmentError),
+    Assessment(Box<AssessmentError>),
     #[error(transparent)]
     Teaching(TeachingError),
     #[error(transparent)]
@@ -162,7 +162,7 @@ impl From<GradebookError> for ContentError {
     fn from(error: GradebookError) -> Self {
         match error {
             GradebookError::HasGrades => Self::HasGrades,
-            other => Self::Gradebook(other),
+            other => Self::Gradebook(Box::new(other)),
         }
     }
 }
@@ -171,7 +171,7 @@ impl From<AssessmentError> for ContentError {
     fn from(error: AssessmentError) -> Self {
         match error {
             AssessmentError::HasSubmissions => Self::HasSubmissions,
-            other => Self::Assessment(other),
+            other => Self::Assessment(Box::new(other)),
         }
     }
 }
@@ -517,7 +517,7 @@ pub async fn get_tree(
 
 /// Whether the actor reads the working copy of a course: drafts, scheduled items and the rules.
 /// Staff do; a student reads what is open to them, and the rules only as where they stand.
-fn sees_drafts(actor: &Actor, access: CourseAccess) -> bool {
+pub fn sees_drafts(actor: &Actor, access: CourseAccess) -> bool {
     access::authorize(actor, Action::ManageContent(access)).is_ok()
 }
 
@@ -1291,9 +1291,10 @@ fn read_minutes(body: &serde_json::Map<String, serde_json::Value>) -> Option<i64
     i64::try_from(words.div_ceil(WORDS_PER_MINUTE).max(1)).ok()
 }
 
-/// The facts of every item of the course that the actor may see (ADR-0049, point 5). Staff get
-/// the counts of what to grade and which items have unpublished changes; a student of the course
-/// gets their own standing. Not paged: a course tree is bounded (ADR-0020).
+/// The facts `content` owns about every item of the course that the actor may see (ADR-0049,
+/// point 5): the reading time, the class day, and for staff which items have unpublished changes.
+/// `gradebook::item_meta` adds the standing and the counts. Not paged: a course tree is bounded
+/// (ADR-0020).
 pub async fn item_meta(
     conn: &mut PgConnection,
     actor: &Actor,
@@ -1341,57 +1342,19 @@ pub async fn item_meta(
                 entry.edited = Some(true);
             }
         }
-        for counts in repo::staff_counts(conn, course_id).await? {
-            if let Some(entry) = facts.get_mut(&counts.assignment_id) {
-                entry.staff = Some(counts);
-            }
-        }
-    } else if access.is_student() {
-        for work in repo::student_work(conn, actor.user_id(), &[course_id], Utc::now()).await? {
-            if let Some(entry) = facts.get_mut(&work.assignment_id) {
-                entry.work = Some(work);
-            }
-        }
     }
     Ok(facts)
 }
 
-/// Every assignment a student can open in their courses with their own standing on it, and the
-/// courses (ADR-0052). Published values only. Not paged: a student has a bounded number of
-/// courses and a course tree is bounded (ADR-0020).
-pub async fn my_work(
+/// The assignments of `course_ids` that students can open at `now` (the item, its module and its
+/// parent are published and released), with their published titles (ADR-0049). The caller has
+/// authorized: it passes the courses the actor studies in.
+pub async fn open_assignments(
     conn: &mut PgConnection,
-    actor: &Actor,
+    course_ids: &[Uuid],
     now: DateTime<Utc>,
-) -> Result<MyWork, ContentError> {
-    let courses = teaching::student_courses(conn, actor).await?;
-    let ids: Vec<Uuid> = courses.iter().map(|card| card.course.id).collect();
-    let standing: HashMap<Uuid, WorkFacts> = repo::student_work(conn, actor.user_id(), &ids, now)
-        .await?
-        .into_iter()
-        .map(|facts| (facts.assignment_id, facts))
-        .collect();
-    let items = repo::open_assignments(conn, &ids, now)
-        .await?
-        .into_iter()
-        .filter_map(|row| {
-            let facts = standing.get(&row.assignment_id)?;
-            Some(WorkEntry {
-                assignment_id: row.assignment_id,
-                course_id: row.course_id,
-                title: row.title,
-                assignment_type: row.assignment_type,
-                due_at: row.due_at,
-                class_on: row.class_on,
-                max_points: row.max_points,
-                status: facts.status,
-                score: facts.score,
-                published_at: facts.published_at,
-                draft_saved_at: facts.draft_saved_at,
-            })
-        })
-        .collect();
-    Ok(MyWork { courses, items })
+) -> Result<Vec<OpenAssignment>, ContentError> {
+    Ok(repo::open_assignments(conn, course_ids, now).await?)
 }
 
 const SEARCH_MIN_CHARS: usize = 2;

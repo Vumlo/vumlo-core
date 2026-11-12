@@ -137,8 +137,6 @@ const DECLARED_VIEWS: &[&str] = &[
 /// (ADR-0093). `RATCHET_UP` is a table of a higher layer, `RATCHET_DOWN` a table of a lower layer
 /// that is not a declared view, `RATCHET_CALLS` a higher `learning` module named in Rust.
 const RATCHET_UP: &[(&str, &str)] = &[
-    ("content", "assessment.submissions"),
-    ("content", "gradebook.grades"),
     ("teaching", "assessment.submissions"),
     ("teaching", "content.assignments"),
     ("teaching", "content.items"),

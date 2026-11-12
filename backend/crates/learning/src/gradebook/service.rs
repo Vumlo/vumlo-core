@@ -28,7 +28,8 @@ use super::model::{
 use super::repo;
 
 mod groups;
-use crate::content::{self, OpenError, OpenedAssignment};
+mod work;
+use crate::content::{self, ContentError, OpenError, OpenedAssignment};
 use crate::teaching::{self, TeachingError};
 use access::Actor;
 use access::{self, AccessError, Action, CourseAccess, CourseRole, CourseStatus};
@@ -38,6 +39,7 @@ pub use groups::{
     GroupInput, SettingsPatch, create_group, delete_group, my_summary, place, save_group,
     structure, update_settings,
 };
+pub use work::{item_meta, my_work};
 
 #[derive(Debug, thiserror::Error)]
 pub enum GradebookError {
@@ -75,6 +77,8 @@ pub enum GradebookError {
     TwelveScale,
     #[error(transparent)]
     Teaching(TeachingError),
+    #[error(transparent)]
+    Content(#[from] ContentError),
     #[error(transparent)]
     Events(#[from] EventsError),
     /// The workbook could not be written (ADR-0090).

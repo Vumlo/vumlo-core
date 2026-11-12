@@ -15,7 +15,9 @@ use super::model::{
 use access::Release;
 
 mod groups;
+mod work;
 pub use groups::*;
+pub use work::*;
 
 pub async fn is_student_member(
     conn: &mut PgConnection,
