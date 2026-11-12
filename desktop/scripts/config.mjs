@@ -51,6 +51,9 @@ const ICONS = ["32x32.png", "128x128.png", "128x128@2x.png", "icon.icns", "icon.
 
 /** The Tauri configuration to merge over `tauri.conf.json` for this institution. */
 export function tauriConfigFor(client, { frontendDist, iconDir, desktopTemplate }) {
+  // Tauri reads `frontendDist` as a URL when it can: `D:\a\web\out` is the URL `d:\a\web\out`, nothing is embedded and
+  // the window opens that "address" (ERR_FILE_NOT_FOUND). A path relative to desktop/, with slashes, is never a URL.
+  if (URL.canParse(frontendDist)) throw new Error(`frontendDist ${frontendDist} would be read as a URL: use a path relative to desktop/`);
   const institution = client.public.institution;
   // The app is called `Vumlo UCU`, as the programs and links are `vumlo-ucu`; the full name, which can be long and
   // in any alphabet, is the publisher and in the descriptions.
