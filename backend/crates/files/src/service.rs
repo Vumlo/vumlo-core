@@ -85,17 +85,42 @@ pub async fn read(
     Ok(storage.store().get_opts(&key(file.id), options).await?)
 }
 
-/// Removes the row, then the object. A failed object delete is logged and ignored: the row is
-/// the truth, and an object without a row is harmless.
+/// Locks the rows that exist among `ids` (an unknown id is absent from the answer), in ascending
+/// id, until the transaction ends. Whoever attaches a file to an owner locks it first, so two
+/// attaches of one upload run one after the other, and ascending order lets two callers that
+/// name the same files in opposite orders pass without a deadlock.
+pub async fn lock(conn: &mut PgConnection, ids: &[Uuid]) -> Result<Vec<File>, FilesError> {
+    Ok(repo::lock(conn, ids).await?)
+}
+
+/// Locks one row if nobody holds it; `None` when it is absent or held. For a job that would
+/// rather skip a file than wait for it.
+pub async fn try_lock(conn: &mut PgConnection, id: Uuid) -> Result<Option<File>, FilesError> {
+    Ok(repo::try_lock(conn, id).await?)
+}
+
+/// Removes the row only. The object is removed afterwards with [`drop_object`], once the row is
+/// gone for good.
+pub async fn forget(conn: &mut PgConnection, id: Uuid) -> Result<(), FilesError> {
+    Ok(repo::delete(conn, id).await?)
+}
+
+/// Removes the stored object. A failure is logged and ignored: the row is the truth, and an
+/// object without a row is harmless.
+pub async fn drop_object(storage: &Storage, id: Uuid) {
+    if let Err(error) = storage.store().delete(&key(id)).await {
+        tracing::warn!(file_id = %id, %error, "deleting the stored object failed");
+    }
+}
+
+/// Removes the row, then the object.
 pub async fn delete(
     conn: &mut PgConnection,
     storage: &Storage,
     id: Uuid,
 ) -> Result<(), FilesError> {
-    repo::delete(conn, id).await?;
-    if let Err(error) = storage.store().delete(&key(id)).await {
-        tracing::warn!(file_id = %id, %error, "deleting the stored object failed");
-    }
+    forget(conn, id).await?;
+    drop_object(storage, id).await;
     Ok(())
 }
 

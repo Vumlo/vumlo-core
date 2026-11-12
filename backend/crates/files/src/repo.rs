@@ -40,6 +40,30 @@ pub async fn get(conn: &mut PgConnection, id: Uuid) -> Result<Option<File>, sqlx
     .await
 }
 
+/// The rows that exist among `ids`, in ascending id, locked until the transaction ends.
+pub async fn lock(conn: &mut PgConnection, ids: &[Uuid]) -> Result<Vec<File>, sqlx::Error> {
+    sqlx::query_as!(
+        File,
+        "SELECT id, uploaded_by, name, mime, size, sha256, created_at
+         FROM files.files WHERE id = ANY($1) ORDER BY id FOR UPDATE",
+        ids
+    )
+    .fetch_all(conn)
+    .await
+}
+
+/// Like [`lock`] for one row, but a row that someone else holds is not waited for.
+pub async fn try_lock(conn: &mut PgConnection, id: Uuid) -> Result<Option<File>, sqlx::Error> {
+    sqlx::query_as!(
+        File,
+        "SELECT id, uploaded_by, name, mime, size, sha256, created_at
+         FROM files.files WHERE id = $1 FOR UPDATE SKIP LOCKED",
+        id
+    )
+    .fetch_optional(conn)
+    .await
+}
+
 pub async fn delete(conn: &mut PgConnection, id: Uuid) -> Result<(), sqlx::Error> {
     sqlx::query!("DELETE FROM files.files WHERE id = $1", id)
         .execute(conn)
