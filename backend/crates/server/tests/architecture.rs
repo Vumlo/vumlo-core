@@ -23,8 +23,9 @@ struct Unit {
     /// Relative to `backend/crates`. The longest `dir` that contains a file decides its unit.
     dir: &'static str,
     schema: Option<&'static str>,
-    /// Higher layers may use lower ones, never the other way round. The four `learning` modules
-    /// share a layer: they may read one another (ADR-0065).
+    /// Higher layers may use lower ones, never the other way round. Inside `learning` the four
+    /// modules are ordered `teaching < content < assessment < gradebook`, and the flows sit above
+    /// them (ADR-0093).
     layer: u8,
 }
 
@@ -82,26 +83,26 @@ const UNITS: &[Unit] = &[
         name: "content",
         dir: "learning/src/content",
         schema: Some("content"),
-        layer: 7,
+        layer: 8,
     },
     Unit {
         name: "assessment",
         dir: "learning/src/assessment",
         schema: Some("assessment"),
-        layer: 7,
+        layer: 9,
     },
     Unit {
         name: "gradebook",
         dir: "learning/src/gradebook",
         schema: Some("gradebook"),
-        layer: 7,
+        layer: 10,
     },
     // The flows above those four (a person with their courses, the audit report, ...): no schema.
     Unit {
         name: "learning",
         dir: "learning/src",
         schema: None,
-        layer: 7,
+        layer: 11,
     },
     // The plugins (ADR-0066) sit on `learning` and write only the schema `plugins`. They read the
     // submissions of `assessment` through its public functions, never its tables.
@@ -109,14 +110,14 @@ const UNITS: &[Unit] = &[
         name: "plugins",
         dir: "plugins/src",
         schema: Some("plugins"),
-        layer: 8,
+        layer: 12,
     },
     // The composition root and the middleware that has a table of its own.
     Unit {
         name: "server",
         dir: "server/src",
         schema: Some("idempotency"),
-        layer: 9,
+        layer: 13,
     },
 ];
 
@@ -128,7 +129,54 @@ const DECLARED_VIEWS: &[&str] = &[
     "org.group_list",
     "org.subgroup_list",
     "events.audit_entries",
+    "teaching.effective_members",
 ];
+
+/// The reads and calls that go the wrong way today, as `(unit, thing)`. A ratchet: the test
+/// tolerates exactly these and fails when one no longer happens, so the lists only shrink
+/// (ADR-0093). `RATCHET_UP` is a table of a higher layer, `RATCHET_DOWN` a table of a lower layer
+/// that is not a declared view, `RATCHET_CALLS` a higher `learning` module named in Rust.
+const RATCHET_UP: &[(&str, &str)] = &[
+    ("content", "assessment.submissions"),
+    ("content", "gradebook.grades"),
+    ("teaching", "assessment.submissions"),
+    ("teaching", "content.assignments"),
+    ("teaching", "content.items"),
+    ("teaching", "content.modules"),
+    ("teaching", "gradebook.grades"),
+];
+const RATCHET_DOWN: &[(&str, &str)] = &[
+    ("assessment", "content.assignments"),
+    ("assessment", "content.items"),
+    ("assessment", "content.modules"),
+    ("assessment", "teaching.courses"),
+    ("content", "teaching.courses"),
+    ("gradebook", "assessment.submissions"),
+    ("gradebook", "content.assignments"),
+    ("gradebook", "content.items"),
+    ("gradebook", "content.modules"),
+    ("learning", "assessment.submission_files"),
+    ("learning", "assessment.submissions"),
+    ("learning", "content.assignments"),
+    ("learning", "content.item_files"),
+    ("learning", "content.items"),
+    ("learning", "content.modules"),
+    ("learning", "gradebook.grades"),
+    ("learning", "teaching.announcements"),
+    ("learning", "teaching.courses"),
+    ("learning", "teaching.tombstones"),
+];
+const RATCHET_CALLS: &[(&str, &str)] = &[
+    ("assessment", "gradebook"),
+    ("content", "assessment"),
+    ("content", "gradebook"),
+    ("teaching", "assessment"),
+    ("teaching", "content"),
+    ("teaching", "gradebook"),
+];
+
+/// The four modules of `learning`, lowest first.
+const MODULES: &[&str] = &["teaching", "content", "assessment", "gradebook"];
 
 /// (text no unit but the owner may mention, the unit that owns it)
 const OWNED: &[(&str, &str)] = &[
@@ -302,8 +350,24 @@ fn layer_of_schema(schema: &str) -> Option<u8> {
         .map(|unit| unit.layer)
 }
 
-#[test]
-fn a_unit_reads_its_own_layer_and_the_declared_views_below_it() {
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Way {
+    /// A table of a higher layer.
+    Up,
+    /// A table of a lower layer that is not a declared view.
+    Down,
+}
+
+/// A table that a unit's `repo` names although its layer does not allow it.
+struct Read {
+    unit: &'static str,
+    table: String,
+    way: Way,
+    at: String,
+}
+
+/// Every such read, and how many table names the scan looked at (to know it is not broken).
+fn forbidden_reads() -> (Vec<Read>, usize) {
     let mut found = Vec::new();
     let mut checked = 0;
     for file in source_files().into_iter().filter(|f| is_repo(f)) {
@@ -313,32 +377,136 @@ fn a_unit_reads_its_own_layer_and_the_declared_views_below_it() {
             for name in qualified_names(line) {
                 checked += 1;
                 let schema = name.split_once('.').map_or("", |(schema, _)| schema);
-                let allowed = match layer_of_schema(schema) {
-                    None => false,
-                    Some(layer) if Some(schema) == unit.schema || layer == unit.layer => true,
-                    Some(layer) if layer < unit.layer => DECLARED_VIEWS.contains(&name.as_str()),
-                    Some(_) => false,
+                let way = match layer_of_schema(schema) {
+                    Some(layer) if Some(schema) == unit.schema || layer == unit.layer => None,
+                    Some(layer) if layer < unit.layer => {
+                        (!DECLARED_VIEWS.contains(&name.as_str())).then_some(Way::Down)
+                    }
+                    _ => Some(Way::Up),
                 };
-                if !allowed {
-                    found.push(format!(
-                        "{}:{}: {name} (in {})",
-                        shown(&file),
-                        number + 1,
-                        unit.name
-                    ));
+                if let Some(way) = way {
+                    found.push(Read {
+                        unit: unit.name,
+                        table: name,
+                        way,
+                        at: format!("{}:{}", shown(&file), number + 1),
+                    });
                 }
             }
         }
     }
+    (found, checked)
+}
+
+fn ratchet(way: Way) -> &'static [(&'static str, &'static str)] {
+    match way {
+        Way::Up => RATCHET_UP,
+        Way::Down => RATCHET_DOWN,
+    }
+}
+
+#[test]
+fn a_unit_reads_its_own_layer_and_the_declared_views_below_it() {
+    let (reads, checked) = forbidden_reads();
     assert!(
         checked > 100,
         "the scan found only {checked} table names; it is broken"
     );
+    let found: Vec<String> = reads
+        .iter()
+        .filter(|r| !ratchet(r.way).contains(&(r.unit, r.table.as_str())))
+        .map(|r| format!("{}: {} (in {})", r.at, r.table, r.unit))
+        .collect();
     assert!(
         found.is_empty(),
         "a unit reads a table of a lower layer that is not a declared view, or one of a higher \
-         layer (ADR-0065; declare a view in a migration and list it in DECLARED_VIEWS):\n{}",
+         layer (ADR-0065, ADR-0093; declare a view in a migration and list it in \
+         DECLARED_VIEWS):\n{}",
         found.join("\n")
+    );
+}
+
+/// Every place in the code of one of the four modules that names a module above it, as
+/// `(unit, module, path:line)`.
+fn calls_to_higher_modules() -> Vec<(&'static str, &'static str, String)> {
+    let rank = |name: &str| MODULES.iter().position(|m| *m == name);
+    let mut found = Vec::new();
+    for file in source_files().into_iter().filter(|f| !is_test_code(f)) {
+        let unit = unit_of(&file);
+        let Some(own) = rank(unit.name) else { continue };
+        let text = fs::read_to_string(&file).expect("a Rust file is UTF-8");
+        for (number, line) in text.lines().enumerate().filter(|(_, l)| !is_comment(l)) {
+            for prefix in ["crate::", "super::"] {
+                for (at, _) in line.match_indices(prefix) {
+                    let rest = &line[at + prefix.len()..];
+                    // `crate::content::x` names `content`; `crate::{content, x}` names every word.
+                    let named = match rest.strip_prefix('{') {
+                        Some(group) => group.split('}').next().unwrap_or(""),
+                        None => rest,
+                    };
+                    let words = named.split(|c: char| !(c.is_ascii_alphanumeric() || c == '_'));
+                    let words = if rest.starts_with('{') {
+                        words.collect::<Vec<_>>()
+                    } else {
+                        words.take(1).collect()
+                    };
+                    for word in words {
+                        if let Some(module) = MODULES.iter().find(|m| **m == word)
+                            && rank(module).is_some_and(|other| other > own)
+                        {
+                            found.push((
+                                unit.name,
+                                *module,
+                                format!("{}:{}", shown(&file), number + 1),
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+    }
+    found
+}
+
+#[test]
+fn a_module_calls_only_modules_below_it() {
+    let found: Vec<String> = calls_to_higher_modules()
+        .into_iter()
+        .filter(|(unit, module, _)| !RATCHET_CALLS.contains(&(*unit, *module)))
+        .map(|(unit, module, at)| format!("{at}: {unit} names {module}"))
+        .collect();
+    assert!(
+        found.is_empty(),
+        "a module calls one above it (teaching < content < assessment < gradebook); the call \
+         belongs in a flow of `learning` (ADR-0093):\n{}",
+        found.join("\n")
+    );
+}
+
+#[test]
+fn the_ratchet_lists_only_what_still_happens() {
+    let (reads, _) = forbidden_reads();
+    let calls = calls_to_higher_modules();
+    let mut stale = Vec::new();
+    for way in [Way::Up, Way::Down] {
+        for (unit, table) in ratchet(way) {
+            if !reads
+                .iter()
+                .any(|r| r.way == way && r.unit == *unit && r.table == *table)
+            {
+                stale.push(format!("{unit} reads {table} (no longer)"));
+            }
+        }
+    }
+    for (unit, module) in RATCHET_CALLS {
+        if !calls.iter().any(|(u, m, _)| u == unit && m == module) {
+            stale.push(format!("{unit} names {module} (no longer)"));
+        }
+    }
+    assert!(
+        stale.is_empty(),
+        "delete these entries from the RATCHET_* lists in architecture.rs; it only shrinks:\n{}",
+        stale.join("\n")
     );
 }
 
