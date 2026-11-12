@@ -12,6 +12,7 @@ mod build_web;
 mod config_cmd;
 mod db_cmd;
 mod doctor;
+mod facts_cmd;
 mod init;
 mod mail_cmd;
 mod modules_cmd;
@@ -87,6 +88,9 @@ enum Command {
         #[arg(long)]
         dry_run: bool,
     },
+    /// The facts that access rules read about what students did (ADR-0093).
+    #[command(subcommand)]
+    Facts(FactsCommand),
     /// The database schema.
     #[command(subcommand)]
     Db(DbCommand),
@@ -114,6 +118,16 @@ enum ConfigCommand {
     },
     /// Print the JSON Schema of `vumlo.toml` (for an editor).
     Schema,
+}
+
+#[derive(Subcommand)]
+enum FactsCommand {
+    /// Make the facts again from the submissions and published grades; the students' own marks stay.
+    Rebuild {
+        /// Only this course (a course id). Without it, every course.
+        #[arg(long, value_name = "ID")]
+        course: Option<uuid::Uuid>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -398,6 +412,9 @@ async fn run(cli: Cli) -> anyhow::Result<bool> {
         Command::Config(ConfigCommand::Schema) => config_cmd::schema()?,
         Command::Modules(ModulesCommand::List { json }) => modules_cmd::list(&options, json)?,
         Command::Module { name, args } => modules_cmd::run_module(&options, &name, &args).await?,
+        Command::Facts(FactsCommand::Rebuild { course }) => {
+            facts_cmd::rebuild(&options, course).await?
+        }
         Command::Mail(command) => match command {
             MailCommand::Status { json } => mail_cmd::status(&options, json).await?,
             MailCommand::List {

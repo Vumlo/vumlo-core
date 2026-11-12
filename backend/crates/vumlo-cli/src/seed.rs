@@ -299,6 +299,9 @@ pub async fn demo(options: &Options, args: SeedDemo) -> anyhow::Result<()> {
         }
     }
 
+    // The grades above were written straight into the table, so no event told `content` of them.
+    learning::rebuild_facts(&mut tx, Some(course)).await?;
+
     db::insert_cli_audit(
         &mut tx,
         "demo.seed",
