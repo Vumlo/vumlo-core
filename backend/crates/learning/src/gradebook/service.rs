@@ -18,17 +18,26 @@ use sqlx::PgConnection;
 use sqlx::types::Decimal;
 use uuid::Uuid;
 
+use super::export;
+use super::layout;
 use super::model::{
     Cell, Feedback, FeedbackInput, FieldProblem, GradeInput, GradebookPage, GradebookRow,
-    HistoryEntry, ModelError, MyGrade, PublishedGrade, Score, Students, TeachingOverview,
+    HistoryEntry, LayoutView, ModelError, MyGrade, PublishedGrade, RowTotals, Score, Students,
+    TeachingOverview,
 };
 use super::repo;
+
+mod groups;
 use crate::content::{self, OpenError, OpenedAssignment};
 use crate::teaching::{self, TeachingError};
 use access::Actor;
 use access::{self, AccessError, Action, CourseAccess, CourseRole, CourseStatus};
 use common::{Page, PageParams};
 use events::{self, AuditEntry, Event, EventsError};
+pub use groups::{
+    GroupInput, SettingsPatch, create_group, delete_group, my_summary, place, save_group,
+    structure, update_settings,
+};
 
 #[derive(Debug, thiserror::Error)]
 pub enum GradebookError {
@@ -55,10 +64,22 @@ pub enum GradebookError {
     /// A purge found grades with a value: the caller had to refuse the delete instead.
     #[error("there are grades")]
     HasGrades,
+    /// No such group in this course, for the layout the course has now.
+    #[error("group not found")]
+    NoSuchGroup,
+    /// The change needs the `custom` layout.
+    #[error("this needs the custom layout")]
+    WrongLayout,
+    /// The twelve-point scale has no course total, so no target and no groups.
+    #[error("the twelve-point scale has no course total")]
+    TwelveScale,
     #[error(transparent)]
     Teaching(TeachingError),
     #[error(transparent)]
     Events(#[from] EventsError),
+    /// The workbook could not be written (ADR-0090).
+    #[error("the workbook could not be written")]
+    Export(#[from] rust_xlsxwriter::XlsxError),
     #[error(transparent)]
     Db(#[from] sqlx::Error),
 }
@@ -392,12 +413,19 @@ pub async fn publish_grades(
 pub async fn gradebook(
     conn: &mut PgConnection,
     actor: &Actor,
+    with_totals: bool,
     course_id: Uuid,
     page: PageParams,
 ) -> Result<GradebookPage, GradebookError> {
     let access = course_access(conn, actor, course_id).await?;
     access::authorize(actor, Action::ViewGradebook(access))?;
-    let columns = repo::columns(conn, course_id).await?;
+    let mut columns = repo::columns(conn, course_id).await?;
+    // The groups and totals exist only on the hundred scale (ADR-0089).
+    let staff_layout = if with_totals {
+        Some(groups::staff_layout(conn, course_id, &mut columns).await?)
+    } else {
+        None
+    };
     let students = repo::students(conn, course_id, page.after, i64::from(page.limit) + 1).await?;
     let students = Page::from_rows(students, page.limit, |student| student.user_id);
     let ids: Vec<Uuid> = students
@@ -423,18 +451,49 @@ pub async fn gradebook(
                     Some((column.assignment_id, cell))
                 })
                 .collect();
+            let totals = staff_layout.as_ref().map(|layout| {
+                let by_id: HashMap<Uuid, &Cell> =
+                    own.iter().map(|(id, cell)| (*id, cell)).collect();
+                let total = |draft: bool| {
+                    let entries = groups::entries_of(&columns, &layout.keys, |id| {
+                        by_id.get(&id).and_then(|cell| {
+                            if draft {
+                                cell.draft_score
+                            } else {
+                                cell.published_score
+                            }
+                        })
+                    });
+                    layout::compute(&layout.settings, &layout.defs, &entries)
+                };
+                RowTotals {
+                    published: total(false),
+                    draft: total(true),
+                }
+            });
             GradebookRow {
                 user_id: student.user_id,
                 name: student.name,
                 surname: student.surname,
                 former: student.former,
                 cells: own,
+                totals,
             }
         })
         .collect();
+    let layout = staff_layout.map(|staff| {
+        let (possible, setup) = groups::status_of(&staff, &columns);
+        LayoutView {
+            settings: staff.settings,
+            groups: staff.defs,
+            possible,
+            setup,
+        }
+    });
     Ok(GradebookPage {
         columns,
         rows,
+        layout,
         next: students.next,
     })
 }
@@ -477,14 +536,16 @@ pub async fn my_grades(
     published_grades(conn, actor, course_id, access).await
 }
 
-async fn published_grades(
+/// The assignments of the course the actor may be shown now, each with their published slot. Each
+/// row is checked again against the policy, on top of the SQL filter.
+async fn visible_rows(
     conn: &mut PgConnection,
     actor: &Actor,
     course_id: Uuid,
     access: CourseAccess,
-) -> Result<Vec<MyGrade>, GradebookError> {
-    let now = Utc::now();
-    let rows = repo::my_published_grades(conn, course_id, actor.user_id(), now).await?;
+    now: DateTime<Utc>,
+) -> Result<Vec<repo::MyGradeRow>, GradebookError> {
+    let rows = repo::my_assignment_rows(conn, course_id, actor.user_id(), now).await?;
     Ok(rows
         .into_iter()
         .filter(|row| {
@@ -501,8 +562,17 @@ async fn published_grades(
             };
             access::authorize(actor, view).is_ok()
         })
-        .map(|row| row.grade)
         .collect())
+}
+
+async fn published_grades(
+    conn: &mut PgConnection,
+    actor: &Actor,
+    course_id: Uuid,
+    access: CourseAccess,
+) -> Result<Vec<MyGrade>, GradebookError> {
+    let rows = visible_rows(conn, actor, course_id, access, Utc::now()).await?;
+    Ok(rows.into_iter().filter_map(|row| row.grade).collect())
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -561,6 +631,68 @@ pub async fn purge_module(conn: &mut PgConnection, module_id: Uuid) -> Result<u6
         return Err(GradebookError::HasGrades);
     }
     Ok(repo::purge_module(conn, module_id).await?)
+}
+
+/// The gradebook of a course as a workbook, with the course title for its file name. Staff and
+/// admins; the published marks only (ADR-0090). Read from one snapshot: the caller opens a
+/// read-only `REPEATABLE READ` transaction, as for the gradebook page.
+pub async fn export(
+    conn: &mut PgConnection,
+    actor: &Actor,
+    with_totals: bool,
+    course_id: Uuid,
+) -> Result<(String, Vec<u8>), GradebookError> {
+    // The columns and the layout come with every page and are the same in all of them.
+    let columns;
+    let layout;
+    let mut rows = Vec::new();
+    let mut after = None;
+    loop {
+        let page = gradebook(
+            conn,
+            actor,
+            with_totals,
+            course_id,
+            PageParams {
+                after,
+                limit: EXPORT_PAGE,
+            },
+        )
+        .await?;
+        rows.extend(page.rows);
+        match page.next {
+            Some(next) => after = Some(next),
+            None => {
+                columns = page.columns;
+                layout = page.layout;
+                break;
+            }
+        }
+    }
+    let title = teaching::get_course(conn, actor, course_id)
+        .await
+        .map_err(|error| match error {
+            TeachingError::CourseNotFound => GradebookError::CourseNotFound,
+            other => GradebookError::Teaching(other),
+        })?
+        .title;
+    let table = export::table(&columns, layout.as_ref(), &rows);
+    Ok((title, export::workbook(&table)?))
+}
+
+/// Students read per page when the gradebook is exported.
+const EXPORT_PAGE: u32 = 200;
+
+/// Copies how the marks of `from` add up (target, pass mark, layout, groups, placements) into the
+/// copy `to` of the course, for the modules and assignments in `ids`. The caller has authorized
+/// both courses (ADR-0089).
+pub async fn copy_layout(
+    conn: &mut PgConnection,
+    from: Uuid,
+    to: Uuid,
+    ids: &content::CopiedIds,
+) -> Result<(), GradebookError> {
+    Ok(repo::copy_layout(conn, from, to, &ids.modules, &ids.items).await?)
 }
 
 /// Like [`purge_assignment`] for every assignment of a course.

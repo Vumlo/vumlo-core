@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM gradebook.group_items WHERE assignment_id = ANY($1)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "UuidArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "272abe38a82d6693b21a4a172f2e53e8f821694b5d74c93d9d52548520f70e66"
+}

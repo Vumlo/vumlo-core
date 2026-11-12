@@ -2,6 +2,7 @@ use chrono::{DateTime, Utc};
 use sqlx::types::Decimal;
 use uuid::Uuid;
 
+use super::layout::{GroupDef, Outcome, Settings, Setup};
 use crate::points;
 use common::text_enum;
 
@@ -199,6 +200,16 @@ pub struct Column {
     pub max_points: Decimal,
     pub is_bonus: bool,
     pub status: ColumnStatus,
+    /// The key of the group the assignment is counted in (ADR-0089); `None` when it is in none
+    /// ("Not sorted"). Set by the service from the layout, not by the query.
+    pub group: Option<Uuid>,
+}
+
+/// What a student's marks add up to, from the published slots and from the drafts.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RowTotals {
+    pub published: Outcome,
+    pub draft: Outcome,
 }
 
 /// One student of the gradebook. `cells` holds only the assignments the student has a grade row
@@ -212,14 +223,38 @@ pub struct GradebookRow {
     /// (ADR-0037).
     pub former: bool,
     pub cells: Vec<(Uuid, Cell)>,
+    /// `None` on the twelve-point scale, which has no course total.
+    pub totals: Option<RowTotals>,
+}
+
+/// How the course turns points into a result, the same for every student (ADR-0089).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LayoutView {
+    pub settings: Settings,
+    /// The groups that have an assignment, in the order they are shown.
+    pub groups: Vec<GroupDef>,
+    /// What a student can reach, bonus left out.
+    pub possible: Decimal,
+    pub setup: Setup,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GradebookPage {
     pub columns: Vec<Column>,
     pub rows: Vec<GradebookRow>,
+    /// `None` on the twelve-point scale.
+    pub layout: Option<LayoutView>,
     /// The cursor for the next page, `None` on the last one.
     pub next: Option<Uuid>,
+}
+
+/// What a student's published marks add up to, and how (ADR-0089). No draft is in it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Summary {
+    pub settings: Settings,
+    /// The groups with an assignment the student may see, in the order they are shown.
+    pub groups: Vec<GroupDef>,
+    pub outcome: Outcome,
 }
 
 /// A published grade as its student sees it. There is no draft field in this type.

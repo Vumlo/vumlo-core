@@ -228,6 +228,7 @@ async fn student_name(
         let page = gradebook::gradebook(
             conn,
             actor,
+            false,
             course_id,
             PageParams {
                 after,

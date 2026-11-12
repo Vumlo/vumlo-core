@@ -1,0 +1,19 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "WITH module_map AS (\n             SELECT * FROM unnest($3::uuid[], $4::uuid[]) AS t (old_id, new_id)),\n         item_map AS (\n             SELECT * FROM unnest($5::uuid[], $6::uuid[]) AS t (old_id, new_id)),\n         group_map AS (\n             SELECT g.id AS old_id, uuidv7() AS new_id\n             FROM gradebook.groups g\n             LEFT JOIN module_map mm ON mm.old_id = g.module_id\n             WHERE g.course_id = $1 AND (g.module_id IS NULL OR mm.new_id IS NOT NULL)),\n         new_settings AS (\n             INSERT INTO gradebook.course_settings (course_id, target, pass_mark, layout)\n             SELECT $2, target, pass_mark, layout\n             FROM gradebook.course_settings WHERE course_id = $1\n             RETURNING course_id),\n         new_groups AS (\n             INSERT INTO gradebook.groups\n                 (id, course_id, module_id, title, position, cap, best_k, counts, bonus)\n             SELECT gm.new_id, $2, mm.new_id, g.title, g.position, g.cap, g.best_k, g.counts, g.bonus\n             FROM gradebook.groups g\n             JOIN group_map gm ON gm.old_id = g.id\n             LEFT JOIN module_map mm ON mm.old_id = g.module_id\n             RETURNING id)\n         INSERT INTO gradebook.group_items (assignment_id, group_id)\n         SELECT im.new_id, gm.new_id\n         FROM gradebook.group_items gi\n         JOIN item_map im ON im.old_id = gi.assignment_id\n         JOIN group_map gm ON gm.old_id = gi.group_id",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "UuidArray",
+        "UuidArray",
+        "UuidArray",
+        "UuidArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "bd3c9e9da4e72cb8309e1a923ba475a13ff9dbdc1dc3344fae9be2fa4282ae41"
+}

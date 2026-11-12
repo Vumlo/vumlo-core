@@ -200,6 +200,48 @@ fn operations(c: &Ctx, other_user: Uuid) -> Vec<Call> {
         call("DELETE", format!("/items/{}", c.text), None),
         call("GET", format!("/courses/{}/gradebook", c.course), None),
         call("GET", format!("/courses/{}/my-grades", c.course), None),
+        // The target, the groups and the total (ADR-0089), and the workbook of the gradebook
+        // (ADR-0090). The summary is the student's own; the rest is for the gradebook's staff.
+        call(
+            "GET",
+            format!("/courses/{}/my-grade-summary", c.course),
+            None,
+        ),
+        call(
+            "GET",
+            format!("/courses/{}/gradebook/export.xlsx", c.course),
+            None,
+        ),
+        call(
+            "GET",
+            format!("/courses/{}/gradebook/structure", c.course),
+            None,
+        ),
+        call(
+            "PUT",
+            format!("/courses/{}/gradebook/settings", c.course),
+            Some(json!({"target": "100", "pass_mark": null, "layout": "course"})),
+        ),
+        call(
+            "POST",
+            format!("/courses/{}/gradebook/groups", c.course),
+            Some(json!({"title": "G", "assignments": [c.assignment]})),
+        ),
+        call(
+            "PUT",
+            format!("/courses/{}/gradebook/groups/{}", c.course, c.module),
+            Some(json!({"cap": "12"})),
+        ),
+        call(
+            "DELETE",
+            format!("/courses/{}/gradebook/groups/{}", c.course, c.module),
+            None,
+        ),
+        call(
+            "PUT",
+            format!("/courses/{}/gradebook/placement", c.course),
+            Some(json!({"assignments": [c.assignment], "group": null})),
+        ),
         call(
             "PUT",
             format!("/assignments/{}/grades/{}", c.assignment, c.student),
@@ -558,6 +600,7 @@ async fn no_operation_answers_a_caller_who_may_not_use_it() {
                 format!("/items/{}", a.text),
                 format!("/items/{}", a.assignment),
                 format!("/courses/{}/my-grades", a.course),
+                format!("/courses/{}/my-grade-summary", a.course),
                 format!("/courses/{}/info", a.course),
                 format!("/courses/{}/people", a.course),
                 format!("/courses/{}/item-meta", a.course),

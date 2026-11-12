@@ -1829,7 +1829,19 @@ async fn cells_follow_the_column_order_and_exist_only_where_graded() {
             columns.map(|c| json!(c)),
             "the columns are in tree order"
         );
-        assert_eq!(book["items"], json!(expected));
+        // The totals of ADR-0089 are checked in `gradebook_totals.rs`; here only the cells.
+        let without_totals = |row: &Value| {
+            let mut row = row.clone();
+            row.as_object_mut().unwrap().remove("totals");
+            row
+        };
+        let rows: Vec<Value> = book["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(without_totals)
+            .collect();
+        assert_eq!(Value::Array(rows), json!(expected));
 
         // The same rows come back, in the same order, when the students are read two at a time.
         let mut paged = Vec::new();
@@ -1840,13 +1852,460 @@ async fn cells_follow_the_column_order_and_exist_only_where_graded() {
                 Some(cursor) => format!("?limit=2&cursor={cursor}"),
             };
             let page = gradebook(&w, &w.owner.token, &query).await;
-            paged.extend(page["items"].as_array().unwrap().iter().cloned());
+            paged.extend(page["items"].as_array().unwrap().iter().map(without_totals));
             match page["next_cursor"].as_str() {
                 Some(next) => cursor = Some(next.to_owned()),
                 None => break,
             }
         }
         assert_eq!(Value::Array(paged), json!(expected));
+    })
+    .await;
+}
+
+// --- ADR-0089: target, groups and totals -------------------------------------------------------
+
+async fn put(w: &World, token: &str, path: &str, body: Value) -> Resp {
+    call(&w.http, "PUT", Some(token), path, Some(body)).await
+}
+
+async fn summary(w: &World) -> Value {
+    ok(&call(
+        &w.http,
+        "GET",
+        Some(&w.student.token),
+        &format!("/courses/{}/my-grade-summary", w.course),
+        None,
+    )
+    .await)
+}
+
+async fn structure(w: &World) -> Value {
+    ok(&call(
+        &w.http,
+        "GET",
+        Some(&w.owner.token),
+        &format!("/courses/{}/gradebook/structure", w.course),
+        None,
+    )
+    .await)
+}
+
+async fn settings(w: &World, layout: &str, pass_mark: Option<&str>) -> Resp {
+    put(
+        w,
+        &w.owner.token,
+        &format!("/courses/{}/gradebook/settings", w.course),
+        json!({"target": "100", "pass_mark": pass_mark, "layout": layout}),
+    )
+    .await
+}
+
+/// A published assignment worth `points` in the main module.
+async fn open_worth(w: &World, title: &str, points: &str) -> Uuid {
+    let id = assignment_in(w, w.module, title, "text", points).await;
+    release(w, w.module, id).await;
+    id
+}
+
+/// Grades the student and publishes it.
+async fn mark(w: &World, assignment: Uuid, score: &str) {
+    grade(w, assignment, w.student.id, Some(score), None).await;
+    published(w, assignment, json!("all")).await;
+}
+
+async fn new_group(w: &World, body: Value) -> Resp {
+    call(
+        &w.http,
+        "POST",
+        Some(&w.owner.token),
+        &format!("/courses/{}/gradebook/groups", w.course),
+        Some(body),
+    )
+    .await
+}
+
+#[tokio::test]
+async fn the_regular_points_of_a_course_may_pass_the_target_and_the_total_is_cut_there() {
+    db_test(async |pool| {
+        let w = world(pool).await;
+        let a = open_worth(&w, "A", "60").await;
+        let b = open_worth(&w, "B", "60").await;
+        mark(&w, a, "60").await;
+        mark(&w, b, "50").await;
+        assert_eq!(settings(&w, "course", Some("60")).await.status, 200);
+
+        let s = summary(&w).await;
+        assert_eq!(s["total"], "100.00");
+        assert_eq!(
+            s["earned"], "110.00",
+            "the points above the target are not lost"
+        );
+        assert_eq!(s["possible"], "120.00");
+        assert_eq!(s["passed"], true);
+        assert_eq!(s["settings"]["target"], "100.00");
+        assert_eq!(s["settings"]["pass_mark"], "60.00");
+
+        let book = gradebook(&w, &w.owner.token, "").await;
+        assert_eq!(book["items"][0]["totals"]["published"]["total"], "100.00");
+        assert_eq!(book["items"][0]["totals"]["published"]["earned"], "110.00");
+        assert_eq!(book["layout"]["possible"], "120.00");
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn the_gradebook_is_exported_as_a_workbook_for_staff_only() {
+    db_test(async |pool| {
+        let w = world(pool).await;
+        let a = open_worth(&w, "A", "10").await;
+        mark(&w, a, "9").await;
+        let path = format!("/courses/{}/gradebook/export.xlsx", w.course);
+
+        for token in [&w.owner.token, &w.assistant.token, &w.admin.token] {
+            let r = call(&w.http, "GET", Some(token), &path, None).await;
+            assert_eq!(r.status, 200);
+            assert_eq!(&r.body[..2], b"PK", "a workbook is a zip archive");
+            assert_eq!(
+                r.headers["content-type"],
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            );
+            assert!(
+                r.headers["content-disposition"]
+                    .to_str()
+                    .unwrap()
+                    .starts_with("attachment;")
+            );
+            assert_eq!(r.headers["cache-control"], "private, no-store");
+        }
+        assert_eq!(
+            call(&w.http, "GET", Some(&w.student.token), &path, None)
+                .await
+                .status,
+            403
+        );
+        assert_eq!(
+            call(&w.http, "GET", Some(&w.outsider.token), &path, None)
+                .await
+                .status,
+            404
+        );
+        assert_eq!(call(&w.http, "GET", None, &path, None).await.status, 401);
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn a_course_made_from_a_template_keeps_the_target_the_groups_and_what_sits_in_them() {
+    db_test(async |pool| {
+        let w = world(pool).await;
+        let a = open_worth(&w, "A", "10").await;
+        let _b = open_worth(&w, "B", "10").await;
+        let r = put(
+            &w,
+            &w.owner.token,
+            &format!("/courses/{}/gradebook/settings", w.course),
+            json!({"target": "80", "pass_mark": "50", "layout": "custom"}),
+        )
+        .await;
+        assert_eq!(r.status, 200);
+        let made = new_group(
+            &w,
+            json!({"title": "Labs", "cap": "15", "best_k": 1, "assignments": [a]}),
+        )
+        .await;
+        assert_eq!(made.status, 201);
+
+        let template = call(
+            &w.http,
+            "POST",
+            Some(&w.owner.token),
+            &format!("/courses/{}/template", w.course),
+            Some(json!({})),
+        )
+        .await;
+        assert_eq!(template.status, 201);
+        let template = template.json();
+        let copy = call(
+            &w.http,
+            "POST",
+            Some(&w.owner.token),
+            &format!("/templates/{}/courses", template["id"].as_str().unwrap()),
+            Some(json!({})),
+        )
+        .await;
+        assert_eq!(copy.status, 201);
+        let copy = copy.json();
+        let tree = ok(&call(
+            &w.http,
+            "GET",
+            Some(&w.owner.token),
+            &format!(
+                "/courses/{}/gradebook/structure",
+                copy["id"].as_str().unwrap()
+            ),
+            None,
+        )
+        .await);
+
+        assert_eq!(tree["settings"]["target"], "80.00");
+        assert_eq!(tree["settings"]["pass_mark"], "50.00");
+        assert_eq!(tree["settings"]["layout"], "custom");
+        let groups = tree["groups"].as_array().unwrap();
+        assert_eq!(groups.len(), 1);
+        assert_eq!(groups[0]["title"], "Labs");
+        assert_eq!(groups[0]["cap"], "15.00");
+        assert_eq!(groups[0]["best_k"], 1);
+        let key = &groups[0]["key"];
+        assert_ne!(key, &made_key(&made), "the copy has a group of its own");
+        let columns = tree["columns"].as_array().unwrap();
+        let group_of = |title: &str| {
+            columns
+                .iter()
+                .find(|c| c["title"] == title)
+                .map(|c| c["group"].clone())
+                .unwrap()
+        };
+        assert_eq!(&group_of("A"), key, "A sits in the copied group");
+        assert_eq!(group_of("B"), Value::Null, "B stays in Not sorted");
+    })
+    .await;
+}
+
+fn made_key(created: &Resp) -> Value {
+    created.json()["key"].clone()
+}
+
+#[tokio::test]
+async fn a_draft_is_not_part_of_the_students_summary_but_is_in_the_staff_totals() {
+    db_test(async |pool| {
+        let w = world(pool).await;
+        let a = open_worth(&w, "A", "20").await;
+        grade(&w, a, w.student.id, Some("15"), None).await;
+
+        let s = summary(&w).await;
+        assert_eq!(s["total"], "0.00");
+        assert_eq!(s["groups"][0]["assignments"], json!([a]));
+
+        let book = gradebook(&w, &w.owner.token, "").await;
+        let totals = &book["items"][0]["totals"];
+        assert_eq!(totals["published"]["total"], "0.00");
+        assert_eq!(totals["draft"]["total"], "15.00");
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn a_module_rule_cuts_its_marks_in_the_course_layout() {
+    db_test(async |pool| {
+        let w = world(pool).await;
+        let a = open_worth(&w, "A", "10").await;
+        let b = open_worth(&w, "B", "10").await;
+        mark(&w, a, "9").await;
+        mark(&w, b, "8").await;
+
+        let key = w.module;
+        let path = format!("/courses/{}/gradebook/groups/{key}", w.course);
+        let denied = put(&w, &w.student.token, &path, json!({"cap": "12"})).await;
+        assert_eq!(denied.status, 403);
+        let hidden = put(&w, &w.outsider.token, &path, json!({"cap": "12"})).await;
+        assert_eq!(hidden.status, 404);
+        let named = put(
+            &w,
+            &w.owner.token,
+            &path,
+            json!({"title": "X", "cap": "12"}),
+        )
+        .await;
+        assert_eq!(named.problem(422).errors[0].field, "title");
+
+        assert_eq!(
+            put(&w, &w.owner.token, &path, json!({"cap": "12"}))
+                .await
+                .status,
+            204
+        );
+        let s = summary(&w).await;
+        assert_eq!(s["total"], "12.00");
+        assert_eq!(s["groups"][0]["capped"], true);
+        assert_eq!(s["groups"][0]["cap"], "12.00");
+        assert_eq!(s["possible"], "12.00");
+
+        // Best one of two instead.
+        assert_eq!(
+            put(&w, &w.owner.token, &path, json!({"best_k": 1}))
+                .await
+                .status,
+            204
+        );
+        let s = summary(&w).await;
+        assert_eq!(s["total"], "9.00");
+        assert_eq!(s["groups"][0]["dropped"], json!([b]));
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn in_the_custom_layout_new_assignments_are_not_sorted_and_still_count() {
+    db_test(async |pool| {
+        let w = world(pool).await;
+        let a = open_worth(&w, "Lab 1", "10").await;
+        let b = open_worth(&w, "Lab 2", "10").await;
+        let c = open_worth(&w, "Exam", "30").await;
+        mark(&w, a, "7").await;
+        mark(&w, c, "20").await;
+
+        // The assignments sit in modules, so nothing can be placed yet.
+        let placement = format!("/courses/{}/gradebook/placement", w.course);
+        let refused = put(
+            &w,
+            &w.owner.token,
+            &placement,
+            json!({"assignments": [a], "group": null}),
+        )
+        .await;
+        assert_eq!(refused.status, 409);
+
+        assert_eq!(settings(&w, "custom", None).await.status, 200);
+        let s = structure(&w).await;
+        assert_eq!(s["setup"]["unsorted"], 3);
+        assert_eq!(s["setup"]["reaches_target"], false);
+        assert_eq!(s["suggestions"][0]["title"], "Lab");
+        assert_eq!(s["suggestions"][0]["assignments"], json!([a, b]));
+        // Nothing is lost: the unsorted ones count as plain assignments.
+        let sum = summary(&w).await;
+        assert_eq!(sum["total"], "27.00");
+        assert_eq!(sum["loose"], json!([a, b, c]));
+
+        let created = new_group(
+            &w,
+            json!({"title": "Labs", "cap": "15", "assignments": [a, b]}),
+        )
+        .await;
+        assert_eq!(
+            created.status,
+            201,
+            "{}",
+            String::from_utf8_lossy(&created.body)
+        );
+        let key = created.json()["key"].clone();
+        let s = structure(&w).await;
+        assert_eq!(s["setup"]["unsorted"], 1);
+        assert_eq!(s["groups"][0]["title"], "Labs");
+        assert_eq!(s["columns"][0]["group"], key);
+        assert_eq!(s["columns"][2]["group"], Value::Null);
+        assert_eq!(s["suggestions"], json!([]));
+        let sum = summary(&w).await;
+        assert_eq!(sum["total"], "27.00");
+        assert_eq!(sum["groups"][0]["possible"], "15.00");
+        assert_eq!(sum["loose"], json!([c]));
+
+        // Deleting the group sends its assignments back to Not sorted.
+        let path = format!(
+            "/courses/{}/gradebook/groups/{}",
+            w.course,
+            key.as_str().unwrap()
+        );
+        assert_eq!(
+            call(&w.http, "DELETE", Some(&w.owner.token), &path, None)
+                .await
+                .status,
+            204
+        );
+        assert_eq!(structure(&w).await["setup"]["unsorted"], 3);
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn deleting_an_assignment_or_a_module_leaves_no_group_rows() {
+    db_test(async |pool| {
+        let w = world(pool).await;
+        let a = assignment_in(&w, w.module, "A", "text", "10").await;
+        put(
+            &w,
+            &w.owner.token,
+            &format!("/courses/{}/gradebook/groups/{}", w.course, w.module),
+            json!({"cap": "5"}),
+        )
+        .await;
+        assert_eq!(settings(&w, "custom", None).await.status, 200);
+        let group = new_group(&w, json!({"title": "G", "assignments": [a]})).await;
+        assert_eq!(group.status, 201);
+
+        let items = || async {
+            sqlx::query_scalar!(r#"SELECT count(*) AS "n!" FROM gradebook.group_items"#)
+                .fetch_one(&w.pool)
+                .await
+                .unwrap()
+        };
+        let groups = || async {
+            sqlx::query_scalar!(r#"SELECT count(*) AS "n!" FROM gradebook.groups"#)
+                .fetch_one(&w.pool)
+                .await
+                .unwrap()
+        };
+        assert_eq!(items().await, 1);
+        assert_eq!(groups().await, 2);
+
+        assert_eq!(delete(&w, &format!("/items/{a}")).await.status, 204);
+        assert_eq!(items().await, 0);
+        assert_eq!(
+            delete(&w, &format!("/modules/{}", w.module)).await.status,
+            204
+        );
+        assert_eq!(groups().await, 1, "only the custom group is left");
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn bad_settings_and_rules_are_refused_with_the_field() {
+    db_test(async |pool| {
+        let w = world(pool).await;
+        let bad = |body: Value| {
+            let w = &w;
+            async move {
+                put(
+                    w,
+                    &w.owner.token,
+                    &format!("/courses/{}/gradebook/settings", w.course),
+                    body,
+                )
+                .await
+                .problem(422)
+                .errors[0]
+                    .field
+                    .clone()
+            }
+        };
+        assert_eq!(
+            bad(json!({"target": "0", "layout": "course"})).await,
+            "target"
+        );
+        assert_eq!(
+            bad(json!({"target": "100.5.1", "layout": "course"})).await,
+            "target"
+        );
+        assert_eq!(
+            bad(json!({"target": "50", "pass_mark": "60", "layout": "course"})).await,
+            "pass_mark"
+        );
+
+        for (body, field) in [
+            (json!({"title": "G", "cap": "0"}), "cap"),
+            (json!({"title": "G", "best_k": 0}), "best_k"),
+            (
+                json!({"title": "G", "counts": false, "bonus": true}),
+                "bonus",
+            ),
+            (json!({"title": "  "}), "title"),
+        ] {
+            let response = new_group(&w, body).await;
+            assert_eq!(response.problem(422).errors[0].field, field);
+        }
+        let outside = new_group(&w, json!({"title": "G", "assignments": [Uuid::now_v7()]})).await;
+        assert_eq!(outside.problem(422).errors[0].field, "assignments");
     })
     .await;
 }

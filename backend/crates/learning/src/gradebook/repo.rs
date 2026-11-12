@@ -14,6 +14,9 @@ use super::model::{
 };
 use access::Release;
 
+mod groups;
+pub use groups::*;
+
 pub async fn is_student_member(
     conn: &mut PgConnection,
     course_id: Uuid,
@@ -375,8 +378,7 @@ pub async fn publish_rows(
 /// Every assignment of the course in tree order: top-level modules by position, each followed by
 /// its sub-modules, the items of one module by position. The order of `content::repo::tree`.
 pub async fn columns(conn: &mut PgConnection, course_id: Uuid) -> Result<Vec<Column>, sqlx::Error> {
-    sqlx::query_as!(
-        Column,
+    let rows = sqlx::query!(
         r#"SELECT i.id AS assignment_id, i.title, a.max_points, a.is_bonus,
                   i.status AS "status: ColumnStatus"
            FROM content.assignments a
@@ -389,7 +391,18 @@ pub async fn columns(conn: &mut PgConnection, course_id: Uuid) -> Result<Vec<Col
         course_id
     )
     .fetch_all(conn)
-    .await
+    .await?;
+    Ok(rows
+        .into_iter()
+        .map(|row| Column {
+            assignment_id: row.assignment_id,
+            title: row.title,
+            max_points: row.max_points,
+            is_bonus: row.is_bonus,
+            status: row.status,
+            group: None,
+        })
+        .collect())
 }
 
 pub struct StudentRow {
@@ -526,18 +539,29 @@ pub async fn cells(
         .collect())
 }
 
-/// A published grade with the release state of the rows on the path to its assignment.
+/// An assignment a student may be shown, with what is published for them and the release state of
+/// the rows on the path to it.
 pub struct MyGradeRow {
-    pub grade: MyGrade,
+    pub assignment_id: Uuid,
+    pub max_points: Decimal,
+    pub is_bonus: bool,
+    pub top_module: Uuid,
+    pub top_module_title: String,
+    /// The custom group the assignment is mapped to.
+    pub group_id: Option<Uuid>,
+    /// The published score; `None` when only feedback, or nothing, is published.
+    pub score: Option<Decimal>,
+    /// Set only when a score or feedback is published.
+    pub grade: Option<MyGrade>,
     pub item: Release,
     pub module: Release,
     pub parent: Option<Release>,
 }
 
-/// The published grades of one student in one course, in tree order. Only `published_*` columns
-/// are selected, and a row appears only when its published score or feedback is set. `open_at`
-/// keeps what a student may see at that moment (ADR-0010); `policy` checks every row again.
-pub async fn my_published_grades(
+/// The assignments of one course a student may be shown, in tree order, each with the published
+/// slot of that student, if there is one. Only `published_*` columns are selected. `open_at` keeps
+/// what a student may see at that moment (ADR-0010); `policy` checks every row again.
+pub async fn my_assignment_rows(
     conn: &mut PgConnection,
     course_id: Uuid,
     student_id: Uuid,
@@ -545,17 +569,22 @@ pub async fn my_published_grades(
 ) -> Result<Vec<MyGradeRow>, sqlx::Error> {
     let rows = sqlx::query!(
         r#"SELECT i.id AS assignment_id, i.published_title AS "title!", a.max_points, a.is_bonus,
-                  g.published_score, g.published_feedback, g.published_at AS "published_at!",
+                  COALESCE(p.id, m.id) AS "top_module!",
+                  COALESCE(p.title, m.title) AS "top_module_title!",
+                  gi.group_id AS "group_id?",
+                  g.published_score AS "published_score?",
+                  g.published_feedback AS "published_feedback?",
+                  g.published_at AS "published_at?",
                   i.status = 'published' AS "item_published!", i.publish_at AS item_publish_at,
                   m.status = 'published' AS "module_published!", m.publish_at AS module_publish_at,
                   p.status = 'published' AS "parent_published?", p.publish_at AS parent_publish_at
-           FROM gradebook.grades g
-           JOIN content.assignments a ON a.item_id = g.assignment_id
+           FROM content.assignments a
            JOIN content.items i ON i.id = a.item_id
            JOIN content.modules m ON m.id = i.module_id
            LEFT JOIN content.modules p ON p.id = m.parent_id
-           WHERE g.student_id = $2 AND i.course_id = $1
-             AND (g.published_score IS NOT NULL OR g.published_feedback IS NOT NULL)
+           LEFT JOIN gradebook.grades g ON g.assignment_id = a.item_id AND g.student_id = $2
+           LEFT JOIN gradebook.group_items gi ON gi.assignment_id = a.item_id
+           WHERE i.course_id = $1
              AND i.status = 'published' AND (i.publish_at IS NULL OR i.publish_at <= $3)
              AND m.status = 'published' AND (m.publish_at IS NULL OR m.publish_at <= $3)
              AND (p.id IS NULL
@@ -571,15 +600,26 @@ pub async fn my_published_grades(
     Ok(rows
         .into_iter()
         .map(|row| MyGradeRow {
-            grade: MyGrade {
-                assignment_id: row.assignment_id,
-                title: row.title,
-                max_points: row.max_points,
-                is_bonus: row.is_bonus,
-                score: row.published_score,
-                feedback: row.published_feedback,
-                published_at: row.published_at,
-            },
+            assignment_id: row.assignment_id,
+            max_points: row.max_points,
+            is_bonus: row.is_bonus,
+            top_module: row.top_module,
+            top_module_title: row.top_module_title,
+            group_id: row.group_id,
+            score: row.published_score,
+            grade: row.published_at.and_then(|published_at| {
+                (row.published_score.is_some() || row.published_feedback.is_some()).then(|| {
+                    MyGrade {
+                        assignment_id: row.assignment_id,
+                        title: row.title.clone(),
+                        max_points: row.max_points,
+                        is_bonus: row.is_bonus,
+                        score: row.published_score,
+                        feedback: row.published_feedback.clone(),
+                        published_at,
+                    }
+                })
+            }),
             item: Release {
                 published: row.item_published,
                 publish_at: row.item_publish_at,
@@ -675,6 +715,12 @@ pub async fn purge_assignment(
     assignment_id: Uuid,
 ) -> Result<u64, sqlx::Error> {
     sqlx::query!(
+        "DELETE FROM gradebook.group_items WHERE assignment_id = $1",
+        assignment_id
+    )
+    .execute(&mut *conn)
+    .await?;
+    sqlx::query!(
         "DELETE FROM gradebook.grade_history WHERE assignment_id = $1",
         assignment_id
     )
@@ -691,6 +737,21 @@ pub async fn purge_assignment(
 
 /// Deletes the history and the grade rows of a module and its sub-modules.
 pub async fn purge_module(conn: &mut PgConnection, module_id: Uuid) -> Result<u64, sqlx::Error> {
+    sqlx::query!(
+        "DELETE FROM gradebook.group_items
+         WHERE assignment_id IN (SELECT i.id FROM content.items i
+                                 JOIN content.modules m ON m.id = i.module_id
+                                 WHERE m.id = $1 OR m.parent_id = $1)",
+        module_id
+    )
+    .execute(&mut *conn)
+    .await?;
+    sqlx::query!(
+        "DELETE FROM gradebook.groups WHERE module_id = $1",
+        module_id
+    )
+    .execute(&mut *conn)
+    .await?;
     sqlx::query!(
         "DELETE FROM gradebook.grade_history
          WHERE assignment_id IN (SELECT i.id FROM content.items i
@@ -714,6 +775,19 @@ pub async fn purge_module(conn: &mut PgConnection, module_id: Uuid) -> Result<u6
 
 /// Deletes the history and the grade rows of every assignment of a course.
 pub async fn purge_course(conn: &mut PgConnection, course_id: Uuid) -> Result<u64, sqlx::Error> {
+    // The groups take the mappings of their assignments with them.
+    sqlx::query!(
+        "DELETE FROM gradebook.groups WHERE course_id = $1",
+        course_id
+    )
+    .execute(&mut *conn)
+    .await?;
+    sqlx::query!(
+        "DELETE FROM gradebook.course_settings WHERE course_id = $1",
+        course_id
+    )
+    .execute(&mut *conn)
+    .await?;
     sqlx::query!(
         "DELETE FROM gradebook.grade_history
          WHERE assignment_id IN (SELECT id FROM content.items WHERE course_id = $1)",

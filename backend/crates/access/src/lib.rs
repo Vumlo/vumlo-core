@@ -167,6 +167,9 @@ pub enum Action {
     PublishGrades(CourseAccess),
     /// Read the staff gradebook of a course, with every draft value (ADR-0028).
     ViewGradebook(CourseAccess),
+    /// Change how a course turns points into a result: the target, the pass mark, the layout and
+    /// the groups (ADR-0089). Staff and admins; not in an archived course.
+    ManageGradebook(CourseAccess),
     /// Read one's own published grades: only a student of a published or archived course
     /// (ADR-0028, ADR-0048). Staff and admins use the gradebook instead.
     ViewOwnGrades(CourseAccess),
@@ -240,6 +243,7 @@ impl Action {
             Self::GradeAssignment(access) => Self::GradeAssignment(mine(access)),
             Self::PublishGrades(access) => Self::PublishGrades(mine(access)),
             Self::ViewGradebook(access) => Self::ViewGradebook(mine(access)),
+            Self::ManageGradebook(access) => Self::ManageGradebook(mine(access)),
             Self::ViewOwnGrades(access) => Self::ViewOwnGrades(mine(access)),
             Self::SubmitWork(access) => Self::SubmitWork(mine(access)),
             Self::ViewOwnSubmission(access) => Self::ViewOwnSubmission(mine(access)),
@@ -276,6 +280,7 @@ impl Action {
             | Self::ChangeGroupLinks(access)
             | Self::GradeAssignment(access)
             | Self::PublishGrades(access)
+            | Self::ManageGradebook(access)
             | Self::SubmitWork(access) => Some(access),
             Self::ManageOwnAccount
             | Self::Module { .. }
@@ -405,6 +410,7 @@ pub fn authorize(actor: &Actor, action: Action) -> Result<(), AccessError> {
         | Action::GradeAssignment(access)
         | Action::PublishGrades(access)
         | Action::ViewGradebook(access)
+        | Action::ManageGradebook(access)
         | Action::ViewSubmissions(access)
         | Action::ManageRoster(access)
         | Action::ChangeRoster(access)

@@ -1,0 +1,52 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT target, pass_mark, layout AS \"layout: Layout\"\n           FROM gradebook.course_settings WHERE course_id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "target",
+        "type_info": "Numeric",
+        "origin": {
+          "Table": {
+            "table": "gradebook.course_settings",
+            "name": "target"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "pass_mark",
+        "type_info": "Numeric",
+        "origin": {
+          "Table": {
+            "table": "gradebook.course_settings",
+            "name": "pass_mark"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "layout: Layout",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "gradebook.course_settings",
+            "name": "layout"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      false
+    ]
+  },
+  "hash": "973d631c38d26df02cc5c07fa8daf7084f8ead7b8066e8b290d4ee0c21ac72c0"
+}

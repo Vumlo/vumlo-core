@@ -386,7 +386,7 @@ fn content_type(mime: &str) -> HeaderValue {
 /// `inline` or `attachment`, with the name twice (RFC 6266): `filename*` carries it in UTF-8
 /// (RFC 8187) and `filename` is an ASCII fallback in which nothing can end the quoted string or
 /// start a parameter.
-fn disposition(name: &str, inline: bool) -> HeaderValue {
+pub fn disposition(name: &str, inline: bool) -> HeaderValue {
     let kind = if inline { "inline" } else { "attachment" };
     let fallback: String = name
         .chars()

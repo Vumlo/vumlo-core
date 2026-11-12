@@ -45,7 +45,7 @@ Accepted and built. Short form: the full texts of ADR-0001 to ADR-0069 are in gi
 - ADR-0041 — Trusted frontends on another origin: an exact `allowed_origins` list, off by default.
 
 ## Institution, groups, courses
-- ADR-0022 — The grading scale (`twelve` or `hundred`) is an institution setting.
+- ADR-0022 — The grading scale (`twelve` or `hundred`) is an institution setting. (The rule that the regular assignments of a course total at most 100 is dropped by ADR-0089.)
 - ADR-0031 — `institution.mode` (school or university) is required and fixed for the life of the installation.
 - ADR-0044 — Institution profile keys in the config (short name, language, time zone).
 - ADR-0032 — Terms are flat; groups have one level of subgroups.

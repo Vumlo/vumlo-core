@@ -24,7 +24,7 @@ use super::model::{
     ModulePatch, MyWork, OnDeadline, OpenedAssignment, Revision, SettingProblem, SettingsPatch,
     WorkEntry, WorkFacts,
 };
-use super::repo::{self, ItemRow, ModuleRow};
+use super::repo::{self, CopiedIds, ItemRow, ModuleRow};
 use super::types::form;
 use crate::assessment::{self, AssessmentError};
 use crate::files::{self as file_service, FileError, UsageOwner};
@@ -37,8 +37,6 @@ use vumlo_config::GradingScale;
 
 /// The most points one assignment can be worth on the `twelve` scale (ADR-0022).
 const TWELVE_LIMIT: u32 = 12;
-/// The most points the regular assignments of a course can add up to on the `hundred` scale.
-const HUNDRED_LIMIT: u32 = 100;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ContentError {
@@ -379,49 +377,21 @@ async fn audit(
 }
 
 /// Refuses points the grading scale does not allow (ADR-0022). The caller decides whether the
-/// change needs the check at all: creating, raising `max_points` and turning a bonus assignment
-/// into a regular one do; lowering, deleting and turning a regular one into a bonus never do.
-///
-/// `hundred`: takes the course's points lock, then reads the sum in a later statement, so a
-/// writer that waited for the lock sees the rows the holder committed. `own` is the assignment
-/// being changed: its current points are not part of the sum it is compared with.
-async fn check_points(
-    conn: &mut PgConnection,
+/// change needs the check at all: creating and raising `max_points` do; lowering and deleting
+/// never do. On the `hundred` scale there is no limit on one assignment or on their sum: the
+/// course total is cut at the target by the gradebook (ADR-0089).
+fn check_points(
     scale: GradingScale,
-    course_id: Uuid,
-    own: Option<Uuid>,
     points: Decimal,
-    is_bonus: bool,
     field: &'static str,
 ) -> Result<(), ContentError> {
-    match scale {
-        GradingScale::Twelve => {
-            if points > Decimal::from(TWELVE_LIMIT) {
-                return Err(ContentError::PointsLimit {
-                    field,
-                    message: format!(
-                        "an assignment may be worth at most {TWELVE_LIMIT} points on the twelve-point scale"
-                    ),
-                });
-            }
-        }
-        GradingScale::Hundred => {
-            if is_bonus {
-                return Ok(());
-            }
-            repo::lock_course_points(conn, course_id).await?;
-            let used = repo::regular_points(conn, course_id, own).await?;
-            let limit = Decimal::from(HUNDRED_LIMIT);
-            if used + points > limit {
-                let free = (limit - used).max(Decimal::ZERO);
-                return Err(ContentError::PointsLimit {
-                    field,
-                    message: format!(
-                        "the regular assignments of a course may total at most {HUNDRED_LIMIT} points; {free:.2} are still free"
-                    ),
-                });
-            }
-        }
+    if scale == GradingScale::Twelve && points > Decimal::from(TWELVE_LIMIT) {
+        return Err(ContentError::PointsLimit {
+            field,
+            message: format!(
+                "an assignment may be worth at most {TWELVE_LIMIT} points on the twelve-point scale"
+            ),
+        });
     }
     Ok(())
 }
@@ -504,14 +474,13 @@ pub async fn lock_course_assignments(
 }
 
 /// Copies the whole tree of `from` into the empty course `to`, all as drafts (ADR-0048). The caller
-/// has authorized both courses.
+/// has authorized both courses. Returns which new id each module and item got.
 pub async fn copy_course_content(
     conn: &mut PgConnection,
     from: Uuid,
     to: Uuid,
-) -> Result<(), ContentError> {
-    repo::copy_course(conn, from, to).await?;
-    Ok(())
+) -> Result<CopiedIds, ContentError> {
+    Ok(repo::copy_course(conn, from, to).await?)
 }
 
 /// The course's content as the actor may see it. Staff see everything; others only what is open
@@ -1027,16 +996,7 @@ async fn create(
     }
     let body = validated_body(kind, body.as_ref(), rules.profiles)?;
     if let Some(assignment) = &assignment {
-        check_points(
-            conn,
-            rules.scale,
-            course_id,
-            None,
-            assignment.max_points.value(),
-            assignment.is_bonus,
-            "max_points",
-        )
-        .await?;
+        check_points(rules.scale, assignment.max_points.value(), "max_points")?;
     }
     let id = Uuid::now_v7();
     let body = body.unwrap_or_else(|| match kind {
@@ -1542,9 +1502,6 @@ pub async fn update_item(
     let mut was_due = None;
     if is_assignment && patch.touches_assignment() {
         let points_change = patch.max_points.is_some() || patch.is_bonus.is_some();
-        if points_change && rules.scale == GradingScale::Hundred {
-            repo::lock_course_points(conn, row.item.course_id).await?;
-        }
         // The row lock comes before the gradebook is asked, which is a later statement: a grade
         // write holds the row `FOR SHARE`, so this waits for it and then sees its score. A
         // submission write holds it the same way, so a submit that began first finishes under the
@@ -1595,7 +1552,6 @@ pub async fn update_item(
         }
         if points_change {
             let points = patch.max_points.unwrap_or(current.max_points);
-            let is_bonus = patch.is_bonus.unwrap_or(current.is_bonus);
             if points.value() < current.max_points.value()
                 && gradebook::max_score(conn, id)
                     .await?
@@ -1603,24 +1559,8 @@ pub async fn update_item(
             {
                 return Err(ContentError::BelowGivenScores);
             }
-            let raised = points.value() > current.max_points.value();
-            let becomes_regular = current.is_bonus && !is_bonus;
-            let needs_check = match rules.scale {
-                GradingScale::Twelve => raised,
-                GradingScale::Hundred => raised || becomes_regular,
-            };
-            if needs_check {
-                let field = if raised { "max_points" } else { "is_bonus" };
-                check_points(
-                    conn,
-                    rules.scale,
-                    row.item.course_id,
-                    Some(id),
-                    points.value(),
-                    is_bonus,
-                    field,
-                )
-                .await?;
+            if points.value() > current.max_points.value() {
+                check_points(rules.scale, points.value(), "max_points")?;
             }
         }
     }

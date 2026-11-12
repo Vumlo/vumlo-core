@@ -1,0 +1,100 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id, module_id, title, cap, best_k, counts, bonus\n           FROM gradebook.groups WHERE course_id = $1\n           ORDER BY position NULLS LAST, id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "gradebook.groups",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "module_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "gradebook.groups",
+            "name": "module_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "title",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "gradebook.groups",
+            "name": "title"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "cap",
+        "type_info": "Numeric",
+        "origin": {
+          "Table": {
+            "table": "gradebook.groups",
+            "name": "cap"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "best_k",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "gradebook.groups",
+            "name": "best_k"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "counts",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "gradebook.groups",
+            "name": "counts"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "bonus",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "gradebook.groups",
+            "name": "bonus"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      true,
+      true,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "9c32a2f98e90c2042206a949cf4c19ec62f7ea7ed6d241596e6b7561a6b14a97"
+}

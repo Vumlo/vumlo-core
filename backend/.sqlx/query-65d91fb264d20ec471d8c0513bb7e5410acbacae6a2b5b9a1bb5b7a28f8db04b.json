@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT COALESCE(max(position), 0) + 1 AS \"next!\"\n           FROM gradebook.groups WHERE course_id = $1 AND module_id IS NULL",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "next!",
+        "type_info": "Int4",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "65d91fb264d20ec471d8c0513bb7e5410acbacae6a2b5b9a1bb5b7a28f8db04b"
+}

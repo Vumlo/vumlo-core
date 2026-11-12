@@ -236,9 +236,12 @@ pub async fn make_template(
         },
     )
     .await?;
-    content::copy_course_content(conn, course_id, template.id)
+    let ids = content::copy_course_content(conn, course_id, template.id)
         .await
         .map_err(from_content)?;
+    gradebook::copy_layout(conn, course_id, template.id, &ids)
+        .await
+        .map_err(from_gradebook)?;
     Ok(template)
 }
 
@@ -273,9 +276,12 @@ pub async fn create_from_template(
         },
     )
     .await?;
-    content::copy_course_content(conn, template_id, course.id)
+    let ids = content::copy_course_content(conn, template_id, course.id)
         .await
         .map_err(from_content)?;
+    gradebook::copy_layout(conn, template_id, course.id, &ids)
+        .await
+        .map_err(from_gradebook)?;
     Ok(course)
 }
 

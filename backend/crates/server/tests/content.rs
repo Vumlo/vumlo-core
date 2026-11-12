@@ -2145,142 +2145,30 @@ async fn on_the_twelve_scale_no_assignment_is_worth_more_than_twelve_points() {
 
 // --- hundred -----------------------------------------------------------------------------------
 
+/// ADR-0089: no limit on one assignment or on their sum; the gradebook cuts the total at the
+/// target of the course. Only the validity of the points themselves is checked.
 #[tokio::test]
-async fn on_the_hundred_scale_regular_points_of_a_course_add_up_to_at_most_one_hundred() {
+async fn on_the_hundred_scale_the_regular_points_of_a_course_have_no_total_limit() {
     db_test(async |pool| {
         let w = world(pool).await;
         let m = module(&w, "M", None).await;
 
-        // A `text` item is not an assignment and counts for nothing.
-        item(&w, m, "Text").await;
-        // Assignments are drafts when created, and drafts count.
+        let sixty = assignment(&w, m, "60", false).await;
         assignment(&w, m, "60", false).await;
-        let forty = assignment(&w, m, "40", false).await;
-        assert_eq!(item_json(&w, forty).await["status"], "draft");
+        assignment(&w, m, "9999.99", false).await;
+        assignment(&w, m, "50", true).await;
 
-        let response = create_assignment(&w, m, "One more", json!("1"), false).await;
-        assert_eq!(error_fields(&response), ["assignment.max_points"]);
-        let message = message_of(&response);
-        assert!(message.contains("at most 100"), "{message}");
-        assert!(message.contains("0.00 are still free"), "{message}");
+        // A raise is not compared with the rest, and a bonus can become regular and back.
+        let raised = ok(&patch_item(&w, sixty, json!({"max_points": "500"})).await);
+        assert_eq!(raised["assignment"]["max_points"], "500.00");
+        let flipped = ok(&patch_item(&w, sixty, json!({"is_bonus": true})).await);
+        assert_eq!(flipped["assignment"]["is_bonus"], true);
 
-        // Deleting an assignment frees its points.
-        no_content(&delete(&w.http, &w.owner.token, &format!("/items/{forty}")).await);
-        let response = create_assignment(&w, m, "Too big", json!("40.01"), false).await;
-        assert!(message_of(&response).contains("40.00 are still free"));
-        assignment(&w, m, "25.5", false).await;
-        assignment(&w, m, "14.5", false).await;
-        create_assignment(&w, m, "Full", json!("0.01"), false)
-            .await
-            .problem(422);
-    })
-    .await;
-}
-
-#[tokio::test]
-async fn on_the_hundred_scale_patch_checks_a_raise_but_never_a_lowering() {
-    db_test(async |pool| {
-        let w = world(pool).await;
-        let m = module(&w, "M", None).await;
-        let sixty = assignment(&w, m, "60", false).await;
-        assignment(&w, m, "40", false).await;
-
-        // The assignment's own points are not counted twice: 60 stays 60.
-        let same = ok(&patch_item(&w, sixty, json!({"max_points": "60"})).await);
-        assert_eq!(same["assignment"]["max_points"], "60.00");
-        ok(&patch_item(&w, sixty, json!({"max_points": "60.00", "config": {}})).await);
-
-        let response = patch_item(&w, sixty, json!({"max_points": "60.01"})).await;
-        assert_eq!(error_fields(&response), ["max_points"]);
-        assert!(message_of(&response).contains("60.00 are still free"));
-        assert_eq!(
-            item_json(&w, sixty).await["assignment"]["max_points"],
-            "60.00"
-        );
-
-        let lowered = ok(&patch_item(&w, sixty, json!({"max_points": "20"})).await);
-        assert_eq!(lowered["assignment"]["max_points"], "20.00");
-        // The freed points can be taken back, and not one more.
-        ok(&patch_item(&w, sixty, json!({"max_points": "60"})).await);
-        patch_item(&w, sixty, json!({"max_points": "61"}))
-            .await
-            .problem(422);
-    })
-    .await;
-}
-
-#[tokio::test]
-async fn bonus_assignments_are_outside_the_sum_and_the_scale() {
-    db_test(async |pool| {
-        let w = world(pool).await;
-        let m = module(&w, "M", None).await;
-        assignment(&w, m, "100", false).await;
-
-        create_assignment(&w, m, "Regular", json!("1"), false)
-            .await
-            .problem(422);
-        let extra = assignment(&w, m, "50", true).await;
-        assignment(&w, m, "9999.99", true).await;
-        let item = item_json(&w, extra).await;
-        assert_eq!(item["assignment"]["is_bonus"], true);
-        // A bonus assignment can be raised without limit, too.
-        ok(&patch_item(&w, extra, json!({"max_points": "500"})).await);
-    })
-    .await;
-}
-
-#[tokio::test]
-async fn turning_bonus_into_regular_is_checked_and_the_other_way_frees_points() {
-    db_test(async |pool| {
-        let w = world(pool).await;
-        let m = module(&w, "M", None).await;
-        let sixty = assignment(&w, m, "60", false).await;
-        assignment(&w, m, "40", false).await;
-        let bonus = assignment(&w, m, "50", true).await;
-
-        // 100 + 50 would pass the limit: refused, and blamed on is_bonus.
-        let response = patch_item(&w, bonus, json!({"is_bonus": false})).await;
-        assert_eq!(error_fields(&response), ["is_bonus"]);
-        assert!(message_of(&response).contains("0.00 are still free"));
-        assert_eq!(item_json(&w, bonus).await["assignment"]["is_bonus"], true);
-        create_assignment(&w, m, "Regular", json!("1"), false)
-            .await
-            .problem(422);
-
-        // Making a regular assignment a bonus one is never refused, and frees its 60 points.
-        let freed = ok(&patch_item(&w, sixty, json!({"is_bonus": true})).await);
-        assert_eq!(freed["assignment"]["is_bonus"], true);
-        // Now 50 fits next to the 40 that stay regular.
-        let regular = ok(&patch_item(&w, bonus, json!({"is_bonus": false})).await);
-        assert_eq!(regular["assignment"]["is_bonus"], false);
-        assignment(&w, m, "10", false).await;
-        create_assignment(&w, m, "Regular", json!("0.01"), false)
-            .await
-            .problem(422);
-        // Raising the points and flipping the bonus in one patch is judged as a whole.
-        let response = patch_item(&w, sixty, json!({"is_bonus": false, "max_points": "1"})).await;
-        assert_eq!(error_fields(&response), ["is_bonus"]);
-    })
-    .await;
-}
-
-#[tokio::test]
-async fn the_points_of_another_course_are_not_counted() {
-    db_test(async |pool| {
-        let w = world(pool).await;
-        let m = module(&w, "M", None).await;
-        assignment(&w, m, "100", false).await;
-
-        let other_course = create_course(&w.http, &w.owner.token, "Geometry").await;
-        let other = module_in(&w, other_course, "Other", None).await;
-        assignment(&w, other, "60", false).await;
-        assignment(&w, other, "40", false).await;
-        create_assignment(&w, other, "One more", json!("1"), false)
-            .await
-            .problem(422);
-        create_assignment(&w, m, "One more", json!("1"), false)
-            .await
-            .problem(422);
+        // The points themselves are still validated.
+        for bad in [json!("0"), json!("10000"), json!("1.005")] {
+            let response = create_assignment(&w, m, "Bad", bad.clone(), false).await;
+            assert_eq!(error_fields(&response), ["assignment.max_points"], "{bad}");
+        }
     })
     .await;
 }
@@ -2572,12 +2460,10 @@ async fn no_submission_assignments_follow_the_points_rules_of_the_scale() {
         };
 
         created(&post(&w.http, &w.owner.token, &path, make("60", false)).await);
-        // A second regular 60 exceeds the hundred points of the course; the type changes nothing.
-        let response = post(&w.http, &w.owner.token, &path, make("60", false)).await;
-        assert_eq!(error_fields(&response), ["assignment.max_points"]);
-        assert!(message_of(&response).contains("40.00 are still free"));
-        // Bonus points are outside that sum, and 0 and a JSON number are invalid points.
+        // There is no limit on the sum on the hundred scale (ADR-0089); the type changes nothing.
+        created(&post(&w.http, &w.owner.token, &path, make("60", false)).await);
         created(&post(&w.http, &w.owner.token, &path, make("60", true)).await);
+        // 0 and a JSON number are invalid points.
         for bad in [json!("0"), json!(5), json!("1.005"), json!("")] {
             let response = post(
                 &w.http,
@@ -2973,7 +2859,7 @@ async fn admin_assignment_writes_are_audited_and_staff_writes_are_not() {
             &w.http,
             token,
             &format!("/items/{id}"),
-            json!({"max_points": "101"}),
+            json!({"max_points": "0"}),
         )
         .await
         .problem(422);

@@ -720,9 +720,10 @@ fn non_members_see_no_content_but_admins_do() {
 fn staff_and_admins_read_the_gradebook_in_every_status_and_grade_and_publish_but_not_in_an_archived_one()
  {
     type Make = fn(CourseAccess) -> Action;
-    let actions: [(Make, bool); 3] = [
+    let actions: [(Make, bool); 4] = [
         (Action::GradeAssignment, true),
         (Action::PublishGrades, true),
+        (Action::ManageGradebook, true),
         (Action::ViewGradebook, false),
     ];
     for (make, is_write) in actions {
@@ -936,6 +937,7 @@ fn an_institution_student_is_never_a_course_teacher_or_owner() {
             Action::ManageContent(held),
             Action::GradeAssignment(held),
             Action::ViewGradebook(held),
+            Action::ManageGradebook(held),
             Action::ManageRoster(held),
             Action::EditCourse(held),
             Action::TransferOwnership(held),

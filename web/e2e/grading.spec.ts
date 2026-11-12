@@ -306,7 +306,8 @@ test("the assignment filter shows one column", async ({ page }) => {
   await openGradebook(page);
   expect(await page.getByRole("columnheader").count()).toBeGreaterThan(2);
   await page.getByLabel("Assignment", { exact: true }).selectOption({ label: "Merge sort implementation" });
-  await expect(page.getByRole("columnheader")).toHaveCount(2);
+  // The student, the total and the one assignment.
+  await expect(page.getByRole("columnheader")).toHaveCount(3);
   await expect(page.getByRole("columnheader", { name: /Merge sort implementation/ })).toBeVisible();
 });
 

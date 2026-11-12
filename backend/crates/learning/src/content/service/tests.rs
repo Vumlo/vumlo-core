@@ -93,8 +93,6 @@ async fn two_creates_racing_for_the_last_position_one_gets_409() {
 // first one commit. Nothing sleeps: the order is forced by the lock, not by timing.
 // -----------------------------------------------------------------------------------------
 
-use std::time::Duration;
-
 use crate::content::model::{BuiltinType, MaxPoints};
 
 fn text(points: &str, is_bonus: bool) -> Assignment {
@@ -111,13 +109,6 @@ fn text(points: &str, is_bonus: bool) -> Assignment {
 fn points(text: &str) -> ItemPatch {
     ItemPatch {
         max_points: Some(MaxPoints::parse(text).unwrap()),
-        ..ItemPatch::default()
-    }
-}
-
-fn bonus(is_bonus: bool) -> ItemPatch {
-    ItemPatch {
-        is_bonus: Some(is_bonus),
         ..ItemPatch::default()
     }
 }
@@ -206,158 +197,27 @@ impl Course {
         update_item(conn, &self.owner, rules(), id, patch).await
     }
 
-    /// Runs `patch` in its own transaction on a task and commits it when it succeeds.
-    fn patch_in_background(
-        &self,
-        id: Uuid,
-        patch: ItemPatch,
-    ) -> tokio::task::JoinHandle<Result<Item, ContentError>> {
-        let (pool, owner) = (self.pool.clone(), self.owner.clone());
-        tokio::spawn(async move {
-            let mut tx = pool.begin().await.unwrap();
-            let result = update_item(&mut tx, &owner, rules(), id, patch).await;
-            if result.is_ok() {
-                tx.commit().await.unwrap();
-            }
-            result
-        })
-    }
-
     async fn assignment(&self, id: Uuid) -> Assignment {
         let mut conn = self.pool.acquire().await.unwrap();
         repo::find_assignment(&mut conn, id).await.unwrap().unwrap()
     }
-
-    async fn regular_points(&self) -> String {
-        let mut conn = self.pool.acquire().await.unwrap();
-        let course_id = repo::find_module(&mut conn, self.module)
-            .await
-            .unwrap()
-            .unwrap()
-            .module
-            .course_id;
-        repo::regular_points(&mut conn, course_id, None)
-            .await
-            .unwrap()
-            .to_string()
-    }
 }
 
-/// Returns once a session waits for an advisory lock. Fails if the writer finished instead
-/// (it did not wait for the lock) or if nobody waits within the timeout.
-async fn wait_until_blocked<T>(pool: &sqlx::PgPool, writer: &tokio::task::JoinHandle<T>) {
-    let mut conn = pool.acquire().await.unwrap();
-    let waited = tokio::time::timeout(Duration::from_secs(10), async {
-        while !writer.is_finished() && repo::advisory_lock_waiters(&mut conn).await.unwrap() < 1 {
-            tokio::task::yield_now().await;
-        }
-    })
-    .await;
-    assert!(waited.is_ok(), "no writer waited for the points lock");
-    assert!(
-        !writer.is_finished(),
-        "the second writer finished without waiting for the points lock"
-    );
-}
-
-fn points_limit(result: Result<Item, ContentError>) -> (&'static str, String) {
-    match result {
-        Err(ContentError::PointsLimit { field, message }) => (field, message),
-        other => panic!("expected the points limit, got {other:?}"),
-    }
-}
-
+/// ADR-0089: the regular assignments of a course may add up to more than 100 points on the
+/// `hundred` scale; the gradebook cuts the total at the target, not the content at creation.
 #[tokio::test]
-async fn two_creates_of_sixty_regular_points_one_gets_422() {
+async fn the_regular_assignments_of_a_course_may_add_up_to_more_than_a_hundred() {
     db_test(async |pool| {
         let course = course(pool).await;
-
-        let mut first = course.pool.begin().await.unwrap();
-        course.create(&mut first, "60", false).await.unwrap();
-
-        let second = tokio::spawn({
-            let (pool, owner, module) = (course.pool.clone(), course.owner.clone(), course.module);
-            async move {
-                let mut tx = pool.begin().await.unwrap();
-                let result = create_item(
-                    &mut tx,
-                    &owner,
-                    rules(),
-                    module,
-                    ContentTitle::parse("B").unwrap(),
-                    None,
-                    Some(text("60", false)),
-                )
-                .await;
-                if result.is_ok() {
-                    tx.commit().await.unwrap();
-                }
-                result
-            }
-        });
-        wait_until_blocked(&course.pool, &second).await;
-        first.commit().await.unwrap();
-
-        let error = second.await.unwrap();
-        let (field, message) = points_limit(error);
-        assert_eq!(field, "max_points");
-        assert!(message.contains("40.00 are still free"), "{message}");
-        assert_eq!(course.regular_points().await, "60.00");
-    })
-    .await;
-}
-
-#[tokio::test]
-async fn a_patch_that_looked_like_a_lowering_is_checked_again_after_the_wait() {
-    db_test(async |pool| {
-        let course = course(pool).await;
-        let x = course.committed("40", false).await;
+        let x = course.committed("60", false).await;
         let y = course.committed("60", false).await;
         assert_ne!(x, y);
 
-        // The first writer lowers X to 10 and fills the freed points with a new assignment.
-        let mut first = course.pool.begin().await.unwrap();
-        course.patch(&mut first, x, points("10")).await.unwrap();
-        course.create(&mut first, "30", false).await.unwrap();
-
-        // The second writer loads X (40) to authorize, then waits for the lock. Against the 40 it
-        // read, 30 is a lowering; against the 10 that is committed by then, it is a raise.
-        let second = course.patch_in_background(x, points("30"));
-        wait_until_blocked(&course.pool, &second).await;
-        first.commit().await.unwrap();
-
-        let (field, message) = points_limit(second.await.unwrap());
-        assert_eq!(field, "max_points");
-        assert!(message.contains("10.00 are still free"), "{message}");
-        assert_eq!(course.assignment(x).await.max_points.to_string(), "10.00");
-        assert_eq!(course.regular_points().await, "100.00");
-    })
-    .await;
-}
-
-#[tokio::test]
-async fn a_patch_that_looked_like_no_change_is_checked_again_after_the_wait() {
-    db_test(async |pool| {
-        let course = course(pool).await;
-        let x = course.committed("50", false).await;
-        course.committed("50", false).await;
-
-        // The first writer makes X a bonus assignment and fills the freed points.
-        let mut first = course.pool.begin().await.unwrap();
-        course.patch(&mut first, x, bonus(true)).await.unwrap();
-        course.create(&mut first, "50", false).await.unwrap();
-
-        // The second writer loads X as a regular assignment, so `is_bonus = false` looks like no
-        // change. Once the first commits, X is a bonus one and this makes it regular again.
-        let second = course.patch_in_background(x, bonus(false));
-        wait_until_blocked(&course.pool, &second).await;
-        first.commit().await.unwrap();
-
-        let (field, message) = points_limit(second.await.unwrap());
-        assert_eq!(field, "is_bonus");
-        assert!(message.contains("0.00 are still free"), "{message}");
-        assert!(course.assignment(x).await.is_bonus);
-        assert_eq!(course.regular_points().await, "100.00");
+        // Raising one of them past what is left of 100 is allowed too.
+        let mut tx = course.pool.begin().await.unwrap();
+        course.patch(&mut tx, x, points("90")).await.unwrap();
+        tx.commit().await.unwrap();
+        assert_eq!(course.assignment(x).await.max_points.to_string(), "90.00");
     })
     .await;
 }
