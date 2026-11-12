@@ -193,3 +193,26 @@ PR B (boundaries in one crate, migrations from `0054`):
 4. Views by reader crate (published-only grades view first), `DECLARED_VIEWS` updated, the ratchet list reaches empty.
 
 PR C (the move): `git mv` of the five crates, workspace members, per-crate error/state/router, `server` composition, then CI, `Dockerfile`, `RELEASING.md`, `CLAUDE.md` §4, `ARCHITECTURE.md`, `docs/PLAN.md`; `.sqlx` regeneration; OpenAPI identical.
+
+---
+
+## Progress (2026-11-12, stopped after Task 6 by the user's request)
+
+Done and committed on `feat/split-learning`: Tasks 1 to 6 (commits `6e7f0f2` to `5270250`). Left: **Task 7** (`vumlo-cli facts rebuild` and the demo seed) and **Task 8** (docs, `.sqlx`, final checks, PR). Then the final whole-branch review of the executing-plans skill.
+
+Rulings made on the way (all small):
+- `events::dispatch::installed()` was added in Task 2, where `emit` starts to use it (clippy rejected it unused in Task 1).
+- `vumlo-cli` installs the registry itself with `events::install(learning::subscribers())` in `main` (normal dependencies `events` and `learning`); `server` is only its dev-dependency. `server::app::install_subscribers()` ignores "already installed" because the registry is the same for every state a process builds.
+- The unit-test wrapper `db_test` (installs the registry, then delegates to `test_support::db_test`) lives in `src/tests.rs` of `org`, `plugins` and `learning`.
+- The facts scenarios are HTTP tests in `server/tests/facts.rs` (not `learning/src/facts/tests.rs`); the rollback-on-subscriber-error test is in `events` (Task 1). The quiz subscriber is covered by `server/tests/quiz_and_form.rs` (new test `only_a_fully_scored_attempt_keeps_a_total_for_the_grade`).
+- Migrations: `0051` creates `content.facts` and backfills it, `0052` drops `content.completions`, `0053` adds `assessment.submissions.auto_total`. The views migration of PR B becomes `0054` (Task 8 amends the spec).
+- `replace_source_facts` deletes the scope's rows that have no mark and then nulls the source columns of the rest (one UPDATE would break the all-empty CHECK); rows are written from a jsonb recordset. `FactScope::filters()` is shared by `content` and `learning::facts`.
+- `LearningError` has a `Content` variant now.
+
+Things to know when resuming:
+- Run `cargo sqlx prepare --workspace -- --all-targets --all-features` (with `--all-features`; without it the queries of the optional modules vanish from `.sqlx`).
+- Dev database: `docker compose up -d postgres`; `DATABASE_URL=postgres://vumlo:vumlo@localhost:5432/vumlo`; apply migrations with `sqlx migrate run --source migrations` from `backend/`.
+- Every process that emits needs a registry: a new binary or test crate that calls services must install one (`events::testing::ensure_installed` in tests).
+- Task 7 detail: `seed --demo` writes grades by raw SQL, so it must call `learning::rebuild_facts(&mut tx, None)` inside a transaction at the end (`rebuild_facts` takes `LOCK TABLE`, which needs a transaction block). `vumlo-cli` already depends on `learning` and `events`.
+- Task 8 also: the unit-test checks of the plan (fmt, clippy, `architecture`, `authorization`, `sqlx prepare --check`, offline check) and the OpenAPI diff (`/api/v1/openapi.json` against `web/openapi.json`, expected identical).
+- Not pushed yet. Push with `git push -u origin feat/split-learning` when ready.
