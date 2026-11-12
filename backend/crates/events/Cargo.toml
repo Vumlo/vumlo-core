@@ -5,6 +5,10 @@ edition.workspace = true
 publish.workspace = true
 description = "The audit log and the outbox: what happened, written in the transaction that made it happen (ADR-0007, ADR-0065)."
 
+[features]
+# Test helpers for other crates. Switched on only from `[dev-dependencies]`.
+testing = []
+
 [dependencies]
 access.workspace = true
 chrono.workspace = true

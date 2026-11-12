@@ -4,6 +4,7 @@ use common::ApiError;
 use sqlx::{PgConnection, PgPool};
 use uuid::Uuid;
 
+use super::dispatch::SubscriberError;
 use super::model::{AuditEntry, Event, Handlers};
 use super::repo;
 use access::Actor;
@@ -15,6 +16,14 @@ pub enum EventsError {
     Forbidden(#[from] AccessError),
     #[error(transparent)]
     Db(#[from] sqlx::Error),
+    /// A synchronous subscriber refused: the operation that emitted the event fails (ADR-0093).
+    #[error("a subscriber failed: {0}")]
+    Subscriber(#[from] SubscriberError),
+    #[error("the subscribers are already installed")]
+    AlreadyInstalled,
+    /// The process never called `events::install`: a bug in its composition root.
+    #[error("no subscribers are installed; the composition root must call events::install")]
+    NoSubscribers,
 }
 
 impl From<EventsError> for ApiError {
@@ -22,6 +31,12 @@ impl From<EventsError> for ApiError {
         match error {
             EventsError::Forbidden(policy) => policy.into(),
             EventsError::Db(e) => Self::from_db("events", &e),
+            EventsError::Subscriber(_)
+            | EventsError::AlreadyInstalled
+            | EventsError::NoSubscribers => {
+                tracing::error!(%error, "events: a subscriber or the registry failed");
+                Self::Internal
+            }
         }
     }
 }
