@@ -8,6 +8,7 @@ import { useContentTree, useCourseInfo, useItemMeta } from "@/lib/api/hooks/cour
 import { allItems } from "@/lib/course";
 import { dayLong, shortDay } from "@/lib/format";
 import { bodyOf, type Item } from "@/lib/api/types";
+import { DoneButton } from "./DoneButton";
 import { ItemFrame, PreviewBanner } from "./ItemFrame";
 import { useT } from "@/lib/i18n";
 import s from "./Item.module.css";
@@ -55,6 +56,7 @@ export function LecturePage({ item, courseId, staff }: { item: Item; courseId: s
             <h1 className={s.lectureTitle}>{item.title}</h1>
             <p className={s.byline}>{info.data?.owner_name}, {t("lecture.updated", { day: dayLong(item.updated_at) })}</p>
             <BlockRenderer doc={doc} />
+            {!staff && <DoneButton item={item} courseId={courseId} />}
             <nav aria-label={t("lecture.pager")} className={s.pager}>
               {prevLecture ? (
                 <Link href={itemHref(courseId, prevLecture.id)} className={s.pagerLink}>

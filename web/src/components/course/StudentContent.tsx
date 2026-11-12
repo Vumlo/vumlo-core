@@ -9,7 +9,7 @@ import { useMyGrades } from "@/lib/api/hooks/work";
 import type { ItemMeta } from "@/lib/api/types";
 import type { ItemSummary } from "@/lib/api/types";
 import { now } from "@/lib/clock";
-import { allItems, dueShort, isAssignment, kindOf, sections, statusPill, typeLabel } from "@/lib/course";
+import { allItems, dueShort, isAssignment, isDone, isLocked, kindOf, sections, statusPill, typeLabel } from "@/lib/course";
 import { dayLabel, dueSentence, relative, sinceLabel } from "@/lib/format";
 import { wholePoints } from "@/lib/points";
 import { CourseHeader } from "./CourseHeader";
@@ -49,7 +49,11 @@ function AssignmentRow({ courseId, item, meta }: { courseId: string; item: ItemS
         <span className={s.dueMain}>{dueShort(a.due_at ?? null, meta?.class_on, today)}</span>
         <span className={s.rowMeta}>{rel}</span>
       </span>
-      <span className={s.pillCol}><StatusPill tone={status === "in_class" ? "strong" : pill.tone}>{status === "in_class" ? t("status.inClass") : label}</StatusPill></span>
+      <span className={s.pillCol}>
+        {isLocked(item)
+          ? <StatusPill tone="plain"><Icon name="lock" size={13} strokeWidth={2} /> {t("locked.badge")}</StatusPill>
+          : <StatusPill tone={status === "in_class" ? "strong" : pill.tone}>{status === "in_class" ? t("status.inClass") : label}</StatusPill>}
+      </span>
     </Link>
   );
 }
@@ -108,7 +112,11 @@ export function StudentContent({ courseId }: { courseId: string }) {
                                       <span className={s.rowTitle}>{i.title}</span>
                                       <span className={s.rowMeta}>{kindOf(i) === "file" ? t("row.file") : t("row.lecture")}{m[i.id]?.read_minutes ? `, ${t("row.readMinutes", { n: m[i.id]!.read_minutes! })}` : ""}</span>
                                     </span>
-                                    <Icon name="chevronRight" size={16} strokeWidth={2} style={{ color: "var(--muted)", flex: "none" }} />
+                                    {isLocked(i)
+                                      ? <StatusPill tone="plain"><Icon name="lock" size={13} strokeWidth={2} /> {t("locked.badge")}</StatusPill>
+                                      : isDone(i)
+                                      ? <StatusPill tone="ok"><Icon name="check" size={13} strokeWidth={2.4} /> {t("done.marked")}</StatusPill>
+                                      : <Icon name="chevronRight" size={16} strokeWidth={2} style={{ color: "var(--muted)", flex: "none" }} />}
                                   </Link>
                                 ),
                               )}

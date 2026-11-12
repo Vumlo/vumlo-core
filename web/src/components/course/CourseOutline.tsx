@@ -5,7 +5,7 @@ import { useState } from "react";
 import { Icon } from "@/components/Icon";
 import type { ItemMeta } from "@/lib/api/types";
 import type { ContentTree } from "@/lib/api/types";
-import { isAssignment, kindOf, outlineMark, sections } from "@/lib/course";
+import { isAssignment, isDone, isLocked, kindOf, outlineMark, sections } from "@/lib/course";
 import { useT } from "@/lib/i18n";
 import s from "./CourseOutline.module.css";
 import { courseHref, itemHref } from "@/lib/routes";
@@ -55,6 +55,9 @@ export function CourseOutline({ courseId, tree, meta, code, title, currentItemId
                 sec.items.map((i) => {
                   const k = kindOf(i);
                   const mark = !staff && k === "assignment" ? outlineMark(meta[i.id]) : null;
+                  const locked = !staff && isLocked(i);
+                  // A text or file item has no status of its own; the student's mark is what shows.
+                  const marked = !staff && k !== "assignment" && isDone(i);
                   return (
                     <Link
                       key={i.id}
@@ -65,7 +68,13 @@ export function CourseOutline({ courseId, tree, meta, code, title, currentItemId
                     >
                       <Icon name={k} size={15} strokeWidth={2} className={k === "lecture" ? s.iconLecture : k === "file" ? s.iconFile : s.iconAssignment} />
                       <span className={s.itemTitle}>{i.title}</span>
-                      {mark && <span className={s.mark} data-tone={mark.tone}>{mark.text}</span>}
+                      {locked ? (
+                        <span className={s.mark}><Icon name="lock" size={13} strokeWidth={2} /><span className="sr-only">{t("locked.badge")}</span></span>
+                      ) : marked ? (
+                        <span className={s.mark} data-tone="ok"><Icon name="check" size={14} strokeWidth={2.4} /><span className="sr-only">{t("done.marked")}</span></span>
+                      ) : (
+                        mark && <span className={s.mark} data-tone={mark.tone}>{mark.text}</span>
+                      )}
                     </Link>
                   );
                 })}

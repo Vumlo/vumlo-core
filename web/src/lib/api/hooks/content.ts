@@ -3,7 +3,7 @@
 import { api } from "../client";
 import { invalidate, useMutation, useQuery } from "../../query";
 import { configToWire, itemFromWire } from "../sheetWire";
-import type { Document, EditorProfiles, Item, ItemRevision, Module } from "../types";
+import type { AccessRule, Document, EditorProfiles, Item, ItemRevision, Module } from "../types";
 
 export type NewItem =
   | { kind: "text"; title: string; body?: Document }
@@ -25,6 +25,8 @@ export type ItemPatch = Partial<{
   publish_at: string | null;
   /** The day of in-class work, `YYYY-MM-DD`; `null` clears it (ADR-0049). */
   class_on: string | null;
+  /** What locks the item until the student has done it (ADR-0092); `null` removes the rule. */
+  access_rule: AccessRule | null;
 }>;
 
 const touched = (courseId: string) => {
@@ -59,7 +61,7 @@ export function useCreateModule(courseId: string) {
 }
 
 export function useUpdateModule(courseId: string) {
-  return useMutation(async (moduleId: string, patch: { title?: string; publish_at?: string | null }) => {
+  return useMutation(async (moduleId: string, patch: { title?: string; publish_at?: string | null; access_rule?: AccessRule | null }) => {
     const m = await api.patch<Module>(`/modules/${moduleId}`, patch);
     touched(courseId);
     return m;
@@ -99,6 +101,16 @@ export function useUpdateItem(courseId: string) {
     const i = await api.patch<Item>(`/items/${itemId}`, wire);
     touched(courseId);
     return itemFromWire(i);
+  });
+}
+
+/** A student marks a text or file item done, or takes the mark off (ADR-0092). */
+export function useMarkDone(courseId: string) {
+  return useMutation(async (itemId: string, done: boolean) => {
+    if (done) await api.put(`/items/${itemId}/completion`);
+    else await api.delete(`/items/${itemId}/completion`);
+    touched(courseId);
+    return true as const;
   });
 }
 

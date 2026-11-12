@@ -1642,6 +1642,28 @@ export interface paths {
         patch: operations["update_item"];
         trace?: never;
     };
+    "/api/v1/items/{id}/completion": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * A student marks a text or file item done (ADR-0092). Marking it again changes nothing. An
+         *     assignment is done by being submitted or graded and takes no mark (409), and neither does an
+         *     item that a rule still keeps closed (409).
+         */
+        put: operations["mark_done"];
+        post?: never;
+        /** A student takes their mark off an item (ADR-0092). With no mark it does nothing. */
+        delete: operations["unmark_done"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/items/{id}/publish": {
         parameters: {
             query?: never;
@@ -2672,6 +2694,13 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /**
+         * @description What locks a module or an item: every condition must hold. A rule on a module also locks the
+         *     items and sub-modules in it. At most 10 conditions; none removes the rule.
+         */
+        AccessRule: {
+            all: components["schemas"]["Condition"][];
+        };
         AddMembersRequest: {
             /**
              * @description 1 to 1000 user ids. All or nothing: one bad entry rejects the request, and the `422`
@@ -3021,6 +3050,27 @@ export interface components {
             /** @description Plain text; the client highlights it. */
             source: string;
         };
+        /**
+         * @description One condition of a rule.
+         *
+         *     `completed` names an item (`item_id`) or a module (`module_id`), not both. An assignment is done
+         *     when the student has submitted it or has a published score; a text or file item, when the
+         *     student marks it (`PUT /items/{id}/completion`); a module, when it has items the student can see
+         *     and all of them are done.
+         *
+         *     `score_at_least` names an assignment (`item_id`) and `points`, a decimal string above 0, at most
+         *     what the assignment is worth.
+         */
+        Condition: {
+            /** Format: uuid */
+            item_id?: string | null;
+            kind: components["schemas"]["ConditionKind"];
+            /** Format: uuid */
+            module_id?: string | null;
+            points?: string | null;
+        };
+        /** @enum {string} */
+        ConditionKind: "completed" | "score_at_least";
         /**
          * @description A top-level module with its sub-modules and its direct items. Both lists are in position
          *     order; clients show sub-modules first.
@@ -3744,6 +3794,7 @@ export interface components {
          *     the item is a draft without one) and a document that describes it.
          */
         Item: {
+            access_rule?: components["schemas"]["AccessRule"] | null;
             assignment?: components["schemas"]["Assignment"] | null;
             /**
              * @description A block document (ADR-0025) for a `text` item and an assignment, `{file_id?, description?}`
@@ -3763,6 +3814,7 @@ export interface components {
             position: number;
             /** Format: date-time */
             publish_at?: string | null;
+            standing?: components["schemas"]["Standing"] | null;
             status: components["schemas"]["ContentStatus"];
             title: string;
             /** Format: date-time */
@@ -3840,6 +3892,7 @@ export interface components {
         };
         /** @description An item in the course tree: everything but the body. */
         ItemSummary: {
+            access_rule?: components["schemas"]["AccessRule"] | null;
             assignment?: components["schemas"]["AssignmentSummary"] | null;
             /** Format: uuid */
             id: string;
@@ -3848,6 +3901,7 @@ export interface components {
             position: number;
             /** Format: date-time */
             publish_at?: string | null;
+            standing?: components["schemas"]["Standing"] | null;
             status: components["schemas"]["ContentStatus"];
             title: string;
         };
@@ -3969,6 +4023,7 @@ export interface components {
         };
         /** @description A top-level module or a sub-module (ADR-0020). */
         Module: {
+            access_rule?: components["schemas"]["AccessRule"] | null;
             /** Format: uuid */
             course_id: string;
             /** Format: date-time */
@@ -3990,6 +4045,7 @@ export interface components {
              * @description Students see the module only from this moment on.
              */
             publish_at?: string | null;
+            standing?: components["schemas"]["Standing"] | null;
             status: components["schemas"]["ContentStatus"];
             title: string;
             /** Format: date-time */
@@ -4967,6 +5023,16 @@ export interface components {
         SourceProps: {
             source: string;
         };
+        /** @description Where a student stands on a module or an item. Students only; staff are never locked. */
+        Standing: {
+            /** @description Finished: marked by the student, submitted or graded, or every item of the module is. */
+            done: boolean;
+            /**
+             * @description What still keeps it closed. Empty when it is open. A locked item reads as its title only:
+             *     an empty `body` and no questions.
+             */
+            locked: components["schemas"]["UnmetCondition"][];
+        };
         /** @description A student of the course, named. */
         StudentName: {
             name: string;
@@ -5117,6 +5183,15 @@ export interface components {
             /** Format: uuid */
             user_id: string;
         };
+        /** @description A condition that does not hold yet. */
+        UnmetCondition: {
+            condition: components["schemas"]["Condition"];
+            /**
+             * @description The title of what the condition names, when the student can see it; `null` for something
+             *     they cannot, so that a draft is not given away.
+             */
+            title?: string | null;
+        };
         /** @description An item with content students cannot read yet. */
         UnpublishedContent: components["schemas"]["CourseRef"] & {
             /** Format: uuid */
@@ -5164,6 +5239,7 @@ export interface components {
         UpdateItemRequest: {
             /** @description Assignments only. Omit to keep, `null` to clear. */
             accept_late?: boolean | null;
+            access_rule?: components["schemas"]["AccessRule"] | null;
             body?: components["schemas"]["Document"] | null;
             /**
              * Format: date
@@ -5204,6 +5280,7 @@ export interface components {
             title?: string | null;
         };
         UpdateModuleRequest: {
+            access_rule?: components["schemas"]["AccessRule"] | null;
             /**
              * Format: date-time
              * @description Omit to keep, `null` to clear, a timestamp to set.
@@ -10748,6 +10825,120 @@ export interface operations {
             };
             /** @description Invalid title or timestamp, a body that is not a JSON object, assignment fields on a `text` item, an unknown config field, invalid points, or points the grading scale does not allow */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    mark_done: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Item id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Marked done */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not logged in */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The caller is not a student of the course */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description No such item, or not visible to the caller */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description An assignment, a locked item, or an archived course */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    unmark_done: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Item id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The item is not marked done */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not logged in */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The caller is not a student of the course */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description No such item, or not visible to the caller */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The course is archived */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

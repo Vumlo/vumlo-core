@@ -3,12 +3,14 @@
 import { useCourseAccess } from "@/components/course/useCourseAccess";
 import { LoadFailed, NotFoundScreen } from "@/components/StateScreen";
 import { useItem } from "@/lib/api/hooks/courses";
+import { isLocked } from "@/lib/course";
 import { useT } from "@/lib/i18n";
 import { AssignmentPage } from "./AssignmentPage";
 import { FileAssignmentPage } from "./FileAssignmentPage";
 import { FilePage } from "./FilePage";
 import { FormPage } from "./FormPage";
 import { LecturePage } from "./LecturePage";
+import { LockedPage } from "./LockedPage";
 import { NoSubmissionPage } from "./NoSubmissionPage";
 import { QuizPage } from "./QuizPage";
 
@@ -20,6 +22,8 @@ export function ItemView({ courseId, itemId }: { courseId: string; itemId: strin
   if (item.error) return item.error.status === 404 || item.error.status === 403 ? <NotFoundScreen /> : <LoadFailed title={item.error.title} />;
   if (!item.data || loading) return <p className="loading" role="status">{t("common.loading")}</p>;
   const it = item.data;
+  // The server sends a locked item as its title only; staff are never locked (ADR-0092).
+  if (!staff && isLocked(it)) return <LockedPage item={it} courseId={courseId} />;
   if (it.kind === "text") return <LecturePage item={it} courseId={courseId} staff={staff} />;
   if (it.kind === "file") return <FilePage item={it} courseId={courseId} staff={staff} />;
   switch (it.assignment?.type) {

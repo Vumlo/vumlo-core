@@ -17,6 +17,7 @@ import { now } from "@/lib/clock";
 import { allItems, dueShort, isAssignment, kindOf, typeLabel } from "@/lib/course";
 import { plural } from "@/lib/format";
 import { wholePoints } from "@/lib/points";
+import { AccessRuleDialog, type RuleTarget } from "./AccessRuleDialog";
 import { CourseHeader } from "./CourseHeader";
 import { CourseOutline } from "./CourseOutline";
 import { translate } from "@/lib/i18n/core";
@@ -35,6 +36,7 @@ type Dlg =
   | { kind: "publish"; sec: Sec }
   | { kind: "delete-section"; sec: Sec }
   | { kind: "delete-item"; item: ItemSummary }
+  | { kind: "rule"; target: RuleTarget }
   | { kind: "new-item"; sec: Sec; type: "lecture" | "assignment" | "file" };
 
 const ASSIGNMENT_TYPES = ["text", "quiz", "form", "file", "no_submission"] as const;
@@ -197,12 +199,14 @@ export function ContentManage({ courseId }: { courseId: string }) {
                         <span className={s.count}>{plural(sec.items.length, "item")}</span>
                         {sec.items.length > 0 && <span aria-hidden="true" className={s.ticks}>{sec.items.map((i) => <span key={i.id} data-s={tick(i)} />)}</span>}
                         {status(sec.status === "draft", false)}
+                        {sec.access_rule && <span className="pill"><Icon name="lock" size={12} strokeWidth={2} /> {t("rule.has")}</span>}
                         {sec.status === "draft" && <button type="button" className="btn btn-outline" style={{ minHeight: 36 }} onClick={() => open({ kind: "publish", sec })}>{t("cm.publishSection")}</button>}
                         <span data-menu style={{ position: "relative" }}>
                           <button type="button" className="icon-btn" aria-label={t("people.moreFor", { name: sec.title })} aria-haspopup="menu" aria-expanded={menu === sec.id} onClick={() => setMenu(menu === sec.id ? null : sec.id)}><Icon name="more" size={18} strokeWidth={3.4} /></button>
                           {menu === sec.id && (
                             <div role="menu" className="popover" style={{ top: 42, right: 0 }}>
                               <button type="button" role="menuitem" className="menu-item" onClick={() => open({ kind: "rename", sec })}>{t("cm.rename")}</button>
+                              <button type="button" role="menuitem" className="menu-item" onClick={() => open({ kind: "rule", target: { kind: "module", id: sec.id, title: sec.title, rule: sec.access_rule } })}>{t("rule.menu")}</button>
                               <button type="button" role="menuitem" className="menu-item" disabled={si === 0} onClick={() => void moveSection(sec.id, -1)}>{t("cm.moveUp")}</button>
                               <button type="button" role="menuitem" className="menu-item" disabled={si === mods.length - 1} onClick={() => void moveSection(sec.id, 1)}>{t("cm.moveDown")}</button>
                               <button type="button" role="menuitem" className="menu-item" style={{ color: "var(--danger)" }} onClick={() => open({ kind: "delete-section", sec })}>{t("cm.deleteSection")}</button>
@@ -224,12 +228,14 @@ export function ContentManage({ courseId }: { courseId: string }) {
                                 <span className={s.itemMeta}>{itemMeta(i, m[i.id])}</span>
                               </Link>
                               {status(i.status === "draft", !!m[i.id]?.edited)}
+                              {i.access_rule && <span className="pill"><Icon name="lock" size={12} strokeWidth={2} /> {t("rule.has")}</span>}
                               <Link href={editItemHref(courseId, i.id)} className="btn btn-quiet" style={{ minHeight: 36 }}>{t("common.edit")}</Link>
                               <span data-menu style={{ position: "relative" }}>
                                 <button type="button" className="icon-btn" aria-label={t("people.moreFor", { name: i.title })} aria-haspopup="menu" aria-expanded={menu === i.id} onClick={() => setMenu(menu === i.id ? null : i.id)}><Icon name="more" size={18} strokeWidth={3.4} /></button>
                                 {menu === i.id && (
                                   <div role="menu" className="popover" style={{ top: 42, right: 0 }}>
                                     {i.status === "draft" && <button type="button" role="menuitem" className="menu-item" onClick={() => { setMenu(null); void publishItem.run(i.id); }}>{t("cm.publish")}</button>}
+                                    <button type="button" role="menuitem" className="menu-item" onClick={() => open({ kind: "rule", target: { kind: "item", id: i.id, title: i.title, rule: i.access_rule } })}>{t("rule.menu")}</button>
                                     <button type="button" role="menuitem" className="menu-item" disabled={sec.items[0]?.id === i.id} onClick={() => void moveItem(sec, i.id, -1)}>{t("cm.moveUp")}</button>
                                     <button type="button" role="menuitem" className="menu-item" disabled={sec.items[sec.items.length - 1]?.id === i.id} onClick={() => void moveItem(sec, i.id, 1)}>{t("cm.moveDown")}</button>
                                     <button type="button" role="menuitem" className="menu-item" style={{ color: "var(--danger)" }} onClick={() => open({ kind: "delete-item", item: i })}>{t("cm.delete")}</button>
@@ -358,6 +364,7 @@ export function ContentManage({ courseId }: { courseId: string }) {
           {t("cm.deleteSectionLead", { n: plural(dlg.sec.items.length, "item") })}
         </ConfirmDialog>
       )}
+      {dlg?.kind === "rule" && tree.data && <AccessRuleDialog courseId={courseId} tree={tree.data} target={dlg.target} onClose={close} />}
       {dlg?.kind === "delete-item" && (
         <ConfirmDialog title={t("cm.deleteQ", { title: dlg.item.title })} confirm={t("cm.delete")} danger pending={deleteItem.pending} error={deleteItem.error?.detail} onClose={close} onConfirm={async () => { if (await deleteItem.run(dlg.item.id)) close(); }}>
           {t("cm.deleteItemLead")}
