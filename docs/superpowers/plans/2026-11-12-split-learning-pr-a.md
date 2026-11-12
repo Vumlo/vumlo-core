@@ -216,3 +216,11 @@ Things to know when resuming:
 - Task 7 detail: `seed --demo` writes grades by raw SQL, so it must call `learning::rebuild_facts(&mut tx, None)` inside a transaction at the end (`rebuild_facts` takes `LOCK TABLE`, which needs a transaction block). `vumlo-cli` already depends on `learning` and `events`.
 - Task 8 also: the unit-test checks of the plan (fmt, clippy, `architecture`, `authorization`, `sqlx prepare --check`, offline check) and the OpenAPI diff (`/api/v1/openapi.json` against `web/openapi.json`, expected identical).
 - Not pushed yet. Push with `git push -u origin feat/split-learning` when ready.
+
+## Done (2026-11-12)
+
+Tasks 7 and 8 are done and the whole branch was reviewed by a fresh reviewer; its findings were fixed in one pass (`fix(learning): lock order of a quiz submit, ...`). What changed against the text above:
+- The quiz subscriber listens to `submission.submitted`, not `quiz.attempt_submitted`, and is registered before the facts subscriber: a publish takes the grade rows and then the facts of the pair, so a submit must take the grade row first, or the two deadlock (a test reproduces it).
+- `SubscriberError` is `Failed(String) | Api(ApiError)`: a subscriber that meets a database that is down answers `503`, as the operation itself would.
+- `upsert_source_facts` writes 5,000 facts per statement.
+- Deferred minors: `install_subscribers` ignores "already installed"; `sync(Pair)` is five statements per submit (a single upsert is the upgrade); `facts rebuild` prints no row count; the rebuild scenario has no unmark or second course.
