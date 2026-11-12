@@ -17,7 +17,8 @@ pub async fn sync(conn: &mut PgConnection, scope: FactScope) -> Result<(), Learn
 }
 
 /// Makes the facts of one course, or of everything, from the sources again. The students' own marks
-/// stay. Writers wait for it (it holds the facts table), so it is meant for a quiet moment.
+/// stay. It must run in a transaction (it locks the facts table, which `LOCK TABLE` allows only
+/// there), and writers wait for it, so it is meant for a quiet moment.
 pub async fn rebuild_facts(
     conn: &mut PgConnection,
     course_id: Option<Uuid>,
@@ -71,5 +72,5 @@ async fn sync_pair(
         },
     )
     .await
-    .map_err(|error| SubscriberError(error.to_string()))
+    .map_err(SubscriberError::api)
 }

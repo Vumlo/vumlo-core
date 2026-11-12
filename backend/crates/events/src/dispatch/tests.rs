@@ -28,7 +28,7 @@ fn recording(log: &Arc<Mutex<Vec<u8>>>, mark: u8, fail: bool) -> Subscribers {
         Box::pin(async move {
             log.lock().expect("the log is not poisoned").push(mark);
             if fail {
-                Err(SubscriberError("refused".to_owned()))
+                Err(SubscriberError::failed("refused"))
             } else {
                 Ok(())
             }
@@ -56,7 +56,7 @@ async fn subscribers_run_in_registration_order_after_the_outbox_row_is_written()
                     let rows = sqlx::query_scalar!(r#"SELECT count(*) AS "n!" FROM events.outbox"#)
                         .fetch_one(conn)
                         .await
-                        .map_err(|e| SubscriberError(e.to_string()))?;
+                        .map_err(|e| SubscriberError::failed(e.to_string()))?;
                     assert_eq!(rows, 1);
                     log.lock().unwrap().push(1);
                     Ok(())
@@ -103,6 +103,19 @@ async fn a_subscriber_error_is_returned_and_the_caller_can_roll_back() {
         assert_eq!(outbox_rows(&mut conn).await, 0);
     })
     .await;
+}
+
+/// A database that is down stays a `503` when it is a subscriber that meets it (CLAUDE.md section 9),
+/// and a failure with only a text is a logged internal error that shows nothing.
+#[test]
+fn a_subscriber_failure_keeps_the_answer_it_already_has() {
+    let down = EventsError::Subscriber(SubscriberError::api(ApiError::ServiceUnavailable("db")));
+    assert!(matches!(
+        ApiError::from(down),
+        ApiError::ServiceUnavailable("db")
+    ));
+    let text = EventsError::Subscriber(SubscriberError::failed("refused"));
+    assert!(matches!(ApiError::from(text), ApiError::Internal));
 }
 
 #[tokio::test]

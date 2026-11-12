@@ -27,8 +27,10 @@ pub use state::LearningState;
 
 /// The synchronous subscribers of the flows (ADR-0093), for the composition root to install with
 /// `events::install`: each runs inside the transaction of the change that emitted its event.
+/// The order is the order of the locks: a submit takes the grade row (the quiz grade) before the
+/// facts of the pair, as publishing a grade does.
 pub fn subscribers() -> events::Subscribers {
-    facts::subscribers().merge(quiz_grade::subscribers())
+    quiz_grade::subscribers().merge(facts::subscribers())
 }
 
 #[cfg(test)]

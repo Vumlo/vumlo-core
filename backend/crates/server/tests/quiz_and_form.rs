@@ -501,6 +501,59 @@ async fn only_a_fully_scored_attempt_keeps_a_total_for_the_grade() {
     .await;
 }
 
+/// ADR-0093: a publish takes the grade rows and then the facts of the pair; a quiz submit has to take
+/// them in that same order, or the two wait for each other. Here a transaction holds the grade row
+/// (as a publish does) while a student submits: the submit waits for the row, the holder then
+/// takes the facts of the pair and commits, and both finish.
+#[tokio::test]
+async fn a_quiz_submit_and_a_publish_for_one_student_take_the_locks_in_one_order() {
+    db_test(async |pool| {
+        let w = world(pool).await;
+        let item = w.make("quiz", quiz_config(), "6").await;
+        w.take(&w.student, item, right()).await;
+        assert_eq!(w.draft(&w.student, item, right()).await.status, 200);
+
+        let mut holder = w.env.pool.begin().await.unwrap();
+        sqlx::query!(
+            r#"SELECT assignment_id FROM gradebook.grades
+               WHERE assignment_id = $1 AND student_id = $2 FOR UPDATE"#,
+            item,
+            w.student.id
+        )
+        .fetch_one(&mut *holder)
+        .await
+        .unwrap();
+        let (base, token) = (w.env.base.clone(), w.student.token.clone());
+        let submit = tokio::spawn(async move {
+            reqwest::Client::new()
+                .post(format!(
+                    "{base}/api/v1/assignments/{item}/submission/submit"
+                ))
+                .bearer_auth(token)
+                .send()
+                .await
+                .unwrap()
+                .status()
+                .as_u16()
+        });
+        test_support::wait_until_blocked(&w.env.pool, &submit).await;
+
+        learning::facts::sync(
+            &mut holder,
+            learning::content::FactScope::Pair {
+                item_id: item,
+                student_id: w.student.id,
+            },
+        )
+        .await
+        .expect("the facts of the pair are free: the submit waits for the grade row, not for them");
+        holder.commit().await.unwrap();
+
+        assert_eq!(submit.await.unwrap(), 201);
+    })
+    .await;
+}
+
 #[tokio::test]
 async fn a_quiz_with_a_free_text_question_is_scored_but_gets_no_draft_grade() {
     db_test(async |pool| {

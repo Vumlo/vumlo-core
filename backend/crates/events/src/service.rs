@@ -31,9 +31,10 @@ impl From<EventsError> for ApiError {
         match error {
             EventsError::Forbidden(policy) => policy.into(),
             EventsError::Db(e) => Self::from_db("events", &e),
-            EventsError::Subscriber(_)
+            EventsError::Subscriber(SubscriberError::Api(answer)) => answer,
+            error @ (EventsError::Subscriber(SubscriberError::Failed(_))
             | EventsError::AlreadyInstalled
-            | EventsError::NoSubscribers => {
+            | EventsError::NoSubscribers) => {
                 tracing::error!(%error, "events: a subscriber or the registry failed");
                 Self::Internal
             }

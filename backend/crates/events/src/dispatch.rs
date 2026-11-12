@@ -8,6 +8,7 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::{Arc, OnceLock};
 
+use common::ApiError;
 use sqlx::PgConnection;
 
 use super::model::Event;
@@ -16,9 +17,27 @@ use super::service::EventsError;
 
 /// Why a subscriber failed. The operation that emitted the event fails with it and rolls back, so
 /// the text holds no secret and no personal data.
-#[derive(Debug, Clone, thiserror::Error)]
-#[error("{0}")]
-pub struct SubscriberError(pub String);
+#[derive(Debug, thiserror::Error)]
+pub enum SubscriberError {
+    /// A failure with nothing more to say than a text.
+    #[error("{0}")]
+    Failed(String),
+    /// A failure that already has its answer: a database that is busy or down stays a `503` with
+    /// `Retry-After`, as it would in the operation itself (CLAUDE.md section 9).
+    #[error("{0:?}")]
+    Api(ApiError),
+}
+
+impl SubscriberError {
+    pub fn failed(text: impl Into<String>) -> Self {
+        Self::Failed(text.into())
+    }
+
+    /// A failure of the module's own kind, answered the way that kind is answered anywhere else.
+    pub fn api(error: impl Into<ApiError>) -> Self {
+        Self::Api(error.into())
+    }
+}
 
 pub type SyncFuture<'a> = Pin<Box<dyn Future<Output = Result<(), SubscriberError>> + Send + 'a>>;
 type SyncHandler =

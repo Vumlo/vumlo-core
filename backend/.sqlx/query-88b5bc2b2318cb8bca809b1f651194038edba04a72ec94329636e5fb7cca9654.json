@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO content.facts (item_id, student_id, submitted_at, published_score)\n             SELECT r.item_id, r.student_id, r.submitted_at::timestamptz, r.published_score::numeric\n             FROM jsonb_to_recordset($1::jsonb)\n                  AS r(item_id uuid, student_id uuid, submitted_at text, published_score text)\n             WHERE EXISTS (SELECT 1 FROM content.items i WHERE i.id = r.item_id)\n             ON CONFLICT (item_id, student_id) DO UPDATE\n                SET submitted_at = EXCLUDED.submitted_at,\n                    published_score = EXCLUDED.published_score",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Jsonb"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "88b5bc2b2318cb8bca809b1f651194038edba04a72ec94329636e5fb7cca9654"
+}

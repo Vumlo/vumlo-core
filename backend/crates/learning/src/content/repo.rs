@@ -1677,35 +1677,43 @@ pub async fn clear_source_facts(
     Ok(())
 }
 
+/// How many facts one statement writes: a rebuild of a large installation is many statements, not
+/// one parameter of hundreds of megabytes.
+const FACTS_PER_STATEMENT: usize = 5_000;
+
 /// Writes the source facts, which hold at least one of the two values. An item that is gone is
 /// skipped: its facts went with it.
 pub async fn upsert_source_facts(
     conn: &mut PgConnection,
     rows: &[SourceFact],
 ) -> Result<(), sqlx::Error> {
-    let records = Value::Array(
-        rows.iter()
-            .map(|row| {
-                serde_json::json!({
-                    "item_id": row.item_id,
-                    "student_id": row.student_id,
-                    "submitted_at": row.submitted_at.map(|at| at.to_rfc3339()),
-                    "published_score": row.published_score.map(|score| score.to_string()),
+    for chunk in rows.chunks(FACTS_PER_STATEMENT) {
+        let records = Value::Array(
+            chunk
+                .iter()
+                .map(|row| {
+                    serde_json::json!({
+                        "item_id": row.item_id,
+                        "student_id": row.student_id,
+                        "submitted_at": row.submitted_at.map(|at| at.to_rfc3339()),
+                        "published_score": row.published_score.map(|score| score.to_string()),
+                    })
                 })
-            })
-            .collect(),
-    );
-    sqlx::query!(
-        "INSERT INTO content.facts (item_id, student_id, submitted_at, published_score)
-         SELECT r.item_id, r.student_id, r.submitted_at::timestamptz, r.published_score::numeric
-         FROM jsonb_to_recordset($1::jsonb)
-              AS r(item_id uuid, student_id uuid, submitted_at text, published_score text)
-         WHERE EXISTS (SELECT 1 FROM content.items i WHERE i.id = r.item_id)
-         ON CONFLICT (item_id, student_id) DO UPDATE
-            SET submitted_at = EXCLUDED.submitted_at, published_score = EXCLUDED.published_score",
-        records
-    )
-    .execute(conn)
-    .await?;
+                .collect(),
+        );
+        sqlx::query!(
+            "INSERT INTO content.facts (item_id, student_id, submitted_at, published_score)
+             SELECT r.item_id, r.student_id, r.submitted_at::timestamptz, r.published_score::numeric
+             FROM jsonb_to_recordset($1::jsonb)
+                  AS r(item_id uuid, student_id uuid, submitted_at text, published_score text)
+             WHERE EXISTS (SELECT 1 FROM content.items i WHERE i.id = r.item_id)
+             ON CONFLICT (item_id, student_id) DO UPDATE
+                SET submitted_at = EXCLUDED.submitted_at,
+                    published_score = EXCLUDED.published_score",
+            records
+        )
+        .execute(&mut *conn)
+        .await?;
+    }
     Ok(())
 }

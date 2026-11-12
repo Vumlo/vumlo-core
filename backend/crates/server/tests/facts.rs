@@ -223,12 +223,28 @@ async fn taking_a_grade_back_clears_the_score_and_keeps_the_submit() {
         let task = w.task().await;
         w.submit(task).await;
         w.grade(task, Some("7")).await;
+        let events = async |kind: &str| {
+            sqlx::query_scalar!(
+                r#"SELECT count(*) AS "n!" FROM events.outbox WHERE type = $1"#,
+                kind
+            )
+            .fetch_one(&w.env.pool)
+            .await
+            .unwrap()
+        };
+        let (changed, published) = (
+            events("grade.publication_changed").await,
+            events("grade.published").await,
+        );
 
         w.grade(task, None).await;
 
         let (submitted, score, _) = w.fact(task).await.unwrap();
         assert!(submitted.is_some());
         assert_eq!(score, None);
+        // The facts heard of it; the plugins were told nothing, as there is no value to tell.
+        assert_eq!(events("grade.publication_changed").await, changed + 1);
+        assert_eq!(events("grade.published").await, published);
     })
     .await;
 }

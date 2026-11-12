@@ -114,6 +114,13 @@ fn the_events_a_plugin_may_subscribe_to_are_events_that_exist_and_hold_ids_only(
 }
 
 #[test]
+fn an_internal_event_is_not_one_a_plugin_may_ask_for() {
+    for internal in ["grade.publication_changed", "group.members_changed"] {
+        assert!(!SUBSCRIBABLE.contains(&internal), "{internal}");
+    }
+}
+
+#[test]
 fn a_route_matches_a_path_of_plain_segments_and_names_its_parameters() {
     let route = |path: &str| crate::model::RouteSpec {
         method: "GET".to_owned(),

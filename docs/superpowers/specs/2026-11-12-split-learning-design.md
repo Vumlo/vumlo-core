@@ -84,7 +84,7 @@ The exact set is drawn up by a ratchet script in PR B, which lists every cross-s
 | `content`: delete a module, an item or an assignment (guards, purge) | flows `learning::items::delete`, `learning::modules::delete`: guards first, purge top-down, then the `content` delete |
 | `content`: assignment edit guards (submissions exist, highest score) | `content::update_assignment` takes an `EditGuard` argument; the flow fills it from `assessment` and `gradebook` |
 | `content`: form facts in the opened assignment (`assessment::form_facts`) | `GET /items/{id}` and the opened assignment become a flow that adds the taken options |
-| `assessment`: quiz auto-grade (`gradebook::save_auto_grade`) | subscriber of `quiz.attempt_submitted` |
+| `assessment`: quiz auto-grade (`gradebook::save_auto_grade`) | subscriber of `submission.submitted`, registered before the facts one so that a submit takes the grade row before the facts of the pair, in the order publishing does |
 | `assessment`: the student's own result (`gradebook::published_grade`) | flow `learning::results::get` |
 | `content` facts for rules (`assessment`, `gradebook` in `repo::facts`) | `content.facts` projection (section 7) |
 
