@@ -439,3 +439,203 @@ async fn set_due_at_changes_the_deadline_and_nothing_else_and_only_for_staff() {
     })
     .await;
 }
+
+// -----------------------------------------------------------------------------------------
+// content.facts: what the access rules know about a student (ADR-0093)
+// -----------------------------------------------------------------------------------------
+
+type FactRow = (
+    Option<DateTime<Utc>>,
+    Option<Decimal>,
+    Option<DateTime<Utc>>,
+);
+
+async fn student(pool: &sqlx::PgPool) -> Uuid {
+    let hash = auth::hash_password("irrelevant").await.unwrap();
+    let mut tx = pool.begin().await.unwrap();
+    let user = auth::create_user_unaudited_for_tests(
+        &mut tx,
+        NewUser {
+            email: Email::parse("student@x.edu").unwrap(),
+            name: PersonName::name("Student").unwrap(),
+            surname: PersonName::surname("Student").unwrap(),
+            role: Role::Student,
+        },
+        hash,
+    )
+    .await
+    .unwrap();
+    tx.commit().await.unwrap();
+    user.id
+}
+
+async fn fact(pool: &sqlx::PgPool, item: Uuid, student: Uuid) -> Option<FactRow> {
+    sqlx::query!(
+        "SELECT submitted_at, published_score, marked_at FROM content.facts
+         WHERE item_id = $1 AND student_id = $2",
+        item,
+        student
+    )
+    .fetch_optional(pool)
+    .await
+    .unwrap()
+    .map(|row| (row.submitted_at, row.published_score, row.marked_at))
+}
+
+async fn mark(pool: &sqlx::PgPool, item: Uuid, student: Uuid) {
+    sqlx::query!(
+        "INSERT INTO content.facts (item_id, student_id, marked_at) VALUES ($1, $2, now())
+         ON CONFLICT (item_id, student_id) DO UPDATE SET marked_at = now()",
+        item,
+        student
+    )
+    .execute(pool)
+    .await
+    .unwrap();
+}
+
+fn source(item: Uuid, student: Uuid, submitted: bool, score: Option<&str>) -> SourceFact {
+    SourceFact {
+        item_id: item,
+        student_id: student,
+        submitted_at: submitted.then(Utc::now),
+        published_score: score.map(|text| text.parse().unwrap()),
+    }
+}
+
+#[tokio::test]
+async fn replacing_one_pair_sets_the_two_source_columns_and_keeps_the_mark() {
+    db_test(async |pool| {
+        let course = course(pool.clone()).await;
+        let item = course.committed("10", false).await;
+        let student = student(&pool).await;
+        mark(&pool, item, student).await;
+        let scope = FactScope::Pair {
+            item_id: item,
+            student_id: student,
+        };
+        let mut conn = pool.acquire().await.unwrap();
+
+        replace_source_facts(
+            &mut conn,
+            &scope,
+            &[source(item, student, true, Some("7.5"))],
+        )
+        .await
+        .unwrap();
+        let (submitted, score, marked) = fact(&pool, item, student).await.unwrap();
+        assert!(submitted.is_some() && marked.is_some());
+        assert_eq!(score, Some("7.5".parse().unwrap()));
+
+        replace_source_facts(&mut conn, &scope, &[]).await.unwrap();
+        let (submitted, score, marked) = fact(&pool, item, student).await.unwrap();
+        assert_eq!((submitted, score), (None, None));
+        assert!(marked.is_some(), "the mark is not a source fact");
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn a_row_left_with_nothing_is_deleted() {
+    db_test(async |pool| {
+        let course = course(pool.clone()).await;
+        let item = course.committed("10", false).await;
+        let student = student(&pool).await;
+        let scope = FactScope::Pair {
+            item_id: item,
+            student_id: student,
+        };
+        let mut conn = pool.acquire().await.unwrap();
+        replace_source_facts(&mut conn, &scope, &[source(item, student, true, None)])
+            .await
+            .unwrap();
+        assert!(fact(&pool, item, student).await.is_some());
+
+        replace_source_facts(&mut conn, &scope, &[]).await.unwrap();
+
+        assert!(fact(&pool, item, student).await.is_none());
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn a_course_scope_replaces_its_own_rows_and_leaves_another_course() {
+    db_test(async |pool| {
+        let first = course(pool.clone()).await;
+        let in_first = first.committed("10", false).await;
+        // A second course of the same owner, with one assignment.
+        let mut tx = pool.begin().await.unwrap();
+        let other_course = teaching::create_course(
+            &mut tx,
+            &first.owner,
+            CourseTitle::parse("Geometry").unwrap(),
+            None,
+        )
+        .await
+        .unwrap();
+        let other_module = create_module(
+            &mut tx,
+            &first.owner,
+            other_course.id,
+            ContentTitle::parse("G").unwrap(),
+            None,
+        )
+        .await
+        .unwrap();
+        let in_other = create_item(
+            &mut tx,
+            &first.owner,
+            rules(),
+            other_module.id,
+            ContentTitle::parse("B").unwrap(),
+            None,
+            Some(text("10", false)),
+        )
+        .await
+        .unwrap()
+        .id;
+        tx.commit().await.unwrap();
+        let student = student(&pool).await;
+        let mut conn = pool.acquire().await.unwrap();
+        let both = [
+            source(in_first, student, true, None),
+            source(in_other, student, true, None),
+        ];
+        replace_source_facts(&mut conn, &FactScope::All, &both)
+            .await
+            .unwrap();
+
+        let course_id = sqlx::query_scalar!(
+            "SELECT course_id FROM content.items WHERE id = $1",
+            in_first
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        replace_source_facts(&mut conn, &FactScope::Course(course_id), &[])
+            .await
+            .unwrap();
+
+        assert!(fact(&pool, in_first, student).await.is_none());
+        assert!(fact(&pool, in_other, student).await.is_some());
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn deleting_the_item_deletes_its_facts() {
+    db_test(async |pool| {
+        let course = course(pool.clone()).await;
+        let item = course.committed("10", false).await;
+        let student = student(&pool).await;
+        mark(&pool, item, student).await;
+
+        sqlx::query!("DELETE FROM content.items WHERE id = $1", item)
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        assert!(fact(&pool, item, student).await.is_none());
+    })
+    .await;
+}

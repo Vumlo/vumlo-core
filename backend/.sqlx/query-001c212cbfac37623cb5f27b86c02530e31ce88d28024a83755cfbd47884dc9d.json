@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE content.facts SET submitted_at = NULL, published_score = NULL\n         WHERE ($1::uuid IS NULL OR item_id = $1) AND ($2::uuid IS NULL OR student_id = $2)\n           AND ($3::uuid IS NULL OR item_id IN (SELECT id FROM content.items WHERE course_id = $3))",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "001c212cbfac37623cb5f27b86c02530e31ce88d28024a83755cfbd47884dc9d"
+}

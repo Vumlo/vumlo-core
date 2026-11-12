@@ -9,9 +9,9 @@ use uuid::Uuid;
 use sqlx::types::Decimal;
 
 use super::model::{
-    Access, Assignment, AssignmentSummary, AssignmentType, BuiltinType, Item, ItemKind, ItemStatus,
-    ItemSummary, MaxPoints, Module, ModuleStatus, OnDeadline, PublishedSlot, StaffFacts,
-    SubmissionSettings, WorkFacts, WorkStatus,
+    Access, Assignment, AssignmentSummary, AssignmentType, BuiltinType, FactScope, Item, ItemKind,
+    ItemStatus, ItemSummary, MaxPoints, Module, ModuleStatus, OnDeadline, PublishedSlot,
+    SourceFact, StaffFacts, SubmissionSettings, WorkFacts, WorkStatus,
 };
 use super::rules::{Condition, Facts, Node, Rules};
 use access::Release;
@@ -1618,6 +1618,110 @@ pub async fn unmark_done(
         "DELETE FROM content.completions WHERE item_id = $1 AND student_id = $2",
         item_id,
         student_id
+    )
+    .execute(conn)
+    .await?;
+    Ok(())
+}
+
+/// The scope of a replacement as the three optional filters the statements below share:
+/// an item, a student, a course.
+fn fact_filters(scope: &FactScope) -> (Option<Uuid>, Option<Uuid>, Option<Uuid>) {
+    match scope {
+        FactScope::Pair {
+            item_id,
+            student_id,
+        } => (Some(*item_id), Some(*student_id), None),
+        FactScope::Course(course_id) => (None, None, Some(*course_id)),
+        FactScope::All => (None, None, None),
+    }
+}
+
+/// Holds the facts of the scope for the rest of the transaction. One pair takes an advisory lock
+/// of its own, so two transactions that change the same student on the same item run one after
+/// the other and the second reads what the first committed; a course or everything takes the
+/// table, because a rebuild must not meet a writer half way.
+pub async fn lock_facts(conn: &mut PgConnection, scope: &FactScope) -> Result<(), sqlx::Error> {
+    match scope {
+        FactScope::Pair {
+            item_id,
+            student_id,
+        } => {
+            sqlx::query!(
+                "SELECT pg_advisory_xact_lock(hashtextextended('facts:' || $1::text || ':' || $2::text, 0))",
+                item_id.to_string(),
+                student_id.to_string()
+            )
+            .execute(conn)
+            .await?;
+        }
+        FactScope::Course(_) | FactScope::All => {
+            sqlx::query!("LOCK TABLE content.facts IN SHARE ROW EXCLUSIVE MODE")
+                .execute(conn)
+                .await?;
+        }
+    }
+    Ok(())
+}
+
+/// Forgets what the sources said inside the scope. A row with no mark of the student's own is
+/// deleted, a row with one keeps it: the mark is not a copy of anything.
+pub async fn clear_source_facts(
+    conn: &mut PgConnection,
+    scope: &FactScope,
+) -> Result<(), sqlx::Error> {
+    let (item, student, course) = fact_filters(scope);
+    sqlx::query!(
+        "DELETE FROM content.facts
+         WHERE marked_at IS NULL
+           AND ($1::uuid IS NULL OR item_id = $1) AND ($2::uuid IS NULL OR student_id = $2)
+           AND ($3::uuid IS NULL OR item_id IN (SELECT id FROM content.items WHERE course_id = $3))",
+        item,
+        student,
+        course
+    )
+    .execute(&mut *conn)
+    .await?;
+    sqlx::query!(
+        "UPDATE content.facts SET submitted_at = NULL, published_score = NULL
+         WHERE ($1::uuid IS NULL OR item_id = $1) AND ($2::uuid IS NULL OR student_id = $2)
+           AND ($3::uuid IS NULL OR item_id IN (SELECT id FROM content.items WHERE course_id = $3))",
+        item,
+        student,
+        course
+    )
+    .execute(conn)
+    .await?;
+    Ok(())
+}
+
+/// Writes the source facts, which hold at least one of the two values. An item that is gone is
+/// skipped: its facts went with it.
+pub async fn upsert_source_facts(
+    conn: &mut PgConnection,
+    rows: &[SourceFact],
+) -> Result<(), sqlx::Error> {
+    let records = Value::Array(
+        rows.iter()
+            .map(|row| {
+                serde_json::json!({
+                    "item_id": row.item_id,
+                    "student_id": row.student_id,
+                    "submitted_at": row.submitted_at.map(|at| at.to_rfc3339()),
+                    "published_score": row.published_score.map(|score| score.to_string()),
+                })
+            })
+            .collect(),
+    );
+    sqlx::query!(
+        "INSERT INTO content.facts (item_id, student_id, submitted_at, published_score)
+         SELECT r.item_id, r.student_id, r.submitted_at::timestamptz, r.published_score::numeric
+         FROM jsonb_to_recordset($1::jsonb)
+              AS r(item_id uuid, student_id uuid, submitted_at text, published_score text)
+         WHERE EXISTS (SELECT 1 FROM content.items i WHERE i.id = r.item_id)
+         ON CONFLICT (item_id, student_id) DO UPDATE
+            SET submitted_at = EXCLUDED.submitted_at, published_score = EXCLUDED.published_score",
+        records
     )
     .execute(conn)
     .await?;

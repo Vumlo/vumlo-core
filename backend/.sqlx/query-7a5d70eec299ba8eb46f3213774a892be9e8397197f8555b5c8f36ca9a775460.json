@@ -1,0 +1,53 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT submitted_at, published_score, marked_at FROM content.facts\n         WHERE item_id = $1 AND student_id = $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "submitted_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "content.facts",
+            "name": "submitted_at"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "published_score",
+        "type_info": "Numeric",
+        "origin": {
+          "Table": {
+            "table": "content.facts",
+            "name": "published_score"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "marked_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "content.facts",
+            "name": "marked_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "7a5d70eec299ba8eb46f3213774a892be9e8397197f8555b5c8f36ca9a775460"
+}
