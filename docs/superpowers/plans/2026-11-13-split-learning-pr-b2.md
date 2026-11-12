@@ -22,6 +22,14 @@
 - Tests: `read_views.rs` (3). The behaviour tests that cover every reader (gradebook, submissions, quiz_and_form, plugin_reads, plugin_events, files, home, content, courses, teaching, groups_roster, admin_reports, schedule, access_rules, revisions, facts, authorization) pass unchanged.
 - Docs: ARCHITECTURE.md rule 2, CLAUDE.md section 4, CHANGELOG (upgrade note), ADR-0093 line, PLAN.md.
 
+## Review of B1 and B2 (one fresh reviewer, whole branch)
+
+No locking, ordering, authorization or visibility regression was found; the moved SQL is textually the same apart from the view names. Fixed: the call scan did not see a module naming a flow, nor a multi-line `use crate::{ ... }` or `crate::*`; it now does (`crate_paths`, with a unit test), which exposed three uses of the `files` flow by `content`, `assessment` and the gradebook export. Those cannot be removed in B: `learning::files::ensure_usable` decides whether a file may be named by a document and reads both `content` and `assessment`, so it has to be redesigned before the crate split (see Next). They are listed in `RATCHET_FLOWS`, a list that only shrinks. The docs no longer claim that the views hide an item's working title or a quiz's key.
+
+Deferred minors: `GET /assignments/{id}/result` takes its lock on an autocommit connection (as on `main`); the `begin_*` / `finish_*` halves are public although only the flows should call them; unused `ModuleDeletion::id` / `ItemDeletion::id`; `gradebook::item_meta` resolves course access twice; `courses::info` loads the former students only to count them; no test pins the precedence of the three guards of `update_item` for a patch that trips two.
+
 ## Next
+
+PR C needs a decision first: the file-usage check. Options: split `ensure_usable` so each of `content` and `assessment` asks only about its own references and a flow combines them (the flows of `items` and `submissions` pass the other side's answer in, as `AssignmentFacts` does), or give the `files` crate a table of usages that both owners write. Then:
 
 PR C: `git mv` into `backend/crates/learning/{teaching,content,assessment,gradebook,flows}`, five crates with their own errors, state and routers; CI paths, `Dockerfile`, `RELEASING.md`, docs.

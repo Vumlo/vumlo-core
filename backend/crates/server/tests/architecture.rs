@@ -360,42 +360,88 @@ fn a_unit_reads_its_own_layer_and_the_declared_views_below_it() {
     );
 }
 
-/// Every place in the code of one of the four modules that names a module above it, as
-/// `(unit, module, path:line)`.
-fn calls_to_higher_modules() -> Vec<(&'static str, &'static str, String)> {
+/// The flows of `learning`, the code above the four modules. A module may not name one either.
+const FLOWS: &[&str] = &[
+    "audit",
+    "courses",
+    "enrollment",
+    "facts",
+    "files",
+    "groups",
+    "items",
+    "people",
+    "plugin_read",
+    "quiz_grade",
+    "reports",
+    "schedule",
+];
+
+/// The flows a module still names, as `(module, flow)`: the file-usage check of `content` and
+/// `assessment` (`learning::files::ensure_usable` reads both of them, so it cannot stay below
+/// them) and the download header of the gradebook export. The split into crates (PR C) has to
+/// resolve each before the dependency becomes a cycle; the list only shrinks.
+const RATCHET_FLOWS: &[(&str, &str)] = &[
+    ("assessment", "files"),
+    ("content", "files"),
+    ("gradebook", "files"),
+];
+
+/// What `text` reaches through `crate::` and `super::`, as `(line of the path, name)`: the first
+/// name of a path, every name in a `{ ... }` group (wrapped over lines or nested), and `*` for a
+/// glob of the crate root. Comments are ignored.
+fn crate_paths(text: &str) -> Vec<(usize, String)> {
+    let code = text
+        .lines()
+        .map(|line| if is_comment(line) { "" } else { line })
+        .collect::<Vec<_>>()
+        .join("\n");
+    let word = |c: char| c.is_ascii_alphanumeric() || c == '_';
+    let mut found = Vec::new();
+    for prefix in ["crate::", "super::"] {
+        for (at, _) in code.match_indices(prefix) {
+            let line = code[..at].matches('\n').count() + 1;
+            let rest = code[at + prefix.len()..].trim_start();
+            if let Some(group) = rest.strip_prefix('{') {
+                let (mut depth, mut end) = (1, group.len());
+                for (i, c) in group.char_indices() {
+                    match c {
+                        '{' => depth += 1,
+                        '}' => depth -= 1,
+                        _ => {}
+                    }
+                    if depth == 0 {
+                        end = i;
+                        break;
+                    }
+                }
+                for name in group[..end].split(|c| !word(c)).filter(|w| !w.is_empty()) {
+                    found.push((line, name.to_owned()));
+                }
+            } else if rest.starts_with('*') {
+                if prefix == "crate::" {
+                    found.push((line, "*".to_owned()));
+                }
+            } else if let Some(name) = rest.split(|c| !word(c)).next().filter(|w| !w.is_empty()) {
+                found.push((line, name.to_owned()));
+            }
+        }
+    }
+    found
+}
+
+/// Every place in the code of one of the four modules that names a module above it, a flow, or
+/// the whole crate root (`crate::*`), as `(unit, name, path:line)`.
+fn calls_upward() -> Vec<(&'static str, String, String)> {
     let rank = |name: &str| MODULES.iter().position(|m| *m == name);
     let mut found = Vec::new();
     for file in source_files().into_iter().filter(|f| !is_test_code(f)) {
         let unit = unit_of(&file);
         let Some(own) = rank(unit.name) else { continue };
         let text = fs::read_to_string(&file).expect("a Rust file is UTF-8");
-        for (number, line) in text.lines().enumerate().filter(|(_, l)| !is_comment(l)) {
-            for prefix in ["crate::", "super::"] {
-                for (at, _) in line.match_indices(prefix) {
-                    let rest = &line[at + prefix.len()..];
-                    // `crate::content::x` names `content`; `crate::{content, x}` names every word.
-                    let named = match rest.strip_prefix('{') {
-                        Some(group) => group.split('}').next().unwrap_or(""),
-                        None => rest,
-                    };
-                    let words = named.split(|c: char| !(c.is_ascii_alphanumeric() || c == '_'));
-                    let words = if rest.starts_with('{') {
-                        words.collect::<Vec<_>>()
-                    } else {
-                        words.take(1).collect()
-                    };
-                    for word in words {
-                        if let Some(module) = MODULES.iter().find(|m| **m == word)
-                            && rank(module).is_some_and(|other| other > own)
-                        {
-                            found.push((
-                                unit.name,
-                                *module,
-                                format!("{}:{}", shown(&file), number + 1),
-                            ));
-                        }
-                    }
-                }
+        for (line, name) in crate_paths(&text) {
+            let above = rank(&name).is_some_and(|other| other > own);
+            if above || FLOWS.contains(&name.as_str()) || name == "*" {
+                found.push((unit.name, name, format!("{}:{line}", shown(&file))));
             }
         }
     }
@@ -403,16 +449,60 @@ fn calls_to_higher_modules() -> Vec<(&'static str, &'static str, String)> {
 }
 
 #[test]
+fn the_path_scan_sees_grouped_wrapped_nested_and_glob_imports() {
+    let text = "use crate::content::x;\n\
+                use crate::{\n    assessment,\n    gradebook::{self, y},\n};\n\
+                // use crate::teaching::ignored;\n\
+                use crate::*;\n\
+                use super::service;\n";
+    let named: Vec<(usize, String)> = crate_paths(text);
+    let words = |line: usize| -> Vec<&str> {
+        named
+            .iter()
+            .filter(|(at, _)| *at == line)
+            .map(|(_, word)| word.as_str())
+            .collect()
+    };
+    assert_eq!(words(1), ["content"]);
+    assert!(words(2).contains(&"assessment") && words(2).contains(&"gradebook"));
+    assert!(
+        named.iter().all(|(_, word)| word != "teaching"),
+        "{named:?}"
+    );
+    assert_eq!(
+        words(7),
+        ["*"],
+        "a glob of the crate root hides what it takes"
+    );
+}
+
+#[test]
 fn a_module_calls_only_modules_below_it() {
-    let found: Vec<String> = calls_to_higher_modules()
+    let found: Vec<String> = calls_upward()
         .into_iter()
-        .map(|(unit, module, at)| format!("{at}: {unit} names {module}"))
+        .filter(|(unit, name, _)| !RATCHET_FLOWS.contains(&(*unit, name.as_str())))
+        .map(|(unit, name, at)| format!("{at}: {unit} names {name}"))
         .collect();
     assert!(
         found.is_empty(),
-        "a module calls one above it (teaching < content < assessment < gradebook); the call \
-         belongs in a flow of `learning` (ADR-0093):\n{}",
+        "a module names one above it (teaching < content < assessment < gradebook), a flow of \
+         `learning`, or the crate root as a glob; the call belongs in a flow (ADR-0093):\n{}",
         found.join("\n")
+    );
+}
+
+#[test]
+fn the_flows_a_module_still_names_are_listed_and_only_those() {
+    let calls = calls_upward();
+    let stale: Vec<String> = RATCHET_FLOWS
+        .iter()
+        .filter(|(unit, flow)| !calls.iter().any(|(u, name, _)| u == unit && name == flow))
+        .map(|(unit, flow)| format!("{unit} no longer names {flow}"))
+        .collect();
+    assert!(
+        stale.is_empty(),
+        "delete these entries from RATCHET_FLOWS in architecture.rs; it only shrinks:\n{}",
+        stale.join("\n")
     );
 }
 

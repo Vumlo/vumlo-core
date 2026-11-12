@@ -1,6 +1,8 @@
 //! What the read views between the modules of `learning` leave out (ADR-0093, migration 0054).
-//! A reader above the owner sees these views and never the table, so the rules of CLAUDE.md
-//! section 6 hold by construction: no draft grade, no draft submission, no working text.
+//! A reader above the owner sees these views and never the table, so three of the rules of
+//! CLAUDE.md section 6 hold by construction: no draft grade, no content of a draft submission, no
+//! item body. (The working title and a quiz's answer key are still there; the readers above strip
+//! them in code.)
 
 mod common;
 
