@@ -9,9 +9,9 @@ use uuid::Uuid;
 use sqlx::types::Decimal;
 
 use super::model::{
-    Access, Assignment, AssignmentSummary, AssignmentType, BuiltinType, Item, ItemKind, ItemStatus,
-    ItemSummary, MaxPoints, Module, ModuleStatus, OnDeadline, PublishedSlot, StaffFacts,
-    SubmissionSettings, WorkFacts, WorkStatus,
+    Access, Assignment, AssignmentSummary, AssignmentType, BuiltinType, FactScope, Item, ItemKind,
+    ItemStatus, ItemSummary, MaxPoints, Module, ModuleStatus, OnDeadline, PublishedSlot,
+    SourceFact, StaffFacts, SubmissionSettings, WorkFacts, WorkStatus,
 };
 use super::rules::{Condition, Facts, Node, Rules};
 use access::Release;
@@ -1548,58 +1548,43 @@ pub async fn replace_rule(
     Ok(())
 }
 
-/// What the student has done in the course: the items that are done, and the published score of
-/// each assignment that has one. An assignment is done once an attempt is submitted or a score is
-/// published; any other item, once the student marked it.
+/// What the student has done in the course, from the facts `content` keeps (ADR-0093): an item
+/// with a row is done, whether the student marked it, an attempt was submitted or a score was
+/// published, and the published scores are the ones the rows hold.
 pub async fn facts(
     conn: &mut PgConnection,
     course_id: Uuid,
     student_id: Uuid,
 ) -> Result<Facts, sqlx::Error> {
-    let done = sqlx::query_scalar!(
-        r#"SELECT i.id AS "id!" FROM content.items i
-           WHERE i.course_id = $1
-             AND (EXISTS (SELECT 1 FROM content.completions c
-                          WHERE c.item_id = i.id AND c.student_id = $2)
-                  OR EXISTS (SELECT 1 FROM assessment.submissions s
-                             WHERE s.assignment_id = i.id AND s.student_id = $2
-                               AND s.status = 'submitted')
-                  OR EXISTS (SELECT 1 FROM gradebook.grades g
-                             WHERE g.assignment_id = i.id AND g.student_id = $2
-                               AND g.published_score IS NOT NULL))"#,
-        course_id,
-        student_id
-    )
-    .fetch_all(&mut *conn)
-    .await?;
-    let scores = sqlx::query!(
-        r#"SELECT g.assignment_id, g.published_score AS "score!: Decimal"
-           FROM gradebook.grades g
-           JOIN content.items i ON i.id = g.assignment_id
-           WHERE i.course_id = $1 AND g.student_id = $2 AND g.published_score IS NOT NULL"#,
+    let rows = sqlx::query!(
+        r#"SELECT f.item_id, f.published_score AS "score: Decimal"
+           FROM content.facts f
+           JOIN content.items i ON i.id = f.item_id
+           WHERE i.course_id = $1 AND f.student_id = $2"#,
         course_id,
         student_id
     )
     .fetch_all(conn)
     .await?;
     Ok(Facts {
-        done_items: done.into_iter().collect(),
-        scores: scores
+        done_items: rows.iter().map(|row| row.item_id).collect(),
+        scores: rows
             .into_iter()
-            .map(|row| (row.assignment_id, row.score))
+            .filter_map(|row| row.score.map(|score| (row.item_id, score)))
             .collect(),
     })
 }
 
-/// Records that the student marked the item done. Marking it again changes nothing.
+/// Records that the student marked the item done. Marking it again keeps the first time.
 pub async fn mark_done(
     conn: &mut PgConnection,
     item_id: Uuid,
     student_id: Uuid,
 ) -> Result<(), sqlx::Error> {
     sqlx::query!(
-        "INSERT INTO content.completions (item_id, student_id) VALUES ($1, $2)
-         ON CONFLICT DO NOTHING",
+        "INSERT INTO content.facts (item_id, student_id, marked_at) VALUES ($1, $2, now())
+         ON CONFLICT (item_id, student_id)
+         DO UPDATE SET marked_at = COALESCE(content.facts.marked_at, EXCLUDED.marked_at)",
         item_id,
         student_id
     )
@@ -1608,18 +1593,127 @@ pub async fn mark_done(
     Ok(())
 }
 
-/// Takes the student's mark off the item. With no mark it does nothing.
+/// Takes the student's mark off the item; a row that held nothing else goes with it. With no mark
+/// it does nothing.
 pub async fn unmark_done(
     conn: &mut PgConnection,
     item_id: Uuid,
     student_id: Uuid,
 ) -> Result<(), sqlx::Error> {
     sqlx::query!(
-        "DELETE FROM content.completions WHERE item_id = $1 AND student_id = $2",
+        "DELETE FROM content.facts
+         WHERE item_id = $1 AND student_id = $2
+           AND submitted_at IS NULL AND published_score IS NULL",
+        item_id,
+        student_id
+    )
+    .execute(&mut *conn)
+    .await?;
+    sqlx::query!(
+        "UPDATE content.facts SET marked_at = NULL WHERE item_id = $1 AND student_id = $2",
         item_id,
         student_id
     )
     .execute(conn)
     .await?;
+    Ok(())
+}
+
+/// Holds the facts of the scope for the rest of the transaction. One pair takes an advisory lock
+/// of its own, so two transactions that change the same student on the same item run one after
+/// the other and the second reads what the first committed; a course or everything takes the
+/// table, because a rebuild must not meet a writer half way.
+pub async fn lock_facts(conn: &mut PgConnection, scope: &FactScope) -> Result<(), sqlx::Error> {
+    match scope {
+        FactScope::Pair {
+            item_id,
+            student_id,
+        } => {
+            sqlx::query!(
+                "SELECT pg_advisory_xact_lock(hashtextextended('facts:' || $1::text || ':' || $2::text, 0))",
+                item_id.to_string(),
+                student_id.to_string()
+            )
+            .execute(conn)
+            .await?;
+        }
+        FactScope::Course(_) | FactScope::All => {
+            sqlx::query!("LOCK TABLE content.facts IN SHARE ROW EXCLUSIVE MODE")
+                .execute(conn)
+                .await?;
+        }
+    }
+    Ok(())
+}
+
+/// Forgets what the sources said inside the scope. A row with no mark of the student's own is
+/// deleted, a row with one keeps it: the mark is not a copy of anything.
+pub async fn clear_source_facts(
+    conn: &mut PgConnection,
+    scope: &FactScope,
+) -> Result<(), sqlx::Error> {
+    let (item, student, course) = scope.filters();
+    sqlx::query!(
+        "DELETE FROM content.facts
+         WHERE marked_at IS NULL
+           AND ($1::uuid IS NULL OR item_id = $1) AND ($2::uuid IS NULL OR student_id = $2)
+           AND ($3::uuid IS NULL OR item_id IN (SELECT id FROM content.items WHERE course_id = $3))",
+        item,
+        student,
+        course
+    )
+    .execute(&mut *conn)
+    .await?;
+    sqlx::query!(
+        "UPDATE content.facts SET submitted_at = NULL, published_score = NULL
+         WHERE ($1::uuid IS NULL OR item_id = $1) AND ($2::uuid IS NULL OR student_id = $2)
+           AND ($3::uuid IS NULL OR item_id IN (SELECT id FROM content.items WHERE course_id = $3))",
+        item,
+        student,
+        course
+    )
+    .execute(conn)
+    .await?;
+    Ok(())
+}
+
+/// How many facts one statement writes: a rebuild of a large installation is many statements, not
+/// one parameter of hundreds of megabytes.
+const FACTS_PER_STATEMENT: usize = 5_000;
+
+/// Writes the source facts, which hold at least one of the two values. An item that is gone is
+/// skipped: its facts went with it.
+pub async fn upsert_source_facts(
+    conn: &mut PgConnection,
+    rows: &[SourceFact],
+) -> Result<(), sqlx::Error> {
+    for chunk in rows.chunks(FACTS_PER_STATEMENT) {
+        let records = Value::Array(
+            chunk
+                .iter()
+                .map(|row| {
+                    serde_json::json!({
+                        "item_id": row.item_id,
+                        "student_id": row.student_id,
+                        "submitted_at": row.submitted_at.map(|at| at.to_rfc3339()),
+                        "published_score": row.published_score.map(|score| score.to_string()),
+                    })
+                })
+                .collect(),
+        );
+        sqlx::query!(
+            "INSERT INTO content.facts (item_id, student_id, submitted_at, published_score)
+             SELECT r.item_id, r.student_id, r.submitted_at::timestamptz, r.published_score::numeric
+             FROM jsonb_to_recordset($1::jsonb)
+                  AS r(item_id uuid, student_id uuid, submitted_at text, published_score text)
+             WHERE EXISTS (SELECT 1 FROM content.items i WHERE i.id = r.item_id)
+             ON CONFLICT (item_id, student_id) DO UPDATE
+                SET submitted_at = EXCLUDED.submitted_at,
+                    published_score = EXCLUDED.published_score",
+            records
+        )
+        .execute(&mut *conn)
+        .await?;
+    }
     Ok(())
 }

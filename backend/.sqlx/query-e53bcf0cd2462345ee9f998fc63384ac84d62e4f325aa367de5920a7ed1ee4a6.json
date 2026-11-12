@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE gradebook.grades SET published_score = draft_score,\n                    published_by = $3, published_at = now()\n             WHERE assignment_id = $1 AND student_id = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "e53bcf0cd2462345ee9f998fc63384ac84d62e4f325aa367de5920a7ed1ee4a6"
+}

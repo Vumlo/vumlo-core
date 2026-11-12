@@ -20,9 +20,9 @@ use super::document::{
 };
 use super::model::{
     Access, Assignment, AssignmentType, BuiltinType, ContentModule, ContentSubModule, ContentTitle,
-    Hit, HitKind, Item, ItemFacts, ItemKind, ItemPatch, ItemStatus, ItemSummary, MaxPoints,
-    ModelError, Module, ModulePatch, MyWork, OnDeadline, OpenedAssignment, Revision,
-    SettingProblem, SettingsPatch, Standing, WorkEntry, WorkFacts,
+    FactScope, Hit, HitKind, Item, ItemFacts, ItemKind, ItemPatch, ItemStatus, ItemSummary,
+    MaxPoints, ModelError, Module, ModulePatch, MyWork, OnDeadline, OpenedAssignment, Revision,
+    SettingProblem, SettingsPatch, SourceFact, Standing, WorkEntry, WorkFacts,
 };
 use super::repo::{self, CopiedIds, ItemRow, ModuleRow};
 use super::rules::Node;
@@ -1992,6 +1992,33 @@ pub async fn unmark_done(
     let (_, access) = open_item(conn, actor, id).await?;
     access::authorize(actor, Action::MarkDone(access))?;
     repo::unmark_done(conn, id, actor.user_id()).await?;
+    Ok(())
+}
+
+/// Holds the facts of `scope` until the end of the transaction. A flow that copies the facts from
+/// their sources calls it first and reads the sources after, so a concurrent change it waited for
+/// is in what it reads (ADR-0093). It authorizes nothing: the flow acts on an event, not a request.
+pub async fn lock_facts(conn: &mut PgConnection, scope: &FactScope) -> Result<(), ContentError> {
+    repo::lock_facts(conn, scope).await?;
+    Ok(())
+}
+
+/// Makes the submitted-and-scored part of the facts inside `scope` equal to `rows`, which come
+/// from `assessment` and `gradebook`: every row of the scope is forgotten first, then the rows
+/// that say something are written. The student's own marks stay. It authorizes nothing, like
+/// [`lock_facts`].
+pub async fn replace_source_facts(
+    conn: &mut PgConnection,
+    scope: &FactScope,
+    rows: &[SourceFact],
+) -> Result<(), ContentError> {
+    repo::clear_source_facts(conn, scope).await?;
+    let saying_something: Vec<SourceFact> = rows
+        .iter()
+        .filter(|row| row.submitted_at.is_some() || row.published_score.is_some())
+        .cloned()
+        .collect();
+    repo::upsert_source_facts(conn, &saying_something).await?;
     Ok(())
 }
 

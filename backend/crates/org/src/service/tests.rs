@@ -1,4 +1,5 @@
-use test_support::{db_test, wait_until_blocked};
+use crate::tests::db_test;
+use test_support::wait_until_blocked;
 
 use sqlx::PgPool;
 

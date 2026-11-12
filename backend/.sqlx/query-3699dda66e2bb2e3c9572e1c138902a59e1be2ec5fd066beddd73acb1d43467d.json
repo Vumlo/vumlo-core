@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "DELETE FROM content.completions WHERE item_id = $1 AND student_id = $2",
+  "query": "UPDATE content.facts SET marked_at = NULL WHERE item_id = $1 AND student_id = $2",
   "describe": {
     "columns": [],
     "parameters": {
@@ -11,5 +11,5 @@
     },
     "nullable": []
   },
-  "hash": "f32ddd13b50212ea6d7dab4d4ea145a255e3a144117802d0c0b9f1f2c089afba"
+  "hash": "3699dda66e2bb2e3c9572e1c138902a59e1be2ec5fd066beddd73acb1d43467d"
 }

@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO content.facts (item_id, student_id, marked_at) VALUES ($1, $2, now())\n         ON CONFLICT (item_id, student_id)\n         DO UPDATE SET marked_at = COALESCE(content.facts.marked_at, EXCLUDED.marked_at)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "e1395a68c205377154dbc20e8d83949a91a3187edd230e467199eca0ffd1121c"
+}

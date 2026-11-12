@@ -245,8 +245,9 @@ pub async fn save_grade(
 
 /// Writes the score a quiz earned as the draft score of the student's cell and records an
 /// `auto_score` history entry with no person (ADR-0050 point 5). The draft feedback and the
-/// published value stay. It authorizes nothing: `assessment` calls it from the submit of a current
-/// student, which holds the assignment row `FOR SHARE`. Emits no event (ADR-0007).
+/// published value stay. It authorizes nothing: the subscriber of `submission.submitted`
+/// (`learning::quiz_grade`) calls it inside the submit of a current student, which holds the
+/// assignment row `FOR SHARE`. Emits no event (ADR-0007).
 pub async fn save_auto_grade(
     conn: &mut PgConnection,
     assignment_id: Uuid,
@@ -334,7 +335,8 @@ pub async fn grade_history(
 /// Copies draft to published for the students of the course, in this transaction, only where the
 /// draft differs from the published value. Returns the students whose published value was
 /// replaced, a retraction included. A student whose published value became non-empty gets one
-/// `grade.published` event; a retraction emits none (ADR-0028).
+/// `grade.published` event; a retraction emits none (ADR-0028). Every replaced value, a retraction
+/// included, emits the internal `grade.publication_changed` (ADR-0093).
 pub async fn publish_grades(
     conn: &mut PgConnection,
     actor: &Actor,
@@ -380,6 +382,17 @@ pub async fn publish_grades(
             Some(actor.user_id()),
             row.score,
             row.feedback.as_deref(),
+        )
+        .await?;
+        // What the student sees changed, whether it became something or nothing: the facts that
+        // the access rules read follow it (ADR-0093). The plugins hear only of a value.
+        events::emit(
+            conn,
+            Event::GradePublicationChanged {
+                assignment_id,
+                student_id: row.student_id,
+                course_id: context.course_id,
+            },
         )
         .await?;
         if row.score.is_some() || row.feedback.is_some() {

@@ -7,18 +7,32 @@ use super::*;
 use crate::{HandlerError, HandlerFuture, OutboxEvent};
 use test_support::db_test;
 
+fn grade_published() -> Event {
+    Event::GradePublished {
+        assignment_id: Uuid::now_v7(),
+        student_id: Uuid::now_v7(),
+        course_id: Uuid::now_v7(),
+    }
+}
+
+/// This test binary never installs a registry, as a process that forgot to would not.
+#[tokio::test]
+async fn emit_without_an_installed_registry_is_an_error() {
+    db_test(async |pool| {
+        let mut conn = pool.acquire().await.unwrap();
+
+        let outcome = emit(&mut conn, grade_published()).await;
+
+        assert!(matches!(outcome, Err(EventsError::NoSubscribers)));
+    })
+    .await;
+}
+
 async fn emit_grade(pool: &PgPool) -> Uuid {
     let mut conn = pool.acquire().await.unwrap();
-    emit(
-        &mut conn,
-        Event::GradePublished {
-            assignment_id: Uuid::now_v7(),
-            student_id: Uuid::now_v7(),
-            course_id: Uuid::now_v7(),
-        },
-    )
-    .await
-    .unwrap();
+    crate::emit_with(&mut conn, grade_published(), &crate::Subscribers::new())
+        .await
+        .unwrap();
     sqlx::query_scalar!("SELECT id FROM events.outbox ORDER BY id DESC LIMIT 1")
         .fetch_one(&mut *conn)
         .await
@@ -258,6 +272,11 @@ fn every_event_has_a_dotted_kind_and_a_payload_of_ids_only() {
         Event::GroupMembersChanged {
             group_id: id(),
             user_ids: vec![id(), id()],
+        },
+        Event::GradePublicationChanged {
+            assignment_id: id(),
+            student_id: id(),
+            course_id: id(),
         },
     ];
     let mut kinds = Vec::new();

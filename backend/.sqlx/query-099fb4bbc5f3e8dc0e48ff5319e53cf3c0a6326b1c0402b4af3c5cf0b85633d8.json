@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO content.facts (item_id, student_id, marked_at) VALUES ($1, $2, now())\n         ON CONFLICT (item_id, student_id) DO UPDATE SET marked_at = now()",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "099fb4bbc5f3e8dc0e48ff5319e53cf3c0a6326b1c0402b4af3c5cf0b85633d8"
+}

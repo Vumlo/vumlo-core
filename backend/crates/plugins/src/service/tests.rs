@@ -1,7 +1,7 @@
+use crate::tests::db_test;
 use access::PluginCaller;
 use serde_json::json;
 use sqlx::PgPool;
-use test_support::db_test;
 use vumlo_config::Secret;
 
 use super::*;

@@ -1,0 +1,52 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT assignment_id, student_id, auto_total AS \"total!: Decimal\"\n           FROM assessment.submissions\n           WHERE id = $1 AND status = 'submitted' AND auto_total IS NOT NULL",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "assignment_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "assessment.submissions",
+            "name": "assignment_id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "student_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "assessment.submissions",
+            "name": "student_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "total!: Decimal",
+        "type_info": "Numeric",
+        "origin": {
+          "Table": {
+            "table": "assessment.submissions",
+            "name": "auto_total"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "8f631a193cefc558f4b99d56a25b675034361b3f88ea104f133bac0a6aa9d778"
+}

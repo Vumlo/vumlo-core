@@ -4,6 +4,7 @@ use common::ApiError;
 use sqlx::{PgConnection, PgPool};
 use uuid::Uuid;
 
+use super::dispatch::{SubscriberError, emit_with, installed};
 use super::model::{AuditEntry, Event, Handlers};
 use super::repo;
 use access::Actor;
@@ -15,6 +16,14 @@ pub enum EventsError {
     Forbidden(#[from] AccessError),
     #[error(transparent)]
     Db(#[from] sqlx::Error),
+    /// A synchronous subscriber refused: the operation that emitted the event fails (ADR-0093).
+    #[error("a subscriber failed: {0}")]
+    Subscriber(#[from] SubscriberError),
+    #[error("the subscribers are already installed")]
+    AlreadyInstalled,
+    /// The process never called `events::install`: a bug in its composition root.
+    #[error("no subscribers are installed; the composition root must call events::install")]
+    NoSubscribers,
 }
 
 impl From<EventsError> for ApiError {
@@ -22,6 +31,13 @@ impl From<EventsError> for ApiError {
         match error {
             EventsError::Forbidden(policy) => policy.into(),
             EventsError::Db(e) => Self::from_db("events", &e),
+            EventsError::Subscriber(SubscriberError::Api(answer)) => answer,
+            error @ (EventsError::Subscriber(SubscriberError::Failed(_))
+            | EventsError::AlreadyInstalled
+            | EventsError::NoSubscribers) => {
+                tracing::error!(%error, "events: a subscriber or the registry failed");
+                Self::Internal
+            }
         }
     }
 }
@@ -63,10 +79,12 @@ pub async fn audit_plugin(
 }
 
 /// Writes `event` to the outbox on the caller's connection, in the same transaction as the state
-/// change it announces (ADR-0007). Draft saves never emit.
+/// change it announces (ADR-0007), then runs the synchronous subscribers the process installed for
+/// its type in that same transaction (ADR-0093): a subscriber error fails the caller, which rolls
+/// back. A process that never called [`crate::install`] gets [`EventsError::NoSubscribers`].
+/// Draft saves never emit.
 pub async fn emit(conn: &mut PgConnection, event: Event) -> Result<(), EventsError> {
-    repo::insert_outbox(conn, &event).await?;
-    Ok(())
+    emit_with(conn, event, installed()?).await
 }
 
 /// Like [`audit`], but only when `actor` acts as an implicit course owner. Admins have no

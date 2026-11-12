@@ -1,6 +1,7 @@
 use std::sync::atomic::{AtomicU16, Ordering};
 use std::sync::{Arc, Mutex};
 
+use crate::tests::db_test;
 use axum::Router;
 use axum::body::Bytes;
 use axum::extract::State;
@@ -8,7 +9,6 @@ use axum::http::{HeaderMap, StatusCode};
 use axum::routing::post;
 use events::OutboxEvent;
 use serde_json::{Value, json};
-use test_support::db_test;
 use tokio::net::TcpListener;
 use uuid::Uuid;
 use vumlo_config::Secret;

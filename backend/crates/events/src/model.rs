@@ -80,6 +80,15 @@ pub enum Event {
     /// Users were added to or removed from a group or one of its subgroups. Internal: `learning`
     /// turns it into `enrollment.changed` for the courses that use the group (ADR-0075).
     GroupMembersChanged { group_id: Uuid, user_ids: Vec<Uuid> },
+    /// What a student can see of their grade on an assignment changed: it was published, published
+    /// again with another value, or taken back. Internal: the subscribers of `learning` copy the
+    /// published score where the access rules read it (ADR-0093). `grade.published` is for the
+    /// plugins and is sent only when the published value became non-empty.
+    GradePublicationChanged {
+        assignment_id: Uuid,
+        student_id: Uuid,
+        course_id: Uuid,
+    },
 }
 
 impl Event {
@@ -98,6 +107,7 @@ impl Event {
             Self::QuizAttemptSubmitted { .. } => "quiz.attempt_submitted",
             Self::AnnouncementPublished { .. } => "announcement.published",
             Self::GroupMembersChanged { .. } => "group.members_changed",
+            Self::GradePublicationChanged { .. } => "grade.publication_changed",
         }
     }
 
@@ -115,13 +125,19 @@ impl Event {
             | Self::EnrollmentChanged { .. }
             | Self::QuizAttemptSubmitted { .. }
             | Self::AnnouncementPublished { .. }
-            | Self::GroupMembersChanged { .. } => 1,
+            | Self::GroupMembersChanged { .. }
+            | Self::GradePublicationChanged { .. } => 1,
         }
     }
 
     pub fn payload(&self) -> serde_json::Value {
         match self {
             Self::GradePublished {
+                assignment_id,
+                student_id,
+                course_id,
+            }
+            | Self::GradePublicationChanged {
                 assignment_id,
                 student_id,
                 course_id,

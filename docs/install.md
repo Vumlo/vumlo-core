@@ -459,11 +459,12 @@ open. A person's chat, and the changes it prepared, are readable by nobody else 
 | `mail status [--json]` | what waits in the mail queue, what was sent and what failed in the last 24 hours, the transport |
 | `mail list [--state --plugin --kind --user --hours --limit --json]` | the messages, newest first; no address is printed |
 | `mail retry <id> \| --dead [--plugin ID] [--dry-run]` | puts dead messages back in the queue (one whose address was already erased is only listed) |
+| `facts rebuild [--course ID]` | makes the facts the access rules read (first submission, published score) again from the submissions and grades; the students' own marks stay; holds the facts table while it runs |
 | `doctor [--json]` | checks everything, changes nothing, non-zero if a check fails |
 | `version` | the release, the config version and the modules compiled in |
 
 Every command that changes the database writes `events.audit_log` (no actor, source `cli`): `db migrate`,
-`admin create`, `seed --demo` and `mail retry`. The audit log is readable by administrators in the web app.
+`admin create`, `seed --demo`, `mail retry` and `facts rebuild`. The audit log is readable by administrators in the web app.
 
 ## When `doctor` fails
 

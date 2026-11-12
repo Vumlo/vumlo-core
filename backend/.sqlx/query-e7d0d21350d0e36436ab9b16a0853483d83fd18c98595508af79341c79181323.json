@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "UPDATE assessment.submissions\n           SET status = 'submitted', attempt = $2, submitted_at = $3, is_late = $4,\n               auto_scores = $5, updated_at = now()\n           WHERE id = $1\n           RETURNING id, attempt AS \"attempt!\", content AS \"content: Body\",\n                     submitted_at AS \"submitted_at!\", is_late",
+  "query": "UPDATE assessment.submissions\n           SET status = 'submitted', attempt = $2, submitted_at = $3, is_late = $4,\n               auto_scores = $5, auto_total = $6, updated_at = now()\n           WHERE id = $1\n           RETURNING id, attempt AS \"attempt!\", content AS \"content: Body\",\n                     submitted_at AS \"submitted_at!\", is_late",
   "describe": {
     "columns": [
       {
@@ -65,7 +65,8 @@
         "Int4",
         "Timestamptz",
         "Bool",
-        "Jsonb"
+        "Jsonb",
+        "Numeric"
       ]
     },
     "nullable": [
@@ -76,5 +77,5 @@
       false
     ]
   },
-  "hash": "c7ff55eec6fb059bbbb2cd8f3aa64c3476b6019944691b405f87fbf696334de2"
+  "hash": "e7d0d21350d0e36436ab9b16a0853483d83fd18c98595508af79341c79181323"
 }

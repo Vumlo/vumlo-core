@@ -136,11 +136,20 @@ pub enum StateError {
     Modules(#[from] module_api::OrderError),
 }
 
+/// Installs the synchronous event subscribers of every layer (ADR-0093). The registry depends only
+/// on what is compiled in, so it is the same for every state this process builds (the tests build
+/// many), and a second call finds it installed: that is the only error `install` has.
+pub fn install_subscribers() {
+    let _already_installed = events::install(learning::subscribers());
+}
+
 impl AppState {
-    /// The composition root of the shared state. It resolves the editor configuration, so a
-    /// configuration that does not fit the profiles in code fails here, at startup, with an error
-    /// that names the key and the value, and never at the first request.
+    /// The composition root of the shared state. It installs the event subscribers and resolves
+    /// the editor configuration, so a configuration that does not fit the profiles in code fails
+    /// here, at startup, with an error that names the key and the value, and never at the first
+    /// request.
     pub fn new(db: PgPool, config: Settings) -> Result<Self, StateError> {
+        install_subscribers();
         let editor = EffectiveProfiles::resolve(&config.editor)?;
         let hashing = auth::HashGate::new(config.auth.max_concurrent_hashes);
         let mailer = config

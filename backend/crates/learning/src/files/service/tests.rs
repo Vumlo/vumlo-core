@@ -2,10 +2,10 @@
 //! them and the files are written through the repo functions of `content` and `assessment`.
 use std::sync::{Arc, LazyLock};
 
+use crate::tests::db_test;
 use chrono::{Duration, Utc};
 use serde_json::{Map, json};
 use sqlx::PgPool;
-use test_support::db_test;
 
 use super::*;
 use crate::content::{

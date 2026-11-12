@@ -615,6 +615,43 @@ pub struct Access {
     pub standing: Option<Standing>,
 }
 
+/// Which rows of `content.facts` a replacement of the source facts covers (ADR-0093).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum FactScope {
+    /// One student on one item.
+    Pair { item_id: Uuid, student_id: Uuid },
+    /// Every student on every item of a course.
+    Course(Uuid),
+    /// Everything.
+    All,
+}
+
+impl FactScope {
+    /// The scope as three optional filters for a statement: an item, a student, a course.
+    pub fn filters(&self) -> (Option<Uuid>, Option<Uuid>, Option<Uuid>) {
+        match self {
+            Self::Pair {
+                item_id,
+                student_id,
+            } => (Some(*item_id), Some(*student_id), None),
+            Self::Course(course_id) => (None, None, Some(*course_id)),
+            Self::All => (None, None, None),
+        }
+    }
+}
+
+/// What `assessment` and `gradebook` say about one student on one assignment: the fact `content`
+/// copies. Both empty is not a fact.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SourceFact {
+    pub item_id: Uuid,
+    pub student_id: Uuid,
+    /// When the first attempt was submitted.
+    pub submitted_at: Option<DateTime<Utc>>,
+    /// The score that was published, never a draft.
+    pub published_score: Option<Decimal>,
+}
+
 /// Where a student stands on a module or an item.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Standing {
