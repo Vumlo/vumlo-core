@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT DISTINCT s.student_id FROM assessment.submissions s\n         JOIN content.item_list i ON i.id = s.assignment_id\n         WHERE i.course_id = $1 AND s.status = 'submitted'",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "student_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "assessment.submissions",
+            "name": "student_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "9dc8e315265bac83308ab31c98750f83e0a3e7a0660e256ce9e1c18305961edf"
+}

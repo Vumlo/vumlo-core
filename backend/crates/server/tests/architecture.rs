@@ -130,32 +130,19 @@ const DECLARED_VIEWS: &[&str] = &[
     "org.subgroup_list",
     "events.audit_entries",
     "teaching.effective_members",
-];
-
-/// The reads of a table of a lower layer that is not a declared view, as `(unit, schema.table)`.
-/// A ratchet: the test tolerates exactly these and fails when one no longer happens, so the list
-/// only shrinks (ADR-0093). Nothing may read a table of a higher layer, and no module may name
-/// one above it in Rust: those rules have no list.
-const RATCHET_DOWN: &[(&str, &str)] = &[
-    ("assessment", "content.assignments"),
-    ("assessment", "content.items"),
-    ("assessment", "content.modules"),
-    ("assessment", "teaching.courses"),
-    ("content", "teaching.courses"),
-    ("gradebook", "assessment.submissions"),
-    ("gradebook", "content.assignments"),
-    ("gradebook", "content.items"),
-    ("gradebook", "content.modules"),
-    ("learning", "assessment.submission_files"),
-    ("learning", "assessment.submissions"),
-    ("learning", "content.assignments"),
-    ("learning", "content.item_files"),
-    ("learning", "content.items"),
-    ("learning", "content.modules"),
-    ("learning", "gradebook.grades"),
-    ("learning", "teaching.announcements"),
-    ("learning", "teaching.courses"),
-    ("learning", "teaching.tombstones"),
+    // Between the four modules of `learning` (ADR-0093, migration 0054). Each leaves out what
+    // the readers above must not see: an item's text, a submission's content, a grade's drafts.
+    "teaching.course_list",
+    "teaching.announcement_list",
+    "teaching.tombstone_list",
+    "content.module_list",
+    "content.item_list",
+    "content.assignment_list",
+    "content.item_file_list",
+    "assessment.submission_index",
+    "assessment.submitted_attempts",
+    "assessment.submission_file_list",
+    "gradebook.published_grades",
 ];
 
 /// The four modules of `learning`, lowest first.
@@ -333,24 +320,8 @@ fn layer_of_schema(schema: &str) -> Option<u8> {
         .map(|unit| unit.layer)
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum Way {
-    /// A table of a higher layer.
-    Up,
-    /// A table of a lower layer that is not a declared view.
-    Down,
-}
-
-/// A table that a unit's `repo` names although its layer does not allow it.
-struct Read {
-    unit: &'static str,
-    table: String,
-    way: Way,
-    at: String,
-}
-
-/// Every such read, and how many table names the scan looked at (to know it is not broken).
-fn forbidden_reads() -> (Vec<Read>, usize) {
+#[test]
+fn a_unit_reads_its_own_layer_and_the_declared_views_below_it() {
     let mut found = Vec::new();
     let mut checked = 0;
     for file in source_files().into_iter().filter(|f| is_repo(f)) {
@@ -360,39 +331,26 @@ fn forbidden_reads() -> (Vec<Read>, usize) {
             for name in qualified_names(line) {
                 checked += 1;
                 let schema = name.split_once('.').map_or("", |(schema, _)| schema);
-                let way = match layer_of_schema(schema) {
-                    Some(layer) if Some(schema) == unit.schema || layer == unit.layer => None,
-                    Some(layer) if layer < unit.layer => {
-                        (!DECLARED_VIEWS.contains(&name.as_str())).then_some(Way::Down)
-                    }
-                    _ => Some(Way::Up),
+                let allowed = match layer_of_schema(schema) {
+                    Some(layer) if Some(schema) == unit.schema || layer == unit.layer => true,
+                    Some(layer) if layer < unit.layer => DECLARED_VIEWS.contains(&name.as_str()),
+                    _ => false,
                 };
-                if let Some(way) = way {
-                    found.push(Read {
-                        unit: unit.name,
-                        table: name,
-                        way,
-                        at: format!("{}:{}", shown(&file), number + 1),
-                    });
+                if !allowed {
+                    found.push(format!(
+                        "{}:{}: {name} (in {})",
+                        shown(&file),
+                        number + 1,
+                        unit.name
+                    ));
                 }
             }
         }
     }
-    (found, checked)
-}
-
-#[test]
-fn a_unit_reads_its_own_layer_and_the_declared_views_below_it() {
-    let (reads, checked) = forbidden_reads();
     assert!(
         checked > 100,
         "the scan found only {checked} table names; it is broken"
     );
-    let found: Vec<String> = reads
-        .iter()
-        .filter(|r| r.way == Way::Up || !RATCHET_DOWN.contains(&(r.unit, r.table.as_str())))
-        .map(|r| format!("{}: {} (in {})", r.at, r.table, r.unit))
-        .collect();
     assert!(
         found.is_empty(),
         "a unit reads a table of a lower layer that is not a declared view, or one of a higher \
@@ -485,25 +443,6 @@ fn a_module_never_names_the_schema_of_a_module_above_it() {
         found.is_empty(),
         "a module names a table of a module above it, in any file (ADR-0093):\n{}",
         found.join("\n")
-    );
-}
-
-#[test]
-fn the_ratchet_lists_only_what_still_happens() {
-    let (reads, _) = forbidden_reads();
-    let stale: Vec<String> = RATCHET_DOWN
-        .iter()
-        .filter(|(unit, table)| {
-            !reads
-                .iter()
-                .any(|r| r.way == Way::Down && r.unit == *unit && r.table == *table)
-        })
-        .map(|(unit, table)| format!("{unit} reads {table} (no longer)"))
-        .collect();
-    assert!(
-        stale.is_empty(),
-        "delete these entries from RATCHET_DOWN in architecture.rs; it only shrinks:\n{}",
-        stale.join("\n")
     );
 }
 

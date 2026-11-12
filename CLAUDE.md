@@ -50,9 +50,11 @@ behind a Cargo feature, and `server` and `vumlo-cli` name it in exactly one plac
   that layer declared** (`auth.people`, `org.term_list`, `org.group_list`, `org.subgroup_list`, `events.audit_entries`,
   and `teaching.effective_members` for the roster). It never names the schema of a higher layer. Inside `learning`
   the four modules are stacked `teaching < content < assessment < gradebook`, and the same rule holds between them:
-  a module never names the schema or the Rust path of one above it (`architecture.rs` fails the build), and until
-  their views are declared (ADR-0093) a module reads the tables below it with plain joins, listed in
-  `RATCHET_DOWN`, a list that only shrinks. Declaring a view is a migration and a line in `architecture.rs`.
+  a module never names the schema or the Rust path of one above it, and reads those below it only through the views
+  they declare (`content.item_list`, `assessment.submission_index`, `assessment.submitted_attempts`,
+  `gradebook.published_grades`, ...; `architecture.rs` fails the build otherwise). A view leaves out what the readers
+  above must not see; sqlx cannot tell that a view column is not null, so a query that returns one writes `"col!"`.
+  Declaring a view is a migration and a line in `architecture.rs`.
 - **What needs the data of several layers is a flow in `learning`**, one service function with one transaction
   (`learning::people::update_user`, `learning::courses::delete`, `learning::items::update_item`), never a call from a
   lower crate to a higher one. A flow whose first half must lock before the others are asked is a pair

@@ -1,0 +1,86 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT a.item_id AS \"assignment_id!\", i.title AS \"title!\", i.course_id AS \"course_id!\",\n                  a.due_at AS \"due_at!\",\n                  (SELECT count(DISTINCT s.student_id) FROM assessment.submission_index s\n                   JOIN teaching.effective_members m\n                     ON m.course_id = i.course_id AND m.user_id = s.student_id\n                    AND m.role = 'student'\n                   WHERE s.assignment_id = a.item_id AND s.status = 'submitted') AS \"submitted!\",\n                  (SELECT count(*) FROM teaching.effective_members m\n                   WHERE m.course_id = i.course_id AND m.role = 'student') AS \"total!\",\n                  (i.status = 'draft') AS \"not_open!\"\n           FROM content.assignment_list a\n           JOIN content.item_list i ON i.id = a.item_id\n           WHERE i.course_id = ANY($1) AND a.due_at >= $2\n           ORDER BY a.due_at, i.id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "assignment_id!",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "content.assignment_list",
+            "name": "item_id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "title!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "content.item_list",
+            "name": "title"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "course_id!",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "content.item_list",
+            "name": "course_id"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "due_at!",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "content.assignment_list",
+            "name": "due_at"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "submitted!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 5,
+        "name": "total!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 6,
+        "name": "not_open!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "UuidArray",
+        "Timestamptz"
+      ]
+    },
+    "nullable": [
+      true,
+      true,
+      true,
+      true,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "79b989514e57c1c0745a438dbd9de971176e028cc64a95d8877de7be0fd880d1"
+}

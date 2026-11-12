@@ -1,0 +1,92 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT s.id AS \"id!\", s.student_id AS \"student_id!\", s.attempt AS \"attempt!\",\n                  s.submitted_at AS \"submitted_at!\",\n                  s.is_late AS \"is_late!\", g.published_at AS graded_at\n           FROM assessment.submitted_attempts s\n           LEFT JOIN gradebook.published_grades g\n                  ON g.assignment_id = s.assignment_id AND g.student_id = s.student_id\n           WHERE s.assignment_id = $1\n             AND ($2::timestamptz IS NULL OR s.submitted_at >= $2)\n             AND ($3::timestamptz IS NULL OR (s.submitted_at, s.id) > ($3, $4))\n           ORDER BY s.submitted_at, s.id\n           LIMIT $5",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id!",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "assessment.submitted_attempts",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "student_id!",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "assessment.submitted_attempts",
+            "name": "student_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "attempt!",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "assessment.submitted_attempts",
+            "name": "attempt"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "submitted_at!",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "assessment.submitted_attempts",
+            "name": "submitted_at"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "is_late!",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "assessment.submitted_attempts",
+            "name": "is_late"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "graded_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "gradebook.published_grades",
+            "name": "published_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Timestamptz",
+        "Timestamptz",
+        "Uuid",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      true,
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "b33eb858e9d187ad30730b9c4cfc71f835eb462e00292ab8553d439e0d964c97"
+}

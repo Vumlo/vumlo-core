@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO content.modules (id, course_id, position, title) VALUES ($1, $2, 1, 'M')",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "e3fd8ff71d1a512dd4dbc6280644d551d00fcfa86bff62bb75973c54fe897494"
+}

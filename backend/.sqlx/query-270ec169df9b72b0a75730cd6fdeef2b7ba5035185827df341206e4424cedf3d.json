@@ -1,0 +1,76 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT i.id AS \"assignment_id!\", i.title AS \"title!\", a.max_points AS \"max_points!\",\n                  a.is_bonus AS \"is_bonus!\", i.status AS \"status!: ColumnStatus\"\n           FROM content.assignment_list a\n           JOIN content.item_list i ON i.id = a.item_id\n           JOIN content.module_list m ON m.id = i.module_id\n           LEFT JOIN content.module_list p ON p.id = m.parent_id\n           WHERE i.course_id = $1\n           ORDER BY COALESCE(p.position, m.position), m.parent_id NULLS FIRST, m.position,\n                    i.position",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "assignment_id!",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "content.item_list",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "title!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "content.item_list",
+            "name": "title"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "max_points!",
+        "type_info": "Numeric",
+        "origin": {
+          "Table": {
+            "table": "content.assignment_list",
+            "name": "max_points"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "is_bonus!",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "content.assignment_list",
+            "name": "is_bonus"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "status!: ColumnStatus",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "content.item_list",
+            "name": "status"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "270ec169df9b72b0a75730cd6fdeef2b7ba5035185827df341206e4424cedf3d"
+}

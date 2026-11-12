@@ -97,11 +97,11 @@ pub async fn due_drafts(
 ) -> Result<Vec<DueDraft>, sqlx::Error> {
     sqlx::query_as!(
         DueDraft,
-        r#"SELECT s.assignment_id, s.student_id, i.course_id
+        r#"SELECT s.assignment_id, s.student_id, i.course_id AS "course_id!"
            FROM assessment.submissions s
-           JOIN content.assignments a ON a.item_id = s.assignment_id
-           JOIN content.items i ON i.id = a.item_id
-           JOIN teaching.courses c ON c.id = i.course_id
+           JOIN content.assignment_list a ON a.item_id = s.assignment_id
+           JOIN content.item_list i ON i.id = a.item_id
+           JOIN teaching.course_list c ON c.id = i.course_id
            WHERE s.status = 'draft' AND s.auto_submit_skipped_at IS NULL
              AND a.on_deadline = 'auto_submit' AND a.due_at <= $1
              AND s.created_at <= a.due_at
@@ -554,8 +554,8 @@ pub async fn has_submitted_in_module(
     sqlx::query_scalar!(
         r#"SELECT EXISTS (
                SELECT 1 FROM assessment.submissions s
-               JOIN content.items i ON i.id = s.assignment_id
-               JOIN content.modules m ON m.id = i.module_id
+               JOIN content.item_list i ON i.id = s.assignment_id
+               JOIN content.module_list m ON m.id = i.module_id
                WHERE (m.id = $1 OR m.parent_id = $1) AND s.status = 'submitted'
            ) AS "has!""#,
         module_id
@@ -571,7 +571,7 @@ pub async fn has_submitted_in_course(
     sqlx::query_scalar!(
         r#"SELECT EXISTS (
                SELECT 1 FROM assessment.submissions s
-               JOIN content.items i ON i.id = s.assignment_id
+               JOIN content.item_list i ON i.id = s.assignment_id
                WHERE i.course_id = $1 AND s.status = 'submitted'
            ) AS "has!""#,
         course_id
@@ -587,7 +587,7 @@ pub async fn students_with_attempts(
 ) -> Result<Vec<Uuid>, sqlx::Error> {
     sqlx::query_scalar!(
         "SELECT DISTINCT s.student_id FROM assessment.submissions s
-         JOIN content.items i ON i.id = s.assignment_id
+         JOIN content.item_list i ON i.id = s.assignment_id
          WHERE i.course_id = $1 AND s.status = 'submitted'",
         course_id
     )
@@ -614,8 +614,8 @@ pub async fn purge_module(conn: &mut PgConnection, module_id: Uuid) -> Result<u6
     let result = sqlx::query!(
         "DELETE FROM assessment.submissions
          WHERE status = 'draft'
-           AND assignment_id IN (SELECT i.id FROM content.items i
-                                 JOIN content.modules m ON m.id = i.module_id
+           AND assignment_id IN (SELECT i.id FROM content.item_list i
+                                 JOIN content.module_list m ON m.id = i.module_id
                                  WHERE m.id = $1 OR m.parent_id = $1)",
         module_id
     )
@@ -629,7 +629,7 @@ pub async fn purge_course(conn: &mut PgConnection, course_id: Uuid) -> Result<u6
     let result = sqlx::query!(
         "DELETE FROM assessment.submissions
          WHERE status = 'draft'
-           AND assignment_id IN (SELECT id FROM content.items WHERE course_id = $1)",
+           AND assignment_id IN (SELECT id FROM content.item_list WHERE course_id = $1)",
         course_id
     )
     .execute(conn)

@@ -67,8 +67,8 @@ Measured on `main` (non-test code): about 150 schema-qualified references cross 
 | `gradebook` | `teaching`, `content`, `assessment` | `effective_members`, `items`, `modules`, `assignments`, `submissions` |
 | `learning` (flows, `plugin_read`, `files`, `audit`) | all four | items, modules, assignments, item and submission files, submissions, announcements, tombstones, grades |
 
-Each becomes a view named for its purpose, declared in migration `0054` and listed in `DECLARED_VIEWS` (about ten).
-The exact set is drawn up by a ratchet script in PR B, which lists every cross-schema reference. Rules:
+Each becomes a view named for its purpose, declared in migration `0054` and listed in `DECLARED_VIEWS` (eleven were
+needed). The set was drawn up from the ratchet in `architecture.rs`, which listed every cross-schema reference. Rules:
 
 - A grades view exposes `published_*` columns only. A reader above `gradebook` cannot select a draft (CLAUDE.md §6).
   Staff reads of drafts go through `gradebook` functions.

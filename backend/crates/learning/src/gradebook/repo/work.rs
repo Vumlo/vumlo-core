@@ -19,23 +19,23 @@ pub async fn student_work(
     now: DateTime<Utc>,
 ) -> Result<Vec<WorkFacts>, sqlx::Error> {
     let rows = sqlx::query!(
-        r#"SELECT a.item_id AS assignment_id, i.course_id,
-                  a.type AS "assignment_type: BuiltinType",
+        r#"SELECT a.item_id AS "assignment_id!", i.course_id AS "course_id!",
+                  a.type AS "assignment_type!: BuiltinType",
                   COALESCE(a.due_at IS NOT NULL
                            AND CASE WHEN a.accept_late THEN a.late_until ELSE a.due_at END < $3,
                            false) AS "closed!",
-                  (SELECT s.updated_at FROM assessment.submissions s
+                  (SELECT s.updated_at FROM assessment.submission_index s
                    WHERE s.assignment_id = a.item_id AND s.student_id = $1
                      AND s.status = 'draft') AS draft_saved_at,
-                  (SELECT count(*) FROM assessment.submissions s
+                  (SELECT count(*) FROM assessment.submission_index s
                    WHERE s.assignment_id = a.item_id AND s.student_id = $1
                      AND s.status = 'submitted') AS "attempts!",
                   g.published_score,
                   (g.published_score IS NOT NULL OR g.published_feedback IS NOT NULL)
                       AS "graded!",
                   g.published_at
-           FROM content.assignments a
-           JOIN content.items i ON i.id = a.item_id
+           FROM content.assignment_list a
+           JOIN content.item_list i ON i.id = a.item_id
            LEFT JOIN gradebook.grades g ON g.assignment_id = a.item_id AND g.student_id = $1
            WHERE i.course_id = ANY($2)"#,
         student_id,
@@ -71,14 +71,14 @@ pub async fn staff_counts(
     course_id: Uuid,
 ) -> Result<Vec<StaffFacts>, sqlx::Error> {
     let rows = sqlx::query!(
-        r#"SELECT a.item_id AS assignment_id,
+        r#"SELECT a.item_id AS "assignment_id!",
                   (SELECT count(*) FROM teaching.effective_members m
                    WHERE m.course_id = $1 AND m.role = 'student') AS "graded_total!",
-                  (SELECT count(DISTINCT s.student_id) FROM assessment.submissions s
+                  (SELECT count(DISTINCT s.student_id) FROM assessment.submission_index s
                    JOIN teaching.effective_members m
                      ON m.course_id = $1 AND m.user_id = s.student_id AND m.role = 'student'
                    WHERE s.assignment_id = a.item_id AND s.status = 'submitted') AS "submitted!",
-                  (SELECT count(DISTINCT s.student_id) FROM assessment.submissions s
+                  (SELECT count(DISTINCT s.student_id) FROM assessment.submission_index s
                    JOIN teaching.effective_members m
                      ON m.course_id = $1 AND m.user_id = s.student_id AND m.role = 'student'
                    LEFT JOIN gradebook.grades g
@@ -92,8 +92,8 @@ pub async fn staff_counts(
                      AND (g.draft_score, g.draft_feedback)
                          IS DISTINCT FROM (g.published_score, g.published_feedback))
                       AS "draft_grades!"
-           FROM content.assignments a
-           JOIN content.items i ON i.id = a.item_id
+           FROM content.assignment_list a
+           JOIN content.item_list i ON i.id = a.item_id
            WHERE i.course_id = $1"#,
         course_id
     )
@@ -123,20 +123,20 @@ pub async fn student_progress(
         r#"WITH open AS (
                SELECT i.course_id, a.item_id,
                       (g.published_score IS NOT NULL OR g.published_feedback IS NOT NULL) AS graded,
-                      EXISTS (SELECT 1 FROM assessment.submissions s
+                      EXISTS (SELECT 1 FROM assessment.submission_index s
                               WHERE s.assignment_id = a.item_id AND s.student_id = $1
                                 AND s.status = 'submitted') AS attempted
-               FROM content.assignments a
-               JOIN content.items i ON i.id = a.item_id
-               JOIN content.modules m ON m.id = i.module_id
-               LEFT JOIN content.modules p ON p.id = m.parent_id
+               FROM content.assignment_list a
+               JOIN content.item_list i ON i.id = a.item_id
+               JOIN content.module_list m ON m.id = i.module_id
+               LEFT JOIN content.module_list p ON p.id = m.parent_id
                LEFT JOIN gradebook.grades g ON g.assignment_id = a.item_id AND g.student_id = $1
                WHERE i.course_id = ANY($2) AND a.type <> 'no_submission'
                  AND i.status = 'published' AND (i.publish_at IS NULL OR i.publish_at <= $3)
                  AND m.status = 'published' AND (m.publish_at IS NULL OR m.publish_at <= $3)
                  AND (p.id IS NULL
                       OR (p.status = 'published' AND (p.publish_at IS NULL OR p.publish_at <= $3))))
-           SELECT course_id, count(*) AS "total!",
+           SELECT course_id AS "course_id!", count(*) AS "total!",
                   count(*) FILTER (WHERE attempted OR COALESCE(graded, false)) AS "submitted!",
                   count(*) FILTER (WHERE COALESCE(graded, false)) AS "graded!"
            FROM open GROUP BY course_id"#,
@@ -165,12 +165,13 @@ pub async fn student_next(
     now: DateTime<Utc>,
 ) -> Result<Vec<NextDeadline>, sqlx::Error> {
     let rows = sqlx::query!(
-        r#"SELECT DISTINCT ON (i.course_id) i.course_id, a.item_id AS assignment_id,
+        r#"SELECT DISTINCT ON (i.course_id) i.course_id AS "course_id!",
+                  a.item_id AS "assignment_id!",
                   i.published_title AS "title!", a.due_at AS "due_at!"
-           FROM content.assignments a
-           JOIN content.items i ON i.id = a.item_id
-           JOIN content.modules m ON m.id = i.module_id
-           LEFT JOIN content.modules p ON p.id = m.parent_id
+           FROM content.assignment_list a
+           JOIN content.item_list i ON i.id = a.item_id
+           JOIN content.module_list m ON m.id = i.module_id
+           LEFT JOIN content.module_list p ON p.id = m.parent_id
            LEFT JOIN gradebook.grades g ON g.assignment_id = a.item_id AND g.student_id = $1
            WHERE i.course_id = ANY($2) AND a.type <> 'no_submission' AND a.due_at >= $3
              AND i.status = 'published' AND (i.publish_at IS NULL OR i.publish_at <= $3)
@@ -178,7 +179,7 @@ pub async fn student_next(
              AND (p.id IS NULL
                   OR (p.status = 'published' AND (p.publish_at IS NULL OR p.publish_at <= $3)))
              AND NOT (g.published_score IS NOT NULL OR g.published_feedback IS NOT NULL)
-             AND NOT EXISTS (SELECT 1 FROM assessment.submissions s
+             AND NOT EXISTS (SELECT 1 FROM assessment.submission_index s
                              WHERE s.assignment_id = a.item_id AND s.student_id = $1
                                AND s.status = 'submitted')
            ORDER BY i.course_id, a.due_at"#,
@@ -207,11 +208,11 @@ pub async fn todo_counts(
     course_ids: &[Uuid],
 ) -> Result<Vec<TodoCounts>, sqlx::Error> {
     let rows = sqlx::query!(
-        r#"SELECT i.course_id,
+        r#"SELECT i.course_id AS "course_id!",
                   (SELECT count(*) FROM (
                        SELECT DISTINCT s.assignment_id, s.student_id
-                       FROM assessment.submissions s
-                       JOIN content.items si ON si.id = s.assignment_id
+                       FROM assessment.submission_index s
+                       JOIN content.item_list si ON si.id = s.assignment_id
                        JOIN teaching.effective_members m
                          ON m.course_id = si.course_id AND m.user_id = s.student_id
                         AND m.role = 'student'
@@ -220,7 +221,7 @@ pub async fn todo_counts(
                        WHERE si.course_id = i.course_id AND s.status = 'submitted'
                          AND g.draft_score IS NULL) pending) AS "to_grade!",
                   (SELECT count(*) FROM gradebook.grades g
-                   JOIN content.items gi ON gi.id = g.assignment_id
+                   JOIN content.item_list gi ON gi.id = g.assignment_id
                    JOIN teaching.effective_members m
                      ON m.course_id = gi.course_id AND m.user_id = g.student_id
                     AND m.role = 'student'
@@ -229,13 +230,13 @@ pub async fn todo_counts(
                          IS DISTINCT FROM (g.published_score, g.published_feedback))
                       AS "draft_grades!",
                   EXISTS (SELECT 1 FROM gradebook.grades g
-                          JOIN content.assignments ga ON ga.item_id = g.assignment_id
-                          JOIN content.items gi ON gi.id = g.assignment_id
+                          JOIN content.assignment_list ga ON ga.item_id = g.assignment_id
+                          JOIN content.item_list gi ON gi.id = g.assignment_id
                           WHERE gi.course_id = i.course_id AND ga.type = 'quiz'
                             AND (g.draft_score, g.draft_feedback)
                                 IS DISTINCT FROM (g.published_score, g.published_feedback))
                       AS "from_quizzes!"
-           FROM (SELECT DISTINCT course_id FROM content.items WHERE course_id = ANY($1)) i"#,
+           FROM (SELECT DISTINCT course_id FROM content.item_list WHERE course_id = ANY($1)) i"#,
         course_ids
     )
     .fetch_all(conn)

@@ -12,7 +12,8 @@ pub async fn item_references(
     file_id: Uuid,
 ) -> Result<Vec<ItemReference>, sqlx::Error> {
     let rows = sqlx::query!(
-        "SELECT item_id, published FROM content.item_files WHERE file_id = $1",
+        r#"SELECT item_id AS "item_id!", published AS "published!"
+           FROM content.item_file_list WHERE file_id = $1"#,
         file_id
     )
     .fetch_all(conn)
@@ -32,7 +33,8 @@ pub async fn submission_references(
     file_id: Uuid,
 ) -> Result<Vec<Uuid>, sqlx::Error> {
     sqlx::query_scalar!(
-        "SELECT submission_id FROM assessment.submission_files WHERE file_id = $1",
+        r#"SELECT submission_id AS "submission_id!"
+           FROM assessment.submission_file_list WHERE file_id = $1"#,
         file_id
     )
     .fetch_all(conn)
@@ -42,8 +44,8 @@ pub async fn submission_references(
 /// Whether any item or submission names the file.
 pub async fn is_referenced(conn: &mut PgConnection, file_id: Uuid) -> Result<bool, sqlx::Error> {
     let referenced = sqlx::query_scalar!(
-        r#"SELECT EXISTS (SELECT 1 FROM content.item_files WHERE file_id = $1)
-               OR EXISTS (SELECT 1 FROM assessment.submission_files WHERE file_id = $1) AS "referenced!""#,
+        r#"SELECT EXISTS (SELECT 1 FROM content.item_file_list WHERE file_id = $1)
+               OR EXISTS (SELECT 1 FROM assessment.submission_file_list WHERE file_id = $1) AS "referenced!""#,
         file_id
     )
     .fetch_one(conn)
@@ -60,7 +62,7 @@ pub async fn count_own_rows_on(
     student: Uuid,
 ) -> Result<i64, sqlx::Error> {
     sqlx::query_scalar!(
-        r#"SELECT count(*) AS "n!" FROM assessment.submissions
+        r#"SELECT count(*) AS "n!" FROM assessment.submission_index
             WHERE id = ANY($1) AND assignment_id = $2 AND student_id = $3"#,
         held_by,
         assignment_id,

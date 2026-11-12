@@ -601,7 +601,7 @@ pub async fn claim_unannounced(
                FROM content.items i
                JOIN content.modules m ON m.id = i.module_id
                LEFT JOIN content.modules p ON p.id = m.parent_id
-               JOIN teaching.courses c ON c.id = i.course_id
+               JOIN teaching.course_list c ON c.id = i.course_id
                WHERE i.kind = 'assignment' AND i.status = 'published' AND i.announced_at IS NULL
                  AND ($2::uuid IS NULL OR i.course_id = $2)
                  AND c.kind = 'regular' AND c.status = 'published'

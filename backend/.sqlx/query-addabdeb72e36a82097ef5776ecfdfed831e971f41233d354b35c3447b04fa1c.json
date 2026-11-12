@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT edited AS \"edited!\" FROM content.item_list WHERE id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "edited!",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "content.item_list",
+            "name": "edited"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "addabdeb72e36a82097ef5776ecfdfed831e971f41233d354b35c3447b04fa1c"
+}
