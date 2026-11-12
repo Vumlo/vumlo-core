@@ -2,7 +2,7 @@
 //! them and the files are written through the repo functions of `content` and `assessment`.
 use std::sync::{Arc, LazyLock};
 
-use crate::tests::db_test;
+use crate::tests::{create_item, db_test};
 use chrono::{Duration, Utc};
 use serde_json::{Map, json};
 use sqlx::PgPool;
@@ -38,6 +38,7 @@ struct Fixture {
     /// A teacher who is not on the course.
     stranger: Actor,
     course: Uuid,
+    module: Uuid,
     /// A published item in a published module.
     lesson: Uuid,
     /// A published text assignment in the same module.
@@ -96,7 +97,7 @@ async fn fixture(pool: PgPool) -> Fixture {
         .await
         .unwrap();
     let lesson = published_item(&mut tx, &owner, module.id, None).await;
-    let assignment = content::create_item(
+    let assignment = create_item(
         &mut tx,
         &owner,
         rules(),
@@ -125,6 +126,7 @@ async fn fixture(pool: PgPool) -> Fixture {
         stranger: actor(stranger_user.id, Role::Teacher),
         owner,
         course: course.id,
+        module: module.id,
         lesson: lesson.id,
         assignment: assignment.id,
     }
@@ -137,7 +139,7 @@ async fn published_item(
     module: Uuid,
     publish_at: Option<chrono::DateTime<Utc>>,
 ) -> content::Item {
-    let item = content::create_item(
+    let item = create_item(
         conn,
         owner,
         rules(),
@@ -318,7 +320,7 @@ async fn student_gets_not_found_when_item_not_yet_published_or_before_publish_at
         )
         .await
         .unwrap();
-        let draft = content::create_item(
+        let draft = create_item(
             &mut tx,
             &f.owner,
             rules(),
@@ -364,7 +366,7 @@ async fn student_gets_not_found_when_item_not_yet_published_or_before_publish_at
             Some(Utc::now() + Duration::days(1)),
         )
         .await;
-        let draft_in_open = content::create_item(
+        let draft_in_open = create_item(
             &mut f.pool.acquire().await.unwrap(),
             &f.owner,
             rules(),
@@ -667,6 +669,98 @@ async fn check_names_a_non_image_and_returns_every_name() {
     .await;
 }
 
+/// A body whose one block, of type `block` (`file` or `image`), names `file`.
+fn body_naming(block: &str, file: Uuid) -> serde_json::Value {
+    let props = if block == "image" {
+        json!({"file_id": file, "alt": "A picture"})
+    } else {
+        json!({"file_id": file})
+    };
+    json!({"v": 1, "attachments": [], "blocks": [{"id": "b", "type": block, "props": props}]})
+}
+
+const FIELD: &str = "body.blocks[0].props.file_id";
+
+#[tokio::test]
+async fn an_item_naming_a_file_of_another_owner_is_refused_with_its_field_path() {
+    db_test(async |pool| {
+        let f = fixture(pool).await;
+        // The student's upload: the teacher may not name it, and nothing is written.
+        let theirs = file(&f.pool, &f.student).await;
+        let mut conn = f.pool.acquire().await.unwrap();
+        let input = crate::content::NewItemInput::document(
+            ContentTitle::parse("New").unwrap(),
+            Some(body_naming("file", theirs)),
+            None,
+        );
+
+        let created = items::create_item(&mut conn, &f.owner, rules(), f.module, input).await;
+        assert!(
+            matches!(&created, Err(crate::LearningError::Content(
+                content::ContentError::FileUnusable { id, field }
+            )) if *id == theirs && field == FIELD),
+            "{created:?}"
+        );
+        let patch = ItemPatch {
+            body: Some(body_naming("file", theirs)),
+            ..ItemPatch::default()
+        };
+        let updated = items::update_item(&mut conn, &f.owner, rules(), f.lesson, patch).await;
+        assert!(
+            matches!(&updated, Err(crate::LearningError::Content(
+                content::ContentError::FileUnusable { id, field }
+            )) if *id == theirs && field == FIELD),
+            "{updated:?}"
+        );
+        assert!(holders_of_items(&f.pool, theirs).await.is_empty());
+    })
+    .await;
+}
+
+async fn holders_of_items(pool: &PgPool, file: Uuid) -> Vec<Uuid> {
+    sqlx::query_scalar!(
+        "SELECT item_id FROM content.item_files WHERE file_id = $1",
+        file
+    )
+    .fetch_all(pool)
+    .await
+    .unwrap()
+}
+
+#[tokio::test]
+async fn an_image_block_needs_an_image_file() {
+    db_test(async |pool| {
+        let f = fixture(pool).await;
+        let text = file(&f.pool, &f.owner).await; // text/plain
+        let png = file(&f.pool, &f.owner).await;
+        sqlx::query!(
+            "UPDATE files.files SET mime = 'image/png' WHERE id = $1",
+            png
+        )
+        .execute(&f.pool)
+        .await
+        .unwrap();
+        let mut conn = f.pool.acquire().await.unwrap();
+        let patch = |file| ItemPatch {
+            body: Some(body_naming("image", file)),
+            ..ItemPatch::default()
+        };
+
+        let refused = items::update_item(&mut conn, &f.owner, rules(), f.lesson, patch(text)).await;
+        assert!(
+            matches!(&refused, Err(crate::LearningError::Content(
+                content::ContentError::NotAnImage { field }
+            )) if field == FIELD),
+            "{refused:?}"
+        );
+        items::update_item(&mut conn, &f.owner, rules(), f.lesson, patch(png))
+            .await
+            .unwrap();
+        assert_eq!(holders_of_items(&f.pool, png).await, [f.lesson]);
+    })
+    .await;
+}
+
 /// `actor` saves a draft on `assignment` whose one block is a `file` block naming `file`.
 async fn save_draft_naming(
     f: &Fixture,
@@ -779,7 +873,7 @@ async fn a_draft_cannot_name_a_file_of_another_students_attempt_or_of_another_as
         content::publish_module(&mut tx, &f.owner, module.id, true)
             .await
             .unwrap();
-        let other = content::create_item(
+        let other = create_item(
             &mut tx,
             &f.owner,
             rules(),

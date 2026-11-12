@@ -2,6 +2,7 @@ use common::ApiError;
 
 use super::assessment::AssessmentError;
 use super::content::ContentError;
+use super::files::FileError;
 use super::gradebook::GradebookError;
 use super::teaching::TeachingError;
 use access::AccessError;
@@ -25,6 +26,9 @@ pub enum LearningError {
     Gradebook(#[from] GradebookError),
     #[error(transparent)]
     Assessment(#[from] AssessmentError),
+    /// The check of the files a write names failed (ADR-0069); the verdict itself is not an error.
+    #[error(transparent)]
+    Files(#[from] FileError),
     /// The assignment, or an assignment below the module, has a grade (ADR-0028).
     #[error("it has grades: clear them before deleting")]
     HasGrades,
@@ -54,6 +58,7 @@ impl From<LearningError> for ApiError {
             LearningError::Content(e) => e.into(),
             LearningError::Gradebook(e) => e.into(),
             LearningError::Assessment(e) => e.into(),
+            LearningError::Files(e) => e.into(),
             LearningError::HasGrades => Self::Conflict("it has grades: clear them before deleting"),
             LearningError::HasSubmissions => {
                 Self::Conflict("it has submitted work: it cannot be deleted")

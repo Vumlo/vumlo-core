@@ -4,7 +4,9 @@
 //! connection.
 
 use access::ActorSource;
-use api_types::{Item, ProblemDetails, QuizResult, QuizResultQuestion, UpdateItemRequest};
+use api_types::{
+    CreateItemRequest, Item, ProblemDetails, QuizResult, QuizResultQuestion, UpdateItemRequest,
+};
 use axum::Json;
 use axum::extract::{FromRef, Path, State};
 use axum::http::StatusCode;
@@ -15,7 +17,7 @@ use uuid::Uuid;
 use super::service;
 use crate::LearningError;
 use crate::LearningState;
-use crate::content::{api_item, item_patch};
+use crate::content::{api_item, item_patch, new_item, under_assignment};
 use access::Actor;
 use common::{ApiError, ValidJson};
 
@@ -26,6 +28,7 @@ where
 {
     OpenApiRouter::new()
         .routes(routes!(delete_module))
+        .routes(routes!(create_item))
         .routes(routes!(get_item, update_item, delete_item))
         .routes(routes!(get_result))
 }
@@ -60,6 +63,63 @@ async fn delete_module(
     service::delete_module(&mut tx, &actor, id).await?;
     tx.commit().await.map_err(LearningError::from)?;
     Ok(StatusCode::NO_CONTENT)
+}
+
+/// Creates a draft `text` item, assignment or `file` item as the last item of a module or sub-module.
+///
+/// `body` is a JSON object that is stored and returned as is; an array or a string is rejected.
+/// For an assignment it holds the instructions. `kind` is optional: without it the item is an
+/// assignment when an `assignment` object is sent and a `text` item otherwise.
+///
+/// A `file` item has the body `{file_id?, description?}` (`description` is a document). It starts
+/// without a file: upload one with `POST /files?for=item:{id}` and name it with
+/// `PATCH /items/{id}`. `file_id` must be a file the caller uploaded that nothing uses yet. A
+/// `file` item must not carry an `assignment` object.
+///
+/// `kind: assignment` requires an `assignment` object `{type, config?, max_points, is_bonus?}`
+/// (ADR-0021); a `text` item must not carry one. `type` is `text`, `no_submission`, `quiz`, `form` or `file`; the
+/// `config` of a `quiz` is its questions and must add up to `max_points` (ADR-0050), that of a `form` its
+/// fields (ADR-0051), that of a `file` `{max_files?, accept?}` (ADR-0069), and the others take an empty one (a `text` assignment may narrow its editor).
+/// `max_points` is a decimal string such as `"20"` or `"7.5"`; a JSON number is rejected. The
+/// grading scale limits the points (ADR-0022): at most 12 per assignment on `twelve`, at most
+/// 100 in total over the regular (not bonus) assignments of the course on `hundred`.
+#[utoipa::path(
+    post,
+    path = "/modules/{id}/items",
+    tag = "content",
+    security(("cookie" = []), ("bearer" = [])),
+    params(("id" = Uuid, Path, description = "Module id")),
+    request_body = CreateItemRequest,
+    responses(
+        (status = 201, description = "The new draft item", body = Item),
+        (status = 401, description = "Not logged in", body = ProblemDetails,
+            content_type = "application/problem+json"),
+        (status = 403, description = "The caller may not change this course's content",
+            body = ProblemDetails, content_type = "application/problem+json"),
+        (status = 404, description = "No such module, or not visible to the caller",
+            body = ProblemDetails, content_type = "application/problem+json"),
+        (status = 409, description = "A concurrent change took the position; retry",
+            body = ProblemDetails, content_type = "application/problem+json"),
+        (status = 422, description = "Invalid title, a body that is not a JSON object (or, for a `file` item, not `{file_id?, description?}` with a usable `file_id`), a missing or unexpected `assignment` object, an unknown type or config field, invalid points, or points the grading scale does not allow",
+            body = ProblemDetails, content_type = "application/problem+json"),
+    )
+)]
+async fn create_item(
+    State(state): State<LearningState>,
+    actor: Actor,
+    Path(module_id): Path<Uuid>,
+    ValidJson(request): ValidJson<CreateItemRequest>,
+) -> Result<(StatusCode, Json<Item>), ApiError> {
+    let input = new_item(request)?;
+    let mut tx = state.db.begin().await.map_err(LearningError::from)?;
+    let item = service::create_item(&mut tx, &actor, state.item_rules(), module_id, input)
+        .await
+        .map_err(|error| match error {
+            LearningError::Content(error) => under_assignment(error),
+            other => other.into(),
+        })?;
+    tx.commit().await.map_err(LearningError::from)?;
+    Ok((StatusCode::CREATED, Json(api_item(item))))
 }
 
 /// One `text` item or assignment with its body (and, for an assignment, its `assignment` part). A

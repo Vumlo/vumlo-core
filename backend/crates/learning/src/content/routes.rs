@@ -23,7 +23,7 @@ use super::model::{
     SettingsPatch, SubmissionSettings,
 };
 use super::rules::{Condition, Node};
-use super::service::{self, ContentError};
+use super::service::{self, ContentError, NewItemInput};
 use crate::LearningState;
 use access::Actor;
 use common::{ApiError, ValidJson, ValidQuery};
@@ -39,7 +39,7 @@ where
         .routes(routes!(update_module))
         .routes(routes!(reorder_modules))
         .routes(routes!(publish_module))
-        .routes(routes!(create_item, reorder_items))
+        .routes(routes!(reorder_items))
         .routes(routes!(publish_item))
         .routes(routes!(mark_done, unmark_done))
         .routes(routes!(get_revision))
@@ -83,7 +83,6 @@ impl From<ContentError> for ApiError {
             ContentError::FileMissing => {
                 Self::Conflict("a file item needs a file before it is published")
             }
-            ContentError::Files(e) => (*e).into(),
             ContentError::Settings(problems) => Self::Unprocessable {
                 detail: "the request has invalid fields".to_owned(),
                 errors: problems
@@ -403,7 +402,7 @@ fn domain_assignment(new: NewAssignment) -> Result<model::Assignment, ApiError> 
 }
 
 /// A 422 about the assignment part of a create request names its field under `assignment.`.
-fn under_assignment(error: ContentError) -> ApiError {
+pub fn under_assignment(error: ContentError) -> ApiError {
     // The document, and the file of a `file` item, are the item's own `body`, not part of the
     // assignment object.
     if matches!(
@@ -613,51 +612,10 @@ async fn publish_module(
     Ok(Json(api_module(module)))
 }
 
-/// Creates a draft `text` item, assignment or `file` item as the last item of a module or sub-module.
-///
-/// `body` is a JSON object that is stored and returned as is; an array or a string is rejected.
-/// For an assignment it holds the instructions. `kind` is optional: without it the item is an
-/// assignment when an `assignment` object is sent and a `text` item otherwise.
-///
-/// A `file` item has the body `{file_id?, description?}` (`description` is a document). It starts
-/// without a file: upload one with `POST /files?for=item:{id}` and name it with
-/// `PATCH /items/{id}`. `file_id` must be a file the caller uploaded that nothing uses yet. A
-/// `file` item must not carry an `assignment` object.
-///
-/// `kind: assignment` requires an `assignment` object `{type, config?, max_points, is_bonus?}`
-/// (ADR-0021); a `text` item must not carry one. `type` is `text`, `no_submission`, `quiz`, `form` or `file`; the
-/// `config` of a `quiz` is its questions and must add up to `max_points` (ADR-0050), that of a `form` its
-/// fields (ADR-0051), that of a `file` `{max_files?, accept?}` (ADR-0069), and the others take an empty one (a `text` assignment may narrow its editor).
-/// `max_points` is a decimal string such as `"20"` or `"7.5"`; a JSON number is rejected. The
-/// grading scale limits the points (ADR-0022): at most 12 per assignment on `twelve`, at most
-/// 100 in total over the regular (not bonus) assignments of the course on `hundred`.
-#[utoipa::path(
-    post,
-    path = "/modules/{id}/items",
-    tag = "content",
-    security(("cookie" = []), ("bearer" = [])),
-    params(("id" = Uuid, Path, description = "Module id")),
-    request_body = CreateItemRequest,
-    responses(
-        (status = 201, description = "The new draft item", body = Item),
-        (status = 401, description = "Not logged in", body = ProblemDetails,
-            content_type = "application/problem+json"),
-        (status = 403, description = "The caller may not change this course's content",
-            body = ProblemDetails, content_type = "application/problem+json"),
-        (status = 404, description = "No such module, or not visible to the caller",
-            body = ProblemDetails, content_type = "application/problem+json"),
-        (status = 409, description = "A concurrent change took the position; retry",
-            body = ProblemDetails, content_type = "application/problem+json"),
-        (status = 422, description = "Invalid title, a body that is not a JSON object (or, for a `file` item, not `{file_id?, description?}` with a usable `file_id`), a missing or unexpected `assignment` object, an unknown type or config field, invalid points, or points the grading scale does not allow",
-            body = ProblemDetails, content_type = "application/problem+json"),
-    )
-)]
-async fn create_item(
-    State(state): State<LearningState>,
-    actor: Actor,
-    Path(module_id): Path<Uuid>,
-    ValidJson(request): ValidJson<CreateItemRequest>,
-) -> Result<(StatusCode, Json<Item>), ApiError> {
+/// What a request to create an item asks for, in the domain's terms. `kind` is optional in the
+/// request: without it the item is an assignment when an `assignment` object is sent and a `text`
+/// item otherwise.
+pub fn new_item(request: CreateItemRequest) -> Result<NewItemInput, ApiError> {
     let title = title(&request.title)?;
     let kind = request.kind.map_or_else(
         || {
@@ -685,32 +643,12 @@ async fn create_item(
         }
         (ItemKind::Assignment, Some(new)) => Some(domain_assignment(new)?),
     };
-    let mut tx = state.db.begin().await.map_err(ContentError::from)?;
-    let item = if kind == ItemKind::File {
-        service::create_file_item(
-            &mut tx,
-            &actor,
-            state.item_rules(),
-            module_id,
-            title,
-            request.body,
-        )
-        .await
-    } else {
-        service::create_item(
-            &mut tx,
-            &actor,
-            state.item_rules(),
-            module_id,
-            title,
-            request.body,
-            assignment,
-        )
-        .await
-    }
-    .map_err(under_assignment)?;
-    tx.commit().await.map_err(ContentError::from)?;
-    Ok((StatusCode::CREATED, Json(api_item(item))))
+    Ok(NewItemInput {
+        title,
+        kind,
+        body: request.body,
+        assignment,
+    })
 }
 
 /// Sets the order of the items of a module. `ids` must be exactly the current items, each once.

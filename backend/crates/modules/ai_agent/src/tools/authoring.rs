@@ -7,8 +7,10 @@ use std::collections::BTreeMap;
 
 use access::Actor;
 use common::ApiError;
-use learning::content::{self, Assignment, BuiltinType, ContentTitle, ItemRules, MaxPoints};
-use learning::teaching;
+use learning::content::{
+    self, Assignment, BuiltinType, ContentTitle, ItemRules, MaxPoints, NewItemInput,
+};
+use learning::{items, teaching};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 use sqlx::PgConnection;
@@ -314,14 +316,12 @@ impl Write {
                 text,
                 ..
             } => {
-                content::create_item(
+                items::create_item(
                     conn,
                     actor,
                     rules,
                     *module_id,
-                    name(title)?,
-                    Some(document(text)),
-                    None,
+                    NewItemInput::document(name(title)?, Some(document(text)), None),
                 )
                 .await
                 .map_err(ApiError::from)?;
@@ -339,14 +339,12 @@ impl Write {
                     .filter(|t| !t.trim().is_empty())
                     .map(document);
                 let assignment = assignment(BuiltinType::Text, Map::new(), points);
-                content::create_item(
+                items::create_item(
                     conn,
                     actor,
                     rules,
                     *module_id,
-                    name(title)?,
-                    body,
-                    Some(assignment),
+                    NewItemInput::document(name(title)?, body, Some(assignment)),
                 )
                 .await
                 .map_err(ApiError::from)?;
@@ -369,14 +367,12 @@ impl Write {
                     config,
                     points(&total.to_string(), "questions")?,
                 );
-                content::create_item(
+                items::create_item(
                     conn,
                     actor,
                     rules,
                     *module_id,
-                    name(title)?,
-                    body,
-                    Some(assignment),
+                    NewItemInput::document(name(title)?, body, Some(assignment)),
                 )
                 .await
                 .map_err(ApiError::from)?;

@@ -2,7 +2,7 @@
 //! open, starts a second writer on a task, waits until that writer is observed blocked on a
 //! lock, and only then lets the first one commit. Nothing sleeps: the order is forced by the
 //! locks, not by timing.
-use crate::tests::db_test;
+use crate::tests::{create_item, db_test};
 use test_support::wait_until_blocked;
 
 use std::sync::LazyLock;
@@ -92,7 +92,7 @@ async fn fixture_worth(pool: PgPool, points: &str) -> Fixture {
     )
     .await
     .unwrap();
-    let item = content::create_item(
+    let item = create_item(
         &mut tx,
         &owner,
         rules(),

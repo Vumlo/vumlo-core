@@ -29,8 +29,8 @@ use super::repo::{self, CopiedIds, ItemRow, ModuleRow};
 use super::rules::Node;
 use super::standing;
 use super::types::form::{self, Holders};
-use crate::files::{self as file_service, FileError, UsageOwner};
 use crate::teaching::{self, TeachingError};
+use ::files::FileVerdict;
 use access::Actor;
 use access::{self, AccessError, Action, CourseAccess, CourseStatus, Release};
 use events::{self, AuditEntry, Event, EventsError};
@@ -83,8 +83,6 @@ pub enum ContentError {
     /// Publishing a `file` item whose published body would name no file.
     #[error("a file item needs a file before it is published")]
     FileMissing,
-    #[error(transparent)]
-    Files(Box<FileError>),
     /// No such module, or the actor may not see it.
     #[error("module not found")]
     ModuleNotFound,
@@ -833,7 +831,7 @@ fn document(
 const FILE_BODY_KEYS: [&str; 2] = ["file_id", "description"];
 
 /// Validates the body of a `file` item: an object with at most `file_id` (a uuid) and
-/// `description` (a document of profile `full`). The file itself is checked by [`usable_files`].
+/// `description` (a document of profile `full`). The file itself is checked by `learning::files::check`.
 fn file_body(
     body: &Value,
     profiles: &EffectiveProfiles,
@@ -952,45 +950,25 @@ fn referenced_file_ids(
     Ok(distinct_ids(&item_file_refs(kind, body, config, "config")?))
 }
 
-/// May the item `owner` name each of `refs` (ADR-0069)? Done before the write. A refusal names
-/// the field of the first file that cannot be used, or of the first image block whose file is not
-/// a PNG, JPEG, GIF or WebP.
-async fn usable_files(
-    conn: &mut PgConnection,
-    actor: &Actor,
-    owner: Uuid,
-    refs: &[FileRef],
-) -> Result<(), ContentError> {
-    match file_service::ensure_usable(
-        conn,
-        actor.user_id(),
-        &UsageOwner::Item(owner),
-        &distinct_ids(refs),
-    )
-    .await
-    {
-        Ok(()) => {}
-        Err(FileError::Unusable { id }) => {
-            let field = refs
-                .iter()
-                .find(|file| file.id == id)
-                .map_or_else(|| "body".to_owned(), |file| file.path.clone());
-            return Err(ContentError::FileUnusable { id, field });
-        }
-        Err(other) => return Err(ContentError::Files(Box::new(other))),
+/// What the check of the files (`learning::files::check`, ADR-0069) said about `refs`, as the
+/// error of this write. A refusal names the field of the first file that cannot be used, or of the
+/// first image block whose file is not a PNG, JPEG, GIF or WebP.
+fn judge_files(refs: &[FileRef], verdict: &FileVerdict) -> Result<(), ContentError> {
+    let field = |id: Uuid| {
+        refs.iter()
+            .find(|file| file.id == id)
+            .map_or_else(|| "body".to_owned(), |file| file.path.clone())
+    };
+    if let Some(id) = verdict.unusable {
+        return Err(ContentError::FileUnusable {
+            id,
+            field: field(id),
+        });
     }
-    let images: Vec<FileRef> = refs.iter().filter(|file| file.image).cloned().collect();
-    match file_service::first_non_image(conn, &distinct_ids(&images)).await {
-        Ok(None) => Ok(()),
-        Ok(Some(id)) => {
-            let field = images
-                .iter()
-                .find(|file| file.id == id)
-                .map_or_else(|| "body".to_owned(), |file| file.path.clone());
-            Err(ContentError::NotAnImage { field })
-        }
-        Err(other) => Err(ContentError::Files(Box::new(other))),
+    if let Some(id) = verdict.not_image {
+        return Err(ContentError::NotAnImage { field: field(id) });
     }
+    Ok(())
 }
 
 /// The assignment type and config of `item`, loaded when the item does not carry them.
@@ -1044,63 +1022,80 @@ async fn sync_published_files(conn: &mut PgConnection, item: &Item) -> Result<()
     Ok(())
 }
 
-/// Creates a draft item as the last of the module, which may be a top-level module or a
-/// sub-module. An `assignment` makes it an item of kind `assignment`; without one it is a `text` item.
-pub async fn create_item(
-    conn: &mut PgConnection,
-    actor: &Actor,
-    rules: ItemRules<'_>,
-    module_id: Uuid,
-    title: ContentTitle,
-    body: Option<Value>,
-    assignment: Option<Assignment>,
-) -> Result<Item, ContentError> {
-    let kind = if assignment.is_some() {
-        ItemKind::Assignment
-    } else {
-        ItemKind::Text
-    };
-    create(conn, actor, rules, module_id, kind, title, body, assignment).await
+/// What a new draft item is made of (ADR-0021, ADR-0024): a `text` item, an `assignment` (with its
+/// `assignment` part) or a `file` item (whose body is `{file_id?, description?}`; the file is
+/// uploaded after the item exists, so a new one usually has none yet).
+#[derive(Debug, Clone)]
+pub struct NewItemInput {
+    pub title: ContentTitle,
+    pub kind: ItemKind,
+    pub body: Option<Value>,
+    pub assignment: Option<Assignment>,
 }
 
-/// Creates a draft item of kind `file` as the last of the module. Its body is
-/// `{file_id?, description?}`; the file is uploaded after the item exists, so a new one usually has
-/// none yet (ADR-0024).
-pub async fn create_file_item(
-    conn: &mut PgConnection,
-    actor: &Actor,
-    rules: ItemRules<'_>,
-    module_id: Uuid,
-    title: ContentTitle,
-    body: Option<Value>,
-) -> Result<Item, ContentError> {
-    create(
-        conn,
-        actor,
-        rules,
-        module_id,
-        ItemKind::File,
-        title,
-        body,
-        None,
-    )
-    .await
+impl NewItemInput {
+    /// A `text` item, or an `assignment` when `assignment` is given.
+    pub fn document(
+        title: ContentTitle,
+        body: Option<Value>,
+        assignment: Option<Assignment>,
+    ) -> Self {
+        let kind = if assignment.is_some() {
+            ItemKind::Assignment
+        } else {
+            ItemKind::Text
+        };
+        Self {
+            title,
+            kind,
+            body,
+            assignment,
+        }
+    }
 }
 
-#[expect(
-    clippy::too_many_arguments,
-    reason = "the two public creators differ only in the kind they pass"
-)]
-async fn create(
-    conn: &mut PgConnection,
-    actor: &Actor,
-    rules: ItemRules<'_>,
+/// A new item that passed everything `content` can judge by itself, with its id chosen: the state
+/// between [`begin_create_item`] and [`finish_create_item`].
+#[derive(Debug)]
+pub struct ItemCreation {
+    id: Uuid,
     module_id: Uuid,
+    course_id: Uuid,
     kind: ItemKind,
     title: ContentTitle,
-    body: Option<Value>,
-    mut assignment: Option<Assignment>,
-) -> Result<Item, ContentError> {
+    body: Map<String, Value>,
+    assignment: Option<Assignment>,
+    files: Vec<FileRef>,
+}
+
+impl ItemCreation {
+    /// The id the item will have: the owner of the files it names.
+    pub fn id(&self) -> Uuid {
+        self.id
+    }
+
+    /// The files the new item names, in its body and its config.
+    pub fn files(&self) -> &[FileRef] {
+        &self.files
+    }
+}
+
+/// First half of creating a draft item as the last of a module, which may be a top-level module or
+/// a sub-module: authorizes, validates, and lists the files the item names. The flow
+/// (`learning::items::create_item`) has them checked and calls [`finish_create_item`].
+pub async fn begin_create_item(
+    conn: &mut PgConnection,
+    actor: &Actor,
+    rules: ItemRules<'_>,
+    module_id: Uuid,
+    input: NewItemInput,
+) -> Result<ItemCreation, ContentError> {
+    let NewItemInput {
+        title,
+        kind,
+        body,
+        mut assignment,
+    } = input;
     let (row, _) = manage_module(conn, actor, module_id).await?;
     let course_id = row.module.course_id;
     if let Some(assignment) = &mut assignment {
@@ -1113,18 +1108,47 @@ async fn create(
     if let Some(assignment) = &assignment {
         check_points(rules.scale, assignment.max_points.value(), "max_points")?;
     }
-    let id = Uuid::now_v7();
     let body = body.unwrap_or_else(|| match kind {
         ItemKind::File => Map::new(),
         ItemKind::Text | ItemKind::Assignment => ValidDocument::empty().as_body().clone(),
     });
-    let refs = item_file_refs(
+    let files = item_file_refs(
         kind,
         &body,
         assignment.as_ref().map(|a| (a.assignment_type, &a.config)),
         "assignment.config",
     )?;
-    usable_files(conn, actor, id, &refs).await?;
+    Ok(ItemCreation {
+        id: Uuid::now_v7(),
+        module_id,
+        course_id,
+        kind,
+        title,
+        body,
+        assignment,
+        files,
+    })
+}
+
+/// Second half: raises what the check of the files said, then inserts the item and the rows that
+/// name its files. The files were locked by the check, in the transaction that is still open.
+pub async fn finish_create_item(
+    conn: &mut PgConnection,
+    actor: &Actor,
+    creation: ItemCreation,
+    files: &FileVerdict,
+) -> Result<Item, ContentError> {
+    let ItemCreation {
+        id,
+        module_id,
+        course_id,
+        kind,
+        title,
+        body,
+        assignment,
+        files: refs,
+    } = creation;
+    judge_files(&refs, files)?;
     let mut item =
         repo::insert_item(conn, id, module_id, course_id, kind, title.as_str(), &body).await?;
     if let Some(assignment) = &assignment {
@@ -1703,9 +1727,16 @@ pub struct ItemUpdate {
     lowered_to: Option<MaxPoints>,
     /// The points go up to this: the grading scale limits them (ADR-0022).
     raised_to: Option<MaxPoints>,
+    /// The files the new body and the new config name.
+    files: Vec<FileRef>,
 }
 
 impl ItemUpdate {
+    /// The files the update names, in the new body and the new config: the flow has them checked.
+    pub fn files(&self) -> &[FileRef] {
+        &self.files
+    }
+
     /// The update needs `has_submissions` of [`AssignmentFacts`].
     pub fn asks_submissions(&self) -> bool {
         self.changes_structure
@@ -1752,6 +1783,7 @@ pub async fn begin_update_item(
             changes_structure: false,
             lowered_to: None,
             raised_to: None,
+            files: Vec::new(),
         });
     }
     let is_assignment = row.item.kind == ItemKind::Assignment;
@@ -1773,9 +1805,9 @@ pub async fn begin_update_item(
         assignment.assignment_type.strip_computed(config);
     }
     let body = validated_body(row.item.kind, patch.body.as_ref(), rules.profiles)?;
+    let mut files = Vec::new();
     if let Some(body) = &body {
-        let refs = item_file_refs(row.item.kind, body, None, "config")?;
-        usable_files(conn, actor, id, &refs).await?;
+        files = item_file_refs(row.item.kind, body, None, "config")?;
     }
     let mut settings = None;
     // The deadline before this update, when the update can change it.
@@ -1809,15 +1841,14 @@ pub async fn begin_update_item(
             let config = patch.config.as_ref().unwrap_or(&current.config);
             if patch.config.is_some() {
                 kind.validate_config(config, rules.profiles)?;
-                let refs = kind
-                    .config_file_refs(config)?
-                    .into_iter()
-                    .map(|file| FileRef {
-                        path: format!("config.{}", file.path),
-                        ..file
-                    })
-                    .collect::<Vec<_>>();
-                usable_files(conn, actor, id, &refs).await?;
+                files.extend(
+                    kind.config_file_refs(config)?
+                        .into_iter()
+                        .map(|file| FileRef {
+                            path: format!("config.{}", file.path),
+                            ..file
+                        }),
+                );
             }
             check_points_total(kind, config, patch.max_points.unwrap_or(current.max_points))?;
             // The structure is frozen once work was submitted (ADR-0023); the assignment row is
@@ -1848,17 +1879,20 @@ pub async fn begin_update_item(
         changes_structure,
         lowered_to,
         raised_to,
+        files,
     })
 }
 
-/// Second half: refuses what the facts of the other modules forbid (a changed structure after work
-/// was submitted, points below a score already given, points the grading scale does not allow),
-/// then writes the update.
+/// Second half: refuses what the check of the files said (a file the item may not name, an image
+/// block that names no image), then what the facts of the other modules forbid (a changed
+/// structure after work was submitted, points below a score already given, points the grading
+/// scale does not allow), then writes the update.
 pub async fn finish_update_item(
     conn: &mut PgConnection,
     actor: &Actor,
     update: ItemUpdate,
     facts: AssignmentFacts,
+    files: &FileVerdict,
 ) -> Result<Item, ContentError> {
     let ItemUpdate {
         id,
@@ -1874,11 +1908,13 @@ pub async fn finish_update_item(
         changes_structure,
         lowered_to,
         raised_to,
+        files: refs,
     } = update;
     if let Some(mut item) = unchanged {
         item.access = node_access(conn, actor, access, course_id, Node::Item(id)).await?;
         return Ok(item);
     }
+    judge_files(&refs, files)?;
     if changes_structure && facts.has_submissions {
         return Err(ContentError::StructureFrozen);
     }
@@ -2000,7 +2036,14 @@ pub async fn set_due_at(
     };
     // A deadline touches neither points nor config, so nothing is asked of the modules above.
     let update = begin_update_item(conn, actor, rules, id, patch).await?;
-    finish_update_item(conn, actor, update, AssignmentFacts::default()).await
+    finish_update_item(
+        conn,
+        actor,
+        update,
+        AssignmentFacts::default(),
+        &FileVerdict::default(),
+    )
+    .await
 }
 
 /// An item the actor may delete, with its assignment row locked if it is an assignment: the state

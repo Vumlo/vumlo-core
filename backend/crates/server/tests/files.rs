@@ -25,6 +25,7 @@ struct World {
     student: Account,
     stranger: Account,
     course: Uuid,
+    module: Uuid,
     /// A published text item: students can see it, only staff can edit it.
     item: Uuid,
     /// A text item nobody has published.
@@ -66,6 +67,7 @@ async fn world_with(pool: PgPool, max_size: Option<u64>) -> World {
         student,
         stranger,
         course,
+        module,
         item,
         draft_item,
         assignment,
@@ -822,6 +824,175 @@ async fn unreadable_file_is_404_not_403() {
         // And a call without a login is a 401, not a hint about the file.
         let anonymous = w.env.http.get(&format!("/files/{shown}")).send().await;
         anonymous.problem(401);
+    })
+    .await;
+}
+
+// ---------------------------------------------------------------------------------------------
+// Naming an upload is one step with its check (ADR-0069, ADR-0093)
+// ---------------------------------------------------------------------------------------------
+
+/// A body whose one block names `files`.
+fn naming(files: &[Uuid]) -> Value {
+    let blocks: Vec<Value> = files
+        .iter()
+        .enumerate()
+        .map(|(n, file)| json!({"id": format!("f{n}"), "type": "file", "props": {"file_id": file}}))
+        .collect();
+    json!({"v": 1, "attachments": [], "blocks": blocks})
+}
+
+/// What a request does to an item that names files, sent on its own task.
+fn patch_in_task(w: &World, item: Uuid, files: &[Uuid]) -> tokio::task::JoinHandle<Resp> {
+    let (base, token, body) = (
+        w.env.base.clone(),
+        w.owner.token.clone(),
+        json!({"body": naming(files)}),
+    );
+    tokio::spawn(async move {
+        common::Http::new(&base)
+            .patch(&format!("/items/{item}"))
+            .bearer(&token)
+            .json(&body)
+            .send()
+            .await
+    })
+}
+
+/// An attach that has checked `file` and has not committed yet: it holds the lock of the file row
+/// and has written the reference of `item`.
+async fn attach_in_flight(
+    w: &World,
+    file: Uuid,
+    item: Uuid,
+) -> sqlx::Transaction<'static, sqlx::Postgres> {
+    let mut tx = w.env.pool.begin().await.unwrap();
+    sqlx::query!("SELECT id FROM files.files WHERE id = $1 FOR UPDATE", file)
+        .fetch_one(&mut *tx)
+        .await
+        .unwrap();
+    sqlx::query!(
+        "INSERT INTO content.item_files (item_id, file_id, published) VALUES ($1, $2, false)",
+        item,
+        file
+    )
+    .execute(&mut *tx)
+    .await
+    .unwrap();
+    tx
+}
+
+async fn holders(pool: &PgPool, file: Uuid) -> Vec<Uuid> {
+    sqlx::query_scalar!(
+        "SELECT item_id FROM content.item_files WHERE file_id = $1 ORDER BY item_id",
+        file
+    )
+    .fetch_all(pool)
+    .await
+    .unwrap()
+}
+
+#[tokio::test]
+async fn two_items_cannot_both_take_one_upload() {
+    db_test(async |pool| {
+        let w = world(pool).await;
+        let file = stored(&w, "a.pdf", "application/pdf", PDF).await;
+        let first = text_item(&w.env, &w.owner, w.module).await;
+        let second = text_item(&w.env, &w.owner, w.module).await;
+
+        let attach = attach_in_flight(&w, file, first).await;
+        let waiting = patch_in_task(&w, second, &[file]);
+        test_support::wait_until_blocked(&w.env.pool, &waiting).await;
+        attach.commit().await.unwrap();
+
+        let response = waiting.await.unwrap();
+        assert_eq!(
+            response.problem(422).errors[0].field,
+            "body.blocks[0].props.file_id"
+        );
+        assert_eq!(holders(&w.env.pool, file).await, [first]);
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn an_item_created_naming_an_upload_waits_for_an_attach_in_flight() {
+    db_test(async |pool| {
+        let w = world(pool).await;
+        let file = stored(&w, "a.pdf", "application/pdf", PDF).await;
+        let first = text_item(&w.env, &w.owner, w.module).await;
+
+        let attach = attach_in_flight(&w, file, first).await;
+        let (base, token, module) = (w.env.base.clone(), w.owner.token.clone(), w.module);
+        let waiting = tokio::spawn(async move {
+            common::Http::new(&base)
+                .post(&format!("/modules/{module}/items"))
+                .bearer(&token)
+                .json(&json!({"kind": "text", "title": "New", "body": naming(&[file])}))
+                .send()
+                .await
+        });
+        test_support::wait_until_blocked(&w.env.pool, &waiting).await;
+        attach.commit().await.unwrap();
+
+        let response = waiting.await.unwrap();
+        assert_eq!(
+            response.problem(422).errors[0].field,
+            "body.blocks[0].props.file_id"
+        );
+        assert_eq!(holders(&w.env.pool, file).await, [first]);
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn an_attach_that_gives_up_leaves_the_upload_free_for_the_next() {
+    db_test(async |pool| {
+        let w = world(pool).await;
+        let file = stored(&w, "a.pdf", "application/pdf", PDF).await;
+        let first = text_item(&w.env, &w.owner, w.module).await;
+        let second = text_item(&w.env, &w.owner, w.module).await;
+
+        let attach = attach_in_flight(&w, file, first).await;
+        let waiting = patch_in_task(&w, second, &[file]);
+        test_support::wait_until_blocked(&w.env.pool, &waiting).await;
+        attach.rollback().await.unwrap();
+
+        assert_eq!(waiting.await.unwrap().status, 200);
+        assert_eq!(holders(&w.env.pool, file).await, [second]);
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn two_updates_naming_the_same_files_in_opposite_orders_do_not_deadlock() {
+    db_test(async |pool| {
+        let w = world(pool).await;
+        let a = stored(&w, "a.pdf", "application/pdf", PDF).await;
+        let b = stored(
+            &w,
+            "b.pdf",
+            "application/pdf",
+            b"%PDF-1.4\n2 0 obj\n<<>>\nendobj\n",
+        )
+        .await;
+        let first = text_item(&w.env, &w.owner, w.module).await;
+        let second = text_item(&w.env, &w.owner, w.module).await;
+        // Both items hold both files, as after copying a course, so each may keep naming them.
+        for item in [first, second] {
+            for file in [a, b] {
+                name_in_item(&w.env.pool, item, file, false).await;
+            }
+        }
+
+        for round in 0..10 {
+            let (one, other) = (
+                patch_in_task(&w, first, &[a, b]),
+                patch_in_task(&w, second, &[b, a]),
+            );
+            let (one, other) = (one.await.unwrap(), other.await.unwrap());
+            assert_eq!((one.status, other.status), (200, 200), "round {round}");
+        }
     })
     .await;
 }
