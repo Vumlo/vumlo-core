@@ -1089,3 +1089,48 @@ async fn the_same_bytes_uploaded_twice_make_two_files_and_the_unused_one_is_swep
     })
     .await;
 }
+
+#[tokio::test]
+async fn sweep_leaves_a_file_that_a_running_attach_has_locked() {
+    db_test(async |pool| {
+        let f = fixture(pool).await;
+        let storage = memory();
+        let id = stored_file(&f.pool, &storage, &f.owner, b"abc").await;
+        let later = Utc::now() + Duration::hours(25);
+
+        // An attach that checked the file and has not committed yet holds this lock.
+        let mut attach = f.pool.begin().await.unwrap();
+        files::lock(&mut attach, &[id]).await.unwrap();
+
+        assert_eq!(sweep(&f.pool, &storage, later).await.unwrap(), 0);
+        assert!(kept(&f.pool, &storage, id).await);
+
+        // The attach gave up: the file is an orphan again and the next round takes it.
+        attach.rollback().await.unwrap();
+        assert_eq!(sweep(&f.pool, &storage, later).await.unwrap(), 1);
+        assert!(gone(&f.pool, &storage, id).await);
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn sweep_keeps_a_file_whose_attach_committed_while_the_sweep_skipped_it() {
+    db_test(async |pool| {
+        let f = fixture(pool).await;
+        let storage = memory();
+        let id = stored_file(&f.pool, &storage, &f.owner, b"abc").await;
+        let later = Utc::now() + Duration::hours(25);
+
+        let mut attach = f.pool.begin().await.unwrap();
+        files::lock(&mut attach, &[id]).await.unwrap();
+        content::replace_item_files(&mut attach, f.lesson, false, &[id])
+            .await
+            .unwrap();
+        assert_eq!(sweep(&f.pool, &storage, later).await.unwrap(), 0);
+        attach.commit().await.unwrap();
+
+        assert_eq!(sweep(&f.pool, &storage, later).await.unwrap(), 0);
+        assert!(kept(&f.pool, &storage, id).await);
+    })
+    .await;
+}
