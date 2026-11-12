@@ -1,5 +1,6 @@
 //! Grades, publishing and the gradebook read models (ADR-0009, ADR-0015, ADR-0028).
 
+mod layout;
 mod model;
 mod repo;
 mod routes;
