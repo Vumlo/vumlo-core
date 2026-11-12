@@ -11,6 +11,7 @@
 
 use std::collections::BTreeMap;
 
+use ::files::FileVerdict;
 use chrono::{DateTime, Utc};
 use serde_json::{Map, Value};
 use sqlx::PgConnection;
@@ -25,7 +26,6 @@ use crate::content::{
     self, Assignment, AssignmentType, AutoGrade, BuiltinType, DocumentErrors, EffectiveProfiles,
     FileRef, OnDeadline, OpenError, OpenedAssignment, Stage, distinct_ids,
 };
-use crate::files::{FileError, UsageOwner, ensure_usable, first_non_image};
 use crate::teaching::TeachingError;
 use access::Actor;
 use access::{self, AccessError, Action};
@@ -186,19 +186,49 @@ fn open_window(assignment: &Assignment, now: DateTime<Utc>) -> Result<bool, Asse
     }
 }
 
-/// Replaces the caller's draft with `content`; the last write wins and nothing is versioned.
-/// Writes no event (ADR-0007).
+/// A draft save that passed everything `assessment` can judge by itself, with the draft row locked
+/// and the id it will keep: the state between [`begin_save_draft`] and [`finish_save_draft`].
+#[derive(Debug)]
+pub struct DraftSave {
+    assignment: Assignment,
+    assignment_id: Uuid,
+    student_id: Uuid,
+    id: Uuid,
+    body: Map<String, Value>,
+    files: Vec<FileRef>,
+}
+
+impl DraftSave {
+    /// The row the draft is saved in: the owner of the files it names.
+    pub fn submission_id(&self) -> Uuid {
+        self.id
+    }
+
+    pub fn assignment_id(&self) -> Uuid {
+        self.assignment_id
+    }
+
+    /// The files the content names.
+    pub fn files(&self) -> &[FileRef] {
+        &self.files
+    }
+}
+
+/// First half of replacing the caller's draft with `content`; the last write wins and nothing is
+/// versioned. Writes no event (ADR-0007). Authorizes, validates and lists the files the content
+/// names; the flow (`learning::submissions::save_draft`) has them checked and calls
+/// [`finish_save_draft`].
 ///
 /// The assignment row is locked `FOR SHARE` before the settings are read from it, so a change of
 /// the window made by a transaction that began first is seen, and one that comes later waits.
-pub async fn save_draft(
+pub async fn begin_save_draft(
     conn: &mut PgConnection,
     actor: &Actor,
     assignment_id: Uuid,
     content: &Value,
     profiles: &EffectiveProfiles,
     now: DateTime<Utc>,
-) -> Result<Draft, AssessmentError> {
+) -> Result<DraftSave, AssessmentError> {
     let opened = open(conn, actor, assignment_id).await?;
     access::authorize(actor, Action::SubmitWork(opened.access))?;
     require_submissions(&opened)?;
@@ -214,18 +244,34 @@ pub async fn save_draft(
         Some(draft) => draft.id,
         None => Uuid::now_v7(),
     };
-    let files = check_files(
-        conn,
-        actor.user_id(),
-        &assignment,
+    let files = file_refs(&assignment, valid.as_body())?;
+    Ok(DraftSave {
+        assignment,
         assignment_id,
-        valid.as_body(),
+        student_id: actor.user_id(),
         id,
+        body: valid.as_body().clone(),
+        files,
+    })
+}
+
+/// Second half: raises what the check of the files said, then writes the draft and the rows that
+/// name its files. The files were locked by the check, in the transaction that is still open.
+pub async fn finish_save_draft(
+    conn: &mut PgConnection,
+    save: DraftSave,
+    files: &FileVerdict,
+) -> Result<Draft, AssessmentError> {
+    let ids = judge_files(&save.assignment, &save.body, &save.files, files)?;
+    let draft = repo::upsert_draft(
+        conn,
+        save.id,
+        save.assignment_id,
+        save.student_id,
+        &save.body,
     )
     .await?;
-    let draft =
-        repo::upsert_draft(conn, id, assignment_id, actor.user_id(), valid.as_body()).await?;
-    repo::replace_submission_files(conn, draft.id, &files).await?;
+    repo::replace_submission_files(conn, draft.id, &ids).await?;
     Ok(draft)
 }
 
@@ -269,24 +315,63 @@ pub async fn discard_draft(
     Ok(())
 }
 
-/// Turns the caller's draft into their next attempt and emits `submission.submitted`.
+/// A submit that passed everything `assessment` can judge by itself, with the assignment row and
+/// the draft row locked: the state between [`begin_submit`] or [`begin_auto_submit`] and
+/// [`finish_submit`]. The draft row becomes the attempt in place.
+#[derive(Debug)]
+pub struct SubmitStart {
+    assignment: Assignment,
+    assignment_id: Uuid,
+    student_id: Uuid,
+    course_id: Uuid,
+    draft_id: Uuid,
+    last: i32,
+    body: Map<String, Value>,
+    submitted_at: DateTime<Utc>,
+    is_late: bool,
+    files: Vec<FileRef>,
+}
+
+impl SubmitStart {
+    /// The row that becomes the attempt: the owner of the files it names.
+    pub fn submission_id(&self) -> Uuid {
+        self.draft_id
+    }
+
+    pub fn assignment_id(&self) -> Uuid {
+        self.assignment_id
+    }
+
+    /// Whose work it is, and so who must have uploaded a file that nothing holds yet.
+    pub fn student_id(&self) -> Uuid {
+        self.student_id
+    }
+
+    /// The files the draft names.
+    pub fn files(&self) -> &[FileRef] {
+        &self.files
+    }
+}
+
+/// First half of turning the caller's draft into their next attempt: everything up to the files.
 ///
 /// Order: the assignment row is locked `FOR SHARE` and the window is judged on the settings in it;
 /// then the draft row is locked `FOR UPDATE`, so a second submit of the same draft waits and then
-/// finds no draft; then, in a later statement, the attempts are counted. The draft row becomes the
-/// attempt in place.
-pub async fn submit(
+/// finds no draft; then, in a later statement, the attempts are counted. The flow
+/// (`learning::submissions::submit`) has the files checked, then [`finish_submit`] writes the
+/// attempt and emits `submission.submitted`.
+pub async fn begin_submit(
     conn: &mut PgConnection,
     actor: &Actor,
     assignment_id: Uuid,
     profiles: &EffectiveProfiles,
     now: DateTime<Utc>,
-) -> Result<Attempt, AssessmentError> {
+) -> Result<SubmitStart, AssessmentError> {
     let opened = open(conn, actor, assignment_id).await?;
     access::authorize(actor, Action::SubmitWork(opened.access))?;
     require_submissions(&opened)?;
     require_unlocked(&opened)?;
-    submit_for(
+    begin_submit_for(
         conn,
         actor.user_id(),
         assignment_id,
@@ -297,29 +382,30 @@ pub async fn submit(
     .await
 }
 
-/// Submits the saved draft of a student whose assignment has `on_deadline = auto_submit` and whose
-/// deadline has passed, as the scheduler's act and not the student's (ADR-0091). Nothing here
-/// authorizes anyone: the draft is the student's own work, saved by them, and the assignment's
-/// settings are the ones the teacher chose. Every rule of a submit still holds: the student must
-/// be a current student, the draft must pass the document and form rules, and the attempt limit
-/// counts. The attempt is stamped with `due_at`, and is never late. An access rule does not stop
-/// it: the draft was saved while the assignment was open (ADR-0092).
+/// First half of submitting the saved draft of a student whose assignment has
+/// `on_deadline = auto_submit` and whose deadline has passed, as the scheduler's act and not the
+/// student's (ADR-0091). Nothing here authorizes anyone: the draft is the student's own work,
+/// saved by them, and the assignment's settings are the ones the teacher chose. Every rule of a
+/// submit still holds: the student must be a current student, the draft must pass the document and
+/// form rules, the files it names are checked again by the flow, and the attempt limit counts. The
+/// attempt is stamped with `due_at`, and is never late. An access rule does not stop it: the draft
+/// was saved while the assignment was open (ADR-0092).
 ///
 /// `AssessmentError::refuses_submit` says which errors mean "this draft cannot be submitted";
 /// `NoDraft` and `NotDue` mean the world changed since the draft was listed.
-pub async fn auto_submit(
+pub async fn begin_auto_submit(
     conn: &mut PgConnection,
     due: &DueDraft,
     profiles: &EffectiveProfiles,
     now: DateTime<Utc>,
-) -> Result<Attempt, AssessmentError> {
+) -> Result<SubmitStart, AssessmentError> {
     if repo::students_among(conn, due.course_id, &[due.student_id])
         .await?
         .is_empty()
     {
         return Err(AssessmentError::StudentNotFound);
     }
-    submit_for(
+    begin_submit_for(
         conn,
         due.student_id,
         due.assignment_id,
@@ -371,17 +457,17 @@ enum When {
     Deadline(DateTime<Utc>),
 }
 
-/// The submit itself, after whoever asked has been let in. The order of locks is the one in the
-/// doc of [`submit`], for both callers, so the scheduler and a student racing for one draft end
-/// with one attempt.
-async fn submit_for(
+/// The first half of the submit, after whoever asked has been let in. The order of locks is the
+/// one in the doc of [`begin_submit`], for both callers, so the scheduler and a student racing for
+/// one draft end with one attempt.
+async fn begin_submit_for(
     conn: &mut PgConnection,
     student_id: Uuid,
     assignment_id: Uuid,
     course_id: Uuid,
     profiles: &EffectiveProfiles,
     when: When,
-) -> Result<Attempt, AssessmentError> {
+) -> Result<SubmitStart, AssessmentError> {
     let assignment = lock(conn, assignment_id).await?;
     if !assignment.assignment_type.takes_submissions() {
         return Err(AssessmentError::TakesNoSubmissions);
@@ -424,23 +510,50 @@ async fn submit_for(
         valid.as_body(),
     )
     .await?;
-    let files = check_files(
-        conn,
-        student_id,
-        &assignment,
+    let files = file_refs(&assignment, valid.as_body())?;
+    Ok(SubmitStart {
+        assignment,
         assignment_id,
-        valid.as_body(),
-        draft.id,
-    )
-    .await?;
+        student_id,
+        course_id,
+        draft_id: draft.id,
+        last,
+        body: valid.as_body().clone(),
+        submitted_at,
+        is_late,
+        files,
+    })
+}
+
+/// Second half: raises what the check of the files said (the files are checked again here, so a
+/// draft whose file is gone is refused, not submitted with a dangling reference), scores what the
+/// server can score, turns the draft into the attempt, names its files and emits the events.
+pub async fn finish_submit(
+    conn: &mut PgConnection,
+    start: SubmitStart,
+    files: &FileVerdict,
+) -> Result<Attempt, AssessmentError> {
+    let SubmitStart {
+        assignment,
+        assignment_id,
+        student_id,
+        course_id,
+        draft_id,
+        last,
+        body,
+        submitted_at,
+        is_late,
+        files: refs,
+    } = start;
+    let ids = judge_files(&assignment, &body, &refs, files)?;
     let auto = assignment
         .assignment_type
-        .auto_grade(&assignment.config, valid.as_body());
+        .auto_grade(&assignment.config, &body);
     let scores = auto.as_ref().map(AutoGrade::scores_json);
     let total = auto.filter(|auto| auto.complete).map(|auto| auto.total);
     let attempt = repo::submit_draft(
         conn,
-        draft.id,
+        draft_id,
         last + 1,
         submitted_at,
         is_late,
@@ -448,7 +561,7 @@ async fn submit_for(
         total,
     )
     .await?;
-    repo::replace_submission_files(conn, attempt.id, &files).await?;
+    repo::replace_submission_files(conn, attempt.id, &ids).await?;
     events::emit(
         conn,
         Event::SubmissionSubmitted {
@@ -524,64 +637,45 @@ async fn check_claims(
     Ok(())
 }
 
-/// The files a submission names, once each is judged: the submitter may use it for the row
-/// `submission_id` (ADR-0069), and for a `file` hand-in the name of each listed file is one the
-/// assignment takes. The files are the listed ones of a `file` hand-in plus the images and files
-/// that documents in the content name (a text answer, a long-text quiz answer, a comment).
-///
-/// Ownership is judged first, so a file of someone else and an unknown id give one message, and
-/// the extension rule never tells whether a foreign id exists. An id that is not a file is refused
-/// like one the submitter may not use.
-async fn check_files(
-    conn: &mut PgConnection,
-    user_id: Uuid,
+/// The files a submission names: the listed ones of a `file` hand-in plus the images and files that
+/// documents in the content name (a text answer, a long-text quiz answer, a comment). The content
+/// passed the validator, so the same parser reads it; if it ever does not, the refusal names the
+/// path rather than leaving a reference unchecked.
+fn file_refs(
     assignment: &Assignment,
-    assignment_id: Uuid,
     body: &Map<String, Value>,
-    submission_id: Uuid,
-) -> Result<Vec<Uuid>, AssessmentError> {
-    // The content passed the validator, so the same parser reads it; if it ever does not, the
-    // refusal names the path rather than leaving a reference unchecked.
-    let refs = assignment
+) -> Result<Vec<FileRef>, AssessmentError> {
+    assignment
         .assignment_type
         .submission_file_refs(body)
-        .map_err(AssessmentError::Document)?;
-    let ids = distinct_ids(&refs);
-    let owner = UsageOwner::Submission {
-        id: submission_id,
-        assignment_id,
+        .map_err(AssessmentError::Document)
+}
+
+/// What the check of the files (`learning::files::check`, ADR-0069) said about `refs`, as the
+/// error of this write, or the ids to attach. For a `file` hand-in the name of each listed file
+/// must also be one the assignment takes.
+///
+/// Ownership is judged first, so a file of someone else and an unknown id give one message, and
+/// the extension rule never tells whether a foreign id exists.
+fn judge_files(
+    assignment: &Assignment,
+    body: &Map<String, Value>,
+    refs: &[FileRef],
+    verdict: &FileVerdict,
+) -> Result<Vec<Uuid>, AssessmentError> {
+    let path = |id: Uuid| {
+        refs.iter()
+            .find(|file| file.id == id)
+            .map_or("files", |file| &file.path)
     };
-    ensure_usable(conn, user_id, &owner, &ids)
-        .await
-        .map_err(|error| match error {
-            FileError::Unusable { id } => unusable(
-                refs.iter()
-                    .find(|file| file.id == id)
-                    .map_or("files", |file| &file.path),
-            ),
-            FileError::Db(error) | FileError::Files(::files::FilesError::Db(error)) => {
-                AssessmentError::Db(error)
-            }
-            // Deny by default: `ensure_usable` has no other way to fail.
-            _ => unusable("files"),
-        })?;
-    let images: Vec<FileRef> = refs.iter().filter(|file| file.image).cloned().collect();
-    match first_non_image(conn, &distinct_ids(&images)).await {
-        Ok(None) => {}
-        Ok(Some(id)) => {
-            let path = images
-                .iter()
-                .find(|file| file.id == id)
-                .map_or("files", |file| &file.path);
-            return Err(AssessmentError::Document(DocumentErrors::one(
-                path,
-                "an image block needs a PNG, JPEG, GIF or WebP file",
-            )));
-        }
-        Err(FileError::Db(error) | FileError::Files(::files::FilesError::Db(error))) => {
-            return Err(AssessmentError::Db(error));
-        }
-        Err(_) => return Err(unusable("files")),
+    if let Some(id) = verdict.unusable {
+        return Err(unusable(path(id)));
+    }
+    if let Some(id) = verdict.not_image {
+        return Err(AssessmentError::Document(DocumentErrors::one(
+            path(id),
+            "an image block needs a PNG, JPEG, GIF or WebP file",
+        )));
     }
     if assignment.assignment_type == BuiltinType::File {
         let listed = assignment
@@ -590,19 +684,16 @@ async fn check_files(
             .files;
         let mut names = BTreeMap::new();
         for (index, &id) in listed.iter().enumerate() {
-            let file = ::files::get(conn, id)
-                .await
-                .map_err(|error| match error {
-                    ::files::FilesError::Db(error) => AssessmentError::Db(error),
-                    _ => unusable(&format!("files[{index}]")),
-                })?
+            let name = verdict
+                .names
+                .get(&id)
                 .ok_or_else(|| unusable(&format!("files[{index}]")))?;
-            names.insert(id, file.name);
+            names.insert(id, name.clone());
         }
         content::check_file_names(&assignment.config, body, &names)
             .map_err(AssessmentError::Document)?;
     }
-    Ok(ids)
+    Ok(distinct_ids(refs))
 }
 
 fn unusable(path: &str) -> AssessmentError {

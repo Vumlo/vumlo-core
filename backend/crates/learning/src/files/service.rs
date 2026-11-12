@@ -25,9 +25,6 @@ pub enum FileError {
     /// The owner takes no more files now (an archived course).
     #[error("{0}")]
     Conflict(&'static str),
-    /// Removed with `ensure_usable` once content and assessment check in the flows (tasks 4, 5).
-    #[error("the file {id} cannot be used here")]
-    Unusable { id: Uuid },
     #[error("the file is larger than the allowed size")]
     TooLarge,
     #[error("the file is empty")]
@@ -205,39 +202,6 @@ pub async fn check(
         .map(|file| file.id);
     verdict.names = rows.into_iter().map(|(id, file)| (id, file.name)).collect();
     Ok(verdict)
-}
-
-/// The old, unlocked form of [`check`], for the callers that move in tasks 4 and 5 (deleted
-/// there): the same rules, one file at a time, no lock.
-pub async fn ensure_usable(
-    conn: &mut PgConnection,
-    user_id: Uuid,
-    owner: &UsageOwner,
-    ids: &[Uuid],
-) -> Result<(), FileError> {
-    for &id in ids {
-        let file = files::get(conn, id)
-            .await?
-            .ok_or(FileError::Unusable { id })?;
-        if !may_name(conn, user_id, owner, &file).await? {
-            return Err(FileError::Unusable { id });
-        }
-    }
-    Ok(())
-}
-
-/// The old form of the image check, deleted with [`ensure_usable`].
-pub async fn first_non_image(
-    conn: &mut PgConnection,
-    ids: &[Uuid],
-) -> Result<Option<Uuid>, FileError> {
-    for &id in ids {
-        match files::get(conn, id).await? {
-            Some(file) if files::is_image(&file.mime) => {}
-            _ => return Ok(Some(id)),
-        }
-    }
-    Ok(None)
 }
 
 /// Rules 1 to 3 for one locked file.

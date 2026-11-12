@@ -36,9 +36,6 @@ impl From<FileError> for ApiError {
             FileError::NotFound => Self::NotFound,
             FileError::Forbidden(policy) => policy.into(),
             FileError::Conflict(detail) => Self::Conflict(detail),
-            FileError::Unusable { id } => {
-                Self::invalid_field("file", format!("the file {id} cannot be used here"))
-            }
             FileError::TooLarge => Self::Status(StatusCode::PAYLOAD_TOO_LARGE),
             FileError::Empty => Self::invalid_field("file", "the file is empty"),
             FileError::Content(e) => e.into(),

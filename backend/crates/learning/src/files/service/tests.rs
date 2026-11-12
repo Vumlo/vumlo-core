@@ -208,7 +208,7 @@ async fn draft_naming(f: &Fixture, file: Uuid) -> Uuid {
     let mut conn = f.pool.acquire().await.unwrap();
     let document = json!({"v": 1, "attachments": [], "blocks": [
         {"id": "i", "type": "file", "props": {"file_id": file}}]});
-    assessment::save_draft(
+    crate::tests::save_draft(
         &mut conn,
         &f.student,
         f.assignment,
@@ -223,7 +223,7 @@ async fn draft_naming(f: &Fixture, file: Uuid) -> Uuid {
 
 async fn submit(f: &Fixture) {
     let mut conn = f.pool.acquire().await.unwrap();
-    assessment::submit(&mut conn, &f.student, f.assignment, &PROFILES, Utc::now())
+    crate::tests::submit(&mut conn, &f.student, f.assignment, &PROFILES, Utc::now())
         .await
         .unwrap();
 }
@@ -771,7 +771,7 @@ async fn save_draft_naming(
     let mut conn = f.pool.acquire().await.unwrap();
     let document = json!({"v": 1, "attachments": [], "blocks": [
         {"id": "i", "type": "file", "props": {"file_id": file}}]});
-    assessment::save_draft(
+    crate::tests::save_draft(
         &mut conn,
         actor,
         assignment,
@@ -860,49 +860,185 @@ async fn a_draft_cannot_name_a_file_of_another_students_attempt_or_of_another_as
         );
 
         // The student's own file from a submission to a different assignment.
-        let mut tx = f.pool.begin().await.unwrap();
-        let module = content::create_module(
-            &mut tx,
-            &f.owner,
-            f.course,
-            ContentTitle::parse("M2").unwrap(),
-            None,
-        )
-        .await
-        .unwrap();
-        content::publish_module(&mut tx, &f.owner, module.id, true)
-            .await
-            .unwrap();
-        let other = create_item(
-            &mut tx,
-            &f.owner,
-            rules(),
-            module.id,
-            ContentTitle::parse("Other").unwrap(),
-            None,
-            Some(Assignment {
-                assignment_type: BuiltinType::Text,
-                config: Map::new(),
-                max_points: MaxPoints::parse("10").unwrap(),
-                is_bonus: false,
-                settings: Default::default(),
-                class_on: None,
-            }),
-        )
-        .await
-        .unwrap();
-        content::publish_item(&mut tx, &f.owner, other.id)
-            .await
-            .unwrap();
-        tx.commit().await.unwrap();
+        let other = second_assignment(&f).await;
         let elsewhere = file(&f.pool, &f.student).await;
-        save_draft_naming(&f, &f.student, other.id, elsewhere)
+        save_draft_naming(&f, &f.student, other, elsewhere)
             .await
             .unwrap();
         assert_eq!(
             refused(&f, &f.student, on_draft, &[elsewhere]).await,
             Some(elsewhere)
         );
+    })
+    .await;
+}
+
+/// A published text assignment in a module of its own, in the course of the fixture.
+async fn second_assignment(f: &Fixture) -> Uuid {
+    let mut tx = f.pool.begin().await.unwrap();
+    let module = content::create_module(
+        &mut tx,
+        &f.owner,
+        f.course,
+        ContentTitle::parse("M2").unwrap(),
+        None,
+    )
+    .await
+    .unwrap();
+    content::publish_module(&mut tx, &f.owner, module.id, true)
+        .await
+        .unwrap();
+    let other = create_item(
+        &mut tx,
+        &f.owner,
+        rules(),
+        module.id,
+        ContentTitle::parse("Other").unwrap(),
+        None,
+        Some(Assignment {
+            assignment_type: BuiltinType::Text,
+            config: Map::new(),
+            max_points: MaxPoints::parse("10").unwrap(),
+            is_bonus: false,
+            settings: Default::default(),
+            class_on: None,
+        }),
+    )
+    .await
+    .unwrap();
+    content::publish_item(&mut tx, &f.owner, other.id)
+        .await
+        .unwrap();
+    tx.commit().await.unwrap();
+    other.id
+}
+
+#[tokio::test]
+async fn a_draft_cannot_take_a_file_another_draft_just_attached() {
+    db_test(async |pool| {
+        let f = fixture(pool).await;
+        let other = second_assignment(&f).await;
+        // One upload of the student, named by their drafts on two assignments.
+        let id = file(&f.pool, &f.student).await;
+
+        // The first save has checked the file and not committed yet.
+        let mut first = f.pool.begin().await.unwrap();
+        crate::tests::save_draft(
+            &mut first,
+            &f.student,
+            f.assignment,
+            &body_naming("file", id),
+            &PROFILES,
+            Utc::now(),
+        )
+        .await
+        .unwrap();
+        let waiting = tokio::spawn({
+            let (pool, student) = (f.pool.clone(), f.student.clone());
+            async move {
+                let mut tx = pool.begin().await.unwrap();
+                let saved = crate::tests::save_draft(
+                    &mut tx,
+                    &student,
+                    other,
+                    &body_naming("file", id),
+                    &PROFILES,
+                    Utc::now(),
+                )
+                .await;
+                tx.commit().await.unwrap();
+                saved
+            }
+        });
+        test_support::wait_until_blocked(&f.pool, &waiting).await;
+        first.commit().await.unwrap();
+
+        // The second one waited, then saw the first one's reference and was refused.
+        let refused = waiting.await.unwrap();
+        assert!(
+            matches!(refused, Err(AssessmentError::Document(_))),
+            "{refused:?}"
+        );
+        assert_eq!(
+            holders(&f.pool, id).await,
+            rows_of(&f.pool, f.assignment, &f.student).await
+        );
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn a_submit_checks_the_files_of_the_draft_again() {
+    db_test(async |pool| {
+        let f = fixture(pool).await;
+        let id = file(&f.pool, &f.student).await;
+        save_draft_naming(&f, &f.student, f.assignment, id)
+            .await
+            .unwrap();
+        // The file went away after the save (nothing ties its row to the draft).
+        sqlx::query!("DELETE FROM files.files WHERE id = $1", id)
+            .execute(&f.pool)
+            .await
+            .unwrap();
+
+        let mut conn = f.pool.acquire().await.unwrap();
+        let error =
+            crate::tests::submit(&mut conn, &f.student, f.assignment, &PROFILES, Utc::now())
+                .await
+                .unwrap_err();
+
+        assert!(matches!(error, AssessmentError::Document(_)), "{error:?}");
+        assert!(error.refuses_submit());
+        assert_eq!(rows_of(&f.pool, f.assignment, &f.student).await.len(), 1);
+        let attempts = sqlx::query_scalar!(
+            r#"SELECT count(*) AS "n!" FROM assessment.submissions
+               WHERE assignment_id = $1 AND status = 'submitted'"#,
+            f.assignment
+        )
+        .fetch_one(&f.pool)
+        .await
+        .unwrap();
+        assert_eq!(attempts, 0);
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn an_auto_submit_whose_file_is_gone_is_refused_and_leaves_the_draft() {
+    db_test(async |pool| {
+        let f = fixture(pool).await;
+        let id = file(&f.pool, &f.student).await;
+        save_draft_naming(&f, &f.student, f.assignment, id)
+            .await
+            .unwrap();
+        let due = Utc::now() - Duration::hours(1);
+        sqlx::query!(
+            "UPDATE content.assignments
+             SET due_at = $2, on_deadline = 'auto_submit', accept_late = false
+             WHERE item_id = $1",
+            f.assignment,
+            due
+        )
+        .execute(&f.pool)
+        .await
+        .unwrap();
+        sqlx::query!("DELETE FROM files.files WHERE id = $1", id)
+            .execute(&f.pool)
+            .await
+            .unwrap();
+        let draft = assessment::DueDraft {
+            assignment_id: f.assignment,
+            student_id: f.student.user_id(),
+            course_id: f.course,
+        };
+
+        let mut conn = f.pool.acquire().await.unwrap();
+        let error = crate::tests::auto_submit(&mut conn, &draft, &PROFILES, Utc::now())
+            .await
+            .unwrap_err();
+
+        assert!(error.refuses_submit(), "{error:?}");
+        assert_eq!(rows_of(&f.pool, f.assignment, &f.student).await.len(), 1);
     })
     .await;
 }

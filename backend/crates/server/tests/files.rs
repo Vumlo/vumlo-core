@@ -1,6 +1,6 @@
 //! Uploading and downloading files over HTTP (ADR-0069): who may upload, what is stored, and what
-//! the download says about itself. Owners (items, submissions) do not name files yet, so the
-//! reference rows are inserted with SQL where a test needs a file to belong to one.
+//! the download says about itself, and that naming an upload is one step with its check. Where a
+//! test needs a file to belong to an owner, the reference rows are inserted with SQL.
 
 mod common;
 
