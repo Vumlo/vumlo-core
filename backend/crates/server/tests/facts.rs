@@ -72,6 +72,43 @@ impl World {
         .await;
     }
 
+    /// A published text item.
+    async fn lecture(&self) -> Uuid {
+        let item = id_of(
+            &self
+                .env
+                .ok(
+                    "POST",
+                    &self.teacher.token,
+                    &format!("/modules/{}/items", self.module),
+                    Some(json!({"kind": "text", "title": "L", "body": essay("read")})),
+                    201,
+                )
+                .await,
+        );
+        self.go(
+            &self.teacher,
+            "POST",
+            &format!("/items/{item}/publish"),
+            None,
+            200,
+        )
+        .await;
+        item
+    }
+
+    /// The student marks a text item done.
+    async fn mark(&self, item: Uuid) {
+        self.go(
+            &self.student,
+            "PUT",
+            &format!("/items/{item}/completion"),
+            None,
+            204,
+        )
+        .await;
+    }
+
     /// The teacher saves a draft grade; `None` clears it.
     async fn draft(&self, assignment: Uuid, points: Option<&str>) {
         self.go(
@@ -278,13 +315,15 @@ async fn a_rebuild_makes_the_rows_the_events_made() {
     db_test(async |pool| {
         let w = world(pool).await;
         let (first, second) = (w.task().await, w.task().await);
+        let lecture = w.lecture().await;
         w.submit(first).await;
         w.grade(first, Some("7")).await;
         w.submit(second).await;
         w.grade(second, Some("5")).await;
         w.grade(second, None).await;
+        w.mark(lecture).await;
         let made = w.snapshot().await;
-        assert_eq!(made.len(), 2);
+        assert_eq!(made.len(), 3);
 
         let mut conn = w.env.pool.acquire().await.unwrap();
         replace_source_facts(&mut conn, &FactScope::All, &[])
@@ -296,6 +335,31 @@ async fn a_rebuild_makes_the_rows_the_events_made() {
         tx.commit().await.unwrap();
 
         assert_eq!(w.snapshot().await, made);
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn a_rebuild_of_a_course_keeps_the_marks() {
+    db_test(async |pool| {
+        let w = world(pool).await;
+        let lecture = w.lecture().await;
+        w.mark(lecture).await;
+        let course =
+            sqlx::query_scalar!("SELECT course_id FROM content.items WHERE id = $1", lecture)
+                .fetch_one(&w.env.pool)
+                .await
+                .unwrap();
+        let before = w.fact(lecture).await.unwrap();
+        let mut tx = w.env.pool.begin().await.unwrap();
+
+        learning::rebuild_facts(&mut tx, Some(course))
+            .await
+            .unwrap();
+        tx.commit().await.unwrap();
+
+        assert!(before.2, "the student marked it");
+        assert_eq!(w.fact(lecture).await, Some(before), "the rebuild left the mark");
     })
     .await;
 }

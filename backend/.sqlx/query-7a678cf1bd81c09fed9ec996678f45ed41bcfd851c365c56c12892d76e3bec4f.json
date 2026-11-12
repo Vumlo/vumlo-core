@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM content.facts\n         WHERE item_id = $1 AND student_id = $2\n           AND submitted_at IS NULL AND published_score IS NULL",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "7a678cf1bd81c09fed9ec996678f45ed41bcfd851c365c56c12892d76e3bec4f"
+}

@@ -1548,58 +1548,43 @@ pub async fn replace_rule(
     Ok(())
 }
 
-/// What the student has done in the course: the items that are done, and the published score of
-/// each assignment that has one. An assignment is done once an attempt is submitted or a score is
-/// published; any other item, once the student marked it.
+/// What the student has done in the course, from the facts `content` keeps (ADR-0093): an item
+/// with a row is done, whether the student marked it, an attempt was submitted or a score was
+/// published, and the published scores are the ones the rows hold.
 pub async fn facts(
     conn: &mut PgConnection,
     course_id: Uuid,
     student_id: Uuid,
 ) -> Result<Facts, sqlx::Error> {
-    let done = sqlx::query_scalar!(
-        r#"SELECT i.id AS "id!" FROM content.items i
-           WHERE i.course_id = $1
-             AND (EXISTS (SELECT 1 FROM content.completions c
-                          WHERE c.item_id = i.id AND c.student_id = $2)
-                  OR EXISTS (SELECT 1 FROM assessment.submissions s
-                             WHERE s.assignment_id = i.id AND s.student_id = $2
-                               AND s.status = 'submitted')
-                  OR EXISTS (SELECT 1 FROM gradebook.grades g
-                             WHERE g.assignment_id = i.id AND g.student_id = $2
-                               AND g.published_score IS NOT NULL))"#,
-        course_id,
-        student_id
-    )
-    .fetch_all(&mut *conn)
-    .await?;
-    let scores = sqlx::query!(
-        r#"SELECT g.assignment_id, g.published_score AS "score!: Decimal"
-           FROM gradebook.grades g
-           JOIN content.items i ON i.id = g.assignment_id
-           WHERE i.course_id = $1 AND g.student_id = $2 AND g.published_score IS NOT NULL"#,
+    let rows = sqlx::query!(
+        r#"SELECT f.item_id, f.published_score AS "score: Decimal"
+           FROM content.facts f
+           JOIN content.items i ON i.id = f.item_id
+           WHERE i.course_id = $1 AND f.student_id = $2"#,
         course_id,
         student_id
     )
     .fetch_all(conn)
     .await?;
     Ok(Facts {
-        done_items: done.into_iter().collect(),
-        scores: scores
+        done_items: rows.iter().map(|row| row.item_id).collect(),
+        scores: rows
             .into_iter()
-            .map(|row| (row.assignment_id, row.score))
+            .filter_map(|row| row.score.map(|score| (row.item_id, score)))
             .collect(),
     })
 }
 
-/// Records that the student marked the item done. Marking it again changes nothing.
+/// Records that the student marked the item done. Marking it again keeps the first time.
 pub async fn mark_done(
     conn: &mut PgConnection,
     item_id: Uuid,
     student_id: Uuid,
 ) -> Result<(), sqlx::Error> {
     sqlx::query!(
-        "INSERT INTO content.completions (item_id, student_id) VALUES ($1, $2)
-         ON CONFLICT DO NOTHING",
+        "INSERT INTO content.facts (item_id, student_id, marked_at) VALUES ($1, $2, now())
+         ON CONFLICT (item_id, student_id)
+         DO UPDATE SET marked_at = COALESCE(content.facts.marked_at, EXCLUDED.marked_at)",
         item_id,
         student_id
     )
@@ -1608,14 +1593,24 @@ pub async fn mark_done(
     Ok(())
 }
 
-/// Takes the student's mark off the item. With no mark it does nothing.
+/// Takes the student's mark off the item; a row that held nothing else goes with it. With no mark
+/// it does nothing.
 pub async fn unmark_done(
     conn: &mut PgConnection,
     item_id: Uuid,
     student_id: Uuid,
 ) -> Result<(), sqlx::Error> {
     sqlx::query!(
-        "DELETE FROM content.completions WHERE item_id = $1 AND student_id = $2",
+        "DELETE FROM content.facts
+         WHERE item_id = $1 AND student_id = $2
+           AND submitted_at IS NULL AND published_score IS NULL",
+        item_id,
+        student_id
+    )
+    .execute(&mut *conn)
+    .await?;
+    sqlx::query!(
+        "UPDATE content.facts SET marked_at = NULL WHERE item_id = $1 AND student_id = $2",
         item_id,
         student_id
     )

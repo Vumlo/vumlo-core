@@ -623,6 +623,76 @@ async fn a_course_scope_replaces_its_own_rows_and_leaves_another_course() {
 }
 
 #[tokio::test]
+async fn marking_twice_keeps_the_first_time_and_the_source_facts() {
+    db_test(async |pool| {
+        let course = course(pool.clone()).await;
+        let item = course.committed("10", false).await;
+        let student = student(&pool).await;
+        let mut conn = pool.acquire().await.unwrap();
+        let scope = FactScope::Pair {
+            item_id: item,
+            student_id: student,
+        };
+        replace_source_facts(&mut conn, &scope, &[source(item, student, true, Some("4"))])
+            .await
+            .unwrap();
+
+        repo::mark_done(&mut conn, item, student).await.unwrap();
+        let (_, _, first) = fact(&pool, item, student).await.unwrap();
+        assert!(first.is_some(), "the mark is a fact");
+        repo::mark_done(&mut conn, item, student).await.unwrap();
+
+        let (submitted, score, marked) = fact(&pool, item, student).await.unwrap();
+        assert_eq!(marked, first, "the first mark stays");
+        assert!(submitted.is_some() && score.is_some(), "the sources stay");
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn unmarking_keeps_a_submitted_fact_and_deletes_an_empty_row() {
+    db_test(async |pool| {
+        let course = course(pool.clone()).await;
+        let (submitted_item, marked_item) = (
+            course.committed("10", false).await,
+            course.committed("10", false).await,
+        );
+        let student = student(&pool).await;
+        let mut conn = pool.acquire().await.unwrap();
+        replace_source_facts(
+            &mut conn,
+            &FactScope::All,
+            &[source(submitted_item, student, true, None)],
+        )
+        .await
+        .unwrap();
+        repo::mark_done(&mut conn, submitted_item, student)
+            .await
+            .unwrap();
+        repo::mark_done(&mut conn, marked_item, student)
+            .await
+            .unwrap();
+        assert!(fact(&pool, marked_item, student).await.unwrap().2.is_some());
+
+        repo::unmark_done(&mut conn, submitted_item, student)
+            .await
+            .unwrap();
+        repo::unmark_done(&mut conn, marked_item, student)
+            .await
+            .unwrap();
+
+        let (submitted, _, marked) = fact(&pool, submitted_item, student).await.unwrap();
+        assert!(submitted.is_some() && marked.is_none());
+        assert!(fact(&pool, marked_item, student).await.is_none());
+        // With no mark it does nothing.
+        repo::unmark_done(&mut conn, marked_item, student)
+            .await
+            .unwrap();
+    })
+    .await;
+}
+
+#[tokio::test]
 async fn deleting_the_item_deletes_its_facts() {
     db_test(async |pool| {
         let course = course(pool.clone()).await;
