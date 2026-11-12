@@ -7,6 +7,8 @@ mod service;
 mod state;
 #[cfg(feature = "testing")]
 mod test_support;
+#[cfg(test)]
+mod tests;
 
 pub use model::{
     DownloadUrl, Group, GroupMember, GroupOption, MemberLine, MemberProblem, ModelError, OrgName,

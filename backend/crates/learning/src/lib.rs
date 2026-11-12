@@ -21,3 +21,12 @@ pub mod teaching;
 pub use enrollment::event_handlers;
 pub use error::LearningError;
 pub use state::LearningState;
+
+/// The synchronous subscribers of the flows (ADR-0093), for the composition root to install with
+/// `events::install`: each runs inside the transaction of the change that emitted its event.
+pub fn subscribers() -> events::Subscribers {
+    events::Subscribers::new()
+}
+
+#[cfg(test)]
+mod tests;

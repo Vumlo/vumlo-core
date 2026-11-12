@@ -4,7 +4,7 @@ use common::ApiError;
 use sqlx::{PgConnection, PgPool};
 use uuid::Uuid;
 
-use super::dispatch::SubscriberError;
+use super::dispatch::{SubscriberError, emit_with, installed};
 use super::model::{AuditEntry, Event, Handlers};
 use super::repo;
 use access::Actor;
@@ -78,10 +78,12 @@ pub async fn audit_plugin(
 }
 
 /// Writes `event` to the outbox on the caller's connection, in the same transaction as the state
-/// change it announces (ADR-0007). Draft saves never emit.
+/// change it announces (ADR-0007), then runs the synchronous subscribers the process installed for
+/// its type in that same transaction (ADR-0093): a subscriber error fails the caller, which rolls
+/// back. A process that never called [`crate::install`] gets [`EventsError::NoSubscribers`].
+/// Draft saves never emit.
 pub async fn emit(conn: &mut PgConnection, event: Event) -> Result<(), EventsError> {
-    repo::insert_outbox(conn, &event).await?;
-    Ok(())
+    emit_with(conn, event, installed()?).await
 }
 
 /// Like [`audit`], but only when `actor` acts as an implicit course owner. Admins have no

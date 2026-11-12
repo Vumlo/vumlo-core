@@ -66,6 +66,11 @@ pub fn install(subscribers: Subscribers) -> Result<(), EventsError> {
         .map_err(|_| EventsError::AlreadyInstalled)
 }
 
+/// The installed registry, or the error that tells a process which forgot to install one.
+pub(super) fn installed() -> Result<&'static Subscribers, EventsError> {
+    REGISTRY.get().ok_or(EventsError::NoSubscribers)
+}
+
 /// Installs `build()` unless a registry is already there. For test binaries only, where many tests
 /// of one process start the application.
 #[cfg(feature = "testing")]

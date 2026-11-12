@@ -2,11 +2,17 @@ use access::Scope;
 use events::{Event, process_once};
 use serde_json::json;
 use sqlx::PgPool;
-use test_support::db_test;
 use uuid::Uuid;
 use vumlo_config::Secret;
 
 use super::*;
+
+/// `db_test` for the unit tests of this crate: what they emit needs a registry of subscribers
+/// installed, as the server does at start (ADR-0093). `plugins` has no subscribers of its own.
+pub(crate) async fn db_test(body: impl AsyncFnOnce(PgPool)) {
+    events::testing::ensure_installed(events::Subscribers::new);
+    test_support::db_test(body).await;
+}
 
 fn key() -> SecretKey {
     SecretKey::from_config(&Secret::new("0123456789abcdef0123456789abcdef")).unwrap()
