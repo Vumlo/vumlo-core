@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE assessment.submissions SET auto_submit_skipped_at = $3\n         WHERE assignment_id = $1 AND student_id = $2 AND status = 'draft'",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "16187f4f177794a93a053b25a7d6427b3ce7f7b6bbc4a0fe5c883ff34ddd2829"
+}

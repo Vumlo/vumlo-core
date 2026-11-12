@@ -319,6 +319,10 @@ pub async fn publish_course(
         CourseStatus::Archived => Err(TeachingError::NotPublishable),
         CourseStatus::Draft => {
             let published = repo::set_published(conn, course_id).await?;
+            // The course was what hid its published assignments from students (ADR-0091).
+            crate::content::announce_visible(conn, chrono::Utc::now(), Some(course_id))
+                .await
+                .map_err(|error| TeachingError::Content(Box::new(error)))?;
             events::audit_admin(
                 conn,
                 actor,

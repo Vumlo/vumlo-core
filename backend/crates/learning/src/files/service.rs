@@ -161,7 +161,7 @@ pub async fn open_for_read(
 /// authorized the write itself.
 pub async fn ensure_usable(
     conn: &mut PgConnection,
-    actor: &Actor,
+    user_id: Uuid,
     owner: &UsageOwner,
     ids: &[Uuid],
 ) -> Result<(), FileError> {
@@ -172,13 +172,13 @@ pub async fn ensure_usable(
         let items = repo::item_references(conn, id).await?;
         let submissions = repo::submission_references(conn, id).await?;
         let usable = if items.is_empty() && submissions.is_empty() {
-            file.uploaded_by == actor.user_id()
+            file.uploaded_by == user_id
         } else {
             let held_here = match *owner {
                 UsageOwner::Item(item_id) => items.iter().any(|r| r.item_id == item_id),
                 UsageOwner::Submission { id, .. } => submissions.contains(&id),
             };
-            held_here || held_by_own_attempts(conn, actor, owner, &items, &submissions).await?
+            held_here || held_by_own_attempts(conn, user_id, owner, &items, &submissions).await?
         };
         if !usable {
             return Err(FileError::Unusable { id });
@@ -192,7 +192,7 @@ pub async fn ensure_usable(
 /// another assignment's row or an item also holds is not theirs to carry over.
 async fn held_by_own_attempts(
     conn: &mut PgConnection,
-    actor: &Actor,
+    user_id: Uuid,
     owner: &UsageOwner,
     items: &[ItemReference],
     submissions: &[Uuid],
@@ -203,7 +203,7 @@ async fn held_by_own_attempts(
     if !items.is_empty() {
         return Ok(false);
     }
-    let own = repo::count_own_rows_on(conn, submissions, assignment_id, actor.user_id()).await?;
+    let own = repo::count_own_rows_on(conn, submissions, assignment_id, user_id).await?;
     Ok(usize::try_from(own).is_ok_and(|own| own == submissions.len()))
 }
 

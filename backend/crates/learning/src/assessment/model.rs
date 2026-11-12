@@ -16,6 +16,14 @@ pub struct Draft {
     pub updated_at: DateTime<Utc>,
 }
 
+/// A draft that the scheduler is to submit at the deadline of its assignment (ADR-0091).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DueDraft {
+    pub assignment_id: Uuid,
+    pub student_id: Uuid,
+    pub course_id: Uuid,
+}
+
 /// A submitted attempt. It never changes (ADR-0011, ADR-0035).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Attempt {

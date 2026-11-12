@@ -10,7 +10,9 @@ use sqlx::PgConnection;
 use sqlx::types::Json;
 use uuid::Uuid;
 
-use super::model::{Attempt, Draft, LatestAttempt, LatestContent, StudentName, StudentSubmission};
+use super::model::{
+    Attempt, Draft, DueDraft, LatestAttempt, LatestContent, StudentName, StudentSubmission,
+};
 
 type Body = Json<Map<String, Value>>;
 
@@ -81,6 +83,55 @@ pub async fn delete_draft(
     .execute(conn)
     .await?;
     Ok(result.rows_affected())
+}
+
+/// The drafts to auto-submit at `now`: the assignment is set to `auto_submit` and its `due_at` has
+/// passed, the course is published (an archived course is read-only), the draft existed at
+/// `due_at` and has not been tried and refused (ADR-0091). The oldest deadline comes first. This
+/// reads `content`, which a module of `learning` may.
+pub async fn due_drafts(
+    conn: &mut PgConnection,
+    now: DateTime<Utc>,
+    limit: i64,
+) -> Result<Vec<DueDraft>, sqlx::Error> {
+    sqlx::query_as!(
+        DueDraft,
+        r#"SELECT s.assignment_id, s.student_id, i.course_id
+           FROM assessment.submissions s
+           JOIN content.assignments a ON a.item_id = s.assignment_id
+           JOIN content.items i ON i.id = a.item_id
+           JOIN teaching.courses c ON c.id = i.course_id
+           WHERE s.status = 'draft' AND s.auto_submit_skipped_at IS NULL
+             AND a.on_deadline = 'auto_submit' AND a.due_at <= $1
+             AND s.created_at <= a.due_at
+             AND c.status = 'published'
+           ORDER BY a.due_at, s.id
+           LIMIT $2"#,
+        now,
+        limit
+    )
+    .fetch_all(conn)
+    .await
+}
+
+/// Marks the student's draft as tried by the scheduler. `auto_submit_skipped_at` is on drafts
+/// only in effect; a submitted row is never changed (trigger), and this matches drafts.
+pub async fn mark_auto_submit_skipped(
+    conn: &mut PgConnection,
+    assignment_id: Uuid,
+    student_id: Uuid,
+    at: DateTime<Utc>,
+) -> Result<(), sqlx::Error> {
+    sqlx::query!(
+        "UPDATE assessment.submissions SET auto_submit_skipped_at = $3
+         WHERE assignment_id = $1 AND student_id = $2 AND status = 'draft'",
+        assignment_id,
+        student_id,
+        at
+    )
+    .execute(conn)
+    .await?;
+    Ok(())
 }
 
 /// A draft that a submit holds.

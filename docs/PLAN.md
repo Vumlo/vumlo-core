@@ -20,7 +20,7 @@ The plan below is only what those files already say; nothing in it has a date or
 ## Plan
 
 Now (partly built, [in-progress.md](decisions/in-progress.md)):
-- Scheduled jobs in the outbox worker: `publish_at` and `auto_submit` at the deadline.
+- Cleanup jobs in the scheduler: expired sessions, retention of processed outbox rows and of the audit log (`publish_at` and `auto_submit` are built, ADR-0091).
 - The `link` item kind and the `lesson` item made of steps.
 
 Next (decide first, [planned.md](decisions/planned.md)):

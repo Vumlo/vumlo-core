@@ -17,12 +17,13 @@ use sqlx::PgConnection;
 use uuid::Uuid;
 
 use super::model::{
-    Attempt, Draft, FormFacts, MySubmission, QuizResult, Responses, StudentSubmission, Window,
+    Attempt, Draft, DueDraft, FormFacts, MySubmission, QuizResult, Responses, StudentSubmission,
+    Window,
 };
 use super::repo;
 use crate::content::{
     self, Assignment, AssignmentType, AutoGrade, BuiltinType, DocumentErrors, EffectiveProfiles,
-    FileRef, OpenError, OpenedAssignment, Stage, distinct_ids,
+    FileRef, OnDeadline, OpenError, OpenedAssignment, Stage, distinct_ids,
 };
 use crate::files::{FileError, UsageOwner, ensure_usable, first_non_image};
 use crate::gradebook::{self, GradebookError};
@@ -60,6 +61,10 @@ pub enum AssessmentError {
     /// Another submit of the same student got the attempt number first.
     #[error("a concurrent submit took this attempt")]
     Concurrent,
+    /// The scheduler found the assignment no longer set to auto-submit, or its deadline moved
+    /// ahead, since it listed the draft (ADR-0091).
+    #[error("the assignment is not due for an auto-submit")]
+    NotDue,
     /// The content is not a valid document of the student profile as the assignment narrows it.
     #[error("the content is not a valid document")]
     Document(DocumentErrors),
@@ -84,6 +89,25 @@ pub enum AssessmentError {
     Events(#[from] EventsError),
     #[error(transparent)]
     Db(sqlx::Error),
+}
+
+impl AssessmentError {
+    /// Whether the error says that this draft cannot be submitted as it is: the content is not
+    /// valid or is blank, the attempts are used up, an exclusive option is gone, the student has
+    /// left the course. The scheduler marks such a draft and does not try it again (ADR-0091). Any
+    /// other error is a fault or a race, and the draft is tried on the next tick.
+    #[must_use]
+    pub fn refuses_submit(&self) -> bool {
+        matches!(
+            self,
+            Self::Document(_)
+                | Self::Empty
+                | Self::AttemptLimit
+                | Self::OptionTaken
+                | Self::StudentNotFound
+                | Self::TakesNoSubmissions
+        )
+    }
 }
 
 impl From<sqlx::Error> for AssessmentError {
@@ -178,7 +202,15 @@ pub async fn save_draft(
         Some(draft) => draft.id,
         None => Uuid::now_v7(),
     };
-    let files = check_files(conn, actor, &assignment, assignment_id, valid.as_body(), id).await?;
+    let files = check_files(
+        conn,
+        actor.user_id(),
+        &assignment,
+        assignment_id,
+        valid.as_body(),
+        id,
+    )
+    .await?;
     let draft =
         repo::upsert_draft(conn, id, assignment_id, actor.user_id(), valid.as_body()).await?;
     repo::replace_submission_files(conn, draft.id, &files).await?;
@@ -241,9 +273,106 @@ pub async fn submit(
     let opened = open(conn, actor, assignment_id).await?;
     access::authorize(actor, Action::SubmitWork(opened.access))?;
     require_submissions(&opened)?;
+    submit_for(
+        conn,
+        actor.user_id(),
+        assignment_id,
+        opened.course_id,
+        profiles,
+        When::Student(now),
+    )
+    .await
+}
+
+/// Submits the saved draft of a student whose assignment has `on_deadline = auto_submit` and whose
+/// deadline has passed, as the scheduler's act and not the student's (ADR-0091). Nothing here
+/// authorizes anyone: the draft is the student's own work, saved by them, and the assignment's
+/// settings are the ones the teacher chose. Every rule of a submit still holds: the student must
+/// be a current student, the draft must pass the document and form rules, and the attempt limit
+/// counts. The attempt is stamped with `due_at`, and is never late.
+///
+/// `AssessmentError::refuses_submit` says which errors mean "this draft cannot be submitted";
+/// `NoDraft` and `NotDue` mean the world changed since the draft was listed.
+pub async fn auto_submit(
+    conn: &mut PgConnection,
+    due: &DueDraft,
+    profiles: &EffectiveProfiles,
+    now: DateTime<Utc>,
+) -> Result<Attempt, AssessmentError> {
+    if repo::students_among(conn, due.course_id, &[due.student_id])
+        .await?
+        .is_empty()
+    {
+        return Err(AssessmentError::StudentNotFound);
+    }
+    submit_for(
+        conn,
+        due.student_id,
+        due.assignment_id,
+        due.course_id,
+        profiles,
+        When::Deadline(now),
+    )
+    .await
+}
+
+/// The drafts whose assignment auto-submits and whose deadline passed before `now`, the oldest
+/// deadline first, at most `limit` (ADR-0091). Only a draft that existed at `due_at` is listed: a
+/// student who starts one in the late window is writing it, not leaving it behind. A draft that
+/// was tried and refused is not listed again.
+pub async fn due_drafts(
+    conn: &mut PgConnection,
+    now: DateTime<Utc>,
+    limit: i64,
+) -> Result<Vec<DueDraft>, AssessmentError> {
+    Ok(repo::due_drafts(conn, now, limit).await?)
+}
+
+/// Records that the scheduler tried the draft and the submit refused it, so it is kept as the
+/// student left it and not tried again (ADR-0091).
+pub async fn skip_auto_submit(
+    conn: &mut PgConnection,
+    due: &DueDraft,
+    now: DateTime<Utc>,
+) -> Result<(), AssessmentError> {
+    repo::mark_auto_submit_skipped(conn, due.assignment_id, due.student_id, now).await?;
+    Ok(())
+}
+
+/// Who turns the draft into an attempt, and when.
+enum When {
+    /// The student, at `now`: the window must be open, and the attempt is late after `due_at`.
+    Student(DateTime<Utc>),
+    /// The scheduler, at `now`, for an auto-submit assignment whose `due_at` has passed.
+    Deadline(DateTime<Utc>),
+}
+
+/// The submit itself, after whoever asked has been let in. The order of locks is the one in the
+/// doc of [`submit`], for both callers, so the scheduler and a student racing for one draft end
+/// with one attempt.
+async fn submit_for(
+    conn: &mut PgConnection,
+    student_id: Uuid,
+    assignment_id: Uuid,
+    course_id: Uuid,
+    profiles: &EffectiveProfiles,
+    when: When,
+) -> Result<Attempt, AssessmentError> {
     let assignment = lock(conn, assignment_id).await?;
-    let is_late = open_window(&assignment, now)?;
-    let student_id = actor.user_id();
+    if !assignment.assignment_type.takes_submissions() {
+        return Err(AssessmentError::TakesNoSubmissions);
+    }
+    let (submitted_at, is_late) = match when {
+        When::Student(now) => (now, open_window(&assignment, now)?),
+        // Judged on the row as it is under the lock: a teacher may have moved the deadline or
+        // switched the setting since the draft was listed.
+        When::Deadline(now) => {
+            match (assignment.settings.on_deadline, assignment.settings.due_at) {
+                (Some(OnDeadline::AutoSubmit), Some(due_at)) if due_at <= now => (due_at, false),
+                _ => return Err(AssessmentError::NotDue),
+            }
+        }
+    };
     let draft = repo::lock_draft(conn, assignment_id, student_id)
         .await?
         .ok_or(AssessmentError::NoDraft)?;
@@ -266,14 +395,14 @@ pub async fn submit(
         conn,
         &assignment,
         assignment_id,
-        opened.course_id,
+        course_id,
         student_id,
         valid.as_body(),
     )
     .await?;
     let files = check_files(
         conn,
-        actor,
+        student_id,
         &assignment,
         assignment_id,
         valid.as_body(),
@@ -284,8 +413,15 @@ pub async fn submit(
         .assignment_type
         .auto_grade(&assignment.config, valid.as_body());
     let scores = auto.as_ref().map(AutoGrade::scores_json);
-    let attempt =
-        repo::submit_draft(conn, draft.id, last + 1, now, is_late, scores.as_ref()).await?;
+    let attempt = repo::submit_draft(
+        conn,
+        draft.id,
+        last + 1,
+        submitted_at,
+        is_late,
+        scores.as_ref(),
+    )
+    .await?;
     repo::replace_submission_files(conn, attempt.id, &files).await?;
     if let Some(auto) = auto.filter(|auto| auto.complete) {
         gradebook::save_auto_grade(conn, assignment_id, student_id, auto.total).await?;
@@ -295,7 +431,7 @@ pub async fn submit(
         Event::SubmissionSubmitted {
             assignment_id,
             student_id,
-            course_id: opened.course_id,
+            course_id,
             submission_id: attempt.id,
         },
     )
@@ -306,7 +442,7 @@ pub async fn submit(
             Event::QuizAttemptSubmitted {
                 assignment_id,
                 student_id,
-                course_id: opened.course_id,
+                course_id,
                 submission_id: attempt.id,
             },
         )
@@ -375,7 +511,7 @@ async fn check_claims(
 /// like one the submitter may not use.
 async fn check_files(
     conn: &mut PgConnection,
-    actor: &Actor,
+    user_id: Uuid,
     assignment: &Assignment,
     assignment_id: Uuid,
     body: &Map<String, Value>,
@@ -392,7 +528,7 @@ async fn check_files(
         id: submission_id,
         assignment_id,
     };
-    ensure_usable(conn, actor, &owner, &ids)
+    ensure_usable(conn, user_id, &owner, &ids)
         .await
         .map_err(|error| match error {
             FileError::Unusable { id } => unusable(

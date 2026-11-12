@@ -14,6 +14,7 @@ pub mod people;
 pub mod plugin_read;
 mod points;
 pub mod reports;
+pub mod schedule;
 mod state;
 pub mod teaching;
 

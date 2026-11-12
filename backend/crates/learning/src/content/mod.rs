@@ -21,12 +21,12 @@ pub use model::{
 pub use repo::CopiedIds;
 pub use routes::router;
 pub use service::{
-    ContentError, CourseSummary, ItemRules, OpenError, authorize_edit_item, copy_course_content,
-    course_summary, create_file_item, create_item, create_module, delete_item, delete_module,
-    editor_profiles, get_item, get_revision, get_tree, item_meta, lock_assignment_shared,
-    lock_course_assignments, may_read_item_files, my_work, open_assignment, publish_item,
-    publish_module, publish_revision, reorder_items, reorder_modules, search, set_due_at,
-    update_item, update_module,
+    ContentError, CourseSummary, ItemRules, OpenError, announce_visible, authorize_edit_item,
+    copy_course_content, course_summary, create_file_item, create_item, create_module, delete_item,
+    delete_module, editor_profiles, get_item, get_revision, get_tree, item_meta,
+    lock_assignment_shared, lock_course_assignments, may_read_item_files, my_work, open_assignment,
+    publish_item, publish_module, publish_revision, reorder_items, reorder_modules, search,
+    set_due_at, update_item, update_module,
 };
 pub use types::file::check_names as check_file_names;
 pub use types::form::Holders;
