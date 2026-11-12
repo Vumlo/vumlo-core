@@ -1,111 +1,30 @@
-//! HTTP edge of the flows over courses: `GET /me/course-cards` (ADR-0052).
+//! HTTP edge of the flows over courses (ADR-0093): the cards of the home page, the header and the
+//! people of a course, and its lifecycle. Writes open the transaction, call exactly one service
+//! function and commit; reads use a pooled connection.
+
+mod cards;
+mod header;
+mod lifecycle;
 
 use access::ActorSource;
-use api_types::{
-    CardNext, CardProgress, CardRole, CardTodo, CourseCard, CourseCards, ProblemDetails,
-};
-use axum::Json;
-use axum::extract::{FromRef, State};
-use chrono::Utc;
+use axum::extract::FromRef;
 use utoipa_axum::router::OpenApiRouter;
 use utoipa_axum::routes;
 
-use super::model::{CourseCardData, Todo};
-use super::service;
-use crate::LearningError;
 use crate::LearningState;
-use crate::content::NextDeadline;
-use crate::teaching::api_course;
-use access::Actor;
-use access::CourseRole;
-use common::ApiError;
 
 pub fn router<S>() -> OpenApiRouter<S>
 where
     S: ActorSource + Clone + 'static,
     LearningState: FromRef<S>,
 {
-    OpenApiRouter::new().routes(routes!(get_course_cards))
-}
-
-fn api_todo(todo: Todo) -> CardTodo {
-    match todo {
-        Todo::ToGrade { count } => CardTodo::ToGrade { count },
-        Todo::DraftGrades { count, auto_scored } => CardTodo::DraftGrades { count, auto_scored },
-        Todo::UnpublishedItems { count, titles } => CardTodo::UnpublishedItems { count, titles },
-        Todo::NextDeadline(NextDeadline {
-            assignment_id,
-            title,
-            due_at,
-            ..
-        }) => CardTodo::NextDeadline {
-            assignment_id,
-            title,
-            due_at,
-        },
-    }
-}
-
-fn api_card(card: CourseCardData, today: chrono::NaiveDate) -> CourseCard {
-    let role = if card.owner {
-        CardRole::Owner
-    } else {
-        match card.course.role {
-            Some(CourseRole::Teacher) => CardRole::Teacher,
-            Some(CourseRole::Assistant) => CardRole::Assistant,
-            _ => CardRole::Student,
-        }
-    };
-    let course = card.course;
-    CourseCard {
-        term_ended: course.term_ends.is_some_and(|ends| ends < today),
-        course: api_course(course.course),
-        code: course.code,
-        term_name: course.term_name,
-        owner_name: course.owner_name,
-        owner_surname: course.owner_surname,
-        my_role: role,
-        student_count: course.student_count,
-        assistant_count: course.assistant_count,
-        progress: card.progress.map(|p| CardProgress {
-            submitted: p.submitted,
-            total: p.total,
-            graded: p.graded,
-        }),
-        next: card.next.map(|n| CardNext {
-            assignment_id: n.assignment_id,
-            title: n.title,
-            due_at: n.due_at,
-        }),
-        todo: card.todo.into_iter().map(api_todo).collect(),
-    }
-}
-
-/// One card for each regular course the caller takes part in, by title: a student's card has their
-/// progress and next deadline, a teacher's has a to-do list with counts and kinds, not sentences.
-/// A student sees only published and archived courses, and only what students may open in them.
-#[utoipa::path(
-    get,
-    path = "/me/course-cards",
-    tag = "courses",
-    security(("cookie" = []), ("bearer" = [])),
-    responses(
-        (status = 200, description = "The caller's cards", body = CourseCards),
-        (status = 401, description = "Not logged in", body = ProblemDetails,
-            content_type = "application/problem+json"),
-    )
-)]
-pub async fn get_course_cards(
-    State(state): State<LearningState>,
-    actor: Actor,
-) -> Result<Json<CourseCards>, ApiError> {
-    let now = Utc::now();
-    let today = now
-        .with_timezone(&state.config.institution.time_zone)
-        .date_naive();
-    let mut conn = state.db.acquire().await.map_err(LearningError::from)?;
-    let cards = service::cards(&mut conn, &actor, now).await?;
-    Ok(Json(CourseCards {
-        items: cards.into_iter().map(|c| api_card(c, today)).collect(),
-    }))
+    OpenApiRouter::new()
+        .routes(routes!(cards::get_course_cards))
+        .routes(routes!(header::get_course_info, header::update_course_info))
+        .routes(routes!(header::get_people))
+        .routes(routes!(lifecycle::publish_course))
+        .routes(routes!(lifecycle::delete_course))
+        .routes(routes!(lifecycle::list_templates))
+        .routes(routes!(lifecycle::make_template))
+        .routes(routes!(lifecycle::create_from_template))
 }

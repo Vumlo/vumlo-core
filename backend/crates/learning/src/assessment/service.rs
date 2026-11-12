@@ -857,6 +857,15 @@ pub async fn has_submitted_in_course(
     Ok(repo::has_submitted_in_course(conn, course_id).await?)
 }
 
+/// The students who submitted an attempt in the course. The caller has authorized (it asks for
+/// the roster page of staff).
+pub async fn students_with_attempts(
+    conn: &mut PgConnection,
+    course_id: Uuid,
+) -> Result<Vec<Uuid>, AssessmentError> {
+    Ok(repo::students_with_attempts(conn, course_id).await?)
+}
+
 /// Deletes the drafts of the assignment, for the delete that follows in the same transaction.
 /// Refuses with `HasSubmissions` instead of destroying an attempt. Returns how many drafts went.
 pub async fn purge_assignment(

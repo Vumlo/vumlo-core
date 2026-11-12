@@ -629,6 +629,15 @@ pub async fn has_grades_in_course(
     Ok(repo::has_grades_in_course(conn, course_id).await?)
 }
 
+/// The students who have a score or feedback, draft or published, in the course. The caller has
+/// authorized (it asks for the roster page of staff).
+pub async fn students_with_values(
+    conn: &mut PgConnection,
+    course_id: Uuid,
+) -> Result<Vec<Uuid>, GradebookError> {
+    Ok(repo::students_with_values(conn, course_id).await?)
+}
+
 /// Deletes the empty grade rows of the assignment and their history, for the delete that follows
 /// in the same transaction. Refuses with `HasGrades` instead of destroying a value. Returns how
 /// many rows were deleted.

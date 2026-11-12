@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT c.code, c.description, t.name AS \"term_name?\",\n                  u.name AS \"owner_name!\", u.surname AS \"owner_surname!\", u.email AS \"owner_email!\",\n                  c.updated_at,\n                  (SELECT count(*) FROM teaching.effective_members m\n                    WHERE m.course_id = c.id AND m.role = 'student') AS \"student_count!\",\n                  (SELECT count(*) FROM teaching.effective_members m\n                    WHERE m.course_id = c.id AND m.role = 'assistant') AS \"assistant_count!\",\n                  (SELECT count(*) FROM auth.people f WHERE f.id IN (\n                       SELECT g.student_id FROM gradebook.grades g\n                       JOIN content.items i ON i.id = g.assignment_id\n                       WHERE i.course_id = c.id\n                         AND (g.draft_score IS NOT NULL OR g.draft_feedback IS NOT NULL\n                              OR g.published_score IS NOT NULL OR g.published_feedback IS NOT NULL)\n                       UNION\n                       SELECT s.student_id FROM assessment.submissions s\n                       JOIN content.items i ON i.id = s.assignment_id\n                       WHERE i.course_id = c.id AND s.status = 'submitted')\n                     AND NOT EXISTS (SELECT 1 FROM teaching.effective_members m\n                                     WHERE m.course_id = c.id AND m.user_id = f.id))\n                      AS \"former_count!\"\n           FROM teaching.courses c\n           JOIN auth.people u ON u.id = c.owner_id\n           LEFT JOIN org.term_list t ON t.id = c.term_id\n           WHERE c.id = $1",
+  "query": "SELECT c.code, c.description, t.name AS \"term_name?\",\n                  u.name AS \"owner_name!\", u.surname AS \"owner_surname!\", u.email AS \"owner_email!\",\n                  c.updated_at,\n                  (SELECT count(*) FROM teaching.effective_members m\n                    WHERE m.course_id = c.id AND m.role = 'student') AS \"student_count!\",\n                  (SELECT count(*) FROM teaching.effective_members m\n                    WHERE m.course_id = c.id AND m.role = 'assistant') AS \"assistant_count!\"\n           FROM teaching.courses c\n           JOIN auth.people u ON u.id = c.owner_id\n           LEFT JOIN org.term_list t ON t.id = c.term_id\n           WHERE c.id = $1",
   "describe": {
     "columns": [
       {
@@ -91,12 +91,6 @@
         "name": "assistant_count!",
         "type_info": "Int8",
         "origin": "Expression"
-      },
-      {
-        "ordinal": 9,
-        "name": "former_count!",
-        "type_info": "Int8",
-        "origin": "Expression"
       }
     ],
     "parameters": {
@@ -113,9 +107,8 @@
       true,
       false,
       null,
-      null,
       null
     ]
   },
-  "hash": "f286414bf0c5bdfc49263c827e937f83d6d3b0f4a67247489e2614cd61ec484a"
+  "hash": "0002bde48cc493aa4912b9c83de94ac764d0f2af3707dd57ea8b711d2dc39534"
 }

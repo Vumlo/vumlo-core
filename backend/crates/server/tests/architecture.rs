@@ -136,12 +136,7 @@ const DECLARED_VIEWS: &[&str] = &[
 /// tolerates exactly these and fails when one no longer happens, so the lists only shrink
 /// (ADR-0093). `RATCHET_UP` is a table of a higher layer, `RATCHET_DOWN` a table of a lower layer
 /// that is not a declared view, `RATCHET_CALLS` a higher `learning` module named in Rust.
-const RATCHET_UP: &[(&str, &str)] = &[
-    ("teaching", "assessment.submissions"),
-    ("teaching", "content.items"),
-    ("teaching", "content.modules"),
-    ("teaching", "gradebook.grades"),
-];
+const RATCHET_UP: &[(&str, &str)] = &[];
 const RATCHET_DOWN: &[(&str, &str)] = &[
     ("assessment", "content.assignments"),
     ("assessment", "content.items"),
@@ -167,9 +162,6 @@ const RATCHET_CALLS: &[(&str, &str)] = &[
     ("assessment", "gradebook"),
     ("content", "assessment"),
     ("content", "gradebook"),
-    ("teaching", "assessment"),
-    ("teaching", "content"),
-    ("teaching", "gradebook"),
 ];
 
 /// The four modules of `learning`, lowest first.

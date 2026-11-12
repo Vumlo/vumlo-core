@@ -23,7 +23,7 @@ use super::model::{
     DraftItem, FactScope, Hit, HitKind, Item, ItemFacts, ItemKind, ItemPatch, ItemStatus,
     ItemSummary, MaxPoints, ModelError, Module, ModulePatch, NextDeadline, OnDeadline,
     OpenAssignment, OpenedAssignment, Revision, SettingProblem, SettingsPatch, SourceFact,
-    Standing,
+    Standing, TemplateCounts,
 };
 use super::repo::{self, CopiedIds, ItemRow, ModuleRow};
 use super::rules::Node;
@@ -1356,6 +1356,15 @@ pub async fn open_assignments(
     now: DateTime<Utc>,
 ) -> Result<Vec<OpenAssignment>, ContentError> {
     Ok(repo::open_assignments(conn, course_ids, now).await?)
+}
+
+/// What each of `course_ids` holds. The caller has authorized: it passes the templates the actor
+/// may see.
+pub async fn template_counts(
+    conn: &mut PgConnection,
+    course_ids: &[Uuid],
+) -> Result<Vec<TemplateCounts>, ContentError> {
+    Ok(repo::template_counts(conn, course_ids).await?)
 }
 
 /// The draft items inside published modules of `course_ids`, newest change first. The caller has

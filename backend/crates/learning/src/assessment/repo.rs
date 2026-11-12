@@ -580,6 +580,21 @@ pub async fn has_submitted_in_course(
     .await
 }
 
+/// The students who submitted an attempt in an assignment of the course.
+pub async fn students_with_attempts(
+    conn: &mut PgConnection,
+    course_id: Uuid,
+) -> Result<Vec<Uuid>, sqlx::Error> {
+    sqlx::query_scalar!(
+        "SELECT DISTINCT s.student_id FROM assessment.submissions s
+         JOIN content.items i ON i.id = s.assignment_id
+         WHERE i.course_id = $1 AND s.status = 'submitted'",
+        course_id
+    )
+    .fetch_all(conn)
+    .await
+}
+
 /// Deletes the drafts of one assignment. Returns how many went.
 pub async fn purge_assignment(
     conn: &mut PgConnection,

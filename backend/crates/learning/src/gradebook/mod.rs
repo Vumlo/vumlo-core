@@ -18,5 +18,6 @@ pub use service::{
     GradebookError, copy_layout, grade_history, gradebook, has_grades_for_assignment,
     has_grades_in_course, has_grades_in_module, item_meta, max_score, my_grades, my_work,
     publish_grades, published_grade, purge_assignment, purge_course, purge_module, save_auto_grade,
-    save_grade, student_next, student_progress, teaching_overview, todo_counts,
+    save_grade, student_next, student_progress, students_with_values, teaching_overview,
+    todo_counts,
 };

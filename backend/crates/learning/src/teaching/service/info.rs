@@ -1,17 +1,16 @@
 //! The header of a course, its lifecycle (archive, restore, delete), templates, the people on it
-//! and the search for people to add (ADR-0048).
+//! and the search for people to add (ADR-0048). What needs the content, the grades or the
+//! attempts of the course is a flow above (`learning::courses`): the functions here do the part
+//! that is `teaching`'s and say where the flow takes over.
 
 use serde_json::json;
 use sqlx::PgConnection;
 use uuid::Uuid;
 
 use super::{NewCourse, TeachingError, insert_owned_course, load};
-use crate::assessment;
-use crate::content;
-use crate::gradebook;
 use crate::teaching::model::{
-    Candidate, Course, CourseCode, CourseDescription, CourseInfo, CourseInfoUpdate, CourseKind,
-    CoursePeople, CourseTitle, TemplateSummary,
+    Candidate, Course, CourseCode, CourseDescription, CourseHeader, CourseInfoUpdate, CourseKind,
+    CoursePeople, CourseTitle, Person, TemplateRow,
 };
 use crate::teaching::repo;
 use access::Actor;
@@ -24,18 +23,6 @@ const CANDIDATE_LIMIT: i64 = 20;
 /// The shortest search text.
 const CANDIDATE_MIN_CHARS: usize = 2;
 
-fn from_content(error: content::ContentError) -> TeachingError {
-    TeachingError::Content(Box::new(error))
-}
-
-fn from_gradebook(error: gradebook::GradebookError) -> TeachingError {
-    TeachingError::Gradebook(Box::new(error))
-}
-
-fn from_assessment(error: assessment::AssessmentError) -> TeachingError {
-    TeachingError::Assessment(Box::new(error))
-}
-
 fn course_entry(action: &'static str, course_id: Uuid, meta: serde_json::Value) -> AuditEntry {
     AuditEntry {
         action,
@@ -45,23 +32,17 @@ fn course_entry(action: &'static str, course_id: Uuid, meta: serde_json::Value) 
     }
 }
 
-/// The header of a course for anyone who may view it.
-pub async fn course_info(
+/// The part of the header of a course that `teaching` knows, for anyone who may view it.
+pub async fn course_header(
     conn: &mut PgConnection,
     actor: &Actor,
     course_id: Uuid,
-) -> Result<CourseInfo, TeachingError> {
+) -> Result<CourseHeader, TeachingError> {
     load(conn, actor, course_id, false).await?;
     let row = repo::info_row(conn, course_id)
         .await?
         .ok_or(TeachingError::CourseNotFound)?;
-    let summary = content::course_summary(conn, actor, course_id)
-        .await
-        .map_err(from_content)?;
-    let has_grades = gradebook::has_grades_in_course(conn, course_id)
-        .await
-        .map_err(from_gradebook)?;
-    Ok(CourseInfo {
+    Ok(CourseHeader {
         course_id,
         code: row.code,
         description: row.description,
@@ -70,13 +51,8 @@ pub async fn course_info(
         owner_surname: row.owner_surname,
         owner_email: row.owner_email,
         student_count: row.student_count,
-        former_count: row.former_count,
         assistant_count: row.assistant_count,
         updated_at: row.updated_at,
-        content_updated_at: summary.changed_at,
-        total_points: summary.total_points,
-        graded_items: summary.graded_items,
-        has_grades,
     })
 }
 
@@ -87,7 +63,7 @@ pub async fn update_course_info(
     actor: &Actor,
     course_id: Uuid,
     update: CourseInfoUpdate,
-) -> Result<CourseInfo, TeachingError> {
+) -> Result<(), TeachingError> {
     let (_, access) = load(conn, actor, course_id, true).await?;
     access::authorize(actor, Action::EditCourse(access))?;
     let code = update.code.as_deref().map(CourseCode::parse).transpose()?;
@@ -118,7 +94,7 @@ pub async fn update_course_info(
         )
         .await?;
     }
-    course_info(conn, actor, course_id).await
+    Ok(())
 }
 
 /// Archives the course: it stays readable and takes no more writes. Archiving an archived course
@@ -165,37 +141,26 @@ pub async fn restore_course(
     Ok(restored)
 }
 
-/// Deletes a course nobody has graded or submitted work in. The assignment rows are locked first
-/// and the guards ask in later statements, so a grade write or a submit in flight is seen
+/// First half of deleting a course: authorizes and locks the course row. The flow
+/// (`learning::courses::delete`) then locks the assignment rows, asks content, grades and
+/// attempts whether anything must be kept, purges the drafts, and calls [`finish_delete_course`]
 /// (ADR-0035 point 12, ADR-0048).
-pub async fn delete_course(
+pub async fn begin_delete_course(
     conn: &mut PgConnection,
     actor: &Actor,
     course_id: Uuid,
 ) -> Result<(), TeachingError> {
     let (_, access) = load(conn, actor, course_id, true).await?;
     access::authorize(actor, Action::DeleteCourse(access))?;
-    content::lock_course_assignments(conn, course_id)
-        .await
-        .map_err(from_content)?;
-    if gradebook::has_grades_in_course(conn, course_id)
-        .await
-        .map_err(from_gradebook)?
-    {
-        return Err(TeachingError::HasGrades);
-    }
-    if assessment::has_submitted_in_course(conn, course_id)
-        .await
-        .map_err(from_assessment)?
-    {
-        return Err(TeachingError::HasSubmissions);
-    }
-    gradebook::purge_course(conn, course_id)
-        .await
-        .map_err(from_gradebook)?;
-    assessment::purge_course(conn, course_id)
-        .await
-        .map_err(from_assessment)?;
+    Ok(())
+}
+
+/// Second half: audits and deletes the course, under the lock [`begin_delete_course`] took.
+pub async fn finish_delete_course(
+    conn: &mut PgConnection,
+    actor: &Actor,
+    course_id: Uuid,
+) -> Result<(), TeachingError> {
     events::audit_admin(
         conn,
         actor,
@@ -208,9 +173,9 @@ pub async fn delete_course(
     Ok(())
 }
 
-/// A copy of the course for the next time: a template owned by the actor with the course's whole
-/// tree as drafts.
-pub async fn make_template(
+/// The course row of a template made from `course_id`, owned by the actor. The flow
+/// (`learning::courses::make_template`) copies the content into it.
+pub async fn new_template(
     conn: &mut PgConnection,
     actor: &Actor,
     course_id: Uuid,
@@ -223,7 +188,7 @@ pub async fn make_template(
         Some(title) => title,
         None => CourseTitle::parse(&course.title)?,
     };
-    let template = insert_owned_course(
+    insert_owned_course(
         conn,
         actor,
         NewCourse {
@@ -235,18 +200,12 @@ pub async fn make_template(
             from: Some(course_id),
         },
     )
-    .await?;
-    let ids = content::copy_course_content(conn, course_id, template.id)
-        .await
-        .map_err(from_content)?;
-    gradebook::copy_layout(conn, course_id, template.id, &ids)
-        .await
-        .map_err(from_gradebook)?;
-    Ok(template)
+    .await
 }
 
-/// A draft course owned by the actor with the whole tree of a template they can edit.
-pub async fn create_from_template(
+/// The row of a draft course made from a template the actor can edit, owned by the actor. The
+/// flow (`learning::courses::create_from_template`) copies the content into it.
+pub async fn new_course_from_template(
     conn: &mut PgConnection,
     actor: &Actor,
     template_id: Uuid,
@@ -263,7 +222,7 @@ pub async fn create_from_template(
         Some(title) => title,
         None => CourseTitle::parse(&template.title)?,
     };
-    let course = insert_owned_course(
+    insert_owned_course(
         conn,
         actor,
         NewCourse {
@@ -275,22 +234,15 @@ pub async fn create_from_template(
             from: Some(template_id),
         },
     )
-    .await?;
-    let ids = content::copy_course_content(conn, template_id, course.id)
-        .await
-        .map_err(from_content)?;
-    gradebook::copy_layout(conn, template_id, course.id, &ids)
-        .await
-        .map_err(from_gradebook)?;
-    Ok(course)
+    .await
 }
 
-/// The templates the actor owns or teaches, with what each holds.
+/// The templates the actor owns or teaches. What each holds is content's to say.
 pub async fn list_templates(
     conn: &mut PgConnection,
     actor: &Actor,
     page: PageParams,
-) -> Result<Page<TemplateSummary>, TeachingError> {
+) -> Result<Page<TemplateRow>, TeachingError> {
     access::authorize(actor, Action::ViewOwnCourses)?;
     let rows =
         repo::list_templates(conn, actor.user_id(), page.after, i64::from(page.limit) + 1).await?;
@@ -299,8 +251,8 @@ pub async fn list_templates(
     }))
 }
 
-/// Everyone on the course. Staff also get the emails, the former students and the linked groups;
-/// a student's queries never read an email (ADR-0048).
+/// Everyone on the roster of the course. Staff also get the emails and the linked groups, and the
+/// flow adds the former students; a student's queries never read an email (ADR-0048).
 pub async fn course_people(
     conn: &mut PgConnection,
     actor: &Actor,
@@ -308,13 +260,28 @@ pub async fn course_people(
 ) -> Result<CoursePeople, TeachingError> {
     let (_, access) = load(conn, actor, course_id, false).await?;
     let staff = access::authorize(actor, Action::ManageRoster(access)).is_ok();
-    let mut people = repo::list_people(conn, course_id, staff).await?;
-    let mut groups = Vec::new();
-    if staff {
-        people.extend(repo::list_former(conn, course_id).await?);
-        groups = repo::list_link_summaries(conn, course_id).await?;
-    }
-    Ok(CoursePeople { people, groups })
+    let people = repo::list_people(conn, course_id, staff).await?;
+    let groups = if staff {
+        repo::list_link_summaries(conn, course_id).await?
+    } else {
+        Vec::new()
+    };
+    Ok(CoursePeople {
+        people,
+        groups,
+        staff,
+    })
+}
+
+/// Those of `candidates` (people who have a value or an attempt in the course) who are no longer
+/// on its roster (ADR-0037), by surname. Emails only `with_emails`. The caller has authorized.
+pub async fn former_people(
+    conn: &mut PgConnection,
+    course_id: Uuid,
+    candidates: &[Uuid],
+    with_emails: bool,
+) -> Result<Vec<Person>, TeachingError> {
+    Ok(repo::list_former(conn, course_id, candidates, with_emails).await?)
 }
 
 /// Escapes `\`, `%` and `_` so that the text is matched as it is.

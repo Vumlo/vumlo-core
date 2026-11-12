@@ -1,5 +1,6 @@
 use common::ApiError;
 
+use super::assessment::AssessmentError;
 use super::content::ContentError;
 use super::gradebook::GradebookError;
 use super::teaching::TeachingError;
@@ -22,6 +23,14 @@ pub enum LearningError {
     Content(#[from] ContentError),
     #[error(transparent)]
     Gradebook(#[from] GradebookError),
+    #[error(transparent)]
+    Assessment(#[from] AssessmentError),
+    /// A grade has a value in the course, so it cannot be deleted (ADR-0048).
+    #[error("the course has grades")]
+    CourseHasGrades,
+    /// An attempt was submitted in the course, so it cannot be deleted (ADR-0048).
+    #[error("the course has submitted work")]
+    CourseHasSubmissions,
     /// A teacher or admin cannot become a student while they own a course (ADR-0037).
     #[error("the user owns courses")]
     OwnsCourses,
@@ -38,6 +47,13 @@ impl From<LearningError> for ApiError {
             LearningError::Teaching(e) => e.into(),
             LearningError::Content(e) => e.into(),
             LearningError::Gradebook(e) => e.into(),
+            LearningError::Assessment(e) => e.into(),
+            LearningError::CourseHasGrades => Self::Conflict(
+                "grades were given in this course, so it cannot be deleted: archive it instead",
+            ),
+            LearningError::CourseHasSubmissions => Self::Conflict(
+                "work was submitted in this course, so it cannot be deleted: archive it instead",
+            ),
             LearningError::OwnsCourses => {
                 Self::Conflict("the user owns courses: transfer them to someone else first")
             }

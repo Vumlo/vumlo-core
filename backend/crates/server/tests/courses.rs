@@ -238,6 +238,44 @@ async fn the_header_knows_when_grades_exist_and_who_left_the_roster_with_results
 }
 
 #[tokio::test]
+async fn former_count_equals_the_length_of_the_former_list() {
+    db_test(async |pool| {
+        let w = world(pool).await;
+        let assignment = w.assignment("20", false, false).await;
+        // One former student has a grade, the other only a submitted attempt.
+        w.submit(&w.student, assignment).await;
+        w.grade(assignment, &w.student, "15").await;
+        w.submit(&w.other, assignment).await;
+        for leaver in [&w.student, &w.other] {
+            w.env
+                .ok(
+                    "DELETE",
+                    &w.owner.token,
+                    &format!("/courses/{}/members/{}", w.course, leaver.id),
+                    None,
+                    204,
+                )
+                .await;
+        }
+        let info = w
+            .get(&w.owner, &format!("/courses/{}/info", w.course))
+            .await;
+        let people = w
+            .get(&w.owner, &format!("/courses/{}/people", w.course))
+            .await;
+        let former = people["people"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|p| p["former"] == true)
+            .count();
+        assert_eq!(former, 2, "{people}");
+        assert_eq!(info["former_count"], former);
+    })
+    .await;
+}
+
+#[tokio::test]
 async fn code_and_description_are_edited_by_staff_trimmed_and_bounded_and_audited_for_admins() {
     db_test(async |pool| {
         let w = world(pool).await;

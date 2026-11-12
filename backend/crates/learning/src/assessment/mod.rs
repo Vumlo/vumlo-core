@@ -15,7 +15,7 @@ pub use service::{
     discard_draft, due_drafts, form_facts, has_submitted_for_assignment, has_submitted_in_course,
     has_submitted_in_module, list_submissions, may_read_submission_files, my_submission,
     purge_assignment, purge_course, purge_module, quiz_result, responses, save_draft,
-    skip_auto_submit, student_attempts, submit,
+    skip_auto_submit, student_attempts, students_with_attempts, submit,
 };
 
 // Seeds the references of a submission for the tests of `learning::files`.

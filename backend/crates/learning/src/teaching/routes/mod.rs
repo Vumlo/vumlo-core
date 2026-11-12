@@ -8,8 +8,8 @@ mod roster;
 
 use access::ActorSource;
 use api_types::{
-    Course, CreateCourseRequest, MemberSource, Membership, Page, PageQuery, ProblemDetails,
-    PutMemberRequest, TransferOwnershipRequest, UpdateCourseRequest,
+    Course, CreateCourseRequest, LinkedGroup, MemberSource, Membership, Page, PageQuery, PersonRow,
+    ProblemDetails, PutMemberRequest, TransferOwnershipRequest, UpdateCourseRequest,
 };
 use axum::Json;
 use axum::extract::FromRef;
@@ -34,15 +34,9 @@ where
 {
     OpenApiRouter::new()
         .routes(routes!(create_course))
-        .routes(routes!(get_course, update_course, info::delete_course))
-        .routes(routes!(info::get_course_info, info::update_course_info))
-        .routes(routes!(publish_course))
+        .routes(routes!(get_course, update_course))
         .routes(routes!(info::archive_course))
         .routes(routes!(info::restore_course))
-        .routes(routes!(info::make_template))
-        .routes(routes!(info::create_from_template))
-        .routes(routes!(info::list_templates))
-        .routes(routes!(info::get_people))
         .routes(routes!(info::get_candidates))
         .routes(routes!(transfer_ownership))
         .routes(routes!(list_my_courses))
@@ -80,15 +74,6 @@ impl From<TeachingError> for ApiError {
             TeachingError::QueryTooShort => {
                 Self::invalid_field("q", "needs at least two characters")
             }
-            TeachingError::HasGrades => Self::Conflict(
-                "grades were given in this course, so it cannot be deleted: archive it instead",
-            ),
-            TeachingError::HasSubmissions => Self::Conflict(
-                "work was submitted in this course, so it cannot be deleted: archive it instead",
-            ),
-            TeachingError::Content(e) => (*e).into(),
-            TeachingError::Gradebook(e) => (*e).into(),
-            TeachingError::Assessment(e) => (*e).into(),
             TeachingError::CourseNotFound
             | TeachingError::MemberNotFound
             | TeachingError::LinkNotFound
@@ -156,6 +141,33 @@ fn domain_role(role: api_types::CourseRole) -> CourseRole {
         api_types::CourseRole::Teacher => CourseRole::Teacher,
         api_types::CourseRole::Assistant => CourseRole::Assistant,
         api_types::CourseRole::Student => CourseRole::Student,
+    }
+}
+
+/// A person on a course roster as the API shows them; used by the flow that adds the former
+/// students.
+pub fn api_person(person: model::Person) -> PersonRow {
+    PersonRow {
+        user_id: person.user_id,
+        name: person.name,
+        surname: person.surname,
+        email: person.email,
+        role: api_role(person.role),
+        is_owner: person.is_owner,
+        source: api_source(person.source),
+        group: person.group,
+        former: person.former,
+    }
+}
+
+/// A linked group as the API shows it.
+pub fn api_linked_group(group: model::LinkedGroup) -> LinkedGroup {
+    LinkedGroup {
+        link_id: group.link_id,
+        group_name: group.group_name,
+        subgroup_name: group.subgroup_name,
+        student_count: u32::try_from(group.student_count).unwrap_or(u32::MAX),
+        linked_at: group.linked_at,
     }
 }
 
@@ -287,38 +299,6 @@ async fn update_course(
     };
     let mut tx = state.db.begin().await.map_err(TeachingError::from)?;
     let course = service::update_course(&mut tx, &actor, id, update).await?;
-    tx.commit().await.map_err(TeachingError::from)?;
-    Ok(Json(api_course(course)))
-}
-
-/// Publishes a draft course so its students can see it. Owner, course teacher or admin.
-///
-/// Idempotent: a published course is returned unchanged. Assistants cannot publish (ADR-0019).
-#[utoipa::path(
-    post,
-    path = "/courses/{id}/publish",
-    tag = "courses",
-    security(("cookie" = []), ("bearer" = [])),
-    params(("id" = Uuid, Path, description = "Course id")),
-    responses(
-        (status = 200, description = "The published course", body = Course),
-        (status = 401, description = "Not logged in", body = ProblemDetails,
-            content_type = "application/problem+json"),
-        (status = 403, description = "The caller may not publish this course",
-            body = ProblemDetails, content_type = "application/problem+json"),
-        (status = 404, description = "No such course, or not visible to the caller",
-            body = ProblemDetails, content_type = "application/problem+json"),
-        (status = 409, description = "The course is archived", body = ProblemDetails,
-            content_type = "application/problem+json"),
-    )
-)]
-async fn publish_course(
-    State(state): State<LearningState>,
-    actor: Actor,
-    Path(id): Path<Uuid>,
-) -> Result<Json<Course>, ApiError> {
-    let mut tx = state.db.begin().await.map_err(TeachingError::from)?;
-    let course = service::publish_course(&mut tx, &actor, id).await?;
     tx.commit().await.map_err(TeachingError::from)?;
     Ok(Json(api_course(course)))
 }

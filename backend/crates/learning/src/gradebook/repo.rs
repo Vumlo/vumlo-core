@@ -711,6 +711,24 @@ pub async fn has_grades_in_course(
     .await
 }
 
+/// The students who have a value (a score or feedback, draft or published) in an assignment of
+/// the course.
+pub async fn students_with_values(
+    conn: &mut PgConnection,
+    course_id: Uuid,
+) -> Result<Vec<Uuid>, sqlx::Error> {
+    sqlx::query_scalar!(
+        r#"SELECT DISTINCT g.student_id FROM gradebook.grades g
+           JOIN content.items i ON i.id = g.assignment_id
+           WHERE i.course_id = $1
+             AND (g.draft_score IS NOT NULL OR g.draft_feedback IS NOT NULL
+                  OR g.published_score IS NOT NULL OR g.published_feedback IS NOT NULL)"#,
+        course_id
+    )
+    .fetch_all(conn)
+    .await
+}
+
 /// Deletes the history and the grade rows of one assignment. Returns how many grade rows went.
 pub async fn purge_assignment(
     conn: &mut PgConnection,

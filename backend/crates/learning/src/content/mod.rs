@@ -19,7 +19,7 @@ pub use model::{
     ConditionKind, ContentModule, ContentSubModule, ContentTitle, DraftItem, FactScope, Hit,
     HitKind, Item, ItemFacts, ItemKind, ItemPatch, ItemStatus, ItemSummary, MaxPoints, ModelError,
     Module, ModulePatch, ModuleStatus, NextDeadline, OnDeadline, OpenAssignment, OpenedAssignment,
-    SettingProblem, SettingsPatch, SourceFact, Standing, SubmissionSettings, Unmet,
+    SettingProblem, SettingsPatch, SourceFact, Standing, SubmissionSettings, TemplateCounts, Unmet,
     editor_features,
 };
 pub use repo::CopiedIds;
@@ -32,7 +32,7 @@ pub use service::{
     lock_assignment_shared, lock_course_assignments, lock_facts, mark_done, may_read_item_files,
     next_deadlines, open_assignment, open_assignments, publish_item, publish_module,
     publish_revision, reorder_items, reorder_modules, replace_source_facts, search, sees_drafts,
-    set_due_at, unmark_done, update_item, update_module,
+    set_due_at, template_counts, unmark_done, update_item, update_module,
 };
 pub use types::file::check_names as check_file_names;
 pub use types::form::Holders;

@@ -59,6 +59,14 @@ impl CourseDescription {
     }
 }
 
+/// A course after a publish, and whether the publish changed it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Publication {
+    pub course: Course,
+    /// The course was a draft; it was already published when this is false.
+    pub changed: bool,
+}
+
 /// The fields of a course-info update that were sent.
 #[derive(Debug, Clone, Default)]
 pub struct CourseInfoUpdate {
@@ -66,9 +74,10 @@ pub struct CourseInfoUpdate {
     pub description: Option<String>,
 }
 
-/// The header of a course (ADR-0048).
+/// What `teaching` knows of the header of a course (ADR-0048): the course itself and its roster.
+/// The numbers that come from content, grades and attempts are added by `learning::courses`.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CourseInfo {
+pub struct CourseHeader {
     pub course_id: Uuid,
     pub code: String,
     pub description: String,
@@ -77,22 +86,14 @@ pub struct CourseInfo {
     pub owner_surname: String,
     pub owner_email: String,
     pub student_count: i64,
-    pub former_count: i64,
     pub assistant_count: i64,
     pub updated_at: DateTime<Utc>,
-    pub content_updated_at: Option<DateTime<Utc>>,
-    pub total_points: sqlx::types::Decimal,
-    pub graded_items: i64,
-    pub has_grades: bool,
 }
 
-/// A template and what it holds.
+/// A template of the actor's.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct TemplateSummary {
+pub struct TemplateRow {
     pub course: Course,
-    pub sections: i64,
-    pub lectures: i64,
-    pub assignments: i64,
     pub updated_at: DateTime<Utc>,
 }
 
@@ -122,11 +123,14 @@ pub struct LinkedGroup {
 }
 
 /// Who is on a course. A student gets the people without the emails, the former students and the
-/// groups (ADR-0048).
+/// groups (ADR-0048). The former students are people of other modules' data: `learning::courses`
+/// adds them when `staff` is set.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CoursePeople {
     pub people: Vec<Person>,
     pub groups: Vec<LinkedGroup>,
+    /// The asker manages the roster: they get emails, groups and the former students.
+    pub staff: bool,
 }
 
 /// Someone who could be added to a course.

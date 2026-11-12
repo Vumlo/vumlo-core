@@ -1,0 +1,44 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT c AS \"course_id!\",\n                  (SELECT count(*) FROM content.modules WHERE course_id = c) AS \"sections!\",\n                  (SELECT count(*) FROM content.items\n                    WHERE course_id = c AND kind = 'text') AS \"lectures!\",\n                  (SELECT count(*) FROM content.items\n                    WHERE course_id = c AND kind = 'assignment') AS \"assignments!\"\n           FROM unnest($1::uuid[]) AS c",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "course_id!",
+        "type_info": "Uuid",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "sections!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 2,
+        "name": "lectures!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 3,
+        "name": "assignments!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "UuidArray"
+      ]
+    },
+    "nullable": [
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "fce6d21ea473437180d8399c6f6c10d68dd2ebf51cb87feac3b89d195519adc8"
+}

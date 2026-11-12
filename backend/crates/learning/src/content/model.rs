@@ -908,6 +908,15 @@ pub struct OpenAssignment {
     pub max_points: MaxPoints,
 }
 
+/// What a course holds: its sections (modules and sub-modules), lectures and assignments.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TemplateCounts {
+    pub course_id: Uuid,
+    pub sections: i64,
+    pub lectures: i64,
+    pub assignments: i64,
+}
+
 /// The earliest deadline of a course.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NextDeadline {

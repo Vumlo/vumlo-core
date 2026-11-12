@@ -11,7 +11,7 @@ use sqlx::types::Decimal;
 use super::model::{
     Access, Assignment, AssignmentSummary, BuiltinType, DraftItem, FactScope, Item, ItemKind,
     ItemStatus, ItemSummary, MaxPoints, Module, ModuleStatus, NextDeadline, OnDeadline,
-    OpenAssignment, PublishedSlot, SourceFact, SubmissionSettings,
+    OpenAssignment, PublishedSlot, SourceFact, SubmissionSettings, TemplateCounts,
 };
 use super::rules::{Condition, Facts, Node, Rules};
 use access::Release;
@@ -1278,6 +1278,26 @@ pub async fn open_assignments(
            ORDER BY i.course_id, a.due_at NULLS LAST, i.id"#,
         course_ids,
         now
+    )
+    .fetch_all(conn)
+    .await
+}
+
+/// What each of the courses holds. A course with no content counts zero.
+pub async fn template_counts(
+    conn: &mut PgConnection,
+    course_ids: &[Uuid],
+) -> Result<Vec<TemplateCounts>, sqlx::Error> {
+    sqlx::query_as!(
+        TemplateCounts,
+        r#"SELECT c AS "course_id!",
+                  (SELECT count(*) FROM content.modules WHERE course_id = c) AS "sections!",
+                  (SELECT count(*) FROM content.items
+                    WHERE course_id = c AND kind = 'text') AS "lectures!",
+                  (SELECT count(*) FROM content.items
+                    WHERE course_id = c AND kind = 'assignment') AS "assignments!"
+           FROM unnest($1::uuid[]) AS c"#,
+        course_ids
     )
     .fetch_all(conn)
     .await

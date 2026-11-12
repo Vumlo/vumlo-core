@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT DISTINCT g.student_id FROM gradebook.grades g\n           JOIN content.items i ON i.id = g.assignment_id\n           WHERE i.course_id = $1\n             AND (g.draft_score IS NOT NULL OR g.draft_feedback IS NOT NULL\n                  OR g.published_score IS NOT NULL OR g.published_feedback IS NOT NULL)",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "student_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "gradebook.grades",
+            "name": "student_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "d176545bbc643500724377d31920a35e981247a82e7a5743ab8622b7512f27a3"
+}
