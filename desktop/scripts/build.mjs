@@ -61,7 +61,8 @@ mkdirSync(gen, { recursive: true });
 const tauri = join(dirname(createRequire(import.meta.url).resolve("@tauri-apps/cli/package.json")), "tauri.js");
 run("making the installer icons from the Vumlo logo", process.execPath, [tauri, "icon", logo, "--output", join(gen, "icons")], { cwd: desktop });
 
-const config = tauriConfigFor(client, { frontendDist: join(web, "out"), iconDir: "gen/icons", desktopTemplate: join(desktop, "desktop-template.desktop") });
+// Relative to desktop/, like tauri.conf.json: an absolute path on Windows is read by Tauri as a URL (see config.mjs).
+const config = tauriConfigFor(client, { frontendDist: "../web/out", iconDir: "gen/icons", desktopTemplate: join(desktop, "desktop-template.desktop") });
 writeFileSync(join(gen, "tauri.conf.json"), JSON.stringify(config, null, 2) + "\n");
 
 run(`building ${config.productName} ${config.version} (${config.identifier}, ${client.desktop.url_scheme}://)`, process.execPath, [tauri, "build", "--config", join(gen, "tauri.conf.json"), ...tauriArgs], {
