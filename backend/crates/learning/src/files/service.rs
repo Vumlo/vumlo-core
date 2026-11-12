@@ -4,15 +4,17 @@
 //! A file the actor may not read does not exist as far as they can tell: an unknown id, a file of
 //! a draft item, of someone else's submission and of nobody all give `NotFound` (ADR-0069).
 
+use std::collections::BTreeMap;
+
 use chrono::{DateTime, Utc};
-use files::{File, FilesError, Stored};
+use files::{File, FileVerdict, FilesError, Stored};
 use sqlx::PgConnection;
 use uuid::Uuid;
 
 use super::model::{ItemReference, Owner, UsageOwner};
 use super::repo;
 use crate::assessment::{self, AssessmentError};
-use crate::content::{self, ContentError};
+use crate::content::{self, ContentError, FileRef, distinct_ids};
 use access::{AccessError, Actor};
 
 #[derive(Debug, thiserror::Error)]
@@ -23,8 +25,7 @@ pub enum FileError {
     /// The owner takes no more files now (an archived course).
     #[error("{0}")]
     Conflict(&'static str),
-    /// The file does not exist, or belongs to someone else's item or submission, or was uploaded
-    /// by another user and is not on this owner yet.
+    /// Removed with `ensure_usable` once content and assessment check in the flows (tasks 4, 5).
     #[error("the file {id} cannot be used here")]
     Unusable { id: Uuid },
     #[error("the file is larger than the allowed size")]
@@ -153,12 +154,61 @@ pub async fn open_for_read(
     Err(FileError::NotFound)
 }
 
-/// May a document or submission of `owner` name each of `ids`? Yes if the file already belongs to
-/// this owner (whoever else holds it too, as after copying a course), or the actor uploaded it and
-/// nothing references it yet, or, for a submission, only the actor's own earlier attempts on the
-/// same assignment hold it (a resubmission). Anything else, an unknown id
-/// included, is `Unusable`: a user cannot borrow the file id of someone else's work. The caller has
-/// authorized the write itself.
+/// May a document or submission of `owner` name the files of `refs`? The answer is plain data
+/// ([`FileVerdict`]) that the owner's `finish_*` turns into its own error, in the same
+/// transaction, after this call.
+///
+/// The named files are locked first (`files::lock`, ascending id), and only then are the
+/// references read. Whoever attaches a file locks it before checking, so two attaches of one
+/// upload run one after the other: the second one reads the first one's reference and is refused.
+/// The locks last until the caller's transaction ends, which is after its `finish_*` has written
+/// the new references.
+///
+/// A file is usable if it already belongs to this owner (whoever else holds it too, as after
+/// copying a course), or the actor uploaded it and nothing references it yet, or, for a
+/// submission, only the actor's own earlier attempts on the same assignment hold it (a
+/// resubmission). Anything else, an unknown id included, is unusable: a user cannot borrow the
+/// file id of someone else's work. `unusable` is the first such file in the order of `refs`;
+/// `not_image` the first file named by an image block whose stored type (the one the server
+/// detected at upload, never the client's claim) is not an image. The caller has authorized the
+/// write itself.
+pub async fn check(
+    conn: &mut PgConnection,
+    user_id: Uuid,
+    owner: &UsageOwner,
+    refs: &[FileRef],
+) -> Result<FileVerdict, FileError> {
+    let ids = distinct_ids(refs);
+    let rows: BTreeMap<Uuid, File> = files::lock(conn, &ids)
+        .await?
+        .into_iter()
+        .map(|file| (file.id, file))
+        .collect();
+    let mut verdict = FileVerdict::default();
+    for id in ids {
+        let usable = match rows.get(&id) {
+            Some(file) => may_name(conn, user_id, owner, file).await?,
+            None => false,
+        };
+        if !usable {
+            verdict.unusable = Some(id);
+            break;
+        }
+    }
+    verdict.not_image = refs
+        .iter()
+        .filter(|file| file.image)
+        .find(|file| {
+            rows.get(&file.id)
+                .is_some_and(|row| !files::is_image(&row.mime))
+        })
+        .map(|file| file.id);
+    verdict.names = rows.into_iter().map(|(id, file)| (id, file.name)).collect();
+    Ok(verdict)
+}
+
+/// The old, unlocked form of [`check`], for the callers that move in tasks 4 and 5 (deleted
+/// there): the same rules, one file at a time, no lock.
 pub async fn ensure_usable(
     conn: &mut PgConnection,
     user_id: Uuid,
@@ -169,22 +219,44 @@ pub async fn ensure_usable(
         let file = files::get(conn, id)
             .await?
             .ok_or(FileError::Unusable { id })?;
-        let items = repo::item_references(conn, id).await?;
-        let submissions = repo::submission_references(conn, id).await?;
-        let usable = if items.is_empty() && submissions.is_empty() {
-            file.uploaded_by == user_id
-        } else {
-            let held_here = match *owner {
-                UsageOwner::Item(item_id) => items.iter().any(|r| r.item_id == item_id),
-                UsageOwner::Submission { id, .. } => submissions.contains(&id),
-            };
-            held_here || held_by_own_attempts(conn, user_id, owner, &items, &submissions).await?
-        };
-        if !usable {
+        if !may_name(conn, user_id, owner, &file).await? {
             return Err(FileError::Unusable { id });
         }
     }
     Ok(())
+}
+
+/// The old form of the image check, deleted with [`ensure_usable`].
+pub async fn first_non_image(
+    conn: &mut PgConnection,
+    ids: &[Uuid],
+) -> Result<Option<Uuid>, FileError> {
+    for &id in ids {
+        match files::get(conn, id).await? {
+            Some(file) if files::is_image(&file.mime) => {}
+            _ => return Ok(Some(id)),
+        }
+    }
+    Ok(None)
+}
+
+/// Rules 1 to 3 for one locked file.
+async fn may_name(
+    conn: &mut PgConnection,
+    user_id: Uuid,
+    owner: &UsageOwner,
+    file: &File,
+) -> Result<bool, FileError> {
+    let items = repo::item_references(conn, file.id).await?;
+    let submissions = repo::submission_references(conn, file.id).await?;
+    if items.is_empty() && submissions.is_empty() {
+        return Ok(file.uploaded_by == user_id);
+    }
+    let held_here = match *owner {
+        UsageOwner::Item(item_id) => items.iter().any(|r| r.item_id == item_id),
+        UsageOwner::Submission { id, .. } => submissions.contains(&id),
+    };
+    Ok(held_here || held_by_own_attempts(conn, user_id, owner, &items, &submissions).await?)
 }
 
 /// A resubmission starts from the earlier answer, so a new draft may name a file that only the
@@ -205,25 +277,6 @@ async fn held_by_own_attempts(
     }
     let own = repo::count_own_rows_on(conn, submissions, assignment_id, user_id).await?;
     Ok(usize::try_from(own).is_ok_and(|own| own == submissions.len()))
-}
-
-/// The types an `image` block may name: the server-detected type of the stored file.
-const IMAGE_MIMES: [&str; 4] = ["image/png", "image/jpeg", "image/gif", "image/webp"];
-
-/// The first of `ids` that is not a PNG, JPEG, GIF or WebP file (an unknown id counts), or `None`.
-/// Called after [`ensure_usable`], so the files exist; the type is the one the server detected at
-/// upload, never the client's claim.
-pub async fn first_non_image(
-    conn: &mut PgConnection,
-    ids: &[Uuid],
-) -> Result<Option<Uuid>, FileError> {
-    for &id in ids {
-        match files::get(conn, id).await? {
-            Some(file) if IMAGE_MIMES.contains(&file.mime.as_str()) => {}
-            _ => return Ok(Some(id)),
-        }
-    }
-    Ok(None)
 }
 
 #[cfg(test)]

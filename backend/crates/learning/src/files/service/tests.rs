@@ -460,59 +460,75 @@ async fn any_referencing_row_that_grants_access_is_enough() {
     .await;
 }
 
-async fn usable(
+fn plain(ids: &[Uuid]) -> Vec<content::FileRef> {
+    ids.iter()
+        .enumerate()
+        .map(|(index, &id)| content::FileRef {
+            id,
+            path: format!("body.blocks[{index}]"),
+            image: false,
+        })
+        .collect()
+}
+
+/// What `check` answers for `actor` naming `refs` on `owner`.
+async fn verdict(
     f: &Fixture,
     actor: &Actor,
     owner: UsageOwner,
-    ids: &[Uuid],
-) -> Result<(), FileError> {
+    refs: &[content::FileRef],
+) -> files::FileVerdict {
     let mut conn = f.pool.acquire().await.unwrap();
-    ensure_usable(&mut conn, actor.user_id(), &owner, ids).await
+    check(&mut conn, actor.user_id(), &owner, refs)
+        .await
+        .unwrap()
+}
+
+/// The first file `check` refuses, or `None` when the owner may name them all.
+async fn refused(f: &Fixture, actor: &Actor, owner: UsageOwner, ids: &[Uuid]) -> Option<Uuid> {
+    verdict(f, actor, owner, &plain(ids)).await.unusable
 }
 
 #[tokio::test]
-async fn ensure_usable_accepts_own_unreferenced_upload() {
+async fn check_accepts_own_unreferenced_upload() {
     db_test(async |pool| {
         let f = fixture(pool).await;
         let id = file(&f.pool, &f.owner).await;
-        usable(&f, &f.owner, UsageOwner::Item(f.lesson), &[id])
-            .await
-            .unwrap();
-        usable(&f, &f.owner, UsageOwner::Item(f.lesson), &[])
-            .await
-            .unwrap();
+        assert_eq!(
+            refused(&f, &f.owner, UsageOwner::Item(f.lesson), &[id]).await,
+            None
+        );
+        assert_eq!(
+            refused(&f, &f.owner, UsageOwner::Item(f.lesson), &[]).await,
+            None
+        );
         // Someone else's unreferenced upload is not theirs to name.
-        let error = usable(&f, &f.stranger, UsageOwner::Item(f.lesson), &[id])
-            .await
-            .unwrap_err();
-        assert!(matches!(error, FileError::Unusable { id: bad } if bad == id));
+        assert_eq!(
+            refused(&f, &f.stranger, UsageOwner::Item(f.lesson), &[id]).await,
+            Some(id)
+        );
     })
     .await;
 }
 
 #[tokio::test]
-async fn ensure_usable_accepts_file_already_on_this_owner() {
+async fn check_accepts_file_already_on_this_owner() {
     db_test(async |pool| {
         let f = fixture(pool).await;
         let id = file(&f.pool, &f.owner).await;
         item_names(&f.pool, f.lesson, false, id).await;
         // Another editor of the same item may keep naming it.
-        usable(&f, &f.stranger, UsageOwner::Item(f.lesson), &[id])
-            .await
-            .unwrap();
+        assert_eq!(
+            refused(&f, &f.stranger, UsageOwner::Item(f.lesson), &[id]).await,
+            None
+        );
         let theirs = file(&f.pool, &f.student).await;
         let submission = draft_naming(&f, theirs).await;
-        usable(
-            &f,
-            &f.student,
-            UsageOwner::Submission {
-                id: submission,
-                assignment_id: f.assignment,
-            },
-            &[theirs],
-        )
-        .await
-        .unwrap();
+        let owner = UsageOwner::Submission {
+            id: submission,
+            assignment_id: f.assignment,
+        };
+        assert_eq!(refused(&f, &f.student, owner, &[theirs]).await, None);
     })
     .await;
 }
@@ -525,64 +541,128 @@ async fn a_file_also_held_by_another_owner_is_still_usable_by_an_owner_that_hold
         item_names(&f.pool, f.lesson, false, id).await;
         item_names(&f.pool, f.assignment, false, id).await;
         // Each of the two holders may keep naming the file, though the other one holds it too.
-        usable(&f, &f.owner, UsageOwner::Item(f.lesson), &[id])
-            .await
-            .unwrap();
-        usable(&f, &f.owner, UsageOwner::Item(f.assignment), &[id])
-            .await
-            .unwrap();
+        assert_eq!(
+            refused(&f, &f.owner, UsageOwner::Item(f.lesson), &[id]).await,
+            None
+        );
+        assert_eq!(
+            refused(&f, &f.owner, UsageOwner::Item(f.assignment), &[id]).await,
+            None
+        );
         // An owner that does not hold it still cannot borrow it, even as the uploader.
         let stranger_submission = UsageOwner::Submission {
             id: Uuid::now_v7(),
             assignment_id: f.assignment,
         };
-        let error = usable(&f, &f.owner, stranger_submission, &[id])
-            .await
-            .unwrap_err();
-        assert!(matches!(error, FileError::Unusable { id: bad } if bad == id));
+        assert_eq!(
+            refused(&f, &f.owner, stranger_submission, &[id]).await,
+            Some(id)
+        );
     })
     .await;
 }
 
 #[tokio::test]
-async fn ensure_usable_rejects_file_of_another_owner_and_unknown_id() {
+async fn check_rejects_file_of_another_owner_and_unknown_id() {
     db_test(async |pool| {
         let f = fixture(pool).await;
         let mine = file(&f.pool, &f.student).await;
         let submission = draft_naming(&f, mine).await;
         // The student cannot hang the same file on a lesson, and a teacher cannot hang it on
         // another item or on the classmate's submission, though they would pass as uploader.
-        let on_lesson = usable(&f, &f.student, UsageOwner::Item(f.lesson), &[mine]).await;
-        assert!(matches!(on_lesson, Err(FileError::Unusable { id }) if id == mine));
+        assert_eq!(
+            refused(&f, &f.student, UsageOwner::Item(f.lesson), &[mine]).await,
+            Some(mine)
+        );
         let other = file(&f.pool, &f.owner).await;
         item_names(&f.pool, f.lesson, false, other).await;
-        let on_assignment = usable(&f, &f.owner, UsageOwner::Item(f.assignment), &[other]).await;
-        assert!(matches!(on_assignment, Err(FileError::Unusable { id }) if id == other));
-        let on_submission = usable(
-            &f,
-            &f.owner,
-            UsageOwner::Submission {
-                id: submission,
-                assignment_id: f.assignment,
-            },
-            &[other],
-        )
-        .await;
-        assert!(matches!(on_submission, Err(FileError::Unusable { id }) if id == other));
+        assert_eq!(
+            refused(&f, &f.owner, UsageOwner::Item(f.assignment), &[other]).await,
+            Some(other)
+        );
+        let on_submission = UsageOwner::Submission {
+            id: submission,
+            assignment_id: f.assignment,
+        };
+        assert_eq!(
+            refused(&f, &f.owner, on_submission, &[other]).await,
+            Some(other)
+        );
         // Unknown id; and the first bad id of a list is the one reported.
         let unknown = Uuid::now_v7();
-        let error = usable(
-            &f,
-            &f.student,
-            UsageOwner::Submission {
-                id: submission,
-                assignment_id: f.assignment,
-            },
-            &[mine, unknown],
+        assert_eq!(
+            refused(&f, &f.student, on_submission, &[mine, unknown]).await,
+            Some(unknown)
+        );
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn check_names_the_first_unusable_file_in_the_order_given() {
+    db_test(async |pool| {
+        let f = fixture(pool).await;
+        let (first, second) = (
+            file(&f.pool, &f.student).await,
+            file(&f.pool, &f.student).await,
+        );
+        let (low, high) = (first.min(second), first.max(second));
+        // Neither is the owner's: both are refused, and the answer follows the order of the
+        // references, not the order of the file ids the locks were taken in.
+        let owner = UsageOwner::Item(f.lesson);
+        assert_eq!(refused(&f, &f.owner, owner, &[high, low]).await, Some(high));
+        assert_eq!(refused(&f, &f.owner, owner, &[low, high]).await, Some(low));
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn check_names_a_non_image_and_returns_every_name() {
+    db_test(async |pool| {
+        let f = fixture(pool).await;
+        let text = file(&f.pool, &f.owner).await; // "a.txt", text/plain
+        let image = file(&f.pool, &f.owner).await;
+        sqlx::query!(
+            "UPDATE files.files SET mime = 'image/png', name = 'p.png' WHERE id = $1",
+            image
         )
+        .execute(&f.pool)
         .await
-        .unwrap_err();
-        assert!(matches!(error, FileError::Unusable { id } if id == unknown));
+        .unwrap();
+        let unknown = Uuid::now_v7();
+        let refs = |ids: &[(Uuid, bool)]| -> Vec<content::FileRef> {
+            ids.iter()
+                .enumerate()
+                .map(|(index, &(id, image))| content::FileRef {
+                    id,
+                    path: format!("body.blocks[{index}]"),
+                    image,
+                })
+                .collect()
+        };
+
+        let answer = verdict(
+            &f,
+            &f.owner,
+            UsageOwner::Item(f.lesson),
+            &refs(&[(image, true), (text, true)]),
+        )
+        .await;
+        assert_eq!(answer.unusable, None);
+        assert_eq!(answer.not_image, Some(text));
+        assert_eq!(answer.names.get(&image).map(String::as_str), Some("p.png"));
+        assert_eq!(answer.names.get(&text).map(String::as_str), Some("a.txt"));
+
+        // An unknown id is unusable, and it has no name.
+        let answer = verdict(
+            &f,
+            &f.owner,
+            UsageOwner::Item(f.lesson),
+            &refs(&[(unknown, true)]),
+        )
+        .await;
+        assert_eq!(answer.unusable, Some(unknown));
+        assert!(answer.names.is_empty());
     })
     .await;
 }
@@ -667,17 +747,14 @@ async fn a_draft_cannot_name_a_file_of_another_students_attempt_or_of_another_as
             .unwrap();
         let mine = file(&f.pool, &f.student).await;
         let draft = draft_naming(&f, mine).await;
-        let refused = usable(
-            &f,
-            &f.student,
-            UsageOwner::Submission {
-                id: draft,
-                assignment_id: f.assignment,
-            },
-            &[theirs],
-        )
-        .await;
-        assert!(matches!(refused, Err(FileError::Unusable { id }) if id == theirs));
+        let on_draft = UsageOwner::Submission {
+            id: draft,
+            assignment_id: f.assignment,
+        };
+        assert_eq!(
+            refused(&f, &f.student, on_draft, &[theirs]).await,
+            Some(theirs)
+        );
         // The same through the draft: nothing is saved and the file stays the classmate's.
         let error = save_draft_naming(&f, &f.student, f.assignment, theirs)
             .await
@@ -728,17 +805,10 @@ async fn a_draft_cannot_name_a_file_of_another_students_attempt_or_of_another_as
         save_draft_naming(&f, &f.student, other.id, elsewhere)
             .await
             .unwrap();
-        let refused = usable(
-            &f,
-            &f.student,
-            UsageOwner::Submission {
-                id: draft,
-                assignment_id: f.assignment,
-            },
-            &[elsewhere],
-        )
-        .await;
-        assert!(matches!(refused, Err(FileError::Unusable { id }) if id == elsewhere));
+        assert_eq!(
+            refused(&f, &f.student, on_draft, &[elsewhere]).await,
+            Some(elsewhere)
+        );
     })
     .await;
 }
@@ -763,43 +833,20 @@ async fn a_file_held_by_an_item_is_not_usable_by_a_draft_even_next_to_an_own_att
                 .last()
                 .unwrap()
         };
-        usable(
-            &f,
-            &f.student,
-            UsageOwner::Submission {
-                id: draft,
-                assignment_id: f.assignment,
-            },
-            &[id],
-        )
-        .await
-        .unwrap();
+        let on_draft = UsageOwner::Submission {
+            id: draft,
+            assignment_id: f.assignment,
+        };
+        assert_eq!(refused(&f, &f.student, on_draft, &[id]).await, None);
         // An item now holds the file as well: the earlier attempt no longer makes it the student's.
         item_names(&f.pool, f.lesson, false, id).await;
-        let refused = usable(
-            &f,
-            &f.student,
-            UsageOwner::Submission {
-                id: draft,
-                assignment_id: f.assignment,
-            },
-            &[id],
-        )
-        .await;
-        assert!(matches!(refused, Err(FileError::Unusable { id: bad }) if bad == id));
+        assert_eq!(refused(&f, &f.student, on_draft, &[id]).await, Some(id));
         let only_item = file(&f.pool, &f.owner).await;
         item_names(&f.pool, f.lesson, true, only_item).await;
-        let refused = usable(
-            &f,
-            &f.student,
-            UsageOwner::Submission {
-                id: draft,
-                assignment_id: f.assignment,
-            },
-            &[only_item],
-        )
-        .await;
-        assert!(matches!(refused, Err(FileError::Unusable { id: bad }) if bad == only_item));
+        assert_eq!(
+            refused(&f, &f.student, on_draft, &[only_item]).await,
+            Some(only_item)
+        );
     })
     .await;
 }
