@@ -1269,42 +1269,6 @@ pub async fn staff_counts(
         .collect())
 }
 
-/// Takes the transaction-scoped advisory lock that serializes writes to a course's points
-/// (ADR-0022), waiting for the holder to commit or roll back. It is released at the end of the
-/// transaction. The course id is hashed into the lock key; two courses that collide only wait for
-/// each other. Callers read the sum in a later statement, so READ COMMITTED sees the holder's rows.
-pub async fn lock_course_points(
-    conn: &mut PgConnection,
-    course_id: Uuid,
-) -> Result<(), sqlx::Error> {
-    sqlx::query!(
-        r#"SELECT pg_advisory_xact_lock(hashtextextended('content.points:' || $1::uuid::text, 0)) AS "locked!: ()""#,
-        course_id
-    )
-    .fetch_one(conn)
-    .await?;
-    Ok(())
-}
-
-/// The sum of `max_points` over the course's regular (not bonus) assignments, drafts included.
-/// `except` leaves one assignment out: the one being changed.
-pub async fn regular_points(
-    conn: &mut PgConnection,
-    course_id: Uuid,
-    except: Option<Uuid>,
-) -> Result<Decimal, sqlx::Error> {
-    sqlx::query_scalar!(
-        r#"SELECT COALESCE(sum(a.max_points), 0) AS "sum!"
-           FROM content.assignments a
-           JOIN content.items i ON i.id = a.item_id
-           WHERE i.course_id = $1 AND NOT a.is_bonus AND a.item_id IS DISTINCT FROM $2::uuid"#,
-        course_id,
-        except
-    )
-    .fetch_one(conn)
-    .await
-}
-
 /// Makes `ids` exactly the files the working (`published = false`) or the published copy of the
 /// item names (ADR-0069). The caller is the service that writes the body, in the same transaction.
 pub async fn replace_item_files(
@@ -1331,20 +1295,4 @@ pub async fn replace_item_files(
     .execute(conn)
     .await?;
     Ok(())
-}
-
-/// How many sessions of this database wait for an advisory lock. Tests poll it to know that a
-/// writer is blocked behind another one, instead of sleeping and hoping.
-///
-/// A plain runtime query: it reads a system view, not our schema, so there is nothing for sqlx to
-/// check.
-#[cfg(test)]
-pub async fn advisory_lock_waiters(conn: &mut PgConnection) -> Result<i64, sqlx::Error> {
-    sqlx::query_scalar::<_, i64>(
-        "SELECT count(*) FROM pg_locks
-         WHERE locktype = 'advisory' AND NOT granted
-           AND database = (SELECT oid FROM pg_database WHERE datname = current_database())",
-    )
-    .fetch_one(conn)
-    .await
 }

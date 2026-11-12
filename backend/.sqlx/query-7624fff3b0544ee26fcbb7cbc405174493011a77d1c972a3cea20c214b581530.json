@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO gradebook.group_items (assignment_id, group_id)\n             SELECT id, $2 FROM unnest($1::uuid[]) AS id",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "UuidArray",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "7624fff3b0544ee26fcbb7cbc405174493011a77d1c972a3cea20c214b581530"
+}

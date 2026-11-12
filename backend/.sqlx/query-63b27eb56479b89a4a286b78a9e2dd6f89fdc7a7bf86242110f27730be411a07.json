@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT count(*) AS \"count!\" FROM content.assignments a\n           JOIN content.items i ON i.id = a.item_id\n           WHERE i.course_id = $1 AND a.item_id = ANY($2)",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "count!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "UuidArray"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "63b27eb56479b89a4a286b78a9e2dd6f89fdc7a7bf86242110f27730be411a07"
+}

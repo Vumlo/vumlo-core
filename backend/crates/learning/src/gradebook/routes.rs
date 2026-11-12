@@ -25,12 +25,15 @@ use access::Actor;
 use common::PageParams;
 use common::{ApiError, ValidJson, ValidQuery};
 
+mod groups;
+
 pub fn router<S>() -> OpenApiRouter<S>
 where
     S: ActorSource + Clone + 'static,
     LearningState: FromRef<S>,
 {
     OpenApiRouter::new()
+        .merge(groups::router())
         .routes(routes!(save_grade))
         .routes(routes!(publish_grades))
         .routes(routes!(get_gradebook))
@@ -68,6 +71,13 @@ impl From<GradebookError> for ApiError {
             },
             GradebookError::Teaching(e) => e.into(),
             GradebookError::HasGrades => Self::Conflict("this has grades"),
+            GradebookError::NoSuchGroup => Self::NotFound,
+            GradebookError::WrongLayout => {
+                Self::Conflict("assignments can be placed only in the custom layout")
+            }
+            GradebookError::TwelveScale => {
+                Self::Conflict("the twelve-point scale has no course total")
+            }
             GradebookError::StudentFormer => {
                 Self::Conflict("the student is no longer on the roster, their grades are read-only")
             }
@@ -96,6 +106,17 @@ fn api_status(status: ColumnStatus) -> api_types::ContentStatus {
     match status {
         ColumnStatus::Draft => api_types::ContentStatus::Draft,
         ColumnStatus::Published => api_types::ContentStatus::Published,
+    }
+}
+
+fn api_column(column: model::Column) -> GradebookColumn {
+    GradebookColumn {
+        assignment_id: column.assignment_id,
+        title: column.title,
+        max_points: points(column.max_points),
+        is_bonus: column.is_bonus,
+        status: api_status(column.status),
+        group: column.group,
     }
 }
 
@@ -229,19 +250,10 @@ async fn get_gradebook(
         .execute(&mut *tx)
         .await
         .map_err(GradebookError::from)?;
-    let result = service::gradebook(&mut tx, &actor, course_id, page).await?;
+    let with_totals = state.config.institution.grading_scale == vumlo_config::GradingScale::Hundred;
+    let result = service::gradebook(&mut tx, &actor, with_totals, course_id, page).await?;
     Ok(Json(GradebookPage {
-        columns: result
-            .columns
-            .into_iter()
-            .map(|column| GradebookColumn {
-                assignment_id: column.assignment_id,
-                title: column.title,
-                max_points: points(column.max_points),
-                is_bonus: column.is_bonus,
-                status: api_status(column.status),
-            })
-            .collect(),
+        columns: result.columns.into_iter().map(api_column).collect(),
         items: result
             .rows
             .into_iter()
@@ -258,8 +270,10 @@ async fn get_gradebook(
                         cell: api_cell(cell),
                     })
                     .collect(),
+                totals: row.totals.map(groups::api_totals),
             })
             .collect(),
+        layout: result.layout.map(groups::api_layout_view),
         next_cursor: result.next.map(|id| id.to_string()),
     }))
 }

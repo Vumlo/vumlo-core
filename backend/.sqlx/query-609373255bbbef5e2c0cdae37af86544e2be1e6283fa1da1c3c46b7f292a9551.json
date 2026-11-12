@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT EXISTS (SELECT 1 FROM content.modules\n                          WHERE id = $1 AND course_id = $2 AND parent_id IS NULL) AS \"top!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "top!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "609373255bbbef5e2c0cdae37af86544e2be1e6283fa1da1c3c46b7f292a9551"
+}

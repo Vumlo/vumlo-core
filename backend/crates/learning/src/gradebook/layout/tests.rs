@@ -72,10 +72,11 @@ fn linear_algebra_adds_up_to_the_total_the_teacher_sees() {
     ];
     let mut entries = Vec::new();
     let mut n = 0u128;
-    let mut add = |entries: &mut Vec<Entry>, max: &str, score: Option<&str>, group: Option<Uuid>| {
-        n += 1;
-        entries.push(entry(n, max, score, group));
-    };
+    let mut add =
+        |entries: &mut Vec<Entry>, max: &str, score: Option<&str>, group: Option<Uuid>| {
+            n += 1;
+            entries.push(entry(n, max, score, group));
+        };
     // 13 seminars worth 2 each: 26 reachable, capped at 15; seminar 13 is empty.
     for score in [
         Some("0.89"),
@@ -203,7 +204,10 @@ fn bonus_points_add_to_the_total_and_not_to_what_is_possible() {
 
 #[test]
 fn the_total_never_passes_the_target_but_the_raw_sum_is_kept() {
-    let entries = vec![entry(1, "100", Some("100"), None), bonus(entry(2, "5", Some("5"), None))];
+    let entries = vec![
+        entry(1, "100", Some("100"), None),
+        bonus(entry(2, "5", Some("5"), None)),
+    ];
     let outcome = compute(&Settings::default(), &[], &entries);
     assert_eq!(outcome.total, d("100"));
     assert_eq!(outcome.raw_total, d("105"));
@@ -238,7 +242,10 @@ fn best_k_larger_than_the_group_counts_everything() {
         best_k: Some(5),
         ..GroupDef::plain(key, "Homework")
     }];
-    let entries = vec![entry(1, "5", Some("5"), Some(key)), entry(2, "5", Some("1"), Some(key))];
+    let entries = vec![
+        entry(1, "5", Some("5"), Some(key)),
+        entry(2, "5", Some("1"), Some(key)),
+    ];
     let outcome = compute(&custom(), &groups, &entries);
     assert_eq!(group_of(&outcome, key).total, d("6"));
     assert!(group_of(&outcome, key).dropped.is_empty());
@@ -269,7 +276,10 @@ fn a_practice_group_counts_for_nothing_but_keeps_its_assignments() {
         counts: false,
         ..GroupDef::plain(key, "Quizzes")
     }];
-    let entries = vec![entry(1, "1", Some("1"), Some(key)), entry(2, "10", Some("7"), None)];
+    let entries = vec![
+        entry(1, "1", Some("1"), Some(key)),
+        entry(2, "10", Some("7"), None),
+    ];
     let outcome = compute(&custom(), &groups, &entries);
     assert_eq!(outcome.total, d("7"));
     assert_eq!(outcome.possible, d("10"));
@@ -283,7 +293,10 @@ fn a_bonus_group_adds_to_the_total_only() {
         bonus: true,
         ..GroupDef::plain(key, "Extra")
     }];
-    let entries = vec![entry(1, "10", Some("4"), Some(key)), entry(2, "90", Some("50"), None)];
+    let entries = vec![
+        entry(1, "10", Some("4"), Some(key)),
+        entry(2, "90", Some("50"), None),
+    ];
     let outcome = compute(&custom(), &groups, &entries);
     assert_eq!(outcome.total, d("54"));
     assert_eq!(outcome.possible, d("90"));

@@ -212,7 +212,10 @@ pub fn compute(settings: &Settings, groups: &[GroupDef], entries: &[Entry]) -> O
     }
     let loose: Vec<&Entry> = entries
         .iter()
-        .filter(|e| !e.group.is_some_and(|key| groups.iter().any(|g| g.key == key)))
+        .filter(|e| {
+            !e.group
+                .is_some_and(|key| groups.iter().any(|g| g.key == key))
+        })
         .collect();
     if !loose.is_empty() {
         results.push(result_of(None, &loose));
@@ -247,7 +250,10 @@ pub fn setup(settings: &Settings, groups: &[GroupDef], entries: &[Entry]) -> Set
     let unsorted = if settings.layout == Layout::Custom {
         entries
             .iter()
-            .filter(|e| !e.group.is_some_and(|key| groups.iter().any(|g| g.key == key)))
+            .filter(|e| {
+                !e.group
+                    .is_some_and(|key| groups.iter().any(|g| g.key == key))
+            })
             .count() as u32
     } else {
         0
@@ -277,10 +283,15 @@ pub struct Suggestion {
 /// "Lab 1: Matrices" are both "Lab").
 fn stem(title: &str) -> String {
     let head = title.split(':').next().unwrap_or(title);
-    let head = head.split(|c: char| c.is_ascii_digit()).next().unwrap_or(head);
-    head.trim_end_matches(|c: char| c.is_whitespace() || matches!(c, '.' | '-' | '_' | '/' | '#' | '№'))
-        .trim()
-        .to_owned()
+    let head = head
+        .split(|c: char| c.is_ascii_digit())
+        .next()
+        .unwrap_or(head);
+    head.trim_end_matches(|c: char| {
+        c.is_whitespace() || matches!(c, '.' | '-' | '_' | '/' | '#' | '№')
+    })
+    .trim()
+    .to_owned()
 }
 
 /// Groups of at least two assignments whose titles share a stem, in the order the first of each

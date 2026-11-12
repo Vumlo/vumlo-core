@@ -259,6 +259,7 @@ impl Fixture {
         let page = gradebook(
             &mut conn,
             &self.owner,
+            true,
             self.course,
             PageParams::new(None, None).unwrap(),
         )

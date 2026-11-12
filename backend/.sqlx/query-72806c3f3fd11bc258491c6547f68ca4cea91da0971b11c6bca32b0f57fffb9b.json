@@ -1,0 +1,20 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO gradebook.groups (id, course_id, module_id, cap, best_k, counts, bonus)\n           VALUES ($1, $2, $3, $4, $5, $6, $7)\n           ON CONFLICT (module_id) WHERE module_id IS NOT NULL\n           DO UPDATE SET cap = $4, best_k = $5, counts = $6, bonus = $7",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Numeric",
+        "Int4",
+        "Bool",
+        "Bool"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "72806c3f3fd11bc258491c6547f68ca4cea91da0971b11c6bca32b0f57fffb9b"
+}

@@ -1,0 +1,19 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE gradebook.groups\n           SET title = COALESCE($2, title), cap = $3, best_k = $4, counts = $5, bonus = $6\n           WHERE id = $1 AND module_id IS NULL",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Numeric",
+        "Int4",
+        "Bool",
+        "Bool"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "1486e6b08e19c9b8bd25b7d7770e11ca67d9831912bd70371f51555b06b116c3"
+}
