@@ -20,7 +20,7 @@ pub use admin::{
 pub use announcements::{
     delete_announcement, list_announcements, publish_announcement, update_announcement,
 };
-pub use cards::{course_cards, course_scope, student_courses};
+pub use cards::{course_scope, student_courses};
 pub use info::{
     archive_course, course_candidates, course_info, course_people, create_from_template,
     delete_course, list_templates, make_template, restore_course, update_course_info,

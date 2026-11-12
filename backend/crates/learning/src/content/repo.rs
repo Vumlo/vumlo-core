@@ -9,9 +9,9 @@ use uuid::Uuid;
 use sqlx::types::Decimal;
 
 use super::model::{
-    Access, Assignment, AssignmentSummary, BuiltinType, FactScope, Item, ItemKind, ItemStatus,
-    ItemSummary, MaxPoints, Module, ModuleStatus, OnDeadline, OpenAssignment, PublishedSlot,
-    SourceFact, SubmissionSettings,
+    Access, Assignment, AssignmentSummary, BuiltinType, DraftItem, FactScope, Item, ItemKind,
+    ItemStatus, ItemSummary, MaxPoints, Module, ModuleStatus, NextDeadline, OnDeadline,
+    OpenAssignment, PublishedSlot, SourceFact, SubmissionSettings,
 };
 use super::rules::{Condition, Facts, Node, Rules};
 use access::Release;
@@ -1281,6 +1281,61 @@ pub async fn open_assignments(
     )
     .fetch_all(conn)
     .await
+}
+
+/// Items that are drafts inside published modules, newest change first.
+pub async fn draft_items(
+    conn: &mut PgConnection,
+    course_ids: &[Uuid],
+) -> Result<Vec<DraftItem>, sqlx::Error> {
+    let rows = sqlx::query!(
+        r#"SELECT i.course_id, i.title
+           FROM content.items i
+           JOIN content.modules m ON m.id = i.module_id
+           LEFT JOIN content.modules p ON p.id = m.parent_id
+           WHERE i.course_id = ANY($1) AND i.status = 'draft' AND m.status = 'published'
+             AND (p.id IS NULL OR p.status = 'published')
+           ORDER BY i.updated_at DESC, i.id"#,
+        course_ids
+    )
+    .fetch_all(conn)
+    .await?;
+    Ok(rows
+        .into_iter()
+        .map(|row| DraftItem {
+            course_id: row.course_id,
+            title: row.title,
+        })
+        .collect())
+}
+
+/// The earliest deadline from `now` on, per course, of any assignment.
+pub async fn next_deadlines(
+    conn: &mut PgConnection,
+    course_ids: &[Uuid],
+    now: DateTime<Utc>,
+) -> Result<Vec<NextDeadline>, sqlx::Error> {
+    let rows = sqlx::query!(
+        r#"SELECT DISTINCT ON (i.course_id) i.course_id, a.item_id AS assignment_id,
+                  i.title, a.due_at AS "due_at!"
+           FROM content.assignments a
+           JOIN content.items i ON i.id = a.item_id
+           WHERE i.course_id = ANY($1) AND a.due_at >= $2
+           ORDER BY i.course_id, a.due_at"#,
+        course_ids,
+        now
+    )
+    .fetch_all(conn)
+    .await?;
+    Ok(rows
+        .into_iter()
+        .map(|row| NextDeadline {
+            course_id: row.course_id,
+            assignment_id: row.assignment_id,
+            title: row.title,
+            due_at: row.due_at,
+        })
+        .collect())
 }
 
 /// Makes `ids` exactly the files the working (`published = false`) or the published copy of the

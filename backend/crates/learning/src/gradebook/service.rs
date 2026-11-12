@@ -39,7 +39,7 @@ pub use groups::{
     GroupInput, SettingsPatch, create_group, delete_group, my_summary, place, save_group,
     structure, update_settings,
 };
-pub use work::{item_meta, my_work};
+pub use work::{item_meta, my_work, student_next, student_progress, todo_counts};
 
 #[derive(Debug, thiserror::Error)]
 pub enum GradebookError {

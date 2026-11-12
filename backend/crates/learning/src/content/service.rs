@@ -20,9 +20,10 @@ use super::document::{
 };
 use super::model::{
     Access, Assignment, AssignmentType, BuiltinType, ContentModule, ContentSubModule, ContentTitle,
-    FactScope, Hit, HitKind, Item, ItemFacts, ItemKind, ItemPatch, ItemStatus, ItemSummary,
-    MaxPoints, ModelError, Module, ModulePatch, OnDeadline, OpenAssignment, OpenedAssignment,
-    Revision, SettingProblem, SettingsPatch, SourceFact, Standing,
+    DraftItem, FactScope, Hit, HitKind, Item, ItemFacts, ItemKind, ItemPatch, ItemStatus,
+    ItemSummary, MaxPoints, ModelError, Module, ModulePatch, NextDeadline, OnDeadline,
+    OpenAssignment, OpenedAssignment, Revision, SettingProblem, SettingsPatch, SourceFact,
+    Standing,
 };
 use super::repo::{self, CopiedIds, ItemRow, ModuleRow};
 use super::rules::Node;
@@ -1355,6 +1356,25 @@ pub async fn open_assignments(
     now: DateTime<Utc>,
 ) -> Result<Vec<OpenAssignment>, ContentError> {
     Ok(repo::open_assignments(conn, course_ids, now).await?)
+}
+
+/// The draft items inside published modules of `course_ids`, newest change first. The caller has
+/// authorized: it passes the courses the actor works in as staff.
+pub async fn draft_items(
+    conn: &mut PgConnection,
+    course_ids: &[Uuid],
+) -> Result<Vec<DraftItem>, ContentError> {
+    Ok(repo::draft_items(conn, course_ids).await?)
+}
+
+/// The earliest deadline from `now` on of any assignment, per course of `course_ids`. The caller
+/// has authorized: it passes the courses the actor works in as staff.
+pub async fn next_deadlines(
+    conn: &mut PgConnection,
+    course_ids: &[Uuid],
+    now: DateTime<Utc>,
+) -> Result<Vec<NextDeadline>, ContentError> {
+    Ok(repo::next_deadlines(conn, course_ids, now).await?)
 }
 
 const SEARCH_MIN_CHARS: usize = 2;

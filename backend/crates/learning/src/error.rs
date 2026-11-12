@@ -1,6 +1,7 @@
 use common::ApiError;
 
 use super::content::ContentError;
+use super::gradebook::GradebookError;
 use super::teaching::TeachingError;
 use access::AccessError;
 use auth::AuthError;
@@ -19,6 +20,8 @@ pub enum LearningError {
     Teaching(#[from] TeachingError),
     #[error(transparent)]
     Content(#[from] ContentError),
+    #[error(transparent)]
+    Gradebook(#[from] GradebookError),
     /// A teacher or admin cannot become a student while they own a course (ADR-0037).
     #[error("the user owns courses")]
     OwnsCourses,
@@ -34,6 +37,7 @@ impl From<LearningError> for ApiError {
             LearningError::Org(e) => e.into(),
             LearningError::Teaching(e) => e.into(),
             LearningError::Content(e) => e.into(),
+            LearningError::Gradebook(e) => e.into(),
             LearningError::OwnsCourses => {
                 Self::Conflict("the user owns courses: transfer them to someone else first")
             }

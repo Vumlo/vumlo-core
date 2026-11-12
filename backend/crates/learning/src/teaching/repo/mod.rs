@@ -19,10 +19,7 @@ pub use announcements::{
     delete as delete_announcement, find as find_announcement, insert as insert_announcement,
     list as list_announcements, update as update_announcement,
 };
-pub use cards::{
-    card_courses, staff_next_deadline, staff_todo_counts, student_next, student_progress,
-    unpublished_items,
-};
+pub use cards::card_courses;
 
 use access::{CourseRole, CourseStatus};
 use common::Role;

@@ -9,8 +9,8 @@ use sqlx::PgConnection;
 use uuid::Uuid;
 
 use super::{GradebookError, course_access};
-use crate::content;
-use crate::gradebook::model::{ItemMeta, MyWork, WorkEntry, WorkFacts};
+use crate::content::{self, NextDeadline};
+use crate::gradebook::model::{ItemMeta, MyWork, Progress, TodoCounts, WorkEntry, WorkFacts};
 use crate::gradebook::repo;
 use crate::teaching;
 use access::Actor;
@@ -51,6 +51,37 @@ pub async fn item_meta(
         }
     }
     Ok(meta)
+}
+
+/// A student's progress per course of `course_ids`, over what they can open (published values
+/// only). The caller has authorized: it passes the courses the actor studies in.
+pub async fn student_progress(
+    conn: &mut PgConnection,
+    student_id: Uuid,
+    course_ids: &[Uuid],
+    now: DateTime<Utc>,
+) -> Result<Vec<Progress>, GradebookError> {
+    Ok(repo::student_progress(conn, student_id, course_ids, now).await?)
+}
+
+/// The earliest upcoming deadline per course of `course_ids` of work the student has not handed
+/// in. The caller has authorized: it passes the courses the actor studies in.
+pub async fn student_next(
+    conn: &mut PgConnection,
+    student_id: Uuid,
+    course_ids: &[Uuid],
+    now: DateTime<Utc>,
+) -> Result<Vec<NextDeadline>, GradebookError> {
+    Ok(repo::student_next(conn, student_id, course_ids, now).await?)
+}
+
+/// What staff still have to grade per course of `course_ids`. Reads drafts: the caller has
+/// authorized and passes only the courses the actor works in as staff.
+pub async fn todo_counts(
+    conn: &mut PgConnection,
+    course_ids: &[Uuid],
+) -> Result<Vec<TodoCounts>, GradebookError> {
+    Ok(repo::todo_counts(conn, course_ids).await?)
 }
 
 /// Every assignment a student can open in their courses with their own standing on it, and the

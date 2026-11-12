@@ -908,6 +908,22 @@ pub struct OpenAssignment {
     pub max_points: MaxPoints,
 }
 
+/// The earliest deadline of a course.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NextDeadline {
+    pub course_id: Uuid,
+    pub assignment_id: Uuid,
+    pub title: String,
+    pub due_at: DateTime<Utc>,
+}
+
+/// A draft item inside a published module.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DraftItem {
+    pub course_id: Uuid,
+    pub title: String,
+}
+
 /// The facts of one item that the tree does not carry and that `content` owns (ADR-0049, point 5);
 /// the gradebook adds the standing of a student and the counts for staff.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]

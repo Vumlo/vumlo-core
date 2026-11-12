@@ -352,6 +352,25 @@ pub struct ItemMeta {
     pub staff: Option<StaffFacts>,
 }
 
+/// A student's numbers over the assignments of one course.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Progress {
+    pub course_id: Uuid,
+    pub submitted: i64,
+    pub total: i64,
+    pub graded: i64,
+}
+
+/// What staff still have to do in one course.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TodoCounts {
+    pub course_id: Uuid,
+    pub to_grade: i64,
+    pub draft_grades: i64,
+    /// Some of the draft grades are those of a quiz.
+    pub from_quizzes: bool,
+}
+
 /// A student's work list: the courses and the assignments in them (ADR-0052).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MyWork {

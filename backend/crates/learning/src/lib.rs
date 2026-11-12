@@ -5,6 +5,7 @@
 pub mod assessment;
 pub mod audit;
 pub mod content;
+pub mod courses;
 mod enrollment;
 mod error;
 pub mod facts;

@@ -3,7 +3,6 @@
 
 mod admin;
 mod announcements;
-mod cards;
 mod info;
 mod roster;
 
@@ -47,7 +46,6 @@ where
         .routes(routes!(info::get_candidates))
         .routes(routes!(transfer_ownership))
         .routes(routes!(list_my_courses))
-        .routes(routes!(cards::get_course_cards))
         .routes(routes!(admin::list_admin_courses))
         .routes(routes!(list_members))
         .routes(routes!(put_member, remove_member))
@@ -161,7 +159,8 @@ fn domain_role(role: api_types::CourseRole) -> CourseRole {
     }
 }
 
-fn api_course(course: model::Course) -> Course {
+/// A course as the API shows it; the flows above `teaching` that answer with a course use it too.
+pub fn api_course(course: model::Course) -> Course {
     Course {
         id: course.id,
         kind: api_kind(course.kind),

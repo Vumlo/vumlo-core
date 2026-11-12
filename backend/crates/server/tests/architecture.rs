@@ -138,7 +138,6 @@ const DECLARED_VIEWS: &[&str] = &[
 /// that is not a declared view, `RATCHET_CALLS` a higher `learning` module named in Rust.
 const RATCHET_UP: &[(&str, &str)] = &[
     ("teaching", "assessment.submissions"),
-    ("teaching", "content.assignments"),
     ("teaching", "content.items"),
     ("teaching", "content.modules"),
     ("teaching", "gradebook.grades"),

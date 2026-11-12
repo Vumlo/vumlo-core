@@ -1,19 +1,32 @@
-//! `GET /me/course-cards` (ADR-0052).
+//! HTTP edge of the flows over courses: `GET /me/course-cards` (ADR-0052).
 
+use access::ActorSource;
 use api_types::{
     CardNext, CardProgress, CardRole, CardTodo, CourseCard, CourseCards, ProblemDetails,
 };
 use axum::Json;
-use axum::extract::State;
+use axum::extract::{FromRef, State};
 use chrono::Utc;
+use utoipa_axum::router::OpenApiRouter;
+use utoipa_axum::routes;
 
-use super::api_course;
+use super::model::{CourseCardData, Todo};
+use super::service;
+use crate::LearningError;
 use crate::LearningState;
-use crate::teaching::model::{CourseCardData, NextDeadline, Todo};
-use crate::teaching::service::{self, TeachingError};
+use crate::content::NextDeadline;
+use crate::teaching::api_course;
 use access::Actor;
 use access::CourseRole;
 use common::ApiError;
+
+pub fn router<S>() -> OpenApiRouter<S>
+where
+    S: ActorSource + Clone + 'static,
+    LearningState: FromRef<S>,
+{
+    OpenApiRouter::new().routes(routes!(get_course_cards))
+}
 
 fn api_todo(todo: Todo) -> CardTodo {
     match todo {
@@ -90,8 +103,8 @@ pub async fn get_course_cards(
     let today = now
         .with_timezone(&state.config.institution.time_zone)
         .date_naive();
-    let mut conn = state.db.acquire().await.map_err(TeachingError::from)?;
-    let cards = service::course_cards(&mut conn, &actor, now).await?;
+    let mut conn = state.db.acquire().await.map_err(LearningError::from)?;
+    let cards = service::cards(&mut conn, &actor, now).await?;
     Ok(Json(CourseCards {
         items: cards.into_iter().map(|c| api_card(c, today)).collect(),
     }))
