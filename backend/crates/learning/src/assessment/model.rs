@@ -80,6 +80,24 @@ pub struct FormFacts {
     pub holders: Holders,
 }
 
+/// What the gradebook published for the caller on a quiz: the part of a quiz result that is not
+/// `assessment`'s to know.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PublishedScore {
+    pub score: Option<Decimal>,
+    pub feedback: Option<String>,
+    pub published_at: DateTime<Utc>,
+}
+
+/// A quiz that the caller may see the result of, with its assignment locked: the state between
+/// [`begin_quiz_result`](super::begin_quiz_result) and
+/// [`finish_quiz_result`](super::finish_quiz_result).
+#[derive(Debug)]
+pub struct QuizResultStart {
+    pub(super) assignment_id: Uuid,
+    pub(super) assignment: crate::content::Assignment,
+}
+
 /// A quiz result as the service builds it (ADR-0050 point 8).
 #[derive(Debug, Clone, PartialEq)]
 pub struct QuizResult {

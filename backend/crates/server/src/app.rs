@@ -306,6 +306,7 @@ pub fn router(state: AppState) -> Result<Router, SetupError> {
                 .merge(mail::router())
                 .merge(teaching::router())
                 .merge(learning::courses::router())
+                .merge(learning::items::router())
                 .merge(learning::people::router())
                 .merge(learning::groups::router())
                 .merge(learning::reports::router())

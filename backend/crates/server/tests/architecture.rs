@@ -158,11 +158,7 @@ const RATCHET_DOWN: &[(&str, &str)] = &[
     ("learning", "teaching.courses"),
     ("learning", "teaching.tombstones"),
 ];
-const RATCHET_CALLS: &[(&str, &str)] = &[
-    ("assessment", "gradebook"),
-    ("content", "assessment"),
-    ("content", "gradebook"),
-];
+const RATCHET_CALLS: &[(&str, &str)] = &[];
 
 /// The four modules of `learning`, lowest first.
 const MODULES: &[&str] = &["teaching", "content", "assessment", "gradebook"];

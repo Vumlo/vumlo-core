@@ -20,7 +20,7 @@ use chrono::{DateTime, Utc};
 use common::{ApiError, PageParams};
 use learning::content::{EffectiveProfiles, ItemRules};
 use learning::gradebook::ColumnStatus;
-use learning::{content, gradebook};
+use learning::{content, gradebook, items};
 use module_api::Institution;
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
@@ -501,7 +501,7 @@ async fn assignment_info(
     arguments: &str,
 ) -> Result<Value, String> {
     let AssignmentArg { assignment_id } = args(arguments)?;
-    let item = content::get_item(conn, actor, assignment_id)
+    let item = items::get(conn, actor, assignment_id)
         .await
         .map_err(|e| unavailable("assignment_info", e))?;
     let Some(assignment) = &item.assignment else {

@@ -12,6 +12,7 @@ pub mod facts;
 pub mod files;
 pub mod gradebook;
 pub mod groups;
+pub mod items;
 pub mod people;
 pub mod plugin_read;
 mod points;

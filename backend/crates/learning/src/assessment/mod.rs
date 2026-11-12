@@ -7,15 +7,16 @@ mod service;
 
 pub use model::{
     Attempt, AutoTotal, Draft, DueDraft, FormFacts, LatestAttempt, LatestContent, MySubmission,
-    QuizResult, Responses, StudentName, StudentSubmission, Window,
+    PublishedScore, QuizResult, QuizResultStart, Responses, StudentName, StudentSubmission, Window,
 };
 pub use routes::router;
 pub use service::{
     AssessmentError, authorize_submit, authorize_view_submission, auto_submit, auto_total,
-    discard_draft, due_drafts, form_facts, has_submitted_for_assignment, has_submitted_in_course,
-    has_submitted_in_module, list_submissions, may_read_submission_files, my_submission,
-    purge_assignment, purge_course, purge_module, quiz_result, responses, save_draft,
-    skip_auto_submit, student_attempts, students_with_attempts, submit,
+    begin_quiz_result, discard_draft, due_drafts, finish_quiz_result, form_facts,
+    has_submitted_for_assignment, has_submitted_in_course, has_submitted_in_module,
+    list_submissions, may_read_submission_files, my_submission, purge_assignment, purge_course,
+    purge_module, responses, save_draft, skip_auto_submit, student_attempts,
+    students_with_attempts, submit,
 };
 
 // Seeds the references of a submission for the tests of `learning::files`.

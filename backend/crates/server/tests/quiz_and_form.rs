@@ -984,6 +984,42 @@ async fn an_exclusive_option_goes_to_the_first_student_and_students_do_not_see_w
 }
 
 #[tokio::test]
+async fn a_form_that_a_rule_keeps_closed_shows_a_student_no_config_and_no_facts() {
+    db_test(async |pool| {
+        let w = world(pool).await;
+        let form = w.make("form", form_config(), "5").await;
+        let first = w.make("form", form_config(), "5").await;
+        assert_eq!(
+            w.take(&w.other, form, json!({"name": "B", "topic": ["t1"]}))
+                .await
+                .status,
+            201
+        );
+        let rule = json!({"access_rule": {"all": [{"kind": "completed", "item_id": first}]}});
+        w.ok(
+            "PATCH",
+            &w.owner,
+            &format!("/items/{form}"),
+            Some(rule),
+            200,
+        )
+        .await;
+
+        // The student who has not done the first form gets the title and nothing else.
+        let closed = w.item(&w.student, form).await;
+        assert_eq!(closed["assignment"]["config"], json!({}), "{closed}");
+        assert!(!closed.to_string().contains("taken"), "{closed}");
+        // Staff still read the config, with who holds the option.
+        let staff = w.item(&w.owner, form).await;
+        assert!(
+            staff["assignment"]["config"]["fields"][1]["options"][0]["taken_by"].is_string(),
+            "{staff}"
+        );
+    })
+    .await;
+}
+
+#[tokio::test]
 async fn two_students_cannot_both_win_an_exclusive_option() {
     db_test(async |pool| {
         let w = world(pool).await;

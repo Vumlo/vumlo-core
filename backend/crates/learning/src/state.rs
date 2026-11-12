@@ -3,7 +3,7 @@ use std::sync::Arc;
 use sqlx::PgPool;
 use vumlo_config::Settings;
 
-use super::content::EffectiveProfiles;
+use super::content::{EffectiveProfiles, ItemRules};
 
 /// What the handlers of `learning` need from the application.
 #[derive(Clone)]
@@ -16,4 +16,14 @@ pub struct LearningState {
     pub files: files::Storage,
     /// `files.max_size`: the largest file the routes accept.
     pub max_file_bytes: u64,
+}
+
+impl LearningState {
+    /// What item writes read from the configuration: the grading scale and the editor profiles.
+    pub fn item_rules(&self) -> ItemRules<'_> {
+        ItemRules {
+            scale: self.config.institution.grading_scale,
+            profiles: &self.editor,
+        }
+    }
 }

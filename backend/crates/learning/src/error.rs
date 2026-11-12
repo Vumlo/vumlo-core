@@ -25,6 +25,12 @@ pub enum LearningError {
     Gradebook(#[from] GradebookError),
     #[error(transparent)]
     Assessment(#[from] AssessmentError),
+    /// The assignment, or an assignment below the module, has a grade (ADR-0028).
+    #[error("it has grades: clear them before deleting")]
+    HasGrades,
+    /// The assignment, or an assignment below the module, has a submitted attempt (ADR-0035).
+    #[error("it has submitted work")]
+    HasSubmissions,
     /// A grade has a value in the course, so it cannot be deleted (ADR-0048).
     #[error("the course has grades")]
     CourseHasGrades,
@@ -48,6 +54,10 @@ impl From<LearningError> for ApiError {
             LearningError::Content(e) => e.into(),
             LearningError::Gradebook(e) => e.into(),
             LearningError::Assessment(e) => e.into(),
+            LearningError::HasGrades => Self::Conflict("it has grades: clear them before deleting"),
+            LearningError::HasSubmissions => {
+                Self::Conflict("it has submitted work: it cannot be deleted")
+            }
             LearningError::CourseHasGrades => Self::Conflict(
                 "grades were given in this course, so it cannot be deleted: archive it instead",
             ),

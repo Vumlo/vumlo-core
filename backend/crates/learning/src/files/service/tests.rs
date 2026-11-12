@@ -12,6 +12,7 @@ use crate::content::{
     Assignment, BuiltinType, ContentTitle, EffectiveProfiles, ItemPatch, ItemRules, MaxPoints,
 };
 use crate::files::sweep;
+use crate::items;
 use crate::teaching::{self, CourseTitle};
 use access::CourseRole;
 use auth::{self, Email, NewUser, PersonName};
@@ -152,7 +153,7 @@ async fn published_item(
             publish_at: Some(publish_at),
             ..ItemPatch::default()
         };
-        content::update_item(conn, owner, rules(), item.id, patch)
+        items::update_item(conn, owner, rules(), item.id, patch)
             .await
             .unwrap();
     }

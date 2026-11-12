@@ -194,7 +194,9 @@ impl Course {
         id: Uuid,
         patch: ItemPatch,
     ) -> Result<Item, ContentError> {
-        update_item(conn, &self.owner, rules(), id, patch).await
+        // Nothing is submitted or graded in these tests: the facts of the modules above are empty.
+        let update = begin_update_item(conn, &self.owner, rules(), id, patch).await?;
+        finish_update_item(conn, &self.owner, update, AssignmentFacts::default()).await
     }
 
     async fn assignment(&self, id: Uuid) -> Assignment {
@@ -271,11 +273,19 @@ async fn item_files_are_replaced_per_copy_and_go_with_the_item_and_its_module() 
             .unwrap();
         assert_eq!(item_file_rows(&course.pool, item).await, [(a, true)]);
 
-        delete_item(&mut conn, &course.owner, item).await.unwrap();
+        let deletion = begin_delete_item(&mut conn, &course.owner, item)
+            .await
+            .unwrap();
+        finish_delete_item(&mut conn, &course.owner, deletion)
+            .await
+            .unwrap();
         assert!(item_file_rows(&course.pool, item).await.is_empty());
         assert_eq!(item_file_rows(&course.pool, other).await, [(c, false)]);
 
-        delete_module(&mut conn, &course.owner, course.module)
+        let deletion = begin_delete_module(&mut conn, &course.owner, course.module)
+            .await
+            .unwrap();
+        finish_delete_module(&mut conn, &course.owner, deletion)
             .await
             .unwrap();
         assert!(item_file_rows(&course.pool, other).await.is_empty());
