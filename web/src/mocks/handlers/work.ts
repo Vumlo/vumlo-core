@@ -376,6 +376,11 @@ export const workHandlers = [
     const columns = items.map((i) => ({ assignment_id: i.id, title: i.title, max_points: i.assignment!.max_points, is_bonus: i.assignment!.is_bonus, status: i.status, group: topModule(i) }));
     return HttpResponse.json({ settings, groups, columns, possible, setup, suggestions: [] });
   }),
+  // Not a real workbook: the mock only has to answer the download link.
+  http.get(`${A}/courses/:id/gradebook/export.xlsx`, ({ params }) => {
+    requireStaff(String(params.id));
+    return new HttpResponse(new Uint8Array([0x50, 0x4b]), { headers: { "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "Content-Disposition": 'attachment; filename="gradebook.xlsx"' } });
+  }),
   // The target and the pass mark are kept; the layout stays "as the course" in the mock, and group rules and placement are not kept.
   http.put(`${A}/courses/:id/gradebook/settings`, async ({ request, params }) => {
     const { course } = requireStaff(String(params.id));

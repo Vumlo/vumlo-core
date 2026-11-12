@@ -11409,6 +11409,82 @@
         ]
       }
     },
+    "/api/v1/courses/{id}/gradebook/export.xlsx": {
+      "get": {
+        "operationId": "export_gradebook",
+        "parameters": [
+          {
+            "description": "Course id",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": {
+                "schema": {
+                  "items": {
+                    "format": "int32",
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "The workbook"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Not logged in"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "The caller may see the course but not its gradebook"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "No such course, or not visible to the caller"
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          },
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "The gradebook of a course as an Excel workbook, for staff and admins: published marks only, with\na subtotal per group and the course total (ADR-0090).",
+        "tags": [
+          "gradebook"
+        ]
+      }
+    },
     "/api/v1/courses/{id}/gradebook/groups": {
       "post": {
         "operationId": "post_group",

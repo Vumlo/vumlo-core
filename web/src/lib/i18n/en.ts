@@ -710,6 +710,7 @@ export const en = {
   "gb.discardTitle": "Discard unsaved changes?",
   "gb.discardBody": "The points or comment you typed have not been saved.",
   "gb.discard": "Discard",
+  "gs.export": "Download Excel",
   "gs.modes": "Gradebook mode",
   "gs.modeGrade": "Grade",
   "gs.modeStructure": "Structure",

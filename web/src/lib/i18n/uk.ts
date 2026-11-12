@@ -743,6 +743,7 @@ export const uk: Record<Keys, string> & Extra = {
   "gb.discardTitle": "Скасувати незбережені зміни?",
   "gb.discardBody": "Бали або коментар, які ви ввели, не збережено.",
   "gb.discard": "Скасувати зміни",
+  "gs.export": "Завантажити Excel",
   "gs.modes": "Режим журналу",
   "gs.modeGrade": "Оцінювання",
   "gs.modeStructure": "Структура",

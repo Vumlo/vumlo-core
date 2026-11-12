@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { Icon } from "@/components/Icon";
-import { errorText } from "@/lib/api/client";
+import { errorText, isDesktop } from "@/lib/api/client";
 import { useContentTree, useCoursePeople } from "@/lib/api/hooks/courses";
 import { useCourseSubmissions, useGradebook, usePublishAllDrafts } from "@/lib/api/hooks/assignments";
 import type { GradebookColumn, GradebookRow } from "@/lib/api/types";
@@ -81,6 +81,12 @@ export function Gradebook({ courseId }: { courseId: string }) {
           <button type="button" aria-pressed={mode === "grade"} onClick={() => setMode("grade")}>{t("gs.modeGrade")}</button>
           <button type="button" aria-pressed={mode === "structure"} onClick={() => setMode("structure")}>{t("gs.modeStructure")}</button>
         </div>
+        {/* The desktop app has no command for a file the server builds; the web app downloads it. */}
+        {!isDesktop() && (
+          <a className="btn" href={`/api/v1/courses/${encodeURIComponent(courseId)}/gradebook/export.xlsx`} download>
+            <Icon name="download" size={16} strokeWidth={2} />{t("gs.export")}
+          </a>
+        )}
         {mode === "grade" && layout && (layout.setup.unsorted > 0 || !layout.setup.reaches_target) && (
           <span className={s.setup} role="status">
             {layout.setup.unsorted > 0 && t("gs.unsorted", { n: layout.setup.unsorted })}

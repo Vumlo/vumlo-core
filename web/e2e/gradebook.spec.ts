@@ -17,6 +17,7 @@ test("the gradebook shows a total per student and opens the Structure mode", asy
   await signIn(page, "teacher");
   await page.goto(courseHref(await firstCourse(page), "grades"));
   await expect(page.getByRole("columnheader", { name: /^Total/ })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Download Excel" })).toHaveAttribute("href", /\/gradebook\/export\.xlsx$/);
   const modes = page.getByRole("group", { name: "Gradebook mode" });
   await expect(modes.getByRole("button", { name: "Grade" })).toHaveAttribute("aria-pressed", "true");
   await modes.getByRole("button", { name: "Structure" }).click();
