@@ -14,6 +14,7 @@ pub mod groups;
 pub mod people;
 pub mod plugin_read;
 mod points;
+mod quiz_grade;
 pub mod reports;
 pub mod schedule;
 mod state;
@@ -27,7 +28,7 @@ pub use state::LearningState;
 /// The synchronous subscribers of the flows (ADR-0093), for the composition root to install with
 /// `events::install`: each runs inside the transaction of the change that emitted its event.
 pub fn subscribers() -> events::Subscribers {
-    facts::subscribers()
+    facts::subscribers().merge(quiz_grade::subscribers())
 }
 
 #[cfg(test)]

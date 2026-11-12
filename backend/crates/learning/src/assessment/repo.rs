@@ -7,11 +7,12 @@
 use chrono::{DateTime, Utc};
 use serde_json::{Map, Value};
 use sqlx::PgConnection;
-use sqlx::types::Json;
+use sqlx::types::{Decimal, Json};
 use uuid::Uuid;
 
 use super::model::{
-    Attempt, Draft, DueDraft, LatestAttempt, LatestContent, StudentName, StudentSubmission,
+    Attempt, AutoTotal, Draft, DueDraft, LatestAttempt, LatestContent, StudentName,
+    StudentSubmission,
 };
 
 type Body = Json<Map<String, Value>>;
@@ -191,11 +192,12 @@ pub async fn submit_draft(
     submitted_at: DateTime<Utc>,
     is_late: bool,
     auto_scores: Option<&Value>,
+    auto_total: Option<Decimal>,
 ) -> Result<Attempt, sqlx::Error> {
     let row = sqlx::query!(
         r#"UPDATE assessment.submissions
            SET status = 'submitted', attempt = $2, submitted_at = $3, is_late = $4,
-               auto_scores = $5, updated_at = now()
+               auto_scores = $5, auto_total = $6, updated_at = now()
            WHERE id = $1
            RETURNING id, attempt AS "attempt!", content AS "content: Body",
                      submitted_at AS "submitted_at!", is_late"#,
@@ -203,7 +205,8 @@ pub async fn submit_draft(
         attempt,
         submitted_at,
         is_late,
-        auto_scores.map(Json) as Option<Json<&Value>>
+        auto_scores.map(Json) as Option<Json<&Value>>,
+        auto_total
     )
     .fetch_one(conn)
     .await?;
@@ -215,6 +218,27 @@ pub async fn submit_draft(
         is_late: row.is_late,
         auto_scores: None,
     })
+}
+
+/// The sum of a submitted attempt that was scored in full. An attempt with a question left for a
+/// person, a draft or a missing id has none.
+pub async fn auto_total(
+    conn: &mut PgConnection,
+    submission_id: Uuid,
+) -> Result<Option<AutoTotal>, sqlx::Error> {
+    let row = sqlx::query!(
+        r#"SELECT assignment_id, student_id, auto_total AS "total!: Decimal"
+           FROM assessment.submissions
+           WHERE id = $1 AND status = 'submitted' AND auto_total IS NOT NULL"#,
+        submission_id
+    )
+    .fetch_optional(conn)
+    .await?;
+    Ok(row.map(|row| AutoTotal {
+        assignment_id: row.assignment_id,
+        student_id: row.student_id,
+        total: row.total,
+    }))
 }
 
 /// The stored per-question scores of attempts, by attempt id: for the staff path only

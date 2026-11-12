@@ -359,7 +359,11 @@ async fn a_rebuild_of_a_course_keeps_the_marks() {
         tx.commit().await.unwrap();
 
         assert!(before.2, "the student marked it");
-        assert_eq!(w.fact(lecture).await, Some(before), "the rebuild left the mark");
+        assert_eq!(
+            w.fact(lecture).await,
+            Some(before),
+            "the rebuild left the mark"
+        );
     })
     .await;
 }

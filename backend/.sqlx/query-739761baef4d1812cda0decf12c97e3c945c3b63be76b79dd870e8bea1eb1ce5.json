@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT auto_total::text FROM assessment.submissions\n                 WHERE assignment_id = $1 AND student_id = $2 AND status = 'submitted'",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "auto_total",
+        "type_info": "Text",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "739761baef4d1812cda0decf12c97e3c945c3b63be76b79dd870e8bea1eb1ce5"
+}

@@ -471,6 +471,36 @@ async fn partial_credit_numbers_and_unanswered_questions_are_scored() {
     .await;
 }
 
+/// ADR-0093: the draft grade of a quiz is written by a subscriber of `quiz.attempt_submitted`, which
+/// finds the total on the attempt; an attempt with a question for a person to grade has none.
+#[tokio::test]
+async fn only_a_fully_scored_attempt_keeps_a_total_for_the_grade() {
+    db_test(async |pool| {
+        let w = world(pool).await;
+        let total = async |item: Uuid| {
+            sqlx::query_scalar!(
+                "SELECT auto_total::text FROM assessment.submissions
+                 WHERE assignment_id = $1 AND student_id = $2 AND status = 'submitted'",
+                item,
+                w.student.id
+            )
+            .fetch_one(&w.env.pool)
+            .await
+            .unwrap()
+        };
+        let scored = w.make("quiz", quiz_config(), "6").await;
+        w.take(&w.student, scored, right()).await;
+        let by_hand = w.make("quiz", quiz_with_essay(), "10").await;
+        let mut answers = right();
+        answers["q4"] = doc("my explanation");
+        w.take(&w.student, by_hand, answers).await;
+
+        assert_eq!(total(scored).await.as_deref(), Some("6.00"));
+        assert_eq!(total(by_hand).await, None);
+    })
+    .await;
+}
+
 #[tokio::test]
 async fn a_quiz_with_a_free_text_question_is_scored_but_gets_no_draft_grade() {
     db_test(async |pool| {

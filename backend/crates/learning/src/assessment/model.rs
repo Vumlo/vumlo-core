@@ -37,6 +37,15 @@ pub struct Attempt {
     pub auto_scores: Option<Map<String, Value>>,
 }
 
+/// The sum of an attempt that was scored in full (ADR-0050 point 5): what the draft grade of the
+/// quiz becomes (ADR-0093).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AutoTotal {
+    pub assignment_id: Uuid,
+    pub student_id: Uuid,
+    pub total: sqlx::types::Decimal,
+}
+
 /// A current student, named.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StudentName {

@@ -17,8 +17,8 @@ use sqlx::PgConnection;
 use uuid::Uuid;
 
 use super::model::{
-    Attempt, Draft, DueDraft, FormFacts, MySubmission, QuizResult, Responses, StudentSubmission,
-    Window,
+    Attempt, AutoTotal, Draft, DueDraft, FormFacts, MySubmission, QuizResult, Responses,
+    StudentSubmission, Window,
 };
 use super::repo;
 use crate::content::{
@@ -356,6 +356,16 @@ pub async fn skip_auto_submit(
     Ok(())
 }
 
+/// The sum of a submitted attempt that was scored in full, or `None`: a question is left for a
+/// person, or there is no such attempt. The draft grade of a quiz comes from it (ADR-0093). It
+/// authorizes nothing: it serves the subscriber of the submit, never a request.
+pub async fn auto_total(
+    conn: &mut PgConnection,
+    submission_id: Uuid,
+) -> Result<Option<AutoTotal>, AssessmentError> {
+    Ok(repo::auto_total(conn, submission_id).await?)
+}
+
 /// Who turns the draft into an attempt, and when.
 enum When {
     /// The student, at `now`: the window must be open, and the attempt is late after `due_at`.
@@ -430,6 +440,7 @@ async fn submit_for(
         .assignment_type
         .auto_grade(&assignment.config, valid.as_body());
     let scores = auto.as_ref().map(AutoGrade::scores_json);
+    let total = auto.filter(|auto| auto.complete).map(|auto| auto.total);
     let attempt = repo::submit_draft(
         conn,
         draft.id,
@@ -437,12 +448,10 @@ async fn submit_for(
         submitted_at,
         is_late,
         scores.as_ref(),
+        total,
     )
     .await?;
     repo::replace_submission_files(conn, attempt.id, &files).await?;
-    if let Some(auto) = auto.filter(|auto| auto.complete) {
-        gradebook::save_auto_grade(conn, assignment_id, student_id, auto.total).await?;
-    }
     events::emit(
         conn,
         Event::SubmissionSubmitted {
