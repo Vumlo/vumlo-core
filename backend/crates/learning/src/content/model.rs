@@ -626,6 +626,20 @@ pub enum FactScope {
     All,
 }
 
+impl FactScope {
+    /// The scope as three optional filters for a statement: an item, a student, a course.
+    pub fn filters(&self) -> (Option<Uuid>, Option<Uuid>, Option<Uuid>) {
+        match self {
+            Self::Pair {
+                item_id,
+                student_id,
+            } => (Some(*item_id), Some(*student_id), None),
+            Self::Course(course_id) => (None, None, Some(*course_id)),
+            Self::All => (None, None, None),
+        }
+    }
+}
+
 /// What `assessment` and `gradebook` say about one student on one assignment: the fact `content`
 /// copies. Both empty is not a fact.
 #[derive(Debug, Clone, PartialEq, Eq)]

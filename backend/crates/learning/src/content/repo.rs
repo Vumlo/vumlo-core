@@ -1624,19 +1624,6 @@ pub async fn unmark_done(
     Ok(())
 }
 
-/// The scope of a replacement as the three optional filters the statements below share:
-/// an item, a student, a course.
-fn fact_filters(scope: &FactScope) -> (Option<Uuid>, Option<Uuid>, Option<Uuid>) {
-    match scope {
-        FactScope::Pair {
-            item_id,
-            student_id,
-        } => (Some(*item_id), Some(*student_id), None),
-        FactScope::Course(course_id) => (None, None, Some(*course_id)),
-        FactScope::All => (None, None, None),
-    }
-}
-
 /// Holds the facts of the scope for the rest of the transaction. One pair takes an advisory lock
 /// of its own, so two transactions that change the same student on the same item run one after
 /// the other and the second reads what the first committed; a course or everything takes the
@@ -1670,7 +1657,7 @@ pub async fn clear_source_facts(
     conn: &mut PgConnection,
     scope: &FactScope,
 ) -> Result<(), sqlx::Error> {
-    let (item, student, course) = fact_filters(scope);
+    let (item, student, course) = scope.filters();
     sqlx::query!(
         "DELETE FROM content.facts
          WHERE marked_at IS NULL

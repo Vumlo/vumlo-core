@@ -1,0 +1,369 @@
+//! ADR-0093: `content.facts`, the copy of what a student did that the access rules read. The
+//! subscribers of `submission.submitted` and `grade.publication_changed` keep it up to date in the
+//! transaction of the change, and `learning::rebuild_facts` makes it again from the sources.
+
+mod common;
+
+use ::common::Role;
+use chrono::{DateTime, Duration, Utc};
+use common::{Account, Env, db_test, essay, id_of, spawn_app, test_settings};
+use learning::content::{FactScope, SourceFact, replace_source_facts};
+use learning::schedule::tick;
+use serde_json::{Value, json};
+use server::app::AppState;
+use sqlx::PgPool;
+use uuid::Uuid;
+
+struct World {
+    env: Env,
+    state: AppState,
+    teacher: Account,
+    student: Account,
+    module: Uuid,
+}
+
+async fn world(pool: PgPool) -> World {
+    let (base, state) = spawn_app(pool.clone(), test_settings()).await;
+    let env = Env {
+        http: common::Http::new(&base),
+        pool,
+        base,
+    };
+    let teacher = env.user("teacher@x.edu", Role::Teacher).await;
+    let student = env.user("student@x.edu", Role::Student).await;
+    let (_, module) = env.course(&teacher, &[&student]).await;
+    World {
+        env,
+        state,
+        teacher,
+        student,
+        module,
+    }
+}
+
+type Row = (Uuid, Option<DateTime<Utc>>, Option<String>, bool);
+
+impl World {
+    async fn task(&self) -> Uuid {
+        self.env.assignment(&self.teacher, self.module, "10").await
+    }
+
+    async fn go(&self, who: &Account, method: &str, path: &str, body: Option<Value>, ok: u16) {
+        self.env.ok(method, &who.token, path, body, ok).await;
+    }
+
+    /// The student saves a text answer and submits it.
+    async fn submit(&self, assignment: Uuid) {
+        self.go(
+            &self.student,
+            "PUT",
+            &format!("/assignments/{assignment}/submission/draft"),
+            Some(json!({"content": essay("answer")})),
+            200,
+        )
+        .await;
+        self.go(
+            &self.student,
+            "POST",
+            &format!("/assignments/{assignment}/submission/submit"),
+            None,
+            201,
+        )
+        .await;
+    }
+
+    /// The teacher saves a draft grade; `None` clears it.
+    async fn draft(&self, assignment: Uuid, points: Option<&str>) {
+        self.go(
+            &self.teacher,
+            "PUT",
+            &format!("/assignments/{assignment}/grades/{}", self.student.id),
+            Some(json!({"score": points, "feedback": null})),
+            200,
+        )
+        .await;
+    }
+
+    async fn publish_grades(&self, assignment: Uuid) {
+        self.go(
+            &self.teacher,
+            "POST",
+            &format!("/assignments/{assignment}/grades/publish"),
+            Some(json!({"students": "all"})),
+            200,
+        )
+        .await;
+    }
+
+    async fn grade(&self, assignment: Uuid, points: Option<&str>) {
+        self.draft(assignment, points).await;
+        self.publish_grades(assignment).await;
+    }
+
+    /// The student's row for the item: first submit, published score, whether it is marked.
+    async fn fact(&self, item: Uuid) -> Option<(Option<DateTime<Utc>>, Option<String>, bool)> {
+        sqlx::query!(
+            r#"SELECT submitted_at, published_score::text AS score, marked_at IS NOT NULL AS "marked!"
+               FROM content.facts WHERE item_id = $1 AND student_id = $2"#,
+            item,
+            self.student.id
+        )
+        .fetch_optional(&self.env.pool)
+        .await
+        .unwrap()
+        .map(|row| (row.submitted_at, row.score, row.marked))
+    }
+
+    /// Every row, in a fixed order.
+    async fn snapshot(&self) -> Vec<Row> {
+        sqlx::query!(
+            r#"SELECT item_id, submitted_at, published_score::text AS score,
+                      marked_at IS NOT NULL AS "marked!"
+               FROM content.facts ORDER BY item_id, student_id"#
+        )
+        .fetch_all(&self.env.pool)
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|row| (row.item_id, row.submitted_at, row.score, row.marked))
+        .collect()
+    }
+
+    async fn first_attempt_at(&self, assignment: Uuid) -> DateTime<Utc> {
+        sqlx::query_scalar!(
+            r#"SELECT submitted_at AS "at!" FROM assessment.submissions
+               WHERE assignment_id = $1 AND student_id = $2 AND attempt = 1"#,
+            assignment,
+            self.student.id
+        )
+        .fetch_one(&self.env.pool)
+        .await
+        .unwrap()
+    }
+}
+
+#[tokio::test]
+async fn a_submit_sets_the_first_time_and_a_later_attempt_keeps_it() {
+    db_test(async |pool| {
+        let w = world(pool).await;
+        let task = w.task().await;
+        assert_eq!(w.fact(task).await, None);
+
+        w.submit(task).await;
+        let (first, score, marked) = w.fact(task).await.unwrap();
+        assert_eq!(first, Some(w.first_attempt_at(task).await));
+        assert_eq!((score, marked), (None, false));
+
+        w.submit(task).await;
+        assert_eq!(
+            w.fact(task).await.unwrap().0,
+            first,
+            "the first attempt counts"
+        );
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn publishing_a_grade_sets_the_score_and_publishing_again_changes_it() {
+    db_test(async |pool| {
+        let w = world(pool).await;
+        let task = w.task().await;
+
+        w.grade(task, Some("7")).await;
+        assert_eq!(w.fact(task).await.unwrap().1.as_deref(), Some("7.00"));
+
+        w.grade(task, Some("9.5")).await;
+        assert_eq!(w.fact(task).await.unwrap().1.as_deref(), Some("9.50"));
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn taking_a_grade_back_clears_the_score_and_keeps_the_submit() {
+    db_test(async |pool| {
+        let w = world(pool).await;
+        let task = w.task().await;
+        w.submit(task).await;
+        w.grade(task, Some("7")).await;
+
+        w.grade(task, None).await;
+
+        let (submitted, score, _) = w.fact(task).await.unwrap();
+        assert!(submitted.is_some());
+        assert_eq!(score, None);
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn a_draft_grade_never_reaches_the_facts() {
+    db_test(async |pool| {
+        let w = world(pool).await;
+        let task = w.task().await;
+
+        w.draft(task, Some("8")).await;
+
+        assert_eq!(w.fact(task).await, None, "a draft is not published");
+        let columns: Vec<String> = sqlx::query_scalar!(
+            r#"SELECT column_name AS "name!" FROM information_schema.columns
+               WHERE table_schema = 'content' AND table_name = 'facts'"#
+        )
+        .fetch_all(&w.env.pool)
+        .await
+        .unwrap();
+        assert!(
+            columns.iter().all(|name| !name.contains("draft")),
+            "{columns:?}"
+        );
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn a_draft_submitted_by_the_scheduler_leaves_the_same_fact_as_a_student_submit() {
+    db_test(async |pool| {
+        let w = world(pool).await;
+        let due = Utc::now() + Duration::hours(1);
+        let task = id_of(
+            &w.env
+                .ok(
+                    "POST",
+                    &w.teacher.token,
+                    &format!("/modules/{}/items", w.module),
+                    Some(json!({"kind": "assignment", "title": "A", "assignment": {
+                        "type": "text", "max_points": "10",
+                        "due_at": due.to_rfc3339(), "on_deadline": "auto_submit",
+                        "accept_late": false}})),
+                    201,
+                )
+                .await,
+        );
+        w.go(
+            &w.teacher,
+            "POST",
+            &format!("/items/{task}/publish"),
+            None,
+            200,
+        )
+        .await;
+        w.go(
+            &w.student,
+            "PUT",
+            &format!("/assignments/{task}/submission/draft"),
+            Some(json!({"content": essay("unfinished")})),
+            200,
+        )
+        .await;
+
+        tick(
+            &w.state.db,
+            &w.state.learning.editor,
+            due + Duration::seconds(1),
+        )
+        .await
+        .expect("a tick");
+
+        let (submitted, _, _) = w
+            .fact(task)
+            .await
+            .expect("the scheduler's submit left a fact");
+        assert_eq!(submitted, Some(w.first_attempt_at(task).await));
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn a_rebuild_makes_the_rows_the_events_made() {
+    db_test(async |pool| {
+        let w = world(pool).await;
+        let (first, second) = (w.task().await, w.task().await);
+        w.submit(first).await;
+        w.grade(first, Some("7")).await;
+        w.submit(second).await;
+        w.grade(second, Some("5")).await;
+        w.grade(second, None).await;
+        let made = w.snapshot().await;
+        assert_eq!(made.len(), 2);
+
+        let mut conn = w.env.pool.acquire().await.unwrap();
+        replace_source_facts(&mut conn, &FactScope::All, &[])
+            .await
+            .unwrap();
+        assert_ne!(w.snapshot().await, made, "the wipe took the source columns");
+        let mut tx = w.env.pool.begin().await.unwrap();
+        learning::rebuild_facts(&mut tx, None).await.unwrap();
+        tx.commit().await.unwrap();
+
+        assert_eq!(w.snapshot().await, made);
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn two_transactions_for_one_pair_do_not_overwrite_each_other() {
+    db_test(async |pool| {
+        let w = world(pool).await;
+        let task = w.task().await;
+        w.submit(task).await;
+        w.draft(task, Some("8")).await;
+        let scope = FactScope::Pair {
+            item_id: task,
+            student_id: w.student.id,
+        };
+
+        // One transaction takes the pair and, still holding it, publishes the grade.
+        let mut holder = w.env.pool.begin().await.unwrap();
+        learning::content::lock_facts(&mut holder, &scope)
+            .await
+            .unwrap();
+        sqlx::query!(
+            "UPDATE gradebook.grades SET published_score = draft_score,
+                    published_by = $3, published_at = now()
+             WHERE assignment_id = $1 AND student_id = $2",
+            task,
+            w.student.id,
+            w.teacher.id
+        )
+        .execute(&mut *holder)
+        .await
+        .unwrap();
+
+        // A second one, for the same pair, has to wait for it, and then reads what it committed.
+        let pool = w.env.pool.clone();
+        let waiting = tokio::spawn(async move {
+            let mut tx = pool.begin().await.unwrap();
+            learning::facts::sync(&mut tx, scope).await.unwrap();
+            tx.commit().await.unwrap();
+        });
+        test_support::wait_until_blocked(&w.env.pool, &waiting).await;
+        holder.commit().await.unwrap();
+        waiting.await.unwrap();
+
+        let (submitted, score, _) = w.fact(task).await.unwrap();
+        assert!(submitted.is_some());
+        assert_eq!(score.as_deref(), Some("8.00"));
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn a_source_fact_of_an_item_that_is_gone_is_skipped() {
+    db_test(async |pool| {
+        let w = world(pool).await;
+        let mut conn = w.env.pool.acquire().await.unwrap();
+        let ghost = SourceFact {
+            item_id: Uuid::now_v7(),
+            student_id: w.student.id,
+            submitted_at: Some(Utc::now()),
+            published_score: None,
+        };
+
+        replace_source_facts(&mut conn, &FactScope::All, &[ghost])
+            .await
+            .unwrap();
+
+        assert!(w.snapshot().await.is_empty());
+    })
+    .await;
+}

@@ -382,6 +382,17 @@ pub async fn publish_grades(
             row.feedback.as_deref(),
         )
         .await?;
+        // What the student sees changed, whether it became something or nothing: the facts that
+        // the access rules read follow it (ADR-0093). The plugins hear only of a value.
+        events::emit(
+            conn,
+            Event::GradePublicationChanged {
+                assignment_id,
+                student_id: row.student_id,
+                course_id: context.course_id,
+            },
+        )
+        .await?;
         if row.score.is_some() || row.feedback.is_some() {
             events::emit(
                 conn,

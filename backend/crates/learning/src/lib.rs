@@ -7,6 +7,7 @@ pub mod audit;
 pub mod content;
 mod enrollment;
 mod error;
+pub mod facts;
 pub mod files;
 pub mod gradebook;
 pub mod groups;
@@ -20,12 +21,13 @@ pub mod teaching;
 
 pub use enrollment::event_handlers;
 pub use error::LearningError;
+pub use facts::rebuild_facts;
 pub use state::LearningState;
 
 /// The synchronous subscribers of the flows (ADR-0093), for the composition root to install with
 /// `events::install`: each runs inside the transaction of the change that emitted its event.
 pub fn subscribers() -> events::Subscribers {
-    events::Subscribers::new()
+    facts::subscribers()
 }
 
 #[cfg(test)]

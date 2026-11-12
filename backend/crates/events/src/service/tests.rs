@@ -273,6 +273,11 @@ fn every_event_has_a_dotted_kind_and_a_payload_of_ids_only() {
             group_id: id(),
             user_ids: vec![id(), id()],
         },
+        Event::GradePublicationChanged {
+            assignment_id: id(),
+            student_id: id(),
+            course_id: id(),
+        },
     ];
     let mut kinds = Vec::new();
     for event in &events {
