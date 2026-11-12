@@ -132,11 +132,10 @@ const DECLARED_VIEWS: &[&str] = &[
     "teaching.effective_members",
 ];
 
-/// The reads and calls that go the wrong way today, as `(unit, thing)`. A ratchet: the test
-/// tolerates exactly these and fails when one no longer happens, so the lists only shrink
-/// (ADR-0093). `RATCHET_UP` is a table of a higher layer, `RATCHET_DOWN` a table of a lower layer
-/// that is not a declared view, `RATCHET_CALLS` a higher `learning` module named in Rust.
-const RATCHET_UP: &[(&str, &str)] = &[];
+/// The reads of a table of a lower layer that is not a declared view, as `(unit, schema.table)`.
+/// A ratchet: the test tolerates exactly these and fails when one no longer happens, so the list
+/// only shrinks (ADR-0093). Nothing may read a table of a higher layer, and no module may name
+/// one above it in Rust: those rules have no list.
 const RATCHET_DOWN: &[(&str, &str)] = &[
     ("assessment", "content.assignments"),
     ("assessment", "content.items"),
@@ -158,7 +157,6 @@ const RATCHET_DOWN: &[(&str, &str)] = &[
     ("learning", "teaching.courses"),
     ("learning", "teaching.tombstones"),
 ];
-const RATCHET_CALLS: &[(&str, &str)] = &[];
 
 /// The four modules of `learning`, lowest first.
 const MODULES: &[&str] = &["teaching", "content", "assessment", "gradebook"];
@@ -383,13 +381,6 @@ fn forbidden_reads() -> (Vec<Read>, usize) {
     (found, checked)
 }
 
-fn ratchet(way: Way) -> &'static [(&'static str, &'static str)] {
-    match way {
-        Way::Up => RATCHET_UP,
-        Way::Down => RATCHET_DOWN,
-    }
-}
-
 #[test]
 fn a_unit_reads_its_own_layer_and_the_declared_views_below_it() {
     let (reads, checked) = forbidden_reads();
@@ -399,7 +390,7 @@ fn a_unit_reads_its_own_layer_and_the_declared_views_below_it() {
     );
     let found: Vec<String> = reads
         .iter()
-        .filter(|r| !ratchet(r.way).contains(&(r.unit, r.table.as_str())))
+        .filter(|r| r.way == Way::Up || !RATCHET_DOWN.contains(&(r.unit, r.table.as_str())))
         .map(|r| format!("{}: {} (in {})", r.at, r.table, r.unit))
         .collect();
     assert!(
@@ -457,7 +448,6 @@ fn calls_to_higher_modules() -> Vec<(&'static str, &'static str, String)> {
 fn a_module_calls_only_modules_below_it() {
     let found: Vec<String> = calls_to_higher_modules()
         .into_iter()
-        .filter(|(unit, module, _)| !RATCHET_CALLS.contains(&(*unit, *module)))
         .map(|(unit, module, at)| format!("{at}: {unit} names {module}"))
         .collect();
     assert!(
@@ -469,28 +459,50 @@ fn a_module_calls_only_modules_below_it() {
 }
 
 #[test]
-fn the_ratchet_lists_only_what_still_happens() {
-    let (reads, _) = forbidden_reads();
-    let calls = calls_to_higher_modules();
-    let mut stale = Vec::new();
-    for way in [Way::Up, Way::Down] {
-        for (unit, table) in ratchet(way) {
-            if !reads
-                .iter()
-                .any(|r| r.way == way && r.unit == *unit && r.table == *table)
-            {
-                stale.push(format!("{unit} reads {table} (no longer)"));
+fn a_module_never_names_the_schema_of_a_module_above_it() {
+    let mut found = Vec::new();
+    for file in source_files().into_iter().filter(|f| !is_test_code(f)) {
+        let unit = unit_of(&file);
+        if !MODULES.contains(&unit.name) {
+            continue;
+        }
+        let text = fs::read_to_string(&file).expect("a Rust file is UTF-8");
+        for (number, line) in text.lines().enumerate().filter(|(_, l)| !is_comment(l)) {
+            for name in qualified_names(line) {
+                let schema = name.split_once('.').map_or("", |(schema, _)| schema);
+                if layer_of_schema(schema).is_some_and(|layer| layer > unit.layer) {
+                    found.push(format!(
+                        "{}:{}: {name} (in {})",
+                        shown(&file),
+                        number + 1,
+                        unit.name
+                    ));
+                }
             }
         }
     }
-    for (unit, module) in RATCHET_CALLS {
-        if !calls.iter().any(|(u, m, _)| u == unit && m == module) {
-            stale.push(format!("{unit} names {module} (no longer)"));
-        }
-    }
+    assert!(
+        found.is_empty(),
+        "a module names a table of a module above it, in any file (ADR-0093):\n{}",
+        found.join("\n")
+    );
+}
+
+#[test]
+fn the_ratchet_lists_only_what_still_happens() {
+    let (reads, _) = forbidden_reads();
+    let stale: Vec<String> = RATCHET_DOWN
+        .iter()
+        .filter(|(unit, table)| {
+            !reads
+                .iter()
+                .any(|r| r.way == Way::Down && r.unit == *unit && r.table == *table)
+        })
+        .map(|(unit, table)| format!("{unit} reads {table} (no longer)"))
+        .collect();
     assert!(
         stale.is_empty(),
-        "delete these entries from the RATCHET_* lists in architecture.rs; it only shrinks:\n{}",
+        "delete these entries from RATCHET_DOWN in architecture.rs; it only shrinks:\n{}",
         stale.join("\n")
     );
 }
