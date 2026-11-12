@@ -12,13 +12,14 @@ must do, in order, besides getting the new release. See [RELEASING.md](RELEASING
 
 ### Added
 
+- **Synchronous event subscribers and `content.facts`** (ADR-0093). `events::emit` also runs the subscribers the process installed, inside the transaction of the change. `content` keeps its own copy of what a student did (the first submitted attempt, the published score, their mark), so the access rules of ADR-0092 no longer read `assessment` or `gradebook`; the quiz's draft grade is written by a subscriber too. A new internal event `grade.publication_changed` (never sent to plugins). `vumlo-cli facts rebuild [--course ID]` makes the facts again from the submissions and grades. No change to the API.
 - **A target, a pass mark and groups in the gradebook** (ADR-0089). A course has a `target` (default 100) and an optional `pass_mark`; its assignments sit in groups that can have a cap, count only the best K marks, count as practice (graded, not in the total) or as bonus. The total is `min(target, sum of the groups)`. A course shows its groups as its top-level modules (`course`, the default) or as groups of the teacher's own (`custom`, with "Not sorted" for what has no group yet), and can switch between them without losing anything. New: `GET /courses/{id}/gradebook/structure`, `PUT /courses/{id}/gradebook/settings`, `POST /courses/{id}/gradebook/groups`, `PUT|DELETE /courses/{id}/gradebook/groups/{key}`, `PUT /courses/{id}/gradebook/placement` and `GET /courses/{id}/my-grade-summary`; the staff gradebook page now carries the layout and a total for every student.
 
 ### Changed
 
 - **The regular assignments of a course on the `hundred` scale may add up to more than 100 points** (ADR-0089 replaces that part of ADR-0022). The total is cut at the target instead. The twelve-point limit on one assignment stays.
 
-**Upgrade notes.** Run `db migrate`: migration `0048_gradebook_groups.sql` adds three tables to the schema `gradebook`; nothing existing is changed.
+**Upgrade notes.** Run `db migrate`: migration `0048_gradebook_groups.sql` adds three tables to the schema `gradebook`; nothing existing is changed. Migrations `0051` to `0053` (ADR-0093) create `content.facts` and fill it from the submissions, grades and marks that exist, drop `content.completions`, and add `assessment.submissions.auto_total`. Nothing else has to be done; `vumlo-cli facts rebuild` repairs the facts if they are ever wrong.
 
 ## [0.6.1] - 2026-11-11
 

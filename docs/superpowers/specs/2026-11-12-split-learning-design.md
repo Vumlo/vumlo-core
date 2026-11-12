@@ -65,7 +65,7 @@ Measured on `main` (non-test code): about 150 schema-qualified references cross 
 | `gradebook` | `teaching`, `content`, `assessment` | `effective_members`, `items`, `modules`, `assignments`, `submissions` |
 | `learning` (flows, `plugin_read`, `files`, `audit`) | all four | items, modules, assignments, item and submission files, submissions, announcements, tombstones, grades |
 
-Each becomes a view named for its purpose, declared in migration `0052` and listed in `DECLARED_VIEWS` (about ten).
+Each becomes a view named for its purpose, declared in migration `0054` and listed in `DECLARED_VIEWS` (about ten).
 The exact set is drawn up by a ratchet script in PR B, which lists every cross-schema reference. Rules:
 
 - A grades view exposes `published_*` columns only. A reader above `gradebook` cannot select a draft (CLAUDE.md §6).
@@ -133,8 +133,9 @@ content.facts(item_id uuid FK content.items ON DELETE CASCADE, student_id uuid, 
 - One function in `learning` reads the sources for `(item, student)`; the subscribers and the rebuild both call it,
   so they cannot disagree.
 - `learning::rebuild_facts(conn, course?)` recomputes the rows from the sources; `vumlo-cli facts rebuild [--course]`
-  runs it and writes an audit row (CLAUDE.md §4). Migration `0051` creates the table, backfills it from the
-  current data, and drops `content.completions`.
+  runs it and writes an audit row (CLAUDE.md §4). Migration `0051` creates the table and backfills it from the
+  current data, `0052` drops `content.completions`, and `0053` adds `assessment.submissions.auto_total`, the
+  sum the quiz subscriber turns into the draft grade.
 - Student removed from a course or item deleted: as today, the rows stay for the first and cascade for the second.
 
 ## 8. Delivery
@@ -143,8 +144,8 @@ Each PR keeps the API and every existing test green, is reviewed by the user, th
 
 | PR | Content | Proof |
 |---|---|---|
-| A. Dispatch and facts | `events::install` and sync subscribers; migration `0051`; `GradePublicationChanged`; subscribers (facts, quiz auto-grade); `rebuild_facts` and its CLI command; `content` stops reading `assessment` and `gradebook` | `events` unit tests (no registry, second install, handler order, handler error); a scenario test that the projection equals `rebuild_facts` after submit, publish, re-publish, retract, mark, unmark; a failing subscriber rolls the write back; `access_rules.rs` and `submissions.rs` unchanged |
-| B. Boundaries in one crate | flows replace the upward calls; migration `0052` declares the views; `architecture.rs` splits the layers (`UNITS`, `DECLARED_VIEWS`, import scan) | `architecture.rs` green with the new layers; the ratchet list is empty; OpenAPI identical |
+| A. Dispatch and facts | `events::install` and sync subscribers; migrations `0051` to `0053`; `GradePublicationChanged`; subscribers (facts, quiz auto-grade); `rebuild_facts` and its CLI command; `content` stops reading `assessment` and `gradebook` | `events` unit tests (no registry, second install, handler order, handler error); a scenario test that the projection equals `rebuild_facts` after submit, publish, re-publish, retract, mark, unmark; a failing subscriber rolls the write back; `access_rules.rs` and `submissions.rs` unchanged |
+| B. Boundaries in one crate | flows replace the upward calls; migration `0054` declares the views; `architecture.rs` splits the layers (`UNITS`, `DECLARED_VIEWS`, import scan) | `architecture.rs` green with the new layers; the ratchet list is empty; OpenAPI identical |
 | C. The move | five crates, workspace members, per-crate error, state and router, `server` composition; CI paths, `Dockerfile`, `RELEASING.md`, `CLAUDE.md` section 4, `ARCHITECTURE.md`, `docs/PLAN.md`; `git mv` keeps history | `cargo check` per crate; Cargo refuses a wrong dependency; OpenAPI identical; all tests green |
 
 Local checks are targeted (`CARGO_BUILD_JOBS=2`, one command at a time): fmt, clippy `-D warnings`, `architecture.rs`,

@@ -102,6 +102,10 @@ behind a Cargo feature, and `server` and `vumlo-cli` name it in exactly one plac
 ## 7. Events
 
 - A state change and its event are written in the same transaction via `events::emit(&mut conn, ...)`.
+- `emit` also runs the synchronous subscribers installed once by the composition root (`events::install`), in that
+  transaction: an error aborts the change, and a subscriber is idempotent. Whatever may fail and be retried (plugins,
+  mail) is an outbox handler instead. A binary or a test crate that calls services installs a registry
+  (ADR-0093).
 - Saving drafts (grades, content, submissions) emits no events.
 - Payloads contain ids only: no grades, content or personal data.
 
