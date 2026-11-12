@@ -629,6 +629,18 @@ pub async fn purge_module(conn: &mut PgConnection, module_id: Uuid) -> Result<u6
     Ok(repo::purge_module(conn, module_id).await?)
 }
 
+/// Copies how the marks of `from` add up (target, pass mark, layout, groups, placements) into the
+/// copy `to` of the course, for the modules and assignments in `ids`. The caller has authorized
+/// both courses (ADR-0089).
+pub async fn copy_layout(
+    conn: &mut PgConnection,
+    from: Uuid,
+    to: Uuid,
+    ids: &content::CopiedIds,
+) -> Result<(), GradebookError> {
+    Ok(repo::copy_layout(conn, from, to, &ids.modules, &ids.items).await?)
+}
+
 /// Like [`purge_assignment`] for every assignment of a course.
 pub async fn purge_course(conn: &mut PgConnection, course_id: Uuid) -> Result<u64, GradebookError> {
     if repo::has_grades_in_course(conn, course_id).await? {

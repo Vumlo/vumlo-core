@@ -284,6 +284,58 @@ pub struct Placement {
     pub group_id: Option<Uuid>,
 }
 
+/// Copies the settings, the groups and the placements of `from` into the course `to`, whose
+/// modules and assignments are the copies `modules` and `items` name (`(old id, new id)`). A group
+/// of a module the map does not know is left out; the groups of the teacher's own get new keys.
+pub async fn copy_layout(
+    conn: &mut PgConnection,
+    from: Uuid,
+    to: Uuid,
+    modules: &[(Uuid, Uuid)],
+    items: &[(Uuid, Uuid)],
+) -> Result<(), sqlx::Error> {
+    let (module_old, module_new): (Vec<Uuid>, Vec<Uuid>) = modules.iter().copied().unzip();
+    let (item_old, item_new): (Vec<Uuid>, Vec<Uuid>) = items.iter().copied().unzip();
+    sqlx::query!(
+        "WITH module_map AS (
+             SELECT * FROM unnest($3::uuid[], $4::uuid[]) AS t (old_id, new_id)),
+         item_map AS (
+             SELECT * FROM unnest($5::uuid[], $6::uuid[]) AS t (old_id, new_id)),
+         group_map AS (
+             SELECT g.id AS old_id, uuidv7() AS new_id
+             FROM gradebook.groups g
+             LEFT JOIN module_map mm ON mm.old_id = g.module_id
+             WHERE g.course_id = $1 AND (g.module_id IS NULL OR mm.new_id IS NOT NULL)),
+         new_settings AS (
+             INSERT INTO gradebook.course_settings (course_id, target, pass_mark, layout)
+             SELECT $2, target, pass_mark, layout
+             FROM gradebook.course_settings WHERE course_id = $1
+             RETURNING course_id),
+         new_groups AS (
+             INSERT INTO gradebook.groups
+                 (id, course_id, module_id, title, position, cap, best_k, counts, bonus)
+             SELECT gm.new_id, $2, mm.new_id, g.title, g.position, g.cap, g.best_k, g.counts, g.bonus
+             FROM gradebook.groups g
+             JOIN group_map gm ON gm.old_id = g.id
+             LEFT JOIN module_map mm ON mm.old_id = g.module_id
+             RETURNING id)
+         INSERT INTO gradebook.group_items (assignment_id, group_id)
+         SELECT im.new_id, gm.new_id
+         FROM gradebook.group_items gi
+         JOIN item_map im ON im.old_id = gi.assignment_id
+         JOIN group_map gm ON gm.old_id = gi.group_id",
+        from,
+        to,
+        &module_old,
+        &module_new,
+        &item_old,
+        &item_new
+    )
+    .execute(conn)
+    .await?;
+    Ok(())
+}
+
 /// The placement of every assignment of the course, in the order of `repo::columns`.
 pub async fn placements(
     conn: &mut PgConnection,

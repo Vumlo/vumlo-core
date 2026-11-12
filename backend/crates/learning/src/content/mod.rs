@@ -18,6 +18,7 @@ pub use model::{
     ModelError, Module, ModulePatch, ModuleStatus, MyWork, OnDeadline, OpenedAssignment,
     SettingProblem, SettingsPatch, SubmissionSettings, editor_features,
 };
+pub use repo::CopiedIds;
 pub use routes::router;
 pub use service::{
     ContentError, CourseSummary, ItemRules, OpenError, authorize_edit_item, copy_course_content,

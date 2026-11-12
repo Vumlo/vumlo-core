@@ -1955,6 +1955,87 @@ async fn the_regular_points_of_a_course_may_pass_the_target_and_the_total_is_cut
 }
 
 #[tokio::test]
+async fn a_course_made_from_a_template_keeps_the_target_the_groups_and_what_sits_in_them() {
+    db_test(async |pool| {
+        let w = world(pool).await;
+        let a = open_worth(&w, "A", "10").await;
+        let _b = open_worth(&w, "B", "10").await;
+        let r = put(
+            &w,
+            &w.owner.token,
+            &format!("/courses/{}/gradebook/settings", w.course),
+            json!({"target": "80", "pass_mark": "50", "layout": "custom"}),
+        )
+        .await;
+        assert_eq!(r.status, 200);
+        let made = new_group(
+            &w,
+            json!({"title": "Labs", "cap": "15", "best_k": 1, "assignments": [a]}),
+        )
+        .await;
+        assert_eq!(made.status, 201);
+
+        let template = call(
+            &w.http,
+            "POST",
+            Some(&w.owner.token),
+            &format!("/courses/{}/template", w.course),
+            Some(json!({})),
+        )
+        .await;
+        assert_eq!(template.status, 201);
+        let template = template.json();
+        let copy = call(
+            &w.http,
+            "POST",
+            Some(&w.owner.token),
+            &format!("/templates/{}/courses", template["id"].as_str().unwrap()),
+            Some(json!({})),
+        )
+        .await;
+        assert_eq!(copy.status, 201);
+        let copy = copy.json();
+        let tree = ok(&call(
+            &w.http,
+            "GET",
+            Some(&w.owner.token),
+            &format!(
+                "/courses/{}/gradebook/structure",
+                copy["id"].as_str().unwrap()
+            ),
+            None,
+        )
+        .await);
+
+        assert_eq!(tree["settings"]["target"], "80.00");
+        assert_eq!(tree["settings"]["pass_mark"], "50.00");
+        assert_eq!(tree["settings"]["layout"], "custom");
+        let groups = tree["groups"].as_array().unwrap();
+        assert_eq!(groups.len(), 1);
+        assert_eq!(groups[0]["title"], "Labs");
+        assert_eq!(groups[0]["cap"], "15.00");
+        assert_eq!(groups[0]["best_k"], 1);
+        let key = &groups[0]["key"];
+        assert_ne!(key, &made_key(&made), "the copy has a group of its own");
+        let columns = tree["columns"].as_array().unwrap();
+        let group_of = |title: &str| {
+            columns
+                .iter()
+                .find(|c| c["title"] == title)
+                .map(|c| c["group"].clone())
+                .unwrap()
+        };
+        assert_eq!(&group_of("A"), key, "A sits in the copied group");
+        assert_eq!(group_of("B"), Value::Null, "B stays in Not sorted");
+    })
+    .await;
+}
+
+fn made_key(created: &Resp) -> Value {
+    created.json()["key"].clone()
+}
+
+#[tokio::test]
 async fn a_draft_is_not_part_of_the_students_summary_but_is_in_the_staff_totals() {
     db_test(async |pool| {
         let w = world(pool).await;

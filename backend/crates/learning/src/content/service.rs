@@ -24,7 +24,7 @@ use super::model::{
     ModulePatch, MyWork, OnDeadline, OpenedAssignment, Revision, SettingProblem, SettingsPatch,
     WorkEntry, WorkFacts,
 };
-use super::repo::{self, ItemRow, ModuleRow};
+use super::repo::{self, CopiedIds, ItemRow, ModuleRow};
 use super::types::form;
 use crate::assessment::{self, AssessmentError};
 use crate::files::{self as file_service, FileError, UsageOwner};
@@ -474,14 +474,13 @@ pub async fn lock_course_assignments(
 }
 
 /// Copies the whole tree of `from` into the empty course `to`, all as drafts (ADR-0048). The caller
-/// has authorized both courses.
+/// has authorized both courses. Returns which new id each module and item got.
 pub async fn copy_course_content(
     conn: &mut PgConnection,
     from: Uuid,
     to: Uuid,
-) -> Result<(), ContentError> {
-    repo::copy_course(conn, from, to).await?;
-    Ok(())
+) -> Result<CopiedIds, ContentError> {
+    Ok(repo::copy_course(conn, from, to).await?)
 }
 
 /// The course's content as the actor may see it. Staff see everything; others only what is open

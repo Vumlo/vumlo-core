@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "WITH module_map AS (\n             SELECT * FROM unnest($2::uuid[], $3::uuid[]) AS t (old_id, new_id)),\n         item_map AS (\n             SELECT * FROM unnest($4::uuid[], $5::uuid[]) AS t (old_id, new_id)),\n         new_modules AS (\n             INSERT INTO content.modules (id, course_id, parent_id, position, title, status)\n             SELECT mm.new_id, $1, pm.new_id, m.position, m.title, 'draft'\n             FROM content.modules m\n             JOIN module_map mm ON mm.old_id = m.id\n             LEFT JOIN module_map pm ON pm.old_id = m.parent_id\n             RETURNING id),\n         new_items AS (\n             INSERT INTO content.items (id, module_id, course_id, position, kind, title, body, status)\n             SELECT im.new_id, mm.new_id, $1, i.position, i.kind, i.title, i.body, 'draft'\n             FROM content.items i\n             JOIN item_map im ON im.old_id = i.id\n             JOIN module_map mm ON mm.old_id = i.module_id\n             RETURNING id),\n         new_files AS (\n             INSERT INTO content.item_files (item_id, file_id, published)\n             SELECT im.new_id, f.file_id, false\n             FROM content.item_files f\n             JOIN item_map im ON im.old_id = f.item_id\n             WHERE NOT f.published\n             RETURNING item_id)\n         INSERT INTO content.assignments (item_id, type, config, max_points, is_bonus, max_attempts)\n         SELECT im.new_id, a.type, a.config, a.max_points, a.is_bonus, a.max_attempts\n         FROM content.assignments a\n         JOIN item_map im ON im.old_id = a.item_id",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "UuidArray",
+        "UuidArray",
+        "UuidArray",
+        "UuidArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "138b2889d4c5d48a35a9dc3964b30899d39d5a1c040aad2dffa116caa097456e"
+}
