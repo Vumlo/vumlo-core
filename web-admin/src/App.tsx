@@ -9,6 +9,7 @@ import { AdminInstitution } from "./components/AdminInstitution";
 import { AdminPeople } from "./components/AdminPeople";
 import { AdminTerms } from "./components/AdminTerms";
 import { ConsolePlugins } from "./components/ConsolePlugins";
+import { ConsoleMail } from "./components/ConsoleMail";
 import { ConsoleShell } from "./components/ConsoleShell";
 import { ConsoleUnits } from "./components/ConsoleUnits";
 import { PluginDetail } from "./components/PluginDetail";
@@ -32,6 +33,7 @@ const pages: (Route & { title: MessageKey })[] = [
   { path: "/units", title: "un.title", render: () => <ConsoleUnits /> },
   { path: "/plugins", title: "pl.title", render: () => <ConsolePlugins /> },
   { path: "/plugins/:id", title: "pl.title", render: ({ id }) => <PluginDetail id={id ?? ""} /> },
+  { path: "/mail", title: "ml.title", render: () => <ConsoleMail /> },
   { path: "/institution", title: "ai.title", render: () => <AdminInstitution /> },
   { path: "/audit", title: "au.title", render: () => <AdminAudit /> },
 ];

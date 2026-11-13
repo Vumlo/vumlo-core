@@ -2,7 +2,7 @@
 import { expect, test, type ConsoleMessage, type Page } from "@playwright/test";
 import { PASSWORD, accounts, store } from "./support";
 
-const PAGES = ["/", "/people", "/groups", "/terms", "/units", "/plugins", "/institution", "/audit"];
+const PAGES = ["/", "/people", "/groups", "/terms", "/units", "/plugins", "/mail", "/institution", "/audit"];
 
 function watch(page: Page) {
   const problems: string[] = [];
@@ -61,7 +61,7 @@ test("every page opens in Ukrainian", async ({ page }) => {
 test("the sidebar names every page, and the terms page has the terms and no table of courses", async ({ page }) => {
   await signIn(page);
   const side = page.getByRole("navigation", { name: "Admin console" });
-  for (const name of ["People", "Groups", "Terms", "Units and roles", "Plugins", "Institution", "Audit log"]) {
+  for (const name of ["People", "Groups", "Terms", "Units and roles", "Plugins", "Mail", "Institution", "Audit log"]) {
     await expect(side.getByRole("link", { name })).toBeVisible();
   }
   await side.getByRole("link", { name: "Terms" }).click();
