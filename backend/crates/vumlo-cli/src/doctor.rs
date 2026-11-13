@@ -475,6 +475,28 @@ async fn plugins(settings: &Settings, pool: Option<&PgPool>) -> Check {
             ),
         );
     }
+    let missing = match plugins::missing_settings(&mut conn).await {
+        Ok(missing) => missing,
+        Err(error) => {
+            return Check::new(
+                "plugins",
+                Fail,
+                format!("cannot read the settings of the plugins: {error}"),
+            );
+        }
+    };
+    if !missing.is_empty() {
+        let lines: Vec<String> = missing
+            .iter()
+            .map(|(id, keys)| {
+                format!(
+                    "{id} needs setup: {} (run `vumlo-cli plugin configure {id}`)",
+                    keys.join(", ")
+                )
+            })
+            .collect();
+        return Check::new("plugins", Warn, lines.join("; "));
+    }
     Check::new("plugins", Pass, format!("{} installed", installed.len()))
 }
 

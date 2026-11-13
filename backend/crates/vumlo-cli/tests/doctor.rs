@@ -119,6 +119,64 @@ async fn doctor_warns_about_plugins_that_are_sent_nothing_and_about_dead_letters
 }
 
 #[tokio::test]
+async fn doctor_names_the_plugins_that_still_need_a_setting_and_how_to_set_it() {
+    db_test(async |pool| {
+        let env = Env::new(&pool);
+        let key = plugins::SecretKey::from_config(&vumlo_config::Secret::new(
+            "0123456789abcdef0123456789abcdef",
+        ))
+        .unwrap();
+        // `api_token` has no default and is the institution's; `max_words` has none either but is
+        // per course, so it is not asked for here.
+        let manifest = plugins::parse_manifest(
+            br#"{"id": "hello", "version": "1", "api": "1", "scopes": ["settings:read"],
+                 "subscribes": ["plugin.settings.changed"],
+                 "settings": {"api_token": {"type": "string", "secret": true},
+                              "max_words": {"type": "number", "scope": "course"}}}"#,
+        )
+        .unwrap();
+        let mut conn = pool.acquire().await.unwrap();
+        plugins::install(
+            &mut conn,
+            &key,
+            "http://127.0.0.1:9",
+            &manifest,
+            &[],
+            &access::CourseScope::All,
+        )
+        .await
+        .unwrap();
+        let doctor = async || {
+            let vars = [
+                ("DATABASE_URL", env.url.as_str()),
+                (
+                    "VUMLO__PLUGINS__SECRET_KEY",
+                    "0123456789abcdef0123456789abcdef",
+                ),
+            ];
+            report(&env.run_with(&["doctor", "--json"], None, &vars).await)
+        };
+
+        let r = doctor().await;
+        assert_eq!(status(&r, "plugins"), "warn", "{r:#}");
+        let text = detail(&r, "plugins");
+        assert!(
+            text.contains("hello needs setup: api_token")
+                && text.contains("vumlo-cli plugin configure hello")
+                && !text.contains("max_words"),
+            "{text}"
+        );
+
+        plugins::set_setting_text(&mut conn, &key, "hello", "api_token", "tok", None)
+            .await
+            .unwrap();
+        assert_eq!(status(&doctor().await, "plugins"), "ok");
+        assert!(audit(&pool).await.is_empty(), "doctor is read-only");
+    })
+    .await;
+}
+
+#[tokio::test]
 async fn a_missing_database_url_fails_and_the_rest_is_still_reported() {
     let env = Env::at(String::new(), CONFIG);
 

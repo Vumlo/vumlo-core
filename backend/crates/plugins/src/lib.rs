@@ -42,8 +42,8 @@ pub use secret::{
 pub use service::{
     CallReport, SettingView, assignment_reports, calls, check_base_url, course_reports,
     delete_report, fan_out, fetch_manifest, get, get_setting, grant, install, list, list_settings,
-    put_report, remove, reports, rotate_token, set_setting, set_setting_text, set_status,
-    settings_for_plugin, unset_setting,
+    missing_settings, put_report, remove, reports, rotate_token, set_setting, set_setting_text,
+    set_status, settings_for_plugin, unset_setting,
 };
 pub use settings::{ItemSpec, ScalarKind, SettingKind, SettingScope, SettingSpec};
 pub use state::PluginsState;

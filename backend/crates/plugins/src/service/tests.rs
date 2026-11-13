@@ -572,6 +572,46 @@ async fn a_setting_is_set_from_text_by_the_type_its_spec_declares() {
 }
 
 #[tokio::test]
+async fn missing_settings_names_the_institution_settings_that_have_no_value_and_no_default() {
+    db_test(async |pool| {
+        install_configurable(&pool, "conf").await;
+        install_hello(&pool, &[]).await;
+        let mut conn = pool.acquire().await.unwrap();
+
+        // `unit` has a default, `strict` is per course; `max_words` is per course with no default
+        // and is not the institution's to set, so it is not named.
+        assert_eq!(
+            missing_settings(&mut conn).await.unwrap(),
+            [(
+                "conf".to_owned(),
+                vec!["api_token".to_owned(), "tags".to_owned()]
+            )]
+        );
+
+        for (name, text) in [("api_token", "tok"), ("tags", r#"["a"]"#)] {
+            set_setting_text(&mut conn, &key(), "conf", name, text, None)
+                .await
+                .unwrap();
+        }
+        assert!(missing_settings(&mut conn).await.unwrap().is_empty());
+
+        // A plugin that is switched off needs nothing.
+        unset_setting(&mut conn, "conf", "tags", None)
+            .await
+            .unwrap();
+        assert_eq!(
+            missing_settings(&mut conn).await.unwrap(),
+            [("conf".to_owned(), vec!["tags".to_owned()])]
+        );
+        set_status(&mut conn, "conf", InstallStatus::Disabled)
+            .await
+            .unwrap();
+        assert!(missing_settings(&mut conn).await.unwrap().is_empty());
+    })
+    .await;
+}
+
+#[tokio::test]
 async fn a_secret_is_stored_sealed_and_only_the_plugin_reads_it_back() {
     db_test(async |pool| {
         let installed = install_configurable(&pool, "conf").await;
