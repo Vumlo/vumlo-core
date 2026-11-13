@@ -255,7 +255,7 @@ each unit if you installed elsewhere.
 
 ### Caddy
 
-Caddy gives the web app and the API one origin and gets the TLS certificate:
+Caddy gives the web app and the API one origin and gets the TLS certificate: `npx create-vumlo` writes `caddy.env` with both domains when the addresses are https hostnames, and sets `server.client_ip_header` (ADR-0096); append it instead of typing the variables:
 
 ```sh
 sudo apt install caddy

@@ -1,6 +1,6 @@
 # The installer asks what the first run needs: design
 
-Status: design, not built. ADR-0096 (to be added with the build). Roadmap item 7. Repository of the work: `create-vumlo`
+Status: built in `create-vumlo` (branch `feat/first-run-setup`, not pushed). ADR-0096. Roadmap item 7. Repository of the work: `create-vumlo`
 (one PR); the release side needs nothing.
 
 ## 1. Intent
