@@ -7,6 +7,7 @@ pub(crate) const VALID: &str = r#"
     [server]
     bind_addr = "127.0.0.1:8080"
     public_origin = "https://lms.example.edu/"
+    admin_origin = "https://admin.lms.example.edu"
     [database]
     max_connections = 5
     [log]
@@ -100,7 +101,7 @@ fn an_old_variable_in_the_environment_stops_the_load() {
 
 #[test]
 fn defaults_apply_when_nothing_else_says_otherwise() {
-    let toml = "[server]\npublic_origin = \"https://a.test\"\n[institution]\nname = \"A\"\nmode = \"school\"";
+    let toml = "[server]\npublic_origin = \"https://a.test\"\nadmin_origin = \"https://admin.a.test\"\n[institution]\nname = \"A\"\nmode = \"school\"";
     let s = build(toml, &[]).unwrap();
     assert_eq!(s.server.bind_addr.to_string(), "127.0.0.1:8080");
     assert_eq!(s.database.max_connections, 10);
@@ -785,6 +786,57 @@ fn public_origin_loses_the_trailing_slash_and_rejects_paths() {
         let e = build(VALID, &[("VUMLO__SERVER__PUBLIC_ORIGIN", bad)]).unwrap_err();
         assert!(e.to_string().contains("public_origin"), "{bad}: {e}");
     }
+}
+
+#[test]
+fn a_missing_admin_origin_is_named_in_the_error() {
+    let toml = VALID.replace("    admin_origin = \"https://admin.lms.example.edu\"\n", "");
+    let e = build(&toml, &[]).unwrap_err();
+    assert!(e.to_string().contains("admin_origin"), "{e}");
+}
+
+#[test]
+fn the_admin_origin_is_normalised_like_the_public_one() {
+    let toml = VALID.replace("edu\"\n    [database]", "edu/\"\n    [database]");
+    assert_eq!(
+        build(&toml, &[]).unwrap().server.admin_origin,
+        "https://admin.lms.example.edu"
+    );
+    for bad in ["admin.lms.example.edu", "https://admin.lms.example.edu/x", "ftp://x"] {
+        let e = build(VALID, &[("VUMLO__SERVER__ADMIN_ORIGIN", bad)]).unwrap_err();
+        assert!(e.to_string().contains("server.admin_origin"), "{bad}: {e}");
+    }
+}
+
+#[test]
+fn the_admin_origin_must_differ_from_the_public_origin() {
+    let e = build(
+        VALID,
+        &[("VUMLO__SERVER__ADMIN_ORIGIN", "https://lms.example.edu/")],
+    )
+    .unwrap_err();
+    let text = e.to_string();
+    assert!(
+        text.contains("server.admin_origin") && text.contains("server.public_origin"),
+        "{text}"
+    );
+}
+
+#[test]
+fn the_admin_origin_is_not_a_trusted_frontend() {
+    let e = build(
+        VALID,
+        &[(
+            "VUMLO__SERVER__ALLOWED_ORIGINS",
+            "https://app.example.edu,https://admin.lms.example.edu",
+        )],
+    )
+    .unwrap_err();
+    let text = e.to_string();
+    assert!(
+        text.contains("server.admin_origin") && text.contains("server.allowed_origins"),
+        "{text}"
+    );
 }
 
 #[test]

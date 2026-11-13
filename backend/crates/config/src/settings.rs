@@ -104,6 +104,11 @@ pub struct ServerSettings {
     /// installation publishes is derived from it.
     #[schemars(extend("x-visibility" = "public"))]
     pub public_origin: String,
+    /// The origin of the admin console, e.g. `https://admin.lms.example.edu` (ADR-0095). Cookie
+    /// requests made with a console session must carry exactly this `Origin`. It differs from
+    /// `public_origin` and is not one of `allowed_origins`.
+    #[schemars(extend("x-visibility" = "private"))]
+    pub admin_origin: String,
     /// Header that carries the client IP when a reverse proxy sets it (e.g. `x-real-ip`).
     /// Unset: the TCP peer address is used.
     #[serde(default)]

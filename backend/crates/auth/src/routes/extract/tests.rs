@@ -6,6 +6,7 @@ fn server(allowed: &[&str]) -> ServerSettings {
     ServerSettings {
         bind_addr: ([127, 0, 0, 1], 0).into(),
         public_origin: "https://a.edu".to_owned(),
+        admin_origin: "https://admin.a.edu".to_owned(),
         client_ip_header: None,
         allowed_origins: allowed.iter().map(|o| (*o).to_owned()).collect(),
     }

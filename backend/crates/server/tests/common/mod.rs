@@ -20,6 +20,9 @@ use vumlo_config::{
 pub use test_support::{bare_db_test, db_test, wait_until_blocked};
 
 pub const ORIGIN: &str = "https://lms.test";
+/// The origin of the admin console in the test configuration (ADR-0095).
+#[allow(dead_code)]
+pub const ADMIN_ORIGIN: &str = "https://admin.lms.test";
 
 /// Applies the migrations of the optional modules compiled in. `db_test` only migrates the core,
 /// and a binary built with a module treats a database with its migrations pending as not ready.
@@ -51,6 +54,7 @@ pub fn test_settings() -> Settings {
         server: ServerSettings {
             bind_addr: ([127, 0, 0, 1], 0).into(),
             public_origin: ORIGIN.to_owned(),
+            admin_origin: ADMIN_ORIGIN.to_owned(),
             client_ip_header: Some("x-real-ip".to_owned()),
             allowed_origins: Vec::new(),
         },
