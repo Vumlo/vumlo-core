@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM org.unit_role_abilities WHERE role = 'viewer' AND ability = 'view_grades'",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "12d22763188520f4cd03a85c1651a1f4e3a3f2c3bd3449a8592b889bf63bf797"
+}

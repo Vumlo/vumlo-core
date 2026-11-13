@@ -199,3 +199,124 @@ async fn the_view_of_items_leaves_out_the_text_and_says_when_a_published_item_wa
     })
     .await;
 }
+
+/// Units A > B > C, and a top-level S beside A. Pat is `viewer` of A and `manager` of B.
+struct Units {
+    a: Uuid,
+    b: Uuid,
+    c: Uuid,
+    s: Uuid,
+    pat: Uuid,
+}
+
+async fn unit(pool: &PgPool, parent: Option<Uuid>, name: &str) -> Uuid {
+    let id = Uuid::now_v7();
+    sqlx::query!(
+        "INSERT INTO org.units (id, parent_id, name) VALUES ($1, $2, $3)",
+        id,
+        parent,
+        name
+    )
+    .execute(pool)
+    .await
+    .unwrap();
+    id
+}
+
+async fn seed_units(pool: &PgPool) -> Units {
+    let a = unit(pool, None, "A").await;
+    let b = unit(pool, Some(a), "B").await;
+    let c = unit(pool, Some(b), "C").await;
+    let s = unit(pool, None, "S").await;
+    let pat = user(pool, "pat@example.com").await;
+    for (unit_id, role) in [(a, "viewer"), (b, "manager")] {
+        sqlx::query!(
+            "INSERT INTO org.unit_roles (unit_id, user_id, role) VALUES ($1, $2, $3)",
+            unit_id,
+            pat,
+            role
+        )
+        .execute(pool)
+        .await
+        .unwrap();
+    }
+    Units { a, b, c, s, pat }
+}
+
+async fn subtree(pool: &PgPool, root: Uuid) -> Vec<Uuid> {
+    let mut ids = sqlx::query_scalar!(
+        r#"SELECT unit_id AS "unit_id!" FROM org.unit_subtree WHERE root_id = $1"#,
+        root
+    )
+    .fetch_all(pool)
+    .await
+    .unwrap();
+    ids.sort();
+    ids
+}
+
+/// Pat's abilities on a unit, sorted; `None` when the view has no row.
+async fn abilities(pool: &PgPool, user_id: Uuid, unit_id: Uuid) -> Option<Vec<String>> {
+    let row = sqlx::query_scalar!(
+        r#"SELECT abilities AS "abilities!" FROM org.unit_grants
+           WHERE user_id = $1 AND unit_id = $2"#,
+        user_id,
+        unit_id
+    )
+    .fetch_optional(pool)
+    .await
+    .unwrap();
+    row.map(|mut list| {
+        list.sort();
+        list
+    })
+}
+
+#[tokio::test]
+async fn unit_subtree_holds_each_unit_and_everything_below() {
+    db_test(async |pool| {
+        let u = seed_units(&pool).await;
+        let mut all = vec![u.a, u.b, u.c];
+        all.sort();
+        assert_eq!(subtree(&pool, u.a).await, all);
+        assert_eq!(subtree(&pool, u.c).await, vec![u.c]);
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn unit_grants_cover_the_subtree_and_unite_the_roles() {
+    db_test(async |pool| {
+        let u = seed_units(&pool).await;
+        assert_eq!(
+            abilities(&pool, u.pat, u.a).await,
+            Some(vec!["view_grades".to_owned()])
+        );
+        let manager = vec![
+            "manage_courses".to_owned(),
+            "manage_roster".to_owned(),
+            "manage_units".to_owned(),
+            "view_grades".to_owned(),
+        ];
+        assert_eq!(abilities(&pool, u.pat, u.b).await, Some(manager.clone()));
+        assert_eq!(abilities(&pool, u.pat, u.c).await, Some(manager));
+        assert_eq!(abilities(&pool, u.pat, u.s).await, None);
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn unit_grants_follow_the_ability_switches_at_once() {
+    db_test(async |pool| {
+        let u = seed_units(&pool).await;
+        sqlx::query!(
+            "DELETE FROM org.unit_role_abilities WHERE role = 'viewer' AND ability = 'view_grades'"
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        // A grant with no switches still means view.
+        assert_eq!(abilities(&pool, u.pat, u.a).await, Some(Vec::new()));
+    })
+    .await;
+}
