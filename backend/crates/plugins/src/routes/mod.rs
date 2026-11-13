@@ -24,6 +24,7 @@ use crate::secret::LAUNCH_TTL_SECONDS;
 use crate::service;
 use crate::state::PluginsState;
 
+mod admin;
 mod guard;
 mod mail;
 mod reads;
@@ -52,6 +53,14 @@ where
     Ok(OpenApiRouter::new()
         .merge(plugin_api)
         .merge(reports::staff_router())
+        // The console's (ADR-0095): each handler's service wants a console administrator.
+        .routes(routes!(admin::list_plugins))
+        .routes(routes!(admin::get_plugin))
+        .routes(routes!(admin::set_status))
+        .routes(routes!(admin::grant))
+        .routes(routes!(admin::list_settings))
+        .routes(routes!(admin::set_setting, admin::unset_setting))
+        .routes(routes!(admin::calls))
         .routes(routes!(list_slots))
         .routes(routes!(launch)))
 }

@@ -434,3 +434,138 @@ pub struct SendMailResponse {
     pub skipped: u32,
     pub skipped_reasons: SkippedReasons,
 }
+
+// ---------------------------------------------------------------------------------------------
+// Administering plugins from the console (ADR-0095)
+// ---------------------------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum PluginStatus {
+    Enabled,
+    Disabled,
+}
+
+/// An installed plugin as the console lists it. It holds no token and no secret.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct AdminPlugin {
+    pub plugin_id: String,
+    pub version: String,
+    pub base_url: String,
+    pub status: PluginStatus,
+    /// What the plugin asked for, as scope names such as `grades:read`.
+    pub requested_scopes: Vec<String>,
+    /// What an administrator granted.
+    pub scopes: Vec<String>,
+    /// Whether the plugin reaches every course; if not, `course_ids` lists them.
+    pub all_courses: bool,
+    pub course_ids: Vec<Uuid>,
+    /// Deliveries owed and failed.
+    pub pending: i64,
+    pub failed: i64,
+    /// The keys of its institution settings that have no value and no default.
+    pub needs_setup: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct AdminPlugins {
+    pub items: Vec<AdminPlugin>,
+}
+
+/// One institution setting of a plugin, with what a form needs to ask for it. A secret never
+/// carries its value: `is_set` says whether there is one.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
+pub struct AdminPluginSetting {
+    pub key: String,
+    pub description: String,
+    /// `string`, `number`, `boolean` or `array`.
+    pub kind: String,
+    pub secret: bool,
+    /// The values a string may take.
+    pub options: Option<Vec<String>>,
+    pub minimum: Option<f64>,
+    pub maximum: Option<f64>,
+    /// The type of the entries of an `array`: `string` or `number`.
+    pub item_kind: Option<String>,
+    #[schema(value_type = Option<Object>)]
+    pub default: Option<Value>,
+    /// Whether a value was set, as opposed to the default applying.
+    pub is_set: bool,
+    /// The value in force; never present for a secret.
+    #[schema(value_type = Option<Object>)]
+    pub value: Option<Value>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
+pub struct AdminPluginSettings {
+    pub items: Vec<AdminPluginSetting>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Validate, ToSchema)]
+pub struct SetPluginStatusRequest {
+    #[garde(skip)]
+    pub status: PluginStatus,
+}
+
+/// What a plugin may do and reach. The scopes stay within what it asked for.
+#[derive(Debug, Clone, Serialize, Deserialize, Validate, ToSchema)]
+pub struct GrantPluginRequest {
+    #[garde(length(max = 32))]
+    pub scopes: Vec<String>,
+    /// Every course, including those created later; otherwise `course_ids`.
+    #[garde(skip)]
+    pub all_courses: bool,
+    #[garde(length(max = 10_000))]
+    pub course_ids: Vec<Uuid>,
+}
+
+/// A value typed as text: a string stays text, a number, a boolean or a list is JSON.
+#[derive(Clone, Serialize, Deserialize, Validate, ToSchema)]
+pub struct SetPluginSettingRequest {
+    #[garde(length(max = 16_384))]
+    pub value: String,
+}
+
+impl std::fmt::Debug for SetPluginSettingRequest {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // The value may be a credential.
+        f.debug_struct("SetPluginSettingRequest")
+            .finish_non_exhaustive()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct AdminPluginCall {
+    pub at: DateTime<Utc>,
+    pub method: String,
+    pub route: String,
+    pub status: i16,
+    pub duration_ms: i32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct AdminPluginCallCount {
+    pub method: String,
+    pub route: String,
+    pub status: i16,
+    pub calls: i64,
+    pub average_ms: i64,
+}
+
+/// What a plugin did to the plugin API: the newest calls, and the counts by route and answer.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct AdminPluginCalls {
+    pub recent: Vec<AdminPluginCall>,
+    pub counts: Vec<AdminPluginCallCount>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Validate, IntoParams)]
+#[into_params(parameter_in = Query)]
+pub struct AdminPluginCallsQuery {
+    /// Only calls newer than this; default: the last 24 hours.
+    #[garde(skip)]
+    pub since: Option<DateTime<Utc>>,
+    /// At most this many of the newest calls, 1 to 200; default 50.
+    #[garde(range(min = 1, max = 200))]
+    pub limit: Option<i64>,
+}

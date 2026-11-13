@@ -79,6 +79,15 @@ impl From<PluginsError> for ApiError {
             | PluginsError::ReportGone
             | PluginsError::CourseGone => Self::NotFound,
             PluginsError::TooManyReports(_) => Self::invalid_field("key", error.to_string()),
+            // The console sets settings and grants, so these reach a request (ADR-0095). The
+            // messages name the key and never repeat the value.
+            PluginsError::BadSetting { .. } => Self::invalid_field("value", error.to_string()),
+            PluginsError::WrongScope { .. } => Self::invalid_field("key", error.to_string()),
+            PluginsError::NotRequested(_) => Self::invalid_field("scopes", error.to_string()),
+            PluginsError::NoSuchSetting { .. } => Self::NotFound,
+            PluginsError::NoKey => Self::ServiceUnavailable(
+                "plugins.secret_key is not set, so no secret can be stored",
+            ),
             PluginsError::Mail(error) => error.into(),
             PluginsError::Db(error) => Self::from_db("plugins", &error),
             // The rest happen at install time, in the CLI, and never in a request.

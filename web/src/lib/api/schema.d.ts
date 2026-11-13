@@ -105,6 +105,145 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/plugins": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The installed plugins, with their state, what they were granted, their deliveries and which
+         *     settings still need a value. Console administrators only.
+         */
+        get: operations["list_plugins"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/plugins/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** One install. Console administrators only. */
+        get: operations["get_plugin"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/plugins/{id}/calls": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * What the plugin did to the plugin API (ADR-0079): its newest calls and the counts by route and
+         *     answer. Console administrators only.
+         */
+        get: operations["calls"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/plugins/{id}/grants": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Replaces what a plugin may do and reach. The scopes stay within what it asked for. Console
+         *     administrators only.
+         */
+        put: operations["grant"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/plugins/{id}/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The institution settings of a plugin, as its manifest declares them. A secret shows only
+         *     whether it is set. Console administrators only.
+         */
+        get: operations["list_settings"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/plugins/{id}/settings/{key}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Sets one institution setting from text: a string stays text, a number, a boolean or a list is
+         *     JSON. The value is checked against the manifest's spec and never returned. Console
+         *     administrators only.
+         */
+        put: operations["set_setting"];
+        post?: never;
+        /** Takes a value away, so that the default applies again. Console administrators only. */
+        delete: operations["unset_setting"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/plugins/{id}/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Switches a plugin on or off. Off, its token stops working, it is sent no event and its queued
+         *     mail is cancelled (ADR-0085). Console administrators only.
+         */
+        put: operations["set_status"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/term-stats": {
         parameters: {
             query?: never;
@@ -2947,6 +3086,84 @@ export interface components {
             allowed_domains: string[];
             mode: components["schemas"]["InstitutionMode"];
         };
+        /** @description An installed plugin as the console lists it. It holds no token and no secret. */
+        AdminPlugin: {
+            /** @description Whether the plugin reaches every course; if not, `course_ids` lists them. */
+            all_courses: boolean;
+            base_url: string;
+            course_ids: string[];
+            /** Format: int64 */
+            failed: number;
+            /** @description The keys of its institution settings that have no value and no default. */
+            needs_setup: string[];
+            /**
+             * Format: int64
+             * @description Deliveries owed and failed.
+             */
+            pending: number;
+            plugin_id: string;
+            /** @description What the plugin asked for, as scope names such as `grades:read`. */
+            requested_scopes: string[];
+            /** @description What an administrator granted. */
+            scopes: string[];
+            status: components["schemas"]["PluginStatus"];
+            version: string;
+        };
+        AdminPluginCall: {
+            /** Format: date-time */
+            at: string;
+            /** Format: int32 */
+            duration_ms: number;
+            method: string;
+            route: string;
+            /** Format: int32 */
+            status: number;
+        };
+        AdminPluginCallCount: {
+            /** Format: int64 */
+            average_ms: number;
+            /** Format: int64 */
+            calls: number;
+            method: string;
+            route: string;
+            /** Format: int32 */
+            status: number;
+        };
+        /** @description What a plugin did to the plugin API: the newest calls, and the counts by route and answer. */
+        AdminPluginCalls: {
+            counts: components["schemas"]["AdminPluginCallCount"][];
+            recent: components["schemas"]["AdminPluginCall"][];
+        };
+        /**
+         * @description One institution setting of a plugin, with what a form needs to ask for it. A secret never
+         *     carries its value: `is_set` says whether there is one.
+         */
+        AdminPluginSetting: {
+            default?: Record<string, never> | null;
+            description: string;
+            /** @description Whether a value was set, as opposed to the default applying. */
+            is_set: boolean;
+            /** @description The type of the entries of an `array`: `string` or `number`. */
+            item_kind?: string | null;
+            key: string;
+            /** @description `string`, `number`, `boolean` or `array`. */
+            kind: string;
+            /** Format: double */
+            maximum?: number | null;
+            /** Format: double */
+            minimum?: number | null;
+            /** @description The values a string may take. */
+            options?: string[] | null;
+            secret: boolean;
+            /** @description The value in force; never present for a secret. */
+            value?: Record<string, never> | null;
+        };
+        AdminPluginSettings: {
+            items: components["schemas"]["AdminPluginSetting"][];
+        };
+        AdminPlugins: {
+            items: components["schemas"]["AdminPlugin"][];
+        };
         /**
          * @description The only value of the `students` selector that is not a list.
          * @enum {string}
@@ -3928,6 +4145,13 @@ export interface components {
          * @enum {string}
          */
         GradingScale: "twelve" | "hundred";
+        /** @description What a plugin may do and reach. The scopes stay within what it asked for. */
+        GrantPluginRequest: {
+            /** @description Every course, including those created later; otherwise `course_ids`. */
+            all_courses: boolean;
+            course_ids: string[];
+            scopes: string[];
+        };
         /** @description A cohort: school class 7-A, university group PZ-31. */
         Group: {
             /** Format: date-time */
@@ -5003,6 +5227,8 @@ export interface components {
         PluginSlots: {
             items: components["schemas"]["PluginSlot"][];
         };
+        /** @enum {string} */
+        PluginStatus: "enabled" | "disabled";
         /**
          * @description A submitted attempt as a plugin with `submissions:read` sees it: which work, whose, and what it
          *     says. No draft, no score and no grade.
@@ -5294,6 +5520,13 @@ export interface components {
              * @description The unit, or `null` for none. Required: a body without it is a 422, never a silent clear.
              */
             unit_id: string | null;
+        };
+        /** @description A value typed as text: a string stays text, a number, a boolean or a list is JSON. */
+        SetPluginSettingRequest: {
+            value: string;
+        };
+        SetPluginStatusRequest: {
+            status: components["schemas"]["PluginStatus"];
         };
         /**
          * @description The switches a unit role has afterwards: exactly these. An empty list leaves the role able to
@@ -6031,6 +6264,375 @@ export interface operations {
             };
             /** @description A link that is not an https address, or a platform twice */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    list_plugins: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The installs */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminPlugins"];
+                };
+            };
+            /** @description No console session */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Not a console administrator */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    get_plugin: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Plugin id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The install */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminPlugin"];
+                };
+            };
+            /** @description Not a console administrator */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description No such plugin */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    calls: {
+        parameters: {
+            query?: {
+                /** @description Only calls newer than this; default: the last 24 hours. */
+                since?: string;
+                /** @description At most this many of the newest calls, 1 to 200; default 50. */
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                /** @description Plugin id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The report */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminPluginCalls"];
+                };
+            };
+            /** @description Not a console administrator */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description No such plugin */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    grant: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Plugin id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GrantPluginRequest"];
+            };
+        };
+        responses: {
+            /** @description The install after the change */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminPlugin"];
+                };
+            };
+            /** @description Not a console administrator */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description No such plugin, or a course that is not there */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description A scope that is unknown or that the plugin did not ask for */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    list_settings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Plugin id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The settings */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminPluginSettings"];
+                };
+            };
+            /** @description Not a console administrator */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description No such plugin */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    set_setting: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Plugin id */
+                id: string;
+                /** @description Setting key */
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetPluginSettingRequest"];
+            };
+        };
+        responses: {
+            /** @description Stored, or it had this value already */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not a console administrator */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description No such plugin or setting */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The value does not meet the setting's spec, or the setting belongs to a course */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    unset_setting: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Plugin id */
+                id: string;
+                /** @description Setting key */
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Removed, or there was no value */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not a console administrator */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description No such plugin or setting */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The setting belongs to a course */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    set_status: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Plugin id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetPluginStatusRequest"];
+            };
+        };
+        responses: {
+            /** @description The install after the change */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminPlugin"];
+                };
+            };
+            /** @description Not a console administrator */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description No such plugin */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

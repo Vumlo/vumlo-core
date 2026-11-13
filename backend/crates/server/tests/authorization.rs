@@ -897,6 +897,17 @@ async fn the_list_of_operations_is_the_api() {
             // The path names a role (`manager`, `viewer`), not an id, so the list above cannot
             // spell it with the nil id; `tests/org.rs` checks who may call it.
             "PUT /admin/unit-roles/{role}",
+            // The paths name a plugin by its text id, which the nil id cannot spell;
+            // `tests/console_plugins.rs` calls every one as an app administrator, a teacher and a
+            // console administrator.
+            "GET /admin/plugins",
+            "GET /admin/plugins/{id}",
+            "PUT /admin/plugins/{id}/status",
+            "PUT /admin/plugins/{id}/grants",
+            "GET /admin/plugins/{id}/settings",
+            "PUT /admin/plugins/{id}/settings/{key}",
+            "DELETE /admin/plugins/{id}/settings/{key}",
+            "GET /admin/plugins/{id}/calls",
             // The routes of a plugin's own server: who may call each is in its manifest, and
             // `tests/plugin_routes.rs` checks every answer.
             "GET /plugins/{plugin_id}/{path}",
