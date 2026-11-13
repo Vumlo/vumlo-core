@@ -75,32 +75,32 @@ const UNITS: &[Unit] = &[
     },
     Unit {
         name: "teaching",
-        dir: "learning/src/teaching",
+        dir: "learning/flows/src/teaching",
         schema: Some("teaching"),
         layer: 7,
     },
     Unit {
         name: "content",
-        dir: "learning/src/content",
+        dir: "learning/flows/src/content",
         schema: Some("content"),
         layer: 8,
     },
     Unit {
         name: "assessment",
-        dir: "learning/src/assessment",
+        dir: "learning/flows/src/assessment",
         schema: Some("assessment"),
         layer: 9,
     },
     Unit {
         name: "gradebook",
-        dir: "learning/src/gradebook",
+        dir: "learning/flows/src/gradebook",
         schema: Some("gradebook"),
         layer: 10,
     },
     // The flows above those four (a person with their courses, the audit report, ...): no schema.
     Unit {
         name: "learning",
-        dir: "learning/src",
+        dir: "learning/flows/src",
         schema: None,
         layer: 11,
     },
@@ -493,10 +493,10 @@ const FILE_FINISHES: &[&str] = &[
 /// Where a `FILE_FINISHES` name may appear: the owners that define them (and `set_due_at`, which
 /// names no file) and the flows that call them.
 const FILE_FINISH_HOMES: &[&str] = &[
-    "learning/src/content/",
-    "learning/src/assessment/",
-    "learning/src/items/",
-    "learning/src/submissions/",
+    "learning/flows/src/content/",
+    "learning/flows/src/assessment/",
+    "learning/flows/src/items/",
+    "learning/flows/src/submissions/",
 ];
 
 #[test]

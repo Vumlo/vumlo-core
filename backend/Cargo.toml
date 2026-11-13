@@ -1,6 +1,7 @@
 [workspace]
 resolver = "3"
-# `crates/modules/` only holds the optional modules; each of them is a member.
+# `crates/modules/` only holds the optional modules, `crates/learning/` the crates of the learning
+# domain (ADR-0093); each of them is a member.
 members = [
     "crates/access",
     "crates/api-types",
@@ -10,7 +11,7 @@ members = [
     "crates/db",
     "crates/events",
     "crates/files",
-    "crates/learning",
+    "crates/learning/*",
     "crates/mail",
     "crates/module-api",
     "crates/org",
@@ -73,7 +74,7 @@ common = { path = "crates/common" }
 db = { path = "crates/db" }
 events = { path = "crates/events" }
 files = { path = "crates/files" }
-learning = { path = "crates/learning" }
+learning = { path = "crates/learning/flows" }
 mail = { path = "crates/mail" }
 module-api = { path = "crates/module-api" }
 org = { path = "crates/org" }
