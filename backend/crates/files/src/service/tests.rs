@@ -159,6 +159,50 @@ async fn lock_returns_the_rows_that_exist_in_id_order() {
 }
 
 #[tokio::test]
+async fn lock_takes_the_rows_in_id_order_even_when_they_are_stored_in_another() {
+    db_test(async |pool| {
+        let (storage, _) = memory();
+        let (a, b) = (Uuid::now_v7(), Uuid::now_v7());
+        let (low, high) = if a < b { (a, b) } else { (b, a) };
+        // The row with the higher id is stored first, so a scan without an order meets it first.
+        let mut conn = pool.acquire().await.unwrap();
+        for id in [high, low] {
+            let stored = put(&storage, id, b"x".as_slice(), 1024).await.unwrap();
+            insert(&mut conn, &stored, Uuid::now_v7(), "a.txt", "text/plain")
+                .await
+                .unwrap();
+        }
+        drop(conn);
+        let mut holder = pool.begin().await.unwrap();
+        lock(&mut holder, &[low]).await.unwrap();
+
+        let waiting = tokio::spawn({
+            let pool = pool.clone();
+            async move {
+                let mut tx = pool.begin().await.unwrap();
+                lock(&mut tx, &[high, low]).await.unwrap().len()
+            }
+        });
+        test_support::wait_until_blocked(&pool, &waiting).await;
+
+        // It waits for `low`, the first of its rows, and has not taken `high` yet: two callers
+        // that name the same files in opposite orders cannot hold one each.
+        let mut probe = pool.begin().await.unwrap();
+        let free = sqlx::query_scalar!(
+            "SELECT id FROM files.files WHERE id = $1 FOR UPDATE NOWAIT",
+            high
+        )
+        .fetch_one(&mut *probe)
+        .await;
+        assert!(free.is_ok(), "{free:?}");
+        probe.rollback().await.unwrap();
+        holder.commit().await.unwrap();
+        assert_eq!(waiting.await.unwrap(), 2);
+    })
+    .await;
+}
+
+#[tokio::test]
 async fn a_second_lock_waits_until_the_first_transaction_ends() {
     db_test(async |pool| {
         let (storage, _) = memory();

@@ -60,9 +60,9 @@ behind a Cargo feature, and `server` and `vumlo-cli` name it in exactly one plac
   lower crate to a higher one. A flow whose first half must lock before the others are asked is a pair
   `begin_*` / `finish_*` in the owner (`content::begin_delete_item`), with the other modules' answers passed
   between them. A write that names files is such a pair too: the flow runs `begin_*`, `learning::files::check`
-  (it locks the file rows, ascending id, then reads the references) and `finish_*`, in one transaction; the order of
-  locks is the owner's rows, the file rows, the reference rows. `auth::apply_user_update` is called only from
-  `learning`.
+  (it locks the file rows, ascending id, then reads the references) and `finish_*`, in one transaction; a
+  `begin_*` takes every lock of the owner before `check`, and file rows are taken only in `check`.
+  `auth::apply_user_update` is called only from `learning`.
 - SQL lives only in `repo.rs`. HTTP types (`axum`, DTOs) never appear in `service.rs` or `repo.rs`.
   Exception: the block document types of ADR-0025 and ADR-0027 live in `api-types` and `content` uses them directly.
 - A large file becomes a folder (`routes/courses.rs`, `routes/groups.rs`); the module's public surface does not change.

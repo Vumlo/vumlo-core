@@ -968,6 +968,17 @@ fn judge_files(refs: &[FileRef], verdict: &FileVerdict) -> Result<(), ContentErr
     if let Some(id) = verdict.not_image {
         return Err(ContentError::NotAnImage { field: field(id) });
     }
+    // The check names every file it judged. One it did not judge (an empty verdict handed to a
+    // write that names files) is refused, so a write finished without the check attaches nothing.
+    if let Some(file) = refs
+        .iter()
+        .find(|file| !verdict.names.contains_key(&file.id))
+    {
+        return Err(ContentError::FileUnusable {
+            id: file.id,
+            field: file.path.clone(),
+        });
+    }
     Ok(())
 }
 

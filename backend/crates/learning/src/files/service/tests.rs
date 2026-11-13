@@ -726,6 +726,54 @@ async fn holders_of_items(pool: &PgPool, file: Uuid) -> Vec<Uuid> {
 }
 
 #[tokio::test]
+async fn a_verdict_that_does_not_cover_the_files_refuses_them() {
+    db_test(async |pool| {
+        let f = fixture(pool).await;
+        // The student's own upload, which `check` would accept for their draft.
+        let id = file(&f.pool, &f.student).await;
+        let mut conn = f.pool.acquire().await.unwrap();
+
+        // A write finished without the check (the empty verdict) is refused, not attached.
+        let creation = content::begin_create_item(
+            &mut conn,
+            &f.owner,
+            rules(),
+            f.module,
+            crate::content::NewItemInput::document(
+                ContentTitle::parse("New").unwrap(),
+                Some(body_naming("file", id)),
+                None,
+            ),
+        )
+        .await
+        .unwrap();
+        let created =
+            content::finish_create_item(&mut conn, &f.owner, creation, &Default::default()).await;
+        assert!(
+            matches!(&created, Err(content::ContentError::FileUnusable { id: bad, .. }) if *bad == id),
+            "{created:?}"
+        );
+
+        let save = assessment::begin_save_draft(
+            &mut conn,
+            &f.student,
+            f.assignment,
+            &body_naming("file", id),
+            &PROFILES,
+            Utc::now(),
+        )
+        .await
+        .unwrap();
+        let saved = assessment::finish_save_draft(&mut conn, save, &Default::default()).await;
+        assert!(
+            matches!(saved, Err(AssessmentError::Document(_))),
+            "{saved:?}"
+        );
+    })
+    .await;
+}
+
+#[tokio::test]
 async fn an_image_block_needs_an_image_file() {
     db_test(async |pool| {
         let f = fixture(pool).await;
@@ -954,6 +1002,55 @@ async fn a_draft_cannot_take_a_file_another_draft_just_attached() {
             holders(&f.pool, id).await,
             rows_of(&f.pool, f.assignment, &f.student).await
         );
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn two_first_saves_of_one_draft_run_one_after_the_other() {
+    db_test(async |pool| {
+        let f = fixture(pool).await;
+        let empty = json!({"v": 1, "attachments": [], "blocks": []});
+        let now = Utc::now();
+
+        // The first save finds no draft and has not written one yet.
+        let mut first = f.pool.begin().await.unwrap();
+        let save = assessment::begin_save_draft(
+            &mut first,
+            &f.student,
+            f.assignment,
+            &empty,
+            &PROFILES,
+            now,
+        )
+        .await
+        .unwrap();
+        let id = save.submission_id();
+
+        // A second first save would otherwise take the file rows before the draft row, against a
+        // submit that holds the draft row: it has to wait here, before any file is locked.
+        let waiting = tokio::spawn({
+            let (pool, student, empty) = (f.pool.clone(), f.student.clone(), empty.clone());
+            let assignment = f.assignment;
+            async move {
+                let mut tx = pool.begin().await.unwrap();
+                let save = assessment::begin_save_draft(
+                    &mut tx, &student, assignment, &empty, &PROFILES, now,
+                )
+                .await
+                .unwrap();
+                tx.commit().await.unwrap();
+                save.submission_id()
+            }
+        });
+        test_support::wait_until_blocked(&f.pool, &waiting).await;
+        assessment::finish_save_draft(&mut first, save, &::files::FileVerdict::default())
+            .await
+            .unwrap();
+        first.commit().await.unwrap();
+
+        // It then found the draft the first one wrote, and keeps its row.
+        assert_eq!(waiting.await.unwrap(), id);
     })
     .await;
 }

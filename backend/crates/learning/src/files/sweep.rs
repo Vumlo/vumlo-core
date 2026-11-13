@@ -39,8 +39,12 @@ pub async fn sweep(
     Ok(deleted)
 }
 
-/// Locks the row, checks the references under the lock, and removes the row. Whatever names the
-/// file afterwards had to lock it first, and finds it gone.
+/// Locks the row, checks the references under the lock, and removes the row. A save that names
+/// the file afterwards had to lock it first (`files::check`), and finds it gone.
+// ponytail: `copy_course_content` copies references without locking the files, so a file whose
+// only holder is deleted while a copy of it is still uncommitted can be swept under the copy;
+// lock the copied file ids there (`files::lock`) if a copy of a day-old, otherwise unused file
+// ever matters.
 async fn delete_if_orphan(
     db: &PgPool,
     storage: &files::Storage,

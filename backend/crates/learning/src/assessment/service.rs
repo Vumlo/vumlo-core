@@ -242,7 +242,15 @@ pub async fn begin_save_draft(
     // The row is locked, so the id the files are checked against is the one the write keeps.
     let id = match repo::lock_draft(conn, assignment_id, actor.user_id()).await? {
         Some(draft) => draft.id,
-        None => Uuid::now_v7(),
+        None => {
+            // No row to lock: the first saves of this draft take turns, and the one that waited
+            // looks again, because the one before it has written the row by now.
+            repo::lock_first_draft(conn, assignment_id, actor.user_id()).await?;
+            match repo::lock_draft(conn, assignment_id, actor.user_id()).await? {
+                Some(draft) => draft.id,
+                None => Uuid::now_v7(),
+            }
+        }
     };
     let files = file_refs(&assignment, valid.as_body())?;
     Ok(DraftSave {
@@ -676,6 +684,14 @@ fn judge_files(
             path(id),
             "an image block needs a PNG, JPEG, GIF or WebP file",
         )));
+    }
+    // The check names every file it judged. One it did not judge (an empty verdict handed to a
+    // write that names files) is refused, so a write finished without the check attaches nothing.
+    if let Some(file) = refs
+        .iter()
+        .find(|file| !verdict.names.contains_key(&file.id))
+    {
+        return Err(unusable(&file.path));
     }
     if assignment.assignment_type == BuiltinType::File {
         let listed = assignment

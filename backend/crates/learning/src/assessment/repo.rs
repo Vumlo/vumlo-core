@@ -382,6 +382,25 @@ pub async fn lock_form(conn: &mut PgConnection, assignment_id: Uuid) -> Result<(
     Ok(())
 }
 
+/// Takes the lock that serializes the first saves of one student's draft on one assignment until
+/// the transaction ends: with no draft row yet, there is nothing else to lock, and a second first
+/// save would otherwise write the row after taking its file locks, behind a submit that holds the
+/// row and waits for those files.
+pub async fn lock_first_draft(
+    conn: &mut PgConnection,
+    assignment_id: Uuid,
+    student_id: Uuid,
+) -> Result<(), sqlx::Error> {
+    sqlx::query!(
+        "SELECT pg_advisory_xact_lock(hashtextextended('draft:' || $1::text || ':' || $2::text, 0))",
+        assignment_id.to_string(),
+        student_id.to_string()
+    )
+    .execute(conn)
+    .await?;
+    Ok(())
+}
+
 /// The submitted attempts of one student, newest first, after the attempt `after` (a row id). The
 /// cursor counts only if it is an attempt of this student at this assignment: a row id from
 /// anywhere else would otherwise tell the caller its attempt number.
