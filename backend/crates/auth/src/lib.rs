@@ -19,8 +19,8 @@ pub use model::{
     UserFilter, UserStatus, UserUpdate, hash,
 };
 pub use routes::{
-    COOKIE_NAME, SetupError, api_role, api_status, api_user, authenticate_request, domain_role,
-    domain_status, router,
+    CONSOLE_COOKIE_NAME, COOKIE_NAME, SetupError, api_role, api_status, api_user,
+    authenticate_request, domain_role, domain_status, router,
 };
 pub use service::{
     AppliedUserUpdate, AuthError, HashGate, LoginThrottle, apply_user_update, create_user_from_cli,

@@ -802,7 +802,11 @@ fn the_admin_origin_is_normalised_like_the_public_one() {
         build(&toml, &[]).unwrap().server.admin_origin,
         "https://admin.lms.example.edu"
     );
-    for bad in ["admin.lms.example.edu", "https://admin.lms.example.edu/x", "ftp://x"] {
+    for bad in [
+        "admin.lms.example.edu",
+        "https://admin.lms.example.edu/x",
+        "ftp://x",
+    ] {
         let e = build(VALID, &[("VUMLO__SERVER__ADMIN_ORIGIN", bad)]).unwrap_err();
         assert!(e.to_string().contains("server.admin_origin"), "{bad}: {e}");
     }

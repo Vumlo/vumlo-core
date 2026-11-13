@@ -28,7 +28,7 @@ use common::ApiError;
 use common::Role;
 use vumlo_config::Settings;
 
-pub use extract::{COOKIE_NAME, authenticate_request};
+pub use extract::{CONSOLE_COOKIE_NAME, COOKIE_NAME, authenticate_request};
 
 #[derive(Debug, thiserror::Error)]
 pub enum SetupError {

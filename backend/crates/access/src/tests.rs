@@ -1658,7 +1658,11 @@ fn an_admin_app_session_is_refused_every_administration_action() {
         assert_eq!(authorize(&actor(Role::Admin), action), Ok(()), "{action:?}");
         for role in [Role::Teacher, Role::Student] {
             for who in [actor(role), app_actor(role)] {
-                assert_eq!(authorize(&who, action), Err(AccessError::Denied), "{action:?}");
+                assert_eq!(
+                    authorize(&who, action),
+                    Err(AccessError::Denied),
+                    "{action:?}"
+                );
             }
         }
     }

@@ -227,8 +227,14 @@ async fn session_row(pool: &sqlx::PgPool, token: &SessionToken) -> Uuid {
 #[tokio::test]
 async fn a_console_session_expires_after_thirty_minutes_idle() {
     db_test(async |pool| {
-        let (_, token) =
-            session_of(&pool, "a@x.edu", "admin", SessionKind::Web, Audience::Console).await;
+        let (_, token) = session_of(
+            &pool,
+            "a@x.edu",
+            "admin",
+            SessionKind::Web,
+            Audience::Console,
+        )
+        .await;
         let secs = sqlx::query_scalar!(
             r#"SELECT extract(epoch FROM expires_at - now())::float8 AS "s!" FROM auth.sessions"#
         )
@@ -254,8 +260,14 @@ async fn a_console_session_expires_after_thirty_minutes_idle() {
 #[tokio::test]
 async fn a_console_session_slides_but_never_past_eight_hours() {
     db_test(async |pool| {
-        let (_, token) =
-            session_of(&pool, "a@x.edu", "admin", SessionKind::Web, Audience::Console).await;
+        let (_, token) = session_of(
+            &pool,
+            "a@x.edu",
+            "admin",
+            SessionKind::Web,
+            Audience::Console,
+        )
+        .await;
         let id = session_row(&pool, &token).await;
         sqlx::query!(
             "UPDATE auth.sessions SET created_at = now() - interval '7 hours 59 minutes',
@@ -266,7 +278,9 @@ async fn a_console_session_slides_but_never_past_eight_hours() {
         .unwrap();
         let mut conn = pool.acquire().await.unwrap();
         let found = authenticate(&mut conn, &token).await.unwrap();
-        let (kind, audience) = found.touch.expect("a console session is refreshed after a minute");
+        let (kind, audience) = found
+            .touch
+            .expect("a console session is refreshed after a minute");
         touch_session(&mut conn, id, kind, audience).await.unwrap();
         let capped = sqlx::query_scalar!(
             r#"SELECT expires_at = created_at + interval '8 hours' AS "capped!"
@@ -284,17 +298,34 @@ async fn a_console_session_slides_but_never_past_eight_hours() {
 #[tokio::test]
 async fn a_console_session_is_refreshed_after_a_minute_not_an_hour() {
     db_test(async |pool| {
-        let (_, console) =
-            session_of(&pool, "a@x.edu", "admin", SessionKind::Web, Audience::Console).await;
-        let (_, app) =
-            session_of(&pool, "b@x.edu", "admin", SessionKind::Web, Audience::App).await;
+        let (_, console) = session_of(
+            &pool,
+            "a@x.edu",
+            "admin",
+            SessionKind::Web,
+            Audience::Console,
+        )
+        .await;
+        let (_, app) = session_of(&pool, "b@x.edu", "admin", SessionKind::Web, Audience::App).await;
         let mut conn = pool.acquire().await.unwrap();
-        assert!(authenticate(&mut conn, &console).await.unwrap().touch.is_none());
+        assert!(
+            authenticate(&mut conn, &console)
+                .await
+                .unwrap()
+                .touch
+                .is_none()
+        );
         sqlx::query!("UPDATE auth.sessions SET last_seen_at = now() - interval '2 minutes'")
             .execute(&pool)
             .await
             .unwrap();
-        assert!(authenticate(&mut conn, &console).await.unwrap().touch.is_some());
+        assert!(
+            authenticate(&mut conn, &console)
+                .await
+                .unwrap()
+                .touch
+                .is_some()
+        );
         assert!(authenticate(&mut conn, &app).await.unwrap().touch.is_none());
         sqlx::query!("UPDATE auth.sessions SET last_seen_at = now() - interval '2 hours'")
             .execute(&pool)
@@ -308,8 +339,14 @@ async fn a_console_session_is_refreshed_after_a_minute_not_an_hour() {
 #[tokio::test]
 async fn a_console_session_of_a_demoted_admin_does_not_resolve() {
     db_test(async |pool| {
-        let (id, token) =
-            session_of(&pool, "a@x.edu", "admin", SessionKind::Web, Audience::Console).await;
+        let (id, token) = session_of(
+            &pool,
+            "a@x.edu",
+            "admin",
+            SessionKind::Web,
+            Audience::Console,
+        )
+        .await;
         let mut conn = pool.acquire().await.unwrap();
         assert!(authenticate(&mut conn, &token).await.is_ok());
         sqlx::query!("UPDATE auth.users SET role = 'teacher' WHERE id = $1", id)

@@ -12,9 +12,9 @@ use super::auth::{COOKIE_MAX_AGE_SECS, session_cookie};
 use super::extract::check_origin;
 use super::{api_user, no_store};
 use crate::AuthState;
-use access::Audience;
 use crate::model::{BrowserBinding, NewSession, SessionKind};
 use crate::service::{self, AuthError};
+use access::Audience;
 use common::{ApiError, ValidJson};
 
 /// Ties a started sign-in to its browser (ADR-0047). It is sent to the Google endpoints only.
@@ -118,7 +118,7 @@ pub async fn callback(
     ValidJson(request): ValidJson<GoogleCallbackRequest>,
 ) -> Result<Response, ApiError> {
     let google = state.google.as_ref().ok_or(ApiError::NotFound)?;
-    check_origin(&Method::POST, &headers, &state.config.server)?;
+    check_origin(&Method::POST, &headers, &state.config.server, Audience::App)?;
     let binding = CookieJar::from_headers(&headers)
         .get(BINDING_COOKIE)
         .and_then(|cookie| BrowserBinding::from_presented(cookie.value()));
