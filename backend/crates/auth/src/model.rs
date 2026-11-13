@@ -2,6 +2,7 @@ mod account;
 
 use std::fmt;
 
+use access::Audience;
 use chrono::{DateTime, Duration, Utc};
 use common::{Role, text_enum};
 // The value types of an account are shared with `vumlo-cli`, which creates accounts too.
@@ -32,23 +33,56 @@ pub enum SessionKind {
 }
 text_enum!(SessionKind { Web => "web", App => "app", Cli => "cli", Pat => "pat" });
 
-impl SessionKind {
-    /// Lifetime of a session when it is created (ADR-0017). `Pat` is the maximum; personal
-    /// access tokens will choose a shorter one when they exist.
-    pub fn initial_lifetime(self) -> Duration {
-        match self {
-            Self::Web => Duration::days(30),
-            Self::App | Self::Cli => Duration::days(90),
-            Self::Pat => Duration::days(365),
-        }
-    }
+/// How long a session lives (ADR-0017, ADR-0095).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Lifetimes {
+    /// From creation to the first expiry. `Pat` is the maximum; personal access tokens will choose
+    /// a shorter one when they exist.
+    pub initial: Duration,
+    /// Extended by this much on activity. `None`: the expiry is absolute.
+    pub slide: Option<Duration>,
+    /// A sliding session never lives past its creation plus this. `None`: no cap.
+    pub cap: Option<Duration>,
+    /// A session seen more recently than this is not written again, so concurrent requests write
+    /// at most once.
+    pub refresh_gap: Duration,
+}
 
-    /// Lifetime of a sliding session, extended on activity. `None`: the expiry is absolute (ADR-0017).
-    pub fn sliding_lifetime(self) -> Option<Duration> {
-        match self {
-            Self::Web => Some(Duration::days(30)),
-            Self::App => Some(Duration::days(90)),
-            Self::Cli | Self::Pat => None,
+impl SessionKind {
+    pub fn lifetimes(self, audience: Audience) -> Lifetimes {
+        let hour = Duration::hours(1);
+        match (self, audience) {
+            // The console: 30 minutes idle, 8 hours at most, refreshed after a minute.
+            (_, Audience::Console) => Lifetimes {
+                initial: Duration::minutes(30),
+                slide: Some(Duration::minutes(30)),
+                cap: Some(Duration::hours(8)),
+                refresh_gap: Duration::minutes(1),
+            },
+            (Self::Web, Audience::App) => Lifetimes {
+                initial: Duration::days(30),
+                slide: Some(Duration::days(30)),
+                cap: None,
+                refresh_gap: hour,
+            },
+            (Self::App, Audience::App) => Lifetimes {
+                initial: Duration::days(90),
+                slide: Some(Duration::days(90)),
+                cap: None,
+                refresh_gap: hour,
+            },
+            (Self::Cli, Audience::App) => Lifetimes {
+                initial: Duration::days(90),
+                slide: None,
+                cap: None,
+                refresh_gap: hour,
+            },
+            (Self::Pat, Audience::App) => Lifetimes {
+                initial: Duration::days(365),
+                slide: None,
+                cap: None,
+                refresh_gap: hour,
+            },
         }
     }
 }

@@ -21,7 +21,7 @@ use super::model::{
 };
 use super::repo::{self, LoginRecord};
 use access::Actor;
-use access::{self, AccessError, Action};
+use access::{self, AccessError, Action, Audience};
 use common::Role;
 use common::{Page, PageParams};
 use events::{self, AuditEntry, Event, EventsError};
@@ -420,6 +420,7 @@ pub async fn create_session(
     conn: &mut PgConnection,
     login: &VerifiedLogin,
     kind: SessionKind,
+    audience: Audience,
 ) -> Result<NewSession, AuthError> {
     if !repo::lock_verified_login(conn, login.user.id, &login.password_hash).await? {
         return Err(AuthError::InvalidCredentials);
@@ -430,7 +431,8 @@ pub async fn create_session(
         login.user.id,
         &token.hash(),
         kind,
-        kind.initial_lifetime().num_seconds(),
+        audience,
+        kind.lifetimes(audience).initial.num_seconds(),
     )
     .await?;
     Ok(NewSession {
@@ -446,8 +448,11 @@ pub struct Authenticated {
     pub role: Role,
     pub session_id: Uuid,
     pub must_change_password: bool,
-    /// Set when the session should be refreshed (not seen for an hour); see [`touch_session`].
-    pub touch: Option<SessionKind>,
+    /// The door the session came through (ADR-0095).
+    pub audience: Audience,
+    /// Set when the session should be refreshed (not seen for its refresh gap); see
+    /// [`touch_session`].
+    pub touch: Option<(SessionKind, Audience)>,
 }
 
 /// Resolves a token to its session. A missing, expired or disabled-user session is `Unauthenticated`.
@@ -458,24 +463,35 @@ pub async fn authenticate(
     let found = repo::find_session(conn, &token.hash())
         .await?
         .ok_or(AuthError::Unauthenticated)?;
+    let gap = found.kind.lifetimes(found.audience).refresh_gap;
+    let due = found.idle_secs >= gap.num_seconds() as f64;
     Ok(Authenticated {
         user_id: found.user_id,
         role: found.role,
         session_id: found.session_id,
         must_change_password: found.must_change_password,
-        touch: found.stale.then_some(found.kind),
+        audience: found.audience,
+        touch: due.then_some((found.kind, found.audience)),
     })
 }
 
-/// Refreshes `last_seen_at` and, for web and app sessions, the expiry. A no-op unless the
-/// session has not been refreshed for an hour.
+/// Refreshes `last_seen_at` and, for sliding sessions, the expiry (never past the session's cap).
+/// A no-op unless the session has not been refreshed for its refresh gap.
 pub async fn touch_session(
     conn: &mut PgConnection,
     session_id: Uuid,
     kind: SessionKind,
+    audience: Audience,
 ) -> Result<(), AuthError> {
-    let slide = kind.sliding_lifetime().map(|d| d.num_seconds());
-    repo::touch_session(conn, session_id, slide).await?;
+    let lifetimes = kind.lifetimes(audience);
+    repo::touch_session(
+        conn,
+        session_id,
+        lifetimes.slide.map(|d| d.num_seconds()),
+        lifetimes.cap.map(|d| d.num_seconds()),
+        lifetimes.refresh_gap.num_seconds(),
+    )
+    .await?;
     Ok(())
 }
 
@@ -895,7 +911,7 @@ pub async fn exchange_app_handoff(
     let user = repo::find_user(conn, user_id)
         .await?
         .ok_or(AuthError::GoogleAttemptInvalid)?;
-    let session = create_session_for(conn, &user, SessionKind::App).await?;
+    let session = create_session_for(conn, &user, SessionKind::App, Audience::App).await?;
     Ok((user, session))
 }
 
@@ -979,6 +995,7 @@ pub async fn create_session_for(
     conn: &mut PgConnection,
     user: &User,
     kind: SessionKind,
+    audience: Audience,
 ) -> Result<NewSession, AuthError> {
     if !repo::lock_active_user(conn, user.id).await? {
         return Err(AuthError::AccountDisabled);
@@ -989,7 +1006,8 @@ pub async fn create_session_for(
         user.id,
         &token.hash(),
         kind,
-        kind.initial_lifetime().num_seconds(),
+        audience,
+        kind.lifetimes(audience).initial.num_seconds(),
     )
     .await?;
     Ok(NewSession {

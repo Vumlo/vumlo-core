@@ -13,7 +13,7 @@ use super::{COOKIE_NAME, MailThrottle, api_user, no_store, password_error, sessi
 use crate::AuthState;
 use crate::model::{EmailToken, ModelError, NewSession};
 use crate::service::{self, AuthError, LoginThrottle, RegistrationRules, ThrottleKey};
-use access::PendingActor;
+use access::{Audience, PendingActor};
 use common::{ApiError, ValidJson};
 
 /// The browsers' maximum cookie lifetime. The session's own `expires_at` decides validity, so
@@ -73,7 +73,7 @@ pub async fn login(
 
     let kind = session_kind(request.client);
     let mut tx = state.db.begin().await.map_err(AuthError::from)?;
-    let session = service::create_session(&mut tx, &login, kind).await?;
+    let session = service::create_session(&mut tx, &login, kind, Audience::App).await?;
     tx.commit().await.map_err(AuthError::from)?;
 
     let NewSession {

@@ -78,9 +78,9 @@ pub async fn authenticate_request(
     let mut conn = state.db.acquire().await?;
     let authenticated = service::authenticate(&mut conn, &token).await?;
     drop(conn);
-    if let Some(kind) = authenticated.touch {
+    if let Some((kind, audience)) = authenticated.touch {
         let mut tx = state.db.begin().await?;
-        service::touch_session(&mut tx, authenticated.session_id, kind).await?;
+        service::touch_session(&mut tx, authenticated.session_id, kind, audience).await?;
         tx.commit().await?;
     }
     Ok(authenticated)

@@ -12,6 +12,7 @@ use super::auth::{COOKIE_MAX_AGE_SECS, session_cookie};
 use super::extract::check_origin;
 use super::{api_user, no_store};
 use crate::AuthState;
+use access::Audience;
 use crate::model::{BrowserBinding, NewSession, SessionKind};
 use crate::service::{self, AuthError};
 use common::{ApiError, ValidJson};
@@ -149,7 +150,7 @@ pub async fn callback(
             .into_response());
     }
     let NewSession { token, .. } =
-        service::create_session_for(&mut tx, &user, SessionKind::Web).await?;
+        service::create_session_for(&mut tx, &user, SessionKind::Web, Audience::App).await?;
     tx.commit().await.map_err(AuthError::from)?;
 
     let secure = state.config.auth.cookie_secure;

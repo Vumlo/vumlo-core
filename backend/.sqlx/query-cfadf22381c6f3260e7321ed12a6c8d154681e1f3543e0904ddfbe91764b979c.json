@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT s.id AS session_id, s.kind AS \"kind: SessionKind\",\n                  s.last_seen_at < now() - interval '1 hour' AS \"stale!\",\n                  u.id AS user_id, u.role AS \"role: Role\", u.must_change_password\n           FROM auth.sessions s\n           JOIN auth.users u ON u.id = s.user_id\n           WHERE s.token_hash = $1 AND s.expires_at > now() AND u.status = 'active'",
+  "query": "SELECT s.id AS session_id, s.kind AS \"kind: SessionKind\",\n                  s.audience AS \"audience: Audience\",\n                  extract(epoch FROM now() - s.last_seen_at)::float8 AS \"idle_secs!\",\n                  u.id AS user_id, u.role AS \"role: Role\", u.must_change_password\n           FROM auth.sessions s\n           JOIN auth.users u ON u.id = s.user_id\n           WHERE s.token_hash = $1 AND s.expires_at > now() AND u.status = 'active'\n             AND (s.audience = 'app' OR u.role = 'admin')",
   "describe": {
     "columns": [
       {
@@ -27,12 +27,23 @@
       },
       {
         "ordinal": 2,
-        "name": "stale!",
-        "type_info": "Bool",
-        "origin": "Expression"
+        "name": "audience: Audience",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "auth.sessions",
+            "name": "audience"
+          }
+        }
       },
       {
         "ordinal": 3,
+        "name": "idle_secs!",
+        "type_info": "Float8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 4,
         "name": "user_id",
         "type_info": "Uuid",
         "origin": {
@@ -43,7 +54,7 @@
         }
       },
       {
-        "ordinal": 4,
+        "ordinal": 5,
         "name": "role: Role",
         "type_info": "Text",
         "origin": {
@@ -54,7 +65,7 @@
         }
       },
       {
-        "ordinal": 5,
+        "ordinal": 6,
         "name": "must_change_password",
         "type_info": "Bool",
         "origin": {
@@ -73,11 +84,12 @@
     "nullable": [
       false,
       false,
+      false,
       null,
       false,
       false,
       false
     ]
   },
-  "hash": "15eb8109936e549d2de1a5ac618d4616db0346b7fcb3f1fe1e5cd1e9b6b8195d"
+  "hash": "cfadf22381c6f3260e7321ed12a6c8d154681e1f3543e0904ddfbe91764b979c"
 }
