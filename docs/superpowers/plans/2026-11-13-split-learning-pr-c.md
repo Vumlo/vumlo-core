@@ -187,3 +187,14 @@ State of each crate (`state.rs`, `#[derive(Clone)]`):
 - Spec coverage: five crates and the order (tasks 1 to 5), per-crate state, error and router (tasks 2 to 5, state table), `server` composition (tasks 2 to 5), `architecture.rs` units (tasks 1 to 6), CI paths (no workflow lists `crates/learning`; the archive scripts do, task 1), `Dockerfile` (copies `backend` whole: nothing to change; confirmed by the archive and CI builds), `RELEASING.md`, `CLAUDE.md` §4, `ARCHITECTURE.md`, `docs/PLAN.md` (task 7), `.sqlx` regenerated and checked (task 7), `git mv` for history (all).
 - Types: state names and fields are defined once, in the table above.
 - Left out on purpose: org units (ADR-0094) and everything after it.
+
+## Record of the run
+
+- `content::parse_decimal` (a `pub use` in `lib.rs`) replaced the `pub mod points` of task 3; `DocumentErrors::one` became `pub` because `assessment` raises it.
+- The concurrency tests of `assessment` and `gradebook` became unit tests of the flows crate (`submissions/tests.rs`, `items/tests.rs`), not `flows/tests/`: they exercise flows and subscribers together and reuse `crate::tests`. The release scripts needed no special case for them.
+- Task 6 has no manifest-direction test: a lower crate listing a higher one is a dependency cycle (Cargo refused it when tried), so such a test could never fail. `manifests()` in `architecture.rs` now also scans `crates/learning/`, so the `testing`-feature rule covers the new crates.
+- `server::AppState` has one field and one `FromRef` per state: `teaching`, `content`, `assessment`, `gradebook`, `learning`.
+
+## Next
+
+Org units and contextual roles (ADR-0094): its own line in `docs/decisions/planned.md`, then a spec, a plan and PRs.

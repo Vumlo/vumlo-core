@@ -30,6 +30,7 @@ uuid.workspace = true
 access = { workspace = true, features = ["testing"] }
 auth = { workspace = true, features = ["testing"] }
 events = { workspace = true, features = ["testing"] }
+org = { workspace = true, features = ["testing"] }
 test-support.workspace = true
 
 [lints]

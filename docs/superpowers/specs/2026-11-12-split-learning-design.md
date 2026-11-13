@@ -1,6 +1,6 @@
 # Splitting `learning` into crates: design
 
-Status: draft for review. Path: architectural. ADR-0093. Delivery: one spec, three stacked PRs (A, B, C).
+Status: built (PR A #61, PR B #62, files-usage #63, PR C). Path: architectural. ADR-0093. Delivery: one spec, stacked PRs.
 
 ## 1. Goal
 
