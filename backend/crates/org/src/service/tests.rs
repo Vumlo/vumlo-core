@@ -39,7 +39,7 @@ struct Fixture {
 async fn fixture(pool: PgPool) -> Fixture {
     let admin = user(&pool, "admin@x.edu", Role::Admin).await;
     let student = user(&pool, "student@x.edu", Role::Student).await;
-    let admin = Actor::for_tests(admin, Role::Admin, Uuid::now_v7());
+    let admin = actor(admin, Role::Admin);
     let mut tx = pool.begin().await.unwrap();
     let group = create_group(&mut tx, &admin, "7-A").await.unwrap();
     add_group_members(&mut tx, &admin, group.id, &[student])
@@ -154,8 +154,9 @@ struct Tree {
     s: Uuid,
 }
 
+/// An actor as the console sees them: an administrator administers from there (ADR-0095).
 fn actor(id: Uuid, role: Role) -> Actor {
-    Actor::for_tests(id, role, Uuid::now_v7())
+    Actor::for_tests_in(id, role, Uuid::now_v7(), access::Audience::Console)
 }
 
 fn name(raw: &str) -> OrgName {

@@ -9,7 +9,7 @@ use axum::http::request::Parts;
 use common::{ApiError, Role};
 use uuid::Uuid;
 
-use super::{AccessError, Actor, PendingActor};
+use super::{AccessError, Actor, Audience, PendingActor};
 
 /// A request's session, resolved by whoever holds the sessions.
 #[derive(Debug, Clone)]
@@ -17,6 +17,8 @@ pub struct Authenticated {
     pub user_id: Uuid,
     pub role: Role,
     pub session_id: Uuid,
+    /// The door the session came through (ADR-0095).
+    pub audience: Audience,
     /// The user signed in with a temporary password they still have to change.
     pub must_change_password: bool,
 }
@@ -40,7 +42,12 @@ impl<S: ActorSource> FromRequestParts<S> for Actor {
         if who.must_change_password {
             return Err(AccessError::PasswordChangeRequired.into());
         }
-        Ok(Actor::new(who.user_id, who.role, who.session_id))
+        Ok(Actor::new(
+            who.user_id,
+            who.role,
+            who.session_id,
+            who.audience,
+        ))
     }
 }
 
@@ -51,6 +58,11 @@ impl<S: ActorSource> FromRequestParts<S> for PendingActor {
 
     async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
         let who = state.authenticate(parts).await?;
-        Ok(Self(Actor::new(who.user_id, who.role, who.session_id)))
+        Ok(Self(Actor::new(
+            who.user_id,
+            who.role,
+            who.session_id,
+            who.audience,
+        )))
     }
 }

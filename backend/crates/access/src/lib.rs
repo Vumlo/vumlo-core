@@ -10,7 +10,7 @@ mod plugin;
 mod test_support;
 mod unit;
 
-pub use actor::{Actor, PendingActor};
+pub use actor::{Actor, Audience, PendingActor};
 pub use extract::{ActorSource, Authenticated};
 pub use plugin::{
     AuthenticatedPlugin, CourseScope, PluginCaller, PluginRoute, PluginSource, PluginUser, Scope,
@@ -403,17 +403,17 @@ pub fn implicit_course_owner(actor: &Actor) -> bool {
 }
 
 /// The grant the actor holds on `unit_id`, given `held`, the union of their unit roles there: an
-/// admin holds every ability on every unit, a student none (ADR-0037, ADR-0094), anyone else what
-/// their roles give them.
+/// admin in the console holds every ability on every unit, a student none (ADR-0037, ADR-0094),
+/// anyone else what their roles give them, an admin in the app included (ADR-0095).
 pub fn effective_unit_grant(
     actor: &Actor,
     unit_id: Uuid,
     held: Option<UnitGrant>,
 ) -> Option<UnitGrant> {
-    match actor.role() {
-        Role::Admin => Some(UnitGrant::full(unit_id)),
-        Role::Student => None,
-        Role::Teacher => held,
+    match (actor.role(), actor.audience()) {
+        (Role::Admin, Audience::Console) => Some(UnitGrant::full(unit_id)),
+        (Role::Student, _) => None,
+        (Role::Admin, Audience::App) | (Role::Teacher, _) => held,
     }
 }
 
@@ -490,6 +490,11 @@ impl From<AccessError> for ApiError {
 pub fn authorize(actor: &Actor, action: Action) -> Result<(), AccessError> {
     let action = action.for_actor(actor);
     let is_admin = actor.role() == Role::Admin;
+    // Administration (ADR-0095): configuration, people and the structure of units need an admin
+    // who signed in to the console. An admin's session in the app still reads and edits any
+    // course (`is_admin` below, audited), because that is course work, not administration. A new
+    // action chooses here: `console_admin` for administration, `is_admin` for work inside a course.
+    let console_admin = is_admin && actor.audience() == Audience::Console;
     let allowed = match action {
         Action::ManageOwnAccount => true,
         Action::Module { roles, .. } => roles.contains(&actor.role()),
@@ -497,23 +502,23 @@ pub fn authorize(actor: &Actor, action: Action) -> Result<(), AccessError> {
         | Action::ViewInstitutionSettings
         | Action::ManageAppDownloads
         | Action::ViewAdminReports
-        | Action::ViewAllCourses
         | Action::ManageTerms
         | Action::ManageGroups
-        | Action::ViewGroups => is_admin,
+        | Action::ViewGroups => console_admin,
+        Action::ViewAllCourses => is_admin,
         Action::ViewTerms => true,
         Action::CreateCourse => matches!(actor.role(), Role::Admin | Role::Teacher),
         Action::ViewOwnCourses => true,
         Action::ViewEditorProfiles => true,
         Action::ViewOwnUnits => true,
-        Action::ViewUnit(grant) => is_admin || grant.is_some(),
+        Action::ViewUnit(grant) => console_admin || grant.is_some(),
         Action::ManageUnitCourses(grant) => {
-            is_admin || grant.is_some_and(|grant| grant.has(UnitAbility::ManageCourses))
+            console_admin || grant.is_some_and(|grant| grant.has(UnitAbility::ManageCourses))
         }
         Action::ManageUnits(grant) => {
-            is_admin || grant.is_some_and(|grant| grant.has(UnitAbility::ManageUnits))
+            console_admin || grant.is_some_and(|grant| grant.has(UnitAbility::ManageUnits))
         }
-        Action::ManageUnitRoleAbilities => is_admin,
+        Action::ManageUnitRoleAbilities => console_admin,
         Action::ViewCourse(access) => {
             is_admin
                 || access.is_staff()

@@ -142,6 +142,8 @@ impl ActorSource for AppState {
             user_id: session.user_id,
             role: session.role,
             session_id: session.session_id,
+            // No console session exists until the sessions carry an audience (ADR-0095).
+            audience: access::Audience::App,
             must_change_password: session.must_change_password,
         })
     }

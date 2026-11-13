@@ -2,8 +2,14 @@ use uuid::Uuid;
 
 use super::*;
 
+/// An actor of the console: the rules below are tested as the administrator of the console sees
+/// them. The app's administrator is [`app_actor`] and has its own tests at the end.
 fn actor(role: Role) -> Actor {
-    Actor::new(Uuid::now_v7(), role, Uuid::now_v7())
+    Actor::new(Uuid::now_v7(), role, Uuid::now_v7(), Audience::Console)
+}
+
+fn app_actor(role: Role) -> Actor {
+    Actor::new(Uuid::now_v7(), role, Uuid::now_v7(), Audience::App)
 }
 
 #[test]
@@ -1620,4 +1626,96 @@ fn unit_role_allowed_is_for_teachers_and_admins() {
     assert!(unit_role_allowed(Role::Teacher));
     assert!(unit_role_allowed(Role::Admin));
     assert!(!unit_role_allowed(Role::Student));
+}
+
+// --- the audience of a session (ADR-0095) ---------------------------------------------------
+
+/// What an administrator may do only from the console: configuration, people, units' structure.
+fn administration_actions() -> Vec<Action> {
+    vec![
+        Action::ManageUsers,
+        Action::ViewInstitutionSettings,
+        Action::ManageAppDownloads,
+        Action::ViewAdminReports,
+        Action::ManageTerms,
+        Action::ManageGroups,
+        Action::ViewGroups,
+        Action::ManageUnitRoleAbilities,
+        Action::ViewUnit(None),
+        Action::ManageUnitCourses(None),
+        Action::ManageUnits(None),
+    ]
+}
+
+#[test]
+fn an_admin_app_session_is_refused_every_administration_action() {
+    for action in administration_actions() {
+        assert_eq!(
+            authorize(&app_actor(Role::Admin), action),
+            Err(AccessError::Denied),
+            "{action:?}"
+        );
+        assert_eq!(authorize(&actor(Role::Admin), action), Ok(()), "{action:?}");
+        for role in [Role::Teacher, Role::Student] {
+            for who in [actor(role), app_actor(role)] {
+                assert_eq!(authorize(&who, action), Err(AccessError::Denied), "{action:?}");
+            }
+        }
+    }
+}
+
+#[test]
+fn an_admin_app_session_keeps_course_oversight() {
+    let course = non_member();
+    let actions = [
+        Action::ViewAllCourses,
+        Action::CreateCourse,
+        Action::ViewTerms,
+        Action::ViewOwnUnits,
+        Action::ViewCourse(course),
+        Action::ManageContent(course),
+        Action::EditContent(course),
+        Action::EditCourse(course),
+        Action::ChangeRoster(course),
+        Action::ManageMembership {
+            access: course,
+            role: Student,
+            target_is_actor: false,
+        },
+        Action::DeleteCourse(course),
+        Action::TransferOwnership(course),
+        Action::ArchiveCourse(course),
+        Action::GradeAssignment(course),
+        Action::ViewGradebook(course),
+    ];
+    for action in actions {
+        for who in [actor(Role::Admin), app_actor(Role::Admin)] {
+            assert_eq!(authorize(&who, action), Ok(()), "{action:?}");
+        }
+    }
+}
+
+#[test]
+fn an_admin_app_session_has_no_implicit_unit_grant() {
+    let unit = Uuid::now_v7();
+    let held = Some(UnitGrant::new(unit, [UnitAbility::ViewGrades]));
+    let admin = app_actor(Role::Admin);
+    assert_eq!(effective_unit_grant(&admin, unit, None), None);
+    assert_eq!(effective_unit_grant(&admin, unit, held), held);
+    assert_eq!(
+        effective_unit_grant(&actor(Role::Admin), unit, None),
+        Some(UnitGrant::full(unit))
+    );
+}
+
+#[test]
+fn an_admin_with_an_explicit_unit_grant_acts_through_it_in_the_app() {
+    let grant = UnitGrant::new(Uuid::now_v7(), [UnitAbility::ManageUnits]);
+    let admin = app_actor(Role::Admin);
+    assert_eq!(authorize(&admin, Action::ViewUnit(Some(grant))), Ok(()));
+    assert_eq!(authorize(&admin, Action::ManageUnits(Some(grant))), Ok(()));
+    assert_eq!(
+        authorize(&admin, Action::ManageUnitCourses(Some(grant))),
+        Err(AccessError::Denied)
+    );
 }
