@@ -515,7 +515,7 @@ async fn a_unit_viewer_sees_a_course_below_in_every_status() {
 }
 
 #[tokio::test]
-async fn a_unit_viewer_cannot_edit_and_a_manager_with_edit_content_can() {
+async fn editing_the_course_needs_manage_courses_which_edit_content_does_not_give() {
     db_test(async |pool| {
         let t = tree(pool).await;
         let rename = || CourseUpdate {
@@ -568,7 +568,11 @@ async fn a_unit_viewer_cannot_edit_and_a_manager_with_edit_content_can() {
 async fn a_manager_enrolls_a_colleague_but_never_themselves() {
     db_test(async |pool| {
         let t = tree(pool).await;
-        for role in [CourseRole::Teacher, CourseRole::Assistant, CourseRole::Student] {
+        for role in [
+            CourseRole::Teacher,
+            CourseRole::Assistant,
+            CourseRole::Student,
+        ] {
             let mut tx = t.pool.begin().await.unwrap();
             let outcome = put_member(&mut tx, &t.max, t.k, t.max.user_id(), role).await;
             assert!(
