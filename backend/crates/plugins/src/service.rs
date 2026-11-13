@@ -7,7 +7,7 @@ use std::time::Duration;
 use access::{self, Actor};
 use std::collections::BTreeMap;
 
-use access::{CourseScope, PluginCaller, Scope};
+use access::{Action, CourseScope, PluginCaller, Scope};
 use content::{self, OpenError};
 use events::{Event, OutboxEvent};
 use module_api::OutboundClient;
@@ -563,18 +563,22 @@ pub async fn launch(
         .filter(|install| install.ui.iter().any(|page| page.slot == ASSIGNMENT_TAB))
         .filter(|install| install.courses.allows(opened.course_id))
         .ok_or_else(not_found)?;
+    // The role in this course, not the institution role: a teacher is a student of another
+    // teacher's course. "staff" is whoever may read the submissions; someone who sees the course
+    // through a unit grant without `view_grades` is neither, and gets no page.
+    let role = if access::authorize(actor, Action::ViewSubmissions(opened.access)).is_ok() {
+        "staff"
+    } else if opened.access.is_student() {
+        "student"
+    } else {
+        return Err(not_found());
+    };
     let secret = derive_secret(key, install.id, install.secret_version)?;
     let claims = LaunchClaims {
         plugin: &install.plugin_id,
         assignment: assignment_id,
         user: actor.user_id(),
-        // The role in this course, not the institution role: a teacher is a student of another
-        // teacher's course.
-        role: if opened.access.is_student() {
-            "student"
-        } else {
-            "staff"
-        },
+        role,
         issued_at: now,
     };
     Ok(launch_token(&secret, &claims)?)
