@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO org.unit_roles (unit_id, user_id, role) VALUES ($1, $2, 'manager')",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "6289a085195384bf29031929bed364cfb391086bb7b6f33cfb802661ae822e64"
+}

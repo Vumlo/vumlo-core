@@ -4,7 +4,11 @@ use chrono::NaiveDate;
 use sqlx::PgConnection;
 use uuid::Uuid;
 
-use super::model::{Group, GroupMember, MemberLine, Subgroup, Term};
+use super::model::{
+    Group, GroupMember, MemberLine, Subgroup, Term, Unit, UnitCandidate, UnitRoleEntry,
+};
+use access::{UnitAbility, UnitRole};
+use common::Role;
 
 // ---------------------------------------------------------------------------------------------
 // Terms
@@ -175,6 +179,322 @@ pub async fn delete_group(conn: &mut PgConnection, id: Uuid) -> Result<u64, sqlx
         .execute(conn)
         .await?;
     Ok(result.rows_affected())
+}
+
+// ---------------------------------------------------------------------------------------------
+// Units
+// ---------------------------------------------------------------------------------------------
+
+pub async fn insert_unit(
+    conn: &mut PgConnection,
+    id: Uuid,
+    parent_id: Option<Uuid>,
+    name: &str,
+) -> Result<Unit, sqlx::Error> {
+    sqlx::query_as!(
+        Unit,
+        "INSERT INTO org.units (id, parent_id, name) VALUES ($1, $2, $3)
+         RETURNING id, parent_id, name, created_at",
+        id,
+        parent_id,
+        name
+    )
+    .fetch_one(conn)
+    .await
+}
+
+pub async fn find_unit(conn: &mut PgConnection, id: Uuid) -> Result<Option<Unit>, sqlx::Error> {
+    sqlx::query_as!(
+        Unit,
+        "SELECT id, parent_id, name, created_at FROM org.units WHERE id = $1",
+        id
+    )
+    .fetch_optional(conn)
+    .await
+}
+
+/// Blocks every other writer of the tree until the transaction ends (it still lets readers in), so
+/// a move checks its new parent against a tree no one else is changing. Two concurrent moves
+/// could each look fine alone and close a cycle together.
+pub async fn lock_tree(conn: &mut PgConnection) -> Result<(), sqlx::Error> {
+    sqlx::query!("LOCK TABLE org.units IN SHARE ROW EXCLUSIVE MODE")
+        .execute(conn)
+        .await?;
+    Ok(())
+}
+
+/// Is `unit_id` the root itself or a unit below it?
+pub async fn in_subtree(
+    conn: &mut PgConnection,
+    root_id: Uuid,
+    unit_id: Uuid,
+) -> Result<bool, sqlx::Error> {
+    sqlx::query_scalar!(
+        r#"SELECT EXISTS (
+               SELECT 1 FROM org.unit_subtree WHERE root_id = $1 AND unit_id = $2
+           ) AS "found!""#,
+        root_id,
+        unit_id
+    )
+    .fetch_one(conn)
+    .await
+}
+
+/// The abilities (as text) of a person's grant on a unit, or `None` when they hold none there.
+pub async fn unit_abilities(
+    conn: &mut PgConnection,
+    user_id: Uuid,
+    unit_id: Uuid,
+) -> Result<Option<Vec<String>>, sqlx::Error> {
+    sqlx::query_scalar!(
+        r#"SELECT abilities AS "abilities!" FROM org.unit_grants WHERE user_id = $1 AND unit_id = $2"#,
+        user_id,
+        unit_id
+    )
+    .fetch_optional(conn)
+    .await
+}
+
+/// Every unit, by name.
+pub async fn list_units(conn: &mut PgConnection) -> Result<Vec<Unit>, sqlx::Error> {
+    sqlx::query_as!(
+        Unit,
+        "SELECT id, parent_id, name, created_at FROM org.units ORDER BY name, id"
+    )
+    .fetch_all(conn)
+    .await
+}
+
+/// The units a person's roles cover, with the abilities of the grant, by name.
+pub async fn list_units_of_user(
+    conn: &mut PgConnection,
+    user_id: Uuid,
+) -> Result<Vec<(Unit, Vec<String>)>, sqlx::Error> {
+    let rows = sqlx::query!(
+        r#"SELECT u.id, u.parent_id, u.name, u.created_at, g.abilities AS "abilities!"
+           FROM org.unit_grants g
+           JOIN org.units u ON u.id = g.unit_id
+           WHERE g.user_id = $1
+           ORDER BY u.name, u.id"#,
+        user_id
+    )
+    .fetch_all(conn)
+    .await?;
+    Ok(rows
+        .into_iter()
+        .map(|row| {
+            (
+                Unit {
+                    id: row.id,
+                    parent_id: row.parent_id,
+                    name: row.name,
+                    created_at: row.created_at,
+                },
+                row.abilities,
+            )
+        })
+        .collect())
+}
+
+/// Changes the name and nothing else: a rename must never write `parent_id`, which a concurrent move
+/// (under the tree lock) may have changed since the caller read the unit.
+pub async fn rename_unit(
+    conn: &mut PgConnection,
+    id: Uuid,
+    name: &str,
+) -> Result<Option<Unit>, sqlx::Error> {
+    sqlx::query_as!(
+        Unit,
+        "UPDATE org.units SET name = $2 WHERE id = $1
+         RETURNING id, parent_id, name, created_at",
+        id,
+        name
+    )
+    .fetch_optional(conn)
+    .await
+}
+
+/// Sets the parent, and the name too when one is given (a move and a rename of the same request are
+/// one statement, so no half of it can collide with a sibling). Only called after [`lock_tree`].
+pub async fn move_unit(
+    conn: &mut PgConnection,
+    id: Uuid,
+    parent_id: Option<Uuid>,
+    name: Option<&str>,
+) -> Result<Unit, sqlx::Error> {
+    sqlx::query_as!(
+        Unit,
+        "UPDATE org.units SET parent_id = $2, name = coalesce($3, name) WHERE id = $1
+         RETURNING id, parent_id, name, created_at",
+        id,
+        parent_id,
+        name
+    )
+    .fetch_one(conn)
+    .await
+}
+
+/// Deletes the unit; its role rows go with it. Subunits and courses refuse (no cascade).
+pub async fn delete_unit(conn: &mut PgConnection, id: Uuid) -> Result<u64, sqlx::Error> {
+    let result = sqlx::query!("DELETE FROM org.units WHERE id = $1", id)
+        .execute(conn)
+        .await?;
+    Ok(result.rows_affected())
+}
+
+// ---------------------------------------------------------------------------------------------
+// Unit roles and their abilities
+// ---------------------------------------------------------------------------------------------
+
+/// The roles held on this unit itself (not the ones inherited from above), by surname.
+pub async fn list_unit_roles(
+    conn: &mut PgConnection,
+    unit_id: Uuid,
+) -> Result<Vec<UnitRoleEntry>, sqlx::Error> {
+    sqlx::query_as!(
+        UnitRoleEntry,
+        r#"SELECT r.user_id, p.name AS "name!", p.surname AS "surname!", p.email AS "email!",
+                  r.role AS "role: UnitRole"
+           FROM org.unit_roles r
+           JOIN auth.people p ON p.id = r.user_id
+           WHERE r.unit_id = $1
+           ORDER BY p.surname, p.name, r.user_id"#,
+        unit_id
+    )
+    .fetch_all(conn)
+    .await
+}
+
+/// Gives the person the role. `false` when they held exactly this role already (nothing written).
+pub async fn upsert_unit_role(
+    conn: &mut PgConnection,
+    unit_id: Uuid,
+    user_id: Uuid,
+    role: UnitRole,
+) -> Result<bool, sqlx::Error> {
+    let written = sqlx::query_scalar!(
+        "INSERT INTO org.unit_roles (unit_id, user_id, role) VALUES ($1, $2, $3)
+         ON CONFLICT (unit_id, user_id) DO UPDATE SET role = EXCLUDED.role
+             WHERE org.unit_roles.role IS DISTINCT FROM EXCLUDED.role
+         RETURNING user_id",
+        unit_id,
+        user_id,
+        role.as_str()
+    )
+    .fetch_optional(conn)
+    .await?;
+    Ok(written.is_some())
+}
+
+/// Takes the person's role on the unit away and returns it; `None` when they held none there.
+pub async fn delete_unit_role(
+    conn: &mut PgConnection,
+    unit_id: Uuid,
+    user_id: Uuid,
+) -> Result<Option<UnitRole>, sqlx::Error> {
+    sqlx::query_scalar!(
+        r#"DELETE FROM org.unit_roles WHERE unit_id = $1 AND user_id = $2
+           RETURNING role AS "role: UnitRole""#,
+        unit_id,
+        user_id
+    )
+    .fetch_optional(conn)
+    .await
+}
+
+/// Takes away every unit role of the person; the units and the roles that were held.
+pub async fn delete_roles_of_user(
+    conn: &mut PgConnection,
+    user_id: Uuid,
+) -> Result<Vec<(Uuid, UnitRole)>, sqlx::Error> {
+    let rows = sqlx::query!(
+        r#"DELETE FROM org.unit_roles WHERE user_id = $1
+           RETURNING unit_id, role AS "role: UnitRole""#,
+        user_id
+    )
+    .fetch_all(conn)
+    .await?;
+    Ok(rows
+        .into_iter()
+        .map(|row| (row.unit_id, row.role))
+        .collect())
+}
+
+/// Active teachers and admins without a role on the unit whose name, surname, "name surname" or
+/// email contains the already escaped `pattern` (`%…%`).
+pub async fn search_unit_candidates(
+    conn: &mut PgConnection,
+    unit_id: Uuid,
+    pattern: &str,
+    limit: i64,
+) -> Result<Vec<UnitCandidate>, sqlx::Error> {
+    sqlx::query_as!(
+        UnitCandidate,
+        r#"SELECT u.id AS "user_id!", u.name AS "name!", u.surname AS "surname!",
+                  u.email AS "email!", u.role AS "role!: Role"
+           FROM auth.people u
+           WHERE u.status = 'active' AND u.role IN ('teacher', 'admin')
+             AND NOT EXISTS (SELECT 1 FROM org.unit_roles r
+                             WHERE r.unit_id = $1 AND r.user_id = u.id)
+             AND (u.name ILIKE $2 ESCAPE '\' OR u.surname ILIKE $2 ESCAPE '\'
+                  OR u.email ILIKE $2 ESCAPE '\'
+                  OR (u.name || ' ' || u.surname) ILIKE $2 ESCAPE '\')
+           ORDER BY u.surname, u.name, u.id
+           LIMIT $3"#,
+        unit_id,
+        pattern,
+        limit
+    )
+    .fetch_all(conn)
+    .await
+}
+
+/// Every (role, ability) pair that is switched on.
+pub async fn list_role_abilities(
+    conn: &mut PgConnection,
+) -> Result<Vec<(UnitRole, UnitAbility)>, sqlx::Error> {
+    let rows = sqlx::query!(
+        r#"SELECT role AS "role: UnitRole", ability AS "ability: UnitAbility"
+           FROM org.unit_role_abilities"#
+    )
+    .fetch_all(conn)
+    .await?;
+    Ok(rows
+        .into_iter()
+        .map(|row| (row.role, row.ability))
+        .collect())
+}
+
+/// Blocks other writers of the abilities until the transaction ends (readers still pass), so two
+/// replacements of one role are applied one after the other and not merged.
+pub async fn lock_role_abilities(conn: &mut PgConnection) -> Result<(), sqlx::Error> {
+    sqlx::query!("LOCK TABLE org.unit_role_abilities IN SHARE ROW EXCLUSIVE MODE")
+        .execute(conn)
+        .await?;
+    Ok(())
+}
+
+/// Replaces the abilities of the role by exactly these. Only called after [`lock_role_abilities`].
+pub async fn replace_role_abilities(
+    conn: &mut PgConnection,
+    role: UnitRole,
+    abilities: &[&str],
+) -> Result<(), sqlx::Error> {
+    sqlx::query!(
+        "DELETE FROM org.unit_role_abilities WHERE role = $1",
+        role.as_str()
+    )
+    .execute(&mut *conn)
+    .await?;
+    sqlx::query!(
+        "INSERT INTO org.unit_role_abilities (role, ability)
+         SELECT $1, ability FROM unnest($2::text[]) AS ability",
+        role.as_str(),
+        abilities as &[&str]
+    )
+    .execute(conn)
+    .await?;
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------------------------

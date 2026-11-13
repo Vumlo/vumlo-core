@@ -31,6 +31,7 @@ pub async fn update_user(
             return Err(LearningError::OwnsCourses);
         }
         left = teaching::drop_teacher_memberships(conn, actor, user_id).await?;
+        org::drop_unit_roles(conn, actor, user_id).await?;
     }
     // A role or a status decides who is on a roster (a disabled student is not, a group brings only
     // students), so the plugins are told, course by course. A new name changes no roster.

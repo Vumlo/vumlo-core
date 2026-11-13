@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "UPDATE teaching.courses SET status = $2, updated_at = now()\n           WHERE id = $1\n           RETURNING id, kind AS \"kind: CourseKind\", title,\n                     status AS \"status: CourseStatus\", owner_id, term_id, created_at",
+  "query": "SELECT c.id, c.title, c.status AS \"status: CourseStatus\", c.owner_id, c.term_id,\n                  c.unit_id, c.created_at, c.updated_at\n           FROM teaching.courses c\n           WHERE c.kind = 'template'\n             AND (c.owner_id = $1\n                  OR EXISTS (SELECT 1 FROM teaching.memberships m\n                             WHERE m.course_id = c.id AND m.user_id = $1\n                               AND m.role IN ('teacher', 'assistant')))\n             AND ($2::uuid IS NULL OR c.id > $2)\n           ORDER BY c.id\n           LIMIT $3",
   "describe": {
     "columns": [
       {
@@ -16,17 +16,6 @@
       },
       {
         "ordinal": 1,
-        "name": "kind: CourseKind",
-        "type_info": "Text",
-        "origin": {
-          "Table": {
-            "table": "teaching.courses",
-            "name": "kind"
-          }
-        }
-      },
-      {
-        "ordinal": 2,
         "name": "title",
         "type_info": "Text",
         "origin": {
@@ -37,7 +26,7 @@
         }
       },
       {
-        "ordinal": 3,
+        "ordinal": 2,
         "name": "status: CourseStatus",
         "type_info": "Text",
         "origin": {
@@ -48,7 +37,7 @@
         }
       },
       {
-        "ordinal": 4,
+        "ordinal": 3,
         "name": "owner_id",
         "type_info": "Uuid",
         "origin": {
@@ -59,13 +48,24 @@
         }
       },
       {
-        "ordinal": 5,
+        "ordinal": 4,
         "name": "term_id",
         "type_info": "Uuid",
         "origin": {
           "Table": {
             "table": "teaching.courses",
             "name": "term_id"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "unit_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "teaching.courses",
+            "name": "unit_id"
           }
         }
       },
@@ -79,12 +79,24 @@
             "name": "created_at"
           }
         }
+      },
+      {
+        "ordinal": 7,
+        "name": "updated_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "teaching.courses",
+            "name": "updated_at"
+          }
+        }
       }
     ],
     "parameters": {
       "Left": [
         "Uuid",
-        "Text"
+        "Uuid",
+        "Int8"
       ]
     },
     "nullable": [
@@ -92,10 +104,11 @@
       false,
       false,
       false,
-      false,
       true,
+      true,
+      false,
       false
     ]
   },
-  "hash": "6ffc4e51683b84272152973d1fdd2344434c4527b1a5adc9ba3f5d841888af55"
+  "hash": "40432130972c414c193d46bd3d32ee25ac81d5d84a9d0ffc89a022fc96b800eb"
 }

@@ -30,6 +30,7 @@ struct Ctx {
     group: Uuid,
     subgroup: Uuid,
     term: Uuid,
+    unit: Uuid,
     owner: Uuid,
     /// A file the owner of the course uploaded and no item names: only the owner reads it.
     file: Uuid,
@@ -49,6 +50,11 @@ fn operations(c: &Ctx, other_user: Uuid) -> Vec<Call> {
             "PATCH",
             format!("/courses/{}", c.course),
             Some(json!({"title": "hacked"})),
+        ),
+        call(
+            "PUT",
+            format!("/courses/{}/unit", c.course),
+            Some(json!({"unit_id": c.unit})),
         ),
         call("POST", format!("/courses/{}/publish", c.course), None),
         call("DELETE", format!("/courses/{}", c.course), None),
@@ -389,12 +395,38 @@ fn operations(c: &Ctx, other_user: Uuid) -> Vec<Call> {
             Some(json!({"name": "evil2"})),
         ),
         call("DELETE", format!("/terms/{}", c.term), None),
+        call(
+            "POST",
+            "/units".into(),
+            Some(json!({"name": "evil", "parent_id": c.unit})),
+        ),
+        call(
+            "PATCH",
+            format!("/units/{}", c.unit),
+            Some(json!({"name": "evil2"})),
+        ),
+        call("DELETE", format!("/units/{}", c.unit), None),
+        call("GET", format!("/units/{}/roles", c.unit), None),
+        call(
+            "PUT",
+            format!("/units/{}/roles/{}", c.unit, c.student),
+            Some(json!({"role": "viewer"})),
+        ),
+        call(
+            "DELETE",
+            format!("/units/{}/roles/{}", c.unit, c.student),
+            None,
+        ),
+        call("GET", format!("/units/{}/candidates?q=ab", c.unit), None),
+        call("GET", format!("/units/{}/courses", c.unit), None),
+        call("GET", "/admin/unit-roles".into(), None),
+        // `PUT /admin/unit-roles/{role}` is not here: its path names a role, not an id.
     ]
 }
 
 /// Whether a path belongs to the institution (admins only) and so is not a course resource.
 fn is_institutional(path: &str) -> bool {
-    ["/admin", "/groups", "/subgroups", "/terms"]
+    ["/admin", "/groups", "/subgroups", "/terms", "/units"]
         .iter()
         .any(|prefix| path.starts_with(prefix))
 }
@@ -466,6 +498,16 @@ async fn build(env: &Env, admin: &Account, owner: &Account, student: &Account, t
         )
         .await,
     );
+    let unit = id_of(
+        &env.ok(
+            "POST",
+            &admin.token,
+            "/units",
+            Some(json!({"name": format!("u-{tag}")})),
+            201,
+        )
+        .await,
+    );
     // Something to leak: an attempt, a draft on top of it and a grade.
     let draft = format!("/assignments/{assignment}/submission/draft");
     env.ok(
@@ -533,6 +575,7 @@ async fn build(env: &Env, admin: &Account, owner: &Account, student: &Account, t
         group,
         subgroup,
         term,
+        unit,
         owner: owner.id,
         file,
         announcement,
@@ -851,6 +894,9 @@ async fn the_list_of_operations_is_the_api() {
             "POST /mail/opt-out/{token}",
             "GET /mail/opt-in/{token}",
             "POST /mail/opt-in/{token}",
+            // The path names a role (`manager`, `viewer`), not an id, so the list above cannot
+            // spell it with the nil id; `tests/org.rs` checks who may call it.
+            "PUT /admin/unit-roles/{role}",
             // The routes of a plugin's own server: who may call each is in its manifest, and
             // `tests/plugin_routes.rs` checks every answer.
             "GET /plugins/{plugin_id}/{path}",
@@ -886,6 +932,7 @@ async fn the_list_of_operations_is_the_api() {
             "GET /editor/profiles",
             "GET /terms",
             "GET /terms/{id}",
+            "GET /units",
         ]
         .into_iter()
         .map(str::to_owned)
@@ -904,6 +951,7 @@ async fn the_list_of_operations_is_the_api() {
             group: any,
             subgroup: any,
             term: any,
+            unit: any,
             owner: any,
             file: any,
             announcement: any,

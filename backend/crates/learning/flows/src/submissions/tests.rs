@@ -84,6 +84,7 @@ async fn fixture(pool: PgPool, settings: SubmissionSettings) -> Fixture {
         &owner,
         CourseTitle::parse("Algebra").unwrap(),
         None,
+        None,
     )
     .await
     .unwrap();

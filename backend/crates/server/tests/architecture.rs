@@ -145,6 +145,9 @@ const DECLARED_VIEWS: &[&str] = &[
     "assessment.submitted_attempts",
     "assessment.submission_file_list",
     "gradebook.published_grades",
+    // Units and unit roles (ADR-0094, migration 0055).
+    "org.unit_subtree",
+    "org.unit_grants",
 ];
 
 /// The four crates below `learning`, lowest first.

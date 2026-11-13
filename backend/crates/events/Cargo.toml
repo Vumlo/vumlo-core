@@ -21,6 +21,7 @@ tracing.workspace = true
 uuid.workspace = true
 
 [dev-dependencies]
+access = { workspace = true, features = ["testing"] }
 test-support.workspace = true
 
 [lints]

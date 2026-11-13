@@ -14,14 +14,9 @@ use crate::model::{
 };
 use crate::repo;
 use access::Actor;
-use access::{self, Action, CourseStatus};
-use common::{Page, PageParams};
+use access::{self, Action, CourseAccess, CourseStatus};
+use common::{CANDIDATE_LIMIT, CANDIDATE_MIN_CHARS, Page, PageParams, like_pattern};
 use events::{self, AuditEntry};
-
-/// The most candidates a search returns.
-const CANDIDATE_LIMIT: i64 = 20;
-/// The shortest search text.
-const CANDIDATE_MIN_CHARS: usize = 2;
 
 fn course_entry(action: &'static str, course_id: Uuid, meta: serde_json::Value) -> AuditEntry {
     AuditEntry {
@@ -87,9 +82,10 @@ pub async fn update_course_info(
             description.as_ref().map(CourseDescription::as_str),
         )
         .await?;
-        events::audit_admin(
+        events::audit_implicit(
             conn,
             actor,
+            access,
             course_entry("course.update", course_id, json!({"fields": fields})),
         )
         .await?;
@@ -110,9 +106,10 @@ pub async fn archive_course(
         return Ok(course);
     }
     let archived = repo::set_status(conn, course_id, CourseStatus::Archived).await?;
-    events::audit_admin(
+    events::audit_implicit(
         conn,
         actor,
+        access,
         course_entry("course.archive", course_id, json!({})),
     )
     .await?;
@@ -132,9 +129,10 @@ pub async fn restore_course(
         return Ok(course);
     }
     let restored = repo::set_status(conn, course_id, CourseStatus::Published).await?;
-    events::audit_admin(
+    events::audit_implicit(
         conn,
         actor,
+        access,
         course_entry("course.restore", course_id, json!({})),
     )
     .await?;
@@ -149,21 +147,24 @@ pub async fn begin_delete_course(
     conn: &mut PgConnection,
     actor: &Actor,
     course_id: Uuid,
-) -> Result<(), TeachingError> {
+) -> Result<CourseAccess, TeachingError> {
     let (_, access) = load(conn, actor, course_id, true).await?;
     access::authorize(actor, Action::DeleteCourse(access))?;
-    Ok(())
+    Ok(access)
 }
 
 /// Second half: audits and deletes the course, under the lock [`begin_delete_course`] took.
+/// `access` is the one that call answered with.
 pub async fn finish_delete_course(
     conn: &mut PgConnection,
     actor: &Actor,
+    access: CourseAccess,
     course_id: Uuid,
 ) -> Result<(), TeachingError> {
-    events::audit_admin(
+    events::audit_implicit(
         conn,
         actor,
+        access,
         course_entry("course.delete", course_id, json!({})),
     )
     .await?;
@@ -195,6 +196,7 @@ pub async fn new_template(
             kind: CourseKind::Template,
             title: &title,
             term_id: None,
+            unit_id: None,
             code: &code,
             description: &description,
             from: Some(course_id),
@@ -204,13 +206,15 @@ pub async fn new_template(
 }
 
 /// The row of a draft course made from a template the actor can edit, owned by the actor. The
-/// flow (`learning::courses::create_from_template`) copies the content into it.
+/// flow (`learning::courses::create_from_template`) copies the content into it. The course sits
+/// in `unit_id` (needs `manage_courses` there), never in the template's unit.
 pub async fn new_course_from_template(
     conn: &mut PgConnection,
     actor: &Actor,
     template_id: Uuid,
     title: Option<CourseTitle>,
     term_id: Option<Uuid>,
+    unit_id: Option<Uuid>,
 ) -> Result<Course, TeachingError> {
     let (template, access) = load(conn, actor, template_id, false).await?;
     if template.kind != CourseKind::Template {
@@ -229,6 +233,7 @@ pub async fn new_course_from_template(
             kind: CourseKind::Regular,
             title: &title,
             term_id,
+            unit_id,
             code: &code,
             description: &description,
             from: Some(template_id),
@@ -284,20 +289,6 @@ pub async fn former_people(
     Ok(repo::list_former(conn, course_id, candidates, with_emails).await?)
 }
 
-/// Escapes `\`, `%` and `_` so that the text is matched as it is.
-fn like_pattern(text: &str) -> String {
-    let mut pattern = String::with_capacity(text.len() + 2);
-    pattern.push('%');
-    for c in text.chars() {
-        if matches!(c, '\\' | '%' | '_') {
-            pattern.push('\\');
-        }
-        pattern.push(c);
-    }
-    pattern.push('%');
-    pattern
-}
-
 /// Active people who are not on the course and whose name, surname or email contains `q`.
 pub async fn course_candidates(
     conn: &mut PgConnection,
@@ -313,6 +304,3 @@ pub async fn course_candidates(
     }
     Ok(repo::search_candidates(conn, course_id, &like_pattern(q), CANDIDATE_LIMIT).await?)
 }
-
-#[cfg(test)]
-mod tests;

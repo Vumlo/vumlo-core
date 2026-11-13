@@ -196,6 +196,7 @@ async fn call(
         "GET" => http.get(path),
         "POST" => http.post(path),
         "PATCH" => http.patch(path),
+        "PUT" => http.put(path),
         "DELETE" => http.delete(path),
         other => panic!("method {other}"),
     };
@@ -1223,6 +1224,12 @@ async fn every_org_endpoint_is_in_the_openapi_document() {
                 "delete",
                 "groups",
             ),
+            ("/api/v1/units/{id}/roles", "get", "units"),
+            ("/api/v1/units/{id}/roles/{user_id}", "put", "units"),
+            ("/api/v1/units/{id}/roles/{user_id}", "delete", "units"),
+            ("/api/v1/units/{id}/candidates", "get", "units"),
+            ("/api/v1/admin/unit-roles", "get", "units"),
+            ("/api/v1/admin/unit-roles/{role}", "put", "units"),
         ] {
             let operation = &doc["paths"][path][method];
             assert!(operation.is_object(), "{method} {path} missing");
@@ -1231,6 +1238,356 @@ async fn every_org_endpoint_is_in_the_openapi_document() {
                 operation["security"].is_array(),
                 "{method} {path} has no security"
             );
+        }
+    })
+    .await;
+}
+
+// ---------------------------------------------------------------------------------------------
+// Units (ADR-0094)
+// ---------------------------------------------------------------------------------------------
+
+#[tokio::test]
+async fn units_are_a_tree_an_admin_edits_and_a_course_in_one_keeps_it() {
+    db_test(async |pool| {
+        let w = world(pool).await;
+        let unit = |name: &str, parent: Option<Uuid>| json!({"name": name, "parent_id": parent});
+
+        let faculty = w
+            .as_admin("POST", "/units", Some(unit("Science", None)))
+            .await;
+        assert_eq!(faculty.status, 201);
+        let faculty = common::id_of(&faculty.json());
+        let physics = w
+            .as_admin("POST", "/units", Some(unit("Physics", Some(faculty))))
+            .await;
+        assert_eq!(physics.status, 201);
+        let physics = common::id_of(&physics.json());
+
+        // The list is flat and gives an admin every ability.
+        let listed = w.as_admin("GET", "/units", None).await;
+        assert_eq!(listed.status, 200);
+        let items = listed.json()["items"].clone();
+        assert_eq!(items.as_array().unwrap().len(), 2);
+        assert_eq!(items[0]["name"], "Physics");
+        assert_eq!(items[0]["parent_id"], json!(faculty));
+        assert_eq!(items[0]["abilities"].as_array().unwrap().len(), 6);
+        assert_eq!(listed.json()["next_cursor"], Value::Null);
+
+        // Others see none, and cannot change the tree.
+        for token in [&w.teacher.token, &w.student.token] {
+            let seen = call(&w.http, "GET", "/units", Some(token), None).await;
+            assert_eq!(seen.json()["items"], json!([]));
+            let created = call(
+                &w.http,
+                "POST",
+                "/units",
+                Some(token),
+                Some(&unit("X", None)),
+            )
+            .await;
+            created.problem(403);
+            call(
+                &w.http,
+                "PATCH",
+                &format!("/units/{physics}"),
+                Some(token),
+                Some(&json!({"name": "X"})),
+            )
+            .await
+            .problem(404);
+        }
+        // Anonymous.
+        call(&w.http, "GET", "/units", None, None)
+            .await
+            .problem(401);
+
+        // A name is free under another parent, taken under the same one; a cycle is 422 on parent_id.
+        w.as_admin("POST", "/units", Some(unit("Physics", Some(faculty))))
+            .await
+            .problem(409);
+        let cycle = w
+            .as_admin(
+                "PATCH",
+                &format!("/units/{faculty}"),
+                Some(json!({"parent_id": physics})),
+            )
+            .await;
+        assert_eq!(fields(&cycle), ["parent_id"]);
+        w.as_admin("POST", "/units", Some(json!({"name": ""})))
+            .await
+            .problem(422);
+        let moved = w
+            .as_admin(
+                "PATCH",
+                &format!("/units/{physics}"),
+                Some(json!({"name": "Physics 2", "parent_id": null})),
+            )
+            .await;
+        assert_eq!(moved.status, 200);
+        assert_eq!(moved.json()["parent_id"], Value::Null);
+        assert_eq!(moved.json()["name"], "Physics 2");
+
+        // A course in a unit keeps it: 409, never a cascade. (Courses get their unit through
+        // `PUT /courses/{id}/unit`, a later step; here the row is set directly.)
+        let created = call(
+            &w.http,
+            "POST",
+            "/courses",
+            Some(&w.teacher.token),
+            Some(&json!({"title": "Mechanics"})),
+        )
+        .await;
+        let course = common::id_of(&created.json());
+        sqlx::query!(
+            "UPDATE teaching.courses SET unit_id = $2 WHERE id = $1",
+            course,
+            physics
+        )
+        .execute(&w.pool)
+        .await
+        .unwrap();
+        w.as_admin("DELETE", &format!("/units/{physics}"), None)
+            .await
+            .problem(409);
+        sqlx::query!(
+            "UPDATE teaching.courses SET unit_id = NULL WHERE id = $1",
+            course
+        )
+        .execute(&w.pool)
+        .await
+        .unwrap();
+        assert_eq!(
+            w.as_admin("DELETE", &format!("/units/{physics}"), None)
+                .await
+                .status,
+            204
+        );
+        w.as_admin("DELETE", &format!("/units/{physics}"), None)
+            .await
+            .problem(404);
+    })
+    .await;
+}
+
+async fn on_role(
+    w: &World,
+    token: &str,
+    method: &str,
+    unit: Uuid,
+    who: Uuid,
+    body: Option<&Value>,
+) -> Resp {
+    let path = format!("/units/{unit}/roles/{who}");
+    call(&w.http, method, &path, Some(token), body).await
+}
+
+#[tokio::test]
+async fn unit_roles_are_granted_listed_searched_and_switched_over_http() {
+    db_test(async |pool| {
+        let w = world(pool).await;
+        let science = common::id_of(
+            &w.as_admin("POST", "/units", Some(json!({"name": "Science"})))
+                .await
+                .json(),
+        );
+        let physics = common::id_of(
+            &w.as_admin(
+                "POST",
+                "/units",
+                Some(json!({"name": "Physics", "parent_id": science})),
+            )
+            .await
+            .json(),
+        );
+        let (teacher, student) = (&w.teacher, &w.student);
+        let role_path = |unit: Uuid, who: Uuid| format!("/units/{unit}/roles/{who}");
+        let viewer = json!({"role": "viewer"});
+
+        // A unit nobody gave the teacher a role on does not exist for them.
+        call(
+            &w.http,
+            "GET",
+            &format!("/units/{physics}/roles"),
+            Some(&teacher.token),
+            None,
+        )
+        .await
+        .problem(404);
+        call(
+            &w.http,
+            "GET",
+            "/admin/unit-roles",
+            Some(&teacher.token),
+            None,
+        )
+        .await
+        .problem(403);
+        call(&w.http, "GET", "/admin/unit-roles", None, None)
+            .await
+            .problem(401);
+
+        // A student cannot hold a role (422 on `role`); nobody by that id is 404.
+        let refused = w
+            .as_admin("PUT", &role_path(physics, student.id), Some(viewer.clone()))
+            .await;
+        assert_eq!(fields(&refused), ["role"]);
+        w.as_admin(
+            "PUT",
+            &role_path(physics, Uuid::now_v7()),
+            Some(viewer.clone()),
+        )
+        .await
+        .problem(404);
+        let unknown = w
+            .as_admin(
+                "PUT",
+                &role_path(physics, teacher.id),
+                Some(json!({"role": "owner"})),
+            )
+            .await;
+        assert_eq!(unknown.status, 422);
+
+        // The teacher becomes manager of Science; idempotent.
+        for _ in 0..2 {
+            let put = w
+                .as_admin(
+                    "PUT",
+                    &role_path(science, teacher.id),
+                    Some(json!({"role": "manager"})),
+                )
+                .await;
+            assert_eq!(put.status, 204);
+        }
+        let seen = call(&w.http, "GET", "/units", Some(&teacher.token), None).await;
+        assert_eq!(seen.json()["items"].as_array().unwrap().len(), 2);
+        // They list the roles on a unit below, and grant there; not on their own unit.
+        let listed = call(
+            &w.http,
+            "GET",
+            &format!("/units/{science}/roles"),
+            Some(&teacher.token),
+            None,
+        )
+        .await;
+        assert_eq!(listed.json()["items"][0]["user_id"], json!(teacher.id));
+        assert_eq!(listed.json()["items"][0]["role"], "manager");
+        let other = user(&w.pool, &w.http, "other@x.edu", Role::Teacher).await;
+        let put = on_role(&w, &teacher.token, "PUT", physics, other.id, Some(&viewer)).await;
+        assert_eq!(put.status, 204);
+        on_role(&w, &teacher.token, "PUT", science, other.id, Some(&viewer))
+            .await
+            .problem(403);
+        on_role(&w, &teacher.token, "DELETE", science, teacher.id, None)
+            .await
+            .problem(403);
+
+        // Candidates: active teachers and admins without a role on Physics; two letters at least.
+        let gone = user(&w.pool, &w.http, "gone@x.edu", Role::Teacher).await;
+        w.patch_user(gone.id, json!({"status": "disabled"})).await;
+        let found = call(
+            &w.http,
+            "GET",
+            &format!("/units/{physics}/candidates?q=%40x.edu"),
+            Some(&w.admin.token),
+            None,
+        )
+        .await;
+        assert_eq!(found.status, 200);
+        let mut got: Vec<String> = ids(&found.json(), "user_id");
+        got.sort();
+        let mut want = vec![w.admin.id.to_string(), teacher.id.to_string()];
+        want.sort();
+        assert_eq!(got, want, "{}", String::from_utf8_lossy(&found.body));
+        let short = call(
+            &w.http,
+            "GET",
+            &format!("/units/{physics}/candidates?q=a"),
+            Some(&w.admin.token),
+            None,
+        )
+        .await;
+        assert_eq!(short.status, 422);
+
+        // The switches: defaults, then a change that the very next request sees.
+        let defaults = w.as_admin("GET", "/admin/unit-roles", None).await.json();
+        assert_eq!(defaults["viewer"], json!(["view_grades"]));
+        assert_eq!(
+            defaults["manager"],
+            json!([
+                "view_grades",
+                "manage_roster",
+                "manage_courses",
+                "manage_units"
+            ])
+        );
+        let changed = w
+            .as_admin(
+                "PUT",
+                "/admin/unit-roles/manager",
+                Some(json!({"abilities": ["manage_units", "grade", "grade"]})),
+            )
+            .await;
+        assert_eq!(changed.status, 200);
+        assert_eq!(changed.json()["manager"], json!(["grade", "manage_units"]));
+        let mine = call(&w.http, "GET", "/units", Some(&teacher.token), None).await;
+        assert_eq!(
+            mine.json()["items"][0]["abilities"],
+            json!(["grade", "manage_units"])
+        );
+        for (who, status) in [(&w.teacher.token, 403), (&w.student.token, 403)] {
+            call(
+                &w.http,
+                "PUT",
+                "/admin/unit-roles/viewer",
+                Some(who),
+                Some(&json!({"abilities": []})),
+            )
+            .await
+            .problem(status);
+        }
+        let bad = w
+            .as_admin(
+                "PUT",
+                "/admin/unit-roles/viewer",
+                Some(json!({"abilities": ["delete_course"]})),
+            )
+            .await;
+        assert_eq!(bad.status, 422);
+        let bad_role = w
+            .as_admin(
+                "PUT",
+                "/admin/unit-roles/owner",
+                Some(json!({"abilities": []})),
+            )
+            .await;
+        assert!((400..500).contains(&bad_role.status), "{}", bad_role.status);
+        assert_eq!(
+            w.as_admin("GET", "/admin/unit-roles", None).await.json()["viewer"],
+            json!(["view_grades"])
+        );
+
+        // Removing: 204 once, then 404; every change left one audit row.
+        let removed = w
+            .as_admin("DELETE", &role_path(science, teacher.id), None)
+            .await;
+        assert_eq!(removed.status, 204);
+        w.as_admin("DELETE", &role_path(science, teacher.id), None)
+            .await
+            .problem(404);
+        for (action, n) in [
+            ("unit.role.set", 2), // the repeated grant left none
+            ("unit.role.remove", 1),
+            ("unit.abilities.set", 1),
+        ] {
+            let found = sqlx::query_scalar!(
+                r#"SELECT count(*) AS "n!" FROM events.audit_log WHERE action = $1"#,
+                action
+            )
+            .fetch_one(&w.pool)
+            .await
+            .unwrap();
+            assert_eq!(found, n, "{action}");
         }
     })
     .await;

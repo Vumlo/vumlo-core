@@ -1,4 +1,6 @@
+use access::UnitRole;
 use chrono::{DateTime, Datelike, NaiveDate, Utc};
+use common::Role;
 use uuid::Uuid;
 
 const NAME_MAX_LEN: usize = 100;
@@ -132,6 +134,43 @@ pub struct Group {
     pub id: Uuid,
     pub name: String,
     pub created_at: DateTime<Utc>,
+}
+
+/// A unit of the institution (a faculty, a department): a node of a tree (ADR-0094).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Unit {
+    pub id: Uuid,
+    pub parent_id: Option<Uuid>,
+    pub name: String,
+    pub created_at: DateTime<Utc>,
+}
+
+/// The fields of a unit update that were sent. `parent_id: Some(None)` moves the unit to the top.
+#[derive(Debug, Clone, Default)]
+pub struct UnitUpdate {
+    pub name: Option<OrgName>,
+    pub parent_id: Option<Option<Uuid>>,
+}
+
+/// A person's role on one unit, as the unit's role list shows it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UnitRoleEntry {
+    pub user_id: Uuid,
+    pub name: String,
+    pub surname: String,
+    pub email: String,
+    pub role: UnitRole,
+}
+
+/// Someone who could be given a role on a unit.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UnitCandidate {
+    pub user_id: Uuid,
+    pub name: String,
+    pub surname: String,
+    pub email: String,
+    /// The institution role: `teacher` or `admin`.
+    pub role: Role,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -345,14 +345,16 @@ fn check_rewritten(rewritten: u64, ids: &[Uuid]) -> Result<(), ContentError> {
 async fn audit(
     conn: &mut PgConnection,
     actor: &Actor,
+    access: CourseAccess,
     action: &'static str,
     resource_type: &'static str,
     resource_id: Uuid,
     course_id: Uuid,
 ) -> Result<(), ContentError> {
-    events::audit_admin(
+    events::audit_implicit(
         conn,
         actor,
+        access,
         AuditEntry {
             action,
             resource_type,
@@ -405,7 +407,7 @@ pub async fn create_module(
     title: ContentTitle,
     parent_id: Option<Uuid>,
 ) -> Result<Module, ContentError> {
-    manage_course(conn, actor, course_id).await?;
+    let access = manage_course(conn, actor, course_id).await?;
     if let Some(parent_id) = parent_id {
         check_parent(conn, course_id, parent_id).await?;
     }
@@ -414,6 +416,7 @@ pub async fn create_module(
     audit(
         conn,
         actor,
+        access,
         "content.module.create",
         "module",
         module.id,
@@ -647,6 +650,7 @@ pub async fn update_module(
     audit(
         conn,
         actor,
+        access,
         "content.module.update",
         "module",
         id,
@@ -663,6 +667,7 @@ pub async fn update_module(
 pub struct ModuleDeletion {
     id: Uuid,
     course_id: Uuid,
+    access: CourseAccess,
     parent_id: Option<Uuid>,
 }
 
@@ -683,11 +688,12 @@ pub async fn begin_delete_module(
     actor: &Actor,
     id: Uuid,
 ) -> Result<ModuleDeletion, ContentError> {
-    let (row, _) = manage_module(conn, actor, id).await?;
+    let (row, access) = manage_module(conn, actor, id).await?;
     repo::lock_assignments_below(conn, id).await?;
     Ok(ModuleDeletion {
         id,
         course_id: row.module.course_id,
+        access,
         parent_id: row.module.parent_id,
     })
 }
@@ -701,6 +707,7 @@ pub async fn finish_delete_module(
     let ModuleDeletion {
         id,
         course_id,
+        access,
         parent_id,
     } = deletion;
     // A delete that lost the race to another one found nothing: no answer of success and no
@@ -712,6 +719,7 @@ pub async fn finish_delete_module(
     audit(
         conn,
         actor,
+        access,
         "content.module.delete",
         "module",
         id,
@@ -730,7 +738,7 @@ pub async fn reorder_modules(
     parent_id: Option<Uuid>,
     ids: &[Uuid],
 ) -> Result<(), ContentError> {
-    manage_course(conn, actor, course_id).await?;
+    let access = manage_course(conn, actor, course_id).await?;
     if let Some(parent_id) = parent_id {
         check_parent(conn, course_id, parent_id).await?;
     }
@@ -743,6 +751,7 @@ pub async fn reorder_modules(
             audit(
                 conn,
                 actor,
+                access,
                 "content.module.reorder",
                 "module",
                 parent_id,
@@ -754,6 +763,7 @@ pub async fn reorder_modules(
             audit(
                 conn,
                 actor,
+                access,
                 "content.module.reorder",
                 "course",
                 course_id,
@@ -793,6 +803,7 @@ pub async fn publish_module(
         audit(
             conn,
             actor,
+            access,
             "content.module.publish",
             "module",
             id,
@@ -1072,6 +1083,7 @@ pub struct ItemCreation {
     id: Uuid,
     module_id: Uuid,
     course_id: Uuid,
+    access: CourseAccess,
     kind: ItemKind,
     title: ContentTitle,
     body: Map<String, Value>,
@@ -1107,7 +1119,7 @@ pub async fn begin_create_item(
         body,
         mut assignment,
     } = input;
-    let (row, _) = manage_module(conn, actor, module_id).await?;
+    let (row, access) = manage_module(conn, actor, module_id).await?;
     let course_id = row.module.course_id;
     if let Some(assignment) = &mut assignment {
         let kind = assignment.assignment_type;
@@ -1133,6 +1145,7 @@ pub async fn begin_create_item(
         id: Uuid::now_v7(),
         module_id,
         course_id,
+        access,
         kind,
         title,
         body,
@@ -1153,6 +1166,7 @@ pub async fn finish_create_item(
         id,
         module_id,
         course_id,
+        access,
         kind,
         title,
         body,
@@ -1169,6 +1183,7 @@ pub async fn finish_create_item(
     audit(
         conn,
         actor,
+        access,
         "content.item.create",
         "item",
         item.id,
@@ -1315,7 +1330,7 @@ pub async fn publish_revision(
     actor: &Actor,
     id: Uuid,
 ) -> Result<Revision, ContentError> {
-    let (row, _) = manage_item(conn, actor, id).await?;
+    let (row, access) = manage_item(conn, actor, id).await?;
     if row.item.status != ItemStatus::Published {
         return Err(ContentError::ItemNotPublished);
     }
@@ -1336,6 +1351,7 @@ pub async fn publish_revision(
     audit(
         conn,
         actor,
+        access,
         "content.item.revision_publish",
         "item",
         id,
@@ -2002,7 +2018,16 @@ pub async fn finish_update_item(
         let tree = load_tree(conn, actor, course_id, access).await?;
         standing::set_rule(conn, course_id, Node::Item(id), inputs, &tree).await?;
     }
-    audit(conn, actor, "content.item.update", "item", id, course_id).await?;
+    audit(
+        conn,
+        actor,
+        access,
+        "content.item.update",
+        "item",
+        id,
+        course_id,
+    )
+    .await?;
     item.access = node_access(conn, actor, access, course_id, Node::Item(id)).await?;
     Ok(item)
 }
@@ -2064,6 +2089,7 @@ pub struct ItemDeletion {
     id: Uuid,
     module_id: Uuid,
     course_id: Uuid,
+    access: CourseAccess,
     is_assignment: bool,
 }
 
@@ -2086,7 +2112,7 @@ pub async fn begin_delete_item(
     actor: &Actor,
     id: Uuid,
 ) -> Result<ItemDeletion, ContentError> {
-    let (row, _) = manage_item(conn, actor, id).await?;
+    let (row, access) = manage_item(conn, actor, id).await?;
     let is_assignment = row.item.kind == ItemKind::Assignment;
     if is_assignment {
         repo::lock_assignment(conn, id).await?;
@@ -2095,6 +2121,7 @@ pub async fn begin_delete_item(
         id,
         module_id: row.item.module_id,
         course_id: row.item.course_id,
+        access,
         is_assignment,
     })
 }
@@ -2109,13 +2136,23 @@ pub async fn finish_delete_item(
         id,
         module_id,
         course_id,
+        access,
         ..
     } = deletion;
     if repo::delete_item(conn, id).await? == 0 {
         return Err(ContentError::ItemNotFound);
     }
     repo::compact_items(conn, module_id).await?;
-    audit(conn, actor, "content.item.delete", "item", id, course_id).await?;
+    audit(
+        conn,
+        actor,
+        access,
+        "content.item.delete",
+        "item",
+        id,
+        course_id,
+    )
+    .await?;
     Ok(())
 }
 
@@ -2126,7 +2163,7 @@ pub async fn reorder_items(
     module_id: Uuid,
     ids: &[Uuid],
 ) -> Result<(), ContentError> {
-    let (row, _) = manage_module(conn, actor, module_id).await?;
+    let (row, access) = manage_module(conn, actor, module_id).await?;
     let current = repo::item_ids(conn, module_id).await?;
     check_order(ids, &current)?;
     let rewritten = repo::reorder_items(conn, module_id, ids).await?;
@@ -2134,6 +2171,7 @@ pub async fn reorder_items(
     audit(
         conn,
         actor,
+        access,
         "content.item.reorder",
         "module",
         module_id,
@@ -2158,6 +2196,7 @@ pub async fn publish_item(
             audit(
                 conn,
                 actor,
+                access,
                 "content.item.publish",
                 "item",
                 id,

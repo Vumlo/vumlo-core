@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM org.unit_role_abilities WHERE role = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "5b3632c086879234013bde13a4e3ca8e77088e1ee3a6159892beef9cdf401d40"
+}

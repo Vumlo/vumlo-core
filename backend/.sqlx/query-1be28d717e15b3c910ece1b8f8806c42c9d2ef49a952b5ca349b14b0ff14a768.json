@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT abilities AS \"abilities!\" FROM org.unit_grants\n           WHERE user_id = $1 AND unit_id = $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "abilities!",
+        "type_info": "TextArray",
+        "origin": {
+          "Table": {
+            "table": "org.unit_grants",
+            "name": "abilities"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "1be28d717e15b3c910ece1b8f8806c42c9d2ef49a952b5ca349b14b0ff14a768"
+}

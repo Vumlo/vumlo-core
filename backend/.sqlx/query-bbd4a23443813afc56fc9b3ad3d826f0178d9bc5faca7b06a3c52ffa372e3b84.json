@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT unit_id AS \"unit_id!\" FROM org.unit_subtree WHERE root_id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "unit_id!",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "org.unit_subtree",
+            "name": "unit_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "bbd4a23443813afc56fc9b3ad3d826f0178d9bc5faca7b06a3c52ffa372e3b84"
+}

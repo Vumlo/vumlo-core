@@ -200,7 +200,9 @@ pub async fn create_from_template(
         .transpose()
         .map_err(TeachingError::from)?;
     let mut tx = state.db.begin().await.map_err(LearningError::from)?;
-    let course = service::create_from_template(&mut tx, &actor, id, title, request.term_id).await?;
+    let course =
+        service::create_from_template(&mut tx, &actor, id, title, request.term_id, request.unit_id)
+            .await?;
     tx.commit().await.map_err(LearningError::from)?;
     Ok((StatusCode::CREATED, Json(api_course(course))))
 }

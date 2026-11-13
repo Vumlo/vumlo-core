@@ -22,6 +22,7 @@ The plan below is only what those files already say; nothing in it has a date or
 Now (partly built, [in-progress.md](decisions/in-progress.md)):
 - Cleanup jobs in the scheduler: expired sessions, retention of processed outbox rows and of the audit log (`publish_at` and `auto_submit` are built, ADR-0091).
 - The `link` item kind and the `lesson` item made of steps.
+- Org units and unit roles (0094): the backend is built (`org` owns units, unit roles and the abilities an admin switches; a unit role reaches the courses below it through `access`); the web pages are next.
 
 Next (decide first, [planned.md](decisions/planned.md)):
 - Final and term grades; what the institution mode changes beyond the grading scale.

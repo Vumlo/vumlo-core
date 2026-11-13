@@ -14,6 +14,6 @@ pub mod testing {
     pub use super::dispatch::ensure_installed;
 }
 pub use service::{
-    EventsError, MAX_ATTEMPTS, audit, audit_admin, audit_cli, audit_plugin, backoff, emit,
+    EventsError, MAX_ATTEMPTS, audit, audit_cli, audit_implicit, audit_plugin, backoff, emit,
     process_once, run_worker,
 };

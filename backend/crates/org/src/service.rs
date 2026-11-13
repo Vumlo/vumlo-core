@@ -11,13 +11,16 @@ use uuid::Uuid;
 
 use super::model::{
     DownloadUrl, Group, GroupMember, GroupOption, MemberLine, MemberProblem, ModelError, OrgName,
-    Subgroup, Term, TermDates, TermUpdate,
+    Subgroup, Term, TermDates, TermUpdate, Unit, UnitCandidate, UnitRoleEntry, UnitUpdate,
 };
 use super::repo;
 use access::Actor;
-use access::{self, AccessError, Action, group_role_allowed};
+use access::{
+    self, AccessError, Action, UnitAbility, UnitGrant, UnitRole, group_role_allowed,
+    unit_role_allowed,
+};
 use auth::{self, AuthError};
-use common::{Page, PageParams};
+use common::{CANDIDATE_LIMIT, CANDIDATE_MIN_CHARS, Page, PageParams, like_pattern};
 use events::{self, AuditEntry, Event, EventsError};
 use vumlo_config::InstitutionMode;
 
@@ -35,6 +38,18 @@ pub enum OrgError {
     SubgroupNotFound,
     #[error("member not found")]
     MemberNotFound,
+    #[error("unit not found")]
+    UnitNotFound,
+    #[error("a unit with this name already exists here")]
+    UnitNameTaken,
+    #[error("a unit cannot move under itself or below")]
+    UnitCycle,
+    #[error("the unit has subunits or courses")]
+    UnitInUse,
+    #[error("this user cannot hold a unit role")]
+    RoleNotAllowed,
+    #[error("the search text is too short")]
+    QueryTooShort,
     #[error("a term with this name already exists")]
     TermNameTaken,
     #[error("a group with this name already exists")]
@@ -757,6 +772,449 @@ pub async fn remove_subgroup_member(
         "subgroup",
         subgroup_id,
         json!({"user_id": user_id}),
+    )
+    .await
+}
+
+// ---------------------------------------------------------------------------------------------
+// Units (ADR-0094)
+// ---------------------------------------------------------------------------------------------
+
+/// Does the actor pass a check that only an administrator passes? (No unit grant opens a top-level
+/// unit.) The one place `org` learns who is an admin; the rule itself lives in `access`.
+fn is_admin(actor: &Actor) -> bool {
+    access::authorize(actor, Action::ManageUnits(None)).is_ok()
+}
+
+fn grant_of(unit_id: Uuid, abilities: &[String]) -> UnitGrant {
+    UnitGrant::new(unit_id, abilities.iter().filter_map(|a| a.parse().ok()))
+}
+
+/// The actor's grant on a unit that is known to exist.
+async fn grant_on(
+    conn: &mut PgConnection,
+    actor: &Actor,
+    unit_id: Uuid,
+) -> Result<Option<UnitGrant>, OrgError> {
+    if is_admin(actor) {
+        return Ok(Some(UnitGrant::full(unit_id)));
+    }
+    let abilities = repo::unit_abilities(conn, actor.user_id(), unit_id).await?;
+    Ok(abilities.map(|abilities| grant_of(unit_id, &abilities)))
+}
+
+/// The grant on the parent of a unit; a top-level unit has none (only an admin manages it).
+async fn parent_grant(
+    conn: &mut PgConnection,
+    actor: &Actor,
+    parent_id: Option<Uuid>,
+) -> Result<Option<UnitGrant>, OrgError> {
+    match parent_id {
+        Some(parent_id) => grant_on(conn, actor, parent_id).await,
+        None => Ok(None),
+    }
+}
+
+/// The actor's grant on a unit; `None` when they hold none. `UnitNotFound` if the unit does not exist.
+pub async fn unit_grant(
+    conn: &mut PgConnection,
+    actor: &Actor,
+    unit_id: Uuid,
+) -> Result<Option<UnitGrant>, OrgError> {
+    repo::find_unit(conn, unit_id)
+        .await?
+        .ok_or(OrgError::UnitNotFound)?;
+    grant_on(conn, actor, unit_id).await
+}
+
+/// A unit the actor may see, with their grant on it. A unit they may not see does not exist for them.
+async fn visible_unit(
+    conn: &mut PgConnection,
+    actor: &Actor,
+    id: Uuid,
+) -> Result<(Unit, Option<UnitGrant>), OrgError> {
+    let unit = repo::find_unit(conn, id)
+        .await?
+        .ok_or(OrgError::UnitNotFound)?;
+    let grant = grant_on(conn, actor, id).await?;
+    access::authorize(actor, Action::ViewUnit(grant)).map_err(|_| OrgError::UnitNotFound)?;
+    Ok((unit, grant))
+}
+
+/// The units the actor sees with their grant on each: an administrator all of them, everyone else
+/// the ones their roles cover (none for most people).
+pub async fn list_units(
+    conn: &mut PgConnection,
+    actor: &Actor,
+) -> Result<Vec<(Unit, UnitGrant)>, OrgError> {
+    access::authorize(actor, Action::ViewOwnUnits)?;
+    if is_admin(actor) {
+        let units = repo::list_units(conn).await?;
+        return Ok(units
+            .into_iter()
+            .map(|unit| {
+                let grant = UnitGrant::full(unit.id);
+                (unit, grant)
+            })
+            .collect());
+    }
+    let rows = repo::list_units_of_user(conn, actor.user_id()).await?;
+    Ok(rows
+        .into_iter()
+        .map(|(unit, abilities)| {
+            let grant = grant_of(unit.id, &abilities);
+            (unit, grant)
+        })
+        // A grant a student somehow holds is ignored (ADR-0037); `access` decides.
+        .filter(|(_, grant)| access::authorize(actor, Action::ViewUnit(Some(*grant))).is_ok())
+        .collect())
+}
+
+pub async fn create_unit(
+    conn: &mut PgConnection,
+    actor: &Actor,
+    name: OrgName,
+    parent_id: Option<Uuid>,
+) -> Result<Unit, OrgError> {
+    let grant = match parent_id {
+        Some(parent_id) => visible_unit(conn, actor, parent_id).await?.1,
+        None => None,
+    };
+    access::authorize(actor, Action::ManageUnits(grant))?;
+    let unit = repo::insert_unit(conn, Uuid::now_v7(), parent_id, name.as_str())
+        .await
+        .map_err(|e| match &e {
+            // The parent was deleted since we looked.
+            sqlx::Error::Database(db) if db.is_foreign_key_violation() => OrgError::UnitNotFound,
+            _ => name_taken(e, "units_name_key", OrgError::UnitNameTaken),
+        })?;
+    audit(
+        conn,
+        actor,
+        "unit.create",
+        "unit",
+        unit.id,
+        json!({"name": unit.name, "parent_id": unit.parent_id}),
+    )
+    .await?;
+    Ok(unit)
+}
+
+/// What an update will do, once the actor is known to be allowed to do it.
+struct UnitChange {
+    unit: Unit,
+    new_parent: Option<Uuid>,
+    moved: bool,
+    new_name: String,
+    renamed: bool,
+}
+
+/// Reads the unit and checks every grant the update needs: the one on the unit's parent, and for a
+/// move the new parent's visibility, its grant and the cycle rule. Run once without the tree lock,
+/// so a caller who may not do it never takes the lock, and again under it, because the tree may have
+/// changed in between.
+async fn check_update(
+    conn: &mut PgConnection,
+    actor: &Actor,
+    id: Uuid,
+    update: &UnitUpdate,
+) -> Result<UnitChange, OrgError> {
+    let (unit, _) = visible_unit(conn, actor, id).await?;
+    let old_grant = parent_grant(conn, actor, unit.parent_id).await?;
+    access::authorize(actor, Action::ManageUnits(old_grant))?;
+
+    let new_parent = update.parent_id.unwrap_or(unit.parent_id);
+    let moved = new_parent != unit.parent_id;
+    if moved {
+        let new_grant = match new_parent {
+            Some(new_parent) => {
+                let (_, grant) = visible_unit(conn, actor, new_parent).await?;
+                if repo::in_subtree(conn, id, new_parent).await? {
+                    return Err(OrgError::UnitCycle);
+                }
+                grant
+            }
+            None => None,
+        };
+        access::authorize(actor, Action::ManageUnits(new_grant))?;
+    }
+    let new_name = update
+        .name
+        .as_ref()
+        .map_or(unit.name.as_str(), OrgName::as_str)
+        .to_owned();
+    let renamed = new_name != unit.name;
+    Ok(UnitChange {
+        unit,
+        new_parent,
+        moved,
+        new_name,
+        renamed,
+    })
+}
+
+/// Renames and/or moves a unit. The grant checked is the one on its parent, and for a move also the
+/// one on the new parent. Everything is checked first without a lock. A move that passes takes the
+/// tree lock, then reads and checks again (including that the new parent is not inside the unit)
+/// before it writes. A rename alone writes the name and never the parent.
+pub async fn update_unit(
+    conn: &mut PgConnection,
+    actor: &Actor,
+    id: Uuid,
+    update: UnitUpdate,
+) -> Result<Unit, OrgError> {
+    let mut change = check_update(conn, actor, id, &update).await?;
+    if change.moved {
+        repo::lock_tree(conn).await?;
+        change = check_update(conn, actor, id, &update).await?;
+    }
+    let UnitChange {
+        unit,
+        new_parent,
+        moved,
+        new_name,
+        renamed,
+    } = change;
+    if !moved && !renamed {
+        return Ok(unit);
+    }
+
+    let written = if moved {
+        // Under the lock; the name rides along so that the pair is checked as one.
+        repo::move_unit(conn, id, new_parent, renamed.then_some(new_name.as_str()))
+            .await
+            .map_err(|e| name_taken(e, "units_name_key", OrgError::UnitNameTaken))?
+    } else {
+        repo::rename_unit(conn, id, &new_name)
+            .await
+            .map_err(|e| name_taken(e, "units_name_key", OrgError::UnitNameTaken))?
+            .ok_or(OrgError::UnitNotFound)?
+    };
+    if renamed {
+        audit(
+            conn,
+            actor,
+            "unit.rename",
+            "unit",
+            id,
+            json!({"name": written.name}),
+        )
+        .await?;
+    }
+    if moved {
+        audit(
+            conn,
+            actor,
+            "unit.move",
+            "unit",
+            id,
+            json!({"name": written.name, "from": unit.parent_id, "to": new_parent}),
+        )
+        .await?;
+    }
+    Ok(written)
+}
+
+/// Deletes a unit with no subunits and no courses; the foreign keys refuse the rest.
+pub async fn delete_unit(conn: &mut PgConnection, actor: &Actor, id: Uuid) -> Result<(), OrgError> {
+    let (unit, _) = visible_unit(conn, actor, id).await?;
+    let grant = parent_grant(conn, actor, unit.parent_id).await?;
+    access::authorize(actor, Action::ManageUnits(grant))?;
+    let deleted = repo::delete_unit(conn, id).await.map_err(|e| match &e {
+        // `units.parent_id` and `courses.unit_id` have no cascade: NO ACTION reports 23503.
+        sqlx::Error::Database(db) if db.is_foreign_key_violation() => OrgError::UnitInUse,
+        _ => OrgError::Db(e),
+    })?;
+    if deleted == 0 {
+        return Err(OrgError::UnitNotFound);
+    }
+    audit(
+        conn,
+        actor,
+        "unit.delete",
+        "unit",
+        id,
+        json!({"name": unit.name, "parent_id": unit.parent_id}),
+    )
+    .await
+}
+
+// ---------------------------------------------------------------------------------------------
+// Unit roles and the abilities admins switch (ADR-0094)
+// ---------------------------------------------------------------------------------------------
+
+/// The unit, once the actor is known to see it and to hold `manage_units` on its parent (an
+/// administrator for a top-level unit): the check behind granting, revoking and searching for
+/// people. Takes no lock, so a caller who is refused has not delayed anyone.
+async fn unit_managed_from_above(
+    conn: &mut PgConnection,
+    actor: &Actor,
+    unit_id: Uuid,
+) -> Result<Unit, OrgError> {
+    let (unit, _) = visible_unit(conn, actor, unit_id).await?;
+    let grant = parent_grant(conn, actor, unit.parent_id).await?;
+    access::authorize(actor, Action::ManageUnits(grant))?;
+    Ok(unit)
+}
+
+/// The roles held on this unit itself, by surname. Anyone who sees the unit may list them.
+pub async fn list_unit_roles(
+    conn: &mut PgConnection,
+    actor: &Actor,
+    unit_id: Uuid,
+) -> Result<Vec<UnitRoleEntry>, OrgError> {
+    visible_unit(conn, actor, unit_id).await?;
+    Ok(repo::list_unit_roles(conn, unit_id).await?)
+}
+
+/// Gives a teacher or an administrator a role on the unit (replacing the one they held). Needs
+/// `manage_units` on the unit's parent, so nobody changes the roles of the unit their own role sits
+/// on. The person's row is read `FOR SHARE` after the caller is authorized, so a demotion cannot slip
+/// in between the check of the institution role and the write (ADR-0037), and a refused caller never
+/// waits for that lock.
+pub async fn set_unit_role(
+    conn: &mut PgConnection,
+    actor: &Actor,
+    unit_id: Uuid,
+    user_id: Uuid,
+    role: UnitRole,
+) -> Result<(), OrgError> {
+    unit_managed_from_above(conn, actor, unit_id).await?;
+    let user = auth::find_user_shared(conn, user_id)
+        .await?
+        .ok_or(OrgError::MemberNotFound)?;
+    // The lock holds the person's institution role. The caller's grant is not decided by the
+    // person's row: it comes from the tree and the caller's own roles, and waiting on the lock
+    // changes neither, so it is not checked again.
+    if !unit_role_allowed(user.role) {
+        return Err(OrgError::RoleNotAllowed);
+    }
+    let changed = repo::upsert_unit_role(conn, unit_id, user_id, role)
+        .await
+        .map_err(|e| match &e {
+            // The unit was deleted since we looked.
+            sqlx::Error::Database(db) if db.is_foreign_key_violation() => OrgError::UnitNotFound,
+            _ => OrgError::Db(e),
+        })?;
+    if changed {
+        audit(
+            conn,
+            actor,
+            "unit.role.set",
+            "unit",
+            unit_id,
+            json!({"user_id": user_id, "role": role.as_str()}),
+        )
+        .await?;
+    }
+    Ok(())
+}
+
+/// Takes a person's role on the unit away. Needs `manage_units` on the unit's parent.
+pub async fn remove_unit_role(
+    conn: &mut PgConnection,
+    actor: &Actor,
+    unit_id: Uuid,
+    user_id: Uuid,
+) -> Result<(), OrgError> {
+    unit_managed_from_above(conn, actor, unit_id).await?;
+    let role = repo::delete_unit_role(conn, unit_id, user_id)
+        .await?
+        .ok_or(OrgError::MemberNotFound)?;
+    audit(
+        conn,
+        actor,
+        "unit.role.remove",
+        "unit",
+        unit_id,
+        json!({"user_id": user_id, "role": role.as_str()}),
+    )
+    .await
+}
+
+/// Takes every unit role of a person who stopped being a teacher, and audits each. For
+/// `learning::people::update_user`, which has authorized `ManageUsers` and holds the person's row
+/// (the way it calls `teaching::drop_teacher_memberships`).
+pub async fn drop_unit_roles(
+    conn: &mut PgConnection,
+    actor: &Actor,
+    user_id: Uuid,
+) -> Result<(), OrgError> {
+    for (unit_id, role) in repo::delete_roles_of_user(conn, user_id).await? {
+        audit(
+            conn,
+            actor,
+            "unit.role.remove",
+            "unit",
+            unit_id,
+            json!({"user_id": user_id, "role": role.as_str(), "reason": "role_change"}),
+        )
+        .await?;
+    }
+    Ok(())
+}
+
+/// Active teachers and administrators without a role on the unit whose name or email contains `q`.
+/// Needs `manage_units` on the unit's parent, like granting does.
+pub async fn unit_candidates(
+    conn: &mut PgConnection,
+    actor: &Actor,
+    unit_id: Uuid,
+    q: &str,
+) -> Result<Vec<UnitCandidate>, OrgError> {
+    unit_managed_from_above(conn, actor, unit_id).await?;
+    let q = q.trim();
+    if q.chars().count() < CANDIDATE_MIN_CHARS {
+        return Err(OrgError::QueryTooShort);
+    }
+    Ok(repo::search_unit_candidates(conn, unit_id, &like_pattern(q), CANDIDATE_LIMIT).await?)
+}
+
+/// The switches each unit role has now: every role, with its abilities in the order of
+/// [`UnitAbility::ALL`]. Administrators only.
+pub async fn unit_role_abilities(
+    conn: &mut PgConnection,
+    actor: &Actor,
+) -> Result<Vec<(UnitRole, Vec<UnitAbility>)>, OrgError> {
+    access::authorize(actor, Action::ManageUnitRoleAbilities)?;
+    let on = repo::list_role_abilities(conn).await?;
+    Ok([UnitRole::Manager, UnitRole::Viewer]
+        .into_iter()
+        .map(|role| {
+            let abilities = UnitAbility::ALL
+                .into_iter()
+                .filter(|ability| on.contains(&(role, *ability)))
+                .collect();
+            (role, abilities)
+        })
+        .collect())
+}
+
+/// Replaces the switches of a unit role by exactly these, in one statement pair under a table lock.
+/// Every request after it reads the new set (nothing caches grants). Administrators only.
+pub async fn set_unit_role_abilities(
+    conn: &mut PgConnection,
+    actor: &Actor,
+    role: UnitRole,
+    abilities: Vec<UnitAbility>,
+) -> Result<(), OrgError> {
+    access::authorize(actor, Action::ManageUnitRoleAbilities)?;
+    // Sorted and without duplicates, whatever order they came in.
+    let abilities: Vec<UnitAbility> = UnitAbility::ALL
+        .into_iter()
+        .filter(|ability| abilities.contains(ability))
+        .collect();
+    let names: Vec<&str> = abilities.iter().map(|ability| ability.as_str()).collect();
+    repo::lock_role_abilities(conn).await?;
+    repo::replace_role_abilities(conn, role, &names).await?;
+    audit(
+        conn,
+        actor,
+        "unit.abilities.set",
+        "unit_role",
+        // A role has no row of its own: the entry names the installation by the nil id.
+        Uuid::nil(),
+        json!({"role": role.as_str(), "abilities": names}),
     )
     .await
 }

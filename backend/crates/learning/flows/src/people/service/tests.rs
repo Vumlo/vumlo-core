@@ -107,6 +107,7 @@ async fn course_of(pool: &sqlx::PgPool, owner: &Actor) -> Uuid {
         owner,
         teaching::CourseTitle::parse("Algebra").unwrap(),
         None,
+        None,
     )
     .await
     .unwrap();
@@ -193,6 +194,98 @@ async fn a_member_write_waits_for_a_demotion_and_then_refuses_the_teacher_role()
             matches!(outcome, Err(TeachingError::RoleNotAllowed)),
             "{outcome:?}"
         );
+    })
+    .await;
+}
+
+/// A teacher who becomes a student keeps no unit role: it is deleted in the same transaction, one
+/// audit row each (ADR-0094). A teacher who stays a teacher keeps theirs.
+#[tokio::test]
+async fn a_demoted_teacher_loses_their_unit_roles() {
+    db_test(async |pool| {
+        let admin = admin_actor(&pool, "a@x.edu").await;
+        let leaving = teacher_actor(&pool, "leaving@x.edu").await;
+        let staying = teacher_actor(&pool, "staying@x.edu").await;
+        let mut tx = pool.begin().await.unwrap();
+        let unit = org::create_unit(&mut tx, &admin, org::OrgName::parse("A").unwrap(), None)
+            .await
+            .unwrap();
+        for who in [&leaving, &staying] {
+            org::set_unit_role(
+                &mut tx,
+                &admin,
+                unit.id,
+                who.user_id(),
+                access::UnitRole::Viewer,
+            )
+            .await
+            .unwrap();
+        }
+        tx.commit().await.unwrap();
+
+        let mut tx = pool.begin().await.unwrap();
+        update_user(&mut tx, &admin, leaving.user_id(), to_student())
+            .await
+            .unwrap();
+        tx.commit().await.unwrap();
+
+        let holders: Vec<Uuid> = sqlx::query_scalar!("SELECT user_id FROM org.unit_roles")
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+        assert_eq!(holders, [staying.user_id()]);
+        let removed = sqlx::query!(
+            "SELECT resource_id, meta FROM events.audit_log WHERE action = 'unit.role.remove'"
+        )
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+        assert_eq!(removed.len(), 1);
+        assert_eq!(removed[0].resource_id, unit.id);
+        assert_eq!(removed[0].meta["user_id"], leaving.user_id().to_string());
+    })
+    .await;
+}
+
+/// A grant that comes while a demotion is in flight waits for it and then reads the new role, so a
+/// student never ends up holding a unit role (ADR-0094).
+#[tokio::test]
+async fn a_unit_role_grant_waits_for_a_demotion_and_then_refuses_the_student() {
+    db_test(async |pool| {
+        let admin = admin_actor(&pool, "a@x.edu").await;
+        let candidate = teacher_actor(&pool, "candidate@x.edu").await;
+        let mut tx = pool.begin().await.unwrap();
+        let unit = org::create_unit(&mut tx, &admin, org::OrgName::parse("A").unwrap(), None)
+            .await
+            .unwrap();
+        tx.commit().await.unwrap();
+
+        let mut first = pool.begin().await.unwrap();
+        update_user(&mut first, &admin, candidate.user_id(), to_student())
+            .await
+            .unwrap();
+        let second = tokio::spawn({
+            let pool = pool.clone();
+            let (admin, who) = (admin.clone(), candidate.user_id());
+            async move {
+                let mut tx = pool.begin().await.unwrap();
+                org::set_unit_role(&mut tx, &admin, unit.id, who, access::UnitRole::Viewer).await?;
+                tx.commit().await.map_err(org::OrgError::from)
+            }
+        });
+        wait_until_blocked(&pool, &second).await;
+        first.commit().await.unwrap();
+
+        let outcome = second.await.unwrap();
+        assert!(
+            matches!(outcome, Err(org::OrgError::RoleNotAllowed)),
+            "{outcome:?}"
+        );
+        let held = sqlx::query_scalar!(r#"SELECT count(*) AS "n!" FROM org.unit_roles"#)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(held, 0);
     })
     .await;
 }

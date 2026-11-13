@@ -19,7 +19,7 @@ pub async fn student_courses(
     Ok(courses
         .into_iter()
         .filter(|card| {
-            let access = access_of(actor, &card.course, card.role);
+            let access = access_of(actor, &card.course, card.role, None);
             access.is_student() && access::authorize(actor, Action::ViewCourse(access)).is_ok()
         })
         .collect())
@@ -37,7 +37,7 @@ pub async fn course_scope(
     Ok(courses
         .into_iter()
         .filter_map(|card| {
-            let access = access_of(actor, &card.course, card.role);
+            let access = access_of(actor, &card.course, card.role, None);
             access::authorize(actor, Action::ViewCourse(access)).ok()?;
             let staff = access::authorize(actor, Action::ManageContent(access)).is_ok();
             Some(ScopedCourse {

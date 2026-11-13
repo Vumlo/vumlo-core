@@ -296,13 +296,15 @@ async fn manage(
 async fn audit_course(
     conn: &mut PgConnection,
     actor: &Actor,
+    access: CourseAccess,
     action: &'static str,
     course_id: Uuid,
     meta: serde_json::Value,
 ) -> Result<(), GradebookError> {
-    events::audit_admin(
+    events::audit_implicit(
         conn,
         actor,
+        access,
         AuditEntry {
             action,
             resource_type: "course",
@@ -349,7 +351,7 @@ pub async fn update_settings(
     course_id: Uuid,
     patch: SettingsPatch,
 ) -> Result<Settings, GradebookError> {
-    manage(conn, actor, scale, course_id).await?;
+    let access = manage(conn, actor, scale, course_id).await?;
     let mut settings = repo::settings(conn, course_id).await?;
     let before = settings.clone();
     if let Some(raw) = &patch.target {
@@ -379,6 +381,7 @@ pub async fn update_settings(
         audit_course(
             conn,
             actor,
+            access,
             "gradebook.settings",
             course_id,
             json!({"layout": settings.layout.as_str()}),
@@ -477,7 +480,7 @@ pub async fn create_group(
     input: GroupInput,
     assignments: Vec<Uuid>,
 ) -> Result<Uuid, GradebookError> {
-    manage(conn, actor, scale, course_id).await?;
+    let access = manage(conn, actor, scale, course_id).await?;
     let title = title_of(input.title.as_deref().unwrap_or_default())?;
     let rules = rules_of(&input)?;
     check_assignments(conn, course_id, &assignments).await?;
@@ -490,6 +493,7 @@ pub async fn create_group(
     audit_course(
         conn,
         actor,
+        access,
         "gradebook.group.create",
         course_id,
         json!({"group_id": id, "assignments": assignments.len()}),
@@ -508,7 +512,7 @@ pub async fn save_group(
     key: Uuid,
     input: GroupInput,
 ) -> Result<(), GradebookError> {
-    manage(conn, actor, scale, course_id).await?;
+    let access = manage(conn, actor, scale, course_id).await?;
     let rules = rules_of(&input)?;
     match target_of(conn, course_id, key).await? {
         Target::Module(module_id) => {
@@ -528,6 +532,7 @@ pub async fn save_group(
     audit_course(
         conn,
         actor,
+        access,
         "gradebook.group.update",
         course_id,
         json!({"group_id": key}),
@@ -545,7 +550,7 @@ pub async fn delete_group(
     course_id: Uuid,
     key: Uuid,
 ) -> Result<(), GradebookError> {
-    manage(conn, actor, scale, course_id).await?;
+    let access = manage(conn, actor, scale, course_id).await?;
     let id = match target_of(conn, course_id, key).await? {
         Target::Module(module_id) => repo::find_module_group(conn, course_id, module_id)
             .await?
@@ -557,6 +562,7 @@ pub async fn delete_group(
         audit_course(
             conn,
             actor,
+            access,
             "gradebook.group.delete",
             course_id,
             json!({"group_id": key}),
@@ -599,7 +605,7 @@ pub async fn place(
     assignments: Vec<Uuid>,
     group: Option<Uuid>,
 ) -> Result<(), GradebookError> {
-    manage(conn, actor, scale, course_id).await?;
+    let access = manage(conn, actor, scale, course_id).await?;
     if repo::settings(conn, course_id).await?.layout != Layout::Custom {
         return Err(GradebookError::WrongLayout);
     }
@@ -618,6 +624,7 @@ pub async fn place(
     audit_course(
         conn,
         actor,
+        access,
         "gradebook.place",
         course_id,
         json!({"group_id": group, "assignments": assignments.len()}),

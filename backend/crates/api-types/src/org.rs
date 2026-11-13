@@ -3,7 +3,7 @@
 
 use chrono::{DateTime, NaiveDate, Utc};
 use garde::Validate;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use utoipa::ToSchema;
 use uuid::Uuid;
 
@@ -144,6 +144,112 @@ pub struct NameRequest {
     /// subgroup.
     #[garde(length(chars, min = 1, max = 100))]
     pub name: String,
+}
+
+/// A unit of the institution: a node of a tree (ADR-0094).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct Unit {
+    pub id: Uuid,
+    /// `null` for a top-level unit.
+    pub parent_id: Option<Uuid>,
+    pub name: String,
+    pub created_at: DateTime<Utc>,
+}
+
+/// What a unit role can be switched to allow. Viewing is implicit to any role and has no switch.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum UnitAbility {
+    ViewGrades,
+    EditContent,
+    Grade,
+    ManageRoster,
+    ManageCourses,
+    ManageUnits,
+}
+
+/// A unit the caller sees, with what their roles let them do on it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct UnitSummary {
+    pub id: Uuid,
+    pub parent_id: Option<Uuid>,
+    pub name: String,
+    /// The switches the caller holds on this unit, the union over every role that covers it. An
+    /// administrator holds all of them. Viewing is implicit to being listed.
+    pub abilities: Vec<UnitAbility>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Validate, ToSchema)]
+pub struct CreateUnitRequest {
+    /// 1 to 100 characters after trimming. Unique among the units with the same parent.
+    #[garde(length(chars, min = 1, max = 100))]
+    pub name: String,
+    /// The unit to create this one under. Omit for a top-level unit (administrators only).
+    #[serde(default)]
+    #[garde(skip)]
+    pub parent_id: Option<Uuid>,
+}
+
+/// Only the fields present change.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, Validate, ToSchema)]
+pub struct UpdateUnitRequest {
+    #[garde(inner(length(chars, min = 1, max = 100)))]
+    pub name: Option<String>,
+    /// The new parent; `null` moves the unit to the top (administrators only); absent changes nothing.
+    #[serde(
+        default,
+        deserialize_with = "present",
+        skip_serializing_if = "Option::is_none"
+    )]
+    #[schema(value_type = Option<Uuid>)]
+    #[garde(skip)]
+    pub parent_id: Option<Option<Uuid>>,
+}
+
+/// A key that may be absent (change nothing), `null` (clear) or a value (set).
+fn present<'de, D: Deserializer<'de>, T: Deserialize<'de>>(
+    deserializer: D,
+) -> Result<Option<Option<T>>, D::Error> {
+    Option::<T>::deserialize(deserializer).map(Some)
+}
+
+/// A person's role on a unit. It covers the unit and every unit below it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum UnitRole {
+    Manager,
+    Viewer,
+}
+
+/// Someone who holds a role directly on a unit.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct UnitRoleEntry {
+    pub user_id: Uuid,
+    pub name: String,
+    pub surname: String,
+    pub email: String,
+    pub role: UnitRole,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Validate, ToSchema)]
+pub struct SetUnitRoleRequest {
+    #[garde(skip)]
+    pub role: UnitRole,
+}
+
+/// The switches of each unit role.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct UnitRoleAbilities {
+    pub manager: Vec<UnitAbility>,
+    pub viewer: Vec<UnitAbility>,
+}
+
+/// The switches a unit role has afterwards: exactly these. An empty list leaves the role able to
+/// view only.
+#[derive(Debug, Clone, Serialize, Deserialize, Validate, ToSchema)]
+pub struct SetUnitRoleAbilitiesRequest {
+    #[garde(length(max = 6))]
+    pub abilities: Vec<UnitAbility>,
 }
 
 /// A member of a group or a subgroup.

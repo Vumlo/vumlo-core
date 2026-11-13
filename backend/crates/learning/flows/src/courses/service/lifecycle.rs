@@ -33,7 +33,7 @@ pub async fn delete(
     actor: &Actor,
     course_id: Uuid,
 ) -> Result<(), LearningError> {
-    teaching::begin_delete_course(conn, actor, course_id).await?;
+    let access = teaching::begin_delete_course(conn, actor, course_id).await?;
     content::lock_course_assignments(conn, course_id).await?;
     if gradebook::has_grades_in_course(conn, course_id).await? {
         return Err(LearningError::CourseHasGrades);
@@ -43,7 +43,7 @@ pub async fn delete(
     }
     gradebook::purge_course(conn, course_id).await?;
     assessment::purge_course(conn, course_id).await?;
-    teaching::finish_delete_course(conn, actor, course_id).await?;
+    teaching::finish_delete_course(conn, actor, access, course_id).await?;
     Ok(())
 }
 
@@ -61,16 +61,19 @@ pub async fn make_template(
     Ok(template)
 }
 
-/// A draft course owned by the actor with the whole tree of a template they can edit.
+/// A draft course owned by the actor with the whole tree of a template they can edit, in `unit_id`
+/// when given (the template's own unit is not taken over).
 pub async fn create_from_template(
     conn: &mut PgConnection,
     actor: &Actor,
     template_id: Uuid,
     title: Option<CourseTitle>,
     term_id: Option<Uuid>,
+    unit_id: Option<Uuid>,
 ) -> Result<Course, LearningError> {
     let course =
-        teaching::new_course_from_template(conn, actor, template_id, title, term_id).await?;
+        teaching::new_course_from_template(conn, actor, template_id, title, term_id, unit_id)
+            .await?;
     let ids = content::copy_course_content(conn, template_id, course.id).await?;
     gradebook::copy_layout(conn, template_id, course.id, &ids).await?;
     Ok(course)
