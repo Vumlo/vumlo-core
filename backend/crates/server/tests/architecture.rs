@@ -374,16 +374,7 @@ const FLOWS: &[&str] = &[
     "quiz_grade",
     "reports",
     "schedule",
-];
-
-/// The flows a module still names, as `(module, flow)`: the file-usage check of `content` and
-/// `assessment` (`learning::files::ensure_usable` reads both of them, so it cannot stay below
-/// them) and the download header of the gradebook export. The split into crates (PR C) has to
-/// resolve each before the dependency becomes a cycle; the list only shrinks.
-const RATCHET_FLOWS: &[(&str, &str)] = &[
-    ("assessment", "files"),
-    ("content", "files"),
-    ("gradebook", "files"),
+    "submissions",
 ];
 
 /// What `text` reaches through `crate::` and `super::`, as `(line of the path, name)`: the first
@@ -480,7 +471,6 @@ fn the_path_scan_sees_grouped_wrapped_nested_and_glob_imports() {
 fn a_module_calls_only_modules_below_it() {
     let found: Vec<String> = calls_upward()
         .into_iter()
-        .filter(|(unit, name, _)| !RATCHET_FLOWS.contains(&(*unit, name.as_str())))
         .map(|(unit, name, at)| format!("{at}: {unit} names {name}"))
         .collect();
     assert!(
@@ -491,18 +481,50 @@ fn a_module_calls_only_modules_below_it() {
     );
 }
 
+/// The second halves of the writes that name files. Each one raises the verdict of the check of
+/// the files, so it must run only after `learning::files::check` has locked and judged them.
+const FILE_FINISHES: &[&str] = &[
+    "finish_create_item",
+    "finish_update_item",
+    "finish_save_draft",
+    "finish_submit",
+];
+
+/// Where a `FILE_FINISHES` name may appear: the owners that define them (and `set_due_at`, which
+/// names no file) and the flows that call them.
+const FILE_FINISH_HOMES: &[&str] = &[
+    "learning/src/content/",
+    "learning/src/assessment/",
+    "learning/src/items/",
+    "learning/src/submissions/",
+];
+
 #[test]
-fn the_flows_a_module_still_names_are_listed_and_only_those() {
-    let calls = calls_upward();
-    let stale: Vec<String> = RATCHET_FLOWS
-        .iter()
-        .filter(|(unit, flow)| !calls.iter().any(|(u, name, _)| u == unit && name == flow))
-        .map(|(unit, flow)| format!("{unit} no longer names {flow}"))
-        .collect();
+fn only_the_flows_complete_a_write_that_names_files() {
+    let modules = crates_dir().join("modules");
+    let mut files = source_files();
+    let mut extra = BTreeSet::new();
+    rust_files(&modules, &mut extra);
+    files.extend(extra);
+    let mut found = Vec::new();
+    for file in files.into_iter().filter(|f| !is_test_code(f)) {
+        let here = shown(&file);
+        if FILE_FINISH_HOMES.iter().any(|home| here.starts_with(home)) {
+            continue;
+        }
+        let text = fs::read_to_string(&file).expect("a Rust file is UTF-8");
+        for (number, line) in text.lines().enumerate().filter(|(_, l)| !is_comment(l)) {
+            if FILE_FINISHES.iter().any(|name| line.contains(name)) {
+                found.push(format!("{here}:{}: {}", number + 1, line.trim()));
+            }
+        }
+    }
     assert!(
-        stale.is_empty(),
-        "delete these entries from RATCHET_FLOWS in architecture.rs; it only shrinks:\n{}",
-        stale.join("\n")
+        found.is_empty(),
+        "a write that names files is completed only by a flow (learning::items, \
+         learning::submissions), after learning::files::check has locked and judged the files \
+         (ADR-0069, ADR-0093):\n{}",
+        found.join("\n")
     );
 }
 

@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO content.item_files (item_id, file_id, published) VALUES ($1, $2, false)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "e68c4c8bc5eaba524a62729ac22d670bd14c8e580db281f82b9acdfee9a0f627"
+}

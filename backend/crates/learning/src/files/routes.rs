@@ -18,7 +18,7 @@ use uuid::Uuid;
 use super::model::Owner;
 use super::service::{self, FileError};
 use crate::LearningState;
-use common::{ApiError, ValidQuery};
+use common::{ApiError, ValidQuery, content_disposition};
 
 pub fn router<S>() -> OpenApiRouter<S>
 where
@@ -286,7 +286,7 @@ async fn download(
     out.insert(header::CONTENT_TYPE, content_type(&file.mime));
     out.insert(
         header::CONTENT_DISPOSITION,
-        disposition(&file.name, files::is_inline(&file.mime)),
+        content_disposition(&file.name, files::is_inline(&file.mime)),
     );
     let length = match range {
         Some((first, last)) => {
@@ -378,35 +378,6 @@ fn content_type(mime: &str) -> HeaderValue {
     };
     HeaderValue::from_str(text)
         .unwrap_or_else(|_| HeaderValue::from_static("application/octet-stream"))
-}
-
-/// `inline` or `attachment`, with the name twice (RFC 6266): `filename*` carries it in UTF-8
-/// (RFC 8187) and `filename` is an ASCII fallback in which nothing can end the quoted string or
-/// start a parameter.
-pub fn disposition(name: &str, inline: bool) -> HeaderValue {
-    let kind = if inline { "inline" } else { "attachment" };
-    let fallback: String = name
-        .chars()
-        .map(|c| {
-            if c.is_ascii_graphic() && !matches!(c, '"' | '\\' | ';' | '%') || c == ' ' {
-                c
-            } else {
-                '_'
-            }
-        })
-        .collect();
-    let mut encoded = String::with_capacity(name.len());
-    for byte in name.bytes() {
-        if byte.is_ascii_alphanumeric() || b"!#$&+-.^_`|~".contains(&byte) {
-            encoded.push(char::from(byte));
-        } else {
-            encoded.push_str(&format!("%{byte:02X}"));
-        }
-    }
-    HeaderValue::from_str(&format!(
-        "{kind}; filename=\"{fallback}\"; filename*=UTF-8''{encoded}"
-    ))
-    .unwrap_or_else(|_| HeaderValue::from_static("attachment"))
 }
 
 #[cfg(test)]

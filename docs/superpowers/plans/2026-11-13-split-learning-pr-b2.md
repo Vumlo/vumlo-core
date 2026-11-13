@@ -30,6 +30,6 @@ Deferred minors: `GET /assignments/{id}/result` takes its lock on an autocommit 
 
 ## Next
 
-PR C needs a decision first: the file-usage check. Options: split `ensure_usable` so each of `content` and `assessment` asks only about its own references and a flow combines them (the flows of `items` and `submissions` pass the other side's answer in, as `AssignmentFacts` does), or give the `files` crate a table of usages that both owners write. Then:
+The file-usage check was decided and built in its own PR (`2026-11-13-files-usage-flows.md`): `learning::files::check` under the file locks, `begin_*` / `finish_*` in `content` and `assessment`, the flows `items::create_item` and `submissions`. Then:
 
 PR C: `git mv` into `backend/crates/learning/{teaching,content,assessment,gradebook,flows}`, five crates with their own errors, state and routers; CI paths, `Dockerfile`, `RELEASING.md`, docs.

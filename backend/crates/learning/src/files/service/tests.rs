@@ -164,6 +164,11 @@ async fn published_item(
 
 /// A file row uploaded by `uploader`, referenced by nobody.
 async fn file(pool: &PgPool, uploader: &Actor) -> Uuid {
+    file_named(pool, uploader, "a.txt", "text/plain").await
+}
+
+/// A file row of the given name and stored type.
+async fn file_named(pool: &PgPool, uploader: &Actor, name: &str, mime: &str) -> Uuid {
     let id = Uuid::now_v7();
     let stored = Stored {
         id,
@@ -172,16 +177,16 @@ async fn file(pool: &PgPool, uploader: &Actor) -> Uuid {
         head: b"abc".to_vec(),
     };
     let mut conn = pool.acquire().await.unwrap();
-    files::insert(
-        &mut conn,
-        &stored,
-        uploader.user_id(),
-        "a.txt",
-        "text/plain",
-    )
-    .await
-    .unwrap();
+    files::insert(&mut conn, &stored, uploader.user_id(), name, mime)
+        .await
+        .unwrap();
     id
+}
+
+/// The file goes away, row and all: nothing ties the reference rows to it.
+async fn remove_file(pool: &PgPool, id: Uuid) {
+    let mut conn = pool.acquire().await.unwrap();
+    files::forget(&mut conn, id).await.unwrap();
 }
 
 async fn item_names(pool: &PgPool, item: Uuid, published: bool, file: Uuid) {
@@ -623,14 +628,7 @@ async fn check_names_a_non_image_and_returns_every_name() {
     db_test(async |pool| {
         let f = fixture(pool).await;
         let text = file(&f.pool, &f.owner).await; // "a.txt", text/plain
-        let image = file(&f.pool, &f.owner).await;
-        sqlx::query!(
-            "UPDATE files.files SET mime = 'image/png', name = 'p.png' WHERE id = $1",
-            image
-        )
-        .execute(&f.pool)
-        .await
-        .unwrap();
+        let image = file_named(&f.pool, &f.owner, "p.png", "image/png").await;
         let unknown = Uuid::now_v7();
         let refs = |ids: &[(Uuid, bool)]| -> Vec<content::FileRef> {
             ids.iter()
@@ -732,14 +730,7 @@ async fn an_image_block_needs_an_image_file() {
     db_test(async |pool| {
         let f = fixture(pool).await;
         let text = file(&f.pool, &f.owner).await; // text/plain
-        let png = file(&f.pool, &f.owner).await;
-        sqlx::query!(
-            "UPDATE files.files SET mime = 'image/png' WHERE id = $1",
-            png
-        )
-        .execute(&f.pool)
-        .await
-        .unwrap();
+        let png = file_named(&f.pool, &f.owner, "p.png", "image/png").await;
         let mut conn = f.pool.acquire().await.unwrap();
         let patch = |file| ItemPatch {
             body: Some(body_naming("image", file)),
@@ -976,10 +967,7 @@ async fn a_submit_checks_the_files_of_the_draft_again() {
             .await
             .unwrap();
         // The file went away after the save (nothing ties its row to the draft).
-        sqlx::query!("DELETE FROM files.files WHERE id = $1", id)
-            .execute(&f.pool)
-            .await
-            .unwrap();
+        remove_file(&f.pool, id).await;
 
         let mut conn = f.pool.acquire().await.unwrap();
         let error =
@@ -1011,21 +999,22 @@ async fn an_auto_submit_whose_file_is_gone_is_refused_and_leaves_the_draft() {
         save_draft_naming(&f, &f.student, f.assignment, id)
             .await
             .unwrap();
-        let due = Utc::now() - Duration::hours(1);
-        sqlx::query!(
-            "UPDATE content.assignments
-             SET due_at = $2, on_deadline = 'auto_submit', accept_late = false
-             WHERE item_id = $1",
-            f.assignment,
-            due
-        )
-        .execute(&f.pool)
-        .await
-        .unwrap();
-        sqlx::query!("DELETE FROM files.files WHERE id = $1", id)
-            .execute(&f.pool)
+        // The deadline passes with the setting on, then the file goes away.
+        let patch = ItemPatch {
+            settings: content::SettingsPatch {
+                due_at: Some(Some(Utc::now() - Duration::hours(1))),
+                on_deadline: Some(Some("auto_submit".to_owned())),
+                accept_late: Some(Some(false)),
+                ..Default::default()
+            },
+            ..ItemPatch::default()
+        };
+        let mut conn = f.pool.acquire().await.unwrap();
+        items::update_item(&mut conn, &f.owner, rules(), f.assignment, patch)
             .await
             .unwrap();
+        drop(conn);
+        remove_file(&f.pool, id).await;
         let draft = assessment::DueDraft {
             assignment_id: f.assignment,
             student_id: f.student.user_id(),
