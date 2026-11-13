@@ -9,6 +9,9 @@
 //!   `teaching.effective_members`, and a reader that skips it misses the students that come from a
 //!   group, or the exclusions that take them away (ADR-0033).
 //! - A view in a migration reads another schema only where an ADR declared that interface.
+//! - Only the flows in `learning` complete a write that names files (ADR-0093). The order of the
+//!   crates below them (`teaching < content < assessment < gradebook`) is Cargo's: a lower crate
+//!   that listed a higher one would be a dependency cycle.
 //! - `Actor::role` is read only by `access`; `auth::apply_user_update` is called only by `learning`.
 //! - The `testing` feature of a crate is switched on only from `[dev-dependencies]`.
 
@@ -16,16 +19,14 @@ use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-/// A part of the backend that owns code, and maybe a schema. When the code moves into a crate of
-/// its own, only `dir` changes.
+/// A part of the backend that owns code, and maybe a schema.
 struct Unit {
     name: &'static str,
     /// Relative to `backend/crates`. The longest `dir` that contains a file decides its unit.
     dir: &'static str,
     schema: Option<&'static str>,
-    /// Higher layers may use lower ones, never the other way round. Inside `learning` the four
-    /// modules are ordered `teaching < content < assessment < gradebook`, and the flows sit above
-    /// them (ADR-0093).
+    /// Higher layers may use lower ones, never the other way round. The crates of `learning` are
+    /// ordered `teaching < content < assessment < gradebook < learning` (ADR-0093).
     layer: u8,
 }
 
@@ -145,7 +146,7 @@ const DECLARED_VIEWS: &[&str] = &[
     "gradebook.published_grades",
 ];
 
-/// The four modules of `learning`, lowest first.
+/// The four crates below `learning`, lowest first.
 const MODULES: &[&str] = &["teaching", "content", "assessment", "gradebook"];
 
 /// (text no unit but the owner may mention, the unit that owns it)
@@ -360,127 +361,6 @@ fn a_unit_reads_its_own_layer_and_the_declared_views_below_it() {
     );
 }
 
-/// The flows of `learning`, the code above the four modules. A module may not name one either.
-const FLOWS: &[&str] = &[
-    "audit",
-    "courses",
-    "enrollment",
-    "facts",
-    "files",
-    "groups",
-    "items",
-    "people",
-    "plugin_read",
-    "quiz_grade",
-    "reports",
-    "schedule",
-    "submissions",
-];
-
-/// What `text` reaches through `crate::` and `super::`, as `(line of the path, name)`: the first
-/// name of a path, every name in a `{ ... }` group (wrapped over lines or nested), and `*` for a
-/// glob of the crate root. Comments are ignored.
-fn crate_paths(text: &str) -> Vec<(usize, String)> {
-    let code = text
-        .lines()
-        .map(|line| if is_comment(line) { "" } else { line })
-        .collect::<Vec<_>>()
-        .join("\n");
-    let word = |c: char| c.is_ascii_alphanumeric() || c == '_';
-    let mut found = Vec::new();
-    for prefix in ["crate::", "super::"] {
-        for (at, _) in code.match_indices(prefix) {
-            let line = code[..at].matches('\n').count() + 1;
-            let rest = code[at + prefix.len()..].trim_start();
-            if let Some(group) = rest.strip_prefix('{') {
-                let (mut depth, mut end) = (1, group.len());
-                for (i, c) in group.char_indices() {
-                    match c {
-                        '{' => depth += 1,
-                        '}' => depth -= 1,
-                        _ => {}
-                    }
-                    if depth == 0 {
-                        end = i;
-                        break;
-                    }
-                }
-                for name in group[..end].split(|c| !word(c)).filter(|w| !w.is_empty()) {
-                    found.push((line, name.to_owned()));
-                }
-            } else if rest.starts_with('*') {
-                if prefix == "crate::" {
-                    found.push((line, "*".to_owned()));
-                }
-            } else if let Some(name) = rest.split(|c| !word(c)).next().filter(|w| !w.is_empty()) {
-                found.push((line, name.to_owned()));
-            }
-        }
-    }
-    found
-}
-
-/// Every place in the code of one of the four modules that names a module above it, a flow, or
-/// the whole crate root (`crate::*`), as `(unit, name, path:line)`.
-fn calls_upward() -> Vec<(&'static str, String, String)> {
-    let rank = |name: &str| MODULES.iter().position(|m| *m == name);
-    let mut found = Vec::new();
-    for file in source_files().into_iter().filter(|f| !is_test_code(f)) {
-        let unit = unit_of(&file);
-        let Some(own) = rank(unit.name) else { continue };
-        let text = fs::read_to_string(&file).expect("a Rust file is UTF-8");
-        for (line, name) in crate_paths(&text) {
-            let above = rank(&name).is_some_and(|other| other > own);
-            if above || FLOWS.contains(&name.as_str()) || name == "*" {
-                found.push((unit.name, name, format!("{}:{line}", shown(&file))));
-            }
-        }
-    }
-    found
-}
-
-#[test]
-fn the_path_scan_sees_grouped_wrapped_nested_and_glob_imports() {
-    let text = "use crate::content::x;\n\
-                use crate::{\n    assessment,\n    gradebook::{self, y},\n};\n\
-                // use crate::teaching::ignored;\n\
-                use crate::*;\n\
-                use super::service;\n";
-    let named: Vec<(usize, String)> = crate_paths(text);
-    let words = |line: usize| -> Vec<&str> {
-        named
-            .iter()
-            .filter(|(at, _)| *at == line)
-            .map(|(_, word)| word.as_str())
-            .collect()
-    };
-    assert_eq!(words(1), ["content"]);
-    assert!(words(2).contains(&"assessment") && words(2).contains(&"gradebook"));
-    assert!(
-        named.iter().all(|(_, word)| word != "teaching"),
-        "{named:?}"
-    );
-    assert_eq!(
-        words(7),
-        ["*"],
-        "a glob of the crate root hides what it takes"
-    );
-}
-
-#[test]
-fn a_module_calls_only_modules_below_it() {
-    let found: Vec<String> = calls_upward()
-        .into_iter()
-        .map(|(unit, name, at)| format!("{at}: {unit} names {name}"))
-        .collect();
-    assert!(
-        found.is_empty(),
-        "a module names one above it (teaching < content < assessment < gradebook), a flow of \
-         `learning`, or the crate root as a glob; the call belongs in a flow (ADR-0093):\n{}",
-        found.join("\n")
-    );
-}
-
 /// The second halves of the writes that name files. Each one raises the verdict of the check of
 /// the files, so it must run only after `learning::files::check` has locked and judged them.
 const FILE_FINISHES: &[&str] = &[
@@ -606,7 +486,11 @@ fn manifests() -> Vec<PathBuf> {
     let crates = crates_dir();
     let root = crates.parent().expect("backend");
     let mut found = vec![root.join("Cargo.toml")];
-    for dir in [crates.to_path_buf(), crates.join("modules")] {
+    for dir in [
+        crates.to_path_buf(),
+        crates.join("learning"),
+        crates.join("modules"),
+    ] {
         for entry in
             fs::read_dir(&dir).unwrap_or_else(|e| panic!("cannot read {}: {e}", dir.display()))
         {

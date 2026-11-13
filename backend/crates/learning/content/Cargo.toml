@@ -18,7 +18,6 @@ chrono.workspace = true
 common.workspace = true
 events.workspace = true
 files.workspace = true
-org.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 sqlx.workspace = true
@@ -35,7 +34,6 @@ vumlo-config.workspace = true
 access = { workspace = true, features = ["testing"] }
 auth = { workspace = true, features = ["testing"] }
 events = { workspace = true, features = ["testing"] }
-org = { workspace = true, features = ["testing"] }
 test-support.workspace = true
 
 [lints]
