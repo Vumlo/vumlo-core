@@ -1322,6 +1322,72 @@ async fn configure_asks_for_each_institution_setting_and_stores_the_answers_with
     .await;
 }
 
+/// Reads what the process prints until it asks for an answer (the prompt `> ` with no line end).
+fn read_until_prompt(out: &mut std::process::ChildStdout) -> String {
+    use std::io::Read;
+    let mut text = String::new();
+    let mut byte = [0u8; 1];
+    while !text.ends_with("> ") {
+        assert_eq!(
+            out.read(&mut byte).expect("read stdout"),
+            1,
+            "ended early:\n{text}"
+        );
+        text.push(byte[0] as char);
+    }
+    text
+}
+
+async fn open_transactions(pool: &PgPool) -> i64 {
+    sqlx::query_scalar(
+        "SELECT count(*) FROM pg_stat_activity
+         WHERE datname = current_database() AND state LIKE 'idle in transaction%'",
+    )
+    .fetch_one(pool)
+    .await
+    .unwrap()
+}
+
+#[tokio::test]
+async fn configure_holds_no_transaction_open_while_it_waits_for_an_answer() {
+    use std::io::Write;
+    use std::process::{Command, Stdio};
+    db_test(async |pool| {
+        common::migrate_modules(&pool).await;
+        let env = Env::new(&pool);
+        install_configurable(&env).await;
+        let mut child = Command::new(env!("CARGO_BIN_EXE_vumlo-cli"))
+            .args(["plugin", "configure", "hello"])
+            .current_dir(&env.dir)
+            .env_clear()
+            .env("PATH", std::env::var("PATH").unwrap_or_default())
+            .env("DATABASE_URL", &env.url)
+            .env("VUMLO__PLUGINS__SECRET_KEY", KEY)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("run vumlo-cli");
+        let mut stdin = child.stdin.take().expect("piped stdin");
+        let mut stdout = child.stdout.take().expect("piped stdout");
+
+        // At the first question, and again after an answer was accepted, a person is typing: the
+        // database must not be holding a transaction (and its locks) for that.
+        read_until_prompt(&mut stdout);
+        assert_eq!(open_transactions(&pool).await, 0, "at the first question");
+        stdin.write_all(b"tok-s3cret\n").unwrap();
+        read_until_prompt(&mut stdout);
+        assert_eq!(open_transactions(&pool).await, 0, "after the first answer");
+
+        stdin.write_all(b"12\n\n\n").unwrap();
+        drop(stdin);
+        assert!(child.wait().expect("wait").success());
+        assert_eq!(setting_value(&env, "limit").await, "12");
+        assert_eq!(setting_value(&env, "api_token").await, "(set)");
+    })
+    .await;
+}
+
 #[tokio::test]
 async fn configure_keeps_what_is_there_when_an_answer_is_empty_and_writes_nothing() {
     db_test(async |pool| {

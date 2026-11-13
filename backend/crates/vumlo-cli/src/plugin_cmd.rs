@@ -825,15 +825,21 @@ fn read_answer(secret: bool) -> anyhow::Result<Option<String>> {
 
 /// Walks through the settings of the plugin that belong to the institution, one question each: the
 /// setting, what it is for and its value now. An empty answer keeps the value; one the setting
-/// refuses is explained and asked again. Everything is stored in one transaction at the end, with
-/// one audit row per changed setting, so input that ends midway changes nothing.
+/// refuses is explained and asked again, checked against the setting's own spec with no database in
+/// the way. Nothing is written while a person types: after the last answer everything is stored in
+/// one short transaction, with one audit row per changed setting, so input that ends midway
+/// changes nothing.
 pub async fn configure(options: &Options, plugin_id: &str, dry_run: bool) -> anyhow::Result<()> {
     let loaded = runtime::load(options)?;
     let secret_key = key(&loaded.settings)?;
     let pool = ready(&loaded.settings).await?;
-    let mut tx = pool.begin().await.context("cannot start a transaction")?;
-    let install = plugins::get(&mut tx, plugin_id).await?;
-    let views = plugins::list_settings(&mut tx, plugin_id, None).await?;
+    let (install, views) = {
+        let mut conn = pool.acquire().await.context("cannot reach the database")?;
+        (
+            plugins::get(&mut conn, plugin_id).await?,
+            plugins::list_settings(&mut conn, plugin_id, None).await?,
+        )
+    };
     let per_course = install
         .settings
         .values()
@@ -854,7 +860,7 @@ pub async fn configure(options: &Options, plugin_id: &str, dry_run: bool) -> any
         return Ok(());
     }
     println!("Settings of {plugin_id}. Enter keeps the current value.");
-    let mut changed = Vec::new();
+    let mut answers: Vec<(&str, String)> = Vec::new();
     for view in &views {
         println!("\n{} ({})", view.key, kind_of(view));
         if !view.spec.description.is_empty() {
@@ -868,28 +874,29 @@ pub async fn configure(options: &Options, plugin_id: &str, dry_run: bool) -> any
             if answer.is_empty() {
                 break;
             }
-            // A refused answer is explained before anything is written, so the transaction is whole.
-            match plugins::set_setting_text(
-                &mut tx,
-                &secret_key,
-                plugin_id,
-                &view.key,
-                &answer,
-                None,
-            )
-            .await
-            {
-                Ok(true) => {
-                    changed.push(view.key.clone());
+            let accepted = view
+                .spec
+                .parse_text(&answer)
+                .and_then(|value| view.spec.check(&value));
+            match accepted {
+                Ok(()) => {
+                    answers.push((&view.key, answer));
                     break;
                 }
-                Ok(false) => break,
-                Err(error @ plugins::PluginsError::BadSetting { .. }) => println!("{error}"),
-                Err(other) => return Err(other.into()),
+                Err(why) => println!("the value of `{}` {why}", view.key),
             }
         }
     }
     println!();
+    // Now, with nobody typing, the writes: parsed and checked again by the store, which also
+    // finds out which answers are the value a setting already has.
+    let mut tx = pool.begin().await.context("cannot start a transaction")?;
+    let mut changed = Vec::new();
+    for (key, text) in &answers {
+        if plugins::set_setting_text(&mut tx, &secret_key, plugin_id, key, text, None).await? {
+            changed.push(*key);
+        }
+    }
     if changed.is_empty() {
         println!("nothing was changed");
         return Ok(());
