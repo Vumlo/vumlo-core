@@ -448,7 +448,29 @@ pub struct Course {
     pub owner_id: Uuid,
     /// The term the course belongs to, if any (ADR-0032).
     pub term_id: Option<Uuid>,
+    /// The org unit the course sits in, if any (ADR-0094).
+    pub unit_id: Option<Uuid>,
     pub created_at: DateTime<Utc>,
+}
+
+/// What the caller may do in one course, answered by the rules in `access` from how they reached
+/// it (ADR-0094). The web app reads this instead of guessing from a course role: someone who
+/// reaches a course through a unit has none. An archived course reads `false` for every write.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct CourseCan {
+    pub view_grades: bool,
+    pub edit_content: bool,
+    pub grade: bool,
+    pub manage_roster: bool,
+    pub manage_course: bool,
+}
+
+/// A course with what the caller may do in it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct CourseDetail {
+    #[serde(flatten)]
+    pub course: Course,
+    pub can: CourseCan,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Validate, ToSchema)]
@@ -459,6 +481,18 @@ pub struct CreateCourseRequest {
     #[serde(default)]
     #[garde(skip)]
     pub term_id: Option<Uuid>,
+    /// An existing unit to create the course in; needs `manage_courses` on it. An unknown one is a
+    /// `422` on this field.
+    #[serde(default)]
+    #[garde(skip)]
+    pub unit_id: Option<Uuid>,
+}
+
+/// Puts a course into a unit, or takes it out with `null`.
+#[derive(Debug, Clone, Serialize, Deserialize, Validate, ToSchema)]
+pub struct SetCourseUnitRequest {
+    #[garde(skip)]
+    pub unit_id: Option<Uuid>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Validate, ToSchema)]

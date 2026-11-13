@@ -51,6 +51,11 @@ fn operations(c: &Ctx, other_user: Uuid) -> Vec<Call> {
             format!("/courses/{}", c.course),
             Some(json!({"title": "hacked"})),
         ),
+        call(
+            "PUT",
+            format!("/courses/{}/unit", c.course),
+            Some(json!({"unit_id": c.unit})),
+        ),
         call("POST", format!("/courses/{}/publish", c.course), None),
         call("DELETE", format!("/courses/{}", c.course), None),
         call("GET", format!("/courses/{}/info", c.course), None),
@@ -413,6 +418,7 @@ fn operations(c: &Ctx, other_user: Uuid) -> Vec<Call> {
             None,
         ),
         call("GET", format!("/units/{}/candidates?q=ab", c.unit), None),
+        call("GET", format!("/units/{}/courses", c.unit), None),
         call("GET", "/admin/unit-roles".into(), None),
         // `PUT /admin/unit-roles/{role}` is not here: its path names a role, not an id.
     ]

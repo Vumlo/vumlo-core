@@ -34,8 +34,8 @@ use super::model::{
 use super::repo;
 use access::Actor;
 use access::{
-    self, AccessError, Action, CourseAccess, CourseRole, CourseStatus, course_role_allowed,
-    implicit_course_owner,
+    self, AccessError, Action, CourseAccess, CourseRole, CourseStatus, UnitAbility, UnitGrant,
+    course_role_allowed, implicit_course_owner,
 };
 use auth::{self, AuthError, UserStatus};
 use common::{Page, PageParams};
@@ -58,6 +58,9 @@ pub enum TeachingError {
     /// The `term_id` of a new or edited course names no term.
     #[error("term not found")]
     TermNotFound,
+    /// The `unit_id` of a new course or of a move names no unit.
+    #[error("unit not found")]
+    UnitNotValid,
     #[error("a template has no term")]
     TemplateHasNoTerm,
     #[error("link not found")]
@@ -99,12 +102,42 @@ pub enum TeachingError {
     Db(#[from] sqlx::Error),
 }
 
-fn access_of(actor: &Actor, course: &Course, role: Option<CourseRole>) -> CourseAccess {
+/// How the actor stands to the course. The course cards and the search scope pass no
+/// `unit_grant`: they list the courses one is on, and a grant adds none of those.
+fn access_of(
+    actor: &Actor,
+    course: &Course,
+    role: Option<CourseRole>,
+    unit_grant: Option<UnitGrant>,
+) -> CourseAccess {
     CourseAccess {
         role,
         is_owner: course.owner_id == actor.user_id(),
         status: course.status,
-        unit_grant: None,
+        unit_grant,
+    }
+}
+
+/// The grant the abilities read from `org.unit_grants` make on `unit_id`. A text that is no ability
+/// is an error, never a smaller grant: dropping it would silently take a right away (or, were the
+/// rule ever inverted, give one).
+fn unit_grant_of(unit_id: Uuid, abilities: Vec<String>) -> Result<UnitGrant, TeachingError> {
+    let abilities = abilities
+        .iter()
+        .map(|ability| ability.parse::<UnitAbility>())
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|message| sqlx::Error::Decode(message.into()))?;
+    Ok(UnitGrant::new(unit_id, abilities))
+}
+
+/// The actor's grant on the unit the course sits in, from the abilities a query returned.
+fn course_unit_grant(
+    course: &Course,
+    abilities: Option<Vec<String>>,
+) -> Result<Option<UnitGrant>, TeachingError> {
+    match (course.unit_id, abilities) {
+        (Some(unit_id), Some(abilities)) => unit_grant_of(unit_id, abilities).map(Some),
+        _ => Ok(None),
     }
 }
 
@@ -112,10 +145,11 @@ fn access_of(actor: &Actor, course: &Course, role: Option<CourseRole>) -> Course
 /// The actor's role is their place on the roster, the view `teaching.effective_members`: a
 /// direct membership, or a student through a linked group (ADR-0033).
 ///
-/// With `lock`, the course row stays locked until the transaction ends, and the actor's role is
-/// read in a second statement after the lock is held. One statement joining both would wait for
-/// the lock and then re-read only the course row, leaving the role as of the statement's
-/// snapshot: an assistant demoted by the writer we waited for would still act as an assistant.
+/// With `lock`, the course row stays locked until the transaction ends, and the actor's role and
+/// their grant on the course's unit are read in later statements, after the lock is held. One
+/// statement joining them would wait for the lock and then re-read only the course row, leaving
+/// the role as of the statement's snapshot: an assistant demoted by the writer we waited for
+/// would still act as an assistant, and a manager whose role was revoked would still manage.
 /// Without `lock` nothing waits, so one statement is enough.
 async fn load(
     conn: &mut PgConnection,
@@ -123,36 +157,69 @@ async fn load(
     course_id: Uuid,
     lock: bool,
 ) -> Result<(Course, CourseAccess), TeachingError> {
-    let (course, role) = if lock {
+    let (course, role, abilities) = if lock {
         let course = repo::lock_course(conn, course_id)
             .await?
             .ok_or(TeachingError::CourseNotFound)?;
         let role = repo::find_member(conn, course_id, actor.user_id())
             .await?
             .map(|entry| entry.role);
-        (course, role)
+        let abilities = match course.unit_id {
+            Some(unit_id) => repo::find_unit_grant(conn, unit_id, actor.user_id()).await?,
+            None => None,
+        };
+        (course, role, abilities)
     } else {
         let row = repo::find_course(conn, course_id, actor.user_id())
             .await?
             .ok_or(TeachingError::CourseNotFound)?;
-        (row.course, row.role)
+        (row.course, row.role, row.unit_abilities)
     };
-    let access = access_of(actor, &course, role);
+    let unit_grant = course_unit_grant(&course, abilities)?;
+    let access = access_of(actor, &course, role, unit_grant);
     access::authorize(actor, Action::ViewCourse(access))
         .map_err(|_| TeachingError::CourseNotFound)?;
     Ok((course, access))
 }
 
-/// An unknown `term_id` violates the foreign key to `org.terms`.
-fn term_fk(error: sqlx::Error) -> TeachingError {
+/// An unknown `term_id` violates the foreign key to `org.terms`, a unit deleted since we looked
+/// the one to `org.units`.
+fn course_fk(error: sqlx::Error) -> TeachingError {
     match &error {
-        sqlx::Error::Database(db)
-            if db.is_foreign_key_violation() && db.constraint() == Some("courses_term_id_fkey") =>
-        {
-            TeachingError::TermNotFound
-        }
+        sqlx::Error::Database(db) if db.is_foreign_key_violation() => match db.constraint() {
+            Some("courses_term_id_fkey") => TeachingError::TermNotFound,
+            Some("courses_unit_id_fkey") => TeachingError::UnitNotValid,
+            _ => TeachingError::Db(error),
+        },
         _ => TeachingError::Db(error),
     }
+}
+
+/// The actor's grant on a unit named by a request body, which must exist (`UnitNotValid` if not).
+async fn body_unit_grant(
+    conn: &mut PgConnection,
+    actor: &Actor,
+    unit_id: Uuid,
+) -> Result<Option<UnitGrant>, TeachingError> {
+    org::unit_grant(conn, actor, unit_id)
+        .await
+        .map_err(|error| match error {
+            OrgError::UnitNotFound => TeachingError::UnitNotValid,
+            other => other.into(),
+        })
+}
+
+/// May the actor put courses into this unit? No unit needs no grant.
+async fn authorize_unit_courses(
+    conn: &mut PgConnection,
+    actor: &Actor,
+    unit_id: Option<Uuid>,
+) -> Result<(), TeachingError> {
+    if let Some(unit_id) = unit_id {
+        let grant = body_unit_grant(conn, actor, unit_id).await?;
+        access::authorize(actor, Action::ManageUnitCourses(grant))?;
+    }
+    Ok(())
 }
 
 /// What a new course is made of: a fresh one, or the copy of another (ADR-0048).
@@ -160,6 +227,8 @@ struct NewCourse<'a> {
     kind: CourseKind,
     title: &'a CourseTitle,
     term_id: Option<Uuid>,
+    /// The unit it is created in. A copy never takes the source's: the creator picks one.
+    unit_id: Option<Uuid>,
     code: &'a str,
     description: &'a str,
     /// The course or template it is copied from.
@@ -167,13 +236,14 @@ struct NewCourse<'a> {
 }
 
 /// Inserts a draft course owned by the actor. Teachers also join it as its `teacher`; an admin
-/// owns it without a membership.
+/// owns it without a membership. In a unit it needs `manage_courses` there (or an admin).
 async fn insert_owned_course(
     conn: &mut PgConnection,
     actor: &Actor,
     new: NewCourse<'_>,
 ) -> Result<Course, TeachingError> {
     access::authorize(actor, Action::CreateCourse)?;
+    authorize_unit_courses(conn, actor, new.unit_id).await?;
     // The role in the session may be a moment old. Read it again with the user's row locked, so a
     // demotion cannot run between this check and the insert (ADR-0037).
     let creator = auth::find_user_shared(conn, actor.user_id())
@@ -190,19 +260,21 @@ async fn insert_owned_course(
             title: new.title.as_str(),
             owner_id: actor.user_id(),
             term_id: new.term_id,
+            unit_id: new.unit_id,
             code: new.code,
             description: new.description,
         },
     )
     .await
-    .map_err(term_fk)?;
+    .map_err(course_fk)?;
     let role = if implicit_course_owner(actor) {
         None
     } else {
         repo::upsert_membership(conn, course.id, actor.user_id(), CourseRole::Teacher).await?;
         Some(CourseRole::Teacher)
     };
-    // `unit_grant` stays `None` until a course is created inside a unit.
+    // The creator is the owner, so they are on the course whatever they hold on its unit: the
+    // access names no grant and a manager's own new course is not audited as theirs.
     let access = CourseAccess {
         role,
         is_owner: true,
@@ -227,12 +299,14 @@ async fn insert_owned_course(
     Ok(course)
 }
 
-/// Creates a draft course owned by the actor.
+/// Creates a draft course owned by the actor, in `unit_id` when given (it needs `manage_courses`
+/// there, or an admin).
 pub async fn create_course(
     conn: &mut PgConnection,
     actor: &Actor,
     title: CourseTitle,
     term_id: Option<Uuid>,
+    unit_id: Option<Uuid>,
 ) -> Result<Course, TeachingError> {
     insert_owned_course(
         conn,
@@ -241,6 +315,7 @@ pub async fn create_course(
             kind: CourseKind::Regular,
             title: &title,
             term_id,
+            unit_id,
             code: "",
             description: "",
             from: None,
@@ -263,6 +338,16 @@ pub async fn get_course(
     Ok(load(conn, actor, course_id, false).await?.0)
 }
 
+/// The course and what the actor may do in it, for the course page (ADR-0094).
+pub async fn get_course_detail(
+    conn: &mut PgConnection,
+    actor: &Actor,
+    course_id: Uuid,
+) -> Result<(Course, access::CourseCan), TeachingError> {
+    let (course, access) = load(conn, actor, course_id, false).await?;
+    Ok((course, access::course_can(actor, access)))
+}
+
 /// How `actor` relates to the course, for other modules that authorize their own actions
 /// against it. A course the actor may not view is `CourseNotFound`.
 pub async fn course_access(
@@ -282,15 +367,76 @@ pub async fn list_my_courses(
     access::authorize(actor, Action::ViewOwnCourses)?;
     let rows =
         repo::list_courses_of(conn, actor.user_id(), page.after, i64::from(page.limit) + 1).await?;
-    let visible = rows
-        .into_iter()
-        .filter(|row| {
-            let access = access_of(actor, &row.course, row.role);
-            access::authorize(actor, Action::ViewCourse(access)).is_ok()
-        })
-        .map(|row| row.course)
-        .collect();
+    let mut visible = Vec::with_capacity(rows.len());
+    for row in rows {
+        let unit_grant = course_unit_grant(&row.course, row.unit_abilities)?;
+        let access = access_of(actor, &row.course, row.role, unit_grant);
+        if access::authorize(actor, Action::ViewCourse(access)).is_ok() {
+            visible.push(row.course);
+        }
+    }
     Ok(Page::from_rows(visible, page.limit, |course| course.id))
+}
+
+/// Puts the course into a unit, takes it out (`None`) or moves it to another. Needs
+/// `manage_courses` on the unit it leaves and on the one it enters (an admin has both); a course
+/// with no unit has nothing to leave, so a plain teacher cannot put even their own course into a
+/// unit they hold nothing on. This is not `EditCourse`, so an archived course moves too.
+///
+/// The actor must also be staff of the course, an admin or hold a grant on its unit
+/// (`ManageContent`): a student of the course (a teacher enrolled as one, say) must not pull it
+/// under a unit they manage and so gain the grant's view of it, and a move with no unit on either
+/// side still asks that of the caller.
+///
+/// `load` locks the course first and authorizes viewing it right after, as it does for every
+/// writer: someone who may not see the course waits for the row only as long as the writer in
+/// front of them holds it, then gets `CourseNotFound`.
+pub async fn set_course_unit(
+    conn: &mut PgConnection,
+    actor: &Actor,
+    course_id: Uuid,
+    unit_id: Option<Uuid>,
+) -> Result<Course, TeachingError> {
+    let (course, access) = load(conn, actor, course_id, true).await?;
+    access::authorize(actor, Action::ManageContent(access))?;
+    if course.unit_id.is_some() {
+        access::authorize(actor, Action::ManageUnitCourses(access.unit_grant))?;
+    }
+    authorize_unit_courses(conn, actor, unit_id).await?;
+    if unit_id == course.unit_id {
+        return Ok(course);
+    }
+    let moved = repo::set_unit(conn, course_id, unit_id)
+        .await
+        .map_err(course_fk)?;
+    events::audit_implicit(
+        conn,
+        actor,
+        access,
+        AuditEntry {
+            action: "course.unit",
+            resource_type: "course",
+            resource_id: course_id,
+            meta: json!({"from": course.unit_id, "to": unit_id}),
+        },
+    )
+    .await?;
+    Ok(moved)
+}
+
+/// The courses in a unit and in every unit below it, in any status. A unit the actor holds no
+/// grant on does not exist for them (an admin sees all).
+pub async fn list_unit_courses(
+    conn: &mut PgConnection,
+    actor: &Actor,
+    unit_id: Uuid,
+    page: PageParams,
+) -> Result<Page<Course>, TeachingError> {
+    let grant = org::unit_grant(conn, actor, unit_id).await?;
+    access::authorize(actor, Action::ViewUnit(grant)).map_err(|_| OrgError::UnitNotFound)?;
+    let rows =
+        repo::list_unit_courses(conn, unit_id, page.after, i64::from(page.limit) + 1).await?;
+    Ok(Page::from_rows(rows, page.limit, |course| course.id))
 }
 
 pub async fn list_members(
@@ -605,7 +751,7 @@ pub async fn update_course(
         update.term_id.flatten(),
     )
     .await
-    .map_err(term_fk)?;
+    .map_err(course_fk)?;
     events::audit_implicit(
         conn,
         actor,

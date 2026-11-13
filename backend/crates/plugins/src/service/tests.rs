@@ -426,7 +426,7 @@ async fn a_course(pool: &PgPool) -> Uuid {
     let actor = Actor::for_tests(owner, common::Role::Teacher, Uuid::now_v7());
     let mut conn = pool.acquire().await.unwrap();
     let title = teaching::CourseTitle::parse("Course").unwrap();
-    teaching::create_course(&mut conn, &actor, title, None)
+    teaching::create_course(&mut conn, &actor, title, None, None)
         .await
         .unwrap()
         .id

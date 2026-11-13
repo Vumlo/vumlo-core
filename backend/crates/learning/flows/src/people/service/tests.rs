@@ -107,6 +107,7 @@ async fn course_of(pool: &sqlx::PgPool, owner: &Actor) -> Uuid {
         owner,
         teaching::CourseTitle::parse("Algebra").unwrap(),
         None,
+        None,
     )
     .await
     .unwrap();

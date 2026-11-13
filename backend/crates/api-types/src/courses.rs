@@ -68,6 +68,11 @@ pub struct CreateFromTemplateRequest {
     /// An existing term; an unknown one is a `422` on this field.
     #[garde(skip)]
     pub term_id: Option<Uuid>,
+    /// An existing unit to create the course in; needs `manage_courses` on it. The template's own
+    /// unit is never taken over.
+    #[serde(default)]
+    #[garde(skip)]
+    pub unit_id: Option<Uuid>,
 }
 
 /// A template with what it holds.

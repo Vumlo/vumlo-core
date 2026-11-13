@@ -178,6 +178,8 @@ pub struct Course {
     pub status: CourseStatus,
     pub owner_id: Uuid,
     pub term_id: Option<Uuid>,
+    /// The org unit the course sits in, if any (ADR-0094).
+    pub unit_id: Option<Uuid>,
     pub created_at: DateTime<Utc>,
 }
 

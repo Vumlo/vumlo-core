@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT c.id, c.kind AS \"kind: CourseKind\", c.title,\n                  c.status AS \"status: CourseStatus\", c.owner_id, c.term_id, c.created_at,\n                  m.role AS \"member_role?: CourseRole\"\n           FROM teaching.courses c\n           LEFT JOIN teaching.effective_members m ON m.course_id = c.id AND m.user_id = $2\n           WHERE c.id = $1",
+  "query": "UPDATE teaching.courses SET owner_id = $2, updated_at = now()\n           WHERE id = $1\n           RETURNING id, kind AS \"kind: CourseKind\", title,\n                     status AS \"status: CourseStatus\", owner_id, term_id, unit_id,\n                     created_at",
   "describe": {
     "columns": [
       {
@@ -71,23 +71,23 @@
       },
       {
         "ordinal": 6,
+        "name": "unit_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "teaching.courses",
+            "name": "unit_id"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
         "name": "created_at",
         "type_info": "Timestamptz",
         "origin": {
           "Table": {
             "table": "teaching.courses",
             "name": "created_at"
-          }
-        }
-      },
-      {
-        "ordinal": 7,
-        "name": "member_role?: CourseRole",
-        "type_info": "Text",
-        "origin": {
-          "Table": {
-            "table": "teaching.effective_members",
-            "name": "role"
           }
         }
       }
@@ -105,9 +105,9 @@
       false,
       false,
       true,
-      false,
-      true
+      true,
+      false
     ]
   },
-  "hash": "faa3f5584feb5de9258528a35426a377648887cc55ad8e300eb81568c6ef2bb1"
+  "hash": "101511ea6f0f99989d0a6427731799b02cb3dbda920afc565f6f3c30c605185a"
 }

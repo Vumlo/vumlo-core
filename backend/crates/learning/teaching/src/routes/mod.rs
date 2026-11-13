@@ -8,8 +8,9 @@ mod roster;
 
 use access::ActorSource;
 use api_types::{
-    Course, CreateCourseRequest, LinkedGroup, MemberSource, Membership, Page, PageQuery, PersonRow,
-    ProblemDetails, PutMemberRequest, TransferOwnershipRequest, UpdateCourseRequest,
+    Course, CourseCan, CourseDetail, CreateCourseRequest, LinkedGroup, MemberSource, Membership,
+    Page, PageQuery, PersonRow, ProblemDetails, PutMemberRequest, SetCourseUnitRequest,
+    TransferOwnershipRequest, UpdateCourseRequest,
 };
 use axum::Json;
 use axum::extract::FromRef;
@@ -35,6 +36,8 @@ where
     OpenApiRouter::new()
         .routes(routes!(create_course))
         .routes(routes!(get_course, update_course))
+        .routes(routes!(set_course_unit))
+        .routes(routes!(list_unit_courses))
         .routes(routes!(info::archive_course))
         .routes(routes!(info::restore_course))
         .routes(routes!(info::get_candidates))
@@ -88,6 +91,7 @@ impl From<TeachingError> for ApiError {
             }
             TeachingError::UserNotFound => Self::invalid_field("user_id", "no such user"),
             TeachingError::TermNotFound => Self::invalid_field("term_id", "no such term"),
+            TeachingError::UnitNotValid => Self::invalid_field("unit_id", "no such unit"),
             TeachingError::UserDisabled => Self::invalid_field("user_id", "that user is disabled"),
             TeachingError::RoleNotAllowed => {
                 Self::invalid_field("role", "this user cannot hold that course role")
@@ -180,7 +184,18 @@ pub fn api_course(course: model::Course) -> Course {
         status: api_status(course.status),
         owner_id: course.owner_id,
         term_id: course.term_id,
+        unit_id: course.unit_id,
         created_at: course.created_at,
+    }
+}
+
+fn api_can(can: access::CourseCan) -> CourseCan {
+    CourseCan {
+        view_grades: can.view_grades,
+        edit_content: can.edit_content,
+        grade: can.grade,
+        manage_roster: can.manage_roster,
+        manage_course: can.manage_course,
     }
 }
 
@@ -218,9 +233,9 @@ pub(super) fn page_params(query: &PageQuery) -> Result<PageParams, ApiError> {
         (status = 201, description = "The new draft course", body = Course),
         (status = 401, description = "Not logged in", body = ProblemDetails,
             content_type = "application/problem+json"),
-        (status = 403, description = "Not a teacher or admin", body = ProblemDetails,
-            content_type = "application/problem+json"),
-        (status = 422, description = "Invalid title, or a term_id that names no term",
+        (status = 403, description = "Not a teacher or admin, or no right to create courses in the unit",
+            body = ProblemDetails, content_type = "application/problem+json"),
+        (status = 422, description = "Invalid title, or a term_id or unit_id that names nothing",
             body = ProblemDetails,
             content_type = "application/problem+json"),
     )
@@ -232,12 +247,14 @@ async fn create_course(
 ) -> Result<(StatusCode, Json<Course>), ApiError> {
     let title = CourseTitle::parse(&request.title).map_err(TeachingError::from)?;
     let mut tx = state.db.begin().await.map_err(TeachingError::from)?;
-    let course = service::create_course(&mut tx, &actor, title, request.term_id).await?;
+    let course =
+        service::create_course(&mut tx, &actor, title, request.term_id, request.unit_id).await?;
     tx.commit().await.map_err(TeachingError::from)?;
     Ok((StatusCode::CREATED, Json(api_course(course))))
 }
 
-/// One course. Students see it only once it is published; anyone who may not see it gets 404.
+/// One course, with what the caller may do in it (`can`). Students see it only once it is
+/// published; anyone who may not see it gets 404.
 #[utoipa::path(
     get,
     path = "/courses/{id}",
@@ -245,7 +262,7 @@ async fn create_course(
     security(("cookie" = []), ("bearer" = [])),
     params(("id" = Uuid, Path, description = "Course id")),
     responses(
-        (status = 200, description = "The course", body = Course),
+        (status = 200, description = "The course and what the caller may do in it", body = CourseDetail),
         (status = 401, description = "Not logged in", body = ProblemDetails,
             content_type = "application/problem+json"),
         (status = 404, description = "No such course, or not visible to the caller",
@@ -256,10 +273,84 @@ async fn get_course(
     State(state): State<TeachingState>,
     actor: Actor,
     Path(id): Path<Uuid>,
-) -> Result<Json<Course>, ApiError> {
+) -> Result<Json<CourseDetail>, ApiError> {
     let mut conn = state.db.acquire().await.map_err(TeachingError::from)?;
-    let course = service::get_course(&mut conn, &actor, id).await?;
+    let (course, can) = service::get_course_detail(&mut conn, &actor, id).await?;
+    Ok(Json(CourseDetail {
+        course: api_course(course),
+        can: api_can(can),
+    }))
+}
+
+/// Puts a course into a unit, moves it to another or takes it out (`unit_id: null`).
+///
+/// Needs `manage_courses` on the unit the course leaves and on the one it enters (an admin has
+/// both). Unlike editing the course this works on an archived one. Audited when the caller is not
+/// on the course (ADR-0094).
+#[utoipa::path(
+    put,
+    path = "/courses/{id}/unit",
+    tag = "courses",
+    security(("cookie" = []), ("bearer" = [])),
+    params(("id" = Uuid, Path, description = "Course id")),
+    request_body = SetCourseUnitRequest,
+    responses(
+        (status = 200, description = "The course", body = Course),
+        (status = 401, description = "Not logged in", body = ProblemDetails,
+            content_type = "application/problem+json"),
+        (status = 403, description = "No right to manage courses in the unit it leaves or enters",
+            body = ProblemDetails, content_type = "application/problem+json"),
+        (status = 404, description = "No such course, or not visible to the caller",
+            body = ProblemDetails, content_type = "application/problem+json"),
+        (status = 422, description = "A unit_id that names no unit", body = ProblemDetails,
+            content_type = "application/problem+json"),
+    )
+)]
+async fn set_course_unit(
+    State(state): State<TeachingState>,
+    actor: Actor,
+    Path(id): Path<Uuid>,
+    ValidJson(request): ValidJson<SetCourseUnitRequest>,
+) -> Result<Json<Course>, ApiError> {
+    let mut tx = state.db.begin().await.map_err(TeachingError::from)?;
+    let course = service::set_course_unit(&mut tx, &actor, id, request.unit_id).await?;
+    tx.commit().await.map_err(TeachingError::from)?;
     Ok(Json(api_course(course)))
+}
+
+/// The courses in a unit and in every unit below it, in any status, by id.
+///
+/// Anyone with a role on the unit (or above it) and every admin. A unit the caller cannot see is a
+/// 404.
+#[utoipa::path(
+    get,
+    path = "/units/{id}/courses",
+    tag = "courses",
+    security(("cookie" = []), ("bearer" = [])),
+    params(("id" = Uuid, Path, description = "Unit id"), PageQuery),
+    responses(
+        (status = 200, description = "A page of courses", body = Page<Course>),
+        (status = 401, description = "Not logged in", body = ProblemDetails,
+            content_type = "application/problem+json"),
+        (status = 404, description = "No such unit, or not visible to the caller",
+            body = ProblemDetails, content_type = "application/problem+json"),
+        (status = 422, description = "Invalid cursor", body = ProblemDetails,
+            content_type = "application/problem+json"),
+    )
+)]
+async fn list_unit_courses(
+    State(state): State<TeachingState>,
+    actor: Actor,
+    Path(id): Path<Uuid>,
+    ValidQuery(query): ValidQuery<PageQuery>,
+) -> Result<Json<Page<Course>>, ApiError> {
+    let page = page_params(&query)?;
+    let mut conn = state.db.acquire().await.map_err(TeachingError::from)?;
+    let courses = service::list_unit_courses(&mut conn, &actor, id, page).await?;
+    Ok(Json(Page {
+        items: courses.items.into_iter().map(api_course).collect(),
+        next_cursor: courses.next.map(|id| id.to_string()),
+    }))
 }
 
 /// Changes the title and/or the term of a course. Assistants, teachers, owners and admins.

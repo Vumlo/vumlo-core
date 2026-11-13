@@ -64,6 +64,7 @@ async fn two_creates_racing_for_the_last_position_one_gets_409() {
             &owner,
             CourseTitle::parse("Algebra").unwrap(),
             None,
+            None,
         )
         .await
         .unwrap();
@@ -155,6 +156,7 @@ async fn course(pool: sqlx::PgPool) -> Course {
         &mut tx,
         &owner,
         CourseTitle::parse("Algebra").unwrap(),
+        None,
         None,
     )
     .await
@@ -602,6 +604,7 @@ async fn a_course_scope_replaces_its_own_rows_and_leaves_another_course() {
             &mut tx,
             &first.owner,
             CourseTitle::parse("Geometry").unwrap(),
+            None,
             None,
         )
         .await

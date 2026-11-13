@@ -196,6 +196,7 @@ pub async fn new_template(
             kind: CourseKind::Template,
             title: &title,
             term_id: None,
+            unit_id: None,
             code: &code,
             description: &description,
             from: Some(course_id),
@@ -205,13 +206,15 @@ pub async fn new_template(
 }
 
 /// The row of a draft course made from a template the actor can edit, owned by the actor. The
-/// flow (`learning::courses::create_from_template`) copies the content into it.
+/// flow (`learning::courses::create_from_template`) copies the content into it. The course sits
+/// in `unit_id` (needs `manage_courses` there), never in the template's unit.
 pub async fn new_course_from_template(
     conn: &mut PgConnection,
     actor: &Actor,
     template_id: Uuid,
     title: Option<CourseTitle>,
     term_id: Option<Uuid>,
+    unit_id: Option<Uuid>,
 ) -> Result<Course, TeachingError> {
     let (template, access) = load(conn, actor, template_id, false).await?;
     if template.kind != CourseKind::Template {
@@ -230,6 +233,7 @@ pub async fn new_course_from_template(
             kind: CourseKind::Regular,
             title: &title,
             term_id,
+            unit_id,
             code: &code,
             description: &description,
             from: Some(template_id),

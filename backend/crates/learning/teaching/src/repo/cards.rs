@@ -16,7 +16,7 @@ pub async fn card_courses(
 ) -> Result<Vec<CardCourse>, sqlx::Error> {
     let rows = sqlx::query!(
         r#"SELECT c.id, c.kind AS "kind: CourseKind", c.title, c.status AS "status: CourseStatus",
-                  c.owner_id, c.term_id, c.created_at, c.code, c.description,
+                  c.owner_id, c.term_id, c.unit_id, c.created_at, c.code, c.description,
                   t.name AS "term_name?", t.ends_on AS "term_ends?",
                   o.name AS "owner_name!", o.surname AS "owner_surname!",
                   m.role AS "member_role?: CourseRole",
@@ -49,8 +49,10 @@ pub async fn card_courses(
                 status: row.status,
                 owner_id: row.owner_id,
                 term_id: row.term_id,
+                unit_id: row.unit_id,
                 created_at: row.created_at,
                 member_role: row.member_role,
+                unit_abilities: None,
             };
             CardCourse {
                 course: CourseRow::from(raw).course,

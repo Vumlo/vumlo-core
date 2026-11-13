@@ -1283,3 +1283,85 @@ async fn every_course_endpoint_of_this_task_is_in_the_openapi_document() {
     })
     .await;
 }
+
+#[tokio::test]
+async fn the_course_tells_its_unit_and_what_the_caller_may_do_in_it() {
+    db_test(async |pool| {
+        let w = world(pool).await;
+        let path = format!("/courses/{}", w.course);
+
+        let owner = w.get(&w.owner, &path).await;
+        assert_eq!(owner["unit_id"], Value::Null);
+        assert_eq!(
+            owner["can"],
+            json!({"view_grades": true, "edit_content": true, "grade": true,
+                   "manage_roster": true, "manage_course": true})
+        );
+        let student = w.get(&w.student, &path).await;
+        assert_eq!(student["id"], owner["id"]);
+        assert_eq!(
+            student["can"],
+            json!({"view_grades": false, "edit_content": false, "grade": false,
+                   "manage_roster": false, "manage_course": false})
+        );
+
+        // An admin puts the course in a unit; its owner holds no role there and cannot take it out.
+        let unit = id_of(
+            &w.env
+                .ok(
+                    "POST",
+                    &w.admin.token,
+                    "/units",
+                    Some(json!({"name": "Faculty"})),
+                    201,
+                )
+                .await,
+        );
+        let into = |unit: Value| Some(json!({ "unit_id": unit }));
+        let moved = w
+            .env
+            .ok(
+                "PUT",
+                &w.admin.token,
+                &format!("{path}/unit"),
+                into(json!(unit)),
+                200,
+            )
+            .await;
+        assert_eq!(moved["unit_id"], json!(unit));
+        assert_eq!(w.get(&w.owner, &path).await["unit_id"], json!(unit));
+        let attempts = [
+            (&w.owner, into(Value::Null), 403),
+            (&w.student, into(Value::Null), 403),
+            (&w.stranger, into(Value::Null), 404),
+            (&w.admin, into(json!(Uuid::now_v7())), 422),
+        ];
+        for (who, body, status) in attempts {
+            let got = w.status_of("PUT", who, &format!("{path}/unit"), body).await;
+            assert_eq!(got, status);
+        }
+
+        // The unit lists it for the admin, and does not exist for a teacher with no role in it.
+        let listed = w.get(&w.admin, &format!("/units/{unit}/courses")).await;
+        assert_eq!(listed["items"].as_array().map(Vec::len), Some(1));
+        assert_eq!(listed["items"][0]["id"], json!(w.course));
+        let got = w
+            .status_of("GET", &w.owner, &format!("/units/{unit}/courses"), None)
+            .await;
+        assert_eq!(got, 404);
+
+        // Out of the unit again.
+        let back = w
+            .env
+            .ok(
+                "PUT",
+                &w.admin.token,
+                &format!("{path}/unit"),
+                into(Value::Null),
+                200,
+            )
+            .await;
+        assert_eq!(back["unit_id"], Value::Null);
+    })
+    .await;
+}

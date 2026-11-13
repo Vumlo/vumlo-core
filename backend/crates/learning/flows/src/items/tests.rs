@@ -75,6 +75,7 @@ async fn fixture_worth(pool: PgPool, points: &str) -> Fixture {
         &owner,
         CourseTitle::parse("Algebra").unwrap(),
         None,
+        None,
     )
     .await
     .unwrap();

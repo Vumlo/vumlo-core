@@ -24,10 +24,12 @@ pub use cards::card_courses;
 use access::{CourseRole, CourseStatus};
 use common::Role;
 
-/// A course together with the asking user's membership in it, if any.
+/// A course together with the asking user's membership in it, if any, and the abilities (as text)
+/// of their unit grant on the unit it sits in, if they hold one.
 pub struct CourseRow {
     pub course: Course,
     pub role: Option<CourseRole>,
+    pub unit_abilities: Option<Vec<String>>,
 }
 
 /// The shape of every course-with-membership query below.
@@ -38,8 +40,10 @@ struct RawCourseRow {
     status: CourseStatus,
     owner_id: Uuid,
     term_id: Option<Uuid>,
+    unit_id: Option<Uuid>,
     created_at: DateTime<Utc>,
     member_role: Option<CourseRole>,
+    unit_abilities: Option<Vec<String>>,
 }
 
 impl From<RawCourseRow> for CourseRow {
@@ -52,9 +56,11 @@ impl From<RawCourseRow> for CourseRow {
                 status: raw.status,
                 owner_id: raw.owner_id,
                 term_id: raw.term_id,
+                unit_id: raw.unit_id,
                 created_at: raw.created_at,
             },
             role: raw.member_role,
+            unit_abilities: raw.unit_abilities,
         }
     }
 }
@@ -68,7 +74,8 @@ pub async fn set_published(
         r#"UPDATE teaching.courses SET status = 'published', updated_at = now()
            WHERE id = $1
            RETURNING id, kind AS "kind: CourseKind", title,
-                     status AS "status: CourseStatus", owner_id, term_id, created_at"#,
+                     status AS "status: CourseStatus", owner_id, term_id, unit_id,
+                     created_at"#,
         course_id
     )
     .fetch_one(conn)
@@ -142,7 +149,8 @@ pub async fn set_owner(
         r#"UPDATE teaching.courses SET owner_id = $2, updated_at = now()
            WHERE id = $1
            RETURNING id, kind AS "kind: CourseKind", title,
-                     status AS "status: CourseStatus", owner_id, term_id, created_at"#,
+                     status AS "status: CourseStatus", owner_id, term_id, unit_id,
+                     created_at"#,
         course_id,
         owner_id
     )
@@ -159,7 +167,7 @@ pub async fn course_exists(conn: &mut PgConnection, course_id: Uuid) -> Result<b
     .await
 }
 
-/// The course and `user_id`'s membership in it.
+/// The course, `user_id`'s membership in it and their grant on its unit.
 pub async fn find_course(
     conn: &mut PgConnection,
     course_id: Uuid,
@@ -167,11 +175,14 @@ pub async fn find_course(
 ) -> Result<Option<CourseRow>, sqlx::Error> {
     let row = sqlx::query_as!(
         RawCourseRow,
-        r#"SELECT c.id, c.kind AS "kind: CourseKind", c.title,
-                  c.status AS "status: CourseStatus", c.owner_id, c.term_id, c.created_at,
-                  m.role AS "member_role?: CourseRole"
+        // Two outer joins make sqlx doubt every column of `c`; the `!` says what the table says.
+        r#"SELECT c.id AS "id!", c.kind AS "kind!: CourseKind", c.title AS "title!",
+                  c.status AS "status!: CourseStatus", c.owner_id AS "owner_id!", c.term_id,
+                  c.unit_id, c.created_at AS "created_at!",
+                  m.role AS "member_role?: CourseRole", g.abilities AS "unit_abilities?"
            FROM teaching.courses c
            LEFT JOIN teaching.effective_members m ON m.course_id = c.id AND m.user_id = $2
+           LEFT JOIN org.unit_grants g ON g.user_id = $2 AND g.unit_id = c.unit_id
            WHERE c.id = $1"#,
         course_id,
         user_id
@@ -194,13 +205,77 @@ pub async fn lock_course(
     sqlx::query_as!(
         Course,
         r#"SELECT id, kind AS "kind: CourseKind", title,
-                  status AS "status: CourseStatus", owner_id, term_id, created_at
+                  status AS "status: CourseStatus", owner_id, term_id, unit_id, created_at
            FROM teaching.courses
            WHERE id = $1
            FOR UPDATE"#,
         course_id
     )
     .fetch_optional(conn)
+    .await
+}
+
+/// The abilities (as text) `user_id` holds on the unit through their unit roles, or `None` when
+/// they hold no role that covers it. Read after [`lock_course`] on the locked path, for the
+/// reason given there.
+pub async fn find_unit_grant(
+    conn: &mut PgConnection,
+    unit_id: Uuid,
+    user_id: Uuid,
+) -> Result<Option<Vec<String>>, sqlx::Error> {
+    sqlx::query_scalar!(
+        r#"SELECT abilities AS "abilities!" FROM org.unit_grants
+           WHERE user_id = $1 AND unit_id = $2"#,
+        user_id,
+        unit_id
+    )
+    .fetch_optional(conn)
+    .await
+}
+
+/// Puts the course into the unit, or takes it out (`None`).
+pub async fn set_unit(
+    conn: &mut PgConnection,
+    course_id: Uuid,
+    unit_id: Option<Uuid>,
+) -> Result<Course, sqlx::Error> {
+    sqlx::query_as!(
+        Course,
+        r#"UPDATE teaching.courses SET unit_id = $2, updated_at = now()
+           WHERE id = $1
+           RETURNING id, kind AS "kind: CourseKind", title,
+                     status AS "status: CourseStatus", owner_id, term_id, unit_id,
+                     created_at"#,
+        course_id,
+        unit_id
+    )
+    .fetch_one(conn)
+    .await
+}
+
+/// The courses in the unit and in every unit below it, in any status, after `after`, in id order,
+/// at most `limit`. The caller has authorized the unit.
+pub async fn list_unit_courses(
+    conn: &mut PgConnection,
+    unit_id: Uuid,
+    after: Option<Uuid>,
+    limit: i64,
+) -> Result<Vec<Course>, sqlx::Error> {
+    sqlx::query_as!(
+        Course,
+        r#"SELECT c.id, c.kind AS "kind: CourseKind", c.title,
+                  c.status AS "status: CourseStatus", c.owner_id, c.term_id, c.unit_id,
+                  c.created_at
+           FROM teaching.courses c
+           WHERE c.unit_id IN (SELECT s.unit_id FROM org.unit_subtree s WHERE s.root_id = $1)
+             AND ($2::uuid IS NULL OR c.id > $2)
+           ORDER BY c.id
+           LIMIT $3"#,
+        unit_id,
+        after,
+        limit
+    )
+    .fetch_all(conn)
     .await
 }
 
@@ -220,13 +295,15 @@ pub async fn list_courses_of(
     let rows = sqlx::query_as!(
         RawCourseRow,
         r#"SELECT c.id, c.kind AS "kind: CourseKind", c.title,
-                  c.status AS "status: CourseStatus", c.owner_id, c.term_id, c.created_at,
-                  m.role AS "member_role?: CourseRole"
+                  c.status AS "status: CourseStatus", c.owner_id, c.term_id, c.unit_id,
+                  c.created_at, m.role AS "member_role?: CourseRole",
+                  g.abilities AS "unit_abilities?"
            FROM (SELECT course_id AS id FROM teaching.effective_members WHERE user_id = $1
                  UNION
                  SELECT id FROM teaching.courses WHERE owner_id = $1) mine
            JOIN teaching.courses c ON c.id = mine.id
            LEFT JOIN teaching.effective_members m ON m.course_id = c.id AND m.user_id = $1
+           LEFT JOIN org.unit_grants g ON g.user_id = $1 AND g.unit_id = c.unit_id
            WHERE (c.status IN ('published', 'archived') OR c.owner_id = $1
                   OR m.role IN ('teacher', 'assistant'))
              AND ($2::uuid IS NULL OR c.id > $2)
@@ -336,7 +413,8 @@ pub async fn update_course(
                updated_at = now()
            WHERE id = $1
            RETURNING id, kind AS "kind: CourseKind", title,
-                     status AS "status: CourseStatus", owner_id, term_id, created_at"#,
+                     status AS "status: CourseStatus", owner_id, term_id, unit_id,
+                     created_at"#,
         course_id,
         title,
         set_term,
@@ -417,7 +495,8 @@ pub async fn set_status(
         r#"UPDATE teaching.courses SET status = $2, updated_at = now()
            WHERE id = $1
            RETURNING id, kind AS "kind: CourseKind", title,
-                     status AS "status: CourseStatus", owner_id, term_id, created_at"#,
+                     status AS "status: CourseStatus", owner_id, term_id, unit_id,
+                     created_at"#,
         course_id,
         status.as_str()
     )
@@ -441,6 +520,7 @@ pub struct CourseCopy<'a> {
     pub title: &'a str,
     pub owner_id: Uuid,
     pub term_id: Option<Uuid>,
+    pub unit_id: Option<Uuid>,
     pub code: &'a str,
     pub description: &'a str,
 }
@@ -453,15 +533,17 @@ pub async fn insert_copy(
     sqlx::query_as!(
         Course,
         r#"INSERT INTO teaching.courses
-               (id, kind, title, owner_id, created_by, term_id, code, description)
-           VALUES ($1, $2, $3, $4, $4, $5, $6, $7)
+               (id, kind, title, owner_id, created_by, term_id, unit_id, code, description)
+           VALUES ($1, $2, $3, $4, $4, $5, $6, $7, $8)
            RETURNING id, kind AS "kind: CourseKind", title,
-                     status AS "status: CourseStatus", owner_id, term_id, created_at"#,
+                     status AS "status: CourseStatus", owner_id, term_id, unit_id,
+                     created_at"#,
         copy.id,
         copy.kind.as_str(),
         copy.title,
         copy.owner_id,
         copy.term_id,
+        copy.unit_id,
         copy.code,
         copy.description
     )
@@ -492,7 +574,7 @@ pub async fn list_templates(
 ) -> Result<Vec<TemplateRow>, sqlx::Error> {
     let rows = sqlx::query!(
         r#"SELECT c.id, c.title, c.status AS "status: CourseStatus", c.owner_id, c.term_id,
-                  c.created_at, c.updated_at
+                  c.unit_id, c.created_at, c.updated_at
            FROM teaching.courses c
            WHERE c.kind = 'template'
              AND (c.owner_id = $1
@@ -518,6 +600,7 @@ pub async fn list_templates(
                 status: row.status,
                 owner_id: row.owner_id,
                 term_id: row.term_id,
+                unit_id: row.unit_id,
                 created_at: row.created_at,
             },
             updated_at: row.updated_at,

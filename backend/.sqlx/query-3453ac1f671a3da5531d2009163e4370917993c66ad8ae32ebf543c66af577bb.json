@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT id, kind AS \"kind: CourseKind\", title,\n                  status AS \"status: CourseStatus\", owner_id, term_id, created_at\n           FROM teaching.courses\n           WHERE id = $1\n           FOR UPDATE",
+  "query": "UPDATE teaching.courses\n           SET title = COALESCE($2, title),\n               term_id = CASE WHEN $3 THEN $4 ELSE term_id END,\n               updated_at = now()\n           WHERE id = $1\n           RETURNING id, kind AS \"kind: CourseKind\", title,\n                     status AS \"status: CourseStatus\", owner_id, term_id, unit_id,\n                     created_at",
   "describe": {
     "columns": [
       {
@@ -71,6 +71,17 @@
       },
       {
         "ordinal": 6,
+        "name": "unit_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "teaching.courses",
+            "name": "unit_id"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
         "name": "created_at",
         "type_info": "Timestamptz",
         "origin": {
@@ -83,6 +94,9 @@
     ],
     "parameters": {
       "Left": [
+        "Uuid",
+        "Text",
+        "Bool",
         "Uuid"
       ]
     },
@@ -93,8 +107,9 @@
       false,
       false,
       true,
+      true,
       false
     ]
   },
-  "hash": "125434ab085e41c9aff3d2306b3b3a39c395201d3b00f9ec281bc6a56631fa6f"
+  "hash": "3453ac1f671a3da5531d2009163e4370917993c66ad8ae32ebf543c66af577bb"
 }
