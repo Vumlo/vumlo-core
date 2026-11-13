@@ -37,14 +37,14 @@ if (current === version) {
 
 const keep = `$1${version}`; // the text before the version, then the new one
 edit("backend/Cargo.toml", /^(\[workspace\.package\]\nversion = ")[^"]+/m, keep);
-for (const app of ["web", "desktop"]) {
+for (const app of ["web", "web-admin", "desktop"]) {
   edit(`${app}/package.json`, /^(  "version": ")[^"]+/m, keep);
   // package-lock.json: the package itself, twice (the top and the "" entry); a dependency named like it never matches the name line.
   edit(`${app}/package-lock.json`, new RegExp(`^(  "name": "vumlo-${app}",\\n  "version": ")[^"]+`, "m"), keep);
   edit(`${app}/package-lock.json`, new RegExp(`^(      "name": "vumlo-${app}",\\n      "version": ")[^"]+`, "m"), keep);
 }
 edit("desktop/Cargo.toml", /^(\[package\]\nname = "vumlo-desktop"\nversion = ")[^"]+/m, keep);
-edit("deploy/compose.yaml", /(\$\{VUMLO_VERSION:-)[^}]+/g, keep, 2);
+edit("deploy/compose.yaml", /(\$\{VUMLO_VERSION:-)[^}]+/g, keep, 3);
 
 // The changelog: the entry under [Unreleased] and the compare links. The text of the entry is written by hand.
 const today = new Date().toISOString().slice(0, 10);

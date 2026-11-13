@@ -22,7 +22,7 @@ function ChangePassword() {
   const [fresh, setFresh] = useState("");
   const [repeat, setRepeat] = useState("");
   const user = me.data;
-  const target = next && next.startsWith("/") && !next.startsWith("//") ? next : user?.role === "admin" ? "/admin" : "/";
+  const target = next && next.startsWith("/") && !next.startsWith("//") ? next : user?.role === "admin" ? "/courses" : "/";
 
   useEffect(() => {
     if (me.error?.status === 401) router.replace("/login");

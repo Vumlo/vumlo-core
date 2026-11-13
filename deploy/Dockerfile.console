@@ -1,0 +1,23 @@
+# The admin console (ADR-0095): a static app of its own, built from what `vumlo-cli brand apply` wrote into web/
+# (web/src/generated and web/public/brand): run `./vumlo brand apply` before building this image, and again whenever
+# vumlo.toml changes. Caddy serves the files and forwards /api to the core.
+#
+# Build from the repository root:
+#   docker build -f deploy/Dockerfile.console -t vumlo-console .
+
+FROM node:24-slim AS build
+WORKDIR /src
+COPY web-admin/package.json web-admin/package-lock.json ./web-admin/
+RUN cd web-admin && npm ci
+# The console reads the parts of the student app that do not depend on its framework (its design tokens, API client,
+# texts and mock API) from web/src, and installs none of the dependencies of web/.
+COPY web ./web
+COPY web-admin ./web-admin
+RUN cd web-admin && npm run build
+# The mock API is for `dev:mock` only: the build fails if the bundle carries a sample account, the sample password or the worker.
+RUN ! grep -rIlE "northfield\.edu|correct horse|setupWorker" web-admin/dist
+
+FROM caddy:2-alpine
+COPY --from=build /src/web-admin/dist /srv
+COPY deploy/Caddyfile.console /etc/caddy/Caddyfile
+EXPOSE 3000

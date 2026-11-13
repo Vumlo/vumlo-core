@@ -112,8 +112,9 @@ the same CPU type with the same archive and `docker compose build`, then copy th
 after the release). Run `./vumlo brand apply` on the
 build machine too.
 
-Open `public_origin` and sign in with the administrator. The web app is on `127.0.0.1:3000` and the API
-on `127.0.0.1:8080`; for a real domain with TLS put Caddy in front of both (`deploy/Caddyfile`, see
+Open `public_origin` and sign in with the administrator. The web app is on `127.0.0.1:3000`, the admin
+console (the administrator's own address and sign-in, `admin_origin`) on `127.0.0.1:3001` and the API
+on `127.0.0.1:8080`; administration is done in the console, not in the web app; for a real domain with TLS put Caddy in front of both (`deploy/Caddyfile`, see
 [Caddy](#caddy)). `doctor` reports the web build as "not built" inside the container because the web
 app is built into its own image; that is expected for this path, and it warns about `node` for the same
 reason.
@@ -210,8 +211,8 @@ sudoedit /etc/vumlo/vumlo.toml
 ```
 
 In `vumlo.toml` set `institution.name`, `institution.mode`, `server.public_origin =
-"https://lms.example.edu"`, `server.admin_origin = "https://admin.lms.example.edu"` (the console's
-own address; the Caddy block for it comes with the console itself), `server.client_ip_header = "x-real-ip"` (Caddy sets it), `auth.allowed_domains`,
+"https://lms.example.edu"`, `server.admin_origin = "https://admin.lms.example.edu"` (the admin
+console's own address, see [Caddy](#caddy)), `server.client_ip_header = "x-real-ip"` (Caddy sets it), `auth.allowed_domains`,
 and in `[cli]` set `env_file = "vumlo.env"` (so the CLI finds the secrets) and `core_url =
 "http://127.0.0.1:8080"` (so `doctor` asks the core directly and not through Caddy). Set `web.dir =
 "/opt/vumlo/web"`. Remove the `cookie_secure = false` line, or set it to `true`: the site is HTTPS.
@@ -239,6 +240,10 @@ sudo vumlo-cli --config /etc/vumlo/vumlo.toml build web      # brand apply, then
 sudo chown -R vumlo: /opt/vumlo/web/.next/cache
 ```
 
+The admin console is built by the same command, from `web-admin/` beside `web/`: copy it too
+(`sudo rsync -a --delete ../web-admin/ /opt/vumlo/web-admin/`, before the `build web` above). It is static
+files in `/opt/vumlo/web-admin/dist`, which Caddy serves; it has no process of its own.
+
 ### 6. systemd
 
 ```sh
@@ -264,9 +269,22 @@ echo 'VUMLO_DOMAIN=lms.example.edu' | sudo tee -a /etc/default/caddy
 sudo systemctl restart caddy
 ```
 
-Open ports 80 and 443 only. Vumlo itself listens on `127.0.0.1:8080` (the API) and `127.0.0.1:3000` (the
-web app); nothing else should reach them. The firewall is yours to configure; `vumlo-cli` does not touch it.
-The Caddyfile of the release also serves the Docker install: its two upstreams are the same ports.
+The admin console has an address of its own, `admin.lms.example.edu` (`server.admin_origin`): give it a DNS
+record next to the main one and the same variable in Caddy's environment as the main domain:
+
+```sh
+echo 'VUMLO_ADMIN_DOMAIN=admin.lms.example.edu' | sudo tee -a /etc/default/caddy
+```
+
+Without Docker, the console is its built files: in the second block of the Caddyfile replace the
+`reverse_proxy 127.0.0.1:3001` with the `root` / `file_server` lines its comment shows. Administrators sign in
+there with their email and password; if one has forgotten the password,
+`vumlo-cli admin set-password <email>` sets a new one.
+
+Open ports 80 and 443 only. Vumlo itself listens on `127.0.0.1:8080` (the API), `127.0.0.1:3000` (the
+web app) and, with Docker, `127.0.0.1:3001` (the admin console); nothing else should reach them. The firewall
+is yours to configure; `vumlo-cli` does not touch it. The Caddyfile of the release also serves the Docker
+install: its upstreams are the same ports.
 
 ### Backups, and a restore test
 

@@ -125,6 +125,253 @@
         ],
         "description": "What an admin sees: the public profile and the settings that are not public. Read-only; they\nchange in the config file (ADR-0044)."
       },
+      "AdminPlugin": {
+        "description": "An installed plugin as the console lists it. It holds no token and no secret.",
+        "properties": {
+          "all_courses": {
+            "description": "Whether the plugin reaches every course; if not, `course_ids` lists them.",
+            "type": "boolean"
+          },
+          "base_url": {
+            "type": "string"
+          },
+          "course_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "failed": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "needs_setup": {
+            "description": "The keys of its institution settings that have no value and no default.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "pending": {
+            "description": "Deliveries owed and failed.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "plugin_id": {
+            "type": "string"
+          },
+          "requested_scopes": {
+            "description": "What the plugin asked for, as scope names such as `grades:read`.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "scopes": {
+            "description": "What an administrator granted.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "status": {
+            "$ref": "#/components/schemas/PluginStatus"
+          },
+          "version": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "plugin_id",
+          "version",
+          "base_url",
+          "status",
+          "requested_scopes",
+          "scopes",
+          "all_courses",
+          "course_ids",
+          "pending",
+          "failed",
+          "needs_setup"
+        ],
+        "type": "object"
+      },
+      "AdminPluginCall": {
+        "properties": {
+          "at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "duration_ms": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "method": {
+            "type": "string"
+          },
+          "route": {
+            "type": "string"
+          },
+          "status": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "at",
+          "method",
+          "route",
+          "status",
+          "duration_ms"
+        ],
+        "type": "object"
+      },
+      "AdminPluginCallCount": {
+        "properties": {
+          "average_ms": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "calls": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "method": {
+            "type": "string"
+          },
+          "route": {
+            "type": "string"
+          },
+          "status": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "method",
+          "route",
+          "status",
+          "calls",
+          "average_ms"
+        ],
+        "type": "object"
+      },
+      "AdminPluginCalls": {
+        "description": "What a plugin did to the plugin API: the newest calls, and the counts by route and answer.",
+        "properties": {
+          "counts": {
+            "items": {
+              "$ref": "#/components/schemas/AdminPluginCallCount"
+            },
+            "type": "array"
+          },
+          "recent": {
+            "items": {
+              "$ref": "#/components/schemas/AdminPluginCall"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "recent",
+          "counts"
+        ],
+        "type": "object"
+      },
+      "AdminPluginSetting": {
+        "description": "One institution setting of a plugin, with what a form needs to ask for it. A secret never\ncarries its value: `is_set` says whether there is one.",
+        "properties": {
+          "default": {},
+          "description": {
+            "type": "string"
+          },
+          "is_set": {
+            "description": "Whether a value was set, as opposed to the default applying.",
+            "type": "boolean"
+          },
+          "item_kind": {
+            "description": "The type of the entries of an `array`: `string` or `number`.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "key": {
+            "type": "string"
+          },
+          "kind": {
+            "description": "`string`, `number`, `boolean` or `array`.",
+            "type": "string"
+          },
+          "maximum": {
+            "format": "double",
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "minimum": {
+            "format": "double",
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "options": {
+            "description": "The values a string may take.",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "secret": {
+            "type": "boolean"
+          },
+          "value": {
+            "description": "The value in force; never present for a secret."
+          }
+        },
+        "required": [
+          "key",
+          "description",
+          "kind",
+          "secret",
+          "is_set"
+        ],
+        "type": "object"
+      },
+      "AdminPluginSettings": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AdminPluginSetting"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "type": "object"
+      },
+      "AdminPlugins": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AdminPlugin"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "type": "object"
+      },
       "AllStudents": {
         "description": "The only value of the `students` selector that is not a list.",
         "enum": [
@@ -2975,6 +3222,34 @@
         ],
         "type": "string"
       },
+      "GrantPluginRequest": {
+        "description": "What a plugin may do and reach. The scopes stay within what it asked for.",
+        "properties": {
+          "all_courses": {
+            "description": "Every course, including those created later; otherwise `course_ids`.",
+            "type": "boolean"
+          },
+          "course_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "scopes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "scopes",
+          "all_courses",
+          "course_ids"
+        ],
+        "type": "object"
+      },
       "Group": {
         "description": "A cohort: school class 7-A, university group PZ-31.",
         "properties": {
@@ -3875,6 +4150,161 @@
           "all"
         ],
         "type": "string"
+      },
+      "MailDeadBy": {
+        "properties": {
+          "dead": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "plugin_id": {
+            "description": "`None` for the mail of the core itself (accounts).",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "dead"
+        ],
+        "type": "object"
+      },
+      "MailMessage": {
+        "description": "One message of the journal.",
+        "properties": {
+          "attempts": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "last_error": {
+            "description": "A class such as `smtp 451`, never the server's text.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "plugin_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "state": {
+            "description": "`pending`, `sent`, `dead` or `cancelled`.",
+            "type": "string"
+          },
+          "subject": {
+            "description": "The subject, cut for display; kept only while the batch is.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "user_id": {
+            "description": "The person it is for.",
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "created_at",
+          "state",
+          "attempts",
+          "kind",
+          "user_id"
+        ],
+        "type": "object"
+      },
+      "MailMessages": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/MailMessage"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "type": "object"
+      },
+      "MailStatus": {
+        "description": "What waits, what was sent and what died.",
+        "properties": {
+          "cancelled_24h": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "configured": {
+            "description": "Whether the installation has `[mail]`; without it nothing is sent.",
+            "type": "boolean"
+          },
+          "dead_24h": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "dead_by": {
+            "items": {
+              "$ref": "#/components/schemas/MailDeadBy"
+            },
+            "type": "array"
+          },
+          "dead_now": {
+            "description": "Dead messages in the journal now.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "oldest_pending": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "pending": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "sent_24h": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "transport": {
+            "description": "`smtp` or `file`, when configured.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "configured",
+          "pending",
+          "sent_24h",
+          "dead_24h",
+          "cancelled_24h",
+          "dead_now",
+          "dead_by"
+        ],
+        "type": "object"
       },
       "MailTarget": {
         "description": "Who a plugin's mail is for: one person, or a course audience.",
@@ -6090,6 +6520,13 @@
         ],
         "type": "object"
       },
+      "PluginStatus": {
+        "enum": [
+          "enabled",
+          "disabled"
+        ],
+        "type": "string"
+      },
       "PluginSubmission": {
         "description": "A submitted attempt as a plugin with `submissions:read` sees it: which work, whose, and what it\nsays. No draft, no score and no grade.",
         "properties": {
@@ -6531,6 +6968,44 @@
         ],
         "type": "object"
       },
+      "RetryMailRequest": {
+        "description": "What to put back: one message by `id`, or, without it, the dead mail of `plugin_id` (all dead\nmail without that either).",
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "plugin_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "RetryMailResponse": {
+        "properties": {
+          "erased": {
+            "description": "Left dead: their address is already erased.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "requeued": {
+            "description": "Put back in the queue.",
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "requeued",
+          "erased"
+        ],
+        "type": "object"
+      },
       "Role": {
         "enum": [
           "admin",
@@ -6786,6 +7261,29 @@
         },
         "required": [
           "unit_id"
+        ],
+        "type": "object"
+      },
+      "SetPluginSettingRequest": {
+        "description": "A value typed as text: a string stays text, a number, a boolean or a list is JSON.",
+        "properties": {
+          "value": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "value"
+        ],
+        "type": "object"
+      },
+      "SetPluginStatusRequest": {
+        "properties": {
+          "status": {
+            "$ref": "#/components/schemas/PluginStatus"
+          }
+        },
+        "required": [
+          "status"
         ],
         "type": "object"
       },
@@ -8597,6 +9095,718 @@
         "summary": "Sets the links to the desktop app's installers (ADR-0064): the whole list, so what is missing is removed.\nAdmin only. The web app shows a hint and a download page when the list is not empty.",
         "tags": [
           "institution"
+        ]
+      }
+    },
+    "/api/v1/admin/mail/messages": {
+      "get": {
+        "operationId": "list_messages",
+        "parameters": [
+          {
+            "description": "`pending`, `sent`, `dead` or `cancelled`.",
+            "in": "query",
+            "name": "state",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "plugin_id",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "kind",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "user_id",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Only messages of the last this many hours, 1 to 8760.",
+            "in": "query",
+            "name": "hours",
+            "required": false,
+            "schema": {
+              "format": "int32",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "The newest this many, 1 to 200; default 50.",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MailMessages"
+                }
+              }
+            },
+            "description": "The newest messages first"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Not a console administrator"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "A state that does not exist"
+          }
+        },
+        "security": [
+          {
+            "console": []
+          }
+        ],
+        "summary": "The newest messages of the journal, by state, plugin, kind and person. A person is an id, never\nan address. Console administrators only.",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/admin/mail/retry": {
+      "post": {
+        "operationId": "retry",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RetryMailRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RetryMailResponse"
+                }
+              }
+            },
+            "description": "How many were put back and how many could not be"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Not a console administrator"
+          }
+        },
+        "security": [
+          {
+            "console": []
+          }
+        ],
+        "summary": "Puts dead mail back in the queue: one message by `id`, or the dead mail of a plugin, or all of\nit. A message whose address is already erased cannot be sent and stays dead. Console\nadministrators only.",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/admin/mail/status": {
+      "get": {
+        "operationId": "get_status",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MailStatus"
+                }
+              }
+            },
+            "description": "The counts"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Not a console administrator"
+          }
+        },
+        "security": [
+          {
+            "console": []
+          }
+        ],
+        "summary": "What waits, what was sent and what died in the last day, and whether mail is set up at all.\nConsole administrators only.",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/admin/plugins": {
+      "get": {
+        "operationId": "list_plugins",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminPlugins"
+                }
+              }
+            },
+            "description": "The installs"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "No console session"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Not a console administrator"
+          }
+        },
+        "security": [
+          {
+            "console": []
+          }
+        ],
+        "summary": "The installed plugins, with their state, what they were granted, their deliveries and which\nsettings still need a value. Console administrators only.",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/admin/plugins/{id}": {
+      "get": {
+        "operationId": "get_plugin",
+        "parameters": [
+          {
+            "description": "Plugin id",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminPlugin"
+                }
+              }
+            },
+            "description": "The install"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Not a console administrator"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "No such plugin"
+          }
+        },
+        "security": [
+          {
+            "console": []
+          }
+        ],
+        "summary": "One install. Console administrators only.",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/admin/plugins/{id}/calls": {
+      "get": {
+        "operationId": "calls",
+        "parameters": [
+          {
+            "description": "Plugin id",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Only calls newer than this; default: the last 24 hours.",
+            "in": "query",
+            "name": "since",
+            "required": false,
+            "schema": {
+              "format": "date-time",
+              "type": "string"
+            }
+          },
+          {
+            "description": "At most this many of the newest calls, 1 to 200; default 50.",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminPluginCalls"
+                }
+              }
+            },
+            "description": "The report"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Not a console administrator"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "No such plugin"
+          }
+        },
+        "security": [
+          {
+            "console": []
+          }
+        ],
+        "summary": "What the plugin did to the plugin API (ADR-0079): its newest calls and the counts by route and\nanswer. Console administrators only.",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/admin/plugins/{id}/grants": {
+      "put": {
+        "operationId": "grant",
+        "parameters": [
+          {
+            "description": "Plugin id",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GrantPluginRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminPlugin"
+                }
+              }
+            },
+            "description": "The install after the change"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Not a console administrator"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "No such plugin, or a course that is not there"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "A scope that is unknown or that the plugin did not ask for"
+          }
+        },
+        "security": [
+          {
+            "console": []
+          }
+        ],
+        "summary": "Replaces what a plugin may do and reach. The scopes stay within what it asked for. Console\nadministrators only.",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/admin/plugins/{id}/settings": {
+      "get": {
+        "operationId": "list_settings",
+        "parameters": [
+          {
+            "description": "Plugin id",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminPluginSettings"
+                }
+              }
+            },
+            "description": "The settings"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Not a console administrator"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "No such plugin"
+          }
+        },
+        "security": [
+          {
+            "console": []
+          }
+        ],
+        "summary": "The institution settings of a plugin, as its manifest declares them. A secret shows only\nwhether it is set. Console administrators only.",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/admin/plugins/{id}/settings/{key}": {
+      "delete": {
+        "operationId": "unset_setting",
+        "parameters": [
+          {
+            "description": "Plugin id",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Setting key",
+            "in": "path",
+            "name": "key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Removed, or there was no value"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Not a console administrator"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "No such plugin or setting"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "The setting belongs to a course"
+          }
+        },
+        "security": [
+          {
+            "console": []
+          }
+        ],
+        "summary": "Takes a value away, so that the default applies again. Console administrators only.",
+        "tags": [
+          "admin"
+        ]
+      },
+      "put": {
+        "operationId": "set_setting",
+        "parameters": [
+          {
+            "description": "Plugin id",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Setting key",
+            "in": "path",
+            "name": "key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetPluginSettingRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Stored, or it had this value already"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Not a console administrator"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "No such plugin or setting"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "The value does not meet the setting's spec, or the setting belongs to a course"
+          }
+        },
+        "security": [
+          {
+            "console": []
+          }
+        ],
+        "summary": "Sets one institution setting from text: a string stays text, a number, a boolean or a list is\nJSON. The value is checked against the manifest's spec and never returned. Console\nadministrators only.",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/admin/plugins/{id}/status": {
+      "put": {
+        "operationId": "set_status",
+        "parameters": [
+          {
+            "description": "Plugin id",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetPluginStatusRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminPlugin"
+                }
+              }
+            },
+            "description": "The install after the change"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Not a console administrator"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "No such plugin"
+          }
+        },
+        "security": [
+          {
+            "console": []
+          }
+        ],
+        "summary": "Switches a plugin on or off. Off, its token stops working, it is sent no event and its queued\nmail is cancelled (ADR-0085). Console administrators only.",
+        "tags": [
+          "admin"
         ]
       }
     },

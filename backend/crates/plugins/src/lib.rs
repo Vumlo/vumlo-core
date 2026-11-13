@@ -7,6 +7,7 @@
 //! configure is declared in the manifest and kept per install (`settings`, ADR-0072). This crate
 //! writes only the schema `plugins`.
 
+mod admin;
 mod delivery;
 mod error;
 mod limiter;

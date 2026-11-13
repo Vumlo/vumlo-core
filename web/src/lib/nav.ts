@@ -16,7 +16,8 @@ export function navFor(role: Role): NavItem[] {
     case "teacher":
       return [home, courses, calendar, { label: "nav.grading", href: "/grading", icon: "grading", match: starts("/grading") }];
     case "admin":
-      return [home, courses, calendar, { label: "nav.admin", href: "/admin", icon: "admin", match: starts("/admin") }];
+      // Administration is the console's (ADR-0095): its link is in the account menu.
+      return [home, courses, calendar];
     default:
       return [home, courses, calendar, { label: "nav.grades", href: "/grades", icon: "grades", match: starts("/grades") }];
   }

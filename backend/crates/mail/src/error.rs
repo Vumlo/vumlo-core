@@ -10,6 +10,11 @@ pub enum MailError {
     Host(String),
     #[error(transparent)]
     Invalid(#[from] ModelError),
+    /// The console's queue and journal are for a console administrator (ADR-0095).
+    #[error(transparent)]
+    Forbidden(#[from] access::AccessError),
+    #[error(transparent)]
+    Events(#[from] events::EventsError),
     /// The plugin made `mail.plugin_hourly_calls` accepted calls in the last hour.
     #[error("this plugin has sent too many mail calls in the last hour")]
     HourlyLimit { retry_after_secs: u64 },
@@ -28,6 +33,8 @@ impl From<MailError> for ApiError {
             | MailError::RecipientLimit { retry_after_secs } => Self::TooManyRequests {
                 retry_after_secs: Some(retry_after_secs),
             },
+            MailError::Forbidden(e) => e.into(),
+            MailError::Events(e) => e.into(),
             MailError::Db(e) => Self::from_db("mail", &e),
             // A configuration error is met at startup; a request never gets one.
             MailError::From(_) | MailError::Host(_) => Self::Internal,

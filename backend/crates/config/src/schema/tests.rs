@@ -20,6 +20,7 @@ fn the_public_keys_are_the_institution_profile_the_origin_and_the_file_limits() 
             "institution.name",
             "institution.short_name",
             "institution.time_zone",
+            "server.admin_origin",
             "server.public_origin",
         ]
     );

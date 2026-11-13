@@ -250,6 +250,13 @@ fn the_web_app_has_the_version_of_the_release() {
 }
 
 #[test]
+fn the_admin_console_has_the_version_of_the_release() {
+    let package: Value =
+        serde_json::from_str(include_str!("../../../../web-admin/package.json")).unwrap();
+    assert_eq!(package["version"], env!("CARGO_PKG_VERSION"));
+}
+
+#[test]
 fn the_desktop_app_has_the_version_of_the_release() {
     let package: Value =
         serde_json::from_str(include_str!("../../../../desktop/package.json")).unwrap();
@@ -266,7 +273,11 @@ fn the_desktop_app_has_the_version_of_the_release() {
 fn the_compose_example_names_its_images_after_the_release() {
     let compose = include_str!("../../../../deploy/compose.yaml");
     let tag = format!("VUMLO_VERSION:-{}}}", env!("CARGO_PKG_VERSION"));
-    assert_eq!(compose.matches(&tag).count(), 2, "backend and web: {tag}");
+    assert_eq!(
+        compose.matches(&tag).count(),
+        3,
+        "backend, web and console: {tag}"
+    );
 }
 
 // --- db ---------------------------------------------------------------------------------------

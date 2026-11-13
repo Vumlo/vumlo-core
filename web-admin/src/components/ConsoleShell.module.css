@@ -1,0 +1,21 @@
+.header {
+  position: sticky; top: 0; z-index: 20;
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px 20px; min-height: 68px;
+  padding: 12px max(24px, calc((100% - 1160px) / 2));
+  background: var(--bg);
+}
+.brand { display: flex; align-items: center; gap: 12px; border-radius: var(--radius-pill); }
+.title { font-size: 15px; font-weight: 600; padding: 4px 12px; border-radius: var(--radius-pill); background: var(--accent-soft); color: var(--accent-fg); }
+.spacer { flex: 1 1 0; }
+.who { font-size: 14px; color: var(--muted); }
+.main { min-height: calc(100vh - 69px); }
+.home { max-width: 640px; }
+.home h1 { font-size: 30px; line-height: 1.2; font-weight: 600; letter-spacing: -0.015em; margin-bottom: 8px; }
+
+@media (max-width: 720px) {
+  .header { min-height: 56px; padding: 0 8px 0 16px; gap: 8px; }
+  .who { display: none; }
+}
+.sections { list-style: none; margin: 24px 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 12px; }
+.section { display: flex; align-items: center; gap: 12px; min-height: 56px; padding: 0 20px; border-radius: var(--radius-inner); background: var(--surface); box-shadow: var(--shadow); font-weight: 500; }
+.section:hover { background: var(--hover); }
