@@ -10,6 +10,8 @@ must do, in order, besides getting the new release. See [RELEASING.md](RELEASING
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-11-14
+
 ### Upgrade notes
 
 - **Add `server.admin_origin` to `vumlo.toml` before starting this release** (ADR-0095). It is the address of
@@ -373,7 +375,8 @@ There is nothing to upgrade from; follow [docs/install.md](docs/install.md).
 - Any optional module, and an end-user CLI (ADR-0055).
 - Published container images: the images are built on your server from the archive.
 
-[Unreleased]: https://github.com/Vumlo/vumlo-core/compare/v0.6.1...HEAD
+[Unreleased]: https://github.com/Vumlo/vumlo-core/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/Vumlo/vumlo-core/compare/v0.6.1...v0.7.0
 [0.6.1]: https://github.com/Vumlo/vumlo-core/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/Vumlo/vumlo-core/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/Vumlo/vumlo-core/compare/v0.4.1...v0.5.0
