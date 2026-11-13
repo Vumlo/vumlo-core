@@ -287,6 +287,7 @@ fn access(role: Option<CourseRole>, is_owner: bool, status: CourseStatus) -> Cou
         role,
         is_owner,
         status,
+        unit_grant: None,
     }
 }
 
@@ -1166,4 +1167,292 @@ fn the_user_a_plugin_is_told_of_is_the_actor_and_their_institution_role() {
     let teacher = actor(Role::Teacher);
     let user = plugin_user(&teacher);
     assert_eq!((user.id, user.role), (teacher.user_id(), Role::Teacher));
+}
+
+fn unit_access(grant: UnitGrant, status: CourseStatus) -> CourseAccess {
+    CourseAccess {
+        role: None,
+        is_owner: false,
+        status,
+        unit_grant: Some(grant),
+    }
+}
+
+type CourseAction = fn(CourseAccess) -> Action;
+
+/// Each course action with the ability that lets a unit grant through (`None`: any grant).
+fn unit_actions() -> Vec<(Option<UnitAbility>, Vec<CourseAction>)> {
+    use UnitAbility::{EditContent, Grade, ManageCourses, ManageRoster, ViewGrades};
+    vec![
+        (
+            None,
+            vec![Action::ViewCourse, Action::ManageContent, |access| {
+                Action::ViewContent {
+                    access,
+                    module: Release {
+                        published: false,
+                        publish_at: None,
+                    },
+                    submodule: None,
+                    item: None,
+                    at: DateTime::UNIX_EPOCH,
+                }
+            }],
+        ),
+        (
+            Some(ViewGrades),
+            vec![Action::ViewGradebook, Action::ViewSubmissions],
+        ),
+        (Some(EditContent), vec![Action::EditContent]),
+        (
+            Some(Grade),
+            vec![
+                Action::GradeAssignment,
+                Action::PublishGrades,
+                Action::ManageGradebook,
+            ],
+        ),
+        (
+            Some(ManageRoster),
+            vec![
+                Action::ManageRoster,
+                Action::ChangeRoster,
+                |access| Action::ManageMembership {
+                    access,
+                    role: Student,
+                },
+                |access| Action::ManageMembership {
+                    access,
+                    role: Assistant,
+                },
+                |access| Action::ManageMembership {
+                    access,
+                    role: Teacher,
+                },
+                Action::LinkGroups,
+                Action::ChangeGroupLinks,
+            ],
+        ),
+        (
+            Some(ManageCourses),
+            vec![
+                Action::EditCourse,
+                Action::PublishCourse,
+                Action::ArchiveCourse,
+            ],
+        ),
+    ]
+}
+
+#[test]
+fn a_unit_grant_lets_through_what_its_abilities_allow() {
+    let teacher = actor(Role::Teacher);
+    let unit = Uuid::now_v7();
+    for (needs, actions) in unit_actions() {
+        let with = match needs {
+            Some(ability) => UnitGrant::new(unit, [ability]),
+            None => UnitGrant::new(unit, []),
+        };
+        let without = UnitGrant::new(
+            unit,
+            UnitAbility::ALL
+                .into_iter()
+                .filter(|ability| Some(*ability) != needs),
+        );
+        for action in actions {
+            let granted = action(unit_access(with, Published));
+            assert_eq!(authorize(&teacher, granted), Ok(()), "{granted:?}");
+            let refused = action(unit_access(without, Published));
+            let expected = if needs.is_none() {
+                Ok(())
+            } else {
+                Err(AccessError::Denied)
+            };
+            assert_eq!(authorize(&teacher, refused), expected, "{refused:?}");
+        }
+    }
+    // View needs no ability, and sees a draft; no grant at all sees nothing.
+    let draft = unit_access(UnitGrant::new(unit, []), Draft);
+    assert_eq!(authorize(&teacher, Action::ViewCourse(draft)), Ok(()));
+    assert_eq!(
+        authorize(&teacher, Action::ViewCourse(non_member())),
+        Err(AccessError::Denied)
+    );
+}
+
+#[test]
+fn a_unit_grant_never_deletes_transfers_or_acts_as_a_student() {
+    let teacher = actor(Role::Teacher);
+    let access = unit_access(UnitGrant::full(Uuid::now_v7()), Published);
+    for action in [
+        Action::DeleteCourse(access),
+        Action::TransferOwnership(access),
+        Action::SubmitWork(access),
+        Action::MarkDone(access),
+        Action::ViewOwnGrades(access),
+        Action::ViewOwnSubmission(access),
+    ] {
+        assert_eq!(
+            authorize(&teacher, action),
+            Err(AccessError::Denied),
+            "{action:?}"
+        );
+    }
+}
+
+#[test]
+fn a_student_holds_no_unit_grant() {
+    let student = actor(Role::Student);
+    let grant = UnitGrant::full(Uuid::now_v7());
+    let access = unit_access(grant, Draft);
+    assert_eq!(
+        authorize(&student, Action::ViewCourse(access)),
+        Err(AccessError::Denied)
+    );
+    assert_eq!(
+        authorize(&student, Action::EditContent(access)),
+        Err(AccessError::Denied)
+    );
+    assert_eq!(
+        authorize(&student, Action::ViewUnit(Some(grant))),
+        Err(AccessError::Denied)
+    );
+    assert_eq!(implicit_access(&student, access), None);
+}
+
+#[test]
+fn unit_actions_need_the_grant_or_admin() {
+    let (admin, teacher, student) = (
+        actor(Role::Admin),
+        actor(Role::Teacher),
+        actor(Role::Student),
+    );
+    let unit = Uuid::now_v7();
+    let viewer = UnitGrant::new(unit, []);
+    assert_eq!(
+        authorize(&teacher, Action::ViewUnit(None)),
+        Err(AccessError::Denied)
+    );
+    assert_eq!(authorize(&admin, Action::ViewUnit(None)), Ok(()));
+    assert_eq!(authorize(&teacher, Action::ViewUnit(Some(viewer))), Ok(()));
+    for (ability, action) in [
+        (
+            UnitAbility::ManageUnits,
+            Action::ManageUnits as fn(Option<UnitGrant>) -> Action,
+        ),
+        (UnitAbility::ManageCourses, Action::ManageUnitCourses),
+    ] {
+        assert_eq!(authorize(&admin, action(None)), Ok(()));
+        assert_eq!(authorize(&teacher, action(None)), Err(AccessError::Denied));
+        assert_eq!(
+            authorize(&teacher, action(Some(viewer))),
+            Err(AccessError::Denied)
+        );
+        assert_eq!(
+            authorize(&teacher, action(Some(UnitGrant::new(unit, [ability])))),
+            Ok(())
+        );
+    }
+    assert_eq!(authorize(&admin, Action::ManageUnitRoleAbilities), Ok(()));
+    for who in [&teacher, &student] {
+        assert_eq!(
+            authorize(who, Action::ManageUnitRoleAbilities),
+            Err(AccessError::Denied)
+        );
+    }
+    for who in [&admin, &teacher, &student] {
+        assert_eq!(authorize(who, Action::ViewOwnUnits), Ok(()));
+    }
+}
+
+#[test]
+fn an_archived_course_refuses_unit_writes() {
+    let teacher = actor(Role::Teacher);
+    let access = unit_access(UnitGrant::full(Uuid::now_v7()), Archived);
+    assert_eq!(
+        authorize(&teacher, Action::EditContent(access)),
+        Err(AccessError::Archived)
+    );
+    assert_eq!(authorize(&teacher, Action::ViewCourse(access)), Ok(()));
+}
+
+#[test]
+fn implicit_access_names_the_way_in() {
+    let grant = UnitGrant::full(Uuid::now_v7());
+    assert_eq!(
+        implicit_access(&actor(Role::Admin), owner()),
+        Some(Via::Admin)
+    );
+    assert_eq!(
+        implicit_access(&actor(Role::Teacher), unit_access(grant, Published)),
+        Some(Via::Unit)
+    );
+    let on_the_course = CourseAccess {
+        role: Some(Teacher),
+        ..unit_access(grant, Published)
+    };
+    assert_eq!(implicit_access(&actor(Role::Teacher), on_the_course), None);
+    let owning = CourseAccess {
+        is_owner: true,
+        ..unit_access(grant, Published)
+    };
+    assert_eq!(implicit_access(&actor(Role::Teacher), owning), None);
+    assert_eq!(implicit_access(&actor(Role::Teacher), non_member()), None);
+}
+
+#[test]
+fn course_can_answers_as_the_api_would() {
+    let teacher = actor(Role::Teacher);
+    let grant = UnitGrant::new(
+        Uuid::now_v7(),
+        [UnitAbility::ManageRoster, UnitAbility::Grade],
+    );
+    let can = course_can(&teacher, unit_access(grant, Published));
+    assert_eq!(
+        can,
+        CourseCan {
+            view_grades: false,
+            edit_content: false,
+            grade: true,
+            manage_roster: true,
+            manage_course: false,
+        }
+    );
+    let archived = course_can(&teacher, unit_access(grant, Archived));
+    // Writes read as refused; `manage_roster` is the reading rule `ManageRoster` (the brief's choice).
+    assert!(!archived.grade && archived.manage_roster);
+    let all = course_can(&actor(Role::Admin), non_member());
+    assert!(
+        all.view_grades && all.edit_content && all.grade && all.manage_roster && all.manage_course
+    );
+}
+
+#[test]
+fn a_unit_grant_keeps_its_abilities_in_order() {
+    let unit = Uuid::now_v7();
+    let grant = UnitGrant::new(
+        unit,
+        [
+            UnitAbility::ManageUnits,
+            UnitAbility::ViewGrades,
+            UnitAbility::ViewGrades,
+        ],
+    );
+    assert_eq!(
+        grant.abilities(),
+        vec![UnitAbility::ViewGrades, UnitAbility::ManageUnits]
+    );
+    assert_eq!(UnitGrant::full(unit).abilities(), UnitAbility::ALL.to_vec());
+    assert!(!grant.has(UnitAbility::Grade));
+    for ability in UnitAbility::ALL {
+        assert_eq!(ability.as_str().parse::<UnitAbility>(), Ok(ability));
+    }
+    assert_eq!("viewer".parse::<UnitRole>(), Ok(UnitRole::Viewer));
+}
+
+#[test]
+fn unit_role_allowed_is_for_teachers_and_admins() {
+    assert!(unit_role_allowed(Role::Teacher));
+    assert!(unit_role_allowed(Role::Admin));
+    assert!(!unit_role_allowed(Role::Student));
 }

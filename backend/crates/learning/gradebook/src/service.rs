@@ -549,6 +549,7 @@ pub async fn my_grades(
         role: Some(CourseRole::Student),
         is_owner: false,
         status: CourseStatus::Published,
+        unit_grant: None,
     };
     published_grades(conn, actor, course_id, access).await
 }

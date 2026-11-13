@@ -104,6 +104,7 @@ fn access_of(actor: &Actor, course: &Course, role: Option<CourseRole>) -> Course
         role,
         is_owner: course.owner_id == actor.user_id(),
         status: course.status,
+        unit_grant: None,
     }
 }
 

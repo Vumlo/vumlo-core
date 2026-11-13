@@ -7,6 +7,7 @@ mod extract;
 mod plugin;
 #[cfg(feature = "testing")]
 mod test_support;
+mod unit;
 
 pub use actor::{Actor, PendingActor};
 pub use extract::{ActorSource, Authenticated};
@@ -15,6 +16,7 @@ pub use plugin::{
     authorize_plugin, authorize_plugin_course, authorize_plugin_route, plugin_course_filter,
     plugin_user,
 };
+pub use unit::{UnitAbility, UnitGrant, UnitRole, unit_role_allowed};
 
 use common::{ApiError, Role, text_enum};
 
@@ -37,12 +39,14 @@ pub enum CourseStatus {
 text_enum!(CourseStatus { Draft => "draft", Published => "published", Archived => "archived" });
 
 /// How one actor relates to one course. `teaching` fills it from the database; the rules that
-/// read it live only here. An admin has no membership: `role` is `None` for them.
+/// read it live only here. An admin has no membership: `role` is `None` for them. `unit_grant` is
+/// what the actor's unit roles give them on the unit the course sits in (ADR-0094).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CourseAccess {
     pub role: Option<CourseRole>,
     pub is_owner: bool,
     pub status: CourseStatus,
+    pub unit_grant: Option<UnitGrant>,
 }
 
 impl CourseAccess {
@@ -57,7 +61,17 @@ impl CourseAccess {
             role: self.role.filter(|role| *role != CourseRole::Teacher),
             is_owner: false,
             status: self.status,
+            unit_grant: None,
         }
+    }
+
+    /// Does a unit grant hold `ability`? Viewing needs none: see [`CourseAccess::has_unit_grant`].
+    fn unit(self, ability: UnitAbility) -> bool {
+        self.unit_grant.is_some_and(|grant| grant.has(ability))
+    }
+
+    fn has_unit_grant(self) -> bool {
+        self.unit_grant.is_some()
     }
 
     /// Owner, teacher or assistant: may see every status and manage students.
@@ -211,13 +225,32 @@ pub enum Action {
     /// Read groups, subgroups and their members. Admins only until task 015 decides how teachers
     /// pick a group (ADR-0032).
     ViewGroups,
+    /// List the units one holds a role in. Which ones is decided by the grants themselves.
+    ViewOwnUnits,
+    /// Read a unit, its roles and its courses (ADR-0094): an admin, or any grant on it. `None` is
+    /// "no grant on that unit".
+    ViewUnit(Option<UnitGrant>),
+    /// Create a course in a unit, or put a course into one or take it out: an admin, or
+    /// `manage_courses` on the unit. Carries no [`CourseAccess`], so an archived course may move.
+    ManageUnitCourses(Option<UnitGrant>),
+    /// Create, rename, move and delete a unit, and grant or revoke roles on it: an admin, or
+    /// `manage_units` on its parent (the caller passes the grant on the parent; a top-level unit
+    /// has none).
+    ManageUnits(Option<UnitGrant>),
+    /// Change what the unit roles may do. Admins only.
+    ManageUnitRoleAbilities,
 }
 
 impl Action {
     /// The same action with the course access read as it applies to `actor`.
     fn for_actor(self, actor: &Actor) -> Self {
         let mine = |access: CourseAccess| access.for_actor(actor);
+        // A grant a student somehow holds is ignored (ADR-0037, ADR-0094).
+        let unit = |grant: Option<UnitGrant>| grant.filter(|_| actor.role() != Role::Student);
         match self {
+            Self::ViewUnit(grant) => Self::ViewUnit(unit(grant)),
+            Self::ManageUnitCourses(grant) => Self::ManageUnitCourses(unit(grant)),
+            Self::ManageUnits(grant) => Self::ManageUnits(unit(grant)),
             Self::ArchiveCourse(access) => Self::ArchiveCourse(mine(access)),
             Self::EditContent(access) => Self::EditContent(mine(access)),
             Self::ChangeRoster(access) => Self::ChangeRoster(mine(access)),
@@ -269,7 +302,9 @@ impl Action {
             | Self::ManageTerms
             | Self::ViewTerms
             | Self::ManageGroups
-            | Self::ViewGroups => self,
+            | Self::ViewGroups
+            | Self::ViewOwnUnits
+            | Self::ManageUnitRoleAbilities => self,
         }
     }
 
@@ -314,7 +349,12 @@ impl Action {
             | Self::ManageTerms
             | Self::ViewTerms
             | Self::ManageGroups
-            | Self::ViewGroups => None,
+            | Self::ViewGroups
+            | Self::ViewOwnUnits
+            | Self::ViewUnit(_)
+            | Self::ManageUnitCourses(_)
+            | Self::ManageUnits(_)
+            | Self::ManageUnitRoleAbilities => None,
         }
     }
 }
@@ -345,6 +385,47 @@ pub fn group_role_allowed(institution: Role) -> bool {
 /// actions are audited.
 pub fn implicit_course_owner(actor: &Actor) -> bool {
     actor.role() == Role::Admin
+}
+
+/// How an actor reached a course without being on it (ADR-0094).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Via {
+    Admin,
+    Unit,
+}
+text_enum!(Via { Admin => "admin", Unit => "unit" });
+
+/// How the actor reached the course without being on it, or `None` when they are on it. Every
+/// change made this way is audited: the course does not show who made it.
+pub fn implicit_access(actor: &Actor, access: CourseAccess) -> Option<Via> {
+    if actor.role() == Role::Admin {
+        return Some(Via::Admin);
+    }
+    let access = access.for_actor(actor);
+    (access.has_unit_grant() && !access.is_owner && access.role.is_none()).then_some(Via::Unit)
+}
+
+/// The course-level actions the actor may take, for the web app (ADR-0094).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CourseCan {
+    pub view_grades: bool,
+    pub edit_content: bool,
+    pub grade: bool,
+    pub manage_roster: bool,
+    pub manage_course: bool,
+}
+
+/// What the actor may do in the course, each answered by [`authorize`] as the API would: an
+/// archived course reads as `false` for a write.
+pub fn course_can(actor: &Actor, access: CourseAccess) -> CourseCan {
+    let can = |action| authorize(actor, action).is_ok();
+    CourseCan {
+        view_grades: can(Action::ViewGradebook(access)),
+        edit_content: can(Action::EditContent(access)),
+        grade: can(Action::GradeAssignment(access)),
+        manage_roster: can(Action::ManageRoster(access)),
+        manage_course: can(Action::EditCourse(access)),
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
@@ -392,17 +473,30 @@ pub fn authorize(actor: &Actor, action: Action) -> Result<(), AccessError> {
         Action::CreateCourse => matches!(actor.role(), Role::Admin | Role::Teacher),
         Action::ViewOwnCourses => true,
         Action::ViewEditorProfiles => true,
+        Action::ViewOwnUnits => true,
+        Action::ViewUnit(grant) => is_admin || grant.is_some(),
+        Action::ManageUnitCourses(grant) => {
+            is_admin || grant.is_some_and(|grant| grant.has(UnitAbility::ManageCourses))
+        }
+        Action::ManageUnits(grant) => {
+            is_admin || grant.is_some_and(|grant| grant.has(UnitAbility::ManageUnits))
+        }
+        Action::ManageUnitRoleAbilities => is_admin,
         Action::ViewCourse(access) => {
             is_admin
                 || access.is_staff()
+                || access.has_unit_grant()
                 || (access.role == Some(CourseRole::Student) && access.status.is_open_to_students())
         }
-        Action::PublishCourse(access)
-        | Action::ArchiveCourse(access)
-        | Action::LinkGroups(access)
-        | Action::ChangeGroupLinks(access) => is_admin || access.is_owner_or_teacher(),
+        Action::PublishCourse(access) | Action::ArchiveCourse(access) => {
+            is_admin || access.is_owner_or_teacher() || access.unit(UnitAbility::ManageCourses)
+        }
+        Action::LinkGroups(access) | Action::ChangeGroupLinks(access) => {
+            is_admin || access.is_owner_or_teacher() || access.unit(UnitAbility::ManageRoster)
+        }
         Action::ManageMembership { access, role } => {
             is_admin
+                || access.unit(UnitAbility::ManageRoster)
                 || match role {
                     CourseRole::Student => access.is_staff(),
                     CourseRole::Teacher | CourseRole::Assistant => access.is_owner_or_teacher(),
@@ -411,16 +505,24 @@ pub fn authorize(actor: &Actor, action: Action) -> Result<(), AccessError> {
         Action::DeleteCourse(access) | Action::TransferOwnership(access) => {
             is_admin || access.is_owner
         }
-        Action::ManageContent(access)
-        | Action::EditContent(access)
-        | Action::GradeAssignment(access)
+        Action::ManageContent(access) => is_admin || access.is_staff() || access.has_unit_grant(),
+        Action::EditContent(access) => {
+            is_admin || access.is_staff() || access.unit(UnitAbility::EditContent)
+        }
+        Action::GradeAssignment(access)
         | Action::PublishGrades(access)
-        | Action::ViewGradebook(access)
-        | Action::ManageGradebook(access)
-        | Action::ViewSubmissions(access)
-        | Action::ManageRoster(access)
-        | Action::ChangeRoster(access)
-        | Action::EditCourse(access) => is_admin || access.is_staff(),
+        | Action::ManageGradebook(access) => {
+            is_admin || access.is_staff() || access.unit(UnitAbility::Grade)
+        }
+        Action::ViewGradebook(access) | Action::ViewSubmissions(access) => {
+            is_admin || access.is_staff() || access.unit(UnitAbility::ViewGrades)
+        }
+        Action::ManageRoster(access) | Action::ChangeRoster(access) => {
+            is_admin || access.is_staff() || access.unit(UnitAbility::ManageRoster)
+        }
+        Action::EditCourse(access) => {
+            is_admin || access.is_staff() || access.unit(UnitAbility::ManageCourses)
+        }
         Action::ViewFormerGrades { has_rows } => has_rows,
         Action::ViewOwnGrades(access)
         | Action::SubmitWork(access)
@@ -437,6 +539,7 @@ pub fn authorize(actor: &Actor, action: Action) -> Result<(), AccessError> {
         } => {
             is_admin
                 || access.is_staff()
+                || access.has_unit_grant()
                 || (access.role == Some(CourseRole::Student)
                     && access.status.is_open_to_students()
                     && [Some(module), submodule, item]

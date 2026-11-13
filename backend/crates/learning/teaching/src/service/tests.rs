@@ -213,7 +213,8 @@ async fn course_access_describes_the_actor_and_hides_courses_they_cannot_view() 
             CourseAccess {
                 role: Some(CourseRole::Teacher),
                 is_owner: true,
-                status: CourseStatus::Draft
+                status: CourseStatus::Draft,
+                unit_grant: None,
             }
         );
         let access = course_access(&mut conn, &admin, course.id).await.unwrap();
