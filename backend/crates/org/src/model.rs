@@ -1,4 +1,6 @@
+use access::UnitRole;
 use chrono::{DateTime, Datelike, NaiveDate, Utc};
+use common::Role;
 use uuid::Uuid;
 
 const NAME_MAX_LEN: usize = 100;
@@ -148,6 +150,27 @@ pub struct Unit {
 pub struct UnitUpdate {
     pub name: Option<OrgName>,
     pub parent_id: Option<Option<Uuid>>,
+}
+
+/// A person's role on one unit, as the unit's role list shows it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UnitRoleEntry {
+    pub user_id: Uuid,
+    pub name: String,
+    pub surname: String,
+    pub email: String,
+    pub role: UnitRole,
+}
+
+/// Someone who could be given a role on a unit.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UnitCandidate {
+    pub user_id: Uuid,
+    pub name: String,
+    pub surname: String,
+    pub email: String,
+    /// The institution role: `teacher` or `admin`.
+    pub role: Role,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

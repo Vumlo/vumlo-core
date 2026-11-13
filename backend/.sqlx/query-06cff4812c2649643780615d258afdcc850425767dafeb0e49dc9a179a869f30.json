@@ -1,0 +1,30 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO org.unit_roles (unit_id, user_id, role) VALUES ($1, $2, $3)\n         ON CONFLICT (unit_id, user_id) DO UPDATE SET role = EXCLUDED.role\n             WHERE org.unit_roles.role IS DISTINCT FROM EXCLUDED.role\n         RETURNING user_id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "user_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "org.unit_roles",
+            "name": "user_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "06cff4812c2649643780615d258afdcc850425767dafeb0e49dc9a179a869f30"
+}

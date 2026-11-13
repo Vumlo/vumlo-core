@@ -15,13 +15,8 @@ use crate::model::{
 use crate::repo;
 use access::Actor;
 use access::{self, Action, CourseAccess, CourseStatus};
-use common::{Page, PageParams};
+use common::{CANDIDATE_LIMIT, CANDIDATE_MIN_CHARS, Page, PageParams, like_pattern};
 use events::{self, AuditEntry};
-
-/// The most candidates a search returns.
-const CANDIDATE_LIMIT: i64 = 20;
-/// The shortest search text.
-const CANDIDATE_MIN_CHARS: usize = 2;
 
 fn course_entry(action: &'static str, course_id: Uuid, meta: serde_json::Value) -> AuditEntry {
     AuditEntry {
@@ -290,20 +285,6 @@ pub async fn former_people(
     Ok(repo::list_former(conn, course_id, candidates, with_emails).await?)
 }
 
-/// Escapes `\`, `%` and `_` so that the text is matched as it is.
-fn like_pattern(text: &str) -> String {
-    let mut pattern = String::with_capacity(text.len() + 2);
-    pattern.push('%');
-    for c in text.chars() {
-        if matches!(c, '\\' | '%' | '_') {
-            pattern.push('\\');
-        }
-        pattern.push(c);
-    }
-    pattern.push('%');
-    pattern
-}
-
 /// Active people who are not on the course and whose name, surname or email contains `q`.
 pub async fn course_candidates(
     conn: &mut PgConnection,
@@ -319,6 +300,3 @@ pub async fn course_candidates(
     }
     Ok(repo::search_candidates(conn, course_id, &like_pattern(q), CANDIDATE_LIMIT).await?)
 }
-
-#[cfg(test)]
-mod tests;

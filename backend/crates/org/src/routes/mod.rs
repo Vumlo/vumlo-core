@@ -5,6 +5,7 @@ mod groups;
 mod institution;
 mod subgroups;
 mod terms;
+mod unit_roles;
 mod units;
 
 use access::ActorSource;
@@ -62,6 +63,11 @@ where
         .routes(routes!(subgroups::remove_subgroup_member))
         .routes(routes!(units::create_unit, units::list_units))
         .routes(routes!(units::update_unit, units::delete_unit))
+        .routes(routes!(units::list_unit_roles))
+        .routes(routes!(units::put_unit_role, units::delete_unit_role))
+        .routes(routes!(units::get_unit_candidates))
+        .routes(routes!(unit_roles::get_unit_role_abilities))
+        .routes(routes!(unit_roles::put_unit_role_abilities))
 }
 
 impl From<OrgError> for ApiError {
@@ -93,6 +99,8 @@ impl From<OrgError> for ApiError {
             }
             OrgError::UnitInUse => Self::Conflict("the unit has subunits or courses"),
             OrgError::UnitCycle => Self::invalid_field("parent_id", error.to_string()),
+            OrgError::RoleNotAllowed => Self::invalid_field("role", error.to_string()),
+            OrgError::QueryTooShort => Self::invalid_field("q", "needs at least two characters"),
             OrgError::TermInUse => Self::Conflict("a course uses this term"),
             OrgError::GroupInUse => Self::Conflict("a course uses this group"),
             OrgError::SubgroupInUse => Self::Conflict("a course uses this subgroup"),

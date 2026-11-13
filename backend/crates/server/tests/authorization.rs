@@ -401,6 +401,20 @@ fn operations(c: &Ctx, other_user: Uuid) -> Vec<Call> {
             Some(json!({"name": "evil2"})),
         ),
         call("DELETE", format!("/units/{}", c.unit), None),
+        call("GET", format!("/units/{}/roles", c.unit), None),
+        call(
+            "PUT",
+            format!("/units/{}/roles/{}", c.unit, c.student),
+            Some(json!({"role": "viewer"})),
+        ),
+        call(
+            "DELETE",
+            format!("/units/{}/roles/{}", c.unit, c.student),
+            None,
+        ),
+        call("GET", format!("/units/{}/candidates?q=ab", c.unit), None),
+        call("GET", "/admin/unit-roles".into(), None),
+        // `PUT /admin/unit-roles/{role}` is not here: its path names a role, not an id.
     ]
 }
 
@@ -874,6 +888,9 @@ async fn the_list_of_operations_is_the_api() {
             "POST /mail/opt-out/{token}",
             "GET /mail/opt-in/{token}",
             "POST /mail/opt-in/{token}",
+            // The path names a role (`manager`, `viewer`), not an id, so the list above cannot
+            // spell it with the nil id; `tests/org.rs` checks who may call it.
+            "PUT /admin/unit-roles/{role}",
             // The routes of a plugin's own server: who may call each is in its manifest, and
             // `tests/plugin_routes.rs` checks every answer.
             "GET /plugins/{plugin_id}/{path}",

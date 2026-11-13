@@ -11,13 +11,16 @@ use uuid::Uuid;
 
 use super::model::{
     DownloadUrl, Group, GroupMember, GroupOption, MemberLine, MemberProblem, ModelError, OrgName,
-    Subgroup, Term, TermDates, TermUpdate, Unit, UnitUpdate,
+    Subgroup, Term, TermDates, TermUpdate, Unit, UnitCandidate, UnitRoleEntry, UnitUpdate,
 };
 use super::repo;
 use access::Actor;
-use access::{self, AccessError, Action, UnitGrant, group_role_allowed};
+use access::{
+    self, AccessError, Action, UnitAbility, UnitGrant, UnitRole, group_role_allowed,
+    unit_role_allowed,
+};
 use auth::{self, AuthError};
-use common::{Page, PageParams};
+use common::{CANDIDATE_LIMIT, CANDIDATE_MIN_CHARS, Page, PageParams, like_pattern};
 use events::{self, AuditEntry, Event, EventsError};
 use vumlo_config::InstitutionMode;
 
@@ -43,6 +46,10 @@ pub enum OrgError {
     UnitCycle,
     #[error("the unit has subunits or courses")]
     UnitInUse,
+    #[error("this user cannot hold a unit role")]
+    RoleNotAllowed,
+    #[error("the search text is too short")]
+    QueryTooShort,
     #[error("a term with this name already exists")]
     TermNameTaken,
     #[error("a group with this name already exists")]
@@ -1028,6 +1035,186 @@ pub async fn delete_unit(conn: &mut PgConnection, actor: &Actor, id: Uuid) -> Re
         "unit",
         id,
         json!({"name": unit.name, "parent_id": unit.parent_id}),
+    )
+    .await
+}
+
+// ---------------------------------------------------------------------------------------------
+// Unit roles and the abilities admins switch (ADR-0094)
+// ---------------------------------------------------------------------------------------------
+
+/// The unit, once the actor is known to see it and to hold `manage_units` on its parent (an
+/// administrator for a top-level unit): the check behind granting, revoking and searching for
+/// people. Takes no lock, so a caller who is refused has not delayed anyone.
+async fn unit_managed_from_above(
+    conn: &mut PgConnection,
+    actor: &Actor,
+    unit_id: Uuid,
+) -> Result<Unit, OrgError> {
+    let (unit, _) = visible_unit(conn, actor, unit_id).await?;
+    let grant = parent_grant(conn, actor, unit.parent_id).await?;
+    access::authorize(actor, Action::ManageUnits(grant))?;
+    Ok(unit)
+}
+
+/// The roles held on this unit itself, by surname. Anyone who sees the unit may list them.
+pub async fn list_unit_roles(
+    conn: &mut PgConnection,
+    actor: &Actor,
+    unit_id: Uuid,
+) -> Result<Vec<UnitRoleEntry>, OrgError> {
+    visible_unit(conn, actor, unit_id).await?;
+    Ok(repo::list_unit_roles(conn, unit_id).await?)
+}
+
+/// Gives a teacher or an administrator a role on the unit (replacing the one they held). Needs
+/// `manage_units` on the unit's parent, so nobody changes the roles of the unit their own role sits
+/// on. The person's row is read `FOR SHARE` after the caller is authorized, so a demotion cannot slip
+/// in between the check of the institution role and the write (ADR-0037), and a refused caller never
+/// waits for that lock.
+pub async fn set_unit_role(
+    conn: &mut PgConnection,
+    actor: &Actor,
+    unit_id: Uuid,
+    user_id: Uuid,
+    role: UnitRole,
+) -> Result<(), OrgError> {
+    unit_managed_from_above(conn, actor, unit_id).await?;
+    let user = auth::find_user_shared(conn, user_id)
+        .await?
+        .ok_or(OrgError::MemberNotFound)?;
+    // The lock holds the person's institution role. The caller's grant is not decided by the
+    // person's row: it comes from the tree and the caller's own roles, and waiting on the lock
+    // changes neither, so it is not checked again.
+    if !unit_role_allowed(user.role) {
+        return Err(OrgError::RoleNotAllowed);
+    }
+    let changed = repo::upsert_unit_role(conn, unit_id, user_id, role)
+        .await
+        .map_err(|e| match &e {
+            // The unit was deleted since we looked.
+            sqlx::Error::Database(db) if db.is_foreign_key_violation() => OrgError::UnitNotFound,
+            _ => OrgError::Db(e),
+        })?;
+    if changed {
+        audit(
+            conn,
+            actor,
+            "unit.role.set",
+            "unit",
+            unit_id,
+            json!({"user_id": user_id, "role": role.as_str()}),
+        )
+        .await?;
+    }
+    Ok(())
+}
+
+/// Takes a person's role on the unit away. Needs `manage_units` on the unit's parent.
+pub async fn remove_unit_role(
+    conn: &mut PgConnection,
+    actor: &Actor,
+    unit_id: Uuid,
+    user_id: Uuid,
+) -> Result<(), OrgError> {
+    unit_managed_from_above(conn, actor, unit_id).await?;
+    let role = repo::delete_unit_role(conn, unit_id, user_id)
+        .await?
+        .ok_or(OrgError::MemberNotFound)?;
+    audit(
+        conn,
+        actor,
+        "unit.role.remove",
+        "unit",
+        unit_id,
+        json!({"user_id": user_id, "role": role.as_str()}),
+    )
+    .await
+}
+
+/// Takes every unit role of a person who stopped being a teacher, and audits each. For
+/// `learning::people::update_user`, which has authorized `ManageUsers` and holds the person's row
+/// (the way it calls `teaching::drop_teacher_memberships`).
+pub async fn drop_unit_roles(
+    conn: &mut PgConnection,
+    actor: &Actor,
+    user_id: Uuid,
+) -> Result<(), OrgError> {
+    for (unit_id, role) in repo::delete_roles_of_user(conn, user_id).await? {
+        audit(
+            conn,
+            actor,
+            "unit.role.remove",
+            "unit",
+            unit_id,
+            json!({"user_id": user_id, "role": role.as_str(), "reason": "role_change"}),
+        )
+        .await?;
+    }
+    Ok(())
+}
+
+/// Active teachers and administrators without a role on the unit whose name or email contains `q`.
+/// Needs `manage_units` on the unit's parent, like granting does.
+pub async fn unit_candidates(
+    conn: &mut PgConnection,
+    actor: &Actor,
+    unit_id: Uuid,
+    q: &str,
+) -> Result<Vec<UnitCandidate>, OrgError> {
+    unit_managed_from_above(conn, actor, unit_id).await?;
+    let q = q.trim();
+    if q.chars().count() < CANDIDATE_MIN_CHARS {
+        return Err(OrgError::QueryTooShort);
+    }
+    Ok(repo::search_unit_candidates(conn, unit_id, &like_pattern(q), CANDIDATE_LIMIT).await?)
+}
+
+/// The switches each unit role has now: every role, with its abilities in the order of
+/// [`UnitAbility::ALL`]. Administrators only.
+pub async fn unit_role_abilities(
+    conn: &mut PgConnection,
+    actor: &Actor,
+) -> Result<Vec<(UnitRole, Vec<UnitAbility>)>, OrgError> {
+    access::authorize(actor, Action::ManageUnitRoleAbilities)?;
+    let on = repo::list_role_abilities(conn).await?;
+    Ok([UnitRole::Manager, UnitRole::Viewer]
+        .into_iter()
+        .map(|role| {
+            let abilities = UnitAbility::ALL
+                .into_iter()
+                .filter(|ability| on.contains(&(role, *ability)))
+                .collect();
+            (role, abilities)
+        })
+        .collect())
+}
+
+/// Replaces the switches of a unit role by exactly these, in one statement pair under a table lock.
+/// Every request after it reads the new set (nothing caches grants). Administrators only.
+pub async fn set_unit_role_abilities(
+    conn: &mut PgConnection,
+    actor: &Actor,
+    role: UnitRole,
+    abilities: Vec<UnitAbility>,
+) -> Result<(), OrgError> {
+    access::authorize(actor, Action::ManageUnitRoleAbilities)?;
+    // Sorted and without duplicates, whatever order they came in.
+    let abilities: Vec<UnitAbility> = UnitAbility::ALL
+        .into_iter()
+        .filter(|ability| abilities.contains(ability))
+        .collect();
+    let names: Vec<&str> = abilities.iter().map(|ability| ability.as_str()).collect();
+    repo::lock_role_abilities(conn).await?;
+    repo::replace_role_abilities(conn, role, &names).await?;
+    audit(
+        conn,
+        actor,
+        "unit.abilities.set",
+        "unit_role",
+        // A role has no row of its own: the entry names the installation by the nil id.
+        Uuid::nil(),
+        json!({"role": role.as_str(), "abilities": names}),
     )
     .await
 }

@@ -564,3 +564,312 @@ async fn a_move_checks_again_under_the_tree_lock() {
     })
     .await;
 }
+
+// ---------------------------------------------------------------------------------------------
+// Unit roles and the abilities admins switch (ADR-0094)
+// ---------------------------------------------------------------------------------------------
+
+async fn person(t: &Tree, email: &str, role: Role) -> (Uuid, Actor) {
+    let id = user(&t.pool, email, role).await;
+    (id, actor(id, role))
+}
+
+impl Tree {
+    async fn audited_in(&self, conn: &mut sqlx::PgConnection, action: &str) -> i64 {
+        sqlx::query_scalar!(
+            r#"SELECT count(*) AS "n!" FROM events.audit_log WHERE action = $1"#,
+            action
+        )
+        .fetch_one(conn)
+        .await
+        .unwrap()
+    }
+
+    async fn roles_of(&self, user_id: Uuid) -> Vec<(Uuid, String)> {
+        sqlx::query!(
+            "SELECT unit_id, role FROM org.unit_roles WHERE user_id = $1 ORDER BY unit_id",
+            user_id
+        )
+        .fetch_all(&self.pool)
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|row| (row.unit_id, row.role))
+        .collect()
+    }
+}
+
+#[tokio::test]
+async fn a_student_cannot_hold_a_unit_role() {
+    db_test(async |pool| {
+        let t = tree(pool).await;
+        let (kim, _) = person(&t, "kim@x.edu", Role::Student).await;
+        let mut tx = t.pool.begin().await.unwrap();
+
+        let outcome = set_unit_role(&mut tx, &t.admin, t.b, kim, UnitRole::Viewer).await;
+        assert!(
+            matches!(outcome, Err(OrgError::RoleNotAllowed)),
+            "{outcome:?}"
+        );
+        let outcome = set_unit_role(&mut tx, &t.admin, t.b, Uuid::now_v7(), UnitRole::Viewer).await;
+        assert!(
+            matches!(outcome, Err(OrgError::MemberNotFound)),
+            "{outcome:?}"
+        );
+        tx.commit().await.unwrap();
+
+        assert!(t.roles_of(kim).await.is_empty());
+        assert_eq!(t.audited("unit.role.set").await, 0);
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn a_manager_grants_below_but_not_on_their_own_unit() {
+    db_test(async |pool| {
+        let t = tree(pool).await;
+        let (quinn, quinn_actor) = person(&t, "quinn@x.edu", Role::Teacher).await;
+        let mut tx = t.pool.begin().await.unwrap();
+
+        set_unit_role(&mut tx, &t.pat, t.b, quinn, UnitRole::Viewer)
+            .await
+            .unwrap();
+        // Idempotent: the same grant again changes nothing and leaves no second audit row.
+        set_unit_role(&mut tx, &t.pat, t.b, quinn, UnitRole::Viewer)
+            .await
+            .unwrap();
+        assert_eq!(t.audited_in(&mut tx, "unit.role.set").await, 1);
+        let listed = list_unit_roles(&mut tx, &t.pat, t.b).await.unwrap();
+        assert_eq!(listed.len(), 1);
+        assert_eq!(
+            (listed[0].user_id, listed[0].role, listed[0].email.as_str()),
+            (quinn, UnitRole::Viewer, "quinn@x.edu")
+        );
+        // A role changes in place.
+        set_unit_role(&mut tx, &t.pat, t.b, quinn, UnitRole::Manager)
+            .await
+            .unwrap();
+        assert_eq!(
+            list_unit_roles(&mut tx, &t.pat, t.b).await.unwrap()[0].role,
+            UnitRole::Manager
+        );
+
+        // Not on the unit Pat's own role sits on, for anyone, themselves included.
+        fn forbidden<T>(outcome: &Result<T, OrgError>) -> bool {
+            matches!(outcome, Err(OrgError::Forbidden(_)))
+        }
+        assert!(forbidden(
+            &set_unit_role(&mut tx, &t.pat, t.a, quinn, UnitRole::Viewer).await
+        ));
+        assert!(forbidden(
+            &set_unit_role(&mut tx, &t.pat, t.a, t.pat.user_id(), UnitRole::Manager).await
+        ));
+        assert!(forbidden(
+            &remove_unit_role(&mut tx, &t.pat, t.a, t.pat.user_id()).await
+        ));
+        // A unit Pat does not see does not exist for them.
+        assert!(matches!(
+            set_unit_role(&mut tx, &t.pat, t.s, quinn, UnitRole::Viewer).await,
+            Err(OrgError::UnitNotFound)
+        ));
+        assert!(matches!(
+            list_unit_roles(&mut tx, &t.pat, t.s).await,
+            Err(OrgError::UnitNotFound)
+        ));
+        // Quinn manages B only, so nothing above it opens to them: they cannot grant on B.
+        assert!(forbidden(
+            &set_unit_role(
+                &mut tx,
+                &quinn_actor,
+                t.b,
+                t.pat.user_id(),
+                UnitRole::Viewer
+            )
+            .await
+        ));
+
+        remove_unit_role(&mut tx, &t.pat, t.b, quinn).await.unwrap();
+        assert!(matches!(
+            remove_unit_role(&mut tx, &t.pat, t.b, quinn).await,
+            Err(OrgError::MemberNotFound)
+        ));
+        tx.commit().await.unwrap();
+
+        assert!(t.roles_of(quinn).await.is_empty());
+        assert_eq!(t.audited("unit.role.set").await, 2);
+        assert_eq!(t.audited("unit.role.remove").await, 1);
+        // Pat's own role is untouched.
+        assert_eq!(
+            t.roles_of(t.pat.user_id()).await,
+            [(t.a, "manager".to_owned())]
+        );
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn switching_an_ability_off_changes_the_grant_at_once() {
+    db_test(async |pool| {
+        let t = tree(pool).await;
+        let (quinn, quinn_actor) = person(&t, "quinn@x.edu", Role::Teacher).await;
+        let mut conn = t.pool.begin().await.unwrap();
+        set_unit_role(&mut conn, &t.admin, t.b, quinn, UnitRole::Viewer)
+            .await
+            .unwrap();
+        let before = unit_grant(&mut conn, &quinn_actor, t.b).await.unwrap();
+        assert!(before.unwrap().has(UnitAbility::ViewGrades));
+
+        set_unit_role_abilities(&mut conn, &t.admin, UnitRole::Viewer, vec![])
+            .await
+            .unwrap();
+        let after = unit_grant(&mut conn, &quinn_actor, t.b).await.unwrap();
+        let after = after.expect("a role with no switches still means view");
+        assert!(!after.has(UnitAbility::ViewGrades));
+        assert!(after.abilities().is_empty());
+
+        // Replacing, not adding: the set comes back as sent, in order, without duplicates.
+        set_unit_role_abilities(
+            &mut conn,
+            &t.admin,
+            UnitRole::Viewer,
+            vec![
+                UnitAbility::Grade,
+                UnitAbility::EditContent,
+                UnitAbility::Grade,
+            ],
+        )
+        .await
+        .unwrap();
+        let all = unit_role_abilities(&mut conn, &t.admin).await.unwrap();
+        assert_eq!(
+            all,
+            [
+                (
+                    UnitRole::Manager,
+                    vec![
+                        UnitAbility::ViewGrades,
+                        UnitAbility::ManageRoster,
+                        UnitAbility::ManageCourses,
+                        UnitAbility::ManageUnits,
+                    ]
+                ),
+                (
+                    UnitRole::Viewer,
+                    vec![UnitAbility::EditContent, UnitAbility::Grade]
+                ),
+            ]
+        );
+        conn.commit().await.unwrap();
+        assert_eq!(t.audited("unit.abilities.set").await, 2);
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn only_an_admin_sets_role_abilities() {
+    db_test(async |pool| {
+        let t = tree(pool).await;
+        let mut conn = t.conn().await;
+        assert!(matches!(
+            set_unit_role_abilities(&mut conn, &t.pat, UnitRole::Viewer, vec![]).await,
+            Err(OrgError::Forbidden(_))
+        ));
+        assert!(matches!(
+            unit_role_abilities(&mut conn, &t.pat).await,
+            Err(OrgError::Forbidden(_))
+        ));
+        let viewer = sqlx::query_scalar!(
+            "SELECT count(*) AS \"n!\" FROM org.unit_role_abilities WHERE role = 'viewer'"
+        )
+        .fetch_one(&t.pool)
+        .await
+        .unwrap();
+        assert_eq!(viewer, 1);
+        assert_eq!(t.audited("unit.abilities.set").await, 0);
+
+        let mut tx = t.pool.begin().await.unwrap();
+        set_unit_role_abilities(
+            &mut tx,
+            &t.admin,
+            UnitRole::Viewer,
+            vec![UnitAbility::Grade],
+        )
+        .await
+        .unwrap();
+        tx.commit().await.unwrap();
+        assert_eq!(t.audited("unit.abilities.set").await, 1);
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn candidates_are_active_teachers_and_admins_not_yet_on_the_unit() {
+    db_test(async |pool| {
+        let t = tree(pool).await;
+        let (lena, _) = person(&t, "lena@x.edu", Role::Teacher).await;
+        let (ada, _) = person(&t, "ada-lena@x.edu", Role::Admin).await;
+        let (_, _) = person(&t, "lena-kid@x.edu", Role::Student).await;
+        let (held, _) = person(&t, "lena-held@x.edu", Role::Teacher).await;
+        let mut tx = t.pool.begin().await.unwrap();
+        set_unit_role(&mut tx, &t.admin, t.b, held, UnitRole::Viewer)
+            .await
+            .unwrap();
+
+        let found = unit_candidates(&mut tx, &t.pat, t.b, "lena").await.unwrap();
+        let mut ids: Vec<_> = found.iter().map(|c| c.user_id).collect();
+        ids.sort();
+        let mut expected = [lena, ada];
+        expected.sort();
+        assert_eq!(ids, expected, "{found:?}");
+        // The percent sign is text, not a wildcard.
+        assert!(
+            unit_candidates(&mut tx, &t.pat, t.b, "l%a")
+                .await
+                .unwrap()
+                .is_empty()
+        );
+        assert!(matches!(
+            unit_candidates(&mut tx, &t.pat, t.b, " l ").await,
+            Err(OrgError::QueryTooShort)
+        ));
+        // Whoever may not manage roles on the unit learns nothing about people.
+        assert!(matches!(
+            unit_candidates(&mut tx, &t.pat, t.a, "lena").await,
+            Err(OrgError::Forbidden(_))
+        ));
+        assert!(matches!(
+            unit_candidates(&mut tx, &t.pat, t.s, "lena").await,
+            Err(OrgError::UnitNotFound)
+        ));
+    })
+    .await;
+}
+
+/// A caller who may not grant on the unit must not be able to hold others up: the person's row is
+/// locked only after the caller is authorized.
+#[tokio::test]
+async fn an_unauthorized_grant_does_not_wait_for_the_person() {
+    db_test(async |pool| {
+        let t = tree(pool).await;
+        let (quinn, _) = person(&t, "quinn@x.edu", Role::Teacher).await;
+        let mut holder = t.pool.begin().await.unwrap();
+        sqlx::query!("SELECT id FROM auth.users WHERE id = $1 FOR UPDATE", quinn)
+            .fetch_one(&mut *holder)
+            .await
+            .unwrap();
+
+        let denied = tokio::time::timeout(std::time::Duration::from_secs(10), async {
+            let mut conn = t.conn().await;
+            (
+                set_unit_role(&mut conn, &t.pat, t.s, quinn, UnitRole::Viewer).await,
+                set_unit_role(&mut conn, &t.pat, t.a, quinn, UnitRole::Viewer).await,
+            )
+        })
+        .await
+        .expect("an unauthorized caller waited for a lock");
+        assert!(matches!(denied.0, Err(OrgError::UnitNotFound)));
+        assert!(matches!(denied.1, Err(OrgError::Forbidden(_))));
+        holder.rollback().await.unwrap();
+    })
+    .await;
+}

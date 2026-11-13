@@ -213,6 +213,45 @@ fn present<'de, D: Deserializer<'de>, T: Deserialize<'de>>(
     Option::<T>::deserialize(deserializer).map(Some)
 }
 
+/// A person's role on a unit. It covers the unit and every unit below it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum UnitRole {
+    Manager,
+    Viewer,
+}
+
+/// Someone who holds a role directly on a unit.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct UnitRoleEntry {
+    pub user_id: Uuid,
+    pub name: String,
+    pub surname: String,
+    pub email: String,
+    pub role: UnitRole,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Validate, ToSchema)]
+pub struct SetUnitRoleRequest {
+    #[garde(skip)]
+    pub role: UnitRole,
+}
+
+/// The switches of each unit role.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct UnitRoleAbilities {
+    pub manager: Vec<UnitAbility>,
+    pub viewer: Vec<UnitAbility>,
+}
+
+/// The switches a unit role has afterwards: exactly these. An empty list leaves the role able to
+/// view only.
+#[derive(Debug, Clone, Serialize, Deserialize, Validate, ToSchema)]
+pub struct SetUnitRoleAbilitiesRequest {
+    #[garde(length(max = 6))]
+    pub abilities: Vec<UnitAbility>,
+}
+
 /// A member of a group or a subgroup.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct GroupMember {

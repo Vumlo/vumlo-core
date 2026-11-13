@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO org.unit_role_abilities (role, ability)\n         SELECT $1, ability FROM unnest($2::text[]) AS ability",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "TextArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "92b79e9c656c23ee4662e0c79102484685ff64d0a8d707577cc65b1667f175ca"
+}
