@@ -521,6 +521,188 @@ async fn admin_create_is_idempotent_and_has_a_dry_run() {
     .await;
 }
 
+const NEW_PASSWORD: &str = "another long passphrase 7";
+
+/// Creates the admin `root@school.edu` with [`PASSWORD`] through the CLI, as an installation does.
+async fn create_root(env: &Env) {
+    let out = env
+        .run_with(
+            &[
+                "admin",
+                "create",
+                "root@school.edu",
+                "--name",
+                "Root",
+                "--surname",
+                "Admin",
+                "--password-stdin",
+            ],
+            Some(&format!("{PASSWORD}\n")),
+            &[("DATABASE_URL", env.url.as_str())],
+        )
+        .await;
+    assert!(out.ok, "{}", out.stderr);
+}
+
+async fn set_password(env: &Env, email: &str, stdin: &str, extra: &[&str]) -> common::Out {
+    let mut args = vec!["admin", "set-password", email, "--password-stdin"];
+    args.extend_from_slice(extra);
+    env.run_with(
+        &args,
+        Some(&format!("{stdin}\n")),
+        &[("DATABASE_URL", env.url.as_str())],
+    )
+    .await
+}
+
+async fn console_status(base: &str, email: &str, password: &str) -> u16 {
+    reqwest::Client::new()
+        .post(format!("{base}/api/v1/console/login"))
+        .header("content-type", "application/json")
+        .header("origin", "https://admin.lms.test")
+        .body(json!({"email": email, "password": password}).to_string())
+        .send()
+        .await
+        .unwrap()
+        .status()
+        .as_u16()
+}
+
+#[tokio::test]
+async fn set_password_replaces_the_password_and_signs_the_admin_out() {
+    db_test(async |pool| {
+        common::migrate_modules(&pool).await;
+        let env = Env::new(&pool);
+        create_root(&env).await;
+        let base = spawn_server(&pool, settings_for(&env.url, common::CONFIG)).await;
+        assert_eq!(
+            console_status(&base, "root@school.edu", PASSWORD).await,
+            200
+        );
+        let app = reqwest::Client::new()
+            .post(format!("{base}/api/v1/auth/login"))
+            .header("content-type", "application/json")
+            .body(
+                json!({"email": "root@school.edu", "password": PASSWORD, "client": "app"})
+                    .to_string(),
+            )
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(app.status(), 200);
+        assert_eq!(count(&pool, "SELECT count(*) FROM auth.sessions").await, 2);
+
+        let out = set_password(&env, "Root@School.edu", NEW_PASSWORD, &[]).await;
+        assert!(out.ok, "{}", out.stderr);
+        assert!(!out.stdout.contains(NEW_PASSWORD) && !out.stderr.contains(NEW_PASSWORD));
+        assert_eq!(count(&pool, "SELECT count(*) FROM auth.sessions").await, 0);
+        assert_eq!(
+            console_status(&base, "root@school.edu", PASSWORD).await,
+            401
+        );
+        assert_eq!(
+            console_status(&base, "root@school.edu", NEW_PASSWORD).await,
+            200
+        );
+        // The admin chose this password for themselves: nothing makes them change it at once.
+        let must_change: bool = sqlx::query_scalar(
+            "SELECT must_change_password FROM auth.users WHERE email = 'root@school.edu'",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert!(!must_change);
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn set_password_audits_with_source_cli_and_no_secret() {
+    db_test(async |pool| {
+        common::migrate_modules(&pool).await;
+        let env = Env::new(&pool);
+        create_root(&env).await;
+        let out = set_password(&env, "root@school.edu", NEW_PASSWORD, &[]).await;
+        assert!(out.ok, "{}", out.stderr);
+        assert_eq!(
+            audit(&pool).await,
+            [
+                ("user.create".into(), "cli".into(), true, "user".into()),
+                (
+                    "user.password_set".into(),
+                    "cli".into(),
+                    true,
+                    "user".into()
+                )
+            ]
+        );
+        assert_eq!(audit_meta(&pool, "user.password_set").await, json!({}));
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn set_password_refuses_a_teacher_and_an_unknown_email_the_same_way() {
+    db_test(async |pool| {
+        common::migrate_modules(&pool).await;
+        let env = Env::new(&pool);
+        create_root(&env).await;
+        sqlx::query(
+            "INSERT INTO auth.users (id, email, name, surname, role, email_verified_at)
+             VALUES ($1, 'teacher@school.edu', 'T', 'T', 'teacher', now())",
+        )
+        .bind(uuid::Uuid::now_v7())
+        .execute(&pool)
+        .await
+        .unwrap();
+        let teacher = set_password(&env, "teacher@school.edu", NEW_PASSWORD, &[]).await;
+        let unknown = set_password(&env, "nobody@school.edu", NEW_PASSWORD, &[]).await;
+        assert!(!teacher.ok && !unknown.ok);
+        assert!(
+            teacher.stderr.contains("no active administrator"),
+            "{}",
+            teacher.stderr
+        );
+        assert_eq!(
+            teacher.stderr.replace("teacher@school.edu", "X"),
+            unknown.stderr.replace("nobody@school.edu", "X")
+        );
+        assert_eq!(audit(&pool).await.len(), 1, "only the creation is audited");
+        let hashes = count(
+            &pool,
+            "SELECT count(DISTINCT password_hash) FROM auth.identities",
+        )
+        .await;
+        assert_eq!(hashes, 1, "nobody's password changed");
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn set_password_has_a_dry_run_and_rejects_a_weak_password() {
+    db_test(async |pool| {
+        common::migrate_modules(&pool).await;
+        let env = Env::new(&pool);
+        create_root(&env).await;
+        let before: String = sqlx::query_scalar("SELECT password_hash FROM auth.identities")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        let dry = set_password(&env, "root@school.edu", NEW_PASSWORD, &["--dry-run"]).await;
+        assert!(dry.ok && dry.stdout.contains("would set"), "{}", dry.stderr);
+        let weak = set_password(&env, "root@school.edu", "password1234", &[]).await;
+        assert!(!weak.ok);
+        assert!(weak.stderr.contains("password rejected"), "{}", weak.stderr);
+        let after: String = sqlx::query_scalar("SELECT password_hash FROM auth.identities")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(before, after);
+        assert_eq!(audit(&pool).await.len(), 1);
+    })
+    .await;
+}
+
 #[tokio::test]
 async fn admin_create_refuses_an_unmigrated_database() {
     bare_db_test(async |pool| {

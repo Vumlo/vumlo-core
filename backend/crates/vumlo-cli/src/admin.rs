@@ -154,3 +154,78 @@ fn read_password(from_stdin: bool) -> anyhow::Result<String> {
     }
     Ok(first)
 }
+
+pub struct SetPassword {
+    pub email: String,
+    pub password_stdin: bool,
+    pub dry_run: bool,
+}
+
+/// `vumlo-cli admin set-password`: the way back in for an administrator who cannot sign in to the
+/// console (ADR-0095). It sets the password the person chose and ends all their sessions.
+pub async fn set_password(options: &Options, args: SetPassword) -> anyhow::Result<()> {
+    let loaded = runtime::load(options)?;
+    let settings = &loaded.settings;
+    let pool = runtime::connect(settings).await?;
+    db::ensure_migrated_with(&pool, &runtime::migrators())
+        .await
+        .context("the database is not ready")?;
+
+    // The same answer for an unknown address, a person who is not an administrator and a disabled
+    // account: this command does not tell who has an account.
+    let admin = {
+        let mut conn = pool.acquire().await?;
+        auth::admin_for_cli(&mut conn, &args.email)
+            .await
+            .map_err(|_| {
+                anyhow::anyhow!("no active administrator has this email; nothing was changed")
+            })?
+    };
+    if args.dry_run && !args.password_stdin {
+        println!(
+            "would set the password of the administrator {}; it would be asked for",
+            admin.id
+        );
+        return Ok(());
+    }
+
+    let raw = read_password(args.password_stdin)?;
+    let policy = PasswordPolicy::new(
+        settings.auth.password_min_length,
+        &admin.email,
+        &admin.name,
+        &admin.surname,
+        &settings.institution.name,
+    );
+    let password = Password::parse(raw, &policy).map_err(|e| match e {
+        ModelError::Password(reasons) => {
+            anyhow::anyhow!("password rejected: {}", reasons.join("; "))
+        }
+        other => anyhow::anyhow!("{other}"),
+    })?;
+    if args.dry_run {
+        println!("would set the password of the administrator {}", admin.id);
+        return Ok(());
+    }
+
+    // Hash before the transaction opens (ADR-0016).
+    let plain = password.expose().to_owned();
+    let hash = tokio::task::spawn_blocking(move || auth::hash(&plain))
+        .await
+        .context("the hashing task failed")?
+        .map_err(|e| anyhow::anyhow!("cannot hash the password: {e}"))?;
+
+    let mut tx = pool.begin().await.context("cannot start a transaction")?;
+    auth::set_admin_password_from_cli(&mut tx, admin.id, hash)
+        .await
+        .map_err(|_| {
+            anyhow::anyhow!("no active administrator has this email; nothing was changed")
+        })?;
+    tx.commit().await.context("cannot commit")?;
+
+    println!(
+        "set the password of the administrator {}; every session of theirs ended",
+        admin.id
+    );
+    Ok(())
+}

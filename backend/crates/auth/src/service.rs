@@ -353,6 +353,47 @@ pub async fn create_user_from_cli(
     Ok(user)
 }
 
+/// The active administrator with this email, for the CLI command that sets their password: it
+/// needs the person's name to check the password against the policy. An unknown email, a person
+/// who is not an administrator and a disabled account are the same error, so the command says
+/// nothing about who has an account.
+pub async fn admin_for_cli(conn: &mut PgConnection, email: &str) -> Result<User, AuthError> {
+    let email = Email::parse(email)?;
+    let account = repo::find_account_by_email(conn, email.as_str())
+        .await?
+        .ok_or(AuthError::UserNotFound)?;
+    let user = repo::find_user(conn, account.id)
+        .await?
+        .ok_or(AuthError::UserNotFound)?;
+    if user.role != Role::Admin || user.status != UserStatus::Active {
+        return Err(AuthError::UserNotFound);
+    }
+    Ok(user)
+}
+
+/// Sets the password of an administrator for the server CLI, where nobody is signed in: the
+/// recovery of an installation whose administrators cannot sign in. The password is the one the
+/// administrator chose (no change is forced), every session of theirs ends, and the audit log gets
+/// an entry with no actor and the source `cli`, holding no secret (ADR-0034). The account is read
+/// again under a lock: a demotion that ran meanwhile is not overridden.
+pub async fn set_admin_password_from_cli(
+    conn: &mut PgConnection,
+    user_id: Uuid,
+    password: HashedPassword,
+) -> Result<(), AuthError> {
+    let user = repo::find_user_shared(conn, user_id)
+        .await?
+        .ok_or(AuthError::UserNotFound)?;
+    if user.role != Role::Admin || user.status != UserStatus::Active {
+        return Err(AuthError::UserNotFound);
+    }
+    repo::upsert_password_hash(conn, user_id, password.as_str()).await?;
+    repo::set_must_change_password(conn, user_id, false).await?;
+    repo::delete_sessions_of(conn, user_id).await?;
+    events::audit_cli(conn, user_entry("user.password_set", user_id, json!({}))).await?;
+    Ok(())
+}
+
 /// An audit entry about a user. `meta` holds ids, roles and field names only (ADR-0034): never a
 /// password, a hash, a token, an email address or a name.
 fn user_entry(action: &'static str, user_id: Uuid, meta: serde_json::Value) -> AuditEntry {
