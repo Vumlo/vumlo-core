@@ -221,6 +221,45 @@ async fn switching_an_ability_off_takes_effect_on_the_next_request() {
     .await;
 }
 
+/// The counts of what to grade on the item facts are about submissions: a viewer sees them only
+/// while their role has `view_grades`.
+#[tokio::test]
+async fn the_counts_to_grade_need_view_grades() {
+    db_test(async |pool| {
+        let w = world(pool).await;
+        let (course, module) = w.env.course(&w.tom, &[]).await;
+        let item = w.env.assignment(&w.tom, module, "10").await;
+        w.env
+            .ok(
+                "PUT",
+                &w.admin.token,
+                &format!("/courses/{course}/unit"),
+                Some(json!({"unit_id": w.b})),
+                200,
+            )
+            .await;
+        let meta = format!("/courses/{course}/item-meta");
+        let submitted = async || {
+            w.env.ok("GET", &w.vic.token, &meta, None, 200).await["items"][item.to_string()]
+                ["submitted"]
+                .clone()
+        };
+        assert_eq!(submitted().await, json!(0));
+
+        w.env
+            .ok(
+                "PUT",
+                &w.admin.token,
+                "/admin/unit-roles/viewer",
+                Some(json!({"abilities": []})),
+                200,
+            )
+            .await;
+        assert_eq!(submitted().await, serde_json::Value::Null);
+    })
+    .await;
+}
+
 #[tokio::test]
 async fn revoking_a_role_takes_effect_on_the_next_request() {
     db_test(async |pool| {

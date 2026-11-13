@@ -300,10 +300,14 @@ async fn a_manager_cannot_touch_their_own_unit_or_create_at_the_top() {
             delete_unit(&mut conn, &t.pat, t.s).await,
             Err(OrgError::UnitNotFound)
         ));
-        assert!(matches!(
-            create_unit(&mut conn, &t.pat, name("X"), Some(t.s)).await,
-            Err(OrgError::UnitNotFound)
-        ));
+        // A parent in the body that they do not see is a bad field, the same as one that does not
+        // exist; the unit in the path stays "not found".
+        for parent in [t.s, Uuid::now_v7()] {
+            assert!(matches!(
+                create_unit(&mut conn, &t.pat, name("X"), Some(parent)).await,
+                Err(OrgError::ParentNotValid)
+            ));
+        }
         // Nor can they move a unit of theirs under one they do not see.
         assert!(matches!(
             update_unit(
@@ -316,7 +320,7 @@ async fn a_manager_cannot_touch_their_own_unit_or_create_at_the_top() {
                 }
             )
             .await,
-            Err(OrgError::UnitNotFound)
+            Err(OrgError::ParentNotValid)
         ));
 
         // The administrator can do all of it.
@@ -460,7 +464,8 @@ async fn an_unauthorized_move_is_refused_without_taking_the_tree_lock() {
         let mut holder = t.pool.begin().await.unwrap();
         repo::lock_tree(&mut holder).await.unwrap();
 
-        // (who, unit, new parent, whether the refusal is "forbidden" rather than "not found")
+        // (who, unit, new parent, whether the refusal is "forbidden" rather than "not found" or,
+        // for a parent the caller does not see, "not valid")
         let attempts = [
             (t.pat.clone(), t.a, None, true),
             (t.pat.clone(), t.s, Some(t.a), false),
@@ -485,7 +490,7 @@ async fn an_unauthorized_move_is_refused_without_taking_the_tree_lock() {
             assert!(
                 match &outcome {
                     Err(OrgError::Forbidden(_)) => forbidden,
-                    Err(OrgError::UnitNotFound) => !forbidden,
+                    Err(OrgError::UnitNotFound | OrgError::ParentNotValid) => !forbidden,
                     _ => false,
                 },
                 "{outcome:?}"
@@ -872,4 +877,14 @@ async fn an_unauthorized_grant_does_not_wait_for_the_person() {
         holder.rollback().await.unwrap();
     })
     .await;
+}
+
+#[test]
+fn an_unknown_ability_in_the_database_is_an_error_not_a_smaller_grant() {
+    let abilities = vec!["view_grades".to_owned(), "fly".to_owned()];
+    let outcome = grant_of(Uuid::now_v7(), &abilities);
+    assert!(
+        matches!(outcome, Err(OrgError::Db(sqlx::Error::Decode(_)))),
+        "{outcome:?}"
+    );
 }

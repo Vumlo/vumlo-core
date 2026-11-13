@@ -34,7 +34,7 @@ use super::model::{
 use super::repo;
 use access::Actor;
 use access::{
-    self, AccessError, Action, CourseAccess, CourseRole, CourseStatus, UnitAbility, UnitGrant,
+    self, AccessError, Action, CourseAccess, CourseRole, CourseStatus, UnitGrant,
     course_role_allowed, implicit_course_owner,
 };
 use auth::{self, AuthError, UserStatus};
@@ -119,15 +119,10 @@ fn access_of(
 }
 
 /// The grant the abilities read from `org.unit_grants` make on `unit_id`. A text that is no ability
-/// is an error, never a smaller grant: dropping it would silently take a right away (or, were the
-/// rule ever inverted, give one).
+/// is a decode error ([`UnitGrant::from_names`]).
 fn unit_grant_of(unit_id: Uuid, abilities: Vec<String>) -> Result<UnitGrant, TeachingError> {
-    let abilities = abilities
-        .iter()
-        .map(|ability| ability.parse::<UnitAbility>())
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|message| sqlx::Error::Decode(message.into()))?;
-    Ok(UnitGrant::new(unit_id, abilities))
+    UnitGrant::from_names(unit_id, &abilities)
+        .map_err(|message| sqlx::Error::Decode(message.into()).into())
 }
 
 /// The actor's grant on the unit the course sits in, from the abilities a query returned.
@@ -502,7 +497,15 @@ pub async fn put_member(
     role: CourseRole,
 ) -> Result<Membership, TeachingError> {
     let (course, access) = load(conn, actor, course_id, true).await?;
-    access::authorize(actor, Action::ManageMembership { access, role })?;
+    let target_is_actor = user_id == actor.user_id();
+    access::authorize(
+        actor,
+        Action::ManageMembership {
+            access,
+            role,
+            target_is_actor,
+        },
+    )?;
     let current = repo::find_member(conn, course_id, user_id).await?;
     if let Some(old) = current {
         access::authorize(
@@ -510,6 +513,7 @@ pub async fn put_member(
             Action::ManageMembership {
                 access,
                 role: old.role,
+                target_is_actor,
             },
         )?;
     }
@@ -684,6 +688,7 @@ pub async fn remove_member(
         Action::ManageMembership {
             access,
             role: member.role,
+            target_is_actor: user_id == actor.user_id(),
         },
     )?;
     if user_id == course.owner_id {

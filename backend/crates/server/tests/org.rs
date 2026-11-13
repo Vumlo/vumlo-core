@@ -1314,6 +1314,30 @@ async fn units_are_a_tree_an_admin_edits_and_a_course_in_one_keeps_it() {
             )
             .await;
         assert_eq!(fields(&cycle), ["parent_id"]);
+        // A parent in the body that does not exist, or that the caller does not see, is 422 on
+        // parent_id (a unit in the path is 404).
+        let nowhere = Uuid::now_v7();
+        let unknown = w
+            .as_admin("POST", "/units", Some(unit("Chemistry", Some(nowhere))))
+            .await;
+        assert_eq!(fields(&unknown), ["parent_id"]);
+        let unknown = w
+            .as_admin(
+                "PATCH",
+                &format!("/units/{physics}"),
+                Some(json!({"parent_id": nowhere})),
+            )
+            .await;
+        assert_eq!(fields(&unknown), ["parent_id"]);
+        let unseen = call(
+            &w.http,
+            "POST",
+            "/units",
+            Some(&w.teacher.token),
+            Some(&unit("Chemistry", Some(faculty))),
+        )
+        .await;
+        assert_eq!(fields(&unseen), ["parent_id"]);
         w.as_admin("POST", "/units", Some(json!({"name": ""})))
             .await
             .problem(422);
@@ -1525,7 +1549,10 @@ async fn unit_roles_are_granted_listed_searched_and_switched_over_http() {
             .as_admin(
                 "PUT",
                 "/admin/unit-roles/manager",
-                Some(json!({"abilities": ["manage_units", "grade", "grade"]})),
+                // Repeats count once, and a list longer than the number of abilities is no error.
+                Some(json!({"abilities": [
+                    "manage_units", "grade", "grade", "grade", "grade", "grade", "grade"
+                ]})),
             )
             .await;
         assert_eq!(changed.status, 200);

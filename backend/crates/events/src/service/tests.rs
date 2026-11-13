@@ -411,3 +411,29 @@ async fn audit_implicit_writes_nothing_for_a_course_teacher() {
     })
     .await;
 }
+
+/// A teacher enrolled as a student of a course in their unit writes through the grant, not as
+/// staff: the write is audited.
+#[tokio::test]
+async fn audit_implicit_writes_for_a_grantee_who_is_a_student_of_the_course() {
+    db_test(async |pool| {
+        let teacher = test_support::insert_user(&pool, "t@x.edu", "teacher").await;
+        let actor = Actor::for_tests(teacher, common::Role::Teacher, Uuid::now_v7());
+        let unit_id = Uuid::now_v7();
+        let access = course_access(
+            Some(access::CourseRole::Student),
+            Some(access::UnitGrant::full(unit_id)),
+        );
+        let mut conn = pool.acquire().await.unwrap();
+
+        audit_implicit(&mut conn, &actor, access, audit_entry(Uuid::now_v7()))
+            .await
+            .unwrap();
+
+        assert_eq!(
+            audit_rows(&pool).await,
+            [serde_json::json!({"field": "title", "via": "unit", "unit_id": unit_id})]
+        );
+    })
+    .await;
+}

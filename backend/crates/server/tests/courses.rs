@@ -1350,6 +1350,20 @@ async fn the_course_tells_its_unit_and_what_the_caller_may_do_in_it() {
             .await;
         assert_eq!(got, 404);
 
+        // A body without `unit_id` is a 422 on it, never a silent clear.
+        let empty = w
+            .env
+            .call(
+                "PUT",
+                &w.admin.token,
+                &format!("{path}/unit"),
+                Some(json!({})),
+            )
+            .await
+            .problem(422);
+        assert_eq!(empty.errors[0].field, "unit_id");
+        assert_eq!(w.get(&w.admin, &path).await["unit_id"], json!(unit));
+
         // Out of the unit again.
         let back = w
             .env

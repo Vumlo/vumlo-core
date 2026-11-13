@@ -94,12 +94,10 @@ pub async fn list_units(
             content_type = "application/problem+json"),
         (status = 403, description = "No `manage_units` on the parent", body = ProblemDetails,
             content_type = "application/problem+json"),
-        (status = 404, description = "No such parent, or the caller cannot see it",
-            body = ProblemDetails, content_type = "application/problem+json"),
         (status = 409, description = "The name is taken under the parent", body = ProblemDetails,
             content_type = "application/problem+json"),
-        (status = 422, description = "Invalid name", body = ProblemDetails,
-            content_type = "application/problem+json"),
+        (status = 422, description = "Invalid name, or a parent_id that names no unit the caller \
+            sees", body = ProblemDetails, content_type = "application/problem+json"),
     )
 )]
 pub async fn create_unit(
@@ -129,11 +127,12 @@ pub async fn create_unit(
             content_type = "application/problem+json"),
         (status = 403, description = "No `manage_units` on the parent", body = ProblemDetails,
             content_type = "application/problem+json"),
-        (status = 404, description = "No such unit (or new parent), or the caller cannot see it",
+        (status = 404, description = "No such unit, or the caller cannot see it",
             body = ProblemDetails, content_type = "application/problem+json"),
         (status = 409, description = "The name is taken under the parent", body = ProblemDetails,
             content_type = "application/problem+json"),
-        (status = 422, description = "Invalid name, or the new parent is the unit or below it",
+        (status = 422, description = "Invalid name, a parent_id that names no unit the caller \
+            sees, or the new parent is the unit or below it",
             body = ProblemDetails, content_type = "application/problem+json"),
     )
 )]

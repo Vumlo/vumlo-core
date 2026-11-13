@@ -491,8 +491,12 @@ pub struct CreateCourseRequest {
 /// Puts a course into a unit, or takes it out with `null`.
 #[derive(Debug, Clone, Serialize, Deserialize, Validate, ToSchema)]
 pub struct SetCourseUnitRequest {
-    #[garde(skip)]
-    pub unit_id: Option<Uuid>,
+    /// The unit, or `null` for none. Required: a body without it is a 422, never a silent clear.
+    // `Some(None)` is `null`; the outer `None` (absent) is refused by `garde(required)`.
+    #[serde(default, deserialize_with = "org::present")]
+    #[schema(required = true, value_type = Option<Uuid>)]
+    #[garde(required)]
+    pub unit_id: Option<Option<Uuid>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Validate, ToSchema)]

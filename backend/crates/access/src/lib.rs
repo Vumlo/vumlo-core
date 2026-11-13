@@ -1,6 +1,7 @@
 //! The only place that decides who may do what (ADR-0004, ADR-0019). Deny by default.
 
 use chrono::{DateTime, Utc};
+use uuid::Uuid;
 
 mod actor;
 mod extract;
@@ -150,10 +151,13 @@ pub enum Action {
     /// Move a course from draft to published (ADR-0019).
     PublishCourse(CourseAccess),
     /// Add, change or remove a member who holds (or will hold) `role`. Students can be enrolled in
-    /// a draft; an archived course takes no change (ADR-0048).
+    /// a draft; an archived course takes no change (ADR-0048). `target_is_actor` is set when the
+    /// member is the actor themselves: a unit grant alone never puts its holder on, or takes them
+    /// off, the roster (ADR-0094), or a manager could make themselves staff past the admin's switches.
     ManageMembership {
         access: CourseAccess,
         role: CourseRole,
+        target_is_actor: bool,
     },
     DeleteCourse(CourseAccess),
     TransferOwnership(CourseAccess),
@@ -257,9 +261,14 @@ impl Action {
             Self::ChangeGroupLinks(access) => Self::ChangeGroupLinks(mine(access)),
             Self::ViewCourse(access) => Self::ViewCourse(mine(access)),
             Self::PublishCourse(access) => Self::PublishCourse(mine(access)),
-            Self::ManageMembership { access, role } => Self::ManageMembership {
+            Self::ManageMembership {
+                access,
+                role,
+                target_is_actor,
+            } => Self::ManageMembership {
                 access: mine(access),
                 role,
+                target_is_actor,
             },
             Self::DeleteCourse(access) => Self::DeleteCourse(mine(access)),
             Self::TransferOwnership(access) => Self::TransferOwnership(mine(access)),
@@ -387,6 +396,21 @@ pub fn implicit_course_owner(actor: &Actor) -> bool {
     actor.role() == Role::Admin
 }
 
+/// The grant the actor holds on `unit_id`, given `held`, the union of their unit roles there: an
+/// admin holds every ability on every unit, a student none (ADR-0037, ADR-0094), anyone else what
+/// their roles give them.
+pub fn effective_unit_grant(
+    actor: &Actor,
+    unit_id: Uuid,
+    held: Option<UnitGrant>,
+) -> Option<UnitGrant> {
+    match actor.role() {
+        Role::Admin => Some(UnitGrant::full(unit_id)),
+        Role::Student => None,
+        Role::Teacher => held,
+    }
+}
+
 /// How an actor reached a course without being on it (ADR-0094).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Via {
@@ -395,14 +419,15 @@ pub enum Via {
 }
 text_enum!(Via { Admin => "admin", Unit => "unit" });
 
-/// How the actor reached the course without being on it, or `None` when they are on it. Every
-/// change made this way is audited: the course does not show who made it.
+/// How the actor reached the course without being its staff, or `None` when they are its owner,
+/// teacher or assistant. Every change made this way is audited: the course does not show who made
+/// it. A grantee who is a student of the course acts through the grant, so they count as `Unit`.
 pub fn implicit_access(actor: &Actor, access: CourseAccess) -> Option<Via> {
     if actor.role() == Role::Admin {
         return Some(Via::Admin);
     }
     let access = access.for_actor(actor);
-    (access.has_unit_grant() && !access.is_owner && access.role.is_none()).then_some(Via::Unit)
+    (access.has_unit_grant() && !access.is_staff()).then_some(Via::Unit)
 }
 
 /// The course-level actions the actor may take, for the web app (ADR-0094).
@@ -494,13 +519,18 @@ pub fn authorize(actor: &Actor, action: Action) -> Result<(), AccessError> {
         Action::LinkGroups(access) | Action::ChangeGroupLinks(access) => {
             is_admin || access.is_owner_or_teacher() || access.unit(UnitAbility::ManageRoster)
         }
-        Action::ManageMembership { access, role } => {
+        Action::ManageMembership {
+            access,
+            role,
+            target_is_actor,
+        } => {
             is_admin
-                || access.unit(UnitAbility::ManageRoster)
                 || match role {
                     CourseRole::Student => access.is_staff(),
                     CourseRole::Teacher | CourseRole::Assistant => access.is_owner_or_teacher(),
                 }
+                // A permission that comes only from the grant never reaches the actor's own row.
+                || (!target_is_actor && access.unit(UnitAbility::ManageRoster))
         }
         Action::DeleteCourse(access) | Action::TransferOwnership(access) => {
             is_admin || access.is_owner

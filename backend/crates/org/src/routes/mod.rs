@@ -98,7 +98,9 @@ impl From<OrgError> for ApiError {
                 Self::Conflict("a unit with this name already exists under the parent")
             }
             OrgError::UnitInUse => Self::Conflict("the unit has subunits or courses"),
-            OrgError::UnitCycle => Self::invalid_field("parent_id", error.to_string()),
+            OrgError::UnitCycle | OrgError::ParentNotValid => {
+                Self::invalid_field("parent_id", error.to_string())
+            }
             OrgError::RoleNotAllowed => Self::invalid_field("role", error.to_string()),
             OrgError::QueryTooShort => Self::invalid_field("q", "needs at least two characters"),
             OrgError::TermInUse => Self::Conflict("a course uses this term"),

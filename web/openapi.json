@@ -6760,6 +6760,7 @@
         "description": "Puts a course into a unit, or takes it out with `null`.",
         "properties": {
           "unit_id": {
+            "description": "The unit, or `null` for none. Required: a body without it is a 422, never a silent clear.",
             "format": "uuid",
             "type": [
               "string",
@@ -6767,10 +6768,13 @@
             ]
           }
         },
+        "required": [
+          "unit_id"
+        ],
         "type": "object"
       },
       "SetUnitRoleAbilitiesRequest": {
-        "description": "The switches a unit role has afterwards: exactly these. An empty list leaves the role able to\nview only.",
+        "description": "The switches a unit role has afterwards: exactly these. An empty list leaves the role able to\nview only. A repeated ability counts once.",
         "properties": {
           "abilities": {
             "items": {
@@ -21225,16 +21229,6 @@
             },
             "description": "No `manage_units` on the parent"
           },
-          "404": {
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            },
-            "description": "No such parent, or the caller cannot see it"
-          },
           "409": {
             "content": {
               "application/problem+json": {
@@ -21253,7 +21247,7 @@
                 }
               }
             },
-            "description": "Invalid name"
+            "description": "Invalid name, or a parent_id that names no unit the caller sees"
           }
         },
         "security": [
@@ -21406,7 +21400,7 @@
                 }
               }
             },
-            "description": "No such unit (or new parent), or the caller cannot see it"
+            "description": "No such unit, or the caller cannot see it"
           },
           "409": {
             "content": {
@@ -21426,7 +21420,7 @@
                 }
               }
             },
-            "description": "Invalid name, or the new parent is the unit or below it"
+            "description": "Invalid name, a parent_id that names no unit the caller sees, or the new parent is the unit or below it"
           }
         },
         "security": [

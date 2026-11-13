@@ -207,7 +207,7 @@ pub struct UpdateUnitRequest {
 }
 
 /// A key that may be absent (change nothing), `null` (clear) or a value (set).
-fn present<'de, D: Deserializer<'de>, T: Deserialize<'de>>(
+pub(crate) fn present<'de, D: Deserializer<'de>, T: Deserialize<'de>>(
     deserializer: D,
 ) -> Result<Option<Option<T>>, D::Error> {
     Option::<T>::deserialize(deserializer).map(Some)
@@ -245,10 +245,10 @@ pub struct UnitRoleAbilities {
 }
 
 /// The switches a unit role has afterwards: exactly these. An empty list leaves the role able to
-/// view only.
+/// view only. A repeated ability counts once.
 #[derive(Debug, Clone, Serialize, Deserialize, Validate, ToSchema)]
 pub struct SetUnitRoleAbilitiesRequest {
-    #[garde(length(max = 6))]
+    #[garde(skip)]
     pub abilities: Vec<UnitAbility>,
 }
 

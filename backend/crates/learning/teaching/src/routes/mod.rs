@@ -313,7 +313,9 @@ async fn set_course_unit(
     ValidJson(request): ValidJson<SetCourseUnitRequest>,
 ) -> Result<Json<Course>, ApiError> {
     let mut tx = state.db.begin().await.map_err(TeachingError::from)?;
-    let course = service::set_course_unit(&mut tx, &actor, id, request.unit_id).await?;
+    // `garde(required)` refused an absent key; what is left is a unit or `null`.
+    let unit_id = request.unit_id.flatten();
+    let course = service::set_course_unit(&mut tx, &actor, id, unit_id).await?;
     tx.commit().await.map_err(TeachingError::from)?;
     Ok(Json(api_course(course)))
 }

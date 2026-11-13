@@ -788,6 +788,75 @@ async fn a_launch_token_says_who_looks_and_is_given_only_to_those_who_may_look()
     .await;
 }
 
+/// Someone who sees the course through a unit role is `staff` to a plugin only while the role may
+/// read the grades (`view_grades`); without it they get no page (ADR-0094).
+#[tokio::test]
+async fn a_unit_viewer_is_staff_only_with_view_grades() {
+    db_test(async |pool| {
+        let w = world(pool).await;
+        w.install_with_a_page("hello", "http://127.0.0.1:9").await;
+        let admin = w.env.user("admin@x.edu", Role::Admin).await;
+        let vic = w.env.user("vic@x.edu", Role::Teacher).await;
+        let unit = w
+            .env
+            .ok(
+                "POST",
+                &admin.token,
+                "/units",
+                Some(json!({"name": "U"})),
+                201,
+            )
+            .await["id"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        w.env
+            .ok(
+                "PUT",
+                &admin.token,
+                &format!("/units/{unit}/roles/{}", vic.id),
+                Some(json!({"role": "viewer"})),
+                204,
+            )
+            .await;
+        w.env
+            .ok(
+                "PUT",
+                &admin.token,
+                &format!("/courses/{}/unit", w.course),
+                Some(json!({"unit_id": unit})),
+                200,
+            )
+            .await;
+
+        // The viewer role reads the grades by default: staff.
+        let launched = w.launch(&vic.token, "hello").await;
+        assert_eq!(
+            launched.status,
+            200,
+            "{}",
+            String::from_utf8_lossy(&launched.body)
+        );
+        assert_eq!(
+            claims_of(launched.json()["token"].as_str().unwrap())["role"],
+            "staff"
+        );
+
+        // `view_grades` switched off: still sees the course, but neither staff nor a student.
+        w.env
+            .ok(
+                "PUT",
+                &admin.token,
+                "/admin/unit-roles/viewer",
+                Some(json!({"abilities": []})),
+                200,
+            )
+            .await;
+        w.launch(&vic.token, "hello").await.problem(404);
+    })
+    .await;
+}
+
 #[tokio::test]
 async fn the_example_page_trusts_only_a_token_the_core_signed() {
     db_test(async |pool| {

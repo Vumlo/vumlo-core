@@ -11,7 +11,7 @@ use uuid::Uuid;
 use super::{GradebookError, course_access};
 use crate::model::{ItemMeta, MyWork, Progress, TodoCounts, WorkEntry, WorkFacts};
 use crate::repo;
-use access::Actor;
+use access::{self, Action, Actor};
 use content::{self, NextDeadline};
 
 /// The facts of every item of the course that the actor may see (ADR-0049, point 5): what
@@ -36,7 +36,9 @@ pub async fn item_meta(
             )
         })
         .collect();
-    if content::sees_drafts(actor, access) {
+    // The counts of what to grade are about submissions: a unit viewer without `view_grades` sees
+    // the drafts of the content, not them.
+    if access::authorize(actor, Action::ViewSubmissions(access)).is_ok() {
         for counts in repo::staff_counts(conn, course_id).await? {
             if let Some(entry) = meta.get_mut(&counts.assignment_id) {
                 entry.staff = Some(counts);
