@@ -164,3 +164,25 @@ fn the_scheme_is_in_the_client_config() {
     let json = serde_json::to_value(ClientConfig::new(&settings, "1.2.3")).unwrap();
     assert_eq!(json["desktop"]["url_scheme"], "vumlo-example-university");
 }
+
+#[test]
+fn the_public_config_carries_the_admin_origin_and_no_other_private_server_key() {
+    let toml = VALID.replace(
+        "bind_addr",
+        "client_ip_header = \"x-sentinel\"\nallowed_origins = [\"https://sentinel.edu\"]\nbind_addr",
+    );
+    let settings = build(&toml, &[]).unwrap();
+    let client = serde_json::to_value(ClientConfig::new(&settings, "1")).unwrap();
+    let server = &client["public"]["server"];
+    assert_eq!(server["admin_origin"], "https://admin.lms.example.edu");
+    assert_eq!(server["public_origin"], "https://lms.example.edu");
+    let text = server.to_string();
+    for private in [
+        "bind_addr",
+        "client_ip_header",
+        "allowed_origins",
+        "sentinel",
+    ] {
+        assert!(!text.contains(private), "{private} in {text}");
+    }
+}
