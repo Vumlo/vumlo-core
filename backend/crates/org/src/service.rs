@@ -44,6 +44,10 @@ pub enum OrgError {
     UnitNameTaken,
     #[error("a unit cannot move under itself or below")]
     UnitCycle,
+    /// A `parent_id` in a request body that names no unit the caller sees: a bad field, like an
+    /// unknown `unit_id` in `teaching`. A unit the caller cannot see reads the same as none.
+    #[error("no such unit")]
+    ParentNotValid,
     #[error("the unit has subunits or courses")]
     UnitInUse,
     #[error("this user cannot hold a unit role")]
@@ -838,6 +842,20 @@ async fn visible_unit(
     Ok((unit, grant))
 }
 
+/// [`visible_unit`] for a parent named by a request body: one the caller cannot see, or that does
+/// not exist, is a bad field (`ParentNotValid`), not a missing resource.
+async fn visible_parent(
+    conn: &mut PgConnection,
+    actor: &Actor,
+    id: Uuid,
+) -> Result<Option<UnitGrant>, OrgError> {
+    match visible_unit(conn, actor, id).await {
+        Ok((_, grant)) => Ok(grant),
+        Err(OrgError::UnitNotFound) => Err(OrgError::ParentNotValid),
+        Err(other) => Err(other),
+    }
+}
+
 /// The units the actor sees with their grant on each: an administrator all of them, everyone else
 /// the ones their roles cover (none for most people).
 pub async fn list_units(
@@ -867,7 +885,7 @@ pub async fn create_unit(
     parent_id: Option<Uuid>,
 ) -> Result<Unit, OrgError> {
     let grant = match parent_id {
-        Some(parent_id) => visible_unit(conn, actor, parent_id).await?.1,
+        Some(parent_id) => visible_parent(conn, actor, parent_id).await?,
         None => None,
     };
     access::authorize(actor, Action::ManageUnits(grant))?;
@@ -875,7 +893,7 @@ pub async fn create_unit(
         .await
         .map_err(|e| match &e {
             // The parent was deleted since we looked.
-            sqlx::Error::Database(db) if db.is_foreign_key_violation() => OrgError::UnitNotFound,
+            sqlx::Error::Database(db) if db.is_foreign_key_violation() => OrgError::ParentNotValid,
             _ => name_taken(e, "units_name_key", OrgError::UnitNameTaken),
         })?;
     audit(
@@ -918,7 +936,7 @@ async fn check_update(
     if moved {
         let new_grant = match new_parent {
             Some(new_parent) => {
-                let (_, grant) = visible_unit(conn, actor, new_parent).await?;
+                let grant = visible_parent(conn, actor, new_parent).await?;
                 if repo::in_subtree(conn, id, new_parent).await? {
                     return Err(OrgError::UnitCycle);
                 }
