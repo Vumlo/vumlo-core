@@ -313,6 +313,76 @@ async fn a_draft_is_submitted_at_the_deadline_and_stamped_with_it() {
     .await;
 }
 
+/// An answer with a paragraph and a `file` block naming a file the student uploaded for `id`.
+async fn answer_with_a_file(w: &World, id: Uuid) -> (Value, Uuid) {
+    let response = w
+        .env
+        .http
+        .post(&format!("/files?for=assignment:{id}&name=notes.txt"))
+        .bearer(&w.student.token)
+        .header("content-type", "text/plain")
+        .body(b"my notes".to_vec())
+        .send()
+        .await;
+    assert_eq!(response.status, 201);
+    let file = id_of(&response.json());
+    let mut answer = essay("my answer");
+    answer["blocks"]
+        .as_array_mut()
+        .unwrap()
+        .push(json!({"id": "f", "type": "file", "props": {"file_id": file}}));
+    (answer, file)
+}
+
+#[tokio::test]
+async fn an_auto_submitted_draft_keeps_its_file() {
+    db_test(async |pool| {
+        let w = world(pool).await;
+        let due = Utc::now() + Duration::hours(1);
+        let id = w.published("text", json!({}), auto_submit_at(due)).await;
+        let (answer, file) = answer_with_a_file(&w, id).await;
+        w.save(id, answer).await;
+
+        let done = w.tick(due + Duration::seconds(1)).await;
+
+        assert_eq!((done.submitted, done.skipped), (1, 0));
+        let held: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM assessment.submission_files sf
+             JOIN assessment.submissions s ON s.id = sf.submission_id
+             WHERE sf.file_id = $1 AND s.status = 'submitted'",
+        )
+        .bind(file)
+        .fetch_one(&w.env.pool)
+        .await
+        .unwrap();
+        assert_eq!(held, 1);
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn a_draft_whose_file_is_gone_is_kept_and_not_submitted_with_a_dangling_reference() {
+    db_test(async |pool| {
+        let w = world(pool).await;
+        let due = Utc::now() + Duration::hours(1);
+        let id = w.published("text", json!({}), auto_submit_at(due)).await;
+        let (answer, file) = answer_with_a_file(&w, id).await;
+        w.save(id, answer).await;
+        sqlx::query("DELETE FROM files.files WHERE id = $1")
+            .bind(file)
+            .execute(&w.env.pool)
+            .await
+            .unwrap();
+
+        let done = w.tick(due + Duration::seconds(1)).await;
+
+        assert_eq!((done.submitted, done.skipped), (0, 1));
+        assert!(w.mine(id).await["draft"].is_object());
+        assert_eq!(w.events("submission.submitted").await, 0);
+    })
+    .await;
+}
+
 #[tokio::test]
 async fn keep_draft_leaves_the_draft_alone() {
     db_test(async |pool| {

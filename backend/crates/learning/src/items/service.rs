@@ -3,7 +3,10 @@ use uuid::Uuid;
 
 use crate::LearningError;
 use crate::assessment::{self, PublishedScore, QuizResult};
-use crate::content::{self, AssignmentFacts, BuiltinType, Item, ItemPatch, ItemRules};
+use crate::content::{
+    self, AssignmentFacts, BuiltinType, Item, ItemPatch, ItemRules, NewItemInput,
+};
+use crate::files::{self, UsageOwner};
 use crate::gradebook;
 use access::Actor;
 
@@ -55,10 +58,28 @@ pub async fn delete_item(
     Ok(())
 }
 
-/// Changes an item. `content` validates and takes the assignment row lock; what only the
-/// gradebook and the attempts know (work submitted, the highest score given) is read after the
-/// lock, and only when the update asks for it, then `content` decides and writes (ADR-0023,
-/// ADR-0035).
+/// Creates a draft item as the last of a module. `content` authorizes and validates, the files it
+/// names are checked and locked (`files::check`), and `content` inserts the item and attaches them
+/// in the same transaction (ADR-0069): the lock is held until the handler commits, so no one else
+/// can attach an upload that this item took.
+pub async fn create_item(
+    conn: &mut PgConnection,
+    actor: &Actor,
+    rules: ItemRules<'_>,
+    module_id: Uuid,
+    input: NewItemInput,
+) -> Result<Item, LearningError> {
+    let creation = content::begin_create_item(conn, actor, rules, module_id, input).await?;
+    let owner = UsageOwner::Item(creation.id());
+    let verdict = files::check(conn, actor.user_id(), &owner, creation.files()).await?;
+    Ok(content::finish_create_item(conn, actor, creation, &verdict).await?)
+}
+
+/// Changes an item. `content` validates and takes the assignment row lock; the files the new body
+/// and config name are checked and locked after it (the order of the locks is the owner's row,
+/// then the files); what only the gradebook and the attempts know (work submitted, the highest
+/// score given) is read after the lock, and only when the update asks for it, then `content`
+/// decides and writes (ADR-0023, ADR-0035, ADR-0069).
 pub async fn update_item(
     conn: &mut PgConnection,
     actor: &Actor,
@@ -67,6 +88,8 @@ pub async fn update_item(
     patch: ItemPatch,
 ) -> Result<Item, LearningError> {
     let update = content::begin_update_item(conn, actor, rules, id, patch).await?;
+    let verdict =
+        files::check(conn, actor.user_id(), &UsageOwner::Item(id), update.files()).await?;
     let has_submissions =
         update.asks_submissions() && assessment::has_submitted_for_assignment(conn, id).await?;
     let highest_score = if update.asks_scores() {
@@ -78,7 +101,7 @@ pub async fn update_item(
         has_submissions,
         highest_score,
     };
-    Ok(content::finish_update_item(conn, actor, update, facts).await?)
+    Ok(content::finish_update_item(conn, actor, update, facts, &verdict).await?)
 }
 
 /// An item as the actor may read it. A form that is open to the reader also shows which of its

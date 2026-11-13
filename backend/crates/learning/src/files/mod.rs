@@ -9,9 +9,6 @@ mod service;
 mod sweep;
 
 pub use model::{Owner, UsageOwner};
-pub(crate) use routes::disposition;
 pub use routes::router;
-pub use service::{
-    FileError, authorize_upload, ensure_usable, first_non_image, open_for_read, register_upload,
-};
+pub use service::{FileError, authorize_upload, check, open_for_read, register_upload};
 pub use sweep::{run_sweeper, sweep};

@@ -6,4 +6,4 @@ mod routes;
 mod service;
 
 pub use routes::router;
-pub use service::{delete_item, delete_module, get, result, update_item};
+pub use service::{create_item, delete_item, delete_module, get, result, update_item};

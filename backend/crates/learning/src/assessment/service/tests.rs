@@ -3,7 +3,7 @@
 //! transaction open, starts a second on a task, waits until that task is observed blocked on
 //! a lock, and only then lets the first one commit. Nothing sleeps: the order is forced by
 //! the locks, not by timing.
-use crate::tests::db_test;
+use crate::tests::{create_item, db_test, save_draft, submit};
 use test_support::wait_until_blocked;
 
 use std::sync::LazyLock;
@@ -106,7 +106,7 @@ async fn fixture(pool: PgPool, settings: SubmissionSettings) -> Fixture {
     content::publish_module(&mut tx, &owner, module.id, true)
         .await
         .unwrap();
-    let item = content::create_item(
+    let item = create_item(
         &mut tx,
         &owner,
         rules(),

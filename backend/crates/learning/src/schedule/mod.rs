@@ -5,7 +5,7 @@
 //!    (`content::announce_visible`), which a publish route already does for the moment it
 //!    publishes; this catches a `publish_at` that has passed, or one a PATCH cleared;
 //! 2. a draft whose assignment says `on_deadline = auto_submit` is submitted once `due_at` has
-//!    passed (`assessment::auto_submit`).
+//!    passed (`submissions::auto_submit`).
 //!
 //! It is a flow here because it needs `content` and `assessment` both. Like the orphan sweep it
 //! takes the time as a parameter, so a test runs a tick at the moment it chooses.
@@ -18,6 +18,7 @@ use sqlx::PgPool;
 
 use crate::assessment::{self, AssessmentError, DueDraft};
 use crate::content::{self, ContentError, EffectiveProfiles};
+use crate::{LearningError, submissions};
 
 /// How often the scheduler wakes. A `publish_at` or a deadline is acted on at most this late.
 const INTERVAL: Duration = Duration::from_secs(30);
@@ -32,6 +33,8 @@ pub enum ScheduleError {
     Content(#[from] ContentError),
     #[error(transparent)]
     Assessment(#[from] AssessmentError),
+    #[error(transparent)]
+    Learning(#[from] LearningError),
     #[error(transparent)]
     Db(#[from] sqlx::Error),
 }
@@ -94,15 +97,15 @@ async fn submit_one(
     now: DateTime<Utc>,
 ) -> Result<Outcome, ScheduleError> {
     let mut tx = db.begin().await?;
-    match assessment::auto_submit(&mut tx, draft, profiles, now).await {
+    match submissions::auto_submit(&mut tx, draft, profiles, now).await {
         Ok(_) => {
             tx.commit().await?;
             Ok(Outcome::Submitted)
         }
-        Err(AssessmentError::NoDraft | AssessmentError::NotDue | AssessmentError::Concurrent) => {
-            Ok(Outcome::Gone)
-        }
-        Err(error) if error.refuses_submit() => {
+        Err(LearningError::Assessment(
+            AssessmentError::NoDraft | AssessmentError::NotDue | AssessmentError::Concurrent,
+        )) => Ok(Outcome::Gone),
+        Err(LearningError::Assessment(error)) if error.refuses_submit() => {
             // The refused submit may have written part of its work; none of it is kept.
             tx.rollback().await?;
             let mut tx = db.begin().await?;

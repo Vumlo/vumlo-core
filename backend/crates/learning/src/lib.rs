@@ -20,6 +20,7 @@ mod quiz_grade;
 pub mod reports;
 pub mod schedule;
 mod state;
+pub mod submissions;
 pub mod teaching;
 
 pub use enrollment::event_handlers;

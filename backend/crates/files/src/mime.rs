@@ -50,6 +50,14 @@ pub fn is_inline(mime: &str) -> bool {
     INLINE.contains(&mime)
 }
 
+/// True for the four image types an `image` block may show.
+pub fn is_image(mime: &str) -> bool {
+    matches!(
+        mime,
+        "image/png" | "image/jpeg" | "image/gif" | "image/webp"
+    )
+}
+
 /// The type to store for an upload. `head` is the first bytes of the file. A type that may be shown
 /// inline is given only when the bytes agree; otherwise the claim and the name are hints at most.
 pub fn sniff(name: &str, head: &[u8], claimed: &str) -> String {

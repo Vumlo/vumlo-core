@@ -26,24 +26,6 @@ fn a_range_outside_the_file_is_refused_and_an_unusable_one_is_ignored() {
 }
 
 #[test]
-fn a_name_cannot_break_out_of_the_disposition() {
-    let value = disposition("a\"; filename=evil.exe\r\nX: y%.pdf", true);
-    let text = value.to_str().expect("an ASCII header value");
-    assert_eq!(
-        text,
-        "inline; filename=\"a__ filename=evil.exe__X: y_.pdf\"; \
-         filename*=UTF-8''a%22%3B%20filename%3Devil.exe%0D%0AX%3A%20y%25.pdf"
-    );
-    let value = disposition("Звіт з фізики.pdf", false);
-    assert!(
-        value
-            .to_str()
-            .expect("ASCII")
-            .starts_with("attachment; filename=\"____ _ ______.pdf\"; filename*=UTF-8''%D0%97")
-    );
-}
-
-#[test]
 fn if_none_match_matches_a_list_a_weak_tag_and_a_star() {
     let with = |value: &str| {
         let mut headers = HeaderMap::new();

@@ -6,9 +6,13 @@ mod model;
 mod repo;
 mod service;
 mod storage;
+mod verdict;
 
-pub use mime::{clean_name, is_inline, sniff};
+pub use mime::{clean_name, is_image, is_inline, sniff};
 pub use model::{File, Stored};
 pub use object_store::GetResult;
-pub use service::{FilesError, candidates, delete, get, insert, put, read};
+pub use service::{
+    FilesError, candidates, delete, drop_object, forget, get, insert, lock, put, read, try_lock,
+};
 pub use storage::Storage;
+pub use verdict::FileVerdict;

@@ -23,10 +23,9 @@ use uuid::Uuid;
 use super::model::{self, ColumnStatus, FeedbackInput, GradeInput, Students};
 use super::service::{self, GradebookError};
 use crate::LearningState;
-use crate::files;
 use access::Actor;
 use common::PageParams;
-use common::{ApiError, ValidJson, ValidQuery};
+use common::{ApiError, ValidJson, ValidQuery, content_disposition};
 
 mod groups;
 mod work;
@@ -324,7 +323,7 @@ async fn export_gradebook(
     headers.insert(header::CONTENT_TYPE, HeaderValue::from_static(XLSX));
     headers.insert(
         header::CONTENT_DISPOSITION,
-        files::disposition(&format!("Gradebook {title}.xlsx"), false),
+        content_disposition(&format!("Gradebook {title}.xlsx"), false),
     );
     // Marks of students: nothing keeps a copy.
     headers.insert(

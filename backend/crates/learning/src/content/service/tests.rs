@@ -21,6 +21,22 @@ fn rules() -> ItemRules<'static> {
     }
 }
 
+/// Creates an item that names no file, so the verdict of the file check is the empty one. An item
+/// that names files is created through `learning::items::create_item`, which checks them.
+async fn create_item(
+    conn: &mut PgConnection,
+    actor: &Actor,
+    rules: ItemRules<'_>,
+    module_id: Uuid,
+    title: ContentTitle,
+    body: Option<Value>,
+    assignment: Option<Assignment>,
+) -> Result<Item, ContentError> {
+    let input = NewItemInput::document(title, body, assignment);
+    let creation = begin_create_item(conn, actor, rules, module_id, input).await?;
+    finish_create_item(conn, actor, creation, &FileVerdict::default()).await
+}
+
 /// Two creators each read "the last position" before the other commits, so both pick the
 /// same one. The unique constraint is deferred: neither insert waits for the other, and the
 /// loser fails at its own commit. The steps run one after another on purpose, so the
@@ -196,7 +212,14 @@ impl Course {
     ) -> Result<Item, ContentError> {
         // Nothing is submitted or graded in these tests: the facts of the modules above are empty.
         let update = begin_update_item(conn, &self.owner, rules(), id, patch).await?;
-        finish_update_item(conn, &self.owner, update, AssignmentFacts::default()).await
+        finish_update_item(
+            conn,
+            &self.owner,
+            update,
+            AssignmentFacts::default(),
+            &FileVerdict::default(),
+        )
+        .await
     }
 
     async fn assignment(&self, id: Uuid) -> Assignment {

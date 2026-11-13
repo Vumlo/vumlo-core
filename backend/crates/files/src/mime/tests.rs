@@ -1,6 +1,16 @@
 use super::*;
 
 #[test]
+fn is_image_accepts_png_jpeg_gif_and_webp_only() {
+    for mime in ["image/png", "image/jpeg", "image/gif", "image/webp"] {
+        assert!(is_image(mime), "{mime}");
+    }
+    for mime in ["image/svg+xml", "application/pdf", "text/plain", ""] {
+        assert!(!is_image(mime), "{mime}");
+    }
+}
+
+#[test]
 fn sniff_accepts_real_pdf_png_jpeg_gif_webp() {
     assert_eq!(sniff("a.bin", b"%PDF-1.7 rest", ""), "application/pdf");
     assert_eq!(sniff("a.bin", b"\x89PNG\r\n\x1a\nrest", ""), "image/png");

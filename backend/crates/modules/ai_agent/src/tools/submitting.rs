@@ -13,7 +13,7 @@ use chrono::Utc;
 use common::{ApiError, PageParams};
 use learning::assessment;
 use learning::content::{BuiltinType, ItemRules};
-use learning::items;
+use learning::{items, submissions};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 use sqlx::PgConnection;
@@ -166,7 +166,7 @@ impl Write {
                 assignment_id,
                 text,
             } => {
-                assessment::save_draft(
+                submissions::save_draft(
                     conn,
                     actor,
                     *assignment_id,
@@ -178,7 +178,7 @@ impl Write {
                 .map_err(ApiError::from)?;
             }
             Self::SubmitWork { assignment_id } => {
-                assessment::submit(conn, actor, *assignment_id, rules.profiles, now)
+                submissions::submit(conn, actor, *assignment_id, rules.profiles, now)
                     .await
                     .map_err(ApiError::from)?;
             }
