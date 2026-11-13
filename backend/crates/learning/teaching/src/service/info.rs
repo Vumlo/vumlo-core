@@ -14,7 +14,7 @@ use crate::model::{
 };
 use crate::repo;
 use access::Actor;
-use access::{self, Action, CourseStatus};
+use access::{self, Action, CourseAccess, CourseStatus};
 use common::{Page, PageParams};
 use events::{self, AuditEntry};
 
@@ -87,9 +87,10 @@ pub async fn update_course_info(
             description.as_ref().map(CourseDescription::as_str),
         )
         .await?;
-        events::audit_admin(
+        events::audit_implicit(
             conn,
             actor,
+            access,
             course_entry("course.update", course_id, json!({"fields": fields})),
         )
         .await?;
@@ -110,9 +111,10 @@ pub async fn archive_course(
         return Ok(course);
     }
     let archived = repo::set_status(conn, course_id, CourseStatus::Archived).await?;
-    events::audit_admin(
+    events::audit_implicit(
         conn,
         actor,
+        access,
         course_entry("course.archive", course_id, json!({})),
     )
     .await?;
@@ -132,9 +134,10 @@ pub async fn restore_course(
         return Ok(course);
     }
     let restored = repo::set_status(conn, course_id, CourseStatus::Published).await?;
-    events::audit_admin(
+    events::audit_implicit(
         conn,
         actor,
+        access,
         course_entry("course.restore", course_id, json!({})),
     )
     .await?;
@@ -149,21 +152,24 @@ pub async fn begin_delete_course(
     conn: &mut PgConnection,
     actor: &Actor,
     course_id: Uuid,
-) -> Result<(), TeachingError> {
+) -> Result<CourseAccess, TeachingError> {
     let (_, access) = load(conn, actor, course_id, true).await?;
     access::authorize(actor, Action::DeleteCourse(access))?;
-    Ok(())
+    Ok(access)
 }
 
 /// Second half: audits and deletes the course, under the lock [`begin_delete_course`] took.
+/// `access` is the one that call answered with.
 pub async fn finish_delete_course(
     conn: &mut PgConnection,
     actor: &Actor,
+    access: CourseAccess,
     course_id: Uuid,
 ) -> Result<(), TeachingError> {
-    events::audit_admin(
+    events::audit_implicit(
         conn,
         actor,
+        access,
         course_entry("course.delete", course_id, json!({})),
     )
     .await?;

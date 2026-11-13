@@ -196,12 +196,23 @@ async fn insert_owned_course(
     )
     .await
     .map_err(term_fk)?;
-    if !implicit_course_owner(actor) {
+    let role = if implicit_course_owner(actor) {
+        None
+    } else {
         repo::upsert_membership(conn, course.id, actor.user_id(), CourseRole::Teacher).await?;
-    }
-    events::audit_admin(
+        Some(CourseRole::Teacher)
+    };
+    // `unit_grant` stays `None` until a course is created inside a unit.
+    let access = CourseAccess {
+        role,
+        is_owner: true,
+        status: course.status,
+        unit_grant: None,
+    };
+    events::audit_implicit(
         conn,
         actor,
+        access,
         AuditEntry {
             action: "course.create",
             resource_type: "course",
@@ -311,9 +322,10 @@ pub async fn publish_course(
         CourseStatus::Archived => Err(TeachingError::NotPublishable),
         CourseStatus::Draft => {
             let published = repo::set_published(conn, course_id).await?;
-            events::audit_admin(
+            events::audit_implicit(
                 conn,
                 actor,
+                access,
                 AuditEntry {
                     action: "course.publish",
                     resource_type: "course",
@@ -382,9 +394,10 @@ pub async fn put_member(
     repo::upsert_membership(conn, course_id, user_id, role).await?;
     repo::delete_exclusion(conn, course_id, user_id).await?;
     enrollment_changed(conn, course_id, [user_id]).await?;
-    events::audit_admin(
+    events::audit_implicit(
         conn,
         actor,
+        access,
         AuditEntry {
             action: "course.member.put",
             resource_type: "course",
@@ -541,9 +554,10 @@ pub async fn remove_member(
         repo::insert_exclusion(conn, course_id, user_id, actor.user_id()).await?;
     }
     enrollment_changed(conn, course_id, [user_id]).await?;
-    events::audit_admin(
+    events::audit_implicit(
         conn,
         actor,
+        access,
         AuditEntry {
             action: "course.member.remove",
             resource_type: "course",
@@ -592,9 +606,10 @@ pub async fn update_course(
     )
     .await
     .map_err(term_fk)?;
-    events::audit_admin(
+    events::audit_implicit(
         conn,
         actor,
+        access,
         AuditEntry {
             action: "course.update",
             resource_type: "course",
@@ -660,9 +675,10 @@ pub async fn link_group(
     };
     let brought = repo::link_users(conn, link.id).await?;
     enrollment_changed(conn, course_id, brought).await?;
-    events::audit_admin(
+    events::audit_implicit(
         conn,
         actor,
+        access,
         AuditEntry {
             action: "course.group.link",
             resource_type: "course",
@@ -688,9 +704,10 @@ pub async fn unlink_group(
         .await?
         .ok_or(TeachingError::LinkNotFound)?;
     enrollment_changed(conn, course_id, leaving).await?;
-    events::audit_admin(
+    events::audit_implicit(
         conn,
         actor,
+        access,
         AuditEntry {
             action: "course.group.unlink",
             resource_type: "course",
@@ -743,9 +760,10 @@ pub async fn restore_exclusion(
         return Err(TeachingError::ExclusionNotFound);
     }
     enrollment_changed(conn, course_id, [user_id]).await?;
-    events::audit_admin(
+    events::audit_implicit(
         conn,
         actor,
+        access,
         AuditEntry {
             action: "course.exclusion.restore",
             resource_type: "course",

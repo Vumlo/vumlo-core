@@ -33,7 +33,7 @@ pub async fn delete(
     actor: &Actor,
     course_id: Uuid,
 ) -> Result<(), LearningError> {
-    teaching::begin_delete_course(conn, actor, course_id).await?;
+    let access = teaching::begin_delete_course(conn, actor, course_id).await?;
     content::lock_course_assignments(conn, course_id).await?;
     if gradebook::has_grades_in_course(conn, course_id).await? {
         return Err(LearningError::CourseHasGrades);
@@ -43,7 +43,7 @@ pub async fn delete(
     }
     gradebook::purge_course(conn, course_id).await?;
     assessment::purge_course(conn, course_id).await?;
-    teaching::finish_delete_course(conn, actor, course_id).await?;
+    teaching::finish_delete_course(conn, actor, access, course_id).await?;
     Ok(())
 }
 

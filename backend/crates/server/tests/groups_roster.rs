@@ -1392,14 +1392,20 @@ async fn admin_roster_and_edit_writes_are_audited_and_staff_writes_are_not() {
         );
         assert_eq!(
             rows[0].meta,
-            json!({"group_id": group.to_string(), "subgroup_id": null})
+            json!({"group_id": group.to_string(), "subgroup_id": null, "via": "admin"})
         );
         assert_eq!(
             rows[1].meta,
-            json!({"user_id": s.id.to_string(), "role": "student", "excluded": true})
+            json!({"user_id": s.id.to_string(), "role": "student", "excluded": true, "via": "admin"})
         );
-        assert_eq!(rows[2].meta, json!({"user_id": s.id.to_string()}));
-        assert_eq!(rows[3].meta, json!({"fields": ["title", "term_id"]}));
+        assert_eq!(
+            rows[2].meta,
+            json!({"user_id": s.id.to_string(), "via": "admin"})
+        );
+        assert_eq!(
+            rows[3].meta,
+            json!({"fields": ["title", "term_id"], "via": "admin"})
+        );
     })
     .await;
 }

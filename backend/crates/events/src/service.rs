@@ -8,7 +8,7 @@ use super::dispatch::{SubscriberError, emit_with, installed};
 use super::model::{AuditEntry, Event, Handlers};
 use super::repo;
 use access::Actor;
-use access::{AccessError, implicit_course_owner};
+use access::{AccessError, CourseAccess, Via, implicit_access};
 
 #[derive(Debug, thiserror::Error)]
 pub enum EventsError {
@@ -87,18 +87,25 @@ pub async fn emit(conn: &mut PgConnection, event: Event) -> Result<(), EventsErr
     emit_with(conn, event, installed()?).await
 }
 
-/// Like [`audit`], but only when `actor` acts as an implicit course owner. Admins have no
-/// membership, so everything they change inside a course is audited (ADR-0004); other actors
-/// write nothing.
-pub async fn audit_admin(
+/// Like [`audit`], but only when `actor` reached the course without being on it: an admin
+/// (ADR-0004) or the holder of a unit grant (ADR-0094). The entry's `meta` (an object) gains `via`
+/// (`admin` or `unit`) and, for a unit, `unit_id`. An actor who is on the course writes nothing.
+pub async fn audit_implicit(
     conn: &mut PgConnection,
     actor: &Actor,
-    entry: AuditEntry,
+    access: CourseAccess,
+    mut entry: AuditEntry,
 ) -> Result<(), EventsError> {
-    if implicit_course_owner(actor) {
-        audit(conn, actor, entry).await?;
+    let Some(via) = implicit_access(actor, access) else {
+        return Ok(());
+    };
+    if let Some(meta) = entry.meta.as_object_mut() {
+        meta.insert("via".to_owned(), via.as_str().into());
+        if let (Via::Unit, Some(grant)) = (via, access.unit_grant) {
+            meta.insert("unit_id".to_owned(), grant.unit_id.to_string().into());
+        }
     }
-    Ok(())
+    audit(conn, actor, entry).await
 }
 
 // ---------------------------------------------------------------------------------------------

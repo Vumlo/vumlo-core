@@ -1930,7 +1930,10 @@ async fn admin_writes_are_audited_with_the_course_id_and_staff_writes_are_not() 
             ]
         );
         for (_, _, _, meta) in &rows {
-            assert_eq!(meta, &json!({"course_id": w.course.to_string()}));
+            assert_eq!(
+                meta,
+                &json!({"course_id": w.course.to_string(), "via": "admin"})
+            );
         }
         let actors: Vec<Option<Uuid>> =
             sqlx::query_scalar!("SELECT DISTINCT actor_id FROM events.audit_log")
@@ -2888,7 +2891,10 @@ async fn admin_assignment_writes_are_audited_and_staff_writes_are_not() {
             ]
         );
         for (_, _, _, meta) in &rows {
-            assert_eq!(meta, &json!({"course_id": w.course.to_string()}));
+            assert_eq!(
+                meta,
+                &json!({"course_id": w.course.to_string(), "via": "admin"})
+            );
         }
     })
     .await;

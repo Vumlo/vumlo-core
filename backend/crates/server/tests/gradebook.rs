@@ -1188,12 +1188,12 @@ async fn admin_grade_writes_are_audited_and_staff_writes_and_reads_are_not() {
         assert_eq!(rows[0].resource_id, a);
         assert_eq!(
             rows[0].meta,
-            json!({"course_id": w.course, "student_id": w.student.id})
+            json!({"course_id": w.course, "student_id": w.student.id, "via": "admin"})
         );
         assert_eq!(rows[1].action, "grade.publish");
         assert_eq!(
             rows[1].meta,
-            json!({"course_id": w.course, "student_ids": [w.student.id]})
+            json!({"course_id": w.course, "student_ids": [w.student.id], "via": "admin"})
         );
         let raw = format!(
             "{:?}",

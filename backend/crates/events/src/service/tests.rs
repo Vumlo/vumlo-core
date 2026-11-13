@@ -312,3 +312,102 @@ async fn a_claimed_event_says_when_it_happened() {
     })
     .await;
 }
+
+fn audit_entry(resource_id: Uuid) -> AuditEntry {
+    AuditEntry {
+        action: "course.update",
+        resource_type: "course",
+        resource_id,
+        meta: serde_json::json!({"field": "title"}),
+    }
+}
+
+fn course_access(
+    role: Option<access::CourseRole>,
+    unit_grant: Option<access::UnitGrant>,
+) -> access::CourseAccess {
+    access::CourseAccess {
+        role,
+        is_owner: false,
+        status: access::CourseStatus::Published,
+        unit_grant,
+    }
+}
+
+async fn audit_rows(pool: &PgPool) -> Vec<serde_json::Value> {
+    sqlx::query_scalar!("SELECT meta FROM events.audit_log ORDER BY id")
+        .fetch_all(pool)
+        .await
+        .unwrap()
+}
+
+#[tokio::test]
+async fn audit_implicit_writes_for_an_admin_with_via_admin() {
+    db_test(async |pool| {
+        let admin = test_support::insert_user(&pool, "a@x.edu", "admin").await;
+        let actor = Actor::for_tests(admin, common::Role::Admin, Uuid::now_v7());
+        let mut conn = pool.acquire().await.unwrap();
+
+        audit_implicit(
+            &mut conn,
+            &actor,
+            course_access(None, None),
+            audit_entry(Uuid::now_v7()),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(
+            audit_rows(&pool).await,
+            [serde_json::json!({"field": "title", "via": "admin"})]
+        );
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn audit_implicit_writes_for_a_unit_grant_with_via_and_unit_id() {
+    db_test(async |pool| {
+        let teacher = test_support::insert_user(&pool, "t@x.edu", "teacher").await;
+        let actor = Actor::for_tests(teacher, common::Role::Teacher, Uuid::now_v7());
+        let unit_id = Uuid::now_v7();
+        let access = course_access(None, Some(access::UnitGrant::full(unit_id)));
+        let mut conn = pool.acquire().await.unwrap();
+
+        audit_implicit(&mut conn, &actor, access, audit_entry(Uuid::now_v7()))
+            .await
+            .unwrap();
+
+        assert_eq!(
+            audit_rows(&pool).await,
+            [serde_json::json!({"field": "title", "via": "unit", "unit_id": unit_id})]
+        );
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn audit_implicit_writes_nothing_for_a_course_teacher() {
+    db_test(async |pool| {
+        let teacher = test_support::insert_user(&pool, "t@x.edu", "teacher").await;
+        let actor = Actor::for_tests(teacher, common::Role::Teacher, Uuid::now_v7());
+        let unit_id = Uuid::now_v7();
+        let mut conn = pool.acquire().await.unwrap();
+
+        // On the course, with or without a unit grant on top: not an implicit way in.
+        for access in [
+            course_access(Some(access::CourseRole::Teacher), None),
+            course_access(
+                Some(access::CourseRole::Teacher),
+                Some(access::UnitGrant::full(unit_id)),
+            ),
+        ] {
+            audit_implicit(&mut conn, &actor, access, audit_entry(Uuid::now_v7()))
+                .await
+                .unwrap();
+        }
+
+        assert!(audit_rows(&pool).await.is_empty());
+    })
+    .await;
+}

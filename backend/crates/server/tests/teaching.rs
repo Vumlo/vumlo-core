@@ -1097,9 +1097,9 @@ async fn admin_actions_are_audited_and_other_actions_are_not() {
         }
         assert_eq!(
             rows[1].meta,
-            json!({"user_id": student.id.to_string(), "role": "student"})
+            json!({"user_id": student.id.to_string(), "role": "student", "via": "admin"})
         );
-        assert_eq!(rows[0].meta, json!({}));
+        assert_eq!(rows[0].meta, json!({"via": "admin"}));
     })
     .await;
 }

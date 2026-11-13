@@ -9,7 +9,7 @@ use super::{TeachingError, load};
 use crate::model::Announcement;
 use crate::repo;
 use access::Actor;
-use access::{self, Action};
+use access::{self, Action, CourseAccess};
 use common::{Page, PageParams};
 use events::{self, AuditEntry, Event};
 
@@ -41,7 +41,14 @@ pub async fn publish_announcement(
         },
     )
     .await?;
-    audit(conn, actor, "course.announcement.publish", &announcement).await?;
+    audit(
+        conn,
+        actor,
+        access,
+        "course.announcement.publish",
+        &announcement,
+    )
+    .await?;
     Ok(announcement)
 }
 
@@ -94,7 +101,7 @@ pub async fn update_announcement(
     let updated = repo::update_announcement(conn, id, title.map(str::trim), body)
         .await?
         .ok_or(TeachingError::AnnouncementNotFound)?;
-    audit(conn, actor, "course.announcement.update", &updated).await?;
+    audit(conn, actor, access, "course.announcement.update", &updated).await?;
     Ok(updated)
 }
 
@@ -106,18 +113,20 @@ pub async fn delete_announcement(
     let (found, access) = locked(conn, actor, id).await?;
     access::authorize(actor, Action::EditContent(access))?;
     repo::delete_announcement(conn, id).await?;
-    audit(conn, actor, "course.announcement.delete", &found).await
+    audit(conn, actor, access, "course.announcement.delete", &found).await
 }
 
 async fn audit(
     conn: &mut PgConnection,
     actor: &Actor,
+    access: CourseAccess,
     action: &'static str,
     announcement: &Announcement,
 ) -> Result<(), TeachingError> {
-    events::audit_admin(
+    events::audit_implicit(
         conn,
         actor,
+        access,
         AuditEntry {
             action,
             resource_type: "course",

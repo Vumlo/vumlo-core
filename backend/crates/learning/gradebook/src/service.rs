@@ -131,13 +131,15 @@ async fn lock_max_points(
 async fn audit(
     conn: &mut PgConnection,
     actor: &Actor,
+    access: CourseAccess,
     action: &'static str,
     assignment_id: Uuid,
     meta: serde_json::Value,
 ) -> Result<(), GradebookError> {
-    events::audit_admin(
+    events::audit_implicit(
         conn,
         actor,
+        access,
         AuditEntry {
             action,
             resource_type: "assignment",
@@ -239,6 +241,7 @@ pub async fn save_grade(
     audit(
         conn,
         actor,
+        context.access,
         "grade.save",
         assignment_id,
         json!({"course_id": context.course_id, "student_id": student_id}),
@@ -416,6 +419,7 @@ pub async fn publish_grades(
         audit(
             conn,
             actor,
+            context.access,
             "grade.publish",
             assignment_id,
             json!({"course_id": context.course_id, "student_ids": student_ids}),
