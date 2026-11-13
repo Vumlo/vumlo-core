@@ -282,12 +282,7 @@
       "AdminPluginSetting": {
         "description": "One institution setting of a plugin, with what a form needs to ask for it. A secret never\ncarries its value: `is_set` says whether there is one.",
         "properties": {
-          "default": {
-            "type": [
-              "object",
-              "null"
-            ]
-          },
+          "default": {},
           "description": {
             "type": "string"
           },
@@ -337,11 +332,7 @@
             "type": "boolean"
           },
           "value": {
-            "description": "The value in force; never present for a secret.",
-            "type": [
-              "object",
-              "null"
-            ]
+            "description": "The value in force; never present for a secret."
           }
         },
         "required": [

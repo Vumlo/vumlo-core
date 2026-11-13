@@ -487,12 +487,10 @@ pub struct AdminPluginSetting {
     pub maximum: Option<f64>,
     /// The type of the entries of an `array`: `string` or `number`.
     pub item_kind: Option<String>,
-    #[schema(value_type = Option<Object>)]
     pub default: Option<Value>,
     /// Whether a value was set, as opposed to the default applying.
     pub is_set: bool,
     /// The value in force; never present for a secret.
-    #[schema(value_type = Option<Object>)]
     pub value: Option<Value>,
 }
 

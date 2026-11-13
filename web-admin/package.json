@@ -1,0 +1,30 @@
+{
+  "name": "vumlo-web-admin",
+  "private": true,
+  "version": "0.6.1",
+  "type": "module",
+  "scripts": {
+    "dev": "node ../web/scripts/brand.mjs --optional && vite",
+    "dev:mock": "node ../web/scripts/brand.mjs --optional && vite --mode mock",
+    "build": "node ../web/scripts/brand.mjs && tsc --noEmit && vite build && node scripts/finish.mjs",
+    "preview": "vite preview",
+    "typecheck": "node ../web/scripts/brand.mjs && tsc --noEmit",
+    "lint": "oxlint && node ../web/scripts/check-colors.mjs ./src",
+    "test:e2e": "playwright test"
+  },
+  "dependencies": {
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.56.1",
+    "@types/node": "^24.19.2",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.2",
+    "msw": "^3.0.5",
+    "oxlint": "^1.90.0",
+    "typescript": "~7.0.2",
+    "vite": "^8.3.6"
+  }
+}

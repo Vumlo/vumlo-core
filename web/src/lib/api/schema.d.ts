@@ -3200,7 +3200,7 @@ export interface components {
          *     carries its value: `is_set` says whether there is one.
          */
         AdminPluginSetting: {
-            default?: Record<string, never> | null;
+            default?: unknown;
             description: string;
             /** @description Whether a value was set, as opposed to the default applying. */
             is_set: boolean;
@@ -3217,7 +3217,7 @@ export interface components {
             options?: string[] | null;
             secret: boolean;
             /** @description The value in force; never present for a secret. */
-            value?: Record<string, never> | null;
+            value?: unknown;
         };
         AdminPluginSettings: {
             items: components["schemas"]["AdminPluginSetting"][];

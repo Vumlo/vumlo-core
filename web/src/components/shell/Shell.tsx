@@ -89,7 +89,7 @@ function AccountMenu({ user }: { user: User }) {
           </Link>
           {user.role === "admin" && (
             // Administration is another address with its own sign-in (ADR-0095), so a plain link.
-            <a role="menuitem" href={`${clientConfig.public.server.admin_origin}/console`} className="menu-item" onClick={() => setOpen(false)}>
+            <a role="menuitem" href={clientConfig.public.server.admin_origin} className="menu-item" onClick={() => setOpen(false)}>
               <Icon name="admin" size={16} /> {t("account.adminConsole")}
             </a>
           )}

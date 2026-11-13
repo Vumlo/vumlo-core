@@ -20,8 +20,7 @@ export default defineConfig({
   webServer: external
     ? undefined
     : {
-        // The console answers on 127.0.0.1 and the student app on localhost: one process, two doors (ADR-0095).
-        command: `VUMLO_ADMIN_HOST=127.0.0.1:${port} pnpm dev:mock --port ${port}`,
+        command: `pnpm dev:mock --port ${port}`,
         url: `http://localhost:${port}/login`,
         reuseExistingServer: !process.env.CI,
         timeout: 120_000,

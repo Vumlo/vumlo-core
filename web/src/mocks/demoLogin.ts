@@ -3,6 +3,3 @@
 import { accounts, PASSWORD } from "./identities";
 
 export const demo: { email: string; password: string } = { email: accounts.student, password: PASSWORD };
-
-/** The console's sign-in form starts filled in with the demo administrator, under the mock only. */
-export const consoleDemo: { email: string; password: string } = { email: accounts.admin, password: PASSWORD };
