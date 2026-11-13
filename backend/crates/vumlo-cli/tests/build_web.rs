@@ -170,3 +170,46 @@ async fn it_needs_the_web_app_and_a_dry_run_does_nothing() {
     })
     .await;
 }
+
+#[tokio::test]
+async fn it_builds_the_admin_console_after_the_web_app_when_the_release_has_one() {
+    db_test(async |pool| {
+        let env = Env::new(&pool);
+        web_app(&env);
+        std::fs::create_dir_all(env.path("web-admin")).unwrap();
+        std::fs::write(env.path("web-admin/package.json"), "{}").unwrap();
+        let bin = env.path("bin");
+        let path = fake_npm(&bin, 0);
+
+        let dry = env
+            .run_with(
+                &["build", "web", "--dry-run"],
+                None,
+                &[("DATABASE_URL", env.url.as_str()), ("PATH", path.as_str())],
+            )
+            .await;
+        assert!(dry.ok, "{}", dry.stderr);
+        assert!(dry.stdout.contains("web-admin"), "{}", dry.stdout);
+        assert!(calls(&bin).is_empty(), "a dry run runs nothing");
+
+        let out = env
+            .run_with(
+                &["build", "web"],
+                None,
+                &[("DATABASE_URL", env.url.as_str()), ("PATH", path.as_str())],
+            )
+            .await;
+        assert!(out.ok, "{}", out.stderr);
+        assert_eq!(
+            calls(&bin),
+            [
+                "install | web",
+                "run build | web",
+                "install | web-admin",
+                "run build | web-admin"
+            ]
+        );
+        assert!(out.stdout.contains("web-admin/dist"), "{}", out.stdout);
+    })
+    .await;
+}

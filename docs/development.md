@@ -28,6 +28,11 @@ before the first start with `VUMLO_INSTITUTION_MODE` (`school` or `university`, 
 `http://localhost:3000`, set `VUMLO_PUBLIC_ORIGIN` to its origin. The admin console's origin is
 `VUMLO_ADMIN_ORIGIN` (default `http://localhost:3001`, and never the same as the public one).
 
+The admin console is its own app in `web-admin/` (Vite, React): `cd web-admin && npm install && npm run dev` serves it on
+`http://localhost:3001`, forwarding `/api` to the core (`VUMLO_API_ORIGIN`, default `http://127.0.0.1:8080`); `npm run dev:mock`
+runs it against the mock API with no backend. It reads the branding `vumlo-cli brand apply` writes into `web/`, and the parts of
+`web/src` that do not depend on Next.js (the design tokens, the API client, the texts); `npm run build` makes `dist/`.
+
 Without Docker for the API:
 
 ```

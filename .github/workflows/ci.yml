@@ -39,8 +39,8 @@ jobs:
           # What each job reads. The backend tests also read the versions in web/ and desktop/, deploy/ and the logo.
           ci='^\.github/workflows/ci\.yml$'
           {
-            hit "$ci|^(backend|brand|deploy)/|^web/package\.json$|^desktop/(package\.json|Cargo\.toml)$|^rust-toolchain" && echo backend=true || echo backend=false
-            hit "$ci|^(web|backend|brand)/|^deploy/(vumlo\.example\.toml|env\.example)$" && echo web=true || echo web=false
+            hit "$ci|^(backend|brand|deploy)/|^web(-admin)?/package\.json$|^desktop/(package\.json|Cargo\.toml)$|^rust-toolchain" && echo backend=true || echo backend=false
+            hit "$ci|^(web|web-admin|backend|brand)/|^deploy/(vumlo\.example\.toml|env\.example)$" && echo web=true || echo web=false
             hit "$ci|^(desktop|web|backend|brand)/|^deploy/(vumlo\.example\.toml|env\.example)$" && echo desktop=true || echo desktop=false
           } >> "$GITHUB_OUTPUT"
           cat "$GITHUB_OUTPUT"
@@ -144,6 +144,37 @@ jobs:
           cargo run -q -p vumlo-cli -- --config ../vumlo.toml brand apply
       - run: npm ci
       - run: npm run typecheck
+      - run: npm run build
+
+  # The admin console (ADR-0095): a static app of its own that reads the shared parts of web/src and the same branding.
+  console:
+    needs: changes
+    if: needs.changes.outputs.web == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web-admin
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: web-admin/package-lock.json
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: backend
+      - name: Generate the branding
+        working-directory: backend
+        env:
+          SQLX_OFFLINE: "true"
+          DATABASE_URL: postgres://ci:ci@localhost:5432/ci
+        run: |
+          cargo run -q -p vumlo-cli -- init --dir ..
+          cargo run -q -p vumlo-cli -- --config ../vumlo.toml brand apply
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint
       - run: npm run build
 
   # The desktop app (ADR-0056): the Rust crate's own checks, the unit tests of the installer's configuration, and

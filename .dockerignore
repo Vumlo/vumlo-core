@@ -9,3 +9,6 @@ web/.next
 web/test-results
 web/playwright-report
 web/src/modules/enabled.ts
+web-admin/node_modules
+web-admin/dist
+web-admin/test-results

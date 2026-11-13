@@ -18,6 +18,21 @@
 - **Units and unit roles need no new API**: `GET/POST /units`, `/units/{id}/roles`, `/units/{id}/candidates` and `/admin/unit-roles` exist (ADR-0094). Only their page is new.
 - **The term list** is the existing terms half of the old admin courses page; it moves as "Terms".
 
+## Amendment during execution (owner decision, after Task 4)
+
+The owner asked for the console to be **a separate light app**, not pages of the Next.js app, so that it can be served
+as static files next to the core. What changed, and what stayed:
+
+- The console is `web-admin/` (Vite 8, React 19, TypeScript 7, scaffolded with `npm create vite`), built to `dist/`. It
+  has its own router (about 60 lines), reads the framework-free parts of `web/src` through an alias (`@/`) and answers
+  `next/link` and `next/navigation` with shims. Its mock API and e2e tests are its own (`web-admin/e2e`, Playwright).
+- Gone with it: `proxy.ts`, the host selection, the desktop export's stash of the console, `allowedDevOrigins`. The student
+  app only lost its `/admin` pages and gained a link in the account menu. Tasks 3 and 4 were redone in `web-admin`;
+  tasks 5 to 7 (plugins, units and roles, mail) were written there. The routes have no `/console` prefix.
+- Task 8 became: `deploy/Dockerfile.console` (Caddy serving `dist/` and forwarding `/api`), a `console` service on port
+  3001, the Caddy block of `VUMLO_ADMIN_DOMAIN`, a `console` job in CI, `vumlo-cli build web` building `web-admin/` too, and
+  `web-admin` among the release's version places and archive allowlist. The `create-vumlo` question follows in its own repository.
+
 ## Global Constraints
 
 - Work on a branch, never `main`; small Conventional Commits; push only when asked. Branch `feat/admin-console-web` from `feat/admin-console-door`.
