@@ -5258,12 +5258,15 @@ export interface components {
         };
         /** @description Puts a course into a unit, or takes it out with `null`. */
         SetCourseUnitRequest: {
-            /** Format: uuid */
-            unit_id?: string | null;
+            /**
+             * Format: uuid
+             * @description The unit, or `null` for none. Required: a body without it is a 422, never a silent clear.
+             */
+            unit_id: string | null;
         };
         /**
          * @description The switches a unit role has afterwards: exactly these. An empty list leaves the role able to
-         *     view only.
+         *     view only. A repeated ability counts once.
          */
         SetUnitRoleAbilitiesRequest: {
             abilities: components["schemas"]["UnitAbility"][];
@@ -14984,15 +14987,6 @@ export interface operations {
                     "application/problem+json": components["schemas"]["ProblemDetails"];
                 };
             };
-            /** @description No such parent, or the caller cannot see it */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ProblemDetails"];
-                };
-            };
             /** @description The name is taken under the parent */
             409: {
                 headers: {
@@ -15002,7 +14996,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["ProblemDetails"];
                 };
             };
-            /** @description Invalid name */
+            /** @description Invalid name, or a parent_id that names no unit the caller sees */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -15113,7 +15107,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["ProblemDetails"];
                 };
             };
-            /** @description No such unit (or new parent), or the caller cannot see it */
+            /** @description No such unit, or the caller cannot see it */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -15131,7 +15125,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["ProblemDetails"];
                 };
             };
-            /** @description Invalid name, or the new parent is the unit or below it */
+            /** @description Invalid name, a parent_id that names no unit the caller sees, or the new parent is the unit or below it */
             422: {
                 headers: {
                     [name: string]: unknown;

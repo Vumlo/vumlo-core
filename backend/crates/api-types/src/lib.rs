@@ -492,7 +492,7 @@ pub struct CreateCourseRequest {
 #[derive(Debug, Clone, Serialize, Deserialize, Validate, ToSchema)]
 pub struct SetCourseUnitRequest {
     /// The unit, or `null` for none. Required: a body without it is a 422, never a silent clear.
-    /// `Some(None)` is `null`; the outer `None` (absent) is refused by `required`.
+    // `Some(None)` is `null`; the outer `None` (absent) is refused by `garde(required)`.
     #[serde(default, deserialize_with = "org::present")]
     #[schema(required = true, value_type = Option<Uuid>)]
     #[garde(required)]
