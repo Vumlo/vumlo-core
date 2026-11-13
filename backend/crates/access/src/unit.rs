@@ -72,6 +72,17 @@ impl UnitGrant {
         }
     }
 
+    /// The grant made of ability names as stored. A name that is no ability is an error, never a
+    /// smaller grant: dropping it would silently take a right away (or, were the rule ever
+    /// inverted, give one).
+    pub fn from_names(unit_id: Uuid, names: &[String]) -> Result<Self, String> {
+        let abilities = names
+            .iter()
+            .map(|name| name.parse::<UnitAbility>())
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(Self::new(unit_id, abilities))
+    }
+
     /// Every ability: an admin's view of a unit.
     pub fn full(unit_id: Uuid) -> Self {
         Self::new(unit_id, UnitAbility::ALL)

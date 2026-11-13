@@ -780,27 +780,24 @@ pub async fn remove_subgroup_member(
 // Units (ADR-0094)
 // ---------------------------------------------------------------------------------------------
 
-/// Does the actor pass a check that only an administrator passes? (No unit grant opens a top-level
-/// unit.) The one place `org` learns who is an admin; the rule itself lives in `access`.
-fn is_admin(actor: &Actor) -> bool {
-    access::authorize(actor, Action::ManageUnits(None)).is_ok()
+/// The grant stored abilities make on `unit_id`. A text that is no ability is a decode error
+/// ([`UnitGrant::from_names`]).
+fn grant_of(unit_id: Uuid, abilities: &[String]) -> Result<UnitGrant, OrgError> {
+    UnitGrant::from_names(unit_id, abilities)
+        .map_err(|message| sqlx::Error::Decode(message.into()).into())
 }
 
-fn grant_of(unit_id: Uuid, abilities: &[String]) -> UnitGrant {
-    UnitGrant::new(unit_id, abilities.iter().filter_map(|a| a.parse().ok()))
-}
-
-/// The actor's grant on a unit that is known to exist.
+/// The actor's grant on a unit that is known to exist, as `access` reads their roles there.
 async fn grant_on(
     conn: &mut PgConnection,
     actor: &Actor,
     unit_id: Uuid,
 ) -> Result<Option<UnitGrant>, OrgError> {
-    if is_admin(actor) {
-        return Ok(Some(UnitGrant::full(unit_id)));
-    }
-    let abilities = repo::unit_abilities(conn, actor.user_id(), unit_id).await?;
-    Ok(abilities.map(|abilities| grant_of(unit_id, &abilities)))
+    let held = match repo::unit_abilities(conn, actor.user_id(), unit_id).await? {
+        Some(abilities) => Some(grant_of(unit_id, &abilities)?),
+        None => None,
+    };
+    Ok(access::effective_unit_grant(actor, unit_id, held))
 }
 
 /// The grant on the parent of a unit; a top-level unit has none (only an admin manages it).
@@ -848,25 +845,18 @@ pub async fn list_units(
     actor: &Actor,
 ) -> Result<Vec<(Unit, UnitGrant)>, OrgError> {
     access::authorize(actor, Action::ViewOwnUnits)?;
-    if is_admin(actor) {
-        let units = repo::list_units(conn).await?;
-        return Ok(units
-            .into_iter()
-            .map(|unit| {
-                let grant = UnitGrant::full(unit.id);
-                (unit, grant)
-            })
-            .collect());
+    let mut held = HashMap::new();
+    for (unit, abilities) in repo::list_units_of_user(conn, actor.user_id()).await? {
+        held.insert(unit.id, grant_of(unit.id, &abilities)?);
     }
-    let rows = repo::list_units_of_user(conn, actor.user_id()).await?;
-    Ok(rows
+    // ponytail: reads every unit for everyone, fine for hundreds; a query per role kind if it grows.
+    let units = repo::list_units(conn).await?;
+    Ok(units
         .into_iter()
-        .map(|(unit, abilities)| {
-            let grant = grant_of(unit.id, &abilities);
-            (unit, grant)
+        .filter_map(|unit| {
+            let grant = access::effective_unit_grant(actor, unit.id, held.get(&unit.id).copied())?;
+            Some((unit, grant))
         })
-        // A grant a student somehow holds is ignored (ADR-0037); `access` decides.
-        .filter(|(_, grant)| access::authorize(actor, Action::ViewUnit(Some(*grant))).is_ok())
         .collect())
 }
 

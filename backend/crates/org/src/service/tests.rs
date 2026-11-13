@@ -873,3 +873,13 @@ async fn an_unauthorized_grant_does_not_wait_for_the_person() {
     })
     .await;
 }
+
+#[test]
+fn an_unknown_ability_in_the_database_is_an_error_not_a_smaller_grant() {
+    let abilities = vec!["view_grades".to_owned(), "fly".to_owned()];
+    let outcome = grant_of(Uuid::now_v7(), &abilities);
+    assert!(
+        matches!(outcome, Err(OrgError::Db(sqlx::Error::Decode(_)))),
+        "{outcome:?}"
+    );
+}

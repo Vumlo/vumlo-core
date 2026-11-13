@@ -1550,6 +1550,71 @@ fn a_unit_grant_keeps_its_abilities_in_order() {
 }
 
 #[test]
+fn an_admin_holds_every_ability_on_every_unit_and_a_student_none() {
+    let unit = Uuid::now_v7();
+    let held = Some(UnitGrant::new(unit, [UnitAbility::ViewGrades]));
+    assert_eq!(
+        effective_unit_grant(&actor(Role::Admin), unit, None),
+        Some(UnitGrant::full(unit))
+    );
+    assert_eq!(
+        effective_unit_grant(&actor(Role::Admin), unit, held),
+        Some(UnitGrant::full(unit))
+    );
+    assert_eq!(
+        effective_unit_grant(&actor(Role::Student), unit, held),
+        None
+    );
+    assert_eq!(
+        effective_unit_grant(&actor(Role::Teacher), unit, held),
+        held
+    );
+    assert_eq!(
+        effective_unit_grant(&actor(Role::Teacher), unit, None),
+        None
+    );
+}
+
+#[test]
+fn a_grant_from_names_refuses_a_name_that_is_no_ability() {
+    let unit = Uuid::now_v7();
+    let names = |names: &[&str]| names.iter().map(|n| (*n).to_owned()).collect::<Vec<_>>();
+    assert_eq!(
+        UnitGrant::from_names(unit, &names(&["grade", "view_grades"])),
+        Ok(UnitGrant::new(
+            unit,
+            [UnitAbility::Grade, UnitAbility::ViewGrades]
+        ))
+    );
+    assert_eq!(
+        UnitGrant::from_names(unit, &[]),
+        Ok(UnitGrant::new(unit, []))
+    );
+    assert!(UnitGrant::from_names(unit, &names(&["grade", "fly"])).is_err());
+}
+
+/// `ALL` is a list the compiler does not keep in step with the enum: a new variant breaks the
+/// match below, and once it is numbered there this test fails until `ALL` holds it too.
+#[test]
+fn unit_ability_all_holds_every_variant() {
+    const VARIANTS: usize = 6;
+    let index = |ability: UnitAbility| match ability {
+        UnitAbility::ViewGrades => 0,
+        UnitAbility::EditContent => 1,
+        UnitAbility::Grade => 2,
+        UnitAbility::ManageRoster => 3,
+        UnitAbility::ManageCourses => 4,
+        UnitAbility::ManageUnits => 5,
+    };
+    assert_eq!(UnitAbility::ALL.len(), VARIANTS);
+    let mut seen = [false; VARIANTS];
+    for ability in UnitAbility::ALL {
+        seen[index(ability)] = true;
+    }
+    assert!(seen.iter().all(|seen| *seen), "{seen:?}");
+}
+
+#[test]
 fn unit_role_allowed_is_for_teachers_and_admins() {
     assert!(unit_role_allowed(Role::Teacher));
     assert!(unit_role_allowed(Role::Admin));

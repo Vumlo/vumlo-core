@@ -1,6 +1,7 @@
 //! The only place that decides who may do what (ADR-0004, ADR-0019). Deny by default.
 
 use chrono::{DateTime, Utc};
+use uuid::Uuid;
 
 mod actor;
 mod extract;
@@ -393,6 +394,21 @@ pub fn group_role_allowed(institution: Role) -> bool {
 /// actions are audited.
 pub fn implicit_course_owner(actor: &Actor) -> bool {
     actor.role() == Role::Admin
+}
+
+/// The grant the actor holds on `unit_id`, given `held`, the union of their unit roles there: an
+/// admin holds every ability on every unit, a student none (ADR-0037, ADR-0094), anyone else what
+/// their roles give them.
+pub fn effective_unit_grant(
+    actor: &Actor,
+    unit_id: Uuid,
+    held: Option<UnitGrant>,
+) -> Option<UnitGrant> {
+    match actor.role() {
+        Role::Admin => Some(UnitGrant::full(unit_id)),
+        Role::Student => None,
+        Role::Teacher => held,
+    }
 }
 
 /// How an actor reached a course without being on it (ADR-0094).
