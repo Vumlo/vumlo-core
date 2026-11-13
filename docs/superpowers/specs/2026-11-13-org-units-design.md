@@ -123,11 +123,20 @@ pub struct CourseAccess { pub role, pub is_owner, pub status, pub unit_grant: Op
 | `ViewGradebook`, `ViewSubmissions` | `view_grades` |
 | `EditContent` | `edit_content` |
 | `GradeAssignment`, `PublishGrades`, `ManageGradebook` | `grade` |
-| `ManageRoster`, `ChangeRoster`, `ManageMembership{any role}`, `LinkGroups`, `ChangeGroupLinks` | `manage_roster` |
+| `ManageRoster`, `ChangeRoster`, `ManageMembership{any role}`, `LinkGroups`, `ChangeGroupLinks` | `manage_roster` (for `ManageMembership`, never on the actor's own row: see below) |
 | `EditCourse`, `PublishCourse`, `ArchiveCourse` | `manage_courses` |
 | `DeleteCourse`, `TransferOwnership`, student actions | never |
 
 The archived-course check after the permission stays as it is.
+
+`ManageMembership` carries `target_is_actor` (the member put, changed or removed is the actor). A permission that comes
+only from the unit grant (not admin, not course owner or staff) is refused when it is set: a manager adds anyone else
+at any course role, but never puts themselves on the roster, changes their own role or removes themselves, or they
+could make themselves the course's staff past the admin's switches, and unaudited.
+
+`effective_unit_grant(actor, unit_id, held)` says what grant an actor holds on a unit from `held`, the union of their
+roles there: an admin every ability on every unit, a student none, anyone else `held`. `org` asks it rather than
+deciding who is an admin itself.
 
 New actions, each with a `UnitGrant` (or `None` for "no grant on that unit") inside:
 
@@ -150,9 +159,10 @@ admin). The reason is the same for a unit grant: the actor is not on the course,
 The test moves from the actor to the access:
 
 - `access` gets `implicit_access(actor, access) -> Option<Via>` (`Via::Admin | Via::Unit`): the actor acts on the course
-  without being on it. An admin who created the course is its `owner_id` with no membership, and is still audited, so
-  the test is "the actor is an admin, or reached the course only through a unit grant", not `!is_owner && role.is_none()`.
-  A later kind of contextual access adds a `Via`, with no change to callers.
+  without being its staff. An admin who created the course is its `owner_id` with no membership, and is still audited,
+  so the test is "the actor is an admin (`Via::Admin`), or holds a unit grant and is not the course's owner, teacher or
+  assistant (`Via::Unit`)": `has_unit_grant && !is_staff`. A grantee who is a student of the course writes through the
+  grant and is audited. A later kind of contextual access adds a `Via`, with no change to callers.
 - `events::audit_admin` became `events::audit_implicit(conn, actor, access, entry)` (the actor comes before the access),
   writing when `implicit_access` is `Some`. Its callers (teaching, content, assessment, gradebook) pass the `CourseAccess`
   they already authorized with; where one did not hold it, its loader returns it (as `load` does).
@@ -223,6 +233,9 @@ are regenerated. Beyond this table, `GET /courses/{id}` carries `can` (5b) and `
 - Unit-level reports and dashboards (the admin reports stay institution-wide).
 - Installer questions about units (the "more setup choices" roadmap item).
 - Deleting a unit that still has courses (move them first).
+- **Copying a course or making a template needs only `ManageContent`**, which any unit grant holds, so a view-only
+  grantee can copy what they can already read (drafts included) into a course of their own. Deliberately unchanged in
+  PR A: the copy belongs to the copier and reveals nothing they could not read. Flagged for review.
 
 ## 10. Delivery
 
@@ -238,10 +251,10 @@ The user's standing requirement: a later change must not break the system. Each 
 
 | Extension | Where it goes | What else changes |
 |---|---|---|
-| A new ability | a `UnitAbility` variant, its row in the rule table (section 5), a migration widening the `CHECK` | nothing: the view, the admin page (lists what `GET /admin/unit-roles` offers) and `can` follow |
-| A new unit role | a `UnitRole` variant, a migration widening the `CHECK` and seeding its abilities | the admin page lists roles from the API |
+| A new ability | a `UnitAbility` variant in `access` (the compiler asks for its bit; a test fails until `UnitAbility::ALL` holds it) and in `api-types`, its row in the rule table (section 5), a migration widening the `CHECK` | the view and the admin page's switches follow (they list what `GET /admin/unit-roles` offers); `can` gets a field only if the web app must show the new action; OpenAPI and web types are regenerated |
+| A new unit role | a `UnitRole` variant in `access` and `api-types`, a migration widening the `CHECK` and seeding its abilities | `UnitRoleAbilities` (the `GET /admin/unit-roles` response, one field per role) gets a field, and the admin page shows it |
 | Groups (or anything else) in units | a `unit_id` column on the owner's table; its rules read `org.unit_grants` | `org` and `access` unchanged |
-| Another kind of contextual access | a field on `CourseAccess` and its rows in `authorize` | audit follows `is_implicit`, no caller changes |
+| Another kind of contextual access | a field on `CourseAccess` and its rows in `authorize` | audit follows `implicit_access` (a new `Via`), no caller changes |
 | A large tree | the body of `org.unit_grants` (section 2, B) | no reader changes |
 
 The invariants that keep it so: rules only in `access`; `org` owns units, roles and abilities and is read only through
@@ -261,3 +274,8 @@ rule); response shapes beyond the fields named; page layout within the existing 
 5. `GET /units` is authorized by `Action::ViewOwnUnits` and is not paginated (sections 5 and 7).
 6. `like_pattern` (the `ILIKE` escaper) moved from `teaching::service::info` to `common`, so `org` can search candidates with it.
 7. `unit_roles.user_id` references `auth.users` (the schema of the users table), and `events::audit_implicit` takes `(conn, actor, access, entry)`.
+8. From the whole-branch review: implicit access is `has_unit_grant && !is_staff` (5a); `ManageMembership.target_is_actor`
+   and `effective_unit_grant` (section 5); `PUT /courses/{id}/unit` requires `unit_id` (`null` to clear, `{}` is `422`);
+   an unknown or unseen `parent_id` in a unit request body is `422` on `parent_id`; a plugin launch token says `staff`
+   only to whoever may read the submissions (`ViewSubmissions`), `student` to a course student, and is refused to anyone
+   else; the counts to grade on the item facts need `ViewSubmissions`.
