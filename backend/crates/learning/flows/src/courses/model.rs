@@ -4,7 +4,7 @@ use uuid::Uuid;
 
 use crate::content::NextDeadline;
 use crate::gradebook::Progress;
-use crate::teaching::{CardCourse, Course};
+use teaching::{CardCourse, Course};
 
 /// One entry of a staff card's to-do list.
 #[derive(Debug, Clone, PartialEq, Eq)]

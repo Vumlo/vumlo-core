@@ -75,7 +75,7 @@ const UNITS: &[Unit] = &[
     },
     Unit {
         name: "teaching",
-        dir: "learning/flows/src/teaching",
+        dir: "learning/teaching/src",
         schema: Some("teaching"),
         layer: 7,
     },

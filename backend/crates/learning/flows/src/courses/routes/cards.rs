@@ -12,10 +12,10 @@ use crate::LearningState;
 use crate::content::NextDeadline;
 use crate::courses::model::{CourseCardData, Todo};
 use crate::courses::service;
-use crate::teaching::api_course;
 use access::Actor;
 use access::CourseRole;
 use common::ApiError;
+use teaching::api_course;
 
 fn api_todo(todo: Todo) -> CardTodo {
     match todo {

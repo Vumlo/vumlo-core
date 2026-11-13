@@ -39,6 +39,7 @@ org.workspace = true
 plugins.workspace = true
 sha2.workspace = true
 sqlx.workspace = true
+teaching.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 tower-http.workspace = true

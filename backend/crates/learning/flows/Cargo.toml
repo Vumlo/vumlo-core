@@ -19,6 +19,7 @@ rust_xlsxwriter.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 sqlx.workspace = true
+teaching.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 tracing.workspace = true
@@ -32,6 +33,7 @@ access = { workspace = true, features = ["testing"] }
 auth = { workspace = true, features = ["testing"] }
 events = { workspace = true, features = ["testing"] }
 org = { workspace = true, features = ["testing"] }
+teaching = { workspace = true, features = ["testing"] }
 object_store.workspace = true
 test-support.workspace = true
 

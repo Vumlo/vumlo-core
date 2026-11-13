@@ -3,7 +3,6 @@ use sqlx::PgConnection;
 
 use super::model::TermUsage;
 use crate::LearningError;
-use crate::teaching;
 use access::Actor;
 use access::{self, Action};
 use org;

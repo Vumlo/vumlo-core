@@ -10,9 +10,9 @@ use crate::LearningError;
 use crate::LearningState;
 use crate::courses::model;
 use crate::courses::service;
-use crate::teaching::{CourseInfoUpdate, api_linked_group, api_person};
 use access::Actor;
 use common::{ApiError, ValidJson};
+use teaching::{CourseInfoUpdate, api_linked_group, api_person};
 
 /// Counts are far below `u32::MAX`; a database that disagreed would still not overflow the field.
 fn count(n: i64) -> u32 {

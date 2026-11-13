@@ -6,10 +6,10 @@ use serde_json::Map;
 use std::sync::LazyLock;
 
 use super::*;
-use crate::teaching::CourseTitle;
 use auth::{self, Email, NewUser, PersonName};
 use common::ApiError;
 use common::Role;
+use teaching::CourseTitle;
 
 static PROFILES: LazyLock<EffectiveProfiles> = LazyLock::new(EffectiveProfiles::unrestricted);
 

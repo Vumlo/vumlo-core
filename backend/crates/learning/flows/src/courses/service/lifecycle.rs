@@ -6,9 +6,9 @@ use sqlx::PgConnection;
 use uuid::Uuid;
 
 use crate::LearningError;
-use crate::teaching::{self, Course, CourseTitle};
 use crate::{assessment, content, gradebook};
 use access::Actor;
+use teaching::{self, Course, CourseTitle};
 
 /// Moves a draft course to published. Publishing a published course changes nothing. Publishing
 /// is what lets students see the assignments it was hiding, so those are announced to the

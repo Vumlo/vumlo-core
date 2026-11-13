@@ -4,10 +4,10 @@ use super::assessment::AssessmentError;
 use super::content::ContentError;
 use super::files::FileError;
 use super::gradebook::GradebookError;
-use super::teaching::TeachingError;
 use access::AccessError;
 use auth::AuthError;
 use org::OrgError;
+use teaching::TeachingError;
 
 /// What goes wrong in a flow that crosses modules: the error of the module that failed.
 #[derive(Debug, thiserror::Error)]

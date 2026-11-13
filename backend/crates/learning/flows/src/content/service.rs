@@ -29,11 +29,11 @@ use super::repo::{self, CopiedIds, ItemRow, ModuleRow};
 use super::rules::Node;
 use super::standing;
 use super::types::form::{self, Holders};
-use crate::teaching::{self, TeachingError};
 use ::files::FileVerdict;
 use access::Actor;
 use access::{self, AccessError, Action, CourseAccess, CourseStatus, Release};
 use events::{self, AuditEntry, Event, EventsError};
+use teaching::{self, TeachingError};
 use vumlo_config::GradingScale;
 
 /// The most points one assignment can be worth on the `twelve` scale (ADR-0022).

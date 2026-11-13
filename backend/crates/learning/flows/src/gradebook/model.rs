@@ -5,8 +5,8 @@ use uuid::Uuid;
 use super::layout::{GroupDef, Outcome, Settings, Setup};
 use crate::content::{BuiltinType, ItemFacts, MaxPoints};
 use crate::points;
-use crate::teaching::CardCourse;
 use common::text_enum;
+use teaching::CardCourse;
 
 const FEEDBACK_MAX_LEN: usize = 4000;
 
@@ -70,7 +70,7 @@ pub struct UnpublishedContentRow {
 /// What a teacher has to do across their courses (ADR-0052).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TeachingOverview {
-    pub courses: Vec<crate::teaching::CardCourse>,
+    pub courses: Vec<teaching::CardCourse>,
     pub to_grade: Vec<ToGradeRow>,
     pub unpublished: Vec<UnpublishedRow>,
     pub deadlines: Vec<DeadlineRow>,

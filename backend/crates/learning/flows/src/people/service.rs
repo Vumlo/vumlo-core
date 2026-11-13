@@ -3,7 +3,6 @@ use uuid::Uuid;
 
 use super::model::UserFacts;
 use crate::LearningError;
-use crate::teaching;
 use access::Actor;
 use access::{self, Action};
 use auth::{self, User, UserUpdate};

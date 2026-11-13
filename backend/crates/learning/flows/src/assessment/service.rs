@@ -26,11 +26,11 @@ use crate::content::{
     self, Assignment, AssignmentType, AutoGrade, BuiltinType, DocumentErrors, EffectiveProfiles,
     FileRef, OnDeadline, OpenError, OpenedAssignment, Stage, distinct_ids,
 };
-use crate::teaching::TeachingError;
 use access::Actor;
 use access::{self, AccessError, Action};
 use common::{Page, PageParams};
 use events::{self, Event, EventsError};
+use teaching::TeachingError;
 
 #[derive(Debug, thiserror::Error)]
 pub enum AssessmentError {

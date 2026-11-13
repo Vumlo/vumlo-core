@@ -13,12 +13,12 @@ use crate::content::{
 };
 use crate::files::sweep;
 use crate::items;
-use crate::teaching::{self, CourseTitle};
 use access::CourseRole;
 use auth::{self, Email, NewUser, PersonName};
 use common::Role;
 use files::{Storage, Stored};
 use object_store::memory::InMemory;
+use teaching::{self, CourseTitle};
 use vumlo_config::GradingScale;
 
 static PROFILES: LazyLock<EffectiveProfiles> = LazyLock::new(EffectiveProfiles::unrestricted);

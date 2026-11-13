@@ -8,7 +8,6 @@ use crate::LearningError;
 use crate::content::{self, DraftItem, NextDeadline};
 use crate::courses::model::{CourseCardData, Todo};
 use crate::gradebook::{self, Progress, TodoCounts};
-use crate::teaching;
 use access::Actor;
 
 /// How many titles of unpublished items a card names.

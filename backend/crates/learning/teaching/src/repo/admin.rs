@@ -3,7 +3,7 @@
 use sqlx::PgConnection;
 use uuid::Uuid;
 
-use crate::teaching::model::{AdminCourseRow, CourseLineRow, LinkedCourseRow};
+use crate::model::{AdminCourseRow, CourseLineRow, LinkedCourseRow};
 use access::CourseStatus;
 
 /// Regular courses after `after` (a course id), by id, with owner, term and student count.

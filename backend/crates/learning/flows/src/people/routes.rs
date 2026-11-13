@@ -52,7 +52,7 @@ pub async fn user_facts(
 ) -> Result<Json<UserFacts>, ApiError> {
     let mut conn = state.db.acquire().await.map_err(LearningError::from)?;
     let facts = service::user_facts(&mut conn, &actor, id).await?;
-    let line = |course: crate::teaching::CourseLineRow| CourseLine {
+    let line = |course: teaching::CourseLineRow| CourseLine {
         course_id: course.course_id,
         code: course.code,
         title: course.title,

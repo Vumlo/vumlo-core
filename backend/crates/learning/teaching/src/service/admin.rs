@@ -6,8 +6,8 @@ use sqlx::PgConnection;
 use uuid::Uuid;
 
 use super::TeachingError;
-use crate::teaching::model::{AdminCourseRow, LinkedCourseRow, UserCourseFacts};
-use crate::teaching::repo;
+use crate::model::{AdminCourseRow, LinkedCourseRow, UserCourseFacts};
+use crate::repo;
 use access::Actor;
 use access::{self, Action};
 use common::{Page, PageParams};

@@ -3,8 +3,8 @@
 use sqlx::PgConnection;
 
 use super::{TeachingError, access_of};
-use crate::teaching::model::{CardCourse, ScopedCourse};
-use crate::teaching::repo;
+use crate::model::{CardCourse, ScopedCourse};
+use crate::repo;
 use access::Actor;
 use access::{self, Action};
 

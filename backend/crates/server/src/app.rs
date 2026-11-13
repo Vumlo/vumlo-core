@@ -33,11 +33,11 @@ use events::Handlers;
 use learning::assessment;
 use learning::content::{self, EditorConfigError, EffectiveProfiles};
 use learning::gradebook;
-use learning::teaching;
 use learning::{self, LearningState};
 use mail::{MailError, MailState, Mailer};
 use org::{self, OrgState};
 use plugins::PluginsState;
+use teaching::TeachingState;
 use vumlo_config::Settings;
 
 /// Shorter than the request timeout, so an unreachable database surfaces as 503, not 408.
@@ -62,6 +62,7 @@ pub struct AppState {
     pub mailer: Option<Arc<Mailer>>,
     pub mail_context: Option<mail::Context>,
     pub org: OrgState,
+    pub teaching: TeachingState,
     pub learning: LearningState,
     pub plugins: PluginsState,
     /// The optional modules compiled in, each after the ones it requires.
@@ -83,6 +84,12 @@ impl FromRef<AppState> for AuthState {
 impl FromRef<AppState> for OrgState {
     fn from_ref(state: &AppState) -> Self {
         state.org.clone()
+    }
+}
+
+impl FromRef<AppState> for TeachingState {
+    fn from_ref(state: &AppState) -> Self {
+        state.teaching.clone()
     }
 }
 
@@ -192,6 +199,7 @@ impl AppState {
                 db: db.clone(),
                 config: config.clone(),
             },
+            teaching: TeachingState { db: db.clone() },
             learning: LearningState {
                 db: db.clone(),
                 config: config.clone(),

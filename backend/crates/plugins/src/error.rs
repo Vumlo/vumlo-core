@@ -1,7 +1,7 @@
 use access::AccessError;
 use common::ApiError;
 use learning::assessment::AssessmentError;
-use learning::teaching::TeachingError;
+use teaching::TeachingError;
 
 use crate::secret::SecretError;
 

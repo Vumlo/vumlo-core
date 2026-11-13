@@ -6,8 +6,6 @@ use events::{Event, HandlerError, Handlers, OutboxEvent};
 use sqlx::PgPool;
 use uuid::Uuid;
 
-use crate::teaching;
-
 const GROUP_MEMBERS_CHANGED: &str = "group.members_changed";
 
 /// The outbox handler of `group.members_changed`: one `enrollment.changed` for every user and

@@ -6,8 +6,8 @@ use sqlx::PgConnection;
 use uuid::Uuid;
 
 use super::{TeachingError, load};
-use crate::teaching::model::Announcement;
-use crate::teaching::repo;
+use crate::model::Announcement;
+use crate::repo;
 use access::Actor;
 use access::{self, Action};
 use common::{Page, PageParams};

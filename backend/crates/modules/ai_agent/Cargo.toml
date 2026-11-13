@@ -17,6 +17,7 @@ org.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 sqlx.workspace = true
+teaching.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 tracing.workspace = true

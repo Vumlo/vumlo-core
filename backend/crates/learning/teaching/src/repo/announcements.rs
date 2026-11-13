@@ -3,7 +3,7 @@
 use sqlx::PgConnection;
 use uuid::Uuid;
 
-use crate::teaching::model::Announcement;
+use crate::model::Announcement;
 
 pub async fn insert(
     conn: &mut PgConnection,

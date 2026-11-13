@@ -7,9 +7,9 @@ use axum::extract::{Path, State};
 use uuid::Uuid;
 
 use super::api_course;
-use crate::LearningState;
-use crate::teaching::model;
-use crate::teaching::service::{self, TeachingError};
+use crate::TeachingState;
+use crate::model;
+use crate::service::{self, TeachingError};
 use access::Actor;
 use common::Role;
 use common::{ApiError, ValidQuery};
@@ -47,7 +47,7 @@ fn api_candidate(candidate: model::Candidate) -> Candidate {
     )
 )]
 pub async fn archive_course(
-    State(state): State<LearningState>,
+    State(state): State<TeachingState>,
     actor: Actor,
     Path(id): Path<Uuid>,
 ) -> Result<Json<Course>, ApiError> {
@@ -76,7 +76,7 @@ pub async fn archive_course(
     )
 )]
 pub async fn restore_course(
-    State(state): State<LearningState>,
+    State(state): State<TeachingState>,
     actor: Actor,
     Path(id): Path<Uuid>,
 ) -> Result<Json<Course>, ApiError> {
@@ -107,7 +107,7 @@ pub async fn restore_course(
     )
 )]
 pub async fn get_candidates(
-    State(state): State<LearningState>,
+    State(state): State<TeachingState>,
     actor: Actor,
     Path(id): Path<Uuid>,
     ValidQuery(query): ValidQuery<CandidatesQuery>,

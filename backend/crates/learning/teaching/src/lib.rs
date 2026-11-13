@@ -4,6 +4,7 @@ mod model;
 mod repo;
 mod routes;
 mod service;
+mod state;
 
 pub use model::{
     CardCourse, Course, CourseGroupLink, CourseHeader, CourseInfoUpdate, CourseKind, CourseLineRow,
@@ -21,7 +22,11 @@ pub use service::{
     transfer_ownership, unlink_group, update_course, update_course_info, user_course_facts,
     user_standing_changed,
 };
+pub use state::TeachingState;
 
 // Archives a course for the tests of `learning::files`.
-#[cfg(test)]
+#[cfg(feature = "testing")]
 pub use service::archive_course;
+
+#[cfg(test)]
+mod tests;

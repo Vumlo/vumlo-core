@@ -1,7 +1,7 @@
 use uuid::Uuid;
 
-use crate::teaching::LinkedCourseRow;
 use org::MemberLine;
+use teaching::LinkedCourseRow;
 
 /// A group, its people and the courses that use it (ADR-0053).
 #[derive(Debug, Clone, PartialEq, Eq)]

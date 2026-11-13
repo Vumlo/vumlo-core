@@ -30,7 +30,6 @@ use super::repo;
 mod groups;
 mod work;
 use crate::content::{self, ContentError, OpenError, OpenedAssignment};
-use crate::teaching::{self, TeachingError};
 use access::Actor;
 use access::{self, AccessError, Action, CourseAccess, CourseRole, CourseStatus};
 use common::{Page, PageParams};
@@ -39,6 +38,7 @@ pub use groups::{
     GroupInput, SettingsPatch, create_group, delete_group, my_summary, place, save_group,
     structure, update_settings,
 };
+use teaching::{self, TeachingError};
 pub use work::{item_meta, my_work, student_next, student_progress, todo_counts};
 
 #[derive(Debug, thiserror::Error)]

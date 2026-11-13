@@ -5,8 +5,8 @@ use axum::Json;
 use axum::extract::State;
 
 use super::{api_status, page_params};
-use crate::LearningState;
-use crate::teaching::service::{self, TeachingError};
+use crate::TeachingState;
+use crate::service::{self, TeachingError};
 use access::Actor;
 use common::{ApiError, ValidQuery};
 
@@ -29,7 +29,7 @@ use common::{ApiError, ValidQuery};
     )
 )]
 pub async fn list_admin_courses(
-    State(state): State<LearningState>,
+    State(state): State<TeachingState>,
     actor: Actor,
     ValidQuery(query): ValidQuery<PageQuery>,
 ) -> Result<Json<Page<AdminCourse>>, ApiError> {

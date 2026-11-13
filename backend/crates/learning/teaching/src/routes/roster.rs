@@ -10,12 +10,11 @@ use axum::http::StatusCode;
 use uuid::Uuid;
 
 use super::page_params;
-use crate::LearningState;
-use crate::teaching::model;
-use crate::teaching::service::{self, TeachingError};
+use crate::TeachingState;
+use crate::model;
+use crate::service::{self, TeachingError};
 use access::Actor;
 use common::{ApiError, ValidJson, ValidQuery};
-use org;
 
 fn api_link(link: model::CourseGroupLink) -> CourseGroupLink {
     CourseGroupLink {
@@ -71,7 +70,7 @@ fn api_exclusion(exclusion: model::Exclusion) -> Exclusion {
     )
 )]
 pub async fn list_links(
-    State(state): State<LearningState>,
+    State(state): State<TeachingState>,
     actor: Actor,
     Path(id): Path<Uuid>,
     ValidQuery(query): ValidQuery<PageQuery>,
@@ -110,7 +109,7 @@ pub async fn list_links(
     )
 )]
 pub async fn link_group(
-    State(state): State<LearningState>,
+    State(state): State<TeachingState>,
     actor: Actor,
     Path(id): Path<Uuid>,
     ValidJson(request): ValidJson<LinkGroupRequest>,
@@ -149,7 +148,7 @@ pub async fn link_group(
     )
 )]
 pub async fn unlink_group(
-    State(state): State<LearningState>,
+    State(state): State<TeachingState>,
     actor: Actor,
     Path((id, link_id)): Path<(Uuid, Uuid)>,
 ) -> Result<StatusCode, ApiError> {
@@ -180,7 +179,7 @@ pub async fn unlink_group(
     )
 )]
 pub async fn group_options(
-    State(state): State<LearningState>,
+    State(state): State<TeachingState>,
     actor: Actor,
     Path(id): Path<Uuid>,
     ValidQuery(query): ValidQuery<PageQuery>,
@@ -216,7 +215,7 @@ pub async fn group_options(
     )
 )]
 pub async fn list_exclusions(
-    State(state): State<LearningState>,
+    State(state): State<TeachingState>,
     actor: Actor,
     Path(id): Path<Uuid>,
     ValidQuery(query): ValidQuery<PageQuery>,
@@ -252,7 +251,7 @@ pub async fn list_exclusions(
     )
 )]
 pub async fn restore_exclusion(
-    State(state): State<LearningState>,
+    State(state): State<TeachingState>,
     actor: Actor,
     Path((id, user_id)): Path<(Uuid, Uuid)>,
 ) -> Result<StatusCode, ApiError> {

@@ -10,9 +10,9 @@ use axum::http::StatusCode;
 use uuid::Uuid;
 
 use super::page_params;
-use crate::LearningState;
-use crate::teaching::model;
-use crate::teaching::service::{self, TeachingError};
+use crate::TeachingState;
+use crate::model;
+use crate::service::{self, TeachingError};
 use access::Actor;
 use common::{ApiError, ValidJson, ValidQuery};
 
@@ -46,7 +46,7 @@ fn api_announcement(a: model::Announcement) -> Announcement {
     )
 )]
 pub async fn list_announcements(
-    State(state): State<LearningState>,
+    State(state): State<TeachingState>,
     actor: Actor,
     Path(id): Path<Uuid>,
     ValidQuery(query): ValidQuery<PageQuery>,
@@ -84,7 +84,7 @@ pub async fn list_announcements(
     )
 )]
 pub async fn publish_announcement(
-    State(state): State<LearningState>,
+    State(state): State<TeachingState>,
     actor: Actor,
     Path(id): Path<Uuid>,
     ValidJson(body): ValidJson<CreateAnnouncementRequest>,
@@ -119,7 +119,7 @@ pub async fn publish_announcement(
     )
 )]
 pub async fn update_announcement(
-    State(state): State<LearningState>,
+    State(state): State<TeachingState>,
     actor: Actor,
     Path(id): Path<Uuid>,
     ValidJson(body): ValidJson<UpdateAnnouncementRequest>,
@@ -157,7 +157,7 @@ pub async fn update_announcement(
     )
 )]
 pub async fn delete_announcement(
-    State(state): State<LearningState>,
+    State(state): State<TeachingState>,
     actor: Actor,
     Path(id): Path<Uuid>,
 ) -> Result<StatusCode, ApiError> {

@@ -425,8 +425,8 @@ async fn a_course(pool: &PgPool) -> Uuid {
         test_support::insert_user(pool, &format!("{}@x.edu", Uuid::now_v7()), "teacher").await;
     let actor = Actor::for_tests(owner, common::Role::Teacher, Uuid::now_v7());
     let mut conn = pool.acquire().await.unwrap();
-    let title = learning::teaching::CourseTitle::parse("Course").unwrap();
-    learning::teaching::create_course(&mut conn, &actor, title, None)
+    let title = teaching::CourseTitle::parse("Course").unwrap();
+    teaching::create_course(&mut conn, &actor, title, None)
         .await
         .unwrap()
         .id

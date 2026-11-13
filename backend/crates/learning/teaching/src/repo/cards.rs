@@ -5,7 +5,7 @@ use sqlx::PgConnection;
 use uuid::Uuid;
 
 use super::{CourseRow, RawCourseRow};
-use crate::teaching::model::{CardCourse, CourseKind};
+use crate::model::{CardCourse, CourseKind};
 use access::{CourseRole, CourseStatus};
 
 /// The regular courses of the user, with what a card shows of the course itself. A student sees

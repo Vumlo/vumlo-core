@@ -12,7 +12,6 @@ use super::{GradebookError, course_access};
 use crate::content::{self, NextDeadline};
 use crate::gradebook::model::{ItemMeta, MyWork, Progress, TodoCounts, WorkEntry, WorkFacts};
 use crate::gradebook::repo;
-use crate::teaching;
 use access::Actor;
 
 /// The facts of every item of the course that the actor may see (ADR-0049, point 5): what

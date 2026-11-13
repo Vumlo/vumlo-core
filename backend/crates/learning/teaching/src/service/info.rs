@@ -8,11 +8,11 @@ use sqlx::PgConnection;
 use uuid::Uuid;
 
 use super::{NewCourse, TeachingError, insert_owned_course, load};
-use crate::teaching::model::{
+use crate::model::{
     Candidate, Course, CourseCode, CourseDescription, CourseHeader, CourseInfoUpdate, CourseKind,
     CoursePeople, CourseTitle, Person, TemplateRow,
 };
-use crate::teaching::repo;
+use crate::repo;
 use access::Actor;
 use access::{self, Action, CourseStatus};
 use common::{Page, PageParams};

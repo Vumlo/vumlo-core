@@ -368,7 +368,7 @@ fn capped<T>(items: &[T], row: impl Fn(&T) -> Value) -> Value {
     Value::Array(rows)
 }
 
-fn course_row(card: &learning::teaching::CardCourse) -> Value {
+fn course_row(card: &teaching::CardCourse) -> Value {
     json!({"id": card.course.id, "title": card.course.title, "code": card.code})
 }
 

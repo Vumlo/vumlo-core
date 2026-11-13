@@ -9,10 +9,10 @@ use uuid::Uuid;
 
 use crate::LearningError;
 use crate::courses::model::{CourseInfo, Template};
-use crate::teaching::{self, CourseInfoUpdate, CoursePeople, Person};
 use crate::{assessment, content, gradebook};
 use access::Actor;
 use common::{Page, PageParams};
+use teaching::{self, CourseInfoUpdate, CoursePeople, Person};
 
 /// The people off the roster of the course who still have a value or an attempt in it
 /// (ADR-0037): `gradebook` and `assessment` say who has one, `teaching` who is no longer on the

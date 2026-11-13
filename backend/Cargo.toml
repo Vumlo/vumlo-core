@@ -80,6 +80,7 @@ module-api = { path = "crates/module-api" }
 org = { path = "crates/org" }
 plugins = { path = "crates/plugins" }
 server = { path = "crates/server" }
+teaching = { path = "crates/learning/teaching" }
 test-support = { path = "crates/test-support" }
 vumlo-config = { path = "crates/config" }
 # The test-only module (feature `dummy` of server and vumlo-cli); never in a default build.

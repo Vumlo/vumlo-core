@@ -19,7 +19,6 @@ use super::model::{
 };
 use super::repo::{self, After, AssignmentRow};
 use crate::content::{AssignmentType, BuiltinType};
-use crate::teaching;
 
 const FORM: &str = "form";
 const QUIZ: &str = "quiz";
