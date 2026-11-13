@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE auth.users SET role = 'teacher' WHERE email = 'admin@x.edu'",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "b5ec74e4dc8df7118f900980a7ba8fd8e306706985a71942a147c5ff14504d56"
+}

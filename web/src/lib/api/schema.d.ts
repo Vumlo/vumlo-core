@@ -733,6 +733,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/console/login": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Signs an administrator in to the admin console.
+         * @description Only a request from the console's origin (`server.admin_origin`) is accepted. Only an
+         *     administrator can sign in: a wrong password, an unknown email and an account that is not an
+         *     administrator get the same answer. The session is the `vumlo_console` cookie, which lasts
+         *     30 minutes idle and 8 hours at most.
+         */
+        post: operations["console_login"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/courses": {
         parameters: {
             query?: never;
@@ -3261,6 +3284,14 @@ export interface components {
         };
         /** @enum {string} */
         ConditionKind: "completed" | "score_at_least";
+        /**
+         * @description Sign-in to the admin console (ADR-0095): an administrator's email and password. The session
+         *     is delivered as the `vumlo_console` cookie.
+         */
+        ConsoleLoginRequest: {
+            email: string;
+            password: string;
+        };
         /**
          * @description A top-level module with its sub-modules and its direct items. Both lists are in position
          *     order; clients show sub-modules first.
@@ -7858,6 +7889,66 @@ export interface operations {
                 };
             };
             /** @description Too many requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    console_login: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConsoleLoginRequest"];
+            };
+        };
+        responses: {
+            /** @description Signed in; the console cookie is set */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["User"];
+                };
+            };
+            /** @description Wrong email or password, or not an administrator */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description A request from another origin */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Malformed request */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Too many attempts */
             429: {
                 headers: {
                     [name: string]: unknown;

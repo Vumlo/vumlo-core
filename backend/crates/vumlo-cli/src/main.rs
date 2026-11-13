@@ -413,6 +413,17 @@ enum AdminCommand {
         #[arg(long)]
         dry_run: bool,
     },
+    /// Set the password of an administrator who cannot sign in to the console, and end all their
+    /// sessions. The password is asked for, or read from standard input; it is never an argument.
+    SetPassword {
+        email: String,
+        /// Read the password from the first line of standard input instead of asking.
+        #[arg(long)]
+        password_stdin: bool,
+        /// Check everything and say what would change, change nothing.
+        #[arg(long)]
+        dry_run: bool,
+    },
 }
 
 #[tokio::main]
@@ -599,6 +610,21 @@ async fn run(cli: Cli) -> anyhow::Result<bool> {
                     email,
                     name,
                     surname,
+                    password_stdin,
+                    dry_run,
+                },
+            )
+            .await?;
+        }
+        Command::Admin(AdminCommand::SetPassword {
+            email,
+            password_stdin,
+            dry_run,
+        }) => {
+            admin::set_password(
+                &options,
+                admin::SetPassword {
+                    email,
                     password_stdin,
                     dry_run,
                 },

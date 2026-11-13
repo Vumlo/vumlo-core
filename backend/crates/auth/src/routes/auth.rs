@@ -1,6 +1,7 @@
 use api_types::{
-    AppLoginResponse, LoginClient, LoginRequest, LoginResponse, PasswordResetConfirmRequest,
-    PasswordResetRequest, ProblemDetails, RegisterRequest, VerifyEmailRequest,
+    AppLoginResponse, ConsoleLoginRequest, LoginClient, LoginRequest, LoginResponse,
+    PasswordResetConfirmRequest, PasswordResetRequest, ProblemDetails, RegisterRequest,
+    VerifyEmailRequest,
 };
 use axum::extract::State;
 use axum::http::{HeaderMap, HeaderValue, Method, StatusCode, header};
@@ -9,11 +10,14 @@ use axum::{Extension, Json};
 use std::sync::Arc;
 
 use super::extract::check_origin;
-use super::{COOKIE_NAME, MailThrottle, api_user, no_store, password_error, session_kind};
+use super::{
+    CONSOLE_COOKIE_NAME, COOKIE_NAME, MailThrottle, api_user, no_store, password_error,
+    session_kind,
+};
 use crate::AuthState;
-use crate::model::{EmailToken, ModelError, NewSession};
+use crate::model::{EmailToken, ModelError, NewSession, SessionKind};
 use crate::service::{self, AuthError, LoginThrottle, RegistrationRules, ThrottleKey};
-use access::PendingActor;
+use access::{Audience, PendingActor};
 use common::{ApiError, ValidJson};
 
 /// The browsers' maximum cookie lifetime. The session's own `expires_at` decides validity, so
@@ -30,6 +34,83 @@ pub(super) fn session_cookie(
         "{COOKIE_NAME}={token}; Max-Age={max_age_secs}; Path=/; HttpOnly; SameSite=Lax{secure}"
     ))
     .map_err(|_| ApiError::Internal)
+}
+
+/// The console's cookie lives as long as its longest session; the session's own expiry decides.
+const CONSOLE_COOKIE_MAX_AGE_SECS: u64 = 8 * 60 * 60;
+
+/// `SameSite=Strict`: the console cookie is never sent on a cross-site request. Like the session
+/// cookie it has no `Domain`, so it is only ever sent to the console's host (ADR-0095).
+pub(super) fn console_cookie(
+    token: &str,
+    max_age_secs: u64,
+    secure: bool,
+) -> Result<HeaderValue, ApiError> {
+    let secure = if secure { "; Secure" } else { "" };
+    HeaderValue::from_str(&format!(
+        "{CONSOLE_COOKIE_NAME}={token}; Max-Age={max_age_secs}; Path=/; HttpOnly; SameSite=Strict{secure}"
+    ))
+    .map_err(|_| ApiError::Internal)
+}
+
+/// Signs an administrator in to the admin console.
+///
+/// Only a request from the console's origin (`server.admin_origin`) is accepted. Only an
+/// administrator can sign in: a wrong password, an unknown email and an account that is not an
+/// administrator get the same answer. The session is the `vumlo_console` cookie, which lasts
+/// 30 minutes idle and 8 hours at most.
+#[utoipa::path(
+    post,
+    path = "/console/login",
+    tag = "auth",
+    request_body = ConsoleLoginRequest,
+    responses(
+        (status = 200, description = "Signed in; the console cookie is set", body = api_types::User),
+        (status = 401, description = "Wrong email or password, or not an administrator",
+            body = ProblemDetails, content_type = "application/problem+json"),
+        (status = 403, description = "A request from another origin", body = ProblemDetails,
+            content_type = "application/problem+json"),
+        (status = 422, description = "Malformed request", body = ProblemDetails,
+            content_type = "application/problem+json"),
+        (status = 429, description = "Too many attempts", body = ProblemDetails,
+            content_type = "application/problem+json"),
+    )
+)]
+pub async fn console_login(
+    State(state): State<AuthState>,
+    Extension(throttle): Extension<Arc<LoginThrottle>>,
+    headers: HeaderMap,
+    ValidJson(request): ValidJson<ConsoleLoginRequest>,
+) -> Result<Response, ApiError> {
+    check_origin(
+        &Method::POST,
+        &headers,
+        &state.config.server,
+        Audience::Console,
+    )?;
+    let attempt = {
+        let mut conn = state.db.acquire().await.map_err(AuthError::from)?;
+        service::lookup_login(&mut conn, &throttle, &request.email, Audience::Console).await?
+    };
+    let login =
+        service::complete_login(&throttle, &state.hashing, attempt, &request.password).await?;
+
+    let mut tx = state.db.begin().await.map_err(AuthError::from)?;
+    let session =
+        service::create_session(&mut tx, &login, SessionKind::Web, Audience::Console).await?;
+    tx.commit().await.map_err(AuthError::from)?;
+
+    let cookie = console_cookie(
+        session.token.expose(),
+        CONSOLE_COOKIE_MAX_AGE_SECS,
+        state.config.auth.cookie_secure,
+    )?;
+    Ok((
+        StatusCode::OK,
+        [(header::SET_COOKIE, cookie), no_store()],
+        Json(api_user(login.user)),
+    )
+        .into_response())
 }
 
 /// Logs in with email and password.
@@ -62,18 +143,18 @@ pub async fn login(
 ) -> Result<Response, ApiError> {
     if request.client == LoginClient::Web {
         // A login with no session yet is still a state change: refuse cross-site form posts.
-        check_origin(&Method::POST, &headers, &state.config.server)?;
+        check_origin(&Method::POST, &headers, &state.config.server, Audience::App)?;
     }
     let attempt = {
         let mut conn = state.db.acquire().await.map_err(AuthError::from)?;
-        service::lookup_login(&mut conn, &throttle, &request.email).await?
+        service::lookup_login(&mut conn, &throttle, &request.email, Audience::App).await?
     };
     let login =
         service::complete_login(&throttle, &state.hashing, attempt, &request.password).await?;
 
     let kind = session_kind(request.client);
     let mut tx = state.db.begin().await.map_err(AuthError::from)?;
-    let session = service::create_session(&mut tx, &login, kind).await?;
+    let session = service::create_session(&mut tx, &login, kind, Audience::App).await?;
     tx.commit().await.map_err(AuthError::from)?;
 
     let NewSession {
@@ -129,7 +210,11 @@ pub async fn logout(
     let mut tx = state.db.begin().await.map_err(AuthError::from)?;
     service::logout(&mut tx, &actor).await?;
     tx.commit().await.map_err(AuthError::from)?;
-    let clear = session_cookie("", 0, state.config.auth.cookie_secure)?;
+    let secure = state.config.auth.cookie_secure;
+    let clear = match actor.audience() {
+        Audience::App => session_cookie("", 0, secure)?,
+        Audience::Console => console_cookie("", 0, secure)?,
+    };
     Ok((StatusCode::NO_CONTENT, [(header::SET_COOKIE, clear)]).into_response())
 }
 

@@ -16,6 +16,10 @@ bind_addr = "127.0.0.1:8080"
 # POST/PATCH/DELETE requests must send exactly this Origin, and every URL the installation
 # publishes (the API, mail links, the manifest) is derived from it. Production: https://lms.example.edu
 public_origin = "http://localhost:3000"
+# The origin of the admin console (ADR-0095): its own address, with its own sign-in for administrators.
+# Administration is refused to a session that did not come from here. It differs from public_origin.
+# Production: https://admin.lms.example.edu
+admin_origin = "http://localhost:3001"
 # Behind a reverse proxy that overwrites this header, rate limits use it instead of the TCP peer.
 # client_ip_header = "x-real-ip"
 # Trusted browser frontends hosted on another origin (ADR-0041). Each entry is an exact origin:

@@ -20,6 +20,9 @@ use vumlo_config::{
 pub use test_support::{bare_db_test, db_test, wait_until_blocked};
 
 pub const ORIGIN: &str = "https://lms.test";
+/// The origin of the admin console in the test configuration (ADR-0095).
+#[allow(dead_code)]
+pub const ADMIN_ORIGIN: &str = "https://admin.lms.test";
 
 /// Applies the migrations of the optional modules compiled in. `db_test` only migrates the core,
 /// and a binary built with a module treats a database with its migrations pending as not ready.
@@ -51,6 +54,7 @@ pub fn test_settings() -> Settings {
         server: ServerSettings {
             bind_addr: ([127, 0, 0, 1], 0).into(),
             public_origin: ORIGIN.to_owned(),
+            admin_origin: ADMIN_ORIGIN.to_owned(),
             client_ip_header: Some("x-real-ip".to_owned()),
             allowed_origins: Vec::new(),
         },
@@ -245,7 +249,12 @@ impl Http {
 }
 
 impl Req {
+    /// The credential of a test account: a bearer token, or the console session of an
+    /// administrator (see [`CONSOLE_TOKENS`]).
     pub fn bearer(self, token: &str) -> Self {
+        if is_console_token(token) {
+            return self.console(token);
+        }
         Self(self.0.header("authorization", format!("Bearer {token}")))
     }
 
@@ -255,6 +264,16 @@ impl Req {
 
     pub fn cookie(self, token: &str) -> Self {
         Self(self.0.header("cookie", format!("vumlo_session={token}")))
+    }
+
+    /// Speaks as the admin console: its cookie and its origin (ADR-0095).
+    #[allow(dead_code)]
+    pub fn console(self, token: &str) -> Self {
+        Self(
+            self.0
+                .header("cookie", format!("vumlo_console={token}"))
+                .header("origin", ADMIN_ORIGIN),
+        )
     }
 
     pub fn origin(self, origin: &str) -> Self {
@@ -379,8 +398,43 @@ pub async fn seed_user(pool: &PgPool, email: &str, role: Role) -> String {
     PASSWORD.to_owned()
 }
 
-/// Seeds a ready-to-use user, logs them in as an app client and returns their id and bearer token.
+/// The tokens of console sessions. A console session is not a bearer token, but the tests pass an
+/// administrator's credential around as one string, so [`Req::bearer`] sends a token listed here
+/// the way the console does: its cookie and its origin (ADR-0095). Tokens are random, so one list
+/// for the whole test run cannot mix two tests up.
+static CONSOLE_TOKENS: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
+
+fn is_console_token(token: &str) -> bool {
+    CONSOLE_TOKENS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .iter()
+        .any(|known| known == token)
+}
+
+/// Seeds a ready-to-use user and logs them in: an administrator in the console (administration
+/// needs it), anyone else as an app client. Returns their id and the credential [`Req::bearer`]
+/// understands.
 pub async fn seed_and_login(
+    pool: &PgPool,
+    http: &Http,
+    email: &str,
+    role: Role,
+) -> (uuid::Uuid, String) {
+    let password = seed_user(pool, email, role).await;
+    let id = sqlx::query_scalar!("SELECT id FROM auth.users WHERE email = $1", email)
+        .fetch_one(pool)
+        .await
+        .expect("user id");
+    if role == Role::Admin {
+        return (id, login_console(http, email, &password).await);
+    }
+    (id, login_app(http, email, &password).await)
+}
+
+/// Seeds a user and logs them in as an app client whatever their role: an administrator's session
+/// in the student app.
+pub async fn seed_and_login_app(
     pool: &PgPool,
     http: &Http,
     email: &str,
@@ -425,6 +479,35 @@ pub async fn login_web(http: &Http, email: &str, password: &str) -> String {
         String::from_utf8_lossy(&response.body)
     );
     cookie_token(&response)
+}
+
+/// Signs in to the admin console and returns the session token from the `vumlo_console` cookie.
+#[allow(dead_code)]
+pub async fn login_console(http: &Http, email: &str, password: &str) -> String {
+    let response = http
+        .post("/console/login")
+        .origin(ADMIN_ORIGIN)
+        .json(&serde_json::json!({"email": email, "password": password}))
+        .send()
+        .await;
+    assert_eq!(
+        response.status,
+        200,
+        "{}",
+        String::from_utf8_lossy(&response.body)
+    );
+    let token = response
+        .header("set-cookie")
+        .strip_prefix("vumlo_console=")
+        .and_then(|rest| rest.split(';').next())
+        .expect("console cookie")
+        .to_owned();
+    // From here on `Req::bearer(token)` speaks as the console.
+    CONSOLE_TOKENS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .push(token.clone());
+    token
 }
 
 pub fn cookie_token(response: &Resp) -> String {
@@ -531,9 +614,17 @@ impl Env {
         }
     }
 
-    /// Seeds a user who can act right away and logs them in as an app client.
+    /// Seeds a user who can act right away and logs them in: an administrator in the console, so
+    /// they can administer, anyone else as an app client.
     pub async fn user(&self, email: &str, role: Role) -> Account {
         let (id, token) = seed_and_login(&self.pool, &self.http, email, role).await;
+        Account { id, token }
+    }
+
+    /// Seeds a user and logs them in as an app client whatever their role: what an administrator's
+    /// session in the student app is (ADR-0095).
+    pub async fn app_user(&self, email: &str, role: Role) -> Account {
+        let (id, token) = seed_and_login_app(&self.pool, &self.http, email, role).await;
         Account { id, token }
     }
 

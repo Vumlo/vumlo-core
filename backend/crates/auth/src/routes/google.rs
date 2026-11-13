@@ -14,6 +14,7 @@ use super::{api_user, no_store};
 use crate::AuthState;
 use crate::model::{BrowserBinding, NewSession, SessionKind};
 use crate::service::{self, AuthError};
+use access::Audience;
 use common::{ApiError, ValidJson};
 
 /// Ties a started sign-in to its browser (ADR-0047). It is sent to the Google endpoints only.
@@ -117,7 +118,7 @@ pub async fn callback(
     ValidJson(request): ValidJson<GoogleCallbackRequest>,
 ) -> Result<Response, ApiError> {
     let google = state.google.as_ref().ok_or(ApiError::NotFound)?;
-    check_origin(&Method::POST, &headers, &state.config.server)?;
+    check_origin(&Method::POST, &headers, &state.config.server, Audience::App)?;
     let binding = CookieJar::from_headers(&headers)
         .get(BINDING_COOKIE)
         .and_then(|cookie| BrowserBinding::from_presented(cookie.value()));
@@ -149,7 +150,7 @@ pub async fn callback(
             .into_response());
     }
     let NewSession { token, .. } =
-        service::create_session_for(&mut tx, &user, SessionKind::Web).await?;
+        service::create_session_for(&mut tx, &user, SessionKind::Web, Audience::App).await?;
     tx.commit().await.map_err(AuthError::from)?;
 
     let secure = state.config.auth.cookie_secure;

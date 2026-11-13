@@ -910,6 +910,8 @@ async fn the_list_of_operations_is_the_api() {
             "GET /meta",
             "GET /institution",
             "POST /auth/login",
+            // The console's sign-in takes no session: `tests/console.rs` tries every way in.
+            "POST /console/login",
             "POST /auth/register",
             "POST /auth/verify-email",
             "POST /auth/password-reset",
@@ -1000,4 +1002,193 @@ fn matches_template(template: &str, path: &str) -> bool {
             _ => return false,
         }
     }
+}
+
+// --- the two doors (ADR-0095) ----------------------------------------------------------------
+
+/// What an administrator does only from the console: configuration, people and the structure of
+/// units. Every operation of the matrix is either one of these or has an answer of its own above,
+/// so a new institutional row cannot skip the test below.
+fn is_administration(method: &str, path: &str) -> bool {
+    let institutional = ["/admin", "/groups", "/subgroups", "/units"]
+        .iter()
+        .any(|prefix| path.starts_with(prefix));
+    // `GET /admin/courses` lists every course for the courses page: course oversight, not
+    // administration. Reading terms is for everyone, changing them is not.
+    (institutional && !(method == "GET" && path == "/admin/courses"))
+        || (method != "GET" && path.starts_with("/terms"))
+        // Putting a course into a unit, or taking it out, is the business of the unit.
+        || (method == "PUT" && path.starts_with("/courses/") && path.ends_with("/unit"))
+}
+
+#[tokio::test]
+async fn an_admin_app_session_is_refused_every_administration_operation() {
+    db_test(async |pool| {
+        let env = Env::new(pool).await;
+        let admin = env.user("admin@x.edu", Role::Admin).await;
+        let app_admin = env.app_user("app-admin@x.edu", Role::Admin).await;
+        let owner = env.user("owner@x.edu", Role::Teacher).await;
+        let student = env.user("student@x.edu", Role::Student).await;
+        let a = build(&env, &admin, &owner, &student, "a").await;
+
+        let mut operations: Vec<Call> = operations(&a, student.id)
+            .into_iter()
+            .filter(|(method, path, _)| is_administration(method, path))
+            .collect();
+        operations.push((
+            "PUT",
+            "/admin/unit-roles/viewer".into(),
+            Some(json!({"abilities": []})),
+        ));
+        assert!(operations.len() > 40, "{}", operations.len());
+
+        let mut wrong = Vec::new();
+        // The session of the student app first: nothing it asks for may change anything.
+        for (method, path, body) in &operations {
+            let status = env
+                .call(method, &app_admin.token, path, body.clone())
+                .await
+                .status;
+            // A parent unit the caller does not see is a 422 of the body (it names nothing), and
+            // an app admin sees no unit they hold no role in.
+            if ![403, 404, 422].contains(&status) {
+                wrong.push(format!("app session: {method} {path} -> {status}"));
+            }
+        }
+        // The console session is not refused: whatever it asks, the answer is about the thing.
+        for (method, path, body) in &operations {
+            let status = env
+                .call(method, &admin.token, path, body.clone())
+                .await
+                .status;
+            if status == 401 || status == 403 || status >= 500 {
+                wrong.push(format!("console session: {method} {path} -> {status}"));
+            }
+        }
+        assert!(wrong.is_empty(), "{}\n{}", wrong.len(), wrong.join("\n"));
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn an_admin_app_session_still_works_inside_a_course() {
+    db_test(async |pool| {
+        let env = Env::new(pool.clone()).await;
+        let admin = env.user("admin@x.edu", Role::Admin).await;
+        let app_admin = env.app_user("app-admin@x.edu", Role::Admin).await;
+        let owner = env.user("owner@x.edu", Role::Teacher).await;
+        let student = env.user("student@x.edu", Role::Student).await;
+        let a = build(&env, &admin, &owner, &student, "a").await;
+
+        let course = format!("/courses/{}", a.course);
+        env.ok("GET", &app_admin.token, &course, None, 200).await;
+        env.ok("GET", &app_admin.token, "/admin/courses", None, 200)
+            .await;
+        env.ok(
+            "PATCH",
+            &app_admin.token,
+            &course,
+            Some(json!({"title": "Edited by an admin"})),
+            200,
+        )
+        .await;
+        env.ok(
+            "POST",
+            &app_admin.token,
+            &format!("/modules/{}/items", a.module),
+            Some(json!({"kind": "text", "title": "added by an admin"})),
+            201,
+        )
+        .await;
+        env.ok(
+            "POST",
+            &app_admin.token,
+            &format!("{course}/archive"),
+            None,
+            200,
+        )
+        .await;
+        env.ok(
+            "POST",
+            &app_admin.token,
+            &format!("{course}/restore"),
+            None,
+            200,
+        )
+        .await;
+        let audited = sqlx::query_scalar!(
+            r#"SELECT count(*) AS "n!" FROM events.audit_log
+               WHERE meta->>'via' = 'admin' AND actor_id = $1"#,
+            app_admin.id
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert!(audited >= 3, "{audited} audit rows with via = admin");
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn an_admin_with_a_unit_role_uses_it_from_the_app() {
+    db_test(async |pool| {
+        let env = Env::new(pool.clone()).await;
+        let admin = env.user("admin@x.edu", Role::Admin).await;
+        let app_admin = env.app_user("app-admin@x.edu", Role::Admin).await;
+        let own = id_of(
+            &env.ok(
+                "POST",
+                &admin.token,
+                "/units",
+                Some(json!({"name": "Own"})),
+                201,
+            )
+            .await,
+        );
+        let other = id_of(
+            &env.ok(
+                "POST",
+                &admin.token,
+                "/units",
+                Some(json!({"name": "Other"})),
+                201,
+            )
+            .await,
+        );
+        env.ok(
+            "PUT",
+            &admin.token,
+            &format!("/units/{own}/roles/{}", app_admin.id),
+            Some(json!({"role": "manager"})),
+            204,
+        )
+        .await;
+        env.ok(
+            "GET",
+            &app_admin.token,
+            &format!("/units/{own}/roles"),
+            None,
+            200,
+        )
+        .await;
+        let denied = env
+            .call(
+                "GET",
+                &app_admin.token,
+                &format!("/units/{other}/roles"),
+                None,
+            )
+            .await
+            .status;
+        assert!(denied == 403 || denied == 404, "{denied}");
+        env.ok(
+            "GET",
+            &admin.token,
+            &format!("/units/{other}/roles"),
+            None,
+            200,
+        )
+        .await;
+    })
+    .await;
 }

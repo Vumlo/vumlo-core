@@ -190,3 +190,191 @@ async fn malformed_stored_hash_is_a_mismatch() {
         .unwrap()
     );
 }
+
+// --- console sessions (ADR-0095) ------------------------------------------------------------
+
+use access::Audience;
+use test_support::{db_test, insert_user};
+
+async fn session_of(
+    pool: &sqlx::PgPool,
+    email: &str,
+    role: &str,
+    kind: SessionKind,
+    audience: Audience,
+) -> (Uuid, SessionToken) {
+    let id = insert_user(pool, email, role).await;
+    let mut conn = pool.acquire().await.unwrap();
+    let user = repo::find_user(&mut conn, id).await.unwrap().unwrap();
+    let mut tx = pool.begin().await.unwrap();
+    let session = create_session_for(&mut tx, &user, kind, audience)
+        .await
+        .unwrap();
+    tx.commit().await.unwrap();
+    (id, session.token)
+}
+
+async fn session_row(pool: &sqlx::PgPool, token: &SessionToken) -> Uuid {
+    sqlx::query_scalar!(
+        "SELECT id FROM auth.sessions WHERE token_hash = $1",
+        &token.hash()[..]
+    )
+    .fetch_one(pool)
+    .await
+    .unwrap()
+}
+
+#[tokio::test]
+async fn a_console_session_expires_after_thirty_minutes_idle() {
+    db_test(async |pool| {
+        let (_, token) = session_of(
+            &pool,
+            "a@x.edu",
+            "admin",
+            SessionKind::Web,
+            Audience::Console,
+        )
+        .await;
+        let secs = sqlx::query_scalar!(
+            r#"SELECT extract(epoch FROM expires_at - now())::float8 AS "s!" FROM auth.sessions"#
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert!((29.0 * 60.0..=30.0 * 60.0).contains(&secs), "{secs}");
+        let mut conn = pool.acquire().await.unwrap();
+        let found = authenticate(&mut conn, &token).await.unwrap();
+        assert_eq!(found.audience, Audience::Console);
+        sqlx::query!("UPDATE auth.sessions SET expires_at = now() - interval '1 second'")
+            .execute(&pool)
+            .await
+            .unwrap();
+        assert!(matches!(
+            authenticate(&mut conn, &token).await,
+            Err(AuthError::Unauthenticated)
+        ));
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn a_console_session_slides_but_never_past_eight_hours() {
+    db_test(async |pool| {
+        let (_, token) = session_of(
+            &pool,
+            "a@x.edu",
+            "admin",
+            SessionKind::Web,
+            Audience::Console,
+        )
+        .await;
+        let id = session_row(&pool, &token).await;
+        sqlx::query!(
+            "UPDATE auth.sessions SET created_at = now() - interval '7 hours 59 minutes',
+                 last_seen_at = now() - interval '2 minutes'"
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        let mut conn = pool.acquire().await.unwrap();
+        let found = authenticate(&mut conn, &token).await.unwrap();
+        let (kind, audience) = found
+            .touch
+            .expect("a console session is refreshed after a minute");
+        touch_session(&mut conn, id, kind, audience).await.unwrap();
+        let capped = sqlx::query_scalar!(
+            r#"SELECT expires_at = created_at + interval '8 hours' AS "capped!"
+               FROM auth.sessions WHERE id = $1"#,
+            id
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert!(capped, "expires_at slid past created_at + 8 h");
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn a_console_session_is_refreshed_after_a_minute_not_an_hour() {
+    db_test(async |pool| {
+        let (_, console) = session_of(
+            &pool,
+            "a@x.edu",
+            "admin",
+            SessionKind::Web,
+            Audience::Console,
+        )
+        .await;
+        let (_, app) = session_of(&pool, "b@x.edu", "admin", SessionKind::Web, Audience::App).await;
+        let mut conn = pool.acquire().await.unwrap();
+        assert!(
+            authenticate(&mut conn, &console)
+                .await
+                .unwrap()
+                .touch
+                .is_none()
+        );
+        sqlx::query!("UPDATE auth.sessions SET last_seen_at = now() - interval '2 minutes'")
+            .execute(&pool)
+            .await
+            .unwrap();
+        assert!(
+            authenticate(&mut conn, &console)
+                .await
+                .unwrap()
+                .touch
+                .is_some()
+        );
+        assert!(authenticate(&mut conn, &app).await.unwrap().touch.is_none());
+        sqlx::query!("UPDATE auth.sessions SET last_seen_at = now() - interval '2 hours'")
+            .execute(&pool)
+            .await
+            .unwrap();
+        assert!(authenticate(&mut conn, &app).await.unwrap().touch.is_some());
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn a_console_session_of_a_demoted_admin_does_not_resolve() {
+    db_test(async |pool| {
+        let (id, token) = session_of(
+            &pool,
+            "a@x.edu",
+            "admin",
+            SessionKind::Web,
+            Audience::Console,
+        )
+        .await;
+        let mut conn = pool.acquire().await.unwrap();
+        assert!(authenticate(&mut conn, &token).await.is_ok());
+        sqlx::query!("UPDATE auth.users SET role = 'teacher' WHERE id = $1", id)
+            .execute(&pool)
+            .await
+            .unwrap();
+        assert!(matches!(
+            authenticate(&mut conn, &token).await,
+            Err(AuthError::Unauthenticated)
+        ));
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn the_database_refuses_an_app_client_console_session() {
+    db_test(async |pool| {
+        let id = insert_user(&pool, "a@x.edu", "admin").await;
+        let result = sqlx::query!(
+            "INSERT INTO auth.sessions (id, user_id, token_hash, kind, audience, expires_at)
+             VALUES ($1, $2, $3, 'app', 'console', now() + interval '1 hour')",
+            Uuid::now_v7(),
+            id,
+            &[7u8; 32][..]
+        )
+        .execute(&pool)
+        .await;
+        assert!(result.is_err());
+    })
+    .await;
+}

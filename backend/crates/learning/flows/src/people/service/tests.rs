@@ -23,7 +23,12 @@ async fn admin_actor(pool: &sqlx::PgPool, email: &str) -> Actor {
     .await
     .unwrap();
     tx.commit().await.unwrap();
-    Actor::for_tests(user.id, Role::Admin, Uuid::now_v7())
+    Actor::for_tests_in(
+        user.id,
+        Role::Admin,
+        Uuid::now_v7(),
+        access::Audience::Console,
+    )
 }
 
 fn demote() -> UserUpdate {

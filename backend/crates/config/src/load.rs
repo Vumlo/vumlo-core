@@ -411,6 +411,7 @@ fn validate(settings: &mut Settings) -> Vec<String> {
         Err(e) => errors.push(e),
     };
     check("server.public_origin", &mut settings.server.public_origin);
+    check("server.admin_origin", &mut settings.server.admin_origin);
     for entry in &mut settings.server.allowed_origins {
         check("server.allowed_origins", entry);
     }
@@ -419,6 +420,24 @@ fn validate(settings: &mut Settings) -> Vec<String> {
     }
     if let Some(core_url) = settings.cli.core_url.as_mut() {
         check("cli.core_url", core_url);
+    }
+    if settings.server.admin_origin == settings.server.public_origin {
+        errors.push(
+            "server.admin_origin must differ from server.public_origin: the console is its own \
+             origin"
+                .to_owned(),
+        );
+    }
+    if settings
+        .server
+        .allowed_origins
+        .contains(&settings.server.admin_origin)
+    {
+        errors.push(
+            "server.allowed_origins must not list server.admin_origin: a trusted frontend is not \
+             the console"
+                .to_owned(),
+        );
     }
     if let Some(scheme) = &settings.desktop.url_scheme
         && !crate::client::is_url_scheme(scheme)

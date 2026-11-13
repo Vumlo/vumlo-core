@@ -21,7 +21,7 @@ use super::model::{
 };
 use super::repo::{self, LoginRecord};
 use access::Actor;
-use access::{self, AccessError, Action};
+use access::{self, AccessError, Action, Audience};
 use common::Role;
 use common::{Page, PageParams};
 use events::{self, AuditEntry, Event, EventsError};
@@ -202,6 +202,19 @@ impl ThrottleKey {
     pub fn new(email: &str) -> Self {
         Self(Sha256::digest(email.trim().to_lowercase().as_bytes()).into())
     }
+
+    /// The key of the same account at the console: a namespace of its own, so failures there do
+    /// not lock the person out of the app, nor the reverse (ADR-0095).
+    pub fn console(email: &str) -> Self {
+        Self(Sha256::digest(format!("console:{}", email.trim().to_lowercase()).as_bytes()).into())
+    }
+
+    fn of(audience: Audience, email: &str) -> Self {
+        match audience {
+            Audience::App => Self::new(email),
+            Audience::Console => Self::console(email),
+        }
+    }
 }
 
 struct Attempts {
@@ -340,6 +353,47 @@ pub async fn create_user_from_cli(
     Ok(user)
 }
 
+/// The active administrator with this email, for the CLI command that sets their password: it
+/// needs the person's name to check the password against the policy. An unknown email, a person
+/// who is not an administrator and a disabled account are the same error, so the command says
+/// nothing about who has an account.
+pub async fn admin_for_cli(conn: &mut PgConnection, email: &str) -> Result<User, AuthError> {
+    let email = Email::parse(email)?;
+    let account = repo::find_account_by_email(conn, email.as_str())
+        .await?
+        .ok_or(AuthError::UserNotFound)?;
+    let user = repo::find_user(conn, account.id)
+        .await?
+        .ok_or(AuthError::UserNotFound)?;
+    if user.role != Role::Admin || user.status != UserStatus::Active {
+        return Err(AuthError::UserNotFound);
+    }
+    Ok(user)
+}
+
+/// Sets the password of an administrator for the server CLI, where nobody is signed in: the
+/// recovery of an installation whose administrators cannot sign in. The password is the one the
+/// administrator chose (no change is forced), every session of theirs ends, and the audit log gets
+/// an entry with no actor and the source `cli`, holding no secret (ADR-0034). The account is read
+/// again under a lock: a demotion that ran meanwhile is not overridden.
+pub async fn set_admin_password_from_cli(
+    conn: &mut PgConnection,
+    user_id: Uuid,
+    password: HashedPassword,
+) -> Result<(), AuthError> {
+    let user = repo::find_user_shared(conn, user_id)
+        .await?
+        .ok_or(AuthError::UserNotFound)?;
+    if user.role != Role::Admin || user.status != UserStatus::Active {
+        return Err(AuthError::UserNotFound);
+    }
+    repo::upsert_password_hash(conn, user_id, password.as_str()).await?;
+    repo::set_must_change_password(conn, user_id, false).await?;
+    repo::delete_sessions_of(conn, user_id).await?;
+    events::audit_cli(conn, user_entry("user.password_set", user_id, json!({}))).await?;
+    Ok(())
+}
+
 /// An audit entry about a user. `meta` holds ids, roles and field names only (ADR-0034): never a
 /// password, a hash, a token, an email address or a name.
 fn user_entry(action: &'static str, user_id: Uuid, meta: serde_json::Value) -> AuditEntry {
@@ -358,6 +412,7 @@ fn user_entry(action: &'static str, user_id: Uuid, meta: serde_json::Value) -> A
 /// A login in progress: the account lookup is done, the password is not checked yet.
 pub struct LoginAttempt {
     key: ThrottleKey,
+    audience: Audience,
     record: Option<LoginRecord>,
 }
 
@@ -374,30 +429,44 @@ pub async fn lookup_login(
     conn: &mut PgConnection,
     throttle: &LoginThrottle,
     email: &str,
+    audience: Audience,
 ) -> Result<LoginAttempt, AuthError> {
-    let key = ThrottleKey::new(email);
+    let key = ThrottleKey::of(audience, email);
     throttle.reserve(&key)?;
     let record = match super::model::Email::parse(email) {
         Ok(email) => repo::find_login(conn, email.as_str()).await?,
         Err(_) => None,
     };
-    Ok(LoginAttempt { key, record })
+    Ok(LoginAttempt {
+        key,
+        audience,
+        record,
+    })
 }
 
 /// Second half of a login, with no database access: verifies the password (a dummy hash when
 /// there is no account) and resets the account's count on a success. Every failure is the same
-/// error.
+/// error. At the console only an administrator can sign in, and anyone else counts as a wrong
+/// password: same answer, same count, no reset.
 pub async fn complete_login(
     throttle: &LoginThrottle,
     gate: &HashGate,
     attempt: LoginAttempt,
     password: &str,
 ) -> Result<VerifiedLogin, AuthError> {
-    let LoginAttempt { key, record } = attempt;
+    let LoginAttempt {
+        key,
+        audience,
+        record,
+    } = attempt;
     let hash = record.as_ref().map(|r| r.password_hash.clone());
     let verified = verify_password(gate, password.to_owned(), hash).await?;
     match record {
-        Some(record) if verified && record.user.status == UserStatus::Active => {
+        Some(record)
+            if verified
+                && record.user.status == UserStatus::Active
+                && (audience == Audience::App || record.user.role == Role::Admin) =>
+        {
             throttle.reset(&key);
             if !record.email_verified {
                 return Err(AuthError::EmailNotVerified);
@@ -420,6 +489,7 @@ pub async fn create_session(
     conn: &mut PgConnection,
     login: &VerifiedLogin,
     kind: SessionKind,
+    audience: Audience,
 ) -> Result<NewSession, AuthError> {
     if !repo::lock_verified_login(conn, login.user.id, &login.password_hash).await? {
         return Err(AuthError::InvalidCredentials);
@@ -430,7 +500,8 @@ pub async fn create_session(
         login.user.id,
         &token.hash(),
         kind,
-        kind.initial_lifetime().num_seconds(),
+        audience,
+        kind.lifetimes(audience).initial.num_seconds(),
     )
     .await?;
     Ok(NewSession {
@@ -446,8 +517,11 @@ pub struct Authenticated {
     pub role: Role,
     pub session_id: Uuid,
     pub must_change_password: bool,
-    /// Set when the session should be refreshed (not seen for an hour); see [`touch_session`].
-    pub touch: Option<SessionKind>,
+    /// The door the session came through (ADR-0095).
+    pub audience: Audience,
+    /// Set when the session should be refreshed (not seen for its refresh gap); see
+    /// [`touch_session`].
+    pub touch: Option<(SessionKind, Audience)>,
 }
 
 /// Resolves a token to its session. A missing, expired or disabled-user session is `Unauthenticated`.
@@ -458,24 +532,35 @@ pub async fn authenticate(
     let found = repo::find_session(conn, &token.hash())
         .await?
         .ok_or(AuthError::Unauthenticated)?;
+    let gap = found.kind.lifetimes(found.audience).refresh_gap;
+    let due = found.idle_secs >= gap.num_seconds() as f64;
     Ok(Authenticated {
         user_id: found.user_id,
         role: found.role,
         session_id: found.session_id,
         must_change_password: found.must_change_password,
-        touch: found.stale.then_some(found.kind),
+        audience: found.audience,
+        touch: due.then_some((found.kind, found.audience)),
     })
 }
 
-/// Refreshes `last_seen_at` and, for web and app sessions, the expiry. A no-op unless the
-/// session has not been refreshed for an hour.
+/// Refreshes `last_seen_at` and, for sliding sessions, the expiry (never past the session's cap).
+/// A no-op unless the session has not been refreshed for its refresh gap.
 pub async fn touch_session(
     conn: &mut PgConnection,
     session_id: Uuid,
     kind: SessionKind,
+    audience: Audience,
 ) -> Result<(), AuthError> {
-    let slide = kind.sliding_lifetime().map(|d| d.num_seconds());
-    repo::touch_session(conn, session_id, slide).await?;
+    let lifetimes = kind.lifetimes(audience);
+    repo::touch_session(
+        conn,
+        session_id,
+        lifetimes.slide.map(|d| d.num_seconds()),
+        lifetimes.cap.map(|d| d.num_seconds()),
+        lifetimes.refresh_gap.num_seconds(),
+    )
+    .await?;
     Ok(())
 }
 
@@ -895,7 +980,7 @@ pub async fn exchange_app_handoff(
     let user = repo::find_user(conn, user_id)
         .await?
         .ok_or(AuthError::GoogleAttemptInvalid)?;
-    let session = create_session_for(conn, &user, SessionKind::App).await?;
+    let session = create_session_for(conn, &user, SessionKind::App, Audience::App).await?;
     Ok((user, session))
 }
 
@@ -979,6 +1064,7 @@ pub async fn create_session_for(
     conn: &mut PgConnection,
     user: &User,
     kind: SessionKind,
+    audience: Audience,
 ) -> Result<NewSession, AuthError> {
     if !repo::lock_active_user(conn, user.id).await? {
         return Err(AuthError::AccountDisabled);
@@ -989,7 +1075,8 @@ pub async fn create_session_for(
         user.id,
         &token.hash(),
         kind,
-        kind.initial_lifetime().num_seconds(),
+        audience,
+        kind.lifetimes(audience).initial.num_seconds(),
     )
     .await?;
     Ok(NewSession {

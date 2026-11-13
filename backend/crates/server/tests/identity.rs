@@ -2,7 +2,8 @@ mod common;
 
 use ::common::Role;
 use common::{
-    Http, ORIGIN, PASSWORD, db_test, login_app, login_web, seed_pending_user, seed_user, spawn,
+    ADMIN_ORIGIN, Http, ORIGIN, PASSWORD, db_test, login_app, login_console, login_web,
+    seed_pending_user, seed_user, spawn,
 };
 use serde_json::json;
 use sha2::{Digest, Sha256};
@@ -1035,7 +1036,7 @@ async fn revoking_with_a_cookie_needs_the_origin() {
 
 async fn admin(pool: &PgPool, http: &Http) -> String {
     seed_user(pool, "root@school.edu", Role::Admin).await;
-    login_app(http, "root@school.edu", PASSWORD).await
+    login_console(http, "root@school.edu", PASSWORD).await
 }
 
 async fn user_id(pool: &PgPool, email: &str) -> uuid::Uuid {
@@ -1348,8 +1349,9 @@ async fn admin_updates_a_user() {
         assert_eq!(only_surname["surname"], "Kowalska");
         assert_eq!(renamed.json()["role"], "student", "other fields stay");
 
-        // A promotion applies at once, to the sessions the user already has.
-        http.get("/admin/users")
+        // A promotion applies at once, to the sessions the user already has: the list of every
+        // course is the administrator's, and it is course oversight, so the app's session has it.
+        http.get("/admin/courses")
             .bearer(&anna_token)
             .send()
             .await
@@ -1359,18 +1361,25 @@ async fn admin_updates_a_user() {
             "admin"
         );
         assert_eq!(
-            http.get("/admin/users")
+            http.get("/admin/courses")
                 .bearer(&anna_token)
                 .send()
                 .await
                 .status,
             200
         );
+        // Administration is the console's: the app session of the new administrator has none of
+        // it, and their console session is another sign-in (ADR-0095).
+        http.get("/admin/users")
+            .bearer(&anna_token)
+            .send()
+            .await
+            .problem(403);
         assert_eq!(
             patch(json!({"role": "teacher"})).await.json()["role"],
             "teacher"
         );
-        http.get("/admin/users")
+        http.get("/admin/courses")
             .bearer(&anna_token)
             .send()
             .await
@@ -1501,7 +1510,7 @@ async fn last_active_admin_cannot_be_disabled_or_demoted() {
 
         // With a second admin, either can step down ...
         seed_user(&pool, "second@school.edu", Role::Admin).await;
-        let second = login_app(&http, "second@school.edu", PASSWORD).await;
+        let second = login_console(&http, "second@school.edu", PASSWORD).await;
         let second_id = user_id(&pool, "second@school.edu").await;
         assert_eq!(
             patch(&second, first_id, json!({"status": "disabled"}))
@@ -1608,29 +1617,57 @@ async fn admin_endpoints_with_a_cookie_need_the_origin() {
     db_test(async |pool| {
         let http = Http::new(&spawn(pool.clone()).await);
         seed_user(&pool, "root@school.edu", Role::Admin).await;
-        let web = login_web(&http, "root@school.edu", PASSWORD).await;
+        let console = login_console(&http, "root@school.edu", PASSWORD).await;
+        let cookie = format!("vumlo_console={console}");
         let body = json!({"email": "x@school.edu", "name": "X", "surname": "X", "role": "student"});
 
+        // The console's cookie needs the console's origin: none, or the app's, is not enough.
         http.post("/admin/users")
-            .cookie(&web)
+            .header("cookie", &cookie)
             .json(&body)
             .send()
             .await
             .problem(403);
         assert_eq!(count_users(&pool).await, 1);
+        let from_app = http
+            .post("/admin/users")
+            .header("cookie", &cookie)
+            .origin(ORIGIN)
+            .json(&body)
+            .send()
+            .await;
+        assert_eq!(
+            from_app.status, 401,
+            "the app's origin does not speak for the console"
+        );
+        assert_eq!(count_users(&pool).await, 1);
         let ok = http
+            .post("/admin/users")
+            .header("cookie", &cookie)
+            .origin(ADMIN_ORIGIN)
+            .json(&body)
+            .send()
+            .await;
+        assert_eq!(ok.status, 201);
+        assert_eq!(
+            http.get("/admin/users")
+                .header("cookie", &cookie)
+                .send()
+                .await
+                .status,
+            200,
+            "reads need no origin"
+        );
+        // The same person in the student app is refused whatever the origin.
+        let web = login_web(&http, "root@school.edu", PASSWORD).await;
+        let refused = http
             .post("/admin/users")
             .cookie(&web)
             .origin(ORIGIN)
             .json(&body)
             .send()
             .await;
-        assert_eq!(ok.status, 201);
-        assert_eq!(
-            http.get("/admin/users").cookie(&web).send().await.status,
-            200,
-            "reads need no origin"
-        );
+        assert_eq!(refused.status, 403);
     })
     .await;
 }

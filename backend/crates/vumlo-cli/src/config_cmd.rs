@@ -26,6 +26,7 @@ pub fn check(options: &Options) -> anyhow::Result<bool> {
                 s.institution.language.as_str()
             );
             println!("  public URL   {}", s.server.public_origin);
+            println!("  admin URL    {}", s.server.admin_origin);
             let modules = s.module_state.statuses();
             if modules.is_empty() {
                 println!("  modules      none in this build");

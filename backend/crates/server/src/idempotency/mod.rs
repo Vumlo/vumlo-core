@@ -18,7 +18,7 @@ use sha2::{Digest, Sha256};
 use sqlx::PgPool;
 
 use crate::app::{AppState, MAX_BODY_BYTES};
-use auth::COOKIE_NAME;
+use auth::{CONSOLE_COOKIE_NAME, COOKIE_NAME};
 use common::ApiError;
 use repo::{Claim, Stored};
 
@@ -147,9 +147,22 @@ fn scope_of(headers: &HeaderMap) -> Option<Digest32> {
     if let Some(value) = headers.get(header::AUTHORIZATION) {
         return Some(digest(&[b"authorization\0", value.as_bytes()]));
     }
+    // The app's cookie and the console's (ADR-0095): a request may carry both, and the pair is
+    // then one scope, so a key is never shared between two people's credentials.
     let jar = CookieJar::from_headers(headers);
-    jar.get(COOKIE_NAME)
-        .map(|cookie| digest(&[b"cookie\0", cookie.value().as_bytes()]))
+    let app = jar.get(COOKIE_NAME).map(|cookie| cookie.value().as_bytes());
+    let console = jar
+        .get(CONSOLE_COOKIE_NAME)
+        .map(|cookie| cookie.value().as_bytes());
+    if app.is_none() && console.is_none() {
+        return None;
+    }
+    Some(digest(&[
+        b"cookie\0",
+        app.unwrap_or_default(),
+        b"\0console\0",
+        console.unwrap_or_default(),
+    ]))
 }
 
 fn digest(parts: &[&[u8]]) -> Digest32 {

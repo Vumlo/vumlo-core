@@ -4,7 +4,7 @@ mod common;
 
 use std::process::Command;
 
-use common::{Http, PASSWORD, bare_db_test, db_test, login_app, spawn};
+use common::{Http, PASSWORD, bare_db_test, db_test, login_app, login_console, spawn};
 use serde_json::json;
 use sqlx::PgPool;
 
@@ -60,6 +60,7 @@ async fn run_in_mode(pool: &PgPool, mode: &str, args: &[&str]) -> Output {
             .args(&args)
             .env("VUMLO__SERVER__BIND_ADDR", "127.0.0.1:0")
             .env("VUMLO__SERVER__PUBLIC_ORIGIN", common::ORIGIN)
+            .env("VUMLO__SERVER__ADMIN_ORIGIN", common::ADMIN_ORIGIN)
             .env("VUMLO__DATABASE__URL", url)
             .env("VUMLO__DATABASE__MAX_CONNECTIONS", "2")
             .env("VUMLO__LOG__FORMAT", "json")
@@ -131,8 +132,18 @@ async fn create_admin_creates_a_working_admin_who_must_change_password() {
             .send()
             .await;
         assert_eq!(changed.status, 204);
+        // The administrator administers from the console; their app session does not.
         assert_eq!(
             http.get("/admin/users").bearer(&token).send().await.status,
+            403
+        );
+        let console = login_console(&http, "root@school.edu", PASSWORD).await;
+        assert_eq!(
+            http.get("/admin/users")
+                .bearer(&console)
+                .send()
+                .await
+                .status,
             200
         );
     })
@@ -344,6 +355,7 @@ async fn a_missing_mode_stops_the_binary_at_startup() {
                 .env_remove("VUMLO__INSTITUTION__MODE")
                 .env("VUMLO__SERVER__BIND_ADDR", "127.0.0.1:0")
                 .env("VUMLO__SERVER__PUBLIC_ORIGIN", common::ORIGIN)
+                .env("VUMLO__SERVER__ADMIN_ORIGIN", common::ADMIN_ORIGIN)
                 .env("VUMLO__DATABASE__URL", url)
                 .env("VUMLO__DATABASE__MAX_CONNECTIONS", "2")
                 .env("VUMLO__LOG__FORMAT", "json")

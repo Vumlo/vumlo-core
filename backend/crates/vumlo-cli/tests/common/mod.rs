@@ -41,6 +41,7 @@ pub const ORIGIN: &str = "https://lms.test";
 pub const CONFIG: &str = r#"
 [server]
 public_origin = "https://lms.test"
+admin_origin = "https://admin.lms.test"
 [institution]
 name = "Test University"
 mode = "university"

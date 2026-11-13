@@ -1,5 +1,6 @@
 //! SQL only. Every function takes the connection it runs on and never begins a transaction.
 
+use access::Audience;
 use chrono::{DateTime, Utc};
 use common::Role;
 use sqlx::PgConnection;
@@ -29,8 +30,9 @@ pub struct AccountRow {
 pub struct SessionLookup {
     pub session_id: Uuid,
     pub kind: SessionKind,
-    /// `last_seen_at` is more than an hour old, so the session should be refreshed.
-    pub stale: bool,
+    pub audience: Audience,
+    /// Seconds since `last_seen_at`; the service decides whether the session is due a refresh.
+    pub idle_secs: f64,
     pub user_id: Uuid,
     pub role: Role,
     pub must_change_password: bool,
@@ -153,16 +155,18 @@ pub async fn insert_session(
     user_id: Uuid,
     token_hash: &[u8],
     kind: SessionKind,
+    audience: Audience,
     lifetime_secs: i64,
 ) -> Result<DateTime<Utc>, sqlx::Error> {
     let expires_at = sqlx::query_scalar!(
-        "INSERT INTO auth.sessions (id, user_id, token_hash, kind, expires_at)
-         VALUES ($1, $2, $3, $4, now() + $5::bigint * interval '1 second')
+        "INSERT INTO auth.sessions (id, user_id, token_hash, kind, audience, expires_at)
+         VALUES ($1, $2, $3, $4, $5, now() + $6::bigint * interval '1 second')
          RETURNING expires_at",
         Uuid::now_v7(),
         user_id,
         token_hash,
         kind.as_str(),
+        audience.as_str(),
         lifetime_secs
     )
     .fetch_one(&mut *conn)
@@ -213,11 +217,13 @@ pub async fn find_session(
 ) -> Result<Option<SessionLookup>, sqlx::Error> {
     let row = sqlx::query!(
         r#"SELECT s.id AS session_id, s.kind AS "kind: SessionKind",
-                  s.last_seen_at < now() - interval '1 hour' AS "stale!",
+                  s.audience AS "audience: Audience",
+                  extract(epoch FROM now() - s.last_seen_at)::float8 AS "idle_secs!",
                   u.id AS user_id, u.role AS "role: Role", u.must_change_password
            FROM auth.sessions s
            JOIN auth.users u ON u.id = s.user_id
-           WHERE s.token_hash = $1 AND s.expires_at > now() AND u.status = 'active'"#,
+           WHERE s.token_hash = $1 AND s.expires_at > now() AND u.status = 'active'
+             AND (s.audience = 'app' OR u.role = 'admin')"#,
         token_hash
     )
     .fetch_optional(conn)
@@ -225,28 +231,37 @@ pub async fn find_session(
     Ok(row.map(|r| SessionLookup {
         session_id: r.session_id,
         kind: r.kind,
-        stale: r.stale,
+        audience: r.audience,
+        idle_secs: r.idle_secs,
         user_id: r.user_id,
         role: r.role,
         must_change_password: r.must_change_password,
     }))
 }
 
-/// Marks the session as seen and, for sliding kinds, pushes the expiry forward. Does nothing
-/// when it was refreshed within the last hour, so concurrent requests write at most once.
+/// Marks the session as seen and, for sliding kinds, pushes the expiry forward, but never past
+/// `cap_secs` after its creation. Does nothing when it was refreshed within `gap_secs`, so
+/// concurrent requests write at most once.
 pub async fn touch_session(
     conn: &mut PgConnection,
     session_id: Uuid,
     slide_secs: Option<i64>,
+    cap_secs: Option<i64>,
+    gap_secs: i64,
 ) -> Result<(), sqlx::Error> {
     sqlx::query!(
         "UPDATE auth.sessions
          SET last_seen_at = now(),
-             expires_at = CASE WHEN $2::bigint IS NULL THEN expires_at
-                               ELSE now() + $2::bigint * interval '1 second' END
-         WHERE id = $1 AND last_seen_at < now() - interval '1 hour'",
+             expires_at = CASE
+                 WHEN $2::bigint IS NULL THEN expires_at
+                 WHEN $3::bigint IS NULL THEN now() + $2::bigint * interval '1 second'
+                 ELSE LEAST(now() + $2::bigint * interval '1 second',
+                            created_at + $3::bigint * interval '1 second') END
+         WHERE id = $1 AND last_seen_at < now() - $4::bigint * interval '1 second'",
         session_id,
-        slide_secs
+        slide_secs,
+        cap_secs,
+        gap_secs
     )
     .execute(conn)
     .await?;

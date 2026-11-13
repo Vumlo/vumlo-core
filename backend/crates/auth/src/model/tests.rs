@@ -57,14 +57,28 @@ fn text_enums_round_trip() {
 
 #[test]
 fn only_web_and_app_sessions_slide() {
-    assert_eq!(
-        SessionKind::Web.sliding_lifetime(),
-        Some(Duration::days(30))
-    );
-    assert_eq!(
-        SessionKind::App.sliding_lifetime(),
-        Some(Duration::days(90))
-    );
-    assert_eq!(SessionKind::Cli.sliding_lifetime(), None);
-    assert_eq!(SessionKind::Pat.sliding_lifetime(), None);
+    let slide = |kind: SessionKind| kind.lifetimes(Audience::App).slide;
+    assert_eq!(slide(SessionKind::Web), Some(Duration::days(30)));
+    assert_eq!(slide(SessionKind::App), Some(Duration::days(90)));
+    assert_eq!(slide(SessionKind::Cli), None);
+    assert_eq!(slide(SessionKind::Pat), None);
+    for kind in [
+        SessionKind::Web,
+        SessionKind::App,
+        SessionKind::Cli,
+        SessionKind::Pat,
+    ] {
+        let lifetimes = kind.lifetimes(Audience::App);
+        assert_eq!(lifetimes.cap, None);
+        assert_eq!(lifetimes.refresh_gap, Duration::hours(1));
+    }
+}
+
+#[test]
+fn a_console_session_is_short_capped_and_refreshed_often() {
+    let lifetimes = SessionKind::Web.lifetimes(Audience::Console);
+    assert_eq!(lifetimes.initial, Duration::minutes(30));
+    assert_eq!(lifetimes.slide, Some(Duration::minutes(30)));
+    assert_eq!(lifetimes.cap, Some(Duration::hours(8)));
+    assert_eq!(lifetimes.refresh_gap, Duration::minutes(1));
 }

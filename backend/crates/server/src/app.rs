@@ -142,6 +142,7 @@ impl ActorSource for AppState {
             user_id: session.user_id,
             role: session.role,
             session_id: session.session_id,
+            audience: session.audience,
             must_change_password: session.must_change_password,
         })
     }
@@ -298,6 +299,15 @@ impl Modify for SecurityAddon {
         components.add_security_scheme(
             "cookie",
             SecurityScheme::ApiKey(ApiKey::Cookie(ApiKeyValue::new(auth::COOKIE_NAME))),
+        );
+        // The admin console's session (ADR-0095): administration needs it, and it is the only
+        // credential the console origin sends.
+        components.add_security_scheme(
+            "console",
+            SecurityScheme::ApiKey(ApiKey::Cookie(ApiKeyValue::with_description(
+                auth::CONSOLE_COOKIE_NAME,
+                "The session of the admin console, from `POST /console/login`.",
+            ))),
         );
         components.add_security_scheme(
             "bearer",

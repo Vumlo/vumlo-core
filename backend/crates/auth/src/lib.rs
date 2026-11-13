@@ -19,13 +19,13 @@ pub use model::{
     UserFilter, UserStatus, UserUpdate, hash,
 };
 pub use routes::{
-    COOKIE_NAME, SetupError, api_role, api_status, api_user, authenticate_request, domain_role,
-    domain_status, router,
+    CONSOLE_COOKIE_NAME, COOKIE_NAME, SetupError, api_role, api_status, api_user,
+    authenticate_request, domain_role, domain_status, router,
 };
 pub use service::{
-    AppliedUserUpdate, AuthError, HashGate, LoginThrottle, apply_user_update, create_user_from_cli,
-    find_user, find_user_shared, find_users, hash_password, hash_password_gated, last_login_at,
-    list_users, reset_password,
+    AppliedUserUpdate, AuthError, HashGate, LoginThrottle, admin_for_cli, apply_user_update,
+    create_user_from_cli, find_user, find_user_shared, find_users, hash_password,
+    hash_password_gated, last_login_at, list_users, reset_password, set_admin_password_from_cli,
 };
 pub use state::AuthState;
 #[cfg(feature = "testing")]
