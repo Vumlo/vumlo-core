@@ -257,6 +257,14 @@ pub struct AdminCourseRow {
     pub student_count: i64,
 }
 
+/// What the list of every course is narrowed by. `q` is the text as typed.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct AdminCourseFilter {
+    pub term_id: Option<Uuid>,
+    pub status: Option<CourseStatus>,
+    pub q: Option<String>,
+}
+
 /// A course that uses a group (ADR-0053).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LinkedCourseRow {

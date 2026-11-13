@@ -407,6 +407,26 @@ pub struct ListUsersQuery {
     pub limit: Option<u32>,
 }
 
+/// Filters and cursor for the list of every course of the institution, newest first.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, Validate, IntoParams)]
+#[into_params(parameter_in = Query)]
+pub struct AllCoursesQuery {
+    /// Only the courses of this term.
+    #[garde(skip)]
+    pub term_id: Option<Uuid>,
+    /// Only the courses in this status.
+    #[garde(skip)]
+    pub status: Option<CourseStatus>,
+    /// Case-insensitive substring of the code, the title, or the owner's name or surname.
+    #[garde(inner(length(min = 1, max = 100)))]
+    pub q: Option<String>,
+    #[garde(inner(length(min = 1, max = 100)))]
+    pub cursor: Option<String>,
+    /// Page size, 1 to 100 (default 50).
+    #[garde(inner(range(min = 1, max = 100)))]
+    pub limit: Option<u32>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct Page<T> {
     pub items: Vec<T>,

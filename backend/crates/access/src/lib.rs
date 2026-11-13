@@ -141,6 +141,10 @@ pub enum Action {
     /// Read the administrator reports: people summary and facts, courses of the institution, term
     /// statistics and the audit log (ADR-0053).
     ViewAdminReports,
+    /// List every regular course of the institution, with its owner, term and size. Course
+    /// oversight, not administration: an administrator reads and edits any course without being
+    /// enrolled, and this is how they find one (the console split keeps it with the courses).
+    ViewAllCourses,
     /// Create a course; the creator becomes its owner.
     CreateCourse,
     /// List the courses one belongs to. Which ones is decided per course by `ViewCourse`.
@@ -304,6 +308,7 @@ impl Action {
             | Self::ViewInstitutionSettings
             | Self::ManageAppDownloads
             | Self::ViewAdminReports
+            | Self::ViewAllCourses
             | Self::CreateCourse
             | Self::ViewOwnCourses
             | Self::ViewEditorProfiles
@@ -338,6 +343,7 @@ impl Action {
             | Self::ViewInstitutionSettings
             | Self::ManageAppDownloads
             | Self::ViewAdminReports
+            | Self::ViewAllCourses
             | Self::CreateCourse
             | Self::ViewOwnCourses
             | Self::ViewCourse(_)
@@ -491,6 +497,7 @@ pub fn authorize(actor: &Actor, action: Action) -> Result<(), AccessError> {
         | Action::ViewInstitutionSettings
         | Action::ManageAppDownloads
         | Action::ViewAdminReports
+        | Action::ViewAllCourses
         | Action::ManageTerms
         | Action::ManageGroups
         | Action::ViewGroups => is_admin,

@@ -6,20 +6,30 @@ use sqlx::PgConnection;
 use uuid::Uuid;
 
 use super::TeachingError;
-use crate::model::{AdminCourseRow, LinkedCourseRow, UserCourseFacts};
+use crate::model::{AdminCourseFilter, AdminCourseRow, LinkedCourseRow, UserCourseFacts};
 use crate::repo;
 use access::Actor;
 use access::{self, Action};
-use common::{Page, PageParams};
+use common::{Page, PageParams, like_pattern};
 
-/// Every regular course of the institution, paged by id. Admins only.
+/// Every regular course of the institution that meets `filter`, newest first, paged by id. Admins
+/// only.
 pub async fn admin_courses(
     conn: &mut PgConnection,
     actor: &Actor,
+    filter: AdminCourseFilter,
     page: PageParams,
 ) -> Result<Page<AdminCourseRow>, TeachingError> {
-    access::authorize(actor, Action::ViewAdminReports)?;
-    let rows = repo::admin_courses(conn, page.after, i64::from(page.limit) + 1).await?;
+    access::authorize(actor, Action::ViewAllCourses)?;
+    let pattern = filter.q.as_deref().map(like_pattern);
+    let rows = repo::admin_courses(
+        conn,
+        &filter,
+        pattern.as_deref(),
+        page.after,
+        i64::from(page.limit) + 1,
+    )
+    .await?;
     Ok(Page::from_rows(rows, page.limit, |row| row.course_id))
 }
 

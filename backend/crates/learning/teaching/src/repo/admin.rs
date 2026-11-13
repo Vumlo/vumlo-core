@@ -3,12 +3,18 @@
 use sqlx::PgConnection;
 use uuid::Uuid;
 
-use crate::model::{AdminCourseRow, CourseLineRow, LinkedCourseRow};
+use crate::model::{AdminCourseFilter, AdminCourseRow, CourseLineRow, LinkedCourseRow};
 use access::CourseStatus;
 
-/// Regular courses after `after` (a course id), by id, with owner, term and student count.
+/// Regular courses that meet `filter`, newest first, after `after` (a course id; ids are UUID v7,
+/// so id order is creation order), with owner, term and student count. `pattern` is the search
+/// text already made into a `LIKE` pattern.
+// ponytail: a sequential scan with `ILIKE`, fine for thousands of courses; a trigram index if an
+// installation reaches hundreds of thousands.
 pub async fn admin_courses(
     conn: &mut PgConnection,
+    filter: &AdminCourseFilter,
+    pattern: Option<&str>,
     after: Option<Uuid>,
     limit: i64,
 ) -> Result<Vec<AdminCourseRow>, sqlx::Error> {
@@ -22,10 +28,18 @@ pub async fn admin_courses(
            FROM teaching.courses c
            JOIN auth.people o ON o.id = c.owner_id
            LEFT JOIN org.term_list t ON t.id = c.term_id
-           WHERE c.kind = 'regular' AND ($1::uuid IS NULL OR c.id > $1)
-           ORDER BY c.id
-           LIMIT $2"#,
+           WHERE c.kind = 'regular'
+             AND ($1::uuid IS NULL OR c.id < $1)
+             AND ($2::uuid IS NULL OR c.term_id = $2)
+             AND ($3::text IS NULL OR c.status = $3)
+             AND ($4::text IS NULL OR c.code ILIKE $4 OR c.title ILIKE $4
+                  OR o.name ILIKE $4 OR o.surname ILIKE $4)
+           ORDER BY c.id DESC
+           LIMIT $5"#,
         after,
+        filter.term_id,
+        filter.status.map(CourseStatus::as_str),
+        pattern,
         limit
     )
     .fetch_all(conn)

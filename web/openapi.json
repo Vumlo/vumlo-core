@@ -8283,6 +8283,34 @@
         "operationId": "list_admin_courses",
         "parameters": [
           {
+            "description": "Only the courses of this term.",
+            "in": "query",
+            "name": "term_id",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Only the courses in this status.",
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/CourseStatus"
+            }
+          },
+          {
+            "description": "Case-insensitive substring of the code, the title, or the owner's name or surname.",
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
             "in": "query",
             "name": "cursor",
             "required": false,
@@ -8352,7 +8380,7 @@
             "bearer": []
           }
         ],
-        "summary": "Every regular course of the institution with its owner, term and student count, paged by id.\nAdmin only.",
+        "summary": "Every regular course of the institution with its owner, term and student count, newest first,\nnarrowed by term, status and a search text. Admin only.",
         "tags": [
           "admin"
         ]
