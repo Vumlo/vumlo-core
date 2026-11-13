@@ -395,14 +395,15 @@ pub enum Via {
 }
 text_enum!(Via { Admin => "admin", Unit => "unit" });
 
-/// How the actor reached the course without being on it, or `None` when they are on it. Every
-/// change made this way is audited: the course does not show who made it.
+/// How the actor reached the course without being its staff, or `None` when they are its owner,
+/// teacher or assistant. Every change made this way is audited: the course does not show who made
+/// it. A grantee who is a student of the course acts through the grant, so they count as `Unit`.
 pub fn implicit_access(actor: &Actor, access: CourseAccess) -> Option<Via> {
     if actor.role() == Role::Admin {
         return Some(Via::Admin);
     }
     let access = access.for_actor(actor);
-    (access.has_unit_grant() && !access.is_owner && access.role.is_none()).then_some(Via::Unit)
+    (access.has_unit_grant() && !access.is_staff()).then_some(Via::Unit)
 }
 
 /// The course-level actions the actor may take, for the web app (ADR-0094).

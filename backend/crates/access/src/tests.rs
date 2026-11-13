@@ -1398,6 +1398,21 @@ fn implicit_access_names_the_way_in() {
     };
     assert_eq!(implicit_access(&actor(Role::Teacher), owning), None);
     assert_eq!(implicit_access(&actor(Role::Teacher), non_member()), None);
+    // An assistant is staff: not implicit either.
+    let assisting = CourseAccess {
+        role: Some(Assistant),
+        ..unit_access(grant, Published)
+    };
+    assert_eq!(implicit_access(&actor(Role::Teacher), assisting), None);
+    // A grantee who studies in the course writes through the grant: audited.
+    let studying = CourseAccess {
+        role: Some(Student),
+        ..unit_access(grant, Published)
+    };
+    assert_eq!(
+        implicit_access(&actor(Role::Teacher), studying),
+        Some(Via::Unit)
+    );
 }
 
 #[test]
