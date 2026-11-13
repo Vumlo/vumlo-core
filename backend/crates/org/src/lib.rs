@@ -16,11 +16,11 @@ pub use model::{
 };
 pub use routes::router;
 pub use service::{
-    OrgError, add_group_members, create_group, create_term, create_unit, delete_unit,
-    drop_unit_roles, get_group, group_member_lines, group_options, groups_of_user, list_groups,
-    list_terms, list_unit_roles, list_units, record_mode, remove_unit_role, set_unit_role,
-    set_unit_role_abilities, terms_newest_first, unit_candidates, unit_grant, unit_role_abilities,
-    update_unit, view_institution_settings,
+    OrgError, add_group_members, apply_role_abilities, create_group, create_term, create_unit,
+    delete_unit, drop_unit_roles, get_group, group_member_lines, group_options, groups_of_user,
+    list_groups, list_terms, list_unit_roles, list_units, record_mode, remove_unit_role,
+    role_abilities, set_unit_role, set_unit_role_abilities, terms_newest_first, unit_candidates,
+    unit_grant, unit_role_abilities, update_unit, view_institution_settings,
 };
 pub use state::OrgState;
 #[cfg(feature = "testing")]

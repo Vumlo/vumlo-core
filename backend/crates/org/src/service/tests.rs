@@ -771,6 +771,57 @@ async fn switching_an_ability_off_changes_the_grant_at_once() {
 }
 
 #[tokio::test]
+async fn the_abilities_of_a_role_are_read_and_replaced_without_an_actor() {
+    db_test(async |pool| {
+        let mut tx = pool.begin().await.unwrap();
+        // Sorted into the order of `UnitAbility::ALL`, without duplicates; the stored names come back.
+        let names = apply_role_abilities(
+            &mut tx,
+            UnitRole::Viewer,
+            vec![
+                UnitAbility::ManageRoster,
+                UnitAbility::ViewGrades,
+                UnitAbility::ManageRoster,
+            ],
+        )
+        .await
+        .unwrap();
+        assert_eq!(names, ["view_grades", "manage_roster"]);
+        let all = role_abilities(&mut tx).await.unwrap();
+        assert_eq!(
+            all[1],
+            (
+                UnitRole::Viewer,
+                vec![UnitAbility::ViewGrades, UnitAbility::ManageRoster]
+            )
+        );
+        assert_eq!(
+            all[0].0,
+            UnitRole::Manager,
+            "the manager's set is not touched"
+        );
+        assert_eq!(all[0].1.len(), 4);
+
+        // No switches at all is a valid set.
+        let none = apply_role_abilities(&mut tx, UnitRole::Viewer, vec![])
+            .await
+            .unwrap();
+        assert!(none.is_empty());
+        assert!(role_abilities(&mut tx).await.unwrap()[1].1.is_empty());
+        // No audit row: that is the caller's, with its own source.
+        tx.commit().await.unwrap();
+        let audited: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM events.audit_log WHERE action = 'unit.abilities.set'",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(audited, 0);
+    })
+    .await;
+}
+
+#[tokio::test]
 async fn only_an_admin_sets_role_abilities() {
     db_test(async |pool| {
         let t = tree(pool).await;

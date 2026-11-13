@@ -17,6 +17,7 @@ mod init;
 mod mail_cmd;
 mod modules_cmd;
 mod plugin_cmd;
+mod roles_cmd;
 mod runtime;
 mod seed;
 mod version;
@@ -97,6 +98,9 @@ enum Command {
     /// Accounts.
     #[command(subcommand)]
     Admin(AdminCommand),
+    /// What the unit roles `manager` and `viewer` may do (ADR-0094).
+    #[command(subcommand)]
+    Roles(RolesCommand),
     /// Check the installation without changing anything. Exits non-zero if a check fails.
     Doctor {
         #[arg(long)]
@@ -104,6 +108,24 @@ enum Command {
     },
     /// Print the version of this binary and what it supports.
     Version,
+}
+
+#[derive(Subcommand)]
+enum RolesCommand {
+    /// The switches each unit role has now. Viewing is always on and has no switch.
+    Show,
+    /// Replace the switches of a role by exactly these. Every request after it sees the new set.
+    Set {
+        /// `manager` or `viewer`.
+        role: String,
+        /// `view_grades`, `edit_content`, `grade`, `manage_roster`, `manage_courses` and
+        /// `manage_units`, comma-separated, or `none`.
+        #[arg(long, value_name = "ABILITIES")]
+        abilities: String,
+        /// Say what would be set, change nothing.
+        #[arg(long)]
+        dry_run: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -583,6 +605,12 @@ async fn run(cli: Cli) -> anyhow::Result<bool> {
             )
             .await?;
         }
+        Command::Roles(RolesCommand::Show) => roles_cmd::show(&options).await?,
+        Command::Roles(RolesCommand::Set {
+            role,
+            abilities,
+            dry_run,
+        }) => roles_cmd::set(&options, &role, &abilities, dry_run).await?,
         Command::Doctor { json } => return doctor::run(&options, json).await,
         Command::Version => version::run(),
     }
