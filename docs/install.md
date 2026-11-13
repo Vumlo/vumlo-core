@@ -79,7 +79,8 @@ binary. Edit the two files:
   `postgres`, the name of the compose service).
 - `vumlo.toml`: set at least `institution.name`, `institution.mode` (`"school"` or `"university"`;
   this cannot be changed later), `server.public_origin` (the address people will type; for a trial
-  `http://localhost:3000`) and `auth.allowed_domains` (who may sign up, e.g. `["example.edu"]`). The
+  `http://localhost:3000`), `server.admin_origin` (the address of the admin console, always another
+  address than `public_origin`; for a trial `http://localhost:3001`) and `auth.allowed_domains` (who may sign up, e.g. `["example.edu"]`). The
   file starts with `[auth] cookie_secure = false`, which is only for a trial over plain HTTP: delete
   that line for anything real.
 
@@ -209,7 +210,8 @@ sudoedit /etc/vumlo/vumlo.toml
 ```
 
 In `vumlo.toml` set `institution.name`, `institution.mode`, `server.public_origin =
-"https://lms.example.edu"`, `server.client_ip_header = "x-real-ip"` (Caddy sets it), `auth.allowed_domains`,
+"https://lms.example.edu"`, `server.admin_origin = "https://admin.lms.example.edu"` (the console's
+own address; the Caddy block for it comes with the console itself), `server.client_ip_header = "x-real-ip"` (Caddy sets it), `auth.allowed_domains`,
 and in `[cli]` set `env_file = "vumlo.env"` (so the CLI finds the secrets) and `core_url =
 "http://127.0.0.1:8080"` (so `doctor` asks the core directly and not through Caddy). Set `web.dir =
 "/opt/vumlo/web"`. Remove the `cookie_secure = false` line, or set it to `true`: the site is HTTPS.

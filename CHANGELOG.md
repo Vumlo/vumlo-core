@@ -10,7 +10,27 @@ must do, in order, besides getting the new release. See [RELEASING.md](RELEASING
 
 ## [Unreleased]
 
+### Upgrade notes
+
+- **Add `server.admin_origin` to `vumlo.toml` before starting this release** (ADR-0095). It is the address of
+  the admin console, different from `server.public_origin`: `https://admin.lms.example.edu` for a public
+  site, `http://localhost:3001` for a trial. The server does not start without it, and
+  `vumlo-cli config check` names the key.
+- **Administration moves out of the student app.** An administrator's session in the student app is refused
+  everything that changes configuration, people or the structure of units (`/admin/users`, institution
+  settings, reports, terms, groups, unit roles); they still read and edit any course, audited. The console
+  that answers these requests arrives in the same release; until it does, administrators use
+  `vumlo-cli`. Every administrator signs in to the console once, with their email and password.
+
 ### Added
+
+- **The admin console's door** (ADR-0095, second part). `POST /console/login` signs an administrator in at
+  `server.admin_origin` with their own cookie (`vumlo_console`: `HttpOnly`, `SameSite=Strict`, `Secure`), a
+  session of 30 minutes idle and 8 hours at most, a login throttle of its own, and the same answer for a
+  non-administrator as for a wrong password. Sessions carry an `audience` (`app` or `console`); a token is
+  only good through the channel of its audience, and cookie requests are checked against the origin of their
+  audience. `vumlo-cli admin set-password <email>` sets the password of an administrator who cannot sign in
+  and ends all their sessions.
 
 - **Guided settings from the terminal** (ADR-0095, first part of the admin console). `vumlo-cli plugin configure <id>` walks through the settings a plugin declares for the institution, one question each (what it is for, its value now; Enter keeps it), and stores the answers in one transaction with one audit row per change; `vumlo-cli roles show|set` reads and replaces the switches of the unit roles `manager` and `viewer`; `vumlo-cli doctor` names the plugins that still need a setting and the command to run. `GET /admin/courses` takes `term_id`, `status` and `q` and lists newest first; an administrator finds every course in the new "All courses" tab of the courses page, and the admin page keeps only the terms (the owner of a course is changed in its settings).
 - **Org units and unit roles** (ADR-0094, backend; the web pages come next). An admin builds a tree of units (`/units`) and makes a teacher a `manager` or a `viewer` of one (`/units/{id}/roles`); the role covers the unit and every unit below it, so a dean sees and runs the courses of their faculty without being an admin or being added to each course. A course sits in at most one unit (`unit_id` on `POST /courses` and `POST /templates/{id}/courses`, `PUT /courses/{id}/unit`); `GET /units/{id}/courses` lists them. What a role may do is a set of switches the admin changes at any time and that works on the next request (`GET` and `PUT /admin/unit-roles`): `view_grades`, `edit_content`, `grade`, `manage_roster`, `manage_courses`, `manage_units`; by default a manager has all but `edit_content` and `grade`, a viewer has `view_grades`. A unit role never deletes a course, transfers its ownership or acts as a student. `GET /courses/{id}` carries `can`, what the caller may do in the course, and `unit_id`. A change made in a course through an admin's or a unit's access is written to the audit log with `meta.via` (`admin` or `unit`). A teacher who becomes a student loses their unit roles.

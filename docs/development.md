@@ -25,7 +25,8 @@ at `VUMLO_ALLOWED_DOMAINS` (default `example.edu`) may sign up themselves.
 `pnpm dev:mock` runs the web app against in-browser mocks instead, with no backend. Set the institution
 before the first start with `VUMLO_INSTITUTION_MODE` (`school` or `university`, default `university`) and
 `VUMLO_INSTITUTION_NAME` in `.env`; the mode cannot be changed later. If the web app is not on
-`http://localhost:3000`, set `VUMLO_PUBLIC_ORIGIN` to its origin.
+`http://localhost:3000`, set `VUMLO_PUBLIC_ORIGIN` to its origin. The admin console's origin is
+`VUMLO_ADMIN_ORIGIN` (default `http://localhost:3001`, and never the same as the public one).
 
 Without Docker for the API:
 
