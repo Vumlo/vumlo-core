@@ -273,7 +273,11 @@ fn the_desktop_app_has_the_version_of_the_release() {
 fn the_compose_example_names_its_images_after_the_release() {
     let compose = include_str!("../../../../deploy/compose.yaml");
     let tag = format!("VUMLO_VERSION:-{}}}", env!("CARGO_PKG_VERSION"));
-    assert_eq!(compose.matches(&tag).count(), 3, "backend, web and console: {tag}");
+    assert_eq!(
+        compose.matches(&tag).count(),
+        3,
+        "backend, web and console: {tag}"
+    );
 }
 
 // --- db ---------------------------------------------------------------------------------------
