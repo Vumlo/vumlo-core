@@ -1185,6 +1185,14 @@ pub async fn unit_role_abilities(
     actor: &Actor,
 ) -> Result<Vec<(UnitRole, Vec<UnitAbility>)>, OrgError> {
     access::authorize(actor, Action::ManageUnitRoleAbilities)?;
+    role_abilities(conn).await
+}
+
+/// [`unit_role_abilities`] for a caller that is not a signed-in user and has been authorized
+/// another way: the administrator CLI, which runs on the server's host.
+pub async fn role_abilities(
+    conn: &mut PgConnection,
+) -> Result<Vec<(UnitRole, Vec<UnitAbility>)>, OrgError> {
     let on = repo::list_role_abilities(conn).await?;
     Ok([UnitRole::Manager, UnitRole::Viewer]
         .into_iter()
@@ -1207,14 +1215,7 @@ pub async fn set_unit_role_abilities(
     abilities: Vec<UnitAbility>,
 ) -> Result<(), OrgError> {
     access::authorize(actor, Action::ManageUnitRoleAbilities)?;
-    // Sorted and without duplicates, whatever order they came in.
-    let abilities: Vec<UnitAbility> = UnitAbility::ALL
-        .into_iter()
-        .filter(|ability| abilities.contains(ability))
-        .collect();
-    let names: Vec<&str> = abilities.iter().map(|ability| ability.as_str()).collect();
-    repo::lock_role_abilities(conn).await?;
-    repo::replace_role_abilities(conn, role, &names).await?;
+    let names = apply_role_abilities(conn, role, abilities).await?;
     audit(
         conn,
         actor,
@@ -1225,6 +1226,24 @@ pub async fn set_unit_role_abilities(
         json!({"role": role.as_str(), "abilities": names}),
     )
     .await
+}
+
+/// The write of [`set_unit_role_abilities`] without the check and without the audit row, for a
+/// caller that is authorized another way and audits with its own source (the CLI). The set is
+/// sorted and has no duplicates, whatever order it came in; the stored names are returned.
+pub async fn apply_role_abilities(
+    conn: &mut PgConnection,
+    role: UnitRole,
+    abilities: Vec<UnitAbility>,
+) -> Result<Vec<&'static str>, OrgError> {
+    let names: Vec<&'static str> = UnitAbility::ALL
+        .into_iter()
+        .filter(|ability| abilities.contains(ability))
+        .map(UnitAbility::as_str)
+        .collect();
+    repo::lock_role_abilities(conn).await?;
+    repo::replace_role_abilities(conn, role, &names).await?;
+    Ok(names)
 }
 
 // ---------------------------------------------------------------------------------------------

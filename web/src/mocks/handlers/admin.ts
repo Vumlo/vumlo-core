@@ -222,14 +222,20 @@ export const adminHandlers = [
     }));
     return HttpResponse.json({ items });
   }),
-  http.get(`${A}/admin/courses`, () => {
+  // Every course, newest first, narrowed by term, status and a text, in pages (the server's filters).
+  http.get(`${A}/admin/courses`, ({ request }) => {
     requireAdmin();
     const db = getDb();
+    const query = new URL(request.url).searchParams;
+    const q = query.get("q");
+    if (q === "") throw problem(422, "Unprocessable Entity", "the request has invalid fields", [{ field: "q", message: "must not be empty" }]);
     const items: AdminCourse[] = db.courses.filter((c) => c.kind === "regular").map((c) => ({
       course_id: c.id, code: c.code, title: c.title, owner_id: c.owner_id, owner_name: userById(c.owner_id).name, owner_surname: userById(c.owner_id).surname, term_id: c.term_id ?? null, term_name: db.terms.find((t) => t.id === c.term_id)?.name ?? null,
       student_count: activeStudents(c.id).length, status: c.status,
-    }));
-    return HttpResponse.json({ items });
+    })).reverse().filter((c) => (!query.get("term_id") || c.term_id === query.get("term_id"))
+      && (!query.get("status") || c.status === query.get("status"))
+      && (!q || [c.code, c.title, c.owner_name, c.owner_surname].some((text) => text.toLowerCase().includes(q.toLowerCase()))));
+    return paged(items, request);
   }),
 
   // ---- institution and audit ----

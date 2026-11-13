@@ -1,6 +1,7 @@
 "use client";
 
-import { api } from "../client";
+import { useState } from "react";
+import { api, type Page } from "../client";
 import { invalidate, useMutation, useQuery } from "../../query";
 import type {
   AdminCourse,
@@ -8,6 +9,7 @@ import type {
   AppDownload,
   AuditKind,
   AuditRecord,
+  CourseStatus,
   CreateUserResponse,
   Group,
   GroupOverview,
@@ -121,9 +123,49 @@ export function useAdminTermStats() {
   return useQuery<TermStat[]>("/admin/term-stats", async () => (await api.get<{ items: TermStat[] }>("/admin/term-stats")).items);
 }
 
-/** Every course of the institution (ADR-0053). */
-export function useAdminCourses() {
-  return useQuery<AdminCourse[]>("/admin/courses", () => fetchAll<AdminCourse>("/admin/courses"));
+export type AllCoursesFilter = { termId: string; status: CourseStatus | "all"; q: string };
+
+const ALL_COURSES_PAGE = 50;
+
+/**
+ * Every course of the institution, newest first, narrowed and paged by the server (ADR-0053): the
+ * first page by its query, then `loadMore` appends the next ones. A change of the filter, or a
+ * reload of the first page, starts again from the first page.
+ */
+export function useAllCourses(filter: AllCoursesFilter) {
+  const params = new URLSearchParams();
+  if (filter.termId) params.set("term_id", filter.termId);
+  if (filter.status !== "all") params.set("status", filter.status);
+  if (filter.q) params.set("q", filter.q);
+  params.set("limit", String(ALL_COURSES_PAGE));
+  const key = `/admin/courses?${params}`;
+  const first = useQuery<Page<AdminCourse>>(key, () => api.get<Page<AdminCourse>>(key));
+  const [more, setMore] = useState<{ key: string; base: Page<AdminCourse>; items: AdminCourse[]; cursor: string | null } | null>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [moreFailed, setMoreFailed] = useState(false);
+  const extra = more && more.key === key && more.base === first.data ? more : null;
+  const cursor = extra ? extra.cursor : (first.data?.next_cursor ?? null);
+  const loadMore = async () => {
+    if (!cursor || !first.data) return;
+    setLoadingMore(true);
+    setMoreFailed(false);
+    try {
+      const page = await api.get<Page<AdminCourse>>(`${key}&cursor=${encodeURIComponent(cursor)}`);
+      setMore({ key, base: first.data, items: [...(extra?.items ?? []), ...page.items], cursor: page.next_cursor });
+    } catch {
+      setMoreFailed(true);
+    } finally {
+      setLoadingMore(false);
+    }
+  };
+  return {
+    data: first.data ? [...first.data.items, ...(extra?.items ?? [])] : undefined,
+    error: first.error,
+    hasMore: cursor !== null,
+    loadMore,
+    loadingMore,
+    moreFailed,
+  };
 }
 
 export function useCreateTerm() {
@@ -160,15 +202,5 @@ export function useGroupOverviews(ids: string[]) {
   return useQuery<Record<string, GroupOverview>>(ids.length ? `/admin/groups/overviews?ids=${ids.join(",")}` : null, async () => {
     const entries = await Promise.all(ids.map(async (id) => [id, await api.get<GroupOverview>(`/admin/groups/${id}/overview`)] as const));
     return Object.fromEntries(entries);
-  });
-}
-
-export function useChangeOwner() {
-  return useMutation(async (courseId: string, userId: string) => {
-    const c = await api.put<unknown>(`/courses/${courseId}/owner`, { user_id: userId });
-    invalidate("/admin/");
-    invalidate("/courses/");
-    invalidate("/me/");
-    return c;
   });
 }

@@ -132,6 +132,14 @@ fn api_status(status: CourseStatus) -> api_types::CourseStatus {
     }
 }
 
+fn access_status(status: api_types::CourseStatus) -> CourseStatus {
+    match status {
+        api_types::CourseStatus::Draft => CourseStatus::Draft,
+        api_types::CourseStatus::Published => CourseStatus::Published,
+        api_types::CourseStatus::Archived => CourseStatus::Archived,
+    }
+}
+
 fn api_role(role: CourseRole) -> api_types::CourseRole {
     match role {
         CourseRole::Teacher => api_types::CourseRole::Teacher,

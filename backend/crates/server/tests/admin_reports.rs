@@ -452,6 +452,163 @@ async fn the_administrator_lists_every_regular_course_in_pages() {
     .await;
 }
 
+/// The titles `GET /admin/courses{query}` lists for the administrator, in the order sent.
+async fn course_titles(w: &World, query: &str) -> Vec<String> {
+    let page = w.get(&w.admin, &format!("/admin/courses{query}")).await;
+    page["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|c| c["title"].as_str().unwrap().to_owned())
+        .collect()
+}
+
+#[tokio::test]
+async fn the_course_list_narrows_by_term_status_and_text_newest_first() {
+    db_test(async |pool| {
+        let w = world(pool).await;
+        let petrenko = w.env.user("petrenko@lms.test", Role::Teacher).await;
+        sqlx::query!(
+            "UPDATE auth.users SET surname = 'Ozerov' WHERE id = $1",
+            w.teacher.id
+        )
+        .execute(&w.env.pool)
+        .await
+        .unwrap();
+        sqlx::query!(
+            "UPDATE auth.users SET surname = 'Petrenko' WHERE id = $1",
+            petrenko.id
+        )
+        .execute(&w.env.pool)
+        .await
+        .unwrap();
+        sqlx::query!(
+            "UPDATE teaching.courses SET code = 'CS 101' WHERE id = $1",
+            w.course
+        )
+        .execute(&w.env.pool)
+        .await
+        .unwrap();
+        let term = async |name: &str, from: &str, to: &str| -> Uuid {
+            id_of(
+                &w.env
+                    .ok(
+                        "POST",
+                        &w.admin.token,
+                        "/terms",
+                        Some(json!({"name": name, "starts_on": from, "ends_on": to})),
+                        201,
+                    )
+                    .await,
+            )
+        };
+        let autumn = term("Autumn", "2000-09-01", "2000-12-31").await;
+        let spring = term("Spring", "2001-02-01", "2001-06-30").await;
+        let make = async |owner: &Account, title: &str, term_id: Uuid| -> Uuid {
+            id_of(
+                &w.env
+                    .ok(
+                        "POST",
+                        &owner.token,
+                        "/courses",
+                        Some(json!({"title": title, "term_id": term_id})),
+                        201,
+                    )
+                    .await,
+            )
+        };
+        // Made in this order, so newest first is Chemistry, Biology, Algebra, then the world's "C".
+        make(&w.teacher, "Algebra 50% off", autumn).await;
+        let biology = make(&w.teacher, "Biology", spring).await;
+        make(&petrenko, "Chemistry", autumn).await;
+        for step in ["publish", "archive"] {
+            w.env
+                .ok(
+                    "POST",
+                    &w.teacher.token,
+                    &format!("/courses/{biology}/{step}"),
+                    None,
+                    200,
+                )
+                .await;
+        }
+
+        let titles = |titles: &[&str]| titles.iter().map(|t| (*t).to_owned()).collect::<Vec<_>>();
+        assert_eq!(
+            course_titles(&w, "").await,
+            titles(&["Chemistry", "Biology", "Algebra 50% off", "C"])
+        );
+        assert_eq!(
+            course_titles(&w, &format!("?term_id={autumn}")).await,
+            titles(&["Chemistry", "Algebra 50% off"])
+        );
+        assert_eq!(
+            course_titles(&w, "?status=archived").await,
+            titles(&["Biology"])
+        );
+        assert_eq!(
+            course_titles(&w, "?status=draft").await,
+            titles(&["Chemistry", "Algebra 50% off"])
+        );
+        assert_eq!(course_titles(&w, "?status=published").await, titles(&["C"]));
+        // The text is a case-insensitive substring of the code, the title, or the owner's name.
+        assert_eq!(
+            course_titles(&w, "?q=PETRENKO").await,
+            titles(&["Chemistry"])
+        );
+        assert_eq!(course_titles(&w, "?q=cs%20101").await, titles(&["C"]));
+        assert_eq!(
+            course_titles(&w, "?q=ozerov").await,
+            titles(&["Biology", "Algebra 50% off", "C"])
+        );
+        assert_eq!(
+            course_titles(&w, &format!("?term_id={autumn}&q=chem")).await,
+            titles(&["Chemistry"])
+        );
+        // `%` is a character like any other: it does not match everything.
+        assert_eq!(
+            course_titles(&w, "?q=%25").await,
+            titles(&["Algebra 50% off"])
+        );
+        assert_eq!(
+            course_titles(&w, "?q=50%25").await,
+            titles(&["Algebra 50% off"])
+        );
+        assert!(course_titles(&w, "?q=_").await.is_empty());
+
+        // A filter and a cursor together lose and repeat nothing.
+        let first = w.get(&w.admin, "/admin/courses?q=ozerov&limit=2").await;
+        let cursor = first["next_cursor"].as_str().unwrap().to_owned();
+        let second = w
+            .get(
+                &w.admin,
+                &format!("/admin/courses?q=ozerov&limit=2&cursor={cursor}"),
+            )
+            .await;
+        let titles_of = |page: &Value| {
+            page["items"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|c| c["title"].as_str().unwrap().to_owned())
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(titles_of(&first), titles(&["Biology", "Algebra 50% off"]));
+        assert_eq!(titles_of(&second), titles(&["C"]));
+        assert_eq!(second["next_cursor"], Value::Null);
+
+        // An empty search is a mistake, not "everything".
+        assert_eq!(
+            w.env
+                .call("GET", &w.admin.token, "/admin/courses?q=", None)
+                .await
+                .status,
+            422
+        );
+    })
+    .await;
+}
+
 #[tokio::test]
 async fn the_audit_log_names_who_did_what_to_what_and_filters_by_kind_and_text() {
     db_test(async |pool| {

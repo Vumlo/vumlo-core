@@ -1,23 +1,24 @@
 //! `GET /admin/courses` (ADR-0053).
 
-use api_types::{AdminCourse, CourseLine, Page, PageQuery, ProblemDetails};
+use api_types::{AdminCourse, AllCoursesQuery, CourseLine, Page, ProblemDetails};
 use axum::Json;
 use axum::extract::State;
 
-use super::{api_status, page_params};
+use super::{access_status, api_status};
 use crate::TeachingState;
+use crate::model::AdminCourseFilter;
 use crate::service::{self, TeachingError};
 use access::Actor;
-use common::{ApiError, ValidQuery};
+use common::{ApiError, PageParams, ValidQuery};
 
-/// Every regular course of the institution with its owner, term and student count, paged by id.
-/// Admin only.
+/// Every regular course of the institution with its owner, term and student count, newest first,
+/// narrowed by term, status and a search text. Admin only.
 #[utoipa::path(
     get,
     path = "/admin/courses",
     tag = "admin",
     security(("cookie" = []), ("bearer" = [])),
-    params(PageQuery),
+    params(AllCoursesQuery),
     responses(
         (status = 200, description = "A page of courses", body = Page<AdminCourse>),
         (status = 401, description = "Not logged in", body = ProblemDetails,
@@ -31,11 +32,16 @@ use common::{ApiError, ValidQuery};
 pub async fn list_admin_courses(
     State(state): State<TeachingState>,
     actor: Actor,
-    ValidQuery(query): ValidQuery<PageQuery>,
+    ValidQuery(query): ValidQuery<AllCoursesQuery>,
 ) -> Result<Json<Page<AdminCourse>>, ApiError> {
-    let page = page_params(&query)?;
+    let page = PageParams::new(query.cursor.as_deref(), query.limit)?;
+    let filter = AdminCourseFilter {
+        term_id: query.term_id,
+        status: query.status.map(access_status),
+        q: query.q,
+    };
     let mut conn = state.db.acquire().await.map_err(TeachingError::from)?;
-    let courses = service::admin_courses(&mut conn, &actor, page).await?;
+    let courses = service::admin_courses(&mut conn, &actor, filter, page).await?;
     Ok(Json(Page {
         items: courses
             .items

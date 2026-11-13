@@ -63,6 +63,7 @@ fn only_admins_manage_terms_and_groups_and_read_groups() {
         Action::ViewInstitutionSettings,
         Action::ManageAppDownloads,
         Action::ViewAdminReports,
+        Action::ViewAllCourses,
         Action::ManageTerms,
         Action::ManageGroups,
         Action::ViewGroups,

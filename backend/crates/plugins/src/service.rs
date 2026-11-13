@@ -370,6 +370,30 @@ pub async fn list_settings(
         .collect())
 }
 
+/// The enabled plugins that still need the administrator: for each, the keys of its institution
+/// settings that have no value and no default. A setting that is per course is the teacher's, and a
+/// plugin that is switched off runs nothing, so neither is named.
+pub async fn missing_settings(
+    conn: &mut PgConnection,
+) -> Result<Vec<(String, Vec<String>)>, PluginsError> {
+    let mut missing = Vec::new();
+    for install in repo::list_installs(conn).await? {
+        if install.status != InstallStatus::Enabled {
+            continue;
+        }
+        let keys: Vec<String> = list_settings(conn, &install.plugin_id, None)
+            .await?
+            .into_iter()
+            .filter(|view| !view.is_set && view.spec.default.is_none())
+            .map(|view| view.key)
+            .collect();
+        if !keys.is_empty() {
+            missing.push((install.plugin_id, keys));
+        }
+    }
+    Ok(missing)
+}
+
 pub async fn get_setting(
     conn: &mut PgConnection,
     plugin_id: &str,
@@ -422,6 +446,26 @@ pub async fn set_setting(
         )?;
     settings_changed(conn, &install, course).await?;
     Ok(true)
+}
+
+/// Like [`set_setting`] for a value typed as text: the setting's own type reads it (a string stays
+/// text; a number, a boolean or a list is JSON). Text the type does not accept is `BadSetting`.
+pub async fn set_setting_text(
+    conn: &mut PgConnection,
+    key: &SecretKey,
+    plugin_id: &str,
+    name: &str,
+    text: &str,
+    course: Option<Uuid>,
+) -> Result<bool, PluginsError> {
+    let install = get(conn, plugin_id).await?;
+    let value = spec_in_scope(&install, name, course)?
+        .parse_text(text)
+        .map_err(|why| PluginsError::BadSetting {
+            key: name.to_owned(),
+            why,
+        })?;
+    set_setting(conn, key, plugin_id, name, value, course).await
 }
 
 /// Removes the value, so that the default applies again. Returns whether there was one.

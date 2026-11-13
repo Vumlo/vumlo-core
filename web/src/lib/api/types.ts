@@ -24,6 +24,7 @@ export type UserFacts = S["UserFacts"];
 export type GroupOverview = S["GroupOverview"];
 export type TermStat = S["TermStat"];
 export type AdminCourse = S["AdminCourse"];
+export type CourseStatus = S["CourseStatus"];
 export type AuditRecord = S["AuditRecord"];
 export type AuditKind = S["AuditKind"];
 export type CourseCard = S["CourseCard"];

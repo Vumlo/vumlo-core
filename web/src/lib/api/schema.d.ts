@@ -33,8 +33,8 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Every regular course of the institution with its owner, term and student count, paged by id.
-         *     Admin only.
+         * Every regular course of the institution with its owner, term and student count, newest first,
+         *     narrowed by term, status and a search text. Admin only.
          */
         get: operations["list_admin_courses"];
         put?: never;
@@ -5816,6 +5816,12 @@ export interface operations {
     list_admin_courses: {
         parameters: {
             query?: {
+                /** @description Only the courses of this term. */
+                term_id?: string;
+                /** @description Only the courses in this status. */
+                status?: components["schemas"]["CourseStatus"];
+                /** @description Case-insensitive substring of the code, the title, or the owner's name or surname. */
+                q?: string;
                 cursor?: string;
                 /** @description Page size, 1 to 100 (default 50). */
                 limit?: number;

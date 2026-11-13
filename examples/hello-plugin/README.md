@@ -24,6 +24,7 @@ a report is kept under a key, on an attempt, an assignment or a course, and writ
 It has two settings, declared in its manifest (`MANIFEST["settings"]` in `plugin.py`), which an administrator
 changes without touching the plugin:
 
+    vumlo-cli plugin configure hello                                       # one question per setting of the institution
     vumlo-cli plugin settings list hello
     vumlo-cli plugin settings set hello unit characters                    # the whole institution
     vumlo-cli plugin settings set hello max_words 300 --course <course id> # one course

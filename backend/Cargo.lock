@@ -4767,6 +4767,7 @@ dependencies = [
  "learning",
  "mail",
  "module-api",
+ "org",
  "plugins",
  "reqwest 0.12.28",
  "rpassword",
