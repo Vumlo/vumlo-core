@@ -8,3 +8,4 @@ public/brand
 src/generated
 src/modules/enabled.ts
 out
+.desktop-stash
