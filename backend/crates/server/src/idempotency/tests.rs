@@ -65,6 +65,21 @@ fn the_scope_follows_the_credential_and_its_kind() {
 }
 
 #[test]
+fn the_console_cookie_is_a_scope_of_its_own() {
+    let console = scope_of(&headers(&[("cookie", "vumlo_console=abc")]));
+    let other = scope_of(&headers(&[("cookie", "vumlo_console=abd")]));
+    let app = scope_of(&headers(&[("cookie", "vumlo_session=abc")]));
+    let both = scope_of(&headers(&[(
+        "cookie",
+        "vumlo_console=abc; vumlo_session=abc",
+    )]));
+    assert!(console.is_some() && other.is_some() && app.is_some() && both.is_some());
+    assert_ne!(console, other);
+    assert_ne!(console, app);
+    assert_ne!(console, both);
+}
+
+#[test]
 fn only_an_answer_about_the_request_is_kept() {
     for kept in [200, 201, 204, 404, 409, 422] {
         assert!(storable(StatusCode::from_u16(kept).unwrap()), "{kept}");
