@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "UPDATE org.units SET parent_id = $2, name = $3 WHERE id = $1\n         RETURNING id, parent_id, name, created_at",
+  "query": "UPDATE org.units SET name = $2 WHERE id = $1\n         RETURNING id, parent_id, name, created_at",
   "describe": {
     "columns": [
       {
@@ -51,7 +51,6 @@
     "parameters": {
       "Left": [
         "Uuid",
-        "Uuid",
         "Text"
       ]
     },
@@ -62,5 +61,5 @@
       false
     ]
   },
-  "hash": "fbb87b18ad8fa826b62c90c03a119d5678f24c3aef2b393755ee6287682b158d"
+  "hash": "d2c9effd22745ca678c05cf1a538f5800fdc2dc475e90f8d67be4028e52567db"
 }

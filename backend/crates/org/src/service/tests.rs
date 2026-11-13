@@ -445,3 +445,122 @@ async fn list_units_shows_the_covered_subtree_with_abilities() {
     })
     .await;
 }
+
+/// A move that the caller may not make is refused before the tree lock is asked for: holding the
+/// lock in another transaction must not stall it (otherwise any signed-in user could stall every
+/// writer of the tree by sending moves).
+#[tokio::test]
+async fn an_unauthorized_move_is_refused_without_taking_the_tree_lock() {
+    db_test(async |pool| {
+        let t = tree(pool).await;
+        let kim = actor(
+            user(&t.pool, "kim@x.edu", Role::Student).await,
+            Role::Student,
+        );
+        let mut holder = t.pool.begin().await.unwrap();
+        repo::lock_tree(&mut holder).await.unwrap();
+
+        // (who, unit, new parent, whether the refusal is "forbidden" rather than "not found")
+        let attempts = [
+            (t.pat.clone(), t.a, None, true),
+            (t.pat.clone(), t.s, Some(t.a), false),
+            (t.pat.clone(), t.b, Some(t.s), false),
+            (t.pat.clone(), Uuid::now_v7(), Some(t.a), false),
+            (kim.clone(), t.b, Some(t.a), false),
+        ];
+        for (who, unit, parent, forbidden) in attempts {
+            let pool = t.pool.clone();
+            let attempt = tokio::spawn(async move {
+                let mut tx = pool.begin().await.unwrap();
+                let update = UnitUpdate {
+                    name: None,
+                    parent_id: Some(parent),
+                };
+                update_unit(&mut tx, &who, unit, update).await
+            });
+            let outcome = tokio::time::timeout(std::time::Duration::from_secs(10), attempt)
+                .await
+                .expect("the refused move waited for the tree lock")
+                .unwrap();
+            assert!(
+                match &outcome {
+                    Err(OrgError::Forbidden(_)) => forbidden,
+                    Err(OrgError::UnitNotFound) => !forbidden,
+                    _ => false,
+                },
+                "{outcome:?}"
+            );
+        }
+        holder.rollback().await.unwrap();
+    })
+    .await;
+}
+
+/// A rename writes the name only. The unit's parent was changed by a committed statement after the
+/// caller's read (which a service call cannot be made to interleave deterministically); the rename
+/// must leave the new parent alone, where the old whole-row update would have written the stale one.
+#[tokio::test]
+async fn a_rename_leaves_the_parent_alone() {
+    db_test(async |pool| {
+        let t = tree(pool).await;
+        let mut conn = t.conn().await;
+        sqlx::query!(
+            "UPDATE org.units SET parent_id = $2 WHERE id = $1",
+            t.b,
+            t.s
+        )
+        .execute(&mut *conn)
+        .await
+        .unwrap();
+
+        let renamed = repo::rename_unit(&mut conn, t.b, "Bio")
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(renamed.parent_id, Some(t.s));
+        assert_eq!(t.unit(t.b).await, Some((Some(t.s), "Bio".to_owned())));
+        assert!(
+            repo::rename_unit(&mut conn, Uuid::now_v7(), "x")
+                .await
+                .unwrap()
+                .is_none()
+        );
+    })
+    .await;
+}
+
+/// Two moves that are each fine alone close a cycle together: the second one passed its unlocked
+/// check, waited for the tree lock, and must see the first one's result when it checks again.
+#[tokio::test]
+async fn a_move_checks_again_under_the_tree_lock() {
+    db_test(async |pool| {
+        let t = tree(pool).await;
+        // S under B is fine now (A > B, S top-level).
+        let mut first = t.pool.begin().await.unwrap();
+        repo::lock_tree(&mut first).await.unwrap();
+        let second = tokio::spawn({
+            let (pool, admin, s, b) = (t.pool.clone(), t.admin.clone(), t.s, t.b);
+            async move {
+                let mut tx = pool.begin().await.unwrap();
+                let update = UnitUpdate {
+                    name: None,
+                    parent_id: Some(Some(b)),
+                };
+                update_unit(&mut tx, &admin, s, update).await
+            }
+        });
+        wait_until_blocked(&t.pool, &second).await;
+        // Meanwhile B goes under S, which makes S under B a cycle.
+        repo::move_unit(&mut first, t.b, Some(t.s), None)
+            .await
+            .unwrap();
+        first.commit().await.unwrap();
+
+        let outcome = second.await.unwrap();
+        assert!(matches!(outcome, Err(OrgError::UnitCycle)), "{outcome:?}");
+        assert_eq!(t.unit(t.s).await.unwrap().0, None);
+        assert_eq!(t.unit(t.b).await.unwrap().0, Some(t.s));
+    })
+    .await;
+}

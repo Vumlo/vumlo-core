@@ -292,15 +292,35 @@ pub async fn list_units_of_user(
         .collect())
 }
 
-pub async fn update_unit(
+/// Changes the name and nothing else: a rename must never write `parent_id`, which a concurrent move
+/// (under the tree lock) may have changed since the caller read the unit.
+pub async fn rename_unit(
+    conn: &mut PgConnection,
+    id: Uuid,
+    name: &str,
+) -> Result<Option<Unit>, sqlx::Error> {
+    sqlx::query_as!(
+        Unit,
+        "UPDATE org.units SET name = $2 WHERE id = $1
+         RETURNING id, parent_id, name, created_at",
+        id,
+        name
+    )
+    .fetch_optional(conn)
+    .await
+}
+
+/// Sets the parent, and the name too when one is given (a move and a rename of the same request are
+/// one statement, so no half of it can collide with a sibling). Only called after [`lock_tree`].
+pub async fn move_unit(
     conn: &mut PgConnection,
     id: Uuid,
     parent_id: Option<Uuid>,
-    name: &str,
+    name: Option<&str>,
 ) -> Result<Unit, sqlx::Error> {
     sqlx::query_as!(
         Unit,
-        "UPDATE org.units SET parent_id = $2, name = $3 WHERE id = $1
+        "UPDATE org.units SET parent_id = $2, name = coalesce($3, name) WHERE id = $1
          RETURNING id, parent_id, name, created_at",
         id,
         parent_id,

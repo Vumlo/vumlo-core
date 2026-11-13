@@ -893,17 +893,25 @@ pub async fn create_unit(
     Ok(unit)
 }
 
-/// Renames and/or moves a unit. The grant checked is the one on its parent, and for a move also the
-/// one on the new parent; a move takes the tree lock first and refuses a new parent inside the unit.
-pub async fn update_unit(
+/// What an update will do, once the actor is known to be allowed to do it.
+struct UnitChange {
+    unit: Unit,
+    new_parent: Option<Uuid>,
+    moved: bool,
+    new_name: String,
+    renamed: bool,
+}
+
+/// Reads the unit and checks every grant the update needs: the one on the unit's parent, and for a
+/// move the new parent's visibility, its grant and the cycle rule. Run once without the tree lock,
+/// so a caller who may not do it never takes the lock, and again under it, because the tree may have
+/// changed in between.
+async fn check_update(
     conn: &mut PgConnection,
     actor: &Actor,
     id: Uuid,
-    update: UnitUpdate,
-) -> Result<Unit, OrgError> {
-    if update.parent_id.is_some() {
-        repo::lock_tree(conn).await?;
-    }
+    update: &UnitUpdate,
+) -> Result<UnitChange, OrgError> {
     let (unit, _) = visible_unit(conn, actor, id).await?;
     let old_grant = parent_grant(conn, actor, unit.parent_id).await?;
     access::authorize(actor, Action::ManageUnits(old_grant))?;
@@ -923,18 +931,58 @@ pub async fn update_unit(
         };
         access::authorize(actor, Action::ManageUnits(new_grant))?;
     }
-    let name = update
+    let new_name = update
         .name
         .as_ref()
-        .map_or(unit.name.as_str(), OrgName::as_str);
-    let renamed = name != unit.name;
+        .map_or(unit.name.as_str(), OrgName::as_str)
+        .to_owned();
+    let renamed = new_name != unit.name;
+    Ok(UnitChange {
+        unit,
+        new_parent,
+        moved,
+        new_name,
+        renamed,
+    })
+}
+
+/// Renames and/or moves a unit. The grant checked is the one on its parent, and for a move also the
+/// one on the new parent. Everything is checked first without a lock. A move that passes takes the
+/// tree lock, then reads and checks again (including that the new parent is not inside the unit)
+/// before it writes. A rename alone writes the name and never the parent.
+pub async fn update_unit(
+    conn: &mut PgConnection,
+    actor: &Actor,
+    id: Uuid,
+    update: UnitUpdate,
+) -> Result<Unit, OrgError> {
+    let mut change = check_update(conn, actor, id, &update).await?;
+    if change.moved {
+        repo::lock_tree(conn).await?;
+        change = check_update(conn, actor, id, &update).await?;
+    }
+    let UnitChange {
+        unit,
+        new_parent,
+        moved,
+        new_name,
+        renamed,
+    } = change;
     if !moved && !renamed {
         return Ok(unit);
     }
 
-    let updated = repo::update_unit(conn, id, new_parent, name)
-        .await
-        .map_err(|e| name_taken(e, "units_name_key", OrgError::UnitNameTaken))?;
+    let written = if moved {
+        // Under the lock; the name rides along so that the pair is checked as one.
+        repo::move_unit(conn, id, new_parent, renamed.then_some(new_name.as_str()))
+            .await
+            .map_err(|e| name_taken(e, "units_name_key", OrgError::UnitNameTaken))?
+    } else {
+        repo::rename_unit(conn, id, &new_name)
+            .await
+            .map_err(|e| name_taken(e, "units_name_key", OrgError::UnitNameTaken))?
+            .ok_or(OrgError::UnitNotFound)?
+    };
     if renamed {
         audit(
             conn,
@@ -942,7 +990,7 @@ pub async fn update_unit(
             "unit.rename",
             "unit",
             id,
-            json!({"name": updated.name}),
+            json!({"name": written.name}),
         )
         .await?;
     }
@@ -953,11 +1001,11 @@ pub async fn update_unit(
             "unit.move",
             "unit",
             id,
-            json!({"name": updated.name, "from": unit.parent_id, "to": new_parent}),
+            json!({"name": written.name, "from": unit.parent_id, "to": new_parent}),
         )
         .await?;
     }
-    Ok(updated)
+    Ok(written)
 }
 
 /// Deletes a unit with no subunits and no courses; the foreign keys refuse the rest.
