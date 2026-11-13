@@ -23,7 +23,7 @@ Each layer is a crate, and a crate depends only on the ones below it. Cargo enfo
       -> assessment drafts, submitted attempts, quiz scoring, form answers
       -> content    modules, items, assignments, access rules and their facts (`content.facts`)
       -> teaching   courses, the roster and its group links, announcements
-      -> org        terms, groups, subgroups, the installation record
+      -> org        terms, groups, subgroups, units and unit roles, the installation record
       -> auth       users, sessions, sign-in, account value types, the text of its mails (it queues them in mail)
       -> mail       outgoing mail: the queue, the worker, opt-outs, the transport; cannot read auth (ADR-0084)
       -> files      stored bytes and their description: the files table and the storage backend (ADR-0069)
@@ -53,8 +53,8 @@ behind a Cargo feature, and `server` and `vumlo-cli` name it in exactly one plac
 - Each module owns its Postgres schema and writes only to it. To change another module's data, call that
   module's public function and pass the connection.
 - **Reads across layers:** a layer reads the tables of its own layer, and those of a lower layer **only through a view
-  that layer declared** (`auth.people`, `org.term_list`, `org.group_list`, `org.subgroup_list`, `events.audit_entries`,
-  and `teaching.effective_members` for the roster). It never names the schema of a higher layer. The four crates
+  that layer declared** (`auth.people`, `org.term_list`, `org.group_list`, `org.subgroup_list`, `org.unit_subtree`, `org.unit_grants`,
+  `events.audit_entries`, and `teaching.effective_members` for the roster). It never names the schema of a higher layer. The four crates
   below `learning` are stacked `teaching < content < assessment < gradebook`, and the same rule holds between them:
   a crate lists none above it (Cargo and `architecture.rs` refuse it) and names none of its schemas, and reads those below it only through
   the views they declare (`content.item_list`, `assessment.submission_index`, `assessment.submitted_attempts`,
@@ -95,7 +95,7 @@ behind a Cargo feature, and `server` and `vumlo-cli` name it in exactly one plac
   then authorize, and report a denied view as "not found".
   A handler may also call it early, before costly work such as hashing, but the service still authorizes first.
 - No role checks anywhere except `access`. Deny by default.
-- Every action by an `admin` inside a course that changes data writes to `events.audit_log` in the same transaction; reads are not audited.
+- Every action by an `admin`, or through a unit grant (ADR-0094), inside a course that changes data writes to `events.audit_log` in the same transaction (`events::audit_implicit`); reads are not audited.
 
 ## 6. Visibility invariants (each one must have a test)
 

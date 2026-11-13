@@ -58,7 +58,7 @@ backend/       # Cargo workspace; run every cargo command here
       content/     #   modules, items, assignments, access rules and their facts
       teaching/    #   courses, the roster and its group links, announcements
     plugins/       # external plugins: installs, signed events sent to them, the plugin API (ADR-0066)
-    org/           # terms, groups, subgroups, the installation record
+    org/           # terms, groups, subgroups, units and unit roles, the installation record
     auth/          # users, sessions, sign-in, account value types, the text of its two mails (it composes them and sends none: ADR-0084)
     mail/          # the mail layer: the queue, the worker, opt-outs, the transport (ADR-0084)
     files/         # stored bytes and their description (ADR-0069)
@@ -91,7 +91,7 @@ Each layer is a crate, and a crate may depend only on the ones below it ([ADR-00
 |------------|----------------------------------|----------------|
 | `auth`     | `auth.*`                         | users, login identities, sessions, tokens, sign-in, the text of its two mails, handed to `mail`; the view `auth.people` for the layers above (with `email_verified`, ADR-0084) |
 | `mail`     | `mail.*`                         | (ADR-0084 to ADR-0087) the queue of outgoing mail with one row per recipient, the worker with its retries and dead letters, the transport (SMTP or files), the opt-outs of plugin mail and their signed one-click route, the limits, the journal the CLI reads; no routes but the opt-out, no `Actor`, no read of `auth` |
-| `org`      | `org.*`                          | the installation record (the institution mode, ADR-0031); the read-only institution profile (ADR-0044); terms, groups (cohorts) and subgroups with their members (ADR-0032); the views `org.term_list`, `org.group_list`, `org.subgroup_list` |
+| `org`      | `org.*`                          | the installation record (the institution mode, ADR-0031); the read-only institution profile (ADR-0044); terms, groups (cohorts) and subgroups with their members (ADR-0032); units, unit roles and the abilities of each role (ADR-0094); the views `org.term_list`, `org.group_list`, `org.subgroup_list`, `org.unit_subtree`, `org.unit_grants` |
 | `teaching` | `teaching.*`                     | courses, memberships, publishing, group links, exclusions and the roster view (ADR-0033); course subgroups are planned |
 | `content`  | `content.*`                      | modules, items (`text` items and assignments of type `text`, `no_submission`, `quiz` (ADR-0050), `form` (ADR-0051) and `file` (ADR-0069) built, items of kind `file` (ADR-0069), their bodies are block documents (ADR-0025, ADR-0027), the deadline settings of an assignment (ADR-0035); `content.item_files` records the files each item names). Planned kinds and types: ADR-0023, ADR-0024. |
 | `assessment` | `assessment.*`                 | submissions (drafts and attempts), lateness, the submission window (ADR-0035); the scoring of quizzes at submit, the result of a quiz and the responses to a form (ADR-0050, ADR-0051) |
@@ -164,12 +164,23 @@ org                                                -- built: ADR-0031, ADR-0032
   subgroup_members subgroup_id, group_id, user_id      -- foreign keys (subgroup_id, group_id) -> subgroups and
                                                        -- (group_id, user_id) -> group_members, both ON DELETE CASCADE:
                                                        -- a subgroup member is a group member, and leaves with them
+  units            id, parent_id?, name, created_at     -- built (ADR-0094): a tree; name trimmed, 1-100, unique among siblings;
+                                                       -- parent_id has no cascade: a unit with subunits is not deleted
+  unit_roles       unit_id, user_id, role: manager | viewer   -- primary key (unit_id, user_id); teachers and admins only (by the
+                                                       -- service); a role covers the unit and every unit below it
+  unit_role_abilities  role, ability                   -- the switches an admin sets: view_grades | edit_content | grade |
+                                                       -- manage_roster | manage_courses | manage_units; seeded with the defaults
+  unit_subtree     (view) root_id, unit_id             -- every unit with itself and each unit below it; recursive, with CYCLE detection
+  unit_grants      (view) user_id, unit_id, abilities  -- one row per person and unit their roles cover, the union of the abilities;
+                                                       -- computed on read, nothing caches it
 
 teaching
   courses          id, kind: regular | template, title, term_id?,
                    status: draft | published | archived, owner_id, created_by,
                    code, description     -- built (ADR-0048): the header of the course
                    -- built: term_id -> org.terms ON DELETE RESTRICT; a term in use cannot be deleted (ADR-0032)
+                   -- built (ADR-0094): unit_id? -> org.units (no cascade; a unit with courses is not deleted); a unit role gives
+                   -- access to the courses of its unit and below, through org.unit_grants, as CourseAccess.unit_grant
   course_groups    id, course_id, group_id, subgroup_id?, created_by, created_at
                    -- built (ADR-0033): live link; no subgroup = whole group. unique (course_id, group_id, subgroup_id)
                    -- with NULLs equal; group_id -> org.groups and (subgroup_id, group_id) -> org.subgroups,
@@ -451,6 +462,18 @@ Admins create, rename, change and delete them; every one of those writes is audi
 | `GET /subgroups/{id}/members`, `POST /subgroups/{id}/members`, `DELETE /subgroups/{id}/members/{user_id}` | an entry that is not a member of the group is 422 on `user_ids[i]` |
 
 Every write below a group takes the group row `FOR UPDATE` first and reads memberships in a later statement, so a removal from the group racing with an add to its subgroup ends consistent; the composite foreign key is the backstop. A role change of a user does not remove their group memberships; while the user is not a student they do nothing for a course (ADR-0037). Unknown ids in the path are 404, in the body 422. `POST /courses` takes an optional `term_id`; a term that does not exist is 422 on `term_id`.
+
+**Units and unit roles** ([ADR-0094](docs/decisions/in-progress.md); the web pages are not built yet)
+A unit is a node of a tree (a faculty, a department); a course sits in at most one. A person is `manager` or `viewer` of a unit (a teacher or an admin; a student is 422), and the role covers the unit and every unit below it; several roles over one unit give the union of their abilities. Every grant lets the holder see the course in any status, its roster and its content including drafts. What else a role may do is a set of switches an admin changes at any time and that takes effect on the next request (nothing caches a grant): `view_grades` (gradebook, submissions), `edit_content`, `grade`, `manage_roster`, `manage_courses` (edit, publish and archive, create a course in the unit, move one into or out of it) and `manage_units` (the subtree and its roles). Defaults: a manager has `view_grades`, `manage_courses`, `manage_roster` and `manage_units`; a viewer `view_grades`. A unit role never deletes a course, transfers its ownership or acts as a student. `access` holds the vocabulary and every rule (`CourseAccess.unit_grant`); `org` reads nothing of `teaching`, and `teaching` reads `org.unit_grants` beside `effective_members`. `manage_units` is checked against the parent of the unit acted on, so nobody changes the unit their own role sits on, or their own role; a top-level unit is admin-only. A change made through an admin's or a unit's access is audited like an admin's, with `meta.via` (`admin` or `unit`); a teacher demoted to a student loses their unit roles.
+
+| Endpoint | Notes |
+|---|---|
+| `GET /units` | the units the caller sees, flat (`items`, `next_cursor` is always null); an admin sees all with every ability, others the units their grants cover |
+| `POST /units`, `PATCH /units/{id}`, `DELETE /units/{id}` | a duplicate sibling name is 409; moving a unit under itself or a unit below it is 422; deleting one with subunits or courses is 409 |
+| `GET /units/{id}/roles`, `PUT /units/{id}/roles/{user_id}`, `DELETE /units/{id}/roles/{user_id}`, `GET /units/{id}/candidates?q=` | the roles on this unit; the put is idempotent |
+| `GET /units/{id}/courses` | the courses in the unit and below it, in any status (cursor pagination) |
+| `PUT /courses/{id}/unit` | `{unit_id}` or `null`; its own operation, allowed on an archived course. `POST /courses` and `POST /templates/{id}/courses` take an optional `unit_id`; `GET /courses/{id}` carries `unit_id` and `can` (what the caller may do in the course) |
+| `GET /admin/unit-roles`, `PUT /admin/unit-roles/{role}` | admin only; the put replaces the set of abilities of a role in one transaction |
 
 **Group links, the live roster and exclusions** ([ADR-0033](docs/decisions/done.md))
 A course links whole groups or single subgroups; their students are students of the course while the link exists. A teacher can take one person off one course without touching the group. Linking and unlinking a group and choosing one (`group-options`) are for the owner, course teachers and admins; the rest, the list of links and the exclusions, for assistants too (ADR-0040); admin writes are audited (`course.group.link`, `course.group.unlink`, `course.member.remove` with `excluded`, `course.exclusion.restore`, `course.update`). Tag `courses`.

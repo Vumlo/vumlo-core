@@ -1,6 +1,7 @@
 # Org units and unit roles: design
 
-Status: designed. ADR-0094. Delivery: one spec, two stacked PRs (backend, then web).
+Status: backend built (PR A), web to come (PR B). ADR-0094. Delivery: one spec, two stacked PRs (backend, then web).
+Where the build departs from the first design, the text below says what was built (section 13 lists the changes).
 
 ## 1. Intent
 
@@ -68,7 +69,7 @@ CREATE INDEX units_parent_id_idx ON org.units (parent_id);
 
 CREATE TABLE org.unit_roles (
     unit_id uuid NOT NULL REFERENCES org.units (id) ON DELETE CASCADE,
-    user_id uuid NOT NULL REFERENCES identity.users (id),
+    user_id uuid NOT NULL REFERENCES auth.users (id),
     role    text NOT NULL CHECK (role IN ('manager', 'viewer')),
     PRIMARY KEY (unit_id, user_id)
 );
@@ -92,8 +93,10 @@ creator picks one, section 6).
 **The declared view** `org.unit_grants (user_id, unit_id, abilities text[])`: one row per person and per unit their
 roles cover, `abilities` the union over every covering role. A recursive CTE from each `unit_roles` row down through
 `parent_id`, joined with `unit_role_abilities`, grouped by `(user_id, unit_id)`. Added to `DECLARED_VIEWS`;
-`teaching` reads only this view (and `org.units` names through a view if it needs them; builder's call). sqlx sees view
-columns as nullable: `AS "col!"`.
+`teaching` reads only declared views. A second declared view, `org.unit_subtree (root_id, unit_id)` (every unit with
+itself and each unit below it), is the base of `org.unit_grants` and lets `teaching` list the courses of a unit for an
+admin, who has no grant rows. Both have `CYCLE` detection in their recursive part. sqlx sees view columns as nullable:
+`AS "col!"`.
 
 **No cycles.** A move (`parent_id` change) takes `LOCK TABLE org.units IN SHARE ROW EXCLUSIVE MODE`, then refuses
 (`422` on `parent_id`) a new parent that is the unit itself or below it. Every write to `parent_id` goes through that
@@ -106,7 +109,8 @@ hang a query.
 pub enum UnitRole { Manager, Viewer }
 pub enum UnitAbility { ViewGrades, EditContent, Grade, ManageRoster, ManageCourses, ManageUnits }
 /// The union of the abilities of every unit role that covers one unit. Present = view.
-#[derive(Clone, Copy)] pub struct UnitGrant { /* a small set, e.g. a u8 bitset */ }
+/// Carries the `unit_id` of the course's unit, so the audit row can name it.
+#[derive(Clone, Copy)] pub struct UnitGrant { pub unit_id: Uuid, /* abilities: a u8 bitset */ }
 
 pub struct CourseAccess { pub role, pub is_owner, pub status, pub unit_grant: Option<UnitGrant> }
 ```
@@ -127,6 +131,7 @@ The archived-course check after the permission stays as it is.
 
 New actions, each with a `UnitGrant` (or `None` for "no grant on that unit") inside:
 
+- `ViewOwnUnits`: anyone signed in (as `ViewOwnCourses`); authorizes `GET /units`, which then shows only what the actor's grants cover.
 - `ViewUnit(Option<UnitGrant>)`: admin, or any grant.
 - `ManageUnitCourses(Option<UnitGrant>)`: admin or `manage_courses`. Create a course in a unit; put a course into a
   unit or take it out (needs it on the old unit and on the new one; "no unit" needs only the old).
@@ -144,13 +149,13 @@ Today `events::audit_admin(conn, actor, entry)` writes only when `implicit_cours
 admin). The reason is the same for a unit grant: the actor is not on the course, so the course does not show who acted.
 The test moves from the actor to the access:
 
-- `access` gets `CourseAccess::is_implicit(self) -> bool`: the actor acts on the course **without** being its owner or
-  on its roster (`!is_owner && role.is_none()`). That is an admin today, a unit grant now, and any later contextual
-  access automatically, with no change to callers.
-- `events::audit_admin` becomes `events::audit_implicit(conn, access: CourseAccess, actor, entry)`, writing when
-  `access.is_implicit()`. Its 8 callers (teaching, content, assessment, gradebook) pass the `CourseAccess` they
-  already authorized with; where one does not hold it yet, its loader returns it (as `load` does). `implicit_course_owner`
-  stays only where it decides something other than audit, or goes if nothing is left.
+- `access` gets `implicit_access(actor, access) -> Option<Via>` (`Via::Admin | Via::Unit`): the actor acts on the course
+  without being on it. An admin who created the course is its `owner_id` with no membership, and is still audited, so
+  the test is "the actor is an admin, or reached the course only through a unit grant", not `!is_owner && role.is_none()`.
+  A later kind of contextual access adds a `Via`, with no change to callers.
+- `events::audit_admin` became `events::audit_implicit(conn, actor, access, entry)` (the actor comes before the access),
+  writing when `implicit_access` is `Some`. Its callers (teaching, content, assessment, gradebook) pass the `CourseAccess`
+  they already authorized with; where one did not hold it, its loader returns it (as `load` does).
 - The audit row records how the actor got in: `meta.via = "admin" | "unit"` (and `unit_id` for a unit grant).
 - Tests: one API test per crate that a manager's write is audited and a course teacher's is not.
 
@@ -169,8 +174,10 @@ guessing from the role. Required in PR A (builder check; my call).
 - `access_of` fills `unit_grant`.
 - `POST /courses` takes an optional `unit_id`; with one it authorizes `ManageUnitCourses` on that unit as well as
   `CreateCourse`.
-- `PATCH /courses/{id}` takes `unit_id` (`null` takes the course out, absent keeps it); authorized as in section 5.
-- Copying a course or creating from a template takes the `unit_id` of the request, not the source's.
+- Moving a course is its own operation, `PUT /courses/{id}/unit` `{unit_id: uuid|null}` (`null` takes the course out),
+  not a field of `PATCH /courses/{id}`: `PATCH` needs `EditCourse`, which refuses an archived course, and a move is
+  allowed on an archived one (section 3). Authorized as in section 5 (`ManageUnitCourses`).
+- Copying a course or creating from a template (`POST /templates/{id}/courses`) takes the `unit_id` of the request, not the source's.
 - `GET /me/courses` is unchanged (only courses one belongs to). Unit courses are listed per unit (section 7).
 - The `Course` response carries `unit_id`.
 
@@ -178,9 +185,10 @@ guessing from the role. Required in PR A (builder check; my call).
 
 | Method and path | Action | Notes |
 |---|---|---|
-| `GET /units` | `ViewOwnCourses`-like: any signed-in user | Flat list `{id, parent_id, name, abilities}` of every unit the actor sees: admin all (abilities: all), others the units their grants cover. Empty for most people. |
+| `GET /units` | `ViewOwnUnits`: any signed-in user | Flat list `{id, parent_id, name, abilities}` of every unit the actor sees: admin all (abilities: all), others the units their grants cover. Empty for most people. It is the items envelope with `next_cursor: null`: not paginated, the whole tree comes in one response. |
 | `POST /units` `{name, parent_id?}` | `ManageUnits` on the parent | `201` |
-| `PATCH /units/{id}` `{name?, parent_id?}` | `ManageUnits` on old (and new) parent | cycle → `422` |
+| `PATCH /units/{id}` `{name?, parent_id?}` | `ManageUnits` on old (and new) parent | cycle → `422`. A request with both `name` and `parent_id` is one statement. |
+| `PUT /courses/{id}/unit` `{unit_id}` (in `teaching`) | `ManageUnitCourses` on the old and the new unit | Puts the course in a unit or, with `null`, takes it out. Its own operation, not a field of `PATCH /courses/{id}`; allowed on an archived course. |
 | `DELETE /units/{id}` | `ManageUnits` on the parent | `409` if it has subunits or courses |
 | `GET /units/{id}/roles` | `ViewUnit` | `{user_id, name, email, role}` of roles **on** this unit |
 | `PUT /units/{id}/roles/{user_id}` `{role}` | `ManageUnits` on the parent | student → `422`; idempotent |
@@ -190,7 +198,9 @@ guessing from the role. Required in PR A (builder check; my call).
 | `GET /admin/unit-roles` | `ManageUnitRoleAbilities` | `{manager: [..], viewer: [..]}` |
 | `PUT /admin/unit-roles/{role}` `{abilities: [..]}` | `ManageUnitRoleAbilities` | replaces the set in one transaction; unknown ability → `422` |
 
-Every new operation is listed in `server/tests/authorization.rs`. OpenAPI and `web/src/generated` are regenerated.
+Every new operation is listed in `server/tests/authorization.rs`. `web/openapi.json` and `web/src/lib/api/schema.d.ts`
+are regenerated. Beyond this table, `GET /courses/{id}` carries `can` (5b) and `unit_id`, and `POST /courses` and
+`POST /templates/{id}/courses` take an optional `unit_id`.
 
 ## 8. Web
 
@@ -241,3 +251,13 @@ The invariants that keep it so: rules only in `access`; `org` owns units, roles 
 
 The exact Rust representation of `UnitGrant`; how `org` and `teaching` split the queries (within the declared-view
 rule); response shapes beyond the fields named; page layout within the existing admin style.
+
+## 13. Changes made while building (PR A)
+
+1. Moving a course is `PUT /courses/{id}/unit`, not a field of `PATCH /courses/{id}` (sections 6 and 7).
+2. A second declared view, `org.unit_subtree (root_id, unit_id)`, under `org.unit_grants` (section 4).
+3. Admins stay audited on courses they own: implicit access is "an admin, or only a unit grant", `via` is `admin` or `unit` (5a).
+4. `UnitGrant` carries the `unit_id` of the course's unit (section 5).
+5. `GET /units` is authorized by `Action::ViewOwnUnits` and is not paginated (sections 5 and 7).
+6. `like_pattern` (the `ILIKE` escaper) moved from `teaching::service::info` to `common`, so `org` can search candidates with it.
+7. `unit_roles.user_id` references `auth.users` (the schema of the users table), and `events::audit_implicit` takes `(conn, actor, access, entry)`.
