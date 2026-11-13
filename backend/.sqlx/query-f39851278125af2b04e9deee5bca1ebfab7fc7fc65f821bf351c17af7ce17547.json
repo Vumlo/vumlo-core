@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO org.unit_role_abilities (role, ability) VALUES ('viewer', 'edit_content')",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "f39851278125af2b04e9deee5bca1ebfab7fc7fc65f821bf351c17af7ce17547"
+}

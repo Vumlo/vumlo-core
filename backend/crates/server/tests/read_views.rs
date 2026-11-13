@@ -288,9 +288,27 @@ async fn unit_subtree_holds_each_unit_and_everything_below() {
 async fn unit_grants_cover_the_subtree_and_unite_the_roles() {
     db_test(async |pool| {
         let u = seed_units(&pool).await;
+        // An ability only the viewer has: the grant on B and C (viewer of A, manager of B) must hold
+        // it, which a rule that took the manager's set alone would miss.
+        sqlx::query!(
+            "INSERT INTO org.unit_role_abilities (role, ability) VALUES ('viewer', 'edit_content')"
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        // S: Pat is its manager and nothing else covers it.
+        sqlx::query!(
+            "INSERT INTO org.unit_roles (unit_id, user_id, role) VALUES ($1, $2, $3)",
+            u.s,
+            u.pat,
+            "manager"
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
         assert_eq!(
             abilities(&pool, u.pat, u.a).await,
-            Some(vec!["view_grades".to_owned()])
+            Some(vec!["edit_content".to_owned(), "view_grades".to_owned()])
         );
         let manager = vec![
             "manage_courses".to_owned(),
@@ -298,9 +316,18 @@ async fn unit_grants_cover_the_subtree_and_unite_the_roles() {
             "manage_units".to_owned(),
             "view_grades".to_owned(),
         ];
-        assert_eq!(abilities(&pool, u.pat, u.b).await, Some(manager.clone()));
-        assert_eq!(abilities(&pool, u.pat, u.c).await, Some(manager));
-        assert_eq!(abilities(&pool, u.pat, u.s).await, None);
+        let united = vec![
+            "edit_content".to_owned(),
+            "manage_courses".to_owned(),
+            "manage_roster".to_owned(),
+            "manage_units".to_owned(),
+            "view_grades".to_owned(),
+        ];
+        assert_eq!(abilities(&pool, u.pat, u.b).await, Some(united.clone()));
+        assert_eq!(abilities(&pool, u.pat, u.c).await, Some(united));
+        assert_eq!(abilities(&pool, u.pat, u.s).await, Some(manager));
+        let stranger = user(&pool, "sid@example.com").await;
+        assert_eq!(abilities(&pool, stranger, u.s).await, None);
     })
     .await;
 }
