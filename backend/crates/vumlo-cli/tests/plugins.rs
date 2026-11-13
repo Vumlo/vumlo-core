@@ -1235,3 +1235,250 @@ async fn the_calls_of_a_plugin_are_listed_by_route_and_by_time() {
     })
     .await;
 }
+
+// ---------------------------------------------------------------------------------------------
+// `plugin configure`: the settings one by one. The institution-scope settings of `configurable`
+// come in this order: api_token, limit, tags, unit.
+// ---------------------------------------------------------------------------------------------
+
+async fn setting_value(env: &Env, key: &str) -> String {
+    run(env, &["plugin", "settings", "get", "hello", key], None)
+        .await
+        .stdout
+        .trim()
+        .to_owned()
+}
+
+#[tokio::test]
+async fn configure_asks_for_each_institution_setting_and_stores_the_answers_with_one_audit_row_each()
+ {
+    db_test(async |pool| {
+        common::migrate_modules(&pool).await;
+        let env = Env::new(&pool);
+        install_configurable(&env).await;
+
+        let out = run(
+            &env,
+            &["plugin", "configure", "hello"],
+            Some("tok-s3cret\n12\n[\"a\",\"b\"]\ncharacters\n"),
+        )
+        .await;
+        assert!(out.ok, "{}", out.stderr);
+        // Each question names the setting, what it is for and what it is now.
+        for line in [
+            "api_token",
+            "(not set)",
+            "limit",
+            "unit",
+            "What to count",
+            "words (default)",
+            "1 setting is set per course",
+        ] {
+            assert!(out.stdout.contains(line), "{line} in:\n{}", out.stdout);
+        }
+        assert!(!out.stdout.contains("max_words ("), "{}", out.stdout);
+        // The secret appears nowhere.
+        assert!(!out.stdout.contains("s3cret") && !out.stderr.contains("s3cret"));
+        let stored: String =
+            sqlx::query_scalar("SELECT value::text FROM plugins.settings WHERE key = 'api_token'")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert!(!stored.contains("s3cret"));
+
+        assert_eq!(setting_value(&env, "api_token").await, "(set)");
+        assert_eq!(setting_value(&env, "limit").await, "12");
+        assert_eq!(setting_value(&env, "tags").await, r#"["a","b"]"#);
+        assert_eq!(setting_value(&env, "unit").await, "characters");
+
+        // One audit row per changed setting, from the CLI, with no value in it; one event each.
+        let rows = audit(&pool).await;
+        let actions: Vec<_> = rows.iter().map(|r| (r.0.as_str(), r.1.as_str())).collect();
+        assert_eq!(
+            actions,
+            [
+                ("plugin.install", "cli"),
+                ("plugin.setting.set", "cli"),
+                ("plugin.setting.set", "cli"),
+                ("plugin.setting.set", "cli"),
+                ("plugin.setting.set", "cli"),
+            ]
+        );
+        let metas: String = sqlx::query_scalar(
+            "SELECT string_agg(meta::text, ' ') FROM events.audit_log WHERE action = 'plugin.setting.set'",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert!(!metas.contains("s3cret") && !metas.contains("characters"), "{metas}");
+        let events: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM events.outbox WHERE type = 'plugin.settings.changed'",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(events, 4);
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn configure_keeps_what_is_there_when_an_answer_is_empty_and_writes_nothing() {
+    db_test(async |pool| {
+        common::migrate_modules(&pool).await;
+        let env = Env::new(&pool);
+        install_configurable(&env).await;
+
+        let out = run(&env, &["plugin", "configure", "hello"], Some("\n\n\n\n")).await;
+        assert!(
+            out.ok && out.stdout.contains("nothing was changed"),
+            "{}{}",
+            out.stdout,
+            out.stderr
+        );
+        assert_eq!(setting_rows(&pool).await, 0);
+        assert_eq!(audit(&pool).await.len(), 1, "only the install");
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn configure_says_why_an_answer_is_refused_and_asks_again() {
+    db_test(async |pool| {
+        common::migrate_modules(&pool).await;
+        let env = Env::new(&pool);
+        install_configurable(&env).await;
+
+        // api_token kept; limit: not a number, below the minimum, then 5; tags and unit kept.
+        let out = run(
+            &env,
+            &["plugin", "configure", "hello"],
+            Some("\nabc\n0\n5\n\n\n"),
+        )
+        .await;
+        assert!(out.ok, "{}", out.stderr);
+        assert_eq!(
+            out.stdout.matches("the value of `limit`").count(),
+            2,
+            "{}",
+            out.stdout
+        );
+        assert_eq!(setting_value(&env, "limit").await, "5");
+        assert_eq!(setting_rows(&pool).await, 1);
+        assert_eq!(audit(&pool).await.len(), 2, "the install and one set");
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn configure_whose_input_ends_midway_commits_nothing() {
+    db_test(async |pool| {
+        common::migrate_modules(&pool).await;
+        let env = Env::new(&pool);
+        install_configurable(&env).await;
+
+        // Two good answers, then the input ends with two settings still to ask.
+        let out = run(
+            &env,
+            &["plugin", "configure", "hello"],
+            Some("tok-s3cret\n12\n"),
+        )
+        .await;
+        assert!(
+            !out.ok && out.stderr.contains("input ended"),
+            "{}{}",
+            out.stdout,
+            out.stderr
+        );
+        assert_eq!(
+            setting_rows(&pool).await,
+            0,
+            "the answered ones are not kept"
+        );
+        assert_eq!(audit(&pool).await.len(), 1, "only the install");
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn configure_reads_windows_line_endings_like_any_other() {
+    db_test(async |pool| {
+        common::migrate_modules(&pool).await;
+        let env = Env::new(&pool);
+        install_configurable(&env).await;
+
+        let out = run(
+            &env,
+            &["plugin", "configure", "hello"],
+            Some("\r\n5\r\n\r\ncharacters\r\n"),
+        )
+        .await;
+        assert!(out.ok, "{}", out.stderr);
+        assert_eq!(setting_value(&env, "limit").await, "5");
+        assert_eq!(setting_value(&env, "unit").await, "characters");
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn configure_dry_run_stores_nothing() {
+    db_test(async |pool| {
+        common::migrate_modules(&pool).await;
+        let env = Env::new(&pool);
+        install_configurable(&env).await;
+
+        let out = run(
+            &env,
+            &["plugin", "configure", "hello", "--dry-run"],
+            Some("\n7\n\n\n"),
+        )
+        .await;
+        assert!(
+            out.ok && out.stdout.contains("would set `limit` of hello"),
+            "{}{}",
+            out.stdout,
+            out.stderr
+        );
+        assert_eq!(setting_rows(&pool).await, 0);
+        assert_eq!(audit(&pool).await.len(), 1, "only the install");
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn configure_of_a_plugin_with_only_course_settings_says_so_and_asks_nothing() {
+    db_test(async |pool| {
+        common::migrate_modules(&pool).await;
+        let env = Env::new(&pool);
+        let base = serve(json!({
+            "id": "hello", "version": "1.0.0", "api": "1",
+            "subscribes": ["plugin.settings.changed"], "scopes": ["settings:read"],
+            "settings": {"max_words": {"type": "number", "scope": "course"}}
+        }))
+        .await;
+        let installed = run(
+            &env,
+            &[
+                "plugin",
+                "install",
+                &base,
+                "--grant",
+                "settings:read",
+                "--courses",
+                "all",
+            ],
+            None,
+        )
+        .await;
+        assert!(installed.ok, "{}", installed.stderr);
+
+        let out = run(&env, &["plugin", "configure", "hello"], None).await;
+        assert!(
+            out.ok && out.stdout.contains("declares no institution settings"),
+            "{}{}",
+            out.stdout,
+            out.stderr
+        );
+    })
+    .await;
+}

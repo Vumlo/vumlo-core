@@ -269,6 +269,16 @@ enum PluginCommand {
         #[arg(long)]
         dry_run: bool,
     },
+    /// Walk through the settings of a plugin one by one: what each is for and its value now. Enter
+    /// keeps the value; an answer the setting refuses is explained and asked again. Answers are
+    /// read line by line, so a script can pipe them; nothing is stored if the input ends midway.
+    /// Settings that are per course are set with `plugin settings set --course`.
+    Configure {
+        plugin_id: String,
+        /// Say what would be set, change nothing.
+        #[arg(long)]
+        dry_run: bool,
+    },
     /// What the plugin lets you configure: the settings its manifest declares (ADR-0072).
     #[command(subcommand)]
     Settings(SettingsCommand),
@@ -511,6 +521,9 @@ async fn run(cli: Cli) -> anyhow::Result<bool> {
                 yes,
                 dry_run,
             } => plugin_cmd::remove(&options, &plugin_id, yes, dry_run).await?,
+            PluginCommand::Configure { plugin_id, dry_run } => {
+                plugin_cmd::configure(&options, &plugin_id, dry_run).await?
+            }
             PluginCommand::Settings(command) => match command {
                 SettingsCommand::List { plugin_id, course } => {
                     plugin_cmd::settings_list(&options, &plugin_id, course).await?

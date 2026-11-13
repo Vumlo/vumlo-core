@@ -4,7 +4,7 @@
 //! changed, writing nothing, when it changes nothing. The token and the secret of an install are
 //! printed once, by `install`, and nowhere else. A secret setting is never printed at all.
 
-use std::io::{BufRead, Write};
+use std::io::{BufRead, IsTerminal, Write};
 
 use access::{CourseScope, Scope};
 use anyhow::{Context, bail};
@@ -798,5 +798,121 @@ pub async fn settings_unset(
     .await?;
     tx.commit().await.context("cannot commit")?;
     println!("unset `{key}` of {plugin_id}; the default applies");
+    Ok(())
+}
+
+/// One answer line, without its line ending; `None` at the end of the input. A secret is read
+/// without an echo when a person types it, and as a plain line when the input is piped.
+fn read_answer(secret: bool) -> anyhow::Result<Option<String>> {
+    if secret && std::io::stdin().is_terminal() {
+        let text = rpassword::prompt_password("> ").context("cannot read the answer")?;
+        return Ok(Some(text));
+    }
+    print!("> ");
+    std::io::stdout()
+        .flush()
+        .context("cannot write the prompt")?;
+    let mut line = String::new();
+    let read = std::io::stdin()
+        .lock()
+        .read_line(&mut line)
+        .context("cannot read the answer")?;
+    if read == 0 {
+        return Ok(None);
+    }
+    Ok(Some(line.trim_end_matches(['\n', '\r']).to_owned()))
+}
+
+/// Walks through the settings of the plugin that belong to the institution, one question each: the
+/// setting, what it is for and its value now. An empty answer keeps the value; one the setting
+/// refuses is explained and asked again. Everything is stored in one transaction at the end, with
+/// one audit row per changed setting, so input that ends midway changes nothing.
+pub async fn configure(options: &Options, plugin_id: &str, dry_run: bool) -> anyhow::Result<()> {
+    let loaded = runtime::load(options)?;
+    let secret_key = key(&loaded.settings)?;
+    let pool = ready(&loaded.settings).await?;
+    let mut tx = pool.begin().await.context("cannot start a transaction")?;
+    let install = plugins::get(&mut tx, plugin_id).await?;
+    let views = plugins::list_settings(&mut tx, plugin_id, None).await?;
+    let per_course = install
+        .settings
+        .values()
+        .filter(|spec| spec.scope == SettingScope::Course)
+        .count();
+    if per_course > 0 {
+        let (count, verb) = if per_course == 1 {
+            ("1 setting", "is")
+        } else {
+            (&*format!("{per_course} settings"), "are")
+        };
+        println!(
+            "{count} {verb} set per course (`vumlo-cli plugin settings list {plugin_id} --course <id>`)"
+        );
+    }
+    if views.is_empty() {
+        println!("{plugin_id} declares no institution settings");
+        return Ok(());
+    }
+    println!("Settings of {plugin_id}. Enter keeps the current value.");
+    let mut changed = Vec::new();
+    for view in &views {
+        println!("\n{} ({})", view.key, kind_of(view));
+        if !view.spec.description.is_empty() {
+            println!("    {}", view.spec.description);
+        }
+        println!("    now: {}", state(view));
+        loop {
+            let Some(answer) = read_answer(view.spec.secret)? else {
+                bail!("the input ended before every setting was answered; nothing was changed");
+            };
+            if answer.is_empty() {
+                break;
+            }
+            // A refused answer is explained before anything is written, so the transaction is whole.
+            match plugins::set_setting_text(
+                &mut tx,
+                &secret_key,
+                plugin_id,
+                &view.key,
+                &answer,
+                None,
+            )
+            .await
+            {
+                Ok(true) => {
+                    changed.push(view.key.clone());
+                    break;
+                }
+                Ok(false) => break,
+                Err(error @ plugins::PluginsError::BadSetting { .. }) => println!("{error}"),
+                Err(other) => return Err(other.into()),
+            }
+        }
+    }
+    println!();
+    if changed.is_empty() {
+        println!("nothing was changed");
+        return Ok(());
+    }
+    if dry_run {
+        for key in &changed {
+            println!("would set `{key}` of {plugin_id}");
+        }
+        return Ok(());
+    }
+    for key in &changed {
+        db::insert_cli_audit(
+            &mut tx,
+            "plugin.setting.set",
+            "plugin",
+            install.id,
+            audit_meta(&install, key, None),
+        )
+        .await?;
+    }
+    tx.commit().await.context("cannot commit")?;
+    for key in &changed {
+        println!("set `{key}` of {plugin_id}");
+    }
     Ok(())
 }
