@@ -202,6 +202,19 @@ impl ThrottleKey {
     pub fn new(email: &str) -> Self {
         Self(Sha256::digest(email.trim().to_lowercase().as_bytes()).into())
     }
+
+    /// The key of the same account at the console: a namespace of its own, so failures there do
+    /// not lock the person out of the app, nor the reverse (ADR-0095).
+    pub fn console(email: &str) -> Self {
+        Self(Sha256::digest(format!("console:{}", email.trim().to_lowercase()).as_bytes()).into())
+    }
+
+    fn of(audience: Audience, email: &str) -> Self {
+        match audience {
+            Audience::App => Self::new(email),
+            Audience::Console => Self::console(email),
+        }
+    }
 }
 
 struct Attempts {
@@ -358,6 +371,7 @@ fn user_entry(action: &'static str, user_id: Uuid, meta: serde_json::Value) -> A
 /// A login in progress: the account lookup is done, the password is not checked yet.
 pub struct LoginAttempt {
     key: ThrottleKey,
+    audience: Audience,
     record: Option<LoginRecord>,
 }
 
@@ -374,30 +388,44 @@ pub async fn lookup_login(
     conn: &mut PgConnection,
     throttle: &LoginThrottle,
     email: &str,
+    audience: Audience,
 ) -> Result<LoginAttempt, AuthError> {
-    let key = ThrottleKey::new(email);
+    let key = ThrottleKey::of(audience, email);
     throttle.reserve(&key)?;
     let record = match super::model::Email::parse(email) {
         Ok(email) => repo::find_login(conn, email.as_str()).await?,
         Err(_) => None,
     };
-    Ok(LoginAttempt { key, record })
+    Ok(LoginAttempt {
+        key,
+        audience,
+        record,
+    })
 }
 
 /// Second half of a login, with no database access: verifies the password (a dummy hash when
 /// there is no account) and resets the account's count on a success. Every failure is the same
-/// error.
+/// error. At the console only an administrator can sign in, and anyone else counts as a wrong
+/// password: same answer, same count, no reset.
 pub async fn complete_login(
     throttle: &LoginThrottle,
     gate: &HashGate,
     attempt: LoginAttempt,
     password: &str,
 ) -> Result<VerifiedLogin, AuthError> {
-    let LoginAttempt { key, record } = attempt;
+    let LoginAttempt {
+        key,
+        audience,
+        record,
+    } = attempt;
     let hash = record.as_ref().map(|r| r.password_hash.clone());
     let verified = verify_password(gate, password.to_owned(), hash).await?;
     match record {
-        Some(record) if verified && record.user.status == UserStatus::Active => {
+        Some(record)
+            if verified
+                && record.user.status == UserStatus::Active
+                && (audience == Audience::App || record.user.role == Role::Admin) =>
+        {
             throttle.reset(&key);
             if !record.email_verified {
                 return Err(AuthError::EmailNotVerified);

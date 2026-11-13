@@ -1207,6 +1207,22 @@
         ],
         "type": "string"
       },
+      "ConsoleLoginRequest": {
+        "description": "Sign-in to the admin console (ADR-0095): an administrator's email and password. The session\nis delivered as the `vumlo_console` cookie.",
+        "properties": {
+          "email": {
+            "type": "string"
+          },
+          "password": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "email",
+          "password"
+        ],
+        "type": "object"
+      },
       "ContentModule": {
         "allOf": [
           {
@@ -8148,6 +8164,12 @@
         "scheme": "bearer",
         "type": "http"
       },
+      "console": {
+        "description": "The session of the admin console, from `POST /console/login`.",
+        "in": "cookie",
+        "name": "vumlo_console",
+        "type": "apiKey"
+      },
       "cookie": {
         "in": "cookie",
         "name": "vumlo_session",
@@ -11144,6 +11166,78 @@
           }
         },
         "summary": "Verifies the address with the token from the mail and sets the password the owner chose.",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/console/login": {
+      "post": {
+        "description": "Only a request from the console's origin (`server.admin_origin`) is accepted. Only an\nadministrator can sign in: a wrong password, an unknown email and an account that is not an\nadministrator get the same answer. The session is the `vumlo_console` cookie, which lasts\n30 minutes idle and 8 hours at most.",
+        "operationId": "console_login",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConsoleLoginRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/User"
+                }
+              }
+            },
+            "description": "Signed in; the console cookie is set"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Wrong email or password, or not an administrator"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "A request from another origin"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Malformed request"
+          },
+          "429": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Too many attempts"
+          }
+        },
+        "summary": "Signs an administrator in to the admin console.",
         "tags": [
           "auth"
         ]

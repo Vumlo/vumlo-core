@@ -261,6 +261,16 @@ impl Req {
         Self(self.0.header("cookie", format!("vumlo_session={token}")))
     }
 
+    /// Speaks as the admin console: its cookie and its origin (ADR-0095).
+    #[allow(dead_code)]
+    pub fn console(self, token: &str) -> Self {
+        Self(
+            self.0
+                .header("cookie", format!("vumlo_console={token}"))
+                .header("origin", ADMIN_ORIGIN),
+        )
+    }
+
     pub fn origin(self, origin: &str) -> Self {
         Self(self.0.header("origin", origin))
     }
@@ -429,6 +439,29 @@ pub async fn login_web(http: &Http, email: &str, password: &str) -> String {
         String::from_utf8_lossy(&response.body)
     );
     cookie_token(&response)
+}
+
+/// Signs in to the admin console and returns the session token from the `vumlo_console` cookie.
+#[allow(dead_code)]
+pub async fn login_console(http: &Http, email: &str, password: &str) -> String {
+    let response = http
+        .post("/console/login")
+        .origin(ADMIN_ORIGIN)
+        .json(&serde_json::json!({"email": email, "password": password}))
+        .send()
+        .await;
+    assert_eq!(
+        response.status,
+        200,
+        "{}",
+        String::from_utf8_lossy(&response.body)
+    );
+    response
+        .header("set-cookie")
+        .strip_prefix("vumlo_console=")
+        .and_then(|rest| rest.split(';').next())
+        .expect("console cookie")
+        .to_owned()
 }
 
 pub fn cookie_token(response: &Resp) -> String {

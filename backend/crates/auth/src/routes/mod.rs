@@ -147,6 +147,12 @@ where
                 .routes(routes!(auth::login))
                 .layer(GovernorLayer::new(client_limiter()?)),
         )
+        // The console's sign-in has an allowance of its own too (ADR-0095).
+        .merge(
+            OpenApiRouter::new()
+                .routes(routes!(auth::console_login))
+                .layer(GovernorLayer::new(client_limiter()?)),
+        )
         // Registration and recovery have an allowance of their own, so a lecture hall of students
         // signing in does not use up the allowance of a student signing up (ADR-0046).
         .merge(

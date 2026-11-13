@@ -142,6 +142,23 @@ impl fmt::Debug for LoginRequest {
     }
 }
 
+/// Sign-in to the admin console (ADR-0095): an administrator's email and password. The session
+/// is delivered as the `vumlo_console` cookie.
+#[derive(Clone, Serialize, Deserialize, Validate, ToSchema)]
+pub struct ConsoleLoginRequest {
+    #[garde(length(min = 1, max = 254))]
+    pub email: String,
+    #[garde(length(min = 1, max = 1024))]
+    pub password: String,
+}
+
+impl fmt::Debug for ConsoleLoginRequest {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ConsoleLoginRequest")
+            .finish_non_exhaustive()
+    }
+}
+
 /// Response to a login with `client = app`.
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct AppLoginResponse {

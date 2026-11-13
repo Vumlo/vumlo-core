@@ -300,6 +300,15 @@ impl Modify for SecurityAddon {
             "cookie",
             SecurityScheme::ApiKey(ApiKey::Cookie(ApiKeyValue::new(auth::COOKIE_NAME))),
         );
+        // The admin console's session (ADR-0095): administration needs it, and it is the only
+        // credential the console origin sends.
+        components.add_security_scheme(
+            "console",
+            SecurityScheme::ApiKey(ApiKey::Cookie(ApiKeyValue::with_description(
+                auth::CONSOLE_COOKIE_NAME,
+                "The session of the admin console, from `POST /console/login`.",
+            ))),
+        );
         components.add_security_scheme(
             "bearer",
             SecurityScheme::Http(
