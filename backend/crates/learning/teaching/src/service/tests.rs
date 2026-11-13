@@ -562,6 +562,32 @@ async fn a_unit_viewer_cannot_edit_and_a_manager_with_edit_content_can() {
     .await;
 }
 
+/// Max manages B (`manage_roster` by default) but is on no roster: he may put a colleague on K at
+/// any role, never himself, or he would be K's staff past the admin's switches.
+#[tokio::test]
+async fn a_manager_enrolls_a_colleague_but_never_themselves() {
+    db_test(async |pool| {
+        let t = tree(pool).await;
+        for role in [CourseRole::Teacher, CourseRole::Assistant, CourseRole::Student] {
+            let mut tx = t.pool.begin().await.unwrap();
+            let outcome = put_member(&mut tx, &t.max, t.k, t.max.user_id(), role).await;
+            assert!(
+                matches!(outcome, Err(TeachingError::Forbidden(_))),
+                "{role:?}: {outcome:?}"
+            );
+            tx.rollback().await.unwrap();
+        }
+        let mut tx = t.pool.begin().await.unwrap();
+        let membership = put_member(&mut tx, &t.max, t.k, t.tess.user_id(), CourseRole::Teacher)
+            .await
+            .unwrap();
+        tx.commit().await.unwrap();
+        assert_eq!(membership.role, CourseRole::Teacher);
+        assert_eq!(t.access(&t.max).await.role, None);
+    })
+    .await;
+}
+
 #[tokio::test]
 async fn creating_in_a_unit_needs_manage_courses() {
     db_test(async |pool| {

@@ -150,10 +150,13 @@ pub enum Action {
     /// Move a course from draft to published (ADR-0019).
     PublishCourse(CourseAccess),
     /// Add, change or remove a member who holds (or will hold) `role`. Students can be enrolled in
-    /// a draft; an archived course takes no change (ADR-0048).
+    /// a draft; an archived course takes no change (ADR-0048). `target_is_actor` is set when the
+    /// member is the actor themselves: a unit grant alone never puts its holder on, or takes them
+    /// off, the roster (ADR-0094), or a manager could make themselves staff past the admin's switches.
     ManageMembership {
         access: CourseAccess,
         role: CourseRole,
+        target_is_actor: bool,
     },
     DeleteCourse(CourseAccess),
     TransferOwnership(CourseAccess),
@@ -257,9 +260,14 @@ impl Action {
             Self::ChangeGroupLinks(access) => Self::ChangeGroupLinks(mine(access)),
             Self::ViewCourse(access) => Self::ViewCourse(mine(access)),
             Self::PublishCourse(access) => Self::PublishCourse(mine(access)),
-            Self::ManageMembership { access, role } => Self::ManageMembership {
+            Self::ManageMembership {
+                access,
+                role,
+                target_is_actor,
+            } => Self::ManageMembership {
                 access: mine(access),
                 role,
+                target_is_actor,
             },
             Self::DeleteCourse(access) => Self::DeleteCourse(mine(access)),
             Self::TransferOwnership(access) => Self::TransferOwnership(mine(access)),
@@ -495,13 +503,18 @@ pub fn authorize(actor: &Actor, action: Action) -> Result<(), AccessError> {
         Action::LinkGroups(access) | Action::ChangeGroupLinks(access) => {
             is_admin || access.is_owner_or_teacher() || access.unit(UnitAbility::ManageRoster)
         }
-        Action::ManageMembership { access, role } => {
+        Action::ManageMembership {
+            access,
+            role,
+            target_is_actor,
+        } => {
             is_admin
-                || access.unit(UnitAbility::ManageRoster)
                 || match role {
                     CourseRole::Student => access.is_staff(),
                     CourseRole::Teacher | CourseRole::Assistant => access.is_owner_or_teacher(),
                 }
+                // A permission that comes only from the grant never reaches the actor's own row.
+                || (!target_is_actor && access.unit(UnitAbility::ManageRoster))
         }
         Action::DeleteCourse(access) | Action::TransferOwnership(access) => {
             is_admin || access.is_owner

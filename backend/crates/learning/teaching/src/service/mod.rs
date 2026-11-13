@@ -502,7 +502,15 @@ pub async fn put_member(
     role: CourseRole,
 ) -> Result<Membership, TeachingError> {
     let (course, access) = load(conn, actor, course_id, true).await?;
-    access::authorize(actor, Action::ManageMembership { access, role })?;
+    let target_is_actor = user_id == actor.user_id();
+    access::authorize(
+        actor,
+        Action::ManageMembership {
+            access,
+            role,
+            target_is_actor,
+        },
+    )?;
     let current = repo::find_member(conn, course_id, user_id).await?;
     if let Some(old) = current {
         access::authorize(
@@ -510,6 +518,7 @@ pub async fn put_member(
             Action::ManageMembership {
                 access,
                 role: old.role,
+                target_is_actor,
             },
         )?;
     }
@@ -684,6 +693,7 @@ pub async fn remove_member(
         Action::ManageMembership {
             access,
             role: member.role,
+            target_is_actor: user_id == actor.user_id(),
         },
     )?;
     if user_id == course.owner_id {

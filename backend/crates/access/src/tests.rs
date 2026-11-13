@@ -329,6 +329,7 @@ fn student_member_cannot_add_members_with_any_role() {
         let action = Action::ManageMembership {
             access: member(Student),
             role,
+            target_is_actor: false,
         };
         assert_eq!(
             authorize(&actor(Role::Student), action),
@@ -464,6 +465,7 @@ fn students_can_be_enrolled_in_a_draft_but_an_archived_course_takes_no_change() 
         let action = Action::ManageMembership {
             access: access(Some(Teacher), false, status),
             role: Student,
+            target_is_actor: false,
         };
         assert_eq!(
             authorize(&actor(Role::Teacher), action),
@@ -510,6 +512,7 @@ fn assistant_manages_students_but_not_staff() {
     let manage = |role| Action::ManageMembership {
         access: member(Assistant),
         role,
+        target_is_actor: false,
     };
     assert_eq!(authorize(&assistant, manage(Student)), Ok(()));
     assert_eq!(
@@ -526,8 +529,14 @@ fn assistant_manages_students_but_not_staff() {
 fn teacher_and_owner_manage_staff_and_students() {
     for access in [member(Teacher), owner()] {
         for role in [Teacher, Assistant, Student] {
-            let action = Action::ManageMembership { access, role };
-            assert_eq!(authorize(&actor(Role::Teacher), action), Ok(()), "{role:?}");
+            for target_is_actor in [false, true] {
+                let action = Action::ManageMembership {
+                    access,
+                    role,
+                    target_is_actor,
+                };
+                assert_eq!(authorize(&actor(Role::Teacher), action), Ok(()), "{role:?}");
+            }
         }
     }
 }
@@ -538,6 +547,7 @@ fn non_members_cannot_manage_members_but_admins_can() {
         let action = Action::ManageMembership {
             access: non_member(),
             role,
+            target_is_actor: false,
         };
         assert_eq!(
             authorize(&actor(Role::Teacher), action),
@@ -952,6 +962,7 @@ fn an_institution_student_is_never_a_course_teacher_or_owner() {
             Action::ManageMembership {
                 access: held,
                 role: Student,
+                target_is_actor: false,
             },
         ] {
             assert_eq!(
@@ -1220,14 +1231,17 @@ fn unit_actions() -> Vec<(Option<UnitAbility>, Vec<CourseAction>)> {
                 |access| Action::ManageMembership {
                     access,
                     role: Student,
+                    target_is_actor: false,
                 },
                 |access| Action::ManageMembership {
                     access,
                     role: Assistant,
+                    target_is_actor: false,
                 },
                 |access| Action::ManageMembership {
                     access,
                     role: Teacher,
+                    target_is_actor: false,
                 },
                 Action::LinkGroups,
                 Action::ChangeGroupLinks,
@@ -1412,6 +1426,76 @@ fn implicit_access_names_the_way_in() {
     assert_eq!(
         implicit_access(&actor(Role::Teacher), studying),
         Some(Via::Unit)
+    );
+}
+
+/// `manage_roster` from a grant lets a manager add others at any role, never change their own row:
+/// otherwise they could make themselves teacher past the admin's switches (ADR-0094).
+#[test]
+fn a_unit_grant_alone_never_manages_the_actors_own_membership() {
+    let teacher = actor(Role::Teacher);
+    let grant = UnitGrant::new(Uuid::now_v7(), [UnitAbility::ManageRoster]);
+    let manage = |access, role, target_is_actor| Action::ManageMembership {
+        access,
+        role,
+        target_is_actor,
+    };
+    for role in [Teacher, Assistant, Student] {
+        let grant_only = unit_access(grant, Published);
+        assert_eq!(
+            authorize(&teacher, manage(grant_only, role, true)),
+            Err(AccessError::Denied),
+            "{role:?}"
+        );
+        assert_eq!(
+            authorize(&teacher, manage(grant_only, role, false)),
+            Ok(()),
+            "{role:?}"
+        );
+        // A student of the course is not staff: the grant is still all they have.
+        let studying = CourseAccess {
+            role: Some(Student),
+            ..grant_only
+        };
+        assert_eq!(
+            authorize(&teacher, manage(studying, role, true)),
+            Err(AccessError::Denied),
+            "{role:?}"
+        );
+        // Course staff keep what their place on the course gives them.
+        let teaching = CourseAccess {
+            role: Some(Teacher),
+            ..grant_only
+        };
+        assert_eq!(
+            authorize(&teacher, manage(teaching, role, true)),
+            Ok(()),
+            "{role:?}"
+        );
+        // An admin is unaffected.
+        assert_eq!(
+            authorize(&actor(Role::Admin), manage(non_member(), role, true)),
+            Ok(()),
+            "{role:?}"
+        );
+    }
+    // An assistant may change a student's row through the course, not their own staff role
+    // through the grant.
+    let assisting = CourseAccess {
+        role: Some(Assistant),
+        ..unit_access(grant, Published)
+    };
+    assert_eq!(
+        authorize(&teacher, manage(assisting, Student, true)),
+        Ok(())
+    );
+    assert_eq!(
+        authorize(&teacher, manage(assisting, Teacher, true)),
+        Err(AccessError::Denied)
+    );
+    assert_eq!(
+        authorize(&teacher, manage(assisting, Teacher, false)),
+        Ok(())
     );
 }
 
