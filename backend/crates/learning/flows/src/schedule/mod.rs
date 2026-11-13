@@ -16,8 +16,8 @@ use std::time::Duration;
 use chrono::{DateTime, Utc};
 use sqlx::PgPool;
 
-use crate::assessment::{self, AssessmentError, DueDraft};
 use crate::{LearningError, submissions};
+use assessment::{self, AssessmentError, DueDraft};
 use content::{self, ContentError, EffectiveProfiles};
 
 /// How often the scheduler wakes. A `publish_at` or a deadline is acted on at most this late.

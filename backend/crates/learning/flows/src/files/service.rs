@@ -13,8 +13,8 @@ use uuid::Uuid;
 
 use super::model::{ItemReference, Owner, UsageOwner};
 use super::repo;
-use crate::assessment::{self, AssessmentError};
 use access::{AccessError, Actor};
+use assessment::{self, AssessmentError};
 use content::{self, ContentError, FileRef, distinct_ids};
 
 #[derive(Debug, thiserror::Error)]

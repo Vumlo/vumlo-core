@@ -4,6 +4,7 @@ mod model;
 mod repo;
 mod routes;
 mod service;
+mod state;
 
 pub use model::{
     Attempt, AutoTotal, Draft, DueDraft, FormFacts, LatestAttempt, LatestContent, MySubmission,
@@ -18,7 +19,8 @@ pub use service::{
     list_submissions, may_read_submission_files, my_submission, purge_assignment, purge_course,
     purge_module, responses, skip_auto_submit, student_attempts, students_with_attempts,
 };
+pub use state::AssessmentState;
 
 // Seeds the references of a submission for the tests of `learning::files`.
-#[cfg(test)]
+#[cfg(feature = "testing")]
 pub use repo::replace_submission_files;

@@ -2,10 +2,10 @@ use sqlx::PgConnection;
 use uuid::Uuid;
 
 use crate::LearningError;
-use crate::assessment::{self, PublishedScore, QuizResult};
 use crate::files::{self, UsageOwner};
 use crate::gradebook;
 use access::Actor;
+use assessment::{self, PublishedScore, QuizResult};
 use content::{self, AssignmentFacts, BuiltinType, Item, ItemPatch, ItemRules, NewItemInput};
 
 /// Deletes the module with its sub-modules and items. Drafts of students and empty grade rows go

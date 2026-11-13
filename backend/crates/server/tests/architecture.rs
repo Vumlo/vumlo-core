@@ -87,7 +87,7 @@ const UNITS: &[Unit] = &[
     },
     Unit {
         name: "assessment",
-        dir: "learning/flows/src/assessment",
+        dir: "learning/assessment/src",
         schema: Some("assessment"),
         layer: 9,
     },
@@ -494,7 +494,7 @@ const FILE_FINISHES: &[&str] = &[
 /// names no file) and the flows that call them.
 const FILE_FINISH_HOMES: &[&str] = &[
     "learning/content/src/",
-    "learning/flows/src/assessment/",
+    "learning/assessment/src/",
     "learning/flows/src/items/",
     "learning/flows/src/submissions/",
 ];

@@ -2,7 +2,6 @@
 //! Each submodule owns its Postgres schema and exposes only its `mod.rs`. The flows that need
 //! more than one module (a person with their courses, ...) live here, above all of them.
 
-pub mod assessment;
 pub mod audit;
 pub mod courses;
 mod enrollment;

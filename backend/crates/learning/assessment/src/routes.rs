@@ -17,7 +17,7 @@ use uuid::Uuid;
 
 use super::model;
 use super::service::{self, AssessmentError};
-use crate::LearningState;
+use crate::AssessmentState;
 use access::Actor;
 use common::PageParams;
 use common::{ApiError, ValidQuery};
@@ -25,7 +25,7 @@ use common::{ApiError, ValidQuery};
 pub fn router<S>() -> OpenApiRouter<S>
 where
     S: ActorSource + Clone + 'static,
-    LearningState: FromRef<S>,
+    AssessmentState: FromRef<S>,
 {
     OpenApiRouter::new()
         .routes(routes!(discard_draft))
@@ -148,7 +148,7 @@ fn api_row(row: model::StudentSubmission) -> SubmissionRow {
     )
 )]
 async fn discard_draft(
-    State(state): State<LearningState>,
+    State(state): State<AssessmentState>,
     actor: Actor,
     Path(assignment_id): Path<Uuid>,
 ) -> Result<StatusCode, ApiError> {
@@ -182,7 +182,7 @@ async fn discard_draft(
     )
 )]
 async fn get_my_submission(
-    State(state): State<LearningState>,
+    State(state): State<AssessmentState>,
     actor: Actor,
     Path(assignment_id): Path<Uuid>,
     ValidQuery(query): ValidQuery<PageQuery>,
@@ -221,7 +221,7 @@ async fn get_my_submission(
     )
 )]
 async fn list_submissions(
-    State(state): State<LearningState>,
+    State(state): State<AssessmentState>,
     actor: Actor,
     Path(assignment_id): Path<Uuid>,
     ValidQuery(query): ValidQuery<PageQuery>,
@@ -263,7 +263,7 @@ async fn list_submissions(
     )
 )]
 async fn list_student_attempts(
-    State(state): State<LearningState>,
+    State(state): State<AssessmentState>,
     actor: Actor,
     Path((assignment_id, student_id)): Path<(Uuid, Uuid)>,
     ValidQuery(query): ValidQuery<PageQuery>,
@@ -297,7 +297,7 @@ async fn list_student_attempts(
     )
 )]
 async fn get_responses(
-    State(state): State<LearningState>,
+    State(state): State<AssessmentState>,
     actor: Actor,
     Path(assignment_id): Path<Uuid>,
 ) -> Result<Json<FormResponses>, ApiError> {

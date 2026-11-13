@@ -8,17 +8,22 @@ use test_support::wait_until_blocked;
 
 use std::sync::LazyLock;
 
-use serde_json::{Map, json};
+use chrono::{DateTime, Utc};
+use serde_json::{Map, Value, json};
 use sqlx::PgPool;
+use uuid::Uuid;
 
-use super::*;
 use crate::{LearningError, items};
-use access::CourseRole;
+use access::{Actor, CourseRole};
+use assessment::{
+    AssessmentError, Attempt, Draft, discard_draft, has_submitted_in_course, list_submissions,
+    student_attempts,
+};
 use auth::{self, Email, NewUser, PersonName};
-use common::Role;
+use common::{PageParams, Role};
 use content::{
-    Assignment, BuiltinType, ContentTitle, ItemPatch, ItemRules, MaxPoints, OnDeadline,
-    SettingsPatch, SubmissionSettings,
+    Assignment, BuiltinType, ContentTitle, EffectiveProfiles, ItemPatch, ItemRules, MaxPoints,
+    OnDeadline, SettingsPatch, SubmissionSettings,
 };
 use teaching::{self, CourseTitle};
 use vumlo_config::GradingScale;

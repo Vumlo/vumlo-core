@@ -23,6 +23,7 @@ ai_agent = ["dep:vumlo-module-ai-agent"]
 access.workspace = true
 anyhow.workspace = true
 api-types.workspace = true
+assessment.workspace = true
 auth.workspace = true
 axum.workspace = true
 axum-extra.workspace = true

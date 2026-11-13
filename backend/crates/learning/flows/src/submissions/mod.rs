@@ -9,3 +9,6 @@ mod service;
 
 pub use routes::router;
 pub use service::{auto_submit, save_draft, submit};
+
+#[cfg(test)]
+mod tests;

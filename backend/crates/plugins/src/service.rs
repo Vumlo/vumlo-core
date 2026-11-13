@@ -10,7 +10,6 @@ use std::collections::BTreeMap;
 use access::{CourseScope, PluginCaller, Scope};
 use content::{self, OpenError};
 use events::{Event, OutboxEvent};
-use learning::assessment;
 use module_api::OutboundClient;
 use serde_json::{Map, Value, json};
 use sqlx::PgConnection;

@@ -6,7 +6,7 @@ use sqlx::PgConnection;
 use uuid::Uuid;
 
 use crate::LearningError;
-use crate::{assessment, gradebook};
+use crate::gradebook;
 use access::Actor;
 use teaching::{self, Course, CourseTitle};
 

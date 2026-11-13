@@ -141,6 +141,31 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d3fb67a6e08acf24fdeccbac2cb6ac4305825bd1f117462e0e6f2f193345ad56"
 
 [[package]]
+name = "assessment"
+version = "0.6.1"
+dependencies = [
+ "access",
+ "api-types",
+ "auth",
+ "axum",
+ "chrono",
+ "common",
+ "content",
+ "events",
+ "files",
+ "org",
+ "serde_json",
+ "sqlx",
+ "teaching",
+ "thiserror 2.0.21",
+ "tokio",
+ "utoipa",
+ "utoipa-axum",
+ "uuid",
+ "vumlo-config",
+]
+
+[[package]]
 name = "async-trait"
 version = "0.1.92"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2151,6 +2176,7 @@ version = "0.6.1"
 dependencies = [
  "access",
  "api-types",
+ "assessment",
  "auth",
  "axum",
  "chrono",
@@ -2781,6 +2807,7 @@ version = "0.6.1"
 dependencies = [
  "access",
  "api-types",
+ "assessment",
  "axum",
  "base64 0.23.1",
  "chacha20poly1305",
@@ -3692,6 +3719,7 @@ dependencies = [
  "access",
  "anyhow",
  "api-types",
+ "assessment",
  "auth",
  "axum",
  "axum-extra",
@@ -4755,6 +4783,7 @@ name = "vumlo-module-ai-agent"
 version = "0.6.1"
 dependencies = [
  "access",
+ "assessment",
  "auth",
  "axum",
  "chrono",

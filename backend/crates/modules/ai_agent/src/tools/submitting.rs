@@ -12,7 +12,6 @@ use access::Actor;
 use chrono::Utc;
 use common::{ApiError, PageParams};
 use content::{BuiltinType, ItemRules};
-use learning::assessment;
 use learning::{items, submissions};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};

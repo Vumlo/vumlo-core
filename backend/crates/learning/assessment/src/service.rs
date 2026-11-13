@@ -1021,6 +1021,3 @@ pub async fn purge_course(
     }
     Ok(repo::purge_course(conn, course_id).await?)
 }
-
-#[cfg(test)]
-mod tests;

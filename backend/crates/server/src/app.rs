@@ -27,11 +27,11 @@ use utoipa_scalar::{Scalar, Servable};
 
 use crate::health;
 use access::{self, ActorSource, PluginSource};
+use assessment::AssessmentState;
 use auth::{self, AuthState, SetupError};
 use common::{ApiError, problem_details};
 use content::{ContentState, EditorConfigError, EffectiveProfiles};
 use events::Handlers;
-use learning::assessment;
 use learning::gradebook;
 use learning::{self, LearningState};
 use mail::{MailError, MailState, Mailer};
@@ -64,6 +64,7 @@ pub struct AppState {
     pub org: OrgState,
     pub teaching: TeachingState,
     pub content: ContentState,
+    pub assessment: AssessmentState,
     pub learning: LearningState,
     pub plugins: PluginsState,
     /// The optional modules compiled in, each after the ones it requires.
@@ -97,6 +98,12 @@ impl FromRef<AppState> for TeachingState {
 impl FromRef<AppState> for ContentState {
     fn from_ref(state: &AppState) -> Self {
         state.content.clone()
+    }
+}
+
+impl FromRef<AppState> for AssessmentState {
+    fn from_ref(state: &AppState) -> Self {
+        state.assessment.clone()
     }
 }
 
@@ -211,6 +218,7 @@ impl AppState {
                 db: db.clone(),
                 editor: editor.clone(),
             },
+            assessment: AssessmentState { db: db.clone() },
             learning: LearningState {
                 db: db.clone(),
                 config: config.clone(),

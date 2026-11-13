@@ -4,8 +4,8 @@ use sqlx::PgConnection;
 use sqlx::PgPool;
 use uuid::Uuid;
 
-use crate::assessment::{AssessmentError, Attempt, Draft, DueDraft};
 use crate::{LearningError, items, submissions};
+use assessment::{AssessmentError, Attempt, Draft, DueDraft};
 use content::{Assignment, ContentTitle, EffectiveProfiles, Item, ItemRules, NewItemInput};
 
 /// `db_test` for the unit tests of this crate: what they emit needs the registry of subscribers

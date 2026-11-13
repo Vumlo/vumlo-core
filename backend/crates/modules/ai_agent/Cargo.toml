@@ -7,6 +7,7 @@ description = "The Buddy: a chat agent for students, teachers and admins (ADR-00
 
 [dependencies]
 access.workspace = true
+assessment.workspace = true
 auth.workspace = true
 axum.workspace = true
 chrono.workspace = true

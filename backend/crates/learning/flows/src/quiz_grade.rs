@@ -12,7 +12,7 @@ use events::{Event, SubscriberError, Subscribers};
 use sqlx::PgConnection;
 use uuid::Uuid;
 
-use crate::{assessment, gradebook};
+use crate::gradebook;
 
 /// Writes the draft grade of the attempt, when it has a total. An attempt with a question left for
 /// a person (or a text or form attempt) has none, and the teacher grades the whole by hand.
