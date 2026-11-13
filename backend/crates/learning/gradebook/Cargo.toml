@@ -1,0 +1,33 @@
+[package]
+name = "gradebook"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+description = "Grades, publishing and the gradebook read models (ADR-0009, ADR-0015, ADR-0028, ADR-0089, ADR-0090, ADR-0093)."
+
+[dependencies]
+access.workspace = true
+api-types.workspace = true
+assessment.workspace = true
+auth.workspace = true
+axum.workspace = true
+chrono.workspace = true
+common.workspace = true
+content.workspace = true
+events.workspace = true
+files.workspace = true
+org.workspace = true
+rust_xlsxwriter.workspace = true
+serde_json.workspace = true
+sqlx.workspace = true
+teaching.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+utoipa.workspace = true
+utoipa-axum.workspace = true
+uuid.workspace = true
+vumlo-config.workspace = true
+
+[lints]
+workspace = true

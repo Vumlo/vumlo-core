@@ -8,16 +8,16 @@ use utoipa_axum::router::OpenApiRouter;
 use utoipa_axum::routes;
 use uuid::Uuid;
 
-use crate::LearningState;
-use crate::gradebook::model;
-use crate::gradebook::service::{self, GradebookError};
+use crate::GradebookState;
+use crate::model;
+use crate::service::{self, GradebookError};
 use access::Actor;
 use common::ApiError;
 
 pub fn router<S>() -> OpenApiRouter<S>
 where
     S: access::ActorSource + Clone + 'static,
-    LearningState: axum::extract::FromRef<S>,
+    GradebookState: axum::extract::FromRef<S>,
 {
     OpenApiRouter::new()
         .routes(routes!(get_item_meta))
@@ -83,7 +83,7 @@ fn api_meta(facts: model::ItemMeta) -> ItemMeta {
     )
 )]
 async fn get_item_meta(
-    State(state): State<LearningState>,
+    State(state): State<GradebookState>,
     actor: Actor,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ItemMetaMap>, ApiError> {
@@ -111,7 +111,7 @@ async fn get_item_meta(
     )
 )]
 async fn get_my_work(
-    State(state): State<LearningState>,
+    State(state): State<GradebookState>,
     actor: Actor,
 ) -> Result<Json<MyWork>, ApiError> {
     let mut conn = state.db.acquire().await.map_err(GradebookError::from)?;

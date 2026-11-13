@@ -6,6 +6,7 @@ mod model;
 mod repo;
 mod routes;
 mod service;
+mod state;
 
 pub use model::{
     Cell, Column, ColumnStatus, Feedback, FeedbackInput, FieldProblem, GradeInput, GradebookPage,
@@ -21,3 +22,4 @@ pub use service::{
     save_grade, student_next, student_progress, students_with_values, teaching_overview,
     todo_counts,
 };
+pub use state::GradebookState;

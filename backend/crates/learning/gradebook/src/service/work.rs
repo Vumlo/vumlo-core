@@ -9,8 +9,8 @@ use sqlx::PgConnection;
 use uuid::Uuid;
 
 use super::{GradebookError, course_access};
-use crate::gradebook::model::{ItemMeta, MyWork, Progress, TodoCounts, WorkEntry, WorkFacts};
-use crate::gradebook::repo;
+use crate::model::{ItemMeta, MyWork, Progress, TodoCounts, WorkEntry, WorkFacts};
+use crate::repo;
 use access::Actor;
 use content::{self, NextDeadline};
 

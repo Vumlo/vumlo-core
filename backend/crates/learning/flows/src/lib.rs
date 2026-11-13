@@ -8,7 +8,6 @@ mod enrollment;
 mod error;
 pub mod facts;
 pub mod files;
-pub mod gradebook;
 pub mod groups;
 pub mod items;
 pub mod people;

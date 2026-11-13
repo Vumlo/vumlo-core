@@ -8,7 +8,7 @@ use std::collections::BTreeMap;
 use access::Actor;
 use chrono::{DateTime, Utc};
 use common::{ApiError, PageParams};
-use learning::gradebook::{self, FeedbackInput, GradeInput, Students};
+use gradebook::{self, FeedbackInput, GradeInput, Students};
 use learning::items;
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::{Value, json};

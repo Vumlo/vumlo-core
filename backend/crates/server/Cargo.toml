@@ -34,6 +34,7 @@ content.workspace = true
 db.workspace = true
 events.workspace = true
 files.workspace = true
+gradebook.workspace = true
 learning.workspace = true
 mail.workspace = true
 module-api.workspace = true

@@ -3,7 +3,6 @@ use uuid::Uuid;
 
 use crate::LearningError;
 use crate::files::{self, UsageOwner};
-use crate::gradebook;
 use access::Actor;
 use assessment::{self, PublishedScore, QuizResult};
 use content::{self, AssignmentFacts, BuiltinType, Item, ItemPatch, ItemRules, NewItemInput};

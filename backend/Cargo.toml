@@ -76,6 +76,7 @@ content = { path = "crates/learning/content" }
 db = { path = "crates/db" }
 events = { path = "crates/events" }
 files = { path = "crates/files" }
+gradebook = { path = "crates/learning/gradebook" }
 learning = { path = "crates/learning/flows" }
 mail = { path = "crates/mail" }
 module-api = { path = "crates/module-api" }

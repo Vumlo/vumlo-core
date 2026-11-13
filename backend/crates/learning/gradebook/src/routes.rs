@@ -22,7 +22,7 @@ use uuid::Uuid;
 
 use super::model::{self, ColumnStatus, FeedbackInput, GradeInput, Students};
 use super::service::{self, GradebookError};
-use crate::LearningState;
+use crate::GradebookState;
 use access::Actor;
 use common::PageParams;
 use common::{ApiError, ValidJson, ValidQuery, content_disposition};
@@ -33,7 +33,7 @@ mod work;
 pub fn router<S>() -> OpenApiRouter<S>
 where
     S: ActorSource + Clone + 'static,
-    LearningState: FromRef<S>,
+    GradebookState: FromRef<S>,
 {
     OpenApiRouter::new()
         .merge(groups::router())
@@ -163,7 +163,7 @@ fn page_params(query: &PageQuery) -> Result<PageParams, ApiError> {
     )
 )]
 async fn save_grade(
-    State(state): State<LearningState>,
+    State(state): State<GradebookState>,
     actor: Actor,
     Path((assignment_id, student_id)): Path<(Uuid, Uuid)>,
     ValidJson(request): ValidJson<SaveGradeRequest>,
@@ -209,7 +209,7 @@ async fn save_grade(
     )
 )]
 async fn publish_grades(
-    State(state): State<LearningState>,
+    State(state): State<GradebookState>,
     actor: Actor,
     Path(assignment_id): Path<Uuid>,
     ValidJson(request): ValidJson<PublishGradesRequest>,
@@ -247,7 +247,7 @@ async fn publish_grades(
     )
 )]
 async fn get_gradebook(
-    State(state): State<LearningState>,
+    State(state): State<GradebookState>,
     actor: Actor,
     Path(course_id): Path<Uuid>,
     ValidQuery(query): ValidQuery<PageQuery>,
@@ -260,7 +260,7 @@ async fn get_gradebook(
         .execute(&mut *tx)
         .await
         .map_err(GradebookError::from)?;
-    let with_totals = state.config.institution.grading_scale == vumlo_config::GradingScale::Hundred;
+    let with_totals = state.grading_scale == vumlo_config::GradingScale::Hundred;
     let result = service::gradebook(&mut tx, &actor, with_totals, course_id, page).await?;
     Ok(Json(GradebookPage {
         columns: result.columns.into_iter().map(api_column).collect(),
@@ -307,7 +307,7 @@ async fn get_gradebook(
     )
 )]
 async fn export_gradebook(
-    State(state): State<LearningState>,
+    State(state): State<GradebookState>,
     actor: Actor,
     Path(course_id): Path<Uuid>,
 ) -> Result<Response, ApiError> {
@@ -316,7 +316,7 @@ async fn export_gradebook(
         .execute(&mut *tx)
         .await
         .map_err(GradebookError::from)?;
-    let with_totals = state.config.institution.grading_scale == vumlo_config::GradingScale::Hundred;
+    let with_totals = state.grading_scale == vumlo_config::GradingScale::Hundred;
     let (title, bytes) = service::export(&mut tx, &actor, with_totals, course_id).await?;
     let mut response = bytes.into_response();
     let headers = response.headers_mut();
@@ -356,7 +356,7 @@ const XLSX: &str = "application/vnd.openxmlformats-officedocument.spreadsheetml.
     )
 )]
 async fn get_my_grades(
-    State(state): State<LearningState>,
+    State(state): State<GradebookState>,
     actor: Actor,
     Path(course_id): Path<Uuid>,
 ) -> Result<Json<MyGrades>, ApiError> {
@@ -393,7 +393,7 @@ async fn get_my_grades(
     )
 )]
 async fn get_teaching(
-    State(state): State<LearningState>,
+    State(state): State<GradebookState>,
     actor: Actor,
 ) -> Result<Json<TeachingOverview>, ApiError> {
     let mut conn = state.db.acquire().await.map_err(GradebookError::from)?;
@@ -503,7 +503,7 @@ async fn get_teaching(
     )
 )]
 async fn get_grade_history(
-    State(state): State<LearningState>,
+    State(state): State<GradebookState>,
     actor: Actor,
     Path((assignment_id, student_id)): Path<(Uuid, Uuid)>,
     ValidQuery(query): ValidQuery<PageQuery>,

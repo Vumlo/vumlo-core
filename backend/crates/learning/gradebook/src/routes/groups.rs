@@ -14,17 +14,17 @@ use utoipa_axum::routes;
 use uuid::Uuid;
 
 use super::{api_column, points};
-use crate::LearningState;
-use crate::gradebook::layout::{GroupDef, Layout, Outcome, Settings, Setup};
-use crate::gradebook::model::{LayoutView, RowTotals, Summary};
-use crate::gradebook::service::{self, GradebookError, GroupInput, SettingsPatch};
+use crate::GradebookState;
+use crate::layout::{GroupDef, Layout, Outcome, Settings, Setup};
+use crate::model::{LayoutView, RowTotals, Summary};
+use crate::service::{self, GradebookError, GroupInput, SettingsPatch};
 use access::Actor;
 use common::{ApiError, ValidJson};
 
 pub fn router<S>() -> OpenApiRouter<S>
 where
     S: access::ActorSource + Clone + 'static,
-    LearningState: axum::extract::FromRef<S>,
+    GradebookState: axum::extract::FromRef<S>,
 {
     OpenApiRouter::new()
         .routes(routes!(get_structure))
@@ -189,11 +189,11 @@ fn group_input(input: GradebookGroupInput) -> (GroupInput, Vec<Uuid>) {
     )
 )]
 async fn get_structure(
-    State(state): State<LearningState>,
+    State(state): State<GradebookState>,
     actor: Actor,
     Path(course_id): Path<Uuid>,
 ) -> Result<Json<GradebookStructure>, ApiError> {
-    let scale = state.config.institution.grading_scale;
+    let scale = state.grading_scale;
     let mut conn = state.db.acquire().await.map_err(GradebookError::from)?;
     let structure = service::structure(&mut conn, &actor, scale, course_id).await?;
     Ok(Json(GradebookStructure {
@@ -239,12 +239,12 @@ async fn get_structure(
     )
 )]
 async fn put_settings(
-    State(state): State<LearningState>,
+    State(state): State<GradebookState>,
     actor: Actor,
     Path(course_id): Path<Uuid>,
     ValidJson(request): ValidJson<GradebookSettings>,
 ) -> Result<Json<GradebookSettings>, ApiError> {
-    let scale = state.config.institution.grading_scale;
+    let scale = state.grading_scale;
     let patch = SettingsPatch {
         target: Some(request.target),
         pass_mark: Some(request.pass_mark),
@@ -279,12 +279,12 @@ async fn put_settings(
     )
 )]
 async fn post_group(
-    State(state): State<LearningState>,
+    State(state): State<GradebookState>,
     actor: Actor,
     Path(course_id): Path<Uuid>,
     ValidJson(request): ValidJson<GradebookGroupInput>,
 ) -> Result<(StatusCode, Json<CreatedGradebookGroup>), ApiError> {
-    let scale = state.config.institution.grading_scale;
+    let scale = state.grading_scale;
     let (input, assignments) = group_input(request);
     let mut tx = state.db.begin().await.map_err(GradebookError::from)?;
     let key = service::create_group(&mut tx, &actor, scale, course_id, input, assignments).await?;
@@ -321,12 +321,12 @@ async fn post_group(
     )
 )]
 async fn put_group(
-    State(state): State<LearningState>,
+    State(state): State<GradebookState>,
     actor: Actor,
     Path((course_id, key)): Path<(Uuid, Uuid)>,
     ValidJson(request): ValidJson<GradebookGroupInput>,
 ) -> Result<StatusCode, ApiError> {
-    let scale = state.config.institution.grading_scale;
+    let scale = state.grading_scale;
     let (input, _) = group_input(request);
     let mut tx = state.db.begin().await.map_err(GradebookError::from)?;
     service::save_group(&mut tx, &actor, scale, course_id, key, input).await?;
@@ -358,11 +358,11 @@ async fn put_group(
     )
 )]
 async fn delete_group(
-    State(state): State<LearningState>,
+    State(state): State<GradebookState>,
     actor: Actor,
     Path((course_id, key)): Path<(Uuid, Uuid)>,
 ) -> Result<StatusCode, ApiError> {
-    let scale = state.config.institution.grading_scale;
+    let scale = state.grading_scale;
     let mut tx = state.db.begin().await.map_err(GradebookError::from)?;
     service::delete_group(&mut tx, &actor, scale, course_id, key).await?;
     tx.commit().await.map_err(GradebookError::from)?;
@@ -393,12 +393,12 @@ async fn delete_group(
     )
 )]
 async fn put_placement(
-    State(state): State<LearningState>,
+    State(state): State<GradebookState>,
     actor: Actor,
     Path(course_id): Path<Uuid>,
     ValidJson(request): ValidJson<GradebookPlacement>,
 ) -> Result<StatusCode, ApiError> {
-    let scale = state.config.institution.grading_scale;
+    let scale = state.grading_scale;
     let mut tx = state.db.begin().await.map_err(GradebookError::from)?;
     service::place(
         &mut tx,
@@ -435,11 +435,11 @@ async fn put_placement(
     )
 )]
 async fn get_my_summary(
-    State(state): State<LearningState>,
+    State(state): State<GradebookState>,
     actor: Actor,
     Path(course_id): Path<Uuid>,
 ) -> Result<Json<MyGradeSummary>, ApiError> {
-    let scale = state.config.institution.grading_scale;
+    let scale = state.grading_scale;
     let mut conn = state.db.acquire().await.map_err(GradebookError::from)?;
     let summary = service::my_summary(&mut conn, &actor, scale, course_id)
         .await?

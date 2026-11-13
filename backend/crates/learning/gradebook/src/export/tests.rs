@@ -1,8 +1,8 @@
 use uuid::Uuid;
 
 use super::*;
-use crate::gradebook::layout::{self, Entry, GroupDef, Settings};
-use crate::gradebook::model::{Cell, ColumnStatus, RowTotals};
+use crate::layout::{self, Entry, GroupDef, Settings};
+use crate::model::{Cell, ColumnStatus, RowTotals};
 
 fn d(text: &str) -> Decimal {
     text.parse().expect("a decimal")

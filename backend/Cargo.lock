@@ -1563,6 +1563,34 @@ dependencies = [
 ]
 
 [[package]]
+name = "gradebook"
+version = "0.6.1"
+dependencies = [
+ "access",
+ "api-types",
+ "assessment",
+ "auth",
+ "axum",
+ "chrono",
+ "common",
+ "content",
+ "events",
+ "files",
+ "org",
+ "rust_xlsxwriter",
+ "serde_json",
+ "sqlx",
+ "teaching",
+ "thiserror 2.0.21",
+ "tokio",
+ "tracing",
+ "utoipa",
+ "utoipa-axum",
+ "uuid",
+ "vumlo-config",
+]
+
+[[package]]
 name = "group"
 version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2184,9 +2212,9 @@ dependencies = [
  "content",
  "events",
  "files",
+ "gradebook",
  "object_store",
  "org",
- "rust_xlsxwriter",
  "serde",
  "serde_json",
  "sqlx",
@@ -3732,6 +3760,7 @@ dependencies = [
  "db",
  "events",
  "files",
+ "gradebook",
  "learning",
  "mail",
  "module-api",
@@ -4789,6 +4818,7 @@ dependencies = [
  "chrono",
  "common",
  "content",
+ "gradebook",
  "learning",
  "module-api",
  "org",

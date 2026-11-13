@@ -6,7 +6,7 @@ use chrono::{DateTime, Utc};
 use sqlx::PgConnection;
 use uuid::Uuid;
 
-use crate::gradebook::model::{Progress, StaffFacts, TodoCounts, WorkFacts, WorkStatus};
+use crate::model::{Progress, StaffFacts, TodoCounts, WorkFacts, WorkStatus};
 use content::{AssignmentType, BuiltinType, NextDeadline};
 
 /// A student's standing on every assignment of the given courses (see [`WorkStatus::of`]). Only

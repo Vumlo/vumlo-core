@@ -11,11 +11,11 @@ use sqlx::types::Decimal;
 use uuid::Uuid;
 
 use super::{GradebookError, course_access, visible_rows};
-use crate::gradebook::layout::{
+use crate::layout::{
     self, Entry, GroupDef, Layout, Settings, Setup, Suggestion, setup as layout_setup,
 };
-use crate::gradebook::model::{Column, FieldProblem, Summary};
-use crate::gradebook::repo::{self, GroupRow, Placement, Rules};
+use crate::model::{Column, FieldProblem, Summary};
+use crate::repo::{self, GroupRow, Placement, Rules};
 use access::Actor;
 use access::{self, Action, CourseAccess};
 use events::{self, AuditEntry};

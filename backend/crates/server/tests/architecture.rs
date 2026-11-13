@@ -93,7 +93,7 @@ const UNITS: &[Unit] = &[
     },
     Unit {
         name: "gradebook",
-        dir: "learning/flows/src/gradebook",
+        dir: "learning/gradebook/src",
         schema: Some("gradebook"),
         layer: 10,
     },

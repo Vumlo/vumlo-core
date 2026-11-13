@@ -6,9 +6,9 @@ use uuid::Uuid;
 
 use crate::LearningError;
 use crate::courses::model::{CourseCardData, Todo};
-use crate::gradebook::{self, Progress, TodoCounts};
 use access::Actor;
 use content::{self, DraftItem, NextDeadline};
+use gradebook::{self, Progress, TodoCounts};
 
 /// How many titles of unpublished items a card names.
 const TITLES_SHOWN: usize = 3;

@@ -32,7 +32,7 @@ use auth::{self, AuthState, SetupError};
 use common::{ApiError, problem_details};
 use content::{ContentState, EditorConfigError, EffectiveProfiles};
 use events::Handlers;
-use learning::gradebook;
+use gradebook::GradebookState;
 use learning::{self, LearningState};
 use mail::{MailError, MailState, Mailer};
 use org::{self, OrgState};
@@ -65,6 +65,7 @@ pub struct AppState {
     pub teaching: TeachingState,
     pub content: ContentState,
     pub assessment: AssessmentState,
+    pub gradebook: GradebookState,
     pub learning: LearningState,
     pub plugins: PluginsState,
     /// The optional modules compiled in, each after the ones it requires.
@@ -104,6 +105,12 @@ impl FromRef<AppState> for ContentState {
 impl FromRef<AppState> for AssessmentState {
     fn from_ref(state: &AppState) -> Self {
         state.assessment.clone()
+    }
+}
+
+impl FromRef<AppState> for GradebookState {
+    fn from_ref(state: &AppState) -> Self {
+        state.gradebook.clone()
     }
 }
 
@@ -219,6 +226,10 @@ impl AppState {
                 editor: editor.clone(),
             },
             assessment: AssessmentState { db: db.clone() },
+            gradebook: GradebookState {
+                db: db.clone(),
+                grading_scale: config.institution.grading_scale,
+            },
             learning: LearningState {
                 db: db.clone(),
                 config: config.clone(),

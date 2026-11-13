@@ -10,15 +10,19 @@ use std::sync::LazyLock;
 use serde_json::Map;
 use sqlx::PgPool;
 
-use super::*;
+use uuid::Uuid;
+
 use crate::{LearningError, items};
-use access::CourseRole;
+use access::{Actor, CourseRole};
 use auth::{self, Email, NewUser, PersonName};
 use common::PageParams;
 use common::Role;
 use content::{
     self, Assignment, BuiltinType, ContentError, ContentTitle, EffectiveProfiles, ItemPatch,
     ItemRules, MaxPoints, SubmissionSettings,
+};
+use gradebook::{
+    Cell, GradeInput, GradebookError, Students, gradebook, publish_grades, save_grade,
 };
 use teaching::{self, CourseTitle};
 use vumlo_config::GradingScale;

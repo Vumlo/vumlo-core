@@ -5,7 +5,7 @@ use sqlx::PgConnection;
 use sqlx::types::Decimal;
 use uuid::Uuid;
 
-use crate::gradebook::layout::{Layout, Settings};
+use crate::layout::{Layout, Settings};
 
 /// The settings of a course; a course that never set any has the defaults.
 pub async fn settings(conn: &mut PgConnection, course_id: Uuid) -> Result<Settings, sqlx::Error> {

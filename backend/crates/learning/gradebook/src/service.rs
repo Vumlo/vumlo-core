@@ -728,6 +728,3 @@ pub async fn purge_course(conn: &mut PgConnection, course_id: Uuid) -> Result<u6
     }
     Ok(repo::purge_course(conn, course_id).await?)
 }
-
-#[cfg(test)]
-mod tests;
