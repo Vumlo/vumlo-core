@@ -207,7 +207,7 @@ pub struct UpdateUnitRequest {
 }
 
 /// A key that may be absent (change nothing), `null` (clear) or a value (set).
-fn present<'de, D: Deserializer<'de>, T: Deserialize<'de>>(
+pub(crate) fn present<'de, D: Deserializer<'de>, T: Deserialize<'de>>(
     deserializer: D,
 ) -> Result<Option<Option<T>>, D::Error> {
     Option::<T>::deserialize(deserializer).map(Some)
