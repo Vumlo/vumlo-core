@@ -1419,8 +1419,8 @@ fn course_can_answers_as_the_api_would() {
         }
     );
     let archived = course_can(&teacher, unit_access(grant, Archived));
-    // Writes read as refused; `manage_roster` is the reading rule `ManageRoster` (the brief's choice).
-    assert!(!archived.grade && archived.manage_roster);
+    // Every write control reads as refused, `manage_roster` (the write `ChangeRoster`) included.
+    assert!(!archived.grade && !archived.manage_roster);
     let all = course_can(&actor(Role::Admin), non_member());
     assert!(
         all.view_grades && all.edit_content && all.grade && all.manage_roster && all.manage_course

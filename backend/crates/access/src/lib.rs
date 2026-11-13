@@ -423,7 +423,7 @@ pub fn course_can(actor: &Actor, access: CourseAccess) -> CourseCan {
         view_grades: can(Action::ViewGradebook(access)),
         edit_content: can(Action::EditContent(access)),
         grade: can(Action::GradeAssignment(access)),
-        manage_roster: can(Action::ManageRoster(access)),
+        manage_roster: can(Action::ChangeRoster(access)),
         manage_course: can(Action::EditCourse(access)),
     }
 }
