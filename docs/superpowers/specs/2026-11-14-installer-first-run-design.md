@@ -80,7 +80,7 @@ the core wants.
 | Files: local or S3 | `--files local\|s3` | local |
 | S3 endpoint (empty: AWS) | `--s3-endpoint` | empty |
 | S3 bucket | `--s3-bucket` | required if S3 |
-| S3 region | `--s3-region` | `us-east-1` if no endpoint, else required |
+| S3 region | `--s3-region` | `eu-north-1` (also with an endpoint: many S3-compatible services ignore it) |
 | S3 keys | env `VUMLO__FILES__S3__ACCESS_KEY`, `VUMLO__FILES__S3__SECRET_KEY`, else asked (hidden) | required if S3 |
 | Skip the checks of mail and S3 | `--skip-checks` | off |
 
