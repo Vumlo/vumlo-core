@@ -22,13 +22,13 @@ use super::model::{
     QuizResultStart, Responses, StudentSubmission, Window,
 };
 use super::repo;
-use crate::content::{
-    self, Assignment, AssignmentType, AutoGrade, BuiltinType, DocumentErrors, EffectiveProfiles,
-    FileRef, OnDeadline, OpenError, OpenedAssignment, Stage, distinct_ids,
-};
 use access::Actor;
 use access::{self, AccessError, Action};
 use common::{Page, PageParams};
+use content::{
+    self, Assignment, AssignmentType, AutoGrade, BuiltinType, DocumentErrors, EffectiveProfiles,
+    FileRef, OnDeadline, OpenError, OpenedAssignment, Stage, distinct_ids,
+};
 use events::{self, Event, EventsError};
 use teaching::TeachingError;
 

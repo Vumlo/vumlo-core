@@ -17,8 +17,8 @@ use chrono::{DateTime, Utc};
 use sqlx::PgPool;
 
 use crate::assessment::{self, AssessmentError, DueDraft};
-use crate::content::{self, ContentError, EffectiveProfiles};
 use crate::{LearningError, submissions};
+use content::{self, ContentError, EffectiveProfiles};
 
 /// How often the scheduler wakes. A `publish_at` or a deadline is acted on at most this late.
 const INTERVAL: Duration = Duration::from_secs(30);

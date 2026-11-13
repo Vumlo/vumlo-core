@@ -3,7 +3,7 @@ use std::sync::Arc;
 use sqlx::PgPool;
 use vumlo_config::Settings;
 
-use super::content::{EffectiveProfiles, ItemRules};
+use content::{EffectiveProfiles, ItemRules};
 
 /// What the handlers of `learning` need from the application.
 #[derive(Clone)]

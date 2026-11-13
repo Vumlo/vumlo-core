@@ -8,14 +8,14 @@ use serde_json::{Map, json};
 use sqlx::PgPool;
 
 use super::*;
-use crate::content::{
-    Assignment, BuiltinType, ContentTitle, EffectiveProfiles, ItemPatch, ItemRules, MaxPoints,
-};
 use crate::files::sweep;
 use crate::items;
 use access::CourseRole;
 use auth::{self, Email, NewUser, PersonName};
 use common::Role;
+use content::{
+    Assignment, BuiltinType, ContentTitle, EffectiveProfiles, ItemPatch, ItemRules, MaxPoints,
+};
 use files::{Storage, Stored};
 use object_store::memory::InMemory;
 use teaching::{self, CourseTitle};
@@ -686,7 +686,7 @@ async fn an_item_naming_a_file_of_another_owner_is_refused_with_its_field_path()
         // The student's upload: the teacher may not name it, and nothing is written.
         let theirs = file(&f.pool, &f.student).await;
         let mut conn = f.pool.acquire().await.unwrap();
-        let input = crate::content::NewItemInput::document(
+        let input = content::NewItemInput::document(
             ContentTitle::parse("New").unwrap(),
             Some(body_naming("file", theirs)),
             None,
@@ -739,7 +739,7 @@ async fn a_verdict_that_does_not_cover_the_files_refuses_them() {
             &f.owner,
             rules(),
             f.module,
-            crate::content::NewItemInput::document(
+            content::NewItemInput::document(
                 ContentTitle::parse("New").unwrap(),
                 Some(body_naming("file", id)),
                 None,

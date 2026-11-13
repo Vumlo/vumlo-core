@@ -29,6 +29,7 @@ axum-extra.workspace = true
 chrono.workspace = true
 clap.workspace = true
 common.workspace = true
+content.workspace = true
 db.workspace = true
 events.workspace = true
 files.workspace = true

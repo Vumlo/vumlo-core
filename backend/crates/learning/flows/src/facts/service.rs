@@ -4,7 +4,7 @@ use uuid::Uuid;
 
 use super::repo;
 use crate::LearningError;
-use crate::content::{self, FactScope};
+use content::{self, FactScope};
 
 /// Makes the facts inside `scope` what the sources say now. It holds the scope first and reads the
 /// sources after, so a change it had to wait for is in what it reads. It authorizes nothing: it

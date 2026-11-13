@@ -13,8 +13,8 @@ use super::{
     Claims, Problems, Stage, ValidContent, answer_path, answers_of, parse_number, shape_problem,
     valid_id,
 };
-use crate::content::document::{DocumentErrors, valid_href};
-use crate::content::model::ModelError;
+use crate::document::{DocumentErrors, valid_href};
+use crate::model::ModelError;
 
 const MAX_FIELDS: usize = 50;
 const MAX_OPTIONS: usize = 20;

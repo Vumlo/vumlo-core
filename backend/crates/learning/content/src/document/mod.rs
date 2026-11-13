@@ -82,7 +82,8 @@ impl DocumentErrors {
         Self(errors)
     }
 
-    pub(crate) fn one(path: &str, message: &'static str) -> Self {
+    /// One problem at `path` (an empty path is the document itself).
+    pub fn one(path: &str, message: &'static str) -> Self {
         Self(vec![DocumentError {
             path: path.to_owned(),
             message,

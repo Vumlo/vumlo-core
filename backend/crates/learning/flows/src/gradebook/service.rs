@@ -29,10 +29,10 @@ use super::repo;
 
 mod groups;
 mod work;
-use crate::content::{self, ContentError, OpenError, OpenedAssignment};
 use access::Actor;
 use access::{self, AccessError, Action, CourseAccess, CourseRole, CourseStatus};
 use common::{Page, PageParams};
+use content::{self, ContentError, OpenError, OpenedAssignment};
 use events::{self, AuditEntry, Event, EventsError};
 pub use groups::{
     GroupInput, SettingsPatch, create_group, delete_group, my_summary, place, save_group,

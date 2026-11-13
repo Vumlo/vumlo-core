@@ -16,7 +16,6 @@ use crate::gradebook::layout::{
 };
 use crate::gradebook::model::{Column, FieldProblem, Summary};
 use crate::gradebook::repo::{self, GroupRow, Placement, Rules};
-use crate::points;
 use access::Actor;
 use access::{self, Action, CourseAccess};
 use events::{self, AuditEntry};
@@ -325,7 +324,7 @@ fn problem(field: &'static str, message: &str) -> GradebookError {
 /// Points for a target or a cap: a decimal string with at most two decimals, above zero for a
 /// target and a cap, and below what the column holds.
 fn parse_points(raw: &str, field: &'static str) -> Result<Decimal, GradebookError> {
-    points::parse_decimal(raw)
+    content::parse_decimal(raw)
         .filter(|value| *value <= Decimal::from(POINTS_MAX))
         .ok_or_else(|| {
             problem(

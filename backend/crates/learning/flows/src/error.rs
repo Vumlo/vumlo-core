@@ -1,11 +1,11 @@
 use common::ApiError;
 
 use super::assessment::AssessmentError;
-use super::content::ContentError;
 use super::files::FileError;
 use super::gradebook::GradebookError;
 use access::AccessError;
 use auth::AuthError;
+use content::ContentError;
 use org::OrgError;
 use teaching::TeachingError;
 

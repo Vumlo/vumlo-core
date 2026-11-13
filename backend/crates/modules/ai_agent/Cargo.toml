@@ -11,6 +11,7 @@ auth.workspace = true
 axum.workspace = true
 chrono.workspace = true
 common.workspace = true
+content.workspace = true
 learning.workspace = true
 module-api.workspace = true
 org.workspace = true

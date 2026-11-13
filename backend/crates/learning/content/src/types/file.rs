@@ -9,10 +9,10 @@ use serde_json::{Map, Value};
 use uuid::Uuid;
 
 use super::{Claims, Problems, Stage, ValidContent};
-use crate::content::document::{
+use crate::document::{
     DocumentErrors, EffectiveProfiles, FileRef, file_refs_under, validate_document,
 };
-use crate::content::model::ModelError;
+use crate::model::ModelError;
 
 const DEFAULT_MAX_FILES: usize = 5;
 const MAX_FILES_LIMIT: usize = 20;

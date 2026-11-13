@@ -71,6 +71,7 @@ access = { path = "crates/access" }
 api-types = { path = "crates/api-types" }
 auth = { path = "crates/auth" }
 common = { path = "crates/common" }
+content = { path = "crates/learning/content" }
 db = { path = "crates/db" }
 events = { path = "crates/events" }
 files = { path = "crates/files" }

@@ -24,14 +24,14 @@ use super::model::{
 };
 use super::rules::{Condition, Node};
 use super::service::{self, ContentError, NewItemInput};
-use crate::LearningState;
+use crate::ContentState;
 use access::Actor;
 use common::{ApiError, ValidJson, ValidQuery};
 
 pub fn router<S>() -> OpenApiRouter<S>
 where
     S: ActorSource + Clone + 'static,
-    LearningState: FromRef<S>,
+    ContentState: FromRef<S>,
 {
     OpenApiRouter::new()
         .routes(routes!(create_module))
@@ -456,7 +456,7 @@ pub fn under_assignment(error: ContentError) -> ApiError {
     )
 )]
 async fn create_module(
-    State(state): State<LearningState>,
+    State(state): State<ContentState>,
     actor: Actor,
     Path(course_id): Path<Uuid>,
     ValidJson(request): ValidJson<CreateModuleRequest>,
@@ -490,7 +490,7 @@ async fn create_module(
     )
 )]
 async fn get_tree(
-    State(state): State<LearningState>,
+    State(state): State<ContentState>,
     actor: Actor,
     Path(course_id): Path<Uuid>,
 ) -> Result<Json<ContentTree>, ApiError> {
@@ -520,7 +520,7 @@ async fn get_tree(
     )
 )]
 async fn update_module(
-    State(state): State<LearningState>,
+    State(state): State<ContentState>,
     actor: Actor,
     Path(id): Path<Uuid>,
     ValidJson(request): ValidJson<UpdateModuleRequest>,
@@ -562,7 +562,7 @@ async fn update_module(
     )
 )]
 async fn reorder_modules(
-    State(state): State<LearningState>,
+    State(state): State<ContentState>,
     actor: Actor,
     Path(course_id): Path<Uuid>,
     ValidJson(request): ValidJson<ReorderModulesRequest>,
@@ -601,7 +601,7 @@ async fn reorder_modules(
     )
 )]
 async fn publish_module(
-    State(state): State<LearningState>,
+    State(state): State<ContentState>,
     actor: Actor,
     Path(id): Path<Uuid>,
     ValidJson(request): ValidJson<PublishModuleRequest>,
@@ -674,7 +674,7 @@ pub fn new_item(request: CreateItemRequest) -> Result<NewItemInput, ApiError> {
     )
 )]
 async fn reorder_items(
-    State(state): State<LearningState>,
+    State(state): State<ContentState>,
     actor: Actor,
     Path(module_id): Path<Uuid>,
     ValidJson(request): ValidJson<ReorderItemsRequest>,
@@ -735,7 +735,7 @@ pub fn item_patch(request: UpdateItemRequest) -> Result<ItemPatch, ApiError> {
     )
 )]
 async fn mark_done(
-    State(state): State<LearningState>,
+    State(state): State<ContentState>,
     actor: Actor,
     Path(id): Path<Uuid>,
 ) -> Result<StatusCode, ApiError> {
@@ -765,7 +765,7 @@ async fn mark_done(
     )
 )]
 async fn unmark_done(
-    State(state): State<LearningState>,
+    State(state): State<ContentState>,
     actor: Actor,
     Path(id): Path<Uuid>,
 ) -> Result<StatusCode, ApiError> {
@@ -796,7 +796,7 @@ async fn unmark_done(
     )
 )]
 async fn publish_item(
-    State(state): State<LearningState>,
+    State(state): State<ContentState>,
     actor: Actor,
     Path(id): Path<Uuid>,
 ) -> Result<Json<Item>, ApiError> {
@@ -832,7 +832,7 @@ fn api_revision(revision: model::Revision) -> ItemRevision {
     )
 )]
 async fn get_revision(
-    State(state): State<LearningState>,
+    State(state): State<ContentState>,
     actor: Actor,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ItemRevision>, ApiError> {
@@ -864,7 +864,7 @@ async fn get_revision(
     )
 )]
 async fn publish_revision(
-    State(state): State<LearningState>,
+    State(state): State<ContentState>,
     actor: Actor,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ItemRevision>, ApiError> {
@@ -892,7 +892,7 @@ async fn publish_revision(
     )
 )]
 async fn search(
-    State(state): State<LearningState>,
+    State(state): State<ContentState>,
     actor: Actor,
     ValidQuery(query): ValidQuery<SearchQuery>,
 ) -> Result<Json<SearchResults>, ApiError> {
@@ -942,7 +942,7 @@ async fn search(
     )
 )]
 async fn get_editor_profiles(
-    State(state): State<LearningState>,
+    State(state): State<ContentState>,
     actor: Actor,
 ) -> Result<Json<EditorProfiles>, ApiError> {
     let profiles = service::editor_profiles(&actor, &state.editor)?;

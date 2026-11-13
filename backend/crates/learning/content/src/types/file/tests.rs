@@ -1,7 +1,7 @@
 use serde_json::{Map, Value, json};
 
 use super::*;
-use crate::content::model::{AssignmentType, BuiltinType};
+use crate::model::{AssignmentType, BuiltinType};
 
 fn obj(value: &Value) -> &Map<String, Value> {
     value.as_object().unwrap()

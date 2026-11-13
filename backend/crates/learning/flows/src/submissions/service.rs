@@ -5,9 +5,9 @@ use uuid::Uuid;
 
 use crate::LearningError;
 use crate::assessment::{self, Attempt, Draft, DueDraft};
-use crate::content::EffectiveProfiles;
 use crate::files::{self, UsageOwner};
 use access::Actor;
+use content::EffectiveProfiles;
 
 /// Replaces the caller's draft with `content`. `assessment` authorizes, validates and locks the
 /// draft row; the files the content names are checked and locked (`files::check`); `assessment`

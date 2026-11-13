@@ -3,7 +3,7 @@
 use sqlx::PgConnection;
 use sqlx::types::Decimal;
 
-use crate::content::{FactScope, SourceFact};
+use content::{FactScope, SourceFact};
 
 /// What the sources say inside the scope: for each student and assignment the first submitted
 /// attempt and the published score, one row where either exists. A draft attempt and a draft

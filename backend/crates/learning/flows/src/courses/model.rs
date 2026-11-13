@@ -2,8 +2,8 @@ use chrono::{DateTime, Utc};
 use sqlx::types::Decimal;
 use uuid::Uuid;
 
-use crate::content::NextDeadline;
 use crate::gradebook::Progress;
+use content::NextDeadline;
 use teaching::{CardCourse, Course};
 
 /// One entry of a staff card's to-do list.

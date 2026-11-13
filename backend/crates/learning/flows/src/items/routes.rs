@@ -17,9 +17,9 @@ use uuid::Uuid;
 use super::service;
 use crate::LearningError;
 use crate::LearningState;
-use crate::content::{api_item, item_patch, new_item, under_assignment};
 use access::Actor;
 use common::{ApiError, ValidJson};
+use content::{api_item, item_patch, new_item, under_assignment};
 
 pub fn router<S>() -> OpenApiRouter<S>
 where

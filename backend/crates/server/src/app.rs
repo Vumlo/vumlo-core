@@ -29,9 +29,9 @@ use crate::health;
 use access::{self, ActorSource, PluginSource};
 use auth::{self, AuthState, SetupError};
 use common::{ApiError, problem_details};
+use content::{ContentState, EditorConfigError, EffectiveProfiles};
 use events::Handlers;
 use learning::assessment;
-use learning::content::{self, EditorConfigError, EffectiveProfiles};
 use learning::gradebook;
 use learning::{self, LearningState};
 use mail::{MailError, MailState, Mailer};
@@ -63,6 +63,7 @@ pub struct AppState {
     pub mail_context: Option<mail::Context>,
     pub org: OrgState,
     pub teaching: TeachingState,
+    pub content: ContentState,
     pub learning: LearningState,
     pub plugins: PluginsState,
     /// The optional modules compiled in, each after the ones it requires.
@@ -90,6 +91,12 @@ impl FromRef<AppState> for OrgState {
 impl FromRef<AppState> for TeachingState {
     fn from_ref(state: &AppState) -> Self {
         state.teaching.clone()
+    }
+}
+
+impl FromRef<AppState> for ContentState {
+    fn from_ref(state: &AppState) -> Self {
+        state.content.clone()
     }
 }
 
@@ -157,7 +164,7 @@ impl AppState {
     /// request.
     pub fn new(db: PgPool, config: Settings) -> Result<Self, StateError> {
         install_subscribers();
-        let editor = EffectiveProfiles::resolve(&config.editor)?;
+        let editor = Arc::new(EffectiveProfiles::resolve(&config.editor)?);
         let hashing = auth::HashGate::new(config.auth.max_concurrent_hashes);
         let mailer = config
             .mail
@@ -200,10 +207,14 @@ impl AppState {
                 config: config.clone(),
             },
             teaching: TeachingState { db: db.clone() },
+            content: ContentState {
+                db: db.clone(),
+                editor: editor.clone(),
+            },
             learning: LearningState {
                 db: db.clone(),
                 config: config.clone(),
-                editor: Arc::new(editor),
+                editor,
                 files: storage,
                 max_file_bytes: config.files.max_size,
             },

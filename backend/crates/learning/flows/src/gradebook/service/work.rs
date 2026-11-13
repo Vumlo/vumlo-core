@@ -9,10 +9,10 @@ use sqlx::PgConnection;
 use uuid::Uuid;
 
 use super::{GradebookError, course_access};
-use crate::content::{self, NextDeadline};
 use crate::gradebook::model::{ItemMeta, MyWork, Progress, TodoCounts, WorkEntry, WorkFacts};
 use crate::gradebook::repo;
 use access::Actor;
+use content::{self, NextDeadline};
 
 /// The facts of every item of the course that the actor may see (ADR-0049, point 5): what
 /// `content` knows of each item, plus the counts of what to grade for staff, or a student's own

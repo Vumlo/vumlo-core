@@ -13,6 +13,7 @@ base64.workspace = true
 chacha20poly1305.workspace = true
 chrono.workspace = true
 common.workspace = true
+content.workspace = true
 events.workspace = true
 hmac.workspace = true
 learning.workspace = true

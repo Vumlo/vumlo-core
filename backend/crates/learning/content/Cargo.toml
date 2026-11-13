@@ -1,0 +1,42 @@
+[package]
+name = "content"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+description = "The course content tree: modules, items and assignments, the access rules and their facts (ADR-0020, ADR-0021, ADR-0092, ADR-0093)."
+
+[features]
+# Test helpers for other crates. Switched on only from `[dev-dependencies]`.
+testing = []
+
+[dependencies]
+access.workspace = true
+api-types.workspace = true
+auth.workspace = true
+axum.workspace = true
+chrono.workspace = true
+common.workspace = true
+events.workspace = true
+files.workspace = true
+org.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sqlx.workspace = true
+teaching.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+utoipa.workspace = true
+utoipa-axum.workspace = true
+uuid.workspace = true
+vumlo-config.workspace = true
+
+[dev-dependencies]
+access = { workspace = true, features = ["testing"] }
+auth = { workspace = true, features = ["testing"] }
+events = { workspace = true, features = ["testing"] }
+org = { workspace = true, features = ["testing"] }
+test-support.workspace = true
+
+[lints]
+workspace = true

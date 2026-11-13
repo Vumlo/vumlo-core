@@ -5,8 +5,8 @@ use sqlx::PgPool;
 use uuid::Uuid;
 
 use crate::assessment::{AssessmentError, Attempt, Draft, DueDraft};
-use crate::content::{Assignment, ContentTitle, EffectiveProfiles, Item, ItemRules, NewItemInput};
 use crate::{LearningError, items, submissions};
+use content::{Assignment, ContentTitle, EffectiveProfiles, Item, ItemRules, NewItemInput};
 
 /// `db_test` for the unit tests of this crate: what they emit needs the registry of subscribers
 /// installed, as the server does at start (ADR-0093).

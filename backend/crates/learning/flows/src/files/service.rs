@@ -14,8 +14,8 @@ use uuid::Uuid;
 use super::model::{ItemReference, Owner, UsageOwner};
 use super::repo;
 use crate::assessment::{self, AssessmentError};
-use crate::content::{self, ContentError, FileRef, distinct_ids};
 use access::{AccessError, Actor};
+use content::{self, ContentError, FileRef, distinct_ids};
 
 #[derive(Debug, thiserror::Error)]
 pub enum FileError {

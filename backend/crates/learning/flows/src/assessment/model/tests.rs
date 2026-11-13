@@ -1,5 +1,5 @@
 use super::*;
-use crate::content::OnDeadline;
+use content::OnDeadline;
 
 fn at(hour: u32) -> DateTime<Utc> {
     DateTime::parse_from_rfc3339(&format!("2030-05-01T{hour:02}:00:00Z"))

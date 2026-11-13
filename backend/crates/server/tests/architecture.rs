@@ -81,7 +81,7 @@ const UNITS: &[Unit] = &[
     },
     Unit {
         name: "content",
-        dir: "learning/flows/src/content",
+        dir: "learning/content/src",
         schema: Some("content"),
         layer: 8,
     },
@@ -493,7 +493,7 @@ const FILE_FINISHES: &[&str] = &[
 /// Where a `FILE_FINISHES` name may appear: the owners that define them (and `set_due_at`, which
 /// names no file) and the flows that call them.
 const FILE_FINISH_HOMES: &[&str] = &[
-    "learning/flows/src/content/",
+    "learning/content/src/",
     "learning/flows/src/assessment/",
     "learning/flows/src/items/",
     "learning/flows/src/submissions/",

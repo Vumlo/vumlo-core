@@ -6,7 +6,7 @@ use access::Actor;
 use auth::{HashedPassword, TemporaryPassword};
 use chrono::{DateTime, Utc};
 use common::ApiError;
-use learning::content::ItemRules;
+use content::ItemRules;
 use serde_json::json;
 use sqlx::{PgConnection, PgPool};
 use uuid::Uuid;

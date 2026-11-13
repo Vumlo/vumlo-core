@@ -7,9 +7,7 @@ use std::collections::BTreeMap;
 
 use access::Actor;
 use common::ApiError;
-use learning::content::{
-    self, Assignment, BuiltinType, ContentTitle, ItemRules, MaxPoints, NewItemInput,
-};
+use content::{self, Assignment, BuiltinType, ContentTitle, ItemRules, MaxPoints, NewItemInput};
 use learning::items;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};

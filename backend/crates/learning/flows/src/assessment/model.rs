@@ -5,8 +5,8 @@ use serde_json::{Map, Value};
 use sqlx::types::Decimal;
 use uuid::Uuid;
 
-use crate::content::{Holders, ResultQuestion, SubmissionSettings};
 use common::Page;
+use content::{Holders, ResultQuestion, SubmissionSettings};
 
 /// The unsubmitted document of a student for an assignment (ADR-0011). Only its owner reads it.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -95,7 +95,7 @@ pub struct PublishedScore {
 #[derive(Debug)]
 pub struct QuizResultStart {
     pub(super) assignment_id: Uuid,
-    pub(super) assignment: crate::content::Assignment,
+    pub(super) assignment: content::Assignment,
 }
 
 /// A quiz result as the service builds it (ADR-0050 point 8).

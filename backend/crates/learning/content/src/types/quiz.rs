@@ -11,10 +11,10 @@ use super::{
     AutoGrade, Problems, Stage, ValidContent, answer_path, answers_of, document_problem,
     parse_number, shape_problem, valid_id,
 };
-use crate::content::document::{
+use crate::document::{
     DocumentErrors, EffectiveProfiles, FileRef, file_refs_under, validate_document,
 };
-use crate::content::model::{MaxPoints, ModelError};
+use crate::model::{MaxPoints, ModelError};
 
 const MAX_QUESTIONS: usize = 100;
 const MAX_OPTIONS: usize = 10;

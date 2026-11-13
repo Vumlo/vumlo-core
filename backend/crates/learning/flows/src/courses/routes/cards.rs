@@ -9,12 +9,12 @@ use chrono::Utc;
 
 use crate::LearningError;
 use crate::LearningState;
-use crate::content::NextDeadline;
 use crate::courses::model::{CourseCardData, Todo};
 use crate::courses::service;
 use access::Actor;
 use access::CourseRole;
 use common::ApiError;
+use content::NextDeadline;
 use teaching::api_course;
 
 fn api_todo(todo: Todo) -> CardTodo {

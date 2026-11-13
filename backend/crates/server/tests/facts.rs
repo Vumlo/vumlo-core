@@ -7,7 +7,7 @@ mod common;
 use ::common::Role;
 use chrono::{DateTime, Duration, Utc};
 use common::{Account, Env, db_test, essay, id_of, spawn_app, test_settings};
-use learning::content::{FactScope, SourceFact, replace_source_facts};
+use content::{FactScope, SourceFact, replace_source_facts};
 use learning::schedule::tick;
 use serde_json::{Value, json};
 use server::app::AppState;
@@ -398,9 +398,7 @@ async fn two_transactions_for_one_pair_do_not_overwrite_each_other() {
 
         // One transaction takes the pair and, still holding it, publishes the grade.
         let mut holder = w.env.pool.begin().await.unwrap();
-        learning::content::lock_facts(&mut holder, &scope)
-            .await
-            .unwrap();
+        content::lock_facts(&mut holder, &scope).await.unwrap();
         sqlx::query!(
             "UPDATE gradebook.grades SET published_score = draft_score,
                     published_by = $3, published_at = now()

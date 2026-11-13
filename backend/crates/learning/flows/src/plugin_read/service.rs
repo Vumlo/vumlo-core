@@ -18,7 +18,7 @@ use super::model::{
     PluginList, PluginMember, PluginPage, PluginQuiz, PluginSubmission, PluginSubmissionRow,
 };
 use super::repo::{self, After, AssignmentRow};
-use crate::content::{AssignmentType, BuiltinType};
+use content::{AssignmentType, BuiltinType};
 
 const FORM: &str = "form";
 const QUIZ: &str = "quiz";

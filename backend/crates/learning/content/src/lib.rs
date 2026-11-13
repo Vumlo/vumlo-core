@@ -3,11 +3,13 @@
 
 mod document;
 mod model;
+mod points;
 mod repo;
 mod routes;
 mod rules;
 mod service;
 mod standing;
+mod state;
 mod types;
 
 pub use document::{
@@ -22,6 +24,7 @@ pub use model::{
     SettingProblem, SettingsPatch, SourceFact, Standing, SubmissionSettings, TemplateCounts, Unmet,
     editor_features,
 };
+pub use points::parse_decimal;
 pub use repo::CopiedIds;
 pub use routes::{api_item, item_patch, new_item, router, under_assignment};
 pub use rules::{Condition, Node};
@@ -37,11 +40,15 @@ pub use service::{
     reorder_items, reorder_modules, replace_source_facts, search, sees_drafts, set_due_at,
     template_counts, unmark_done, update_module,
 };
+pub use state::ContentState;
 pub use types::file::check_names as check_file_names;
 pub use types::form::Holders;
 pub use types::quiz::ResultQuestion;
 pub use types::quiz::result_questions as quiz_result_questions;
 pub use types::{AutoGrade, Claims, Stage, ValidContent};
 // Seeds the references of an item for the tests of `learning::files`.
-#[cfg(test)]
+#[cfg(feature = "testing")]
 pub use repo::replace_item_files;
+
+#[cfg(test)]
+mod tests;

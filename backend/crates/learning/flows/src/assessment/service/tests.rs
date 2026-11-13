@@ -12,14 +12,14 @@ use serde_json::{Map, json};
 use sqlx::PgPool;
 
 use super::*;
-use crate::content::{
-    Assignment, BuiltinType, ContentTitle, ItemPatch, ItemRules, MaxPoints, OnDeadline,
-    SettingsPatch, SubmissionSettings,
-};
 use crate::{LearningError, items};
 use access::CourseRole;
 use auth::{self, Email, NewUser, PersonName};
 use common::Role;
+use content::{
+    Assignment, BuiltinType, ContentTitle, ItemPatch, ItemRules, MaxPoints, OnDeadline,
+    SettingsPatch, SubmissionSettings,
+};
 use teaching::{self, CourseTitle};
 use vumlo_config::GradingScale;
 

@@ -676,6 +676,33 @@ dependencies = [
 ]
 
 [[package]]
+name = "content"
+version = "0.6.1"
+dependencies = [
+ "access",
+ "api-types",
+ "auth",
+ "axum",
+ "chrono",
+ "common",
+ "events",
+ "files",
+ "org",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "teaching",
+ "test-support",
+ "thiserror 2.0.21",
+ "tokio",
+ "tracing",
+ "utoipa",
+ "utoipa-axum",
+ "uuid",
+ "vumlo-config",
+]
+
+[[package]]
 name = "cookie"
 version = "0.18.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2128,6 +2155,7 @@ dependencies = [
  "axum",
  "chrono",
  "common",
+ "content",
  "events",
  "files",
  "object_store",
@@ -2758,6 +2786,7 @@ dependencies = [
  "chacha20poly1305",
  "chrono",
  "common",
+ "content",
  "events",
  "hmac 0.13.0",
  "learning",
@@ -3671,6 +3700,7 @@ dependencies = [
  "chrono-tz",
  "clap",
  "common",
+ "content",
  "db",
  "events",
  "files",
@@ -4729,6 +4759,7 @@ dependencies = [
  "axum",
  "chrono",
  "common",
+ "content",
  "learning",
  "module-api",
  "org",
