@@ -4,7 +4,7 @@ import { ChangePasswordForm, type ChangePasswordWhere } from "@/components/Chang
 
 const where: ChangePasswordWhere = {
   signIn: "/login",
-  landing: (user, next) => (next && next.startsWith("/") && !next.startsWith("//") ? next : user.role === "admin" ? "/admin" : "/"),
+  landing: (user, next) => (next && next.startsWith("/") && !next.startsWith("//") ? next : user.role === "admin" ? "/courses" : "/"),
 };
 
 export default function ChangePasswordPage() {

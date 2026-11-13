@@ -37,12 +37,3 @@ test("an admin finds any course by term, status and text, and opens it", async (
   await expect(page).toHaveURL(/\/course\?id=/);
   await expect(page.getByRole("heading", { name: "Programming Fundamentals" }).first()).toBeVisible();
 });
-
-test("the admin course page keeps the terms and no table of courses", async ({ page }) => {
-  await signIn(page, accounts.admin);
-  await page.goto("/admin/courses");
-  await expect(page.getByRole("heading", { name: "Terms", exact: true }).first()).toBeVisible();
-  await expect(page.getByText("Autumn 2026").first()).toBeVisible();
-  await expect(page.getByRole("table")).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "Change owner" })).toHaveCount(0);
-});

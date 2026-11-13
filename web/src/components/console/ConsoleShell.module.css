@@ -16,3 +16,6 @@
   .header { min-height: 56px; padding: 0 8px 0 16px; gap: 8px; }
   .who { display: none; }
 }
+.sections { list-style: none; margin: 24px 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 12px; }
+.section { display: flex; align-items: center; gap: 12px; min-height: 56px; padding: 0 20px; border-radius: var(--radius-inner); background: var(--surface); box-shadow: var(--shadow); font-weight: 500; }
+.section:hover { background: var(--hover); }

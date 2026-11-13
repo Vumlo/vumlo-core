@@ -38,7 +38,7 @@ export const en = {
   "nav.calendar": "Calendar",
   "nav.grades": "Grades",
   "nav.grading": "Grading",
-  "nav.admin": "Admin",
+  "account.adminConsole": "Admin console",
   "title.newCourse": "New course",
   "title.people": "People",
   "title.settings": "Course settings",

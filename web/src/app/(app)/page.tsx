@@ -13,7 +13,8 @@ export default function Home() {
   const role = me.data?.role;
 
   useEffect(() => {
-    if (role === "admin") router.replace("/admin");
+    // An administrator's home is the list of every course; administration is the console's (ADR-0095).
+    if (role === "admin") router.replace("/courses");
   }, [role, router]);
 
   if (!me.data || role === "admin") return null;

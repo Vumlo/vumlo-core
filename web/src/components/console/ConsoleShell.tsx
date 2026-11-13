@@ -11,7 +11,7 @@ import { onSessionExpired } from "@/lib/api/client";
 import { useT } from "@/lib/i18n";
 import { clearQueries, invalidate, retryFailed } from "@/lib/query";
 import { fullName, useLogout, useMe } from "@/lib/session";
-import a from "@/components/admin/Admin.module.css";
+import a from "./Admin.module.css";
 import { SECTIONS } from "./sections";
 import s from "./ConsoleShell.module.css";
 

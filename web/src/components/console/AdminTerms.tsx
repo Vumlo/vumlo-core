@@ -16,7 +16,7 @@ const range = (a: string, b: string) => {
 };
 
 /** The terms of the institution. The courses themselves are listed on the courses page (the "All courses" tab). */
-export function AdminCourses() {
+export function AdminTerms() {
   const t = useT();
   const terms = useTerms();
   const stats = useAdminTermStats();

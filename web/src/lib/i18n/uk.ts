@@ -41,7 +41,7 @@ export const uk: Record<Keys, string> & Extra = {
   "nav.calendar": "Календар",
   "nav.grades": "Оцінки",
   "nav.grading": "Перевірка",
-  "nav.admin": "Адміністрування",
+  "account.adminConsole": "Консоль адміністратора",
   "title.newCourse": "Новий курс",
   "title.people": "Учасники",
   "title.settings": "Налаштування курсу",

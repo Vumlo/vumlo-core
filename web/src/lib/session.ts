@@ -50,7 +50,7 @@ export function temporaryPassword() {
 
 /** Where a person lands after signing in: the page they asked for, or their home. */
 export function landingPath(user: Pick<User, "role" | "must_change_password">, next: string | null) {
-  const target = next && next.startsWith("/") && !next.startsWith("//") ? next : user.role === "admin" ? "/admin" : "/";
+  const target = next && next.startsWith("/") && !next.startsWith("//") ? next : user.role === "admin" ? "/courses" : "/";
   return user.must_change_password ? `/change-password?next=${encodeURIComponent(target)}` : target;
 }
 
