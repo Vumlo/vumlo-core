@@ -3,6 +3,8 @@
 //! caller above passes each recipient's address, and the layer copies it into the row and erases it
 //! `mail.retention_days` after the message ends.
 
+mod admin;
+mod admin_routes;
 mod compose;
 mod error;
 mod mailer;

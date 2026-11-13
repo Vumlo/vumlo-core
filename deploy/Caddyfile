@@ -34,3 +34,37 @@
 		reverse_proxy 127.0.0.1:3000
 	}
 }
+
+# The admin console (ADR-0095): its own address and its own sign-in, in front of the same API. Set the domain:
+#   VUMLO_ADMIN_DOMAIN=admin.lms.example.edu
+# The same origin goes in vumlo.toml as server.admin_origin = "https://admin.lms.example.edu".
+{$VUMLO_ADMIN_DOMAIN} {
+	encode zstd gzip
+
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+	}
+
+	handle /api/* {
+		reverse_proxy 127.0.0.1:8080 {
+			header_up X-Real-IP {remote_host}
+		}
+	}
+
+	# The console is static files. With Docker they are served by the console container, on 127.0.0.1:3001.
+	handle {
+		reverse_proxy 127.0.0.1:3001
+	}
+
+	# Without Docker, serve the build of `vumlo-cli build web` (web-admin/dist) instead of the block above:
+	#
+	#   handle {
+	#       root * /opt/vumlo/web-admin/dist
+	#       try_files {path} /index.html
+	#       file_server
+	#   }
+}

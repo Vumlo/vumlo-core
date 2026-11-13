@@ -22,7 +22,7 @@ stage="$work/$name"
 allow=(
     backend/Cargo.toml backend/Cargo.lock backend/rust-toolchain.toml
     backend/migrations backend/.sqlx backend/crates
-    web deploy brand desktop
+    web web-admin deploy brand desktop
     vumlo .dockerignore
     docs/install.md docs/desktop.md docs/img CHANGELOG.md README.md
 )
@@ -39,7 +39,8 @@ rm -rf \
     "$stage"/backend/crates/modules/dummy \
     "$stage"/backend/crates/test-support \
     "$stage"/web/e2e "$stage"/web/playwright.config.ts "$stage"/web/src/modules/dummy \
-    "$stage"/web/AGENTS.md "$stage"/web/API_GAPS.md "$stage"/web/pnpm-lock.yaml
+    "$stage"/web/AGENTS.md "$stage"/web/API_GAPS.md "$stage"/web/pnpm-lock.yaml \
+    "$stage"/web-admin/e2e "$stage"/web-admin/playwright.config.ts
 # The unit tests of a source file live in a file of their own (`mod tests;` behind #[cfg(test)]).
 find "$stage/backend/crates" -type f \( -name tests.rs -o -name content_tests.rs -o -name test_support.rs \) -delete
 find "$stage/backend/crates" -type d -empty -delete

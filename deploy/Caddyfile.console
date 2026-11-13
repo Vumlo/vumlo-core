@@ -1,0 +1,29 @@
+# The Caddy inside the console's container (deploy/Dockerfile.console): its files on one port, and the API on the
+# same address, so that the console and its API share one origin (ADR-0013). TLS is the business of whatever is in
+# front of it (deploy/Caddyfile).
+{
+	auto_https off
+	admin off
+}
+
+:3000 {
+	encode zstd gzip
+
+	header {
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+	}
+
+	handle /api/* {
+		reverse_proxy {$VUMLO_CORE_URL:core:8080}
+	}
+
+	# A single-page app: every address that is no file is the page, which reads the address itself.
+	handle {
+		root * /srv
+		try_files {path} /index.html
+		file_server
+	}
+}

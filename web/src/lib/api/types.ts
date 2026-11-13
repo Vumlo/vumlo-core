@@ -128,3 +128,11 @@ export function fileBodyToWire(fileId: string | null, description: Document): Do
   const body: FileItemBody = { ...(fileId ? { file_id: fileId } : {}), ...(description.blocks.length > 0 ? { description } : {}) };
   return body as unknown as Document;
 }
+
+// The admin console (ADR-0095).
+export type AdminPlugin = S["AdminPlugin"];
+export type AdminPluginSetting = S["AdminPluginSetting"];
+export type AdminPluginCalls = S["AdminPluginCalls"];
+export type PluginStatus = S["PluginStatus"];
+export type MailStatus = S["MailStatus"];
+export type MailMessage = S["MailMessage"];

@@ -110,6 +110,19 @@ services:
       - core
     restart: unless-stopped
 
+  # The admin console (ADR-0095): static files on its own address (server.admin_origin in vumlo.toml), which forward
+  # /api to the core. A reverse proxy in front of it (deploy/Caddyfile) gives it its own domain and TLS.
+  console:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.console
+    image: vumlo-console:${VUMLO_VERSION:-0.6.1}
+    ports:
+      - "127.0.0.1:3001:3000"
+    depends_on:
+      - core
+    restart: unless-stopped
+
 volumes:
   postgres-data:
   files-data:

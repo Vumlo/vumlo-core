@@ -5,6 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
 import { BrandLockup } from "@/components/BrandMark";
 import { appName } from "@/lib/appName";
+import { clientConfig } from "@/lib/clientConfig";
 import { Icon } from "@/components/Icon";
 import { navFor } from "@/lib/nav";
 import { onSessionExpired } from "@/lib/api/client";
@@ -86,6 +87,12 @@ function AccountMenu({ user }: { user: User }) {
           <Link role="menuitem" href="/profile" className="menu-item" onClick={() => setOpen(false)}>
             <Icon name="user" size={16} /> {t("account.profile")}
           </Link>
+          {user.role === "admin" && (
+            // Administration is another address with its own sign-in (ADR-0095), so a plain link.
+            <a role="menuitem" href={clientConfig.public.server.admin_origin} className="menu-item" onClick={() => setOpen(false)}>
+              <Icon name="admin" size={16} /> {t("account.adminConsole")}
+            </a>
+          )}
           {appLinks.length > 0 && (
             <Link role="menuitem" href="/download" className="menu-item" onClick={() => setOpen(false)}>
               <Icon name="download" size={16} /> {t("account.getApp")}

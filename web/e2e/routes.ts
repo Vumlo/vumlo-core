@@ -21,7 +21,7 @@ export const accounts: Record<RoleName, string> = {
 export const staticRoutes: Record<RoleName, string[]> = {
   student: ["/", "/courses", "/calendar", "/grades", "/profile", "/search?q=merge", "/search", "/no-such-page"],
   teacher: ["/", "/courses", "/courses/new", "/calendar", "/grading", "/profile", "/search?q=merge", "/no-such-page"],
-  admin: ["/admin", "/admin/people", "/admin/groups", "/admin/courses", "/admin/institution", "/admin/audit", "/courses", "/calendar", "/profile", "/search?q=merge", "/no-such-page"],
+  admin: ["/", "/courses", "/courses/new", "/calendar", "/profile", "/search?q=merge", "/no-such-page"],
 };
 
 /**

@@ -49,6 +49,8 @@ pub struct PublicFiles {
 #[derive(Debug, Clone, Serialize, JsonSchema)]
 pub struct PublicServer {
     pub public_origin: String,
+    /// Where the admin console answers (ADR-0095).
+    pub admin_origin: String,
 }
 
 #[derive(Debug, Clone, Serialize, JsonSchema)]
@@ -72,6 +74,7 @@ impl ClientConfig {
             public: PublicConfig {
                 server: PublicServer {
                     public_origin: settings.server.public_origin.clone(),
+                    admin_origin: settings.server.admin_origin.clone(),
                 },
                 institution: PublicInstitution {
                     name: institution.name.clone(),

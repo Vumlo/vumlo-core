@@ -18,12 +18,22 @@ must do, in order, besides getting the new release. See [RELEASING.md](RELEASING
   `vumlo-cli config check` names the key.
 - **Administration moves out of the student app.** An administrator's session in the student app is refused
   everything that changes configuration, people or the structure of units (`/admin/users`, institution
-  settings, reports, terms, groups, unit roles); they still read and edit any course, audited. The console
-  that answers these requests arrives in the same release; until it does, administrators use
-  `vumlo-cli`. Every administrator signs in to the console once, with their email and password.
+  settings, reports, terms, groups, unit roles); they still read and edit any course, audited. It is done in
+  the **admin console** now, at `server.admin_origin`. Every administrator signs in to the console once, with
+  their email and password. The student app's `/admin` pages are gone; an administrator's account menu has a
+  link to the console.
+- **Give the console an address.** With Docker, `docker compose up -d --build` starts a `console` service on
+  `127.0.0.1:3001`; put its domain in front of it (`VUMLO_ADMIN_DOMAIN` in the Caddyfile of the release). Without
+  Docker, `vumlo-cli build web` also builds `web-admin/` (copy it beside `web/`), and Caddy serves its `dist/`.
 
 ### Added
 
+- **The admin console** (ADR-0095, third part): a static app of its own, `web-admin/` (Vite, React), on its own
+  address. Pages: people, groups, terms, institution, audit log, **units and unit roles** (the tree, who holds a
+  role on each, and the switches of the two roles), **plugins** (status, what each may reach, the settings its
+  manifest declares as a form, its call log; a secret is write-only) and **mail** (the queue, the journal with no
+  address, putting dead mail back). New API: `/admin/plugins/...` and `/admin/mail/...`, console administrators only.
+  `server.admin_origin` is public configuration.
 - **The admin console's door** (ADR-0095, second part). `POST /console/login` signs an administrator in at
   `server.admin_origin` with their own cookie (`vumlo_console`: `HttpOnly`, `SameSite=Strict`, `Secure`), a
   session of 30 minutes idle and 8 hours at most, a login throttle of its own, and the same answer for a

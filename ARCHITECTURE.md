@@ -76,6 +76,7 @@ backend/       # Cargo workspace; run every cargo command here
   .sqlx/
   Dockerfile
 web/           # Next.js frontend (ADR-0042); also built as a static export for the desktop app (ADR-0057)
+web-admin/     # the admin console (ADR-0095): Vite and React, built to static files on its own address; reads the framework-free parts of web/src
 desktop/       # the Tauri desktop app: its own Cargo workspace and lockfile, no UI of its own (ADR-0056)
 docs/decisions/
 .env, vumlo.toml, compose.yaml   # shared by backend and web; stay in the root

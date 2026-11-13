@@ -247,6 +247,16 @@ pub enum Action {
     ManageUnits(Option<UnitGrant>),
     /// Change what the unit roles may do. Admins only.
     ManageUnitRoleAbilities,
+    /// Read the installed plugins, their settings and the log of their calls (ADR-0095). Console
+    /// administrators only.
+    ViewPlugins,
+    /// Switch a plugin on or off, change what it may reach and its settings (ADR-0095). Console
+    /// administrators only.
+    ManagePlugins,
+    /// Read the mail queue and the delivery journal (ADR-0095). Console administrators only.
+    ViewMail,
+    /// Put dead mail back in the queue (ADR-0095). Console administrators only.
+    ManageMail,
 }
 
 impl Action {
@@ -318,7 +328,11 @@ impl Action {
             | Self::ManageGroups
             | Self::ViewGroups
             | Self::ViewOwnUnits
-            | Self::ManageUnitRoleAbilities => self,
+            | Self::ManageUnitRoleAbilities
+            | Self::ViewPlugins
+            | Self::ManagePlugins
+            | Self::ViewMail
+            | Self::ManageMail => self,
         }
     }
 
@@ -343,6 +357,10 @@ impl Action {
             | Self::ViewInstitutionSettings
             | Self::ManageAppDownloads
             | Self::ViewAdminReports
+            | Self::ViewPlugins
+            | Self::ManagePlugins
+            | Self::ViewMail
+            | Self::ManageMail
             | Self::ViewAllCourses
             | Self::CreateCourse
             | Self::ViewOwnCourses
@@ -504,7 +522,11 @@ pub fn authorize(actor: &Actor, action: Action) -> Result<(), AccessError> {
         | Action::ViewAdminReports
         | Action::ManageTerms
         | Action::ManageGroups
-        | Action::ViewGroups => console_admin,
+        | Action::ViewGroups
+        | Action::ViewPlugins
+        | Action::ManagePlugins
+        | Action::ViewMail
+        | Action::ManageMail => console_admin,
         Action::ViewAllCourses => is_admin,
         Action::ViewTerms => true,
         Action::CreateCourse => matches!(actor.role(), Role::Admin | Role::Teacher),

@@ -11,8 +11,8 @@ clone this repository.
 
 1. Branch from `main`. Run `node .github/release/set-version.mjs X.Y.Z`. It sets the version in every place (a test fails
    if they differ): `[workspace.package] version` in `backend/Cargo.toml` (the one the rest follows), `"version"` in
-   `web/package.json` and `desktop/package.json` and their lockfiles, `version` in the `[package]` of `desktop/Cargo.toml`, the
-   default of `VUMLO_VERSION` (twice) in `deploy/compose.yaml`, and both `Cargo.lock` files. It also opens the changelog entry
+   `web/package.json`, `web-admin/package.json` and `desktop/package.json` and their lockfiles, `version` in the `[package]` of `desktop/Cargo.toml`, the
+   default of `VUMLO_VERSION` (three times) in `deploy/compose.yaml`, and both `Cargo.lock` files. It also opens the changelog entry
    (step 2). A new place that carries the version is added to that script.
 2. In `CHANGELOG.md` move the `[Unreleased]` entries under the `## [X.Y.Z] - YYYY-MM-DD` heading the script made (its compare
    links are made too), and write the **Upgrade notes** (a new `config_version`, a manual step, the migrations that run). If the
@@ -40,7 +40,7 @@ next patch version.
 ## What the archive contains
 
 An explicit allowlist: `backend/` (the crates, the migrations, the offline SQL data, the lockfile),
-`web/`, `desktop/` (the desktop app, ADR-0056; its tests are left out), `deploy/`, `brand/` (the Vumlo logo and mark), the `vumlo` script, `docs/install.md`, `docs/desktop.md`,
+`web/`, `web-admin/` (the admin console, ADR-0095; its tests are left out), `desktop/` (the desktop app, ADR-0056; its tests are left out), `deploy/`, `brand/` (the Vumlo logo and mark), the `vumlo` script, `docs/install.md`, `docs/desktop.md`,
 `docs/img/` (the screenshots of `README.md`), `CHANGELOG.md`, `README.md`, and `vumlo.toml.example`. Not in it: the tests directories, the ADRs,
 `ARCHITECTURE.md`, `docs/PLAN.md`, `CLAUDE.md`, `AGENTS.md`, the CI files and the development compose file.
 
