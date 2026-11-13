@@ -512,6 +512,66 @@ async fn a_setting_is_its_default_until_set_and_a_set_value_is_what_the_plugin_r
 }
 
 #[tokio::test]
+async fn a_setting_is_set_from_text_by_the_type_its_spec_declares() {
+    db_test(async |pool| {
+        install_configurable(&pool, "conf").await;
+        let mut conn = pool.acquire().await.unwrap();
+
+        // A string stays text; a list is JSON.
+        assert!(
+            set_setting_text(&mut conn, &key(), "conf", "unit", "characters", None)
+                .await
+                .unwrap()
+        );
+        assert!(
+            set_setting_text(&mut conn, &key(), "conf", "tags", r#"["a","b"]"#, None)
+                .await
+                .unwrap()
+        );
+        assert!(
+            !set_setting_text(&mut conn, &key(), "conf", "tags", r#"  ["a","b"]  "#, None)
+                .await
+                .unwrap(),
+            "the same value again changes nothing"
+        );
+        let value = async |conn: &mut PgConnection, name: &str| {
+            get_setting(conn, "conf", name, None).await.unwrap().value
+        };
+        assert_eq!(value(&mut conn, "unit").await, Some(json!("characters")));
+        assert_eq!(value(&mut conn, "tags").await, Some(json!(["a", "b"])));
+
+        // Text the type does not accept, and a value the spec refuses, store nothing.
+        for (name, text) in [("tags", "not json"), ("unit", "chars")] {
+            let outcome = set_setting_text(&mut conn, &key(), "conf", name, text, None).await;
+            assert!(
+                matches!(&outcome, Err(PluginsError::BadSetting { key, .. }) if key == name),
+                "{name}: {outcome:?}"
+            );
+        }
+        assert_eq!(value(&mut conn, "unit").await, Some(json!("characters")));
+        assert_eq!(value(&mut conn, "tags").await, Some(json!(["a", "b"])));
+
+        // A secret typed as text is sealed, and shows no value.
+        assert!(
+            set_setting_text(&mut conn, &key(), "conf", "api_token", "hunter2", None)
+                .await
+                .unwrap()
+        );
+        let token = get_setting(&mut conn, "conf", "api_token", None)
+            .await
+            .unwrap();
+        assert!(token.is_set && token.value.is_none());
+        let stored: String =
+            sqlx::query_scalar("SELECT value::text FROM plugins.settings WHERE key = 'api_token'")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert!(!stored.contains("hunter2"), "{stored}");
+    })
+    .await;
+}
+
+#[tokio::test]
 async fn a_secret_is_stored_sealed_and_only_the_plugin_reads_it_back() {
     db_test(async |pool| {
         let installed = install_configurable(&pool, "conf").await;

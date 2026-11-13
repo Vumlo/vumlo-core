@@ -745,14 +745,9 @@ pub async fn settings_set(
     let pool = ready(&loaded.settings).await?;
     let mut tx = pool.begin().await.context("cannot start a transaction")?;
     let install = plugins::get(&mut tx, plugin_id).await?;
-    let view = plugins::get_setting(&mut tx, plugin_id, key, course).await?;
-    let parsed = view
-        .spec
-        .parse_text(&text)
-        .map_err(|why| anyhow::anyhow!("the value of `{key}` {why}"))?;
-    // Checked, stored and announced inside the transaction; a dry run rolls it back.
+    // Parsed, checked, stored and announced inside the transaction; a dry run rolls it back.
     let changed =
-        plugins::set_setting(&mut tx, &secret_key, plugin_id, key, parsed, course).await?;
+        plugins::set_setting_text(&mut tx, &secret_key, plugin_id, key, &text, course).await?;
     if !changed {
         println!("{plugin_id} `{key}` has this value already; nothing was changed");
         return Ok(());

@@ -424,6 +424,26 @@ pub async fn set_setting(
     Ok(true)
 }
 
+/// Like [`set_setting`] for a value typed as text: the setting's own type reads it (a string stays
+/// text; a number, a boolean or a list is JSON). Text the type does not accept is `BadSetting`.
+pub async fn set_setting_text(
+    conn: &mut PgConnection,
+    key: &SecretKey,
+    plugin_id: &str,
+    name: &str,
+    text: &str,
+    course: Option<Uuid>,
+) -> Result<bool, PluginsError> {
+    let install = get(conn, plugin_id).await?;
+    let value = spec_in_scope(&install, name, course)?
+        .parse_text(text)
+        .map_err(|why| PluginsError::BadSetting {
+            key: name.to_owned(),
+            why,
+        })?;
+    set_setting(conn, key, plugin_id, name, value, course).await
+}
+
 /// Removes the value, so that the default applies again. Returns whether there was one.
 pub async fn unset_setting(
     conn: &mut PgConnection,
