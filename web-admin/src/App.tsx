@@ -10,6 +10,7 @@ import { AdminPeople } from "./components/AdminPeople";
 import { AdminTerms } from "./components/AdminTerms";
 import { ConsolePlugins } from "./components/ConsolePlugins";
 import { ConsoleShell } from "./components/ConsoleShell";
+import { ConsoleUnits } from "./components/ConsoleUnits";
 import { PluginDetail } from "./components/PluginDetail";
 import { ChangePassword } from "./pages/ChangePassword";
 import { Home } from "./pages/Home";
@@ -28,6 +29,7 @@ const pages: (Route & { title: MessageKey })[] = [
   { path: "/people", title: "ap.people", render: () => <AdminPeople /> },
   { path: "/groups", title: "ag.groups", render: () => <AdminGroups /> },
   { path: "/terms", title: "ac.title", render: () => <AdminTerms /> },
+  { path: "/units", title: "un.title", render: () => <ConsoleUnits /> },
   { path: "/plugins", title: "pl.title", render: () => <ConsolePlugins /> },
   { path: "/plugins/:id", title: "pl.title", render: ({ id }) => <PluginDetail id={id ?? ""} /> },
   { path: "/institution", title: "ai.title", render: () => <AdminInstitution /> },

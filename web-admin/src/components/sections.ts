@@ -6,6 +6,7 @@ export const SECTIONS: [string, MessageKey, IconName][] = [
   ["people", "ap.people", "user"],
   ["groups", "ag.groups", "courses"],
   ["terms", "ac.title", "calendar"],
+  ["units", "un.title", "courses"],
   ["plugins", "pl.title", "tune"],
   ["institution", "ai.title", "admin"],
   ["audit", "au.title", "file"],
