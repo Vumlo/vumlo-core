@@ -26,8 +26,5 @@ utoipa.workspace = true
 utoipa-axum.workspace = true
 uuid.workspace = true
 
-[dev-dependencies]
-events = { workspace = true, features = ["testing"] }
-
 [lints]
 workspace = true

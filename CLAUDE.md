@@ -56,7 +56,7 @@ behind a Cargo feature, and `server` and `vumlo-cli` name it in exactly one plac
   that layer declared** (`auth.people`, `org.term_list`, `org.group_list`, `org.subgroup_list`, `events.audit_entries`,
   and `teaching.effective_members` for the roster). It never names the schema of a higher layer. The four crates
   below `learning` are stacked `teaching < content < assessment < gradebook`, and the same rule holds between them:
-  a crate cannot name one above it (Cargo refuses the cycle) or its schema, and reads those below it only through
+  a crate lists none above it (Cargo and `architecture.rs` refuse it) and names none of its schemas, and reads those below it only through
   the views they declare (`content.item_list`, `assessment.submission_index`, `assessment.submitted_attempts`,
   `gradebook.published_grades`, ...; `architecture.rs` fails the build otherwise). A view leaves out what the readers
   above must not see; sqlx cannot tell that a view column is not null, so a query that returns one writes `"col!"`.

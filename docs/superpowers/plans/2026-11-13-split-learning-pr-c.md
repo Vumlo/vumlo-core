@@ -192,7 +192,8 @@ State of each crate (`state.rs`, `#[derive(Clone)]`):
 
 - `content::parse_decimal` (a `pub use` in `lib.rs`) replaced the `pub mod points` of task 3; `DocumentErrors::one` became `pub` because `assessment` raises it.
 - The concurrency tests of `assessment` and `gradebook` became unit tests of the flows crate (`submissions/tests.rs`, `items/tests.rs`), not `flows/tests/`: they exercise flows and subscribers together and reuse `crate::tests`. The release scripts needed no special case for them.
-- Task 6 has no manifest-direction test: a lower crate listing a higher one is a dependency cycle (Cargo refused it when tried), so such a test could never fail. `manifests()` in `architecture.rs` now also scans `crates/learning/`, so the `testing`-feature rule covers the new crates.
+- Task 6 first dropped the manifest-direction test on the argument that every wrong edge is a cycle. The final review showed that false: `gradebook` does not list `assessment`, so `assessment` could list `gradebook`, and a dev-dependency cycle is allowed too. `the_four_crates_list_nothing_above_them` is back (red with `gradebook` added to `assessment`, green without). `manifests()` in `architecture.rs` also scans `crates/learning/`, so the `testing`-feature rule covers the new crates.
+- The final review's minors were fixed too: test-only `tokio` and `auth` moved to `[dev-dependencies]`, an unused `events/testing` dev-dependency in `assessment` dropped, the `learning` crate doc rewritten, stale ADR links and the `test-support` wording corrected.
 - `server::AppState` has one field and one `FromRef` per state: `teaching`, `content`, `assessment`, `gradebook`, `learning`.
 
 ## Next

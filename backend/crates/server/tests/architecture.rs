@@ -9,9 +9,10 @@
 //!   `teaching.effective_members`, and a reader that skips it misses the students that come from a
 //!   group, or the exclusions that take them away (ADR-0033).
 //! - A view in a migration reads another schema only where an ADR declared that interface.
-//! - Only the flows in `learning` complete a write that names files (ADR-0093). The order of the
-//!   crates below them (`teaching < content < assessment < gradebook`) is Cargo's: a lower crate
-//!   that listed a higher one would be a dependency cycle.
+//! - The four crates below the flows (`teaching < content < assessment < gradebook`) list nothing
+//!   above them, in any dependency table: Cargo refuses most such edges as a cycle, but not all
+//!   (`assessment` could list `gradebook`). Only the flows in `learning` complete a write that
+//!   names files (ADR-0093).
 //! - `Actor::role` is read only by `access`; `auth::apply_user_update` is called only by `learning`.
 //! - The `testing` feature of a crate is switched on only from `[dev-dependencies]`.
 
@@ -357,6 +358,53 @@ fn a_unit_reads_its_own_layer_and_the_declared_views_below_it() {
         "a unit reads a table of a lower layer that is not a declared view, or one of a higher \
          layer (ADR-0065, ADR-0093; declare a view in a migration and list it in \
          DECLARED_VIEWS):\n{}",
+        found.join("\n")
+    );
+}
+
+/// The names a manifest lists in any `[dependencies]`, `[dev-dependencies]` or target table.
+fn dependencies_of(manifest: &Path) -> Vec<String> {
+    let text = fs::read_to_string(manifest).expect("a manifest is UTF-8");
+    let mut section = String::new();
+    let mut found = Vec::new();
+    for line in text.lines() {
+        let line = line.split('#').next().unwrap_or("").trim();
+        if line.starts_with('[') {
+            section = line.trim_matches(|c| c == '[' || c == ']').to_owned();
+        } else if section.ends_with("dependencies") {
+            let name = line.split(|c: char| c == '.' || c == '=' || c.is_whitespace());
+            found.extend(
+                name.map(str::to_owned)
+                    .next()
+                    .filter(|name| !name.is_empty()),
+            );
+        }
+    }
+    found
+}
+
+/// Cargo refuses a cycle, but not every wrong edge is one: `gradebook` does not list `assessment`,
+/// so `assessment` could list `gradebook` and build. And a dev-dependency cycle is allowed.
+/// So the order is checked in the manifests, in every dependency table (ADR-0093).
+#[test]
+fn the_four_crates_list_nothing_above_them() {
+    let mut found = Vec::new();
+    for (rank, module) in MODULES.iter().enumerate() {
+        let manifest = crates_dir()
+            .join("learning")
+            .join(module)
+            .join("Cargo.toml");
+        for name in dependencies_of(&manifest) {
+            let above = MODULES.iter().skip(rank + 1).any(|other| *other == name);
+            if above || name == "learning" {
+                found.push(format!("{module} lists {name}"));
+            }
+        }
+    }
+    assert!(
+        found.is_empty(),
+        "a crate of the learning domain lists one above it (teaching < content < assessment < \
+         gradebook < learning); the call belongs in a flow in `learning` (ADR-0093):\n{}",
         found.join("\n")
     );
 }

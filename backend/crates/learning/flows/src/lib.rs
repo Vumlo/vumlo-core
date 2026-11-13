@@ -1,6 +1,7 @@
-//! The learning domain: courses and their roster, the content tree, student work and grades (ADR-0065).
-//! Each submodule owns its Postgres schema and exposes only its `mod.rs`. The flows that need
-//! more than one module (a person with their courses, ...) live here, above all of them.
+//! The flows of the learning domain (ADR-0065, ADR-0093): what needs several of `teaching`,
+//! `content`, `assessment` and `gradebook` (a person with their courses, a course's cards and
+//! lifecycle, items, submissions, the file check, the facts, plugin reads, the scheduler). It owns
+//! no schema; each submodule exposes only its `mod.rs`.
 
 pub mod audit;
 pub mod courses;

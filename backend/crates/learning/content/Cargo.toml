@@ -12,7 +12,6 @@ testing = []
 [dependencies]
 access.workspace = true
 api-types.workspace = true
-auth.workspace = true
 axum.workspace = true
 chrono.workspace = true
 common.workspace = true
@@ -23,7 +22,6 @@ serde_json.workspace = true
 sqlx.workspace = true
 teaching.workspace = true
 thiserror.workspace = true
-tokio.workspace = true
 tracing.workspace = true
 utoipa.workspace = true
 utoipa-axum.workspace = true
@@ -35,6 +33,7 @@ access = { workspace = true, features = ["testing"] }
 auth = { workspace = true, features = ["testing"] }
 events = { workspace = true, features = ["testing"] }
 test-support.workspace = true
+tokio.workspace = true
 
 [lints]
 workspace = true
