@@ -7,19 +7,26 @@ use axum::response::{IntoResponse, Response};
 use common::ApiError;
 use utoipa_axum::{router::OpenApiRouter, routes};
 
+use access::ActorSource;
+
+use crate::admin_routes;
 use crate::compose;
 use crate::service;
 use crate::state::MailState;
 
-/// The routes of the layer, to be merged under `/api/v1`.
+/// The routes of the layer, to be merged under `/api/v1`: the opt-out links, which take no session,
+/// and the console's queue and journal (ADR-0095), which take a console administrator.
 pub fn router<S>() -> OpenApiRouter<S>
 where
-    S: Clone + Send + Sync + 'static,
+    S: ActorSource + Clone + Send + Sync + 'static,
     MailState: FromRef<S>,
 {
     OpenApiRouter::new()
         .routes(routes!(opt_out_get, opt_out_post))
         .routes(routes!(opt_in_get, opt_in_post))
+        .routes(routes!(admin_routes::get_status))
+        .routes(routes!(admin_routes::list_messages))
+        .routes(routes!(admin_routes::retry))
 }
 
 fn text(body: String) -> Response {

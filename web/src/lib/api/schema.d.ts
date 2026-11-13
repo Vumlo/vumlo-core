@@ -105,6 +105,67 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/mail/messages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The newest messages of the journal, by state, plugin, kind and person. A person is an id, never
+         *     an address. Console administrators only.
+         */
+        get: operations["list_messages"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/mail/retry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Puts dead mail back in the queue: one message by `id`, or the dead mail of a plugin, or all of
+         *     it. A message whose address is already erased cannot be sent and stays dead. Console
+         *     administrators only.
+         */
+        post: operations["retry"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/mail/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * What waits, what was sent and what died in the last day, and whether mail is set up at all.
+         *     Console administrators only.
+         */
+        get: operations["get_status"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/plugins": {
         parameters: {
             query?: never;
@@ -4470,6 +4531,61 @@ export interface components {
          * @enum {string}
          */
         MailAudience: "students" | "teachers" | "all";
+        MailDeadBy: {
+            /** Format: int64 */
+            dead: number;
+            kind: string;
+            /** @description `None` for the mail of the core itself (accounts). */
+            plugin_id?: string | null;
+        };
+        /** @description One message of the journal. */
+        MailMessage: {
+            /** Format: int32 */
+            attempts: number;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: uuid */
+            id: string;
+            kind: string;
+            /** @description A class such as `smtp 451`, never the server's text. */
+            last_error?: string | null;
+            plugin_id?: string | null;
+            /** @description `pending`, `sent`, `dead` or `cancelled`. */
+            state: string;
+            /** @description The subject, cut for display; kept only while the batch is. */
+            subject?: string | null;
+            /**
+             * Format: uuid
+             * @description The person it is for.
+             */
+            user_id: string;
+        };
+        MailMessages: {
+            items: components["schemas"]["MailMessage"][];
+        };
+        /** @description What waits, what was sent and what died. */
+        MailStatus: {
+            /** Format: int64 */
+            cancelled_24h: number;
+            /** @description Whether the installation has `[mail]`; without it nothing is sent. */
+            configured: boolean;
+            /** Format: int64 */
+            dead_24h: number;
+            dead_by: components["schemas"]["MailDeadBy"][];
+            /**
+             * Format: int64
+             * @description Dead messages in the journal now.
+             */
+            dead_now: number;
+            /** Format: date-time */
+            oldest_pending?: string | null;
+            /** Format: int64 */
+            pending: number;
+            /** Format: int64 */
+            sent_24h: number;
+            /** @description `smtp` or `file`, when configured. */
+            transport?: string | null;
+        };
         /** @description Who a plugin's mail is for: one person, or a course audience. */
         MailTarget: {
             /** Format: uuid */
@@ -5404,6 +5520,27 @@ export interface components {
             /** @description The members who are not in the new list. */
             removed: string[];
         };
+        /**
+         * @description What to put back: one message by `id`, or, without it, the dead mail of `plugin_id` (all dead
+         *     mail without that either).
+         */
+        RetryMailRequest: {
+            /** Format: uuid */
+            id?: string | null;
+            plugin_id?: string | null;
+        };
+        RetryMailResponse: {
+            /**
+             * Format: int64
+             * @description Left dead: their address is already erased.
+             */
+            erased: number;
+            /**
+             * Format: int64
+             * @description Put back in the queue.
+             */
+            requeued: number;
+        };
         /** @enum {string} */
         Role: "admin" | "teacher" | "student";
         /**
@@ -6264,6 +6401,116 @@ export interface operations {
             };
             /** @description A link that is not an https address, or a platform twice */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    list_messages: {
+        parameters: {
+            query?: {
+                /** @description `pending`, `sent`, `dead` or `cancelled`. */
+                state?: string;
+                plugin_id?: string;
+                kind?: string;
+                user_id?: string;
+                /** @description Only messages of the last this many hours, 1 to 8760. */
+                hours?: number;
+                /** @description The newest this many, 1 to 200; default 50. */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The newest messages first */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MailMessages"];
+                };
+            };
+            /** @description Not a console administrator */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description A state that does not exist */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    retry: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RetryMailRequest"];
+            };
+        };
+        responses: {
+            /** @description How many were put back and how many could not be */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RetryMailResponse"];
+                };
+            };
+            /** @description Not a console administrator */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    get_status: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The counts */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MailStatus"];
+                };
+            };
+            /** @description Not a console administrator */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };

@@ -908,6 +908,10 @@ async fn the_list_of_operations_is_the_api() {
             "PUT /admin/plugins/{id}/settings/{key}",
             "DELETE /admin/plugins/{id}/settings/{key}",
             "GET /admin/plugins/{id}/calls",
+            // The mail queue and journal of the console: `tests/console_mail.rs` calls each one.
+            "GET /admin/mail/status",
+            "GET /admin/mail/messages",
+            "POST /admin/mail/retry",
             // The routes of a plugin's own server: who may call each is in its manifest, and
             // `tests/plugin_routes.rs` checks every answer.
             "GET /plugins/{plugin_id}/{path}",
