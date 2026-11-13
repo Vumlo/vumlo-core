@@ -245,10 +245,10 @@ pub struct UnitRoleAbilities {
 }
 
 /// The switches a unit role has afterwards: exactly these. An empty list leaves the role able to
-/// view only.
+/// view only. A repeated ability counts once.
 #[derive(Debug, Clone, Serialize, Deserialize, Validate, ToSchema)]
 pub struct SetUnitRoleAbilitiesRequest {
-    #[garde(length(max = 6))]
+    #[garde(skip)]
     pub abilities: Vec<UnitAbility>,
 }
 

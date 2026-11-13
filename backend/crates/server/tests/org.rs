@@ -1549,7 +1549,10 @@ async fn unit_roles_are_granted_listed_searched_and_switched_over_http() {
             .as_admin(
                 "PUT",
                 "/admin/unit-roles/manager",
-                Some(json!({"abilities": ["manage_units", "grade", "grade"]})),
+                // Repeats count once, and a list longer than the number of abilities is no error.
+                Some(json!({"abilities": [
+                    "manage_units", "grade", "grade", "grade", "grade", "grade", "grade"
+                ]})),
             )
             .await;
         assert_eq!(changed.status, 200);
