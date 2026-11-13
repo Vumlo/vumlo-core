@@ -179,10 +179,14 @@ async fn a_console_token_is_not_a_bearer_token_and_not_an_app_cookie() {
             env.http.get("/me").console(&console).send().await.status,
             200
         );
-        assert_eq!(
-            env.http.get("/me").bearer(&console).send().await.status,
-            401
-        );
+        // `bearer` would speak as the console for a console token; this is a real bearer header.
+        let as_bearer = env
+            .http
+            .get("/me")
+            .header("authorization", &format!("Bearer {console}"))
+            .send()
+            .await;
+        assert_eq!(as_bearer.status, 401);
         assert_eq!(
             env.http.get("/me").cookie(&console).send().await.status,
             401

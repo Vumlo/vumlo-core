@@ -20,7 +20,8 @@ async fn actor(pool: &sqlx::PgPool, hash: &HashedPassword, email: &str, role: Ro
     .await
     .unwrap();
     tx.commit().await.unwrap();
-    Actor::for_tests(user.id, role, Uuid::now_v7())
+    // An administrator administers units from the console (ADR-0095).
+    Actor::for_tests_in(user.id, role, Uuid::now_v7(), access::Audience::Console)
 }
 
 /// The owner promotes a student to teacher and holds its transaction open; an assistant
