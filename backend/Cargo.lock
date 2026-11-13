@@ -4,7 +4,7 @@ version = 4
 
 [[package]]
 name = "access"
-version = "0.6.1"
+version = "0.7.0"
 dependencies = [
  "axum",
  "chrono",
@@ -142,7 +142,7 @@ checksum = "d3fb67a6e08acf24fdeccbac2cb6ac4305825bd1f117462e0e6f2f193345ad56"
 
 [[package]]
 name = "assessment"
-version = "0.6.1"
+version = "0.7.0"
 dependencies = [
  "access",
  "api-types",
@@ -189,7 +189,7 @@ checksum = "1505bd5d3d116872e7271a6d4e16d81d0c8570876c8de68093a09ac269d8aac0"
 
 [[package]]
 name = "auth"
-version = "0.6.1"
+version = "0.7.0"
 dependencies = [
  "access",
  "api-types",
@@ -636,7 +636,7 @@ dependencies = [
 
 [[package]]
 name = "common"
-version = "0.6.1"
+version = "0.7.0"
 dependencies = [
  "api-types",
  "axum",
@@ -698,7 +698,7 @@ dependencies = [
 
 [[package]]
 name = "content"
-version = "0.6.1"
+version = "0.7.0"
 dependencies = [
  "access",
  "api-types",
@@ -968,7 +968,7 @@ dependencies = [
 
 [[package]]
 name = "db"
-version = "0.6.1"
+version = "0.7.0"
 dependencies = [
  "serde_json",
  "sqlx",
@@ -1234,7 +1234,7 @@ dependencies = [
 
 [[package]]
 name = "events"
-version = "0.6.1"
+version = "0.7.0"
 dependencies = [
  "access",
  "chrono",
@@ -1292,7 +1292,7 @@ checksum = "28dea519a9695b9977216879a3ebfddf92f1c08c05d984f8996aecd6ecdc811d"
 
 [[package]]
 name = "files"
-version = "0.6.1"
+version = "0.7.0"
 dependencies = [
  "chrono",
  "object_store",
@@ -1559,7 +1559,7 @@ dependencies = [
 
 [[package]]
 name = "gradebook"
-version = "0.6.1"
+version = "0.7.0"
 dependencies = [
  "access",
  "api-types",
@@ -2190,7 +2190,7 @@ dependencies = [
 
 [[package]]
 name = "learning"
-version = "0.6.1"
+version = "0.7.0"
 dependencies = [
  "access",
  "api-types",
@@ -2297,7 +2297,7 @@ checksum = "4050469837a6ff301cd14c1f8f24f88549e6d548f24f64e2148eb0f72cebc51f"
 
 [[package]]
 name = "mail"
-version = "0.6.1"
+version = "0.7.0"
 dependencies = [
  "access",
  "api-types",
@@ -2384,7 +2384,7 @@ dependencies = [
 
 [[package]]
 name = "module-api"
-version = "0.6.1"
+version = "0.7.0"
 dependencies = [
  "access",
  "anyhow",
@@ -2626,7 +2626,7 @@ dependencies = [
 
 [[package]]
 name = "org"
-version = "0.6.1"
+version = "0.7.0"
 dependencies = [
  "access",
  "api-types",
@@ -2822,7 +2822,7 @@ checksum = "f6b464fbc74e149a392436b17d523f769e057cb6877f6a5c4618bc6f11800548"
 
 [[package]]
 name = "plugins"
-version = "0.6.1"
+version = "0.7.0"
 dependencies = [
  "access",
  "api-types",
@@ -3733,7 +3733,7 @@ dependencies = [
 
 [[package]]
 name = "server"
-version = "0.6.1"
+version = "0.7.0"
 dependencies = [
  "access",
  "anyhow",
@@ -4196,7 +4196,7 @@ dependencies = [
 
 [[package]]
 name = "teaching"
-version = "0.6.1"
+version = "0.7.0"
 dependencies = [
  "access",
  "api-types",
@@ -4218,7 +4218,7 @@ dependencies = [
 
 [[package]]
 name = "test-support"
-version = "0.6.1"
+version = "0.7.0"
 dependencies = [
  "db",
  "sqlx",
@@ -4753,7 +4753,7 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 
 [[package]]
 name = "vumlo-cli"
-version = "0.6.1"
+version = "0.7.0"
 dependencies = [
  "access",
  "anyhow",
@@ -4787,7 +4787,7 @@ dependencies = [
 
 [[package]]
 name = "vumlo-config"
-version = "0.6.1"
+version = "0.7.0"
 dependencies = [
  "api-types",
  "chrono-tz",
@@ -4799,7 +4799,7 @@ dependencies = [
 
 [[package]]
 name = "vumlo-module-ai-agent"
-version = "0.6.1"
+version = "0.7.0"
 dependencies = [
  "access",
  "assessment",
@@ -4827,7 +4827,7 @@ dependencies = [
 
 [[package]]
 name = "vumlo-module-dummy"
-version = "0.6.1"
+version = "0.7.0"
 dependencies = [
  "access",
  "anyhow",
