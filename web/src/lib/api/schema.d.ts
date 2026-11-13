@@ -125,6 +125,43 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/unit-roles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The switches of each unit role, as they stand. Administrators only. */
+        get: operations["get_unit_role_abilities"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/unit-roles/{role}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Replaces the switches of a unit role by exactly these (viewing is implicit and has none). It takes
+         *     effect on the next request of everyone who holds the role. Administrators only.
+         */
+        put: operations["put_unit_role_abilities"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/users": {
         parameters: {
             query?: never;
@@ -723,7 +760,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** One course. Students see it only once it is published; anyone who may not see it gets 404. */
+        /**
+         * One course, with what the caller may do in it (`can`). Students see it only once it is
+         *     published; anyone who may not see it gets 404.
+         */
         get: operations["get_course"];
         put?: never;
         post?: never;
@@ -1374,6 +1414,28 @@ export interface paths {
          *     submissions and grades are not copied. Works on an archived course.
          */
         post: operations["make_template"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/courses/{id}/unit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Puts a course into a unit, moves it to another or takes it out (`unit_id: null`).
+         * @description Needs `manage_courses` on the unit the course leaves and on the one it enters (an admin has
+         *     both). Unlike editing the course this works on an archived one. Audited when the caller is not
+         *     on the course (ADR-0094).
+         */
+        put: operations["set_course_unit"];
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -2690,6 +2752,134 @@ export interface paths {
         patch: operations["update_term"];
         trace?: never;
     };
+    "/api/v1/units": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The units the caller sees, flat, by name. An administrator sees all of them with every ability;
+         *     anyone else sees the units their unit roles cover (an empty list for most people). The whole tree
+         *     comes in one response, so there is no cursor.
+         */
+        get: operations["list_units"];
+        put?: never;
+        /**
+         * Creates a unit under another one. Needs `manage_units` on the parent; a top-level unit is for
+         *     administrators.
+         */
+        post: operations["create_unit"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/units/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Deletes a unit that has no subunits and no courses. Needs `manage_units` on its parent. */
+        delete: operations["delete_unit"];
+        options?: never;
+        head?: never;
+        /**
+         * Renames a unit, moves it, or both. Needs `manage_units` on its parent, and on the new parent for
+         *     a move; a unit cannot move under itself or below.
+         */
+        patch: operations["update_unit"];
+        trace?: never;
+    };
+    "/api/v1/units/{id}/candidates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Active teachers and administrators without a role on the unit who match `q` in their name,
+         *     surname or email: at most 20, ordered by surname. Needs `manage_units` on the unit's parent.
+         */
+        get: operations["get_unit_candidates"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/units/{id}/courses": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The courses in a unit and in every unit below it, in any status, by id.
+         * @description Anyone with a role on the unit (or above it) and every admin. A unit the caller cannot see is a
+         *     404.
+         */
+        get: operations["list_unit_courses"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/units/{id}/roles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The roles held directly on a unit, by surname. Anyone who sees the unit may list them; the roles
+         *     of the units above it are not shown. The list is short, so there is no cursor.
+         */
+        get: operations["list_unit_roles"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/units/{id}/roles/{user_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Gives a teacher or an administrator a role on the unit, replacing the one they held. Needs
+         *     `manage_units` on the unit's parent: nobody changes the roles of the unit their own role sits on.
+         */
+        put: operations["put_unit_role"];
+        post?: never;
+        /** Takes a person's role on the unit away. Needs `manage_units` on the unit's parent. */
+        delete: operations["delete_unit_role"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -3104,6 +3294,23 @@ export interface components {
              */
             term_id?: string | null;
             title: string;
+            /**
+             * Format: uuid
+             * @description The org unit the course sits in, if any (ADR-0094).
+             */
+            unit_id?: string | null;
+        };
+        /**
+         * @description What the caller may do in one course, answered by the rules in `access` from how they reached
+         *     it (ADR-0094). The web app reads this instead of guessing from a course role: someone who
+         *     reaches a course through a unit has none. An archived course reads `false` for every write.
+         */
+        CourseCan: {
+            edit_content: boolean;
+            grade: boolean;
+            manage_course: boolean;
+            manage_roster: boolean;
+            view_grades: boolean;
         };
         /** @description One course of the caller on the course list and the home page. */
         CourseCard: {
@@ -3127,6 +3334,10 @@ export interface components {
         /** @description The course cards of the caller. */
         CourseCards: {
             items: components["schemas"]["CourseCard"][];
+        };
+        /** @description A course with what the caller may do in it. */
+        CourseDetail: components["schemas"]["Course"] & {
+            can: components["schemas"]["CourseCan"];
         };
         /** @description A live link of a course to a whole group, or to one subgroup of it. */
         CourseGroupLink: {
@@ -3231,6 +3442,12 @@ export interface components {
              */
             term_id?: string | null;
             title: string;
+            /**
+             * Format: uuid
+             * @description An existing unit to create the course in; needs `manage_courses` on it. An unknown one is a
+             *     `422` on this field.
+             */
+            unit_id?: string | null;
         };
         /** @description Makes a draft course from a template. */
         CreateFromTemplateRequest: {
@@ -3241,6 +3458,12 @@ export interface components {
             term_id?: string | null;
             /** @description The new course's title; the template's own when absent. */
             title?: string | null;
+            /**
+             * Format: uuid
+             * @description An existing unit to create the course in; needs `manage_courses` on it. The template's own
+             *     unit is never taken over.
+             */
+            unit_id?: string | null;
         };
         CreateItemRequest: {
             assignment?: components["schemas"]["NewAssignment"] | null;
@@ -3264,6 +3487,15 @@ export interface components {
             name: string;
             /** Format: date */
             starts_on: string;
+        };
+        CreateUnitRequest: {
+            /** @description 1 to 100 characters after trimming. Unique among the units with the same parent. */
+            name: string;
+            /**
+             * Format: uuid
+             * @description The unit to create this one under. Omit for a top-level unit (administrators only).
+             */
+            parent_id?: string | null;
         };
         CreateUserRequest: {
             email: string;
@@ -4241,6 +4473,11 @@ export interface components {
                  */
                 term_id?: string | null;
                 title: string;
+                /**
+                 * Format: uuid
+                 * @description The org unit the course sits in, if any (ADR-0094).
+                 */
+                unit_id?: string | null;
             }[];
             /** @description Pass as `cursor` to get the next page; `null` on the last page. */
             next_cursor?: string | null;
@@ -4511,6 +4748,34 @@ export interface components {
                 name: string;
                 /** Format: date */
                 starts_on: string;
+            }[];
+            /** @description Pass as `cursor` to get the next page; `null` on the last page. */
+            next_cursor?: string | null;
+        };
+        Page_UnitRoleEntry: {
+            items: {
+                email: string;
+                name: string;
+                role: components["schemas"]["UnitRole"];
+                surname: string;
+                /** Format: uuid */
+                user_id: string;
+            }[];
+            /** @description Pass as `cursor` to get the next page; `null` on the last page. */
+            next_cursor?: string | null;
+        };
+        Page_UnitSummary: {
+            items: {
+                /**
+                 * @description The switches the caller holds on this unit, the union over every role that covers it. An
+                 *     administrator holds all of them. Viewing is implicit to being listed.
+                 */
+                abilities: components["schemas"]["UnitAbility"][];
+                /** Format: uuid */
+                id: string;
+                name: string;
+                /** Format: uuid */
+                parent_id?: string | null;
             }[];
             /** @description Pass as `cursor` to get the next page; `null` on the last page. */
             next_cursor?: string | null;
@@ -4991,6 +5256,21 @@ export interface components {
             /** @description At most one link per platform, each at most 2048 characters of an `https` address. */
             downloads: components["schemas"]["AppDownload"][];
         };
+        /** @description Puts a course into a unit, or takes it out with `null`. */
+        SetCourseUnitRequest: {
+            /** Format: uuid */
+            unit_id?: string | null;
+        };
+        /**
+         * @description The switches a unit role has afterwards: exactly these. An empty list leaves the role able to
+         *     view only.
+         */
+        SetUnitRoleAbilitiesRequest: {
+            abilities: components["schemas"]["UnitAbility"][];
+        };
+        SetUnitRoleRequest: {
+            role: components["schemas"]["UnitRole"];
+        };
         /** @description Why people were not mailed. All five are always present. */
         SkippedReasons: {
             /**
@@ -5183,6 +5463,56 @@ export interface components {
             /** Format: uuid */
             user_id: string;
         };
+        /** @description A unit of the institution: a node of a tree (ADR-0094). */
+        Unit: {
+            /** Format: date-time */
+            created_at: string;
+            /** Format: uuid */
+            id: string;
+            name: string;
+            /**
+             * Format: uuid
+             * @description `null` for a top-level unit.
+             */
+            parent_id?: string | null;
+        };
+        /**
+         * @description What a unit role can be switched to allow. Viewing is implicit to any role and has no switch.
+         * @enum {string}
+         */
+        UnitAbility: "view_grades" | "edit_content" | "grade" | "manage_roster" | "manage_courses" | "manage_units";
+        /**
+         * @description A person's role on a unit. It covers the unit and every unit below it.
+         * @enum {string}
+         */
+        UnitRole: "manager" | "viewer";
+        /** @description The switches of each unit role. */
+        UnitRoleAbilities: {
+            manager: components["schemas"]["UnitAbility"][];
+            viewer: components["schemas"]["UnitAbility"][];
+        };
+        /** @description Someone who holds a role directly on a unit. */
+        UnitRoleEntry: {
+            email: string;
+            name: string;
+            role: components["schemas"]["UnitRole"];
+            surname: string;
+            /** Format: uuid */
+            user_id: string;
+        };
+        /** @description A unit the caller sees, with what their roles let them do on it. */
+        UnitSummary: {
+            /**
+             * @description The switches the caller holds on this unit, the union over every role that covers it. An
+             *     administrator holds all of them. Viewing is implicit to being listed.
+             */
+            abilities: components["schemas"]["UnitAbility"][];
+            /** Format: uuid */
+            id: string;
+            name: string;
+            /** Format: uuid */
+            parent_id?: string | null;
+        };
         /** @description A condition that does not hold yet. */
         UnmetCondition: {
             condition: components["schemas"]["Condition"];
@@ -5295,6 +5625,15 @@ export interface components {
             name?: string | null;
             /** Format: date */
             starts_on?: string | null;
+        };
+        /** @description Only the fields present change. */
+        UpdateUnitRequest: {
+            name?: string | null;
+            /**
+             * Format: uuid
+             * @description The new parent; `null` moves the unit to the top (administrators only); absent changes nothing.
+             */
+            parent_id?: string | null;
         };
         UpdateUserRequest: {
             name?: string | null;
@@ -5690,6 +6029,98 @@ export interface operations {
             };
             /** @description Not an admin */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    get_unit_role_abilities: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The switches of each role */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UnitRoleAbilities"];
+                };
+            };
+            /** @description Not logged in */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Not an admin */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    put_unit_role_abilities: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unit role */
+                role: components["schemas"]["UnitRole"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetUnitRoleAbilitiesRequest"];
+            };
+        };
+        responses: {
+            /** @description The switches of each role afterwards */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UnitRoleAbilities"];
+                };
+            };
+            /** @description Not logged in */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Not an admin */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description An unknown ability */
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -7459,7 +7890,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["ProblemDetails"];
                 };
             };
-            /** @description Not a teacher or admin */
+            /** @description Not a teacher or admin, or no right to create courses in the unit */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -7468,7 +7899,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["ProblemDetails"];
                 };
             };
-            /** @description Invalid title, or a term_id that names no term */
+            /** @description Invalid title, or a term_id or unit_id that names nothing */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -7491,13 +7922,13 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description The course */
+            /** @description The course and what the caller may do in it */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Course"];
+                    "application/json": components["schemas"]["CourseDetail"];
                 };
             };
             /** @description Not logged in */
@@ -9714,6 +10145,69 @@ export interface operations {
                 };
             };
             /** @description Invalid title */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    set_course_unit: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Course id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetCourseUnitRequest"];
+            };
+        };
+        responses: {
+            /** @description The course */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Course"];
+                };
+            };
+            /** @description Not logged in */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description No right to manage courses in the unit it leaves or enters */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description No such course, or not visible to the caller */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description A unit_id that names no unit */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -14412,6 +14906,503 @@ export interface operations {
             };
             /** @description Invalid name, or ends_on before starts_on */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    list_units: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The units the caller sees; `next_cursor` is always null */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Page_UnitSummary"];
+                };
+            };
+            /** @description Not logged in */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    create_unit: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateUnitRequest"];
+            };
+        };
+        responses: {
+            /** @description The new unit */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Unit"];
+                };
+            };
+            /** @description Not logged in */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description No `manage_units` on the parent */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description No such parent, or the caller cannot see it */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The name is taken under the parent */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Invalid name */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    delete_unit: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Unit id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not logged in */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description No `manage_units` on the parent */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description No such unit, or the caller cannot see it */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The unit has subunits or courses */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    update_unit: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Unit id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateUnitRequest"];
+            };
+        };
+        responses: {
+            /** @description The updated unit */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Unit"];
+                };
+            };
+            /** @description Not logged in */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description No `manage_units` on the parent */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description No such unit (or new parent), or the caller cannot see it */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The name is taken under the parent */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Invalid name, or the new parent is the unit or below it */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    get_unit_candidates: {
+        parameters: {
+            query: {
+                /** @description Part of a name, surname or email: at least 2 characters. */
+                q: string;
+            };
+            header?: never;
+            path: {
+                /** @description Unit id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Up to 20 people */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Candidates"];
+                };
+            };
+            /** @description Not logged in */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description No `manage_units` on the parent */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description No such unit, or the caller cannot see it */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description A search text shorter than two characters */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    list_unit_courses: {
+        parameters: {
+            query?: {
+                cursor?: string;
+                /** @description Page size, 1 to 100 (default 50). */
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                /** @description Unit id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A page of courses */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Page_Course"];
+                };
+            };
+            /** @description Not logged in */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description No such unit, or not visible to the caller */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Invalid cursor */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    list_unit_roles: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Unit id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The roles on this unit; `next_cursor` is always null */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Page_UnitRoleEntry"];
+                };
+            };
+            /** @description Not logged in */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description No such unit, or the caller cannot see it */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    put_unit_role: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Unit id */
+                id: string;
+                /** @description The person who gets the role */
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetUnitRoleRequest"];
+            };
+        };
+        responses: {
+            /** @description The person holds the role */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not logged in */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description No `manage_units` on the parent */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description No such unit (or the caller cannot see it), or no such user */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The user is a student */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    delete_unit_role: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Unit id */
+                id: string;
+                /** @description The person who loses the role */
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Removed */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not logged in */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description No `manage_units` on the parent */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description No such unit (or the caller cannot see it), or the person holds no role on it */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

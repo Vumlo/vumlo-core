@@ -1310,6 +1310,14 @@
           },
           "title": {
             "type": "string"
+          },
+          "unit_id": {
+            "description": "The org unit the course sits in, if any (ADR-0094).",
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
           }
         },
         "required": [
@@ -1319,6 +1327,34 @@
           "status",
           "owner_id",
           "created_at"
+        ],
+        "type": "object"
+      },
+      "CourseCan": {
+        "description": "What the caller may do in one course, answered by the rules in `access` from how they reached\nit (ADR-0094). The web app reads this instead of guessing from a course role: someone who\nreaches a course through a unit has none. An archived course reads `false` for every write.",
+        "properties": {
+          "edit_content": {
+            "type": "boolean"
+          },
+          "grade": {
+            "type": "boolean"
+          },
+          "manage_course": {
+            "type": "boolean"
+          },
+          "manage_roster": {
+            "type": "boolean"
+          },
+          "view_grades": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "view_grades",
+          "edit_content",
+          "grade",
+          "manage_roster",
+          "manage_course"
         ],
         "type": "object"
       },
@@ -1415,6 +1451,25 @@
           "items"
         ],
         "type": "object"
+      },
+      "CourseDetail": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Course"
+          },
+          {
+            "properties": {
+              "can": {
+                "$ref": "#/components/schemas/CourseCan"
+              }
+            },
+            "required": [
+              "can"
+            ],
+            "type": "object"
+          }
+        ],
+        "description": "A course with what the caller may do in it."
       },
       "CourseGroupLink": {
         "description": "A live link of a course to a whole group, or to one subgroup of it.",
@@ -1663,6 +1718,14 @@
           },
           "title": {
             "type": "string"
+          },
+          "unit_id": {
+            "description": "An existing unit to create the course in; needs `manage_courses` on it. An unknown one is a\n`422` on this field.",
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
           }
         },
         "required": [
@@ -1683,6 +1746,14 @@
           },
           "title": {
             "description": "The new course's title; the template's own when absent.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "unit_id": {
+            "description": "An existing unit to create the course in; needs `manage_courses` on it. The template's own\nunit is never taken over.",
+            "format": "uuid",
             "type": [
               "string",
               "null"
@@ -1774,6 +1845,26 @@
           "name",
           "starts_on",
           "ends_on"
+        ],
+        "type": "object"
+      },
+      "CreateUnitRequest": {
+        "properties": {
+          "name": {
+            "description": "1 to 100 characters after trimming. Unique among the units with the same parent.",
+            "type": "string"
+          },
+          "parent_id": {
+            "description": "The unit to create this one under. Omit for a top-level unit (administrators only).",
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "name"
         ],
         "type": "object"
       },
@@ -4467,6 +4558,14 @@
                 },
                 "title": {
                   "type": "string"
+                },
+                "unit_id": {
+                  "description": "The org unit the course sits in, if any (ADR-0094).",
+                  "format": "uuid",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
                 }
               },
               "required": [
@@ -5345,6 +5444,103 @@
                 "name",
                 "starts_on",
                 "ends_on"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "next_cursor": {
+            "description": "Pass as `cursor` to get the next page; `null` on the last page.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "type": "object"
+      },
+      "Page_UnitRoleEntry": {
+        "properties": {
+          "items": {
+            "items": {
+              "description": "Someone who holds a role directly on a unit.",
+              "properties": {
+                "email": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "role": {
+                  "$ref": "#/components/schemas/UnitRole"
+                },
+                "surname": {
+                  "type": "string"
+                },
+                "user_id": {
+                  "format": "uuid",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "user_id",
+                "name",
+                "surname",
+                "email",
+                "role"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "next_cursor": {
+            "description": "Pass as `cursor` to get the next page; `null` on the last page.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "type": "object"
+      },
+      "Page_UnitSummary": {
+        "properties": {
+          "items": {
+            "items": {
+              "description": "A unit the caller sees, with what their roles let them do on it.",
+              "properties": {
+                "abilities": {
+                  "description": "The switches the caller holds on this unit, the union over every role that covers it. An\nadministrator holds all of them. Viewing is implicit to being listed.",
+                  "items": {
+                    "$ref": "#/components/schemas/UnitAbility"
+                  },
+                  "type": "array"
+                },
+                "id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "parent_id": {
+                  "format": "uuid",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "id",
+                "name",
+                "abilities"
               ],
               "type": "object"
             },
@@ -6560,6 +6756,45 @@
         ],
         "type": "object"
       },
+      "SetCourseUnitRequest": {
+        "description": "Puts a course into a unit, or takes it out with `null`.",
+        "properties": {
+          "unit_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "SetUnitRoleAbilitiesRequest": {
+        "description": "The switches a unit role has afterwards: exactly these. An empty list leaves the role able to\nview only.",
+        "properties": {
+          "abilities": {
+            "items": {
+              "$ref": "#/components/schemas/UnitAbility"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "abilities"
+        ],
+        "type": "object"
+      },
+      "SetUnitRoleRequest": {
+        "properties": {
+          "role": {
+            "$ref": "#/components/schemas/UnitRole"
+          }
+        },
+        "required": [
+          "role"
+        ],
+        "type": "object"
+      },
       "SkippedReasons": {
         "description": "Why people were not mailed. All five are always present.",
         "properties": {
@@ -7102,6 +7337,139 @@
         ],
         "type": "object"
       },
+      "Unit": {
+        "description": "A unit of the institution: a node of a tree (ADR-0094).",
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "parent_id": {
+            "description": "`null` for a top-level unit.",
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "created_at"
+        ],
+        "type": "object"
+      },
+      "UnitAbility": {
+        "description": "What a unit role can be switched to allow. Viewing is implicit to any role and has no switch.",
+        "enum": [
+          "view_grades",
+          "edit_content",
+          "grade",
+          "manage_roster",
+          "manage_courses",
+          "manage_units"
+        ],
+        "type": "string"
+      },
+      "UnitRole": {
+        "description": "A person's role on a unit. It covers the unit and every unit below it.",
+        "enum": [
+          "manager",
+          "viewer"
+        ],
+        "type": "string"
+      },
+      "UnitRoleAbilities": {
+        "description": "The switches of each unit role.",
+        "properties": {
+          "manager": {
+            "items": {
+              "$ref": "#/components/schemas/UnitAbility"
+            },
+            "type": "array"
+          },
+          "viewer": {
+            "items": {
+              "$ref": "#/components/schemas/UnitAbility"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "manager",
+          "viewer"
+        ],
+        "type": "object"
+      },
+      "UnitRoleEntry": {
+        "description": "Someone who holds a role directly on a unit.",
+        "properties": {
+          "email": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "role": {
+            "$ref": "#/components/schemas/UnitRole"
+          },
+          "surname": {
+            "type": "string"
+          },
+          "user_id": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "user_id",
+          "name",
+          "surname",
+          "email",
+          "role"
+        ],
+        "type": "object"
+      },
+      "UnitSummary": {
+        "description": "A unit the caller sees, with what their roles let them do on it.",
+        "properties": {
+          "abilities": {
+            "description": "The switches the caller holds on this unit, the union over every role that covers it. An\nadministrator holds all of them. Viewing is implicit to being listed.",
+            "items": {
+              "$ref": "#/components/schemas/UnitAbility"
+            },
+            "type": "array"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "parent_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "abilities"
+        ],
+        "type": "object"
+      },
       "UnmetCondition": {
         "description": "A condition that does not hold yet.",
         "properties": {
@@ -7406,6 +7774,26 @@
           },
           "starts_on": {
             "format": "date",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "UpdateUnitRequest": {
+        "description": "Only the fields present change.",
+        "properties": {
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "parent_id": {
+            "description": "The new parent; `null` moves the unit to the top (administrators only); absent changes nothing.",
+            "format": "uuid",
             "type": [
               "string",
               "null"
@@ -8204,6 +8592,135 @@
         "summary": "How many regular courses each term has, whether today (in the institution's time zone) falls in\nit and whether it is over. Admin only.",
         "tags": [
           "admin"
+        ]
+      }
+    },
+    "/api/v1/admin/unit-roles": {
+      "get": {
+        "operationId": "get_unit_role_abilities",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnitRoleAbilities"
+                }
+              }
+            },
+            "description": "The switches of each role"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Not logged in"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Not an admin"
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          },
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "The switches of each unit role, as they stand. Administrators only.",
+        "tags": [
+          "units"
+        ]
+      }
+    },
+    "/api/v1/admin/unit-roles/{role}": {
+      "put": {
+        "operationId": "put_unit_role_abilities",
+        "parameters": [
+          {
+            "description": "The unit role",
+            "in": "path",
+            "name": "role",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/UnitRole"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetUnitRoleAbilitiesRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnitRoleAbilities"
+                }
+              }
+            },
+            "description": "The switches of each role afterwards"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Not logged in"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Not an admin"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "An unknown ability"
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          },
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Replaces the switches of a unit role by exactly these (viewing is implicit and has none). It takes\neffect on the next request of everyone who holds the role. Administrators only.",
+        "tags": [
+          "units"
         ]
       }
     },
@@ -10643,7 +11160,7 @@
                 }
               }
             },
-            "description": "Not a teacher or admin"
+            "description": "Not a teacher or admin, or no right to create courses in the unit"
           },
           "422": {
             "content": {
@@ -10653,7 +11170,7 @@
                 }
               }
             },
-            "description": "Invalid title, or a term_id that names no term"
+            "description": "Invalid title, or a term_id or unit_id that names nothing"
           }
         },
         "security": [
@@ -10763,11 +11280,11 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Course"
+                  "$ref": "#/components/schemas/CourseDetail"
                 }
               }
             },
-            "description": "The course"
+            "description": "The course and what the caller may do in it"
           },
           "401": {
             "content": {
@@ -10798,7 +11315,7 @@
             "bearer": []
           }
         ],
-        "summary": "One course. Students see it only once it is published; anyone who may not see it gets 404.",
+        "summary": "One course, with what the caller may do in it (`can`). Students see it only once it is\npublished; anyone who may not see it gets 404.",
         "tags": [
           "courses"
         ]
@@ -13930,6 +14447,98 @@
           }
         ],
         "summary": "Makes a template from a course: a copy of its whole tree, as drafts, owned by the caller.",
+        "tags": [
+          "courses"
+        ]
+      }
+    },
+    "/api/v1/courses/{id}/unit": {
+      "put": {
+        "description": "Needs `manage_courses` on the unit the course leaves and on the one it enters (an admin has\nboth). Unlike editing the course this works on an archived one. Audited when the caller is not\non the course (ADR-0094).",
+        "operationId": "set_course_unit",
+        "parameters": [
+          {
+            "description": "Course id",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetCourseUnitRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Course"
+                }
+              }
+            },
+            "description": "The course"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Not logged in"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "No right to manage courses in the unit it leaves or enters"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "No such course, or not visible to the caller"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "A unit_id that names no unit"
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          },
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Puts a course into a unit, moves it to another or takes it out (`unit_id: null`).",
         "tags": [
           "courses"
         ]
@@ -20532,6 +21141,713 @@
         "summary": "Changes the name or the dates of a term. Admin only.",
         "tags": [
           "terms"
+        ]
+      }
+    },
+    "/api/v1/units": {
+      "get": {
+        "operationId": "list_units",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_UnitSummary"
+                }
+              }
+            },
+            "description": "The units the caller sees; `next_cursor` is always null"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Not logged in"
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          },
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "The units the caller sees, flat, by name. An administrator sees all of them with every ability;\nanyone else sees the units their unit roles cover (an empty list for most people). The whole tree\ncomes in one response, so there is no cursor.",
+        "tags": [
+          "units"
+        ]
+      },
+      "post": {
+        "operationId": "create_unit",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateUnitRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Unit"
+                }
+              }
+            },
+            "description": "The new unit"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Not logged in"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "No `manage_units` on the parent"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "No such parent, or the caller cannot see it"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "The name is taken under the parent"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Invalid name"
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          },
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Creates a unit under another one. Needs `manage_units` on the parent; a top-level unit is for\nadministrators.",
+        "tags": [
+          "units"
+        ]
+      }
+    },
+    "/api/v1/units/{id}": {
+      "delete": {
+        "operationId": "delete_unit",
+        "parameters": [
+          {
+            "description": "Unit id",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Deleted"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Not logged in"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "No `manage_units` on the parent"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "No such unit, or the caller cannot see it"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "The unit has subunits or courses"
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          },
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Deletes a unit that has no subunits and no courses. Needs `manage_units` on its parent.",
+        "tags": [
+          "units"
+        ]
+      },
+      "patch": {
+        "operationId": "update_unit",
+        "parameters": [
+          {
+            "description": "Unit id",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateUnitRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Unit"
+                }
+              }
+            },
+            "description": "The updated unit"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Not logged in"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "No `manage_units` on the parent"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "No such unit (or new parent), or the caller cannot see it"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "The name is taken under the parent"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Invalid name, or the new parent is the unit or below it"
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          },
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Renames a unit, moves it, or both. Needs `manage_units` on its parent, and on the new parent for\na move; a unit cannot move under itself or below.",
+        "tags": [
+          "units"
+        ]
+      }
+    },
+    "/api/v1/units/{id}/candidates": {
+      "get": {
+        "operationId": "get_unit_candidates",
+        "parameters": [
+          {
+            "description": "Unit id",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Part of a name, surname or email: at least 2 characters.",
+            "in": "query",
+            "name": "q",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Candidates"
+                }
+              }
+            },
+            "description": "Up to 20 people"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Not logged in"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "No `manage_units` on the parent"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "No such unit, or the caller cannot see it"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "A search text shorter than two characters"
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          },
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Active teachers and administrators without a role on the unit who match `q` in their name,\nsurname or email: at most 20, ordered by surname. Needs `manage_units` on the unit's parent.",
+        "tags": [
+          "units"
+        ]
+      }
+    },
+    "/api/v1/units/{id}/courses": {
+      "get": {
+        "description": "Anyone with a role on the unit (or above it) and every admin. A unit the caller cannot see is a\n404.",
+        "operationId": "list_unit_courses",
+        "parameters": [
+          {
+            "description": "Unit id",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Page size, 1 to 100 (default 50).",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "format": "int32",
+              "minimum": 0,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_Course"
+                }
+              }
+            },
+            "description": "A page of courses"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Not logged in"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "No such unit, or not visible to the caller"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Invalid cursor"
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          },
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "The courses in a unit and in every unit below it, in any status, by id.",
+        "tags": [
+          "courses"
+        ]
+      }
+    },
+    "/api/v1/units/{id}/roles": {
+      "get": {
+        "operationId": "list_unit_roles",
+        "parameters": [
+          {
+            "description": "Unit id",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_UnitRoleEntry"
+                }
+              }
+            },
+            "description": "The roles on this unit; `next_cursor` is always null"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Not logged in"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "No such unit, or the caller cannot see it"
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          },
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "The roles held directly on a unit, by surname. Anyone who sees the unit may list them; the roles\nof the units above it are not shown. The list is short, so there is no cursor.",
+        "tags": [
+          "units"
+        ]
+      }
+    },
+    "/api/v1/units/{id}/roles/{user_id}": {
+      "delete": {
+        "operationId": "delete_unit_role",
+        "parameters": [
+          {
+            "description": "Unit id",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The person who loses the role",
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Removed"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Not logged in"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "No `manage_units` on the parent"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "No such unit (or the caller cannot see it), or the person holds no role on it"
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          },
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Takes a person's role on the unit away. Needs `manage_units` on the unit's parent.",
+        "tags": [
+          "units"
+        ]
+      },
+      "put": {
+        "operationId": "put_unit_role",
+        "parameters": [
+          {
+            "description": "Unit id",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The person who gets the role",
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetUnitRoleRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "The person holds the role"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Not logged in"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "No `manage_units` on the parent"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "No such unit (or the caller cannot see it), or no such user"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "The user is a student"
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          },
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Gives a teacher or an administrator a role on the unit, replacing the one they held. Needs\n`manage_units` on the unit's parent: nobody changes the roles of the unit their own role sits on.",
+        "tags": [
+          "units"
         ]
       }
     }
