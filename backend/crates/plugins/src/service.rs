@@ -8,13 +8,12 @@ use access::{self, Actor};
 use std::collections::BTreeMap;
 
 use access::{CourseScope, PluginCaller, Scope};
+use content::{self, OpenError};
 use events::{Event, OutboxEvent};
-use learning::assessment;
-use learning::content::{self, OpenError};
-use learning::teaching::{self, TeachingError};
 use module_api::OutboundClient;
 use serde_json::{Map, Value, json};
 use sqlx::PgConnection;
+use teaching::{self, TeachingError};
 use uuid::Uuid;
 
 use crate::PluginsError;

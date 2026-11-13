@@ -7,7 +7,6 @@ use std::time::Duration;
 
 use chrono::Utc;
 use events::{MAX_ATTEMPTS, backoff};
-use learning::teaching;
 use module_api::OutboundClient;
 use serde_json::json;
 use sqlx::PgPool;

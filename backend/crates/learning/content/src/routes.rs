@@ -1,0 +1,950 @@
+//! HTTP edge of `content`: extractors, DTO mapping, OpenAPI annotations. Writes open the
+//! transaction, call exactly one service function and commit; reads use a pooled connection.
+
+use access::ActorSource;
+use api_types::{
+    ContentModule, ContentStatus, ContentSubModule, ContentTree, CourseRef, CreateItemRequest,
+    CreateModuleRequest, EditorProfiles, FieldError, HitKind, HitStatus, Item, ItemRevision,
+    ItemSummary, Module, NewAssignment, ProblemDetails, PublishModuleRequest, ReorderItemsRequest,
+    ReorderModulesRequest, SearchHit as ApiHit, SearchQuery, SearchResults, UpdateItemRequest,
+    UpdateModuleRequest,
+};
+use axum::Json;
+use axum::extract::FromRef;
+use axum::extract::{Path, State};
+use axum::http::StatusCode;
+use utoipa_axum::router::OpenApiRouter;
+use utoipa_axum::routes;
+use uuid::Uuid;
+
+use super::model::{
+    self, AssignmentType, BuiltinType, ConditionInput, ConditionKind, ContentTitle, ItemKind,
+    ItemPatch, ItemStatus, MaxPoints, ModelError, ModulePatch, ModuleStatus, OnDeadline,
+    SettingsPatch, SubmissionSettings,
+};
+use super::rules::{Condition, Node};
+use super::service::{self, ContentError, NewItemInput};
+use crate::ContentState;
+use access::Actor;
+use common::{ApiError, ValidJson, ValidQuery};
+
+pub fn router<S>() -> OpenApiRouter<S>
+where
+    S: ActorSource + Clone + 'static,
+    ContentState: FromRef<S>,
+{
+    OpenApiRouter::new()
+        .routes(routes!(create_module))
+        .routes(routes!(get_tree))
+        .routes(routes!(update_module))
+        .routes(routes!(reorder_modules))
+        .routes(routes!(publish_module))
+        .routes(routes!(reorder_items))
+        .routes(routes!(publish_item))
+        .routes(routes!(mark_done, unmark_done))
+        .routes(routes!(get_revision))
+        .routes(routes!(publish_revision))
+        .routes(routes!(search))
+        .routes(routes!(get_editor_profiles))
+}
+
+impl From<ContentError> for ApiError {
+    fn from(error: ContentError) -> Self {
+        match error {
+            ContentError::Forbidden(policy) => policy.into(),
+            ContentError::Invalid(ref model) => {
+                let field = match model {
+                    ModelError::Title => "title",
+                    ModelError::MaxPoints => "max_points",
+                    ModelError::AssignmentType => "type",
+                    ModelError::Config(_) => "config",
+                };
+                Self::invalid_field(field, error.to_string())
+            }
+            ContentError::Document(errors) => Self::Unprocessable {
+                detail: "the request has invalid fields".to_owned(),
+                errors: errors.into_field_errors("body"),
+            },
+            ContentError::NotAnAssignment { field } => {
+                Self::invalid_field(field, error.to_string())
+            }
+            ContentError::FileBody { ref field, message } => Self::invalid_field(field, message),
+            ContentError::FileDescription(errors) => Self::Unprocessable {
+                detail: "the request has invalid fields".to_owned(),
+                errors: errors.into_field_errors("body.description"),
+            },
+            ContentError::FileUnusable { id, field } => {
+                Self::invalid_field(&field, format!("the file {id} cannot be used here"))
+            }
+            ContentError::NotAnImage { field } => {
+                Self::invalid_field(&field, "an image block needs a PNG, JPEG, GIF or WebP file")
+            }
+            ContentError::StoredDocument => Self::Internal,
+            ContentError::FileMissing => {
+                Self::Conflict("a file item needs a file before it is published")
+            }
+            ContentError::Settings(problems) => Self::Unprocessable {
+                detail: "the request has invalid fields".to_owned(),
+                errors: problems
+                    .into_iter()
+                    .map(|problem| FieldError {
+                        field: problem.field.to_owned(),
+                        message: problem.message,
+                    })
+                    .collect(),
+            },
+            ContentError::PointsLimit { field, message } => Self::invalid_field(field, message),
+            ContentError::InvalidParent => Self::invalid_field("parent_id", error.to_string()),
+            ContentError::InvalidOrder => Self::invalid_field("ids", error.to_string()),
+            ContentError::ModuleNotFound | ContentError::ItemNotFound => Self::NotFound,
+            ContentError::Conflict => Self::Conflict("a concurrent change conflicts, retry"),
+            ContentError::BelowGivenScores => {
+                Self::Conflict("max_points cannot be lowered below a score that was already given")
+            }
+            ContentError::ItemNotPublished => {
+                Self::Conflict("the item is a draft: publish it first")
+            }
+            ContentError::BadQuery => Self::invalid_field("q", "must be 2 to 100 characters"),
+            ContentError::StructureFrozen => {
+                Self::Conflict("work was submitted: the questions or fields can no longer change")
+            }
+            ContentError::Rule { ref field, message } => Self::invalid_field(field, message),
+            ContentError::Locked => {
+                Self::Conflict("the item is locked until its conditions are met")
+            }
+            ContentError::CompletesItself => Self::Conflict(
+                "an assignment is done when it is submitted or graded, not when it is marked",
+            ),
+            ContentError::Teaching(e) => e.into(),
+            ContentError::Events(e) => e.into(),
+            ContentError::Db(e) => Self::from_db("content", &e),
+        }
+    }
+}
+
+fn api_module_status(status: ModuleStatus) -> ContentStatus {
+    match status {
+        ModuleStatus::Draft => ContentStatus::Draft,
+        ModuleStatus::Published => ContentStatus::Published,
+    }
+}
+
+fn api_item_status(status: ItemStatus) -> ContentStatus {
+    match status {
+        ItemStatus::Draft => ContentStatus::Draft,
+        ItemStatus::Published => ContentStatus::Published,
+    }
+}
+
+fn api_kind(kind: ItemKind) -> api_types::ItemKind {
+    match kind {
+        ItemKind::Text => api_types::ItemKind::Text,
+        ItemKind::Assignment => api_types::ItemKind::Assignment,
+        ItemKind::File => api_types::ItemKind::File,
+    }
+}
+
+fn domain_kind(kind: api_types::ItemKind) -> ItemKind {
+    match kind {
+        api_types::ItemKind::Text => ItemKind::Text,
+        api_types::ItemKind::Assignment => ItemKind::Assignment,
+        api_types::ItemKind::File => ItemKind::File,
+    }
+}
+
+fn api_module(module: model::Module) -> Module {
+    let (access_rule, standing) = api_access(module.access);
+    Module {
+        id: module.id,
+        course_id: module.course_id,
+        parent_id: module.parent_id,
+        position: module.position,
+        title: module.title,
+        status: api_module_status(module.status),
+        publish_at: module.publish_at,
+        created_at: module.created_at,
+        updated_at: module.updated_at,
+        access_rule,
+        standing,
+    }
+}
+
+fn api_condition(condition: &Condition) -> api_types::Condition {
+    let (kind, item_id, module_id, points) = match condition {
+        Condition::Completed(Node::Item(item)) => {
+            (api_types::ConditionKind::Completed, Some(*item), None, None)
+        }
+        Condition::Completed(Node::Module(module)) => (
+            api_types::ConditionKind::Completed,
+            None,
+            Some(*module),
+            None,
+        ),
+        Condition::ScoreAtLeast { assignment, points } => (
+            api_types::ConditionKind::ScoreAtLeast,
+            Some(*assignment),
+            None,
+            Some(format!("{points:.2}")),
+        ),
+    };
+    api_types::Condition {
+        kind,
+        item_id,
+        module_id,
+        points,
+    }
+}
+
+/// What the reader is told about the rules of a node: the rule for staff, where they stand for a
+/// student. A node without a rule has none to show.
+fn api_access(
+    access: model::Access,
+) -> (Option<api_types::AccessRule>, Option<api_types::Standing>) {
+    let rule = (!access.rule.is_empty()).then(|| api_types::AccessRule {
+        all: access.rule.iter().map(api_condition).collect(),
+    });
+    let standing = access.standing.map(|standing| api_types::Standing {
+        done: standing.done,
+        locked: standing
+            .locked
+            .into_iter()
+            .map(|unmet| api_types::UnmetCondition {
+                condition: api_condition(&unmet.condition),
+                title: unmet.title,
+            })
+            .collect(),
+    });
+    (rule, standing)
+}
+
+/// The conditions a client sent; no rule, or `null`, is none.
+fn domain_rule(rule: Option<api_types::AccessRule>) -> Vec<ConditionInput> {
+    rule.map(|rule| rule.all)
+        .unwrap_or_default()
+        .into_iter()
+        .map(|condition| ConditionInput {
+            kind: match condition.kind {
+                api_types::ConditionKind::Completed => ConditionKind::Completed,
+                api_types::ConditionKind::ScoreAtLeast => ConditionKind::ScoreAtLeast,
+            },
+            item_id: condition.item_id,
+            module_id: condition.module_id,
+            points: condition.points,
+        })
+        .collect()
+}
+
+fn api_assignment(assignment: model::Assignment) -> api_types::Assignment {
+    api_types::Assignment {
+        assignment_type: assignment.assignment_type.as_str().to_owned(),
+        config: assignment.config,
+        max_points: assignment.max_points.to_string(),
+        is_bonus: assignment.is_bonus,
+        due_at: assignment.settings.due_at,
+        on_deadline: assignment.settings.on_deadline.map(api_on_deadline),
+        accept_late: assignment.settings.accept_late,
+        late_until: assignment.settings.late_until,
+        max_attempts: assignment.settings.max_attempts,
+        class_on: assignment.class_on,
+    }
+}
+
+fn api_on_deadline(on_deadline: OnDeadline) -> api_types::OnDeadline {
+    match on_deadline {
+        OnDeadline::KeepDraft => api_types::OnDeadline::KeepDraft,
+        OnDeadline::AutoSubmit => api_types::OnDeadline::AutoSubmit,
+    }
+}
+
+fn api_assignment_summary(assignment: model::AssignmentSummary) -> api_types::AssignmentSummary {
+    api_types::AssignmentSummary {
+        assignment_type: assignment.assignment_type.as_str().to_owned(),
+        max_points: assignment.max_points.to_string(),
+        is_bonus: assignment.is_bonus,
+        due_at: assignment.settings.due_at,
+        on_deadline: assignment.settings.on_deadline.map(api_on_deadline),
+        accept_late: assignment.settings.accept_late,
+        late_until: assignment.settings.late_until,
+        max_attempts: assignment.settings.max_attempts,
+    }
+}
+
+/// An item as the API shows it; the flows above `content` that answer with one use it too.
+pub fn api_item(item: model::Item) -> Item {
+    let (access_rule, standing) = api_access(item.access);
+    Item {
+        id: item.id,
+        module_id: item.module_id,
+        course_id: item.course_id,
+        position: item.position,
+        kind: api_kind(item.kind),
+        title: item.title,
+        body: item.body,
+        status: api_item_status(item.status),
+        publish_at: item.publish_at,
+        assignment: item.assignment.map(api_assignment),
+        created_at: item.created_at,
+        updated_at: item.updated_at,
+        access_rule,
+        standing,
+    }
+}
+
+fn api_summary(item: model::ItemSummary) -> ItemSummary {
+    let (access_rule, standing) = api_access(item.access);
+    ItemSummary {
+        id: item.id,
+        kind: api_kind(item.kind),
+        title: item.title,
+        status: api_item_status(item.status),
+        publish_at: item.publish_at,
+        position: item.position,
+        assignment: item.assignment.map(api_assignment_summary),
+        access_rule,
+        standing,
+    }
+}
+
+fn api_tree(modules: Vec<model::ContentModule>) -> ContentTree {
+    ContentTree {
+        modules: modules
+            .into_iter()
+            .map(|top| ContentModule {
+                module: api_module(top.module),
+                submodules: top
+                    .submodules
+                    .into_iter()
+                    .map(|sub| ContentSubModule {
+                        module: api_module(sub.module),
+                        items: sub.items.into_iter().map(api_summary).collect(),
+                    })
+                    .collect(),
+                items: top.items.into_iter().map(api_summary).collect(),
+            })
+            .collect(),
+    }
+}
+
+fn title(raw: &str) -> Result<ContentTitle, ContentError> {
+    Ok(ContentTitle::parse(raw)?)
+}
+
+/// Parses the assignment object of a create request. Every bad field is reported at once, under
+/// its path in the request. The messages are fixed texts: they never repeat what was sent.
+fn domain_assignment(new: NewAssignment) -> Result<model::Assignment, ApiError> {
+    let assignment_type = BuiltinType::parse(&new.assignment_type);
+    let max_points = MaxPoints::parse(&new.max_points);
+    // With an unknown type the settings cannot be judged; the type is the field to fix first.
+    let settings = match &assignment_type {
+        Ok(assignment_type) => SubmissionSettings::default().resolve(
+            &SettingsPatch {
+                due_at: new.due_at.map(Some),
+                on_deadline: new.on_deadline.map(Some),
+                accept_late: new.accept_late.map(Some),
+                late_until: new.late_until.map(Some),
+                max_attempts: new.max_attempts.map(Some),
+            },
+            assignment_type.takes_submissions(),
+        ),
+        Err(_) => Ok(SubmissionSettings::default()),
+    };
+    // A class day belongs to in-class work only (ADR-0049).
+    let class_on_misplaced =
+        matches!((&assignment_type, new.class_on), (Ok(kind), Some(_)) if kind.takes_submissions());
+    let settings = if class_on_misplaced {
+        let mut problems = settings.err().unwrap_or_default();
+        problems.push(model::SettingProblem {
+            field: "class_on",
+            message: "only an in-class assignment has a class day".to_owned(),
+        });
+        Err(problems)
+    } else {
+        settings
+    };
+    match (assignment_type, max_points, settings) {
+        (Ok(assignment_type), Ok(max_points), Ok(settings)) => Ok(model::Assignment {
+            assignment_type,
+            config: new.config.unwrap_or_default(),
+            max_points,
+            is_bonus: new.is_bonus,
+            settings,
+            class_on: new.class_on,
+        }),
+        (assignment_type, max_points, settings) => {
+            let mut errors: Vec<FieldError> = [
+                ("assignment.type", assignment_type.err()),
+                ("assignment.max_points", max_points.err()),
+            ]
+            .into_iter()
+            .filter_map(|(field, error)| {
+                error.map(|error| FieldError {
+                    field: field.to_owned(),
+                    message: error.to_string(),
+                })
+            })
+            .collect();
+            errors.extend(
+                settings
+                    .err()
+                    .into_iter()
+                    .flatten()
+                    .map(|problem| FieldError {
+                        field: format!("assignment.{}", problem.field),
+                        message: problem.message,
+                    }),
+            );
+            Err(ApiError::Unprocessable {
+                detail: "the request has invalid fields".to_owned(),
+                errors,
+            })
+        }
+    }
+}
+
+/// A 422 about the assignment part of a create request names its field under `assignment.`.
+pub fn under_assignment(error: ContentError) -> ApiError {
+    // The document, and the file of a `file` item, are the item's own `body`, not part of the
+    // assignment object.
+    if matches!(
+        error,
+        ContentError::Document(_)
+            | ContentError::FileBody { .. }
+            | ContentError::FileDescription(_)
+            | ContentError::FileUnusable { .. }
+            | ContentError::NotAnImage { .. }
+    ) {
+        return error.into();
+    }
+    match ApiError::from(error) {
+        ApiError::Unprocessable { detail, errors } => ApiError::Unprocessable {
+            detail,
+            errors: errors
+                .into_iter()
+                .map(|error| FieldError {
+                    field: format!("assignment.{}", error.field),
+                    message: error.message,
+                })
+                .collect(),
+        },
+        other => other,
+    }
+}
+
+/// Creates a draft module as the last of its siblings. Staff and admins only.
+///
+/// Without `parent_id` this is a top-level module. With one, a sub-module of that module, which
+/// must be a top-level module of this course.
+#[utoipa::path(
+    post,
+    path = "/courses/{id}/modules",
+    tag = "content",
+    security(("cookie" = []), ("bearer" = [])),
+    params(("id" = Uuid, Path, description = "Course id")),
+    request_body = CreateModuleRequest,
+    responses(
+        (status = 201, description = "The new draft module", body = Module),
+        (status = 401, description = "Not logged in", body = ProblemDetails,
+            content_type = "application/problem+json"),
+        (status = 403, description = "The caller may not change this course's content",
+            body = ProblemDetails, content_type = "application/problem+json"),
+        (status = 404, description = "No such course, or not visible to the caller",
+            body = ProblemDetails, content_type = "application/problem+json"),
+        (status = 409, description = "A concurrent change took the position; retry",
+            body = ProblemDetails, content_type = "application/problem+json"),
+        (status = 422, description = "Invalid title, or a parent that is not a top-level module of this course",
+            body = ProblemDetails, content_type = "application/problem+json"),
+    )
+)]
+async fn create_module(
+    State(state): State<ContentState>,
+    actor: Actor,
+    Path(course_id): Path<Uuid>,
+    ValidJson(request): ValidJson<CreateModuleRequest>,
+) -> Result<(StatusCode, Json<Module>), ApiError> {
+    let title = title(&request.title)?;
+    let mut tx = state.db.begin().await.map_err(ContentError::from)?;
+    let module =
+        service::create_module(&mut tx, &actor, course_id, title, request.parent_id).await?;
+    tx.commit().await.map_err(ContentError::from)?;
+    Ok((StatusCode::CREATED, Json(api_module(module))))
+}
+
+/// The whole content tree of a course: top-level modules in order, each with its sub-modules and
+/// its direct items, and each sub-module with its items. Items are summaries without the body.
+///
+/// Staff and admins see everything. A student sees only what is published and not scheduled
+/// later, on every level, and nothing at all while the course is a draft. The tree is not paged:
+/// it is bounded and ordered by position, not by id (ADR-0018 pages id-ordered lists).
+#[utoipa::path(
+    get,
+    path = "/courses/{id}/content",
+    tag = "content",
+    security(("cookie" = []), ("bearer" = [])),
+    params(("id" = Uuid, Path, description = "Course id")),
+    responses(
+        (status = 200, description = "The content tree as the caller may see it", body = ContentTree),
+        (status = 401, description = "Not logged in", body = ProblemDetails,
+            content_type = "application/problem+json"),
+        (status = 404, description = "No such course, or not visible to the caller",
+            body = ProblemDetails, content_type = "application/problem+json"),
+    )
+)]
+async fn get_tree(
+    State(state): State<ContentState>,
+    actor: Actor,
+    Path(course_id): Path<Uuid>,
+) -> Result<Json<ContentTree>, ApiError> {
+    let mut conn = state.db.acquire().await.map_err(ContentError::from)?;
+    let modules = service::get_tree(&mut conn, &actor, course_id).await?;
+    Ok(Json(api_tree(modules)))
+}
+
+/// Changes a module's title and/or `publish_at` (`null` clears it). The parent cannot change.
+#[utoipa::path(
+    patch,
+    path = "/modules/{id}",
+    tag = "content",
+    security(("cookie" = []), ("bearer" = [])),
+    params(("id" = Uuid, Path, description = "Module id")),
+    request_body = UpdateModuleRequest,
+    responses(
+        (status = 200, description = "The module", body = Module),
+        (status = 401, description = "Not logged in", body = ProblemDetails,
+            content_type = "application/problem+json"),
+        (status = 403, description = "The caller may not change this course's content",
+            body = ProblemDetails, content_type = "application/problem+json"),
+        (status = 404, description = "No such module, or not visible to the caller",
+            body = ProblemDetails, content_type = "application/problem+json"),
+        (status = 422, description = "Invalid title or timestamp", body = ProblemDetails,
+            content_type = "application/problem+json"),
+    )
+)]
+async fn update_module(
+    State(state): State<ContentState>,
+    actor: Actor,
+    Path(id): Path<Uuid>,
+    ValidJson(request): ValidJson<UpdateModuleRequest>,
+) -> Result<Json<Module>, ApiError> {
+    let patch = ModulePatch {
+        title: request.title.as_deref().map(title).transpose()?,
+        publish_at: request.publish_at,
+        access_rule: request.access_rule.map(domain_rule),
+    };
+    let mut tx = state.db.begin().await.map_err(ContentError::from)?;
+    let module = service::update_module(&mut tx, &actor, id, patch).await?;
+    tx.commit().await.map_err(ContentError::from)?;
+    Ok(Json(api_module(module)))
+}
+
+/// Sets the order of the top-level modules, or of the sub-modules of `parent_id`.
+///
+/// `ids` must be exactly the current members of that sequence, each once. Positions are
+/// rewritten to 1..n in one transaction.
+#[utoipa::path(
+    put,
+    path = "/courses/{id}/modules/order",
+    tag = "content",
+    security(("cookie" = []), ("bearer" = [])),
+    params(("id" = Uuid, Path, description = "Course id")),
+    request_body = ReorderModulesRequest,
+    responses(
+        (status = 204, description = "Reordered"),
+        (status = 401, description = "Not logged in", body = ProblemDetails,
+            content_type = "application/problem+json"),
+        (status = 403, description = "The caller may not change this course's content",
+            body = ProblemDetails, content_type = "application/problem+json"),
+        (status = 404, description = "No such course, or not visible to the caller",
+            body = ProblemDetails, content_type = "application/problem+json"),
+        (status = 409, description = "A concurrent change conflicts; retry", body = ProblemDetails,
+            content_type = "application/problem+json"),
+        (status = 422, description = "ids are not exactly the current siblings, or the parent is not a top-level module of this course",
+            body = ProblemDetails, content_type = "application/problem+json"),
+    )
+)]
+async fn reorder_modules(
+    State(state): State<ContentState>,
+    actor: Actor,
+    Path(course_id): Path<Uuid>,
+    ValidJson(request): ValidJson<ReorderModulesRequest>,
+) -> Result<StatusCode, ApiError> {
+    let mut tx = state.db.begin().await.map_err(ContentError::from)?;
+    service::reorder_modules(&mut tx, &actor, course_id, request.parent_id, &request.ids).await?;
+    tx.commit().await.map_err(ContentError::from)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// Publishes a module. `cascade` is required and has no default (ADR-0010).
+///
+/// With `cascade: false` only this module is published. With `cascade: true` its sub-modules and
+/// every draft item below it are published too, in the same transaction; a `file` item without a
+/// file below it refuses the whole publish (`409`). Idempotent. Never
+/// changes `publish_at`: a module scheduled for later stays hidden from students until then.
+#[utoipa::path(
+    post,
+    path = "/modules/{id}/publish",
+    tag = "content",
+    security(("cookie" = []), ("bearer" = [])),
+    params(("id" = Uuid, Path, description = "Module id")),
+    request_body = PublishModuleRequest,
+    responses(
+        (status = 200, description = "The module", body = Module),
+        (status = 401, description = "Not logged in", body = ProblemDetails,
+            content_type = "application/problem+json"),
+        (status = 403, description = "The caller may not change this course's content",
+            body = ProblemDetails, content_type = "application/problem+json"),
+        (status = 404, description = "No such module, or not visible to the caller",
+            body = ProblemDetails, content_type = "application/problem+json"),
+        (status = 409, description = "With `cascade`, a `file` item below the module has no file",
+            body = ProblemDetails, content_type = "application/problem+json"),
+        (status = 422, description = "`cascade` is missing", body = ProblemDetails,
+            content_type = "application/problem+json"),
+    )
+)]
+async fn publish_module(
+    State(state): State<ContentState>,
+    actor: Actor,
+    Path(id): Path<Uuid>,
+    ValidJson(request): ValidJson<PublishModuleRequest>,
+) -> Result<Json<Module>, ApiError> {
+    let mut tx = state.db.begin().await.map_err(ContentError::from)?;
+    let module = service::publish_module(&mut tx, &actor, id, request.cascade).await?;
+    tx.commit().await.map_err(ContentError::from)?;
+    Ok(Json(api_module(module)))
+}
+
+/// What a request to create an item asks for, in the domain's terms. `kind` is optional in the
+/// request: without it the item is an assignment when an `assignment` object is sent and a `text`
+/// item otherwise.
+pub fn new_item(request: CreateItemRequest) -> Result<NewItemInput, ApiError> {
+    let title = title(&request.title)?;
+    let kind = request.kind.map_or_else(
+        || {
+            if request.assignment.is_some() {
+                ItemKind::Assignment
+            } else {
+                ItemKind::Text
+            }
+        },
+        domain_kind,
+    );
+    let assignment = match (kind, request.assignment) {
+        (ItemKind::Text | ItemKind::File, None) => None,
+        (ItemKind::Text | ItemKind::File, Some(_)) => {
+            return Err(ApiError::invalid_field(
+                "assignment",
+                "only an item of kind `assignment` has this field",
+            ));
+        }
+        (ItemKind::Assignment, None) => {
+            return Err(ApiError::invalid_field(
+                "assignment",
+                "an item of kind `assignment` needs an assignment object",
+            ));
+        }
+        (ItemKind::Assignment, Some(new)) => Some(domain_assignment(new)?),
+    };
+    Ok(NewItemInput {
+        title,
+        kind,
+        body: request.body,
+        assignment,
+    })
+}
+
+/// Sets the order of the items of a module. `ids` must be exactly the current items, each once.
+#[utoipa::path(
+    put,
+    path = "/modules/{id}/items/order",
+    tag = "content",
+    security(("cookie" = []), ("bearer" = [])),
+    params(("id" = Uuid, Path, description = "Module id")),
+    request_body = ReorderItemsRequest,
+    responses(
+        (status = 204, description = "Reordered"),
+        (status = 401, description = "Not logged in", body = ProblemDetails,
+            content_type = "application/problem+json"),
+        (status = 403, description = "The caller may not change this course's content",
+            body = ProblemDetails, content_type = "application/problem+json"),
+        (status = 404, description = "No such module, or not visible to the caller",
+            body = ProblemDetails, content_type = "application/problem+json"),
+        (status = 409, description = "A concurrent change conflicts; retry", body = ProblemDetails,
+            content_type = "application/problem+json"),
+        (status = 422, description = "ids are not exactly the current items", body = ProblemDetails,
+            content_type = "application/problem+json"),
+    )
+)]
+async fn reorder_items(
+    State(state): State<ContentState>,
+    actor: Actor,
+    Path(module_id): Path<Uuid>,
+    ValidJson(request): ValidJson<ReorderItemsRequest>,
+) -> Result<StatusCode, ApiError> {
+    let mut tx = state.db.begin().await.map_err(ContentError::from)?;
+    service::reorder_items(&mut tx, &actor, module_id, &request.ids).await?;
+    tx.commit().await.map_err(ContentError::from)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// The patch an update request asks for, parsed. Every field that cannot be parsed is the
+/// client's to fix (422). The route of `PATCH /items/{id}` lives in `learning::items`, which
+/// answers with [`api_item`].
+pub fn item_patch(request: UpdateItemRequest) -> Result<ItemPatch, ApiError> {
+    Ok(ItemPatch {
+        title: request.title.as_deref().map(title).transpose()?,
+        body: request.body,
+        publish_at: request.publish_at,
+        config: request.config,
+        max_points: request
+            .max_points
+            .as_deref()
+            .map(MaxPoints::parse)
+            .transpose()
+            .map_err(ContentError::from)?,
+        is_bonus: request.is_bonus,
+        settings: SettingsPatch {
+            due_at: request.due_at,
+            on_deadline: request.on_deadline,
+            accept_late: request.accept_late,
+            late_until: request.late_until,
+            max_attempts: request.max_attempts,
+        },
+        class_on: request.class_on,
+        access_rule: request.access_rule.map(domain_rule),
+    })
+}
+
+/// A student marks a text or file item done (ADR-0092). Marking it again changes nothing. An
+/// assignment is done by being submitted or graded and takes no mark (409), and neither does an
+/// item that a rule still keeps closed (409).
+#[utoipa::path(
+    put,
+    path = "/items/{id}/completion",
+    tag = "content",
+    security(("cookie" = []), ("bearer" = [])),
+    params(("id" = Uuid, Path, description = "Item id")),
+    responses(
+        (status = 204, description = "Marked done"),
+        (status = 401, description = "Not logged in", body = ProblemDetails,
+            content_type = "application/problem+json"),
+        (status = 403, description = "The caller is not a student of the course",
+            body = ProblemDetails, content_type = "application/problem+json"),
+        (status = 404, description = "No such item, or not visible to the caller",
+            body = ProblemDetails, content_type = "application/problem+json"),
+        (status = 409, description = "An assignment, a locked item, or an archived course",
+            body = ProblemDetails, content_type = "application/problem+json"),
+    )
+)]
+async fn mark_done(
+    State(state): State<ContentState>,
+    actor: Actor,
+    Path(id): Path<Uuid>,
+) -> Result<StatusCode, ApiError> {
+    let mut tx = state.db.begin().await.map_err(ContentError::from)?;
+    service::mark_done(&mut tx, &actor, id).await?;
+    tx.commit().await.map_err(ContentError::from)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// A student takes their mark off an item (ADR-0092). With no mark it does nothing.
+#[utoipa::path(
+    delete,
+    path = "/items/{id}/completion",
+    tag = "content",
+    security(("cookie" = []), ("bearer" = [])),
+    params(("id" = Uuid, Path, description = "Item id")),
+    responses(
+        (status = 204, description = "The item is not marked done"),
+        (status = 401, description = "Not logged in", body = ProblemDetails,
+            content_type = "application/problem+json"),
+        (status = 403, description = "The caller is not a student of the course",
+            body = ProblemDetails, content_type = "application/problem+json"),
+        (status = 404, description = "No such item, or not visible to the caller",
+            body = ProblemDetails, content_type = "application/problem+json"),
+        (status = 409, description = "The course is archived", body = ProblemDetails,
+            content_type = "application/problem+json"),
+    )
+)]
+async fn unmark_done(
+    State(state): State<ContentState>,
+    actor: Actor,
+    Path(id): Path<Uuid>,
+) -> Result<StatusCode, ApiError> {
+    let mut tx = state.db.begin().await.map_err(ContentError::from)?;
+    service::unmark_done(&mut tx, &actor, id).await?;
+    tx.commit().await.map_err(ContentError::from)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// Publishes an item. Idempotent; never changes `publish_at`. A `file` item without a file is
+/// refused (`409`).
+#[utoipa::path(
+    post,
+    path = "/items/{id}/publish",
+    tag = "content",
+    security(("cookie" = []), ("bearer" = [])),
+    params(("id" = Uuid, Path, description = "Item id")),
+    responses(
+        (status = 200, description = "The item", body = Item),
+        (status = 401, description = "Not logged in", body = ProblemDetails,
+            content_type = "application/problem+json"),
+        (status = 403, description = "The caller may not change this course's content",
+            body = ProblemDetails, content_type = "application/problem+json"),
+        (status = 404, description = "No such item, or not visible to the caller",
+            body = ProblemDetails, content_type = "application/problem+json"),
+        (status = 409, description = "A `file` item whose body names no file",
+            body = ProblemDetails, content_type = "application/problem+json"),
+    )
+)]
+async fn publish_item(
+    State(state): State<ContentState>,
+    actor: Actor,
+    Path(id): Path<Uuid>,
+) -> Result<Json<Item>, ApiError> {
+    let mut tx = state.db.begin().await.map_err(ContentError::from)?;
+    let item = service::publish_item(&mut tx, &actor, id).await?;
+    tx.commit().await.map_err(ContentError::from)?;
+    Ok(Json(api_item(item)))
+}
+
+fn api_revision(revision: model::Revision) -> ItemRevision {
+    ItemRevision {
+        has_unpublished_changes: revision.has_unpublished_changes,
+        last_published_at: revision.last_published_at,
+        size_bytes: revision.size_bytes,
+    }
+}
+
+/// Whether a published item has changes that students do not see yet. Staff only.
+#[utoipa::path(
+    get,
+    path = "/items/{id}/revision",
+    tag = "content",
+    security(("cookie" = []), ("bearer" = [])),
+    params(("id" = Uuid, Path, description = "Item id")),
+    responses(
+        (status = 200, description = "The revision", body = ItemRevision),
+        (status = 401, description = "Not logged in", body = ProblemDetails,
+            content_type = "application/problem+json"),
+        (status = 403, description = "Only staff see revisions", body = ProblemDetails,
+            content_type = "application/problem+json"),
+        (status = 404, description = "No such item, or not visible to the caller",
+            body = ProblemDetails, content_type = "application/problem+json"),
+    )
+)]
+async fn get_revision(
+    State(state): State<ContentState>,
+    actor: Actor,
+    Path(id): Path<Uuid>,
+) -> Result<Json<ItemRevision>, ApiError> {
+    let mut conn = state.db.acquire().await.map_err(ContentError::from)?;
+    let revision = service::get_revision(&mut conn, &actor, id).await?;
+    Ok(Json(api_revision(revision)))
+}
+
+/// Gives students the working title and body of a published item (ADR-0049).
+///
+/// A draft has nothing to publish a revision of: publish the item (`409`). A `file` item whose
+/// working body names no file cannot be published either (`409`). Not in an archived course.
+#[utoipa::path(
+    post,
+    path = "/items/{id}/revision/publish",
+    tag = "content",
+    security(("cookie" = []), ("bearer" = [])),
+    params(("id" = Uuid, Path, description = "Item id")),
+    responses(
+        (status = 200, description = "The revision after publishing", body = ItemRevision),
+        (status = 401, description = "Not logged in", body = ProblemDetails,
+            content_type = "application/problem+json"),
+        (status = 403, description = "The caller may not change this course's content",
+            body = ProblemDetails, content_type = "application/problem+json"),
+        (status = 404, description = "No such item, or not visible to the caller",
+            body = ProblemDetails, content_type = "application/problem+json"),
+        (status = 409, description = "The item is a draft, the course is archived, or a `file` item has no file",
+            body = ProblemDetails, content_type = "application/problem+json"),
+    )
+)]
+async fn publish_revision(
+    State(state): State<ContentState>,
+    actor: Actor,
+    Path(id): Path<Uuid>,
+) -> Result<Json<ItemRevision>, ApiError> {
+    let mut tx = state.db.begin().await.map_err(ContentError::from)?;
+    let revision = service::publish_revision(&mut tx, &actor, id).await?;
+    tx.commit().await.map_err(ContentError::from)?;
+    Ok(Json(api_revision(revision)))
+}
+
+/// Courses, lectures and assignments of the caller's courses that contain `q` (2 to 100
+/// characters), title matches first, at most 50 (ADR-0052). A student searches the published copy
+/// of what students can open; staff also search drafts and unpublished edits.
+#[utoipa::path(
+    get,
+    path = "/search",
+    tag = "content",
+    security(("cookie" = []), ("bearer" = [])),
+    params(SearchQuery),
+    responses(
+        (status = 200, description = "The hits", body = SearchResults),
+        (status = 401, description = "Not logged in", body = ProblemDetails,
+            content_type = "application/problem+json"),
+        (status = 422, description = "A search text that is not 2 to 100 characters",
+            body = ProblemDetails, content_type = "application/problem+json"),
+    )
+)]
+async fn search(
+    State(state): State<ContentState>,
+    actor: Actor,
+    ValidQuery(query): ValidQuery<SearchQuery>,
+) -> Result<Json<SearchResults>, ApiError> {
+    let mut conn = state.db.acquire().await.map_err(ContentError::from)?;
+    let hits = service::search(&mut conn, &actor, &query.q, chrono::Utc::now()).await?;
+    Ok(Json(SearchResults {
+        items: hits
+            .into_iter()
+            .map(|hit| ApiHit {
+                kind: match hit.kind {
+                    model::HitKind::Course => HitKind::Course,
+                    model::HitKind::Lecture => HitKind::Lecture,
+                    model::HitKind::Assignment => HitKind::Assignment,
+                },
+                id: hit.id,
+                title: hit.title,
+                course: CourseRef {
+                    course_id: hit.course_id,
+                    course_code: hit.course_code,
+                    course_title: hit.course_title,
+                },
+                snippet: hit.snippet,
+                due_at: hit.due_at,
+                status: if hit.draft {
+                    HitStatus::Draft
+                } else {
+                    HitStatus::Published
+                },
+            })
+            .collect(),
+        next_cursor: None,
+    }))
+}
+
+/// The document editor's profiles as the server enforces them: for each profile the features it
+/// allows after the institution's configuration narrowed it, whether it is a single block, and
+/// the limits; plus the video providers that are switched on. Any signed-in user may read it.
+#[utoipa::path(
+    get,
+    path = "/editor/profiles",
+    tag = "editor",
+    security(("cookie" = []), ("bearer" = [])),
+    responses(
+        (status = 200, description = "The effective profiles", body = EditorProfiles),
+        (status = 401, description = "Not logged in", body = ProblemDetails,
+            content_type = "application/problem+json"),
+    )
+)]
+async fn get_editor_profiles(
+    State(state): State<ContentState>,
+    actor: Actor,
+) -> Result<Json<EditorProfiles>, ApiError> {
+    let profiles = service::editor_profiles(&actor, &state.editor)?;
+    Ok(Json(profiles.to_dto()))
+}

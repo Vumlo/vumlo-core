@@ -18,7 +18,11 @@ Each layer is a crate, and a crate depends only on the ones below it. Cargo enfo
     server, vumlo-cli
       -> plugins    plugin installs, event delivery to plugins, the plugin API (ADR-0066)
       -> modules/*  optional crates behind Cargo features, built on module-api (ADR-0066)
-      -> learning   teaching, content, assessment, gradebook, and the flows that need several of them
+      -> learning   the flows that need several of the four crates below it, the scheduler, the audit report (ADR-0093)
+      -> gradebook  grades, publishing, the gradebook and the work read models
+      -> assessment drafts, submitted attempts, quiz scoring, form answers
+      -> content    modules, items, assignments, access rules and their facts (`content.facts`)
+      -> teaching   courses, the roster and its group links, announcements
       -> org        terms, groups, subgroups, the installation record
       -> auth       users, sessions, sign-in, account value types, the text of its mails (it queues them in mail)
       -> mail       outgoing mail: the queue, the worker, opt-outs, the transport; cannot read auth (ADR-0084)
@@ -28,7 +32,9 @@ Each layer is a crate, and a crate depends only on the ones below it. Cargo enfo
       -> common     Role, ApiError, pagination, text_enum!
 
 `db` (migrations, the installation record, the CLI's audit row) is a crate beside the chain.
-`test-support` is the test database harness and a dev-dependency only.
+`test-support` is the test database harness and a dev-dependency only. `teaching`, `content`, `assessment`,
+`gradebook` and `learning` (the flows, in `backend/crates/learning/flows`) are the crates in
+`backend/crates/learning/`; each has its own state, error enum and router, and `server` builds the states.
 
 The configuration schema is `backend/crates/config` (`vumlo-config`), shared with `vumlo-cli`: a new
 key must be marked `public`, `private` or `secret` (ADR-0054), and a secret is never read from the
@@ -48,10 +54,10 @@ behind a Cargo feature, and `server` and `vumlo-cli` name it in exactly one plac
   module's public function and pass the connection.
 - **Reads across layers:** a layer reads the tables of its own layer, and those of a lower layer **only through a view
   that layer declared** (`auth.people`, `org.term_list`, `org.group_list`, `org.subgroup_list`, `events.audit_entries`,
-  and `teaching.effective_members` for the roster). It never names the schema of a higher layer. Inside `learning`
-  the four modules are stacked `teaching < content < assessment < gradebook`, and the same rule holds between them:
-  a module never names the schema or the Rust path of one above it, and reads those below it only through the views
-  they declare (`content.item_list`, `assessment.submission_index`, `assessment.submitted_attempts`,
+  and `teaching.effective_members` for the roster). It never names the schema of a higher layer. The four crates
+  below `learning` are stacked `teaching < content < assessment < gradebook`, and the same rule holds between them:
+  a crate lists none above it (Cargo and `architecture.rs` refuse it) and names none of its schemas, and reads those below it only through
+  the views they declare (`content.item_list`, `assessment.submission_index`, `assessment.submitted_attempts`,
   `gradebook.published_grades`, ...; `architecture.rs` fails the build otherwise). A view leaves out what the readers
   above must not see; sqlx cannot tell that a view column is not null, so a query that returns one writes `"col!"`.
   Declaring a view is a migration and a line in `architecture.rs`.

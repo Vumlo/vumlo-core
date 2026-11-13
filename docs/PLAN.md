@@ -20,7 +20,6 @@ The plan below is only what those files already say; nothing in it has a date or
 ## Plan
 
 Now (partly built, [in-progress.md](decisions/in-progress.md)):
-- Splitting `learning` into crates (ADR-0093): the synchronous event subscribers, `content.facts`, the order of the four modules (nothing goes up) and the read views between them are built; the move into separate crates is not.
 - Cleanup jobs in the scheduler: expired sessions, retention of processed outbox rows and of the audit log (`publish_at` and `auto_submit` are built, ADR-0091).
 - The `link` item kind and the `lesson` item made of steps.
 

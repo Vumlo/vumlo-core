@@ -17,8 +17,8 @@ use axum::response::Response;
 use axum::routing::any;
 use chrono::Utc;
 use common::ApiError;
-use learning::teaching::{self, TeachingError};
 use module_api::OutboundError;
+use teaching::{self, TeachingError};
 use uuid::Uuid;
 
 use crate::model::{COURSE_SEGMENT, InstallStatus, RouteAuth};

@@ -56,8 +56,10 @@ Unit tests never live inside a source file: `foo.rs` has `#[cfg(test)] mod tests
 `foo/tests.rs` (`mod.rs`, `lib.rs`: `tests.rs` beside it). The script deletes every `tests.rs`, and fails
 if one is left; the declaration stays, and does nothing outside a test build. A new test module follows
 that naming, or it ships. The test database harness is the crate `backend/crates/test-support`, a
-dev-dependency of `server` and `vumlo-cli`: the script deletes it with its lines in the manifests, and
-`verify-archive.sh` checks that neither it nor any `tests.rs` is in the archive.
+dev-dependency of every crate that tests against a database: the script deletes it with its lines in the manifests (those
+of the crates in `backend/crates/learning/` too), and `verify-archive.sh` checks that neither it nor any
+`tests.rs` is in the archive. An integration-test folder `tests/` of a crate in `crates/`, `crates/learning/` or
+`crates/modules/` is deleted as a whole.
 
 ## Experimental
 

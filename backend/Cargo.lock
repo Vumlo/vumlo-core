@@ -141,6 +141,27 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d3fb67a6e08acf24fdeccbac2cb6ac4305825bd1f117462e0e6f2f193345ad56"
 
 [[package]]
+name = "assessment"
+version = "0.6.1"
+dependencies = [
+ "access",
+ "api-types",
+ "axum",
+ "chrono",
+ "common",
+ "content",
+ "events",
+ "files",
+ "serde_json",
+ "sqlx",
+ "teaching",
+ "thiserror 2.0.21",
+ "utoipa",
+ "utoipa-axum",
+ "uuid",
+]
+
+[[package]]
 name = "async-trait"
 version = "0.1.92"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -673,6 +694,32 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9eb6feb175df65d0a3ccd3e73484e940d0ac664e8034f0519fd49a93db3071d9"
 dependencies = [
  "rustversion",
+]
+
+[[package]]
+name = "content"
+version = "0.6.1"
+dependencies = [
+ "access",
+ "api-types",
+ "auth",
+ "axum",
+ "chrono",
+ "common",
+ "events",
+ "files",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "teaching",
+ "test-support",
+ "thiserror 2.0.21",
+ "tokio",
+ "tracing",
+ "utoipa",
+ "utoipa-axum",
+ "uuid",
+ "vumlo-config",
 ]
 
 [[package]]
@@ -1511,6 +1558,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "gradebook"
+version = "0.6.1"
+dependencies = [
+ "access",
+ "api-types",
+ "axum",
+ "chrono",
+ "common",
+ "content",
+ "events",
+ "rust_xlsxwriter",
+ "serde_json",
+ "sqlx",
+ "teaching",
+ "thiserror 2.0.21",
+ "tracing",
+ "utoipa",
+ "utoipa-axum",
+ "uuid",
+ "vumlo-config",
+]
+
+[[package]]
 name = "group"
 version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2124,18 +2194,20 @@ version = "0.6.1"
 dependencies = [
  "access",
  "api-types",
+ "assessment",
  "auth",
  "axum",
  "chrono",
  "common",
+ "content",
  "events",
  "files",
+ "gradebook",
  "object_store",
  "org",
- "rust_xlsxwriter",
- "serde",
  "serde_json",
  "sqlx",
+ "teaching",
  "test-support",
  "thiserror 2.0.21",
  "tokio",
@@ -2752,11 +2824,13 @@ version = "0.6.1"
 dependencies = [
  "access",
  "api-types",
+ "assessment",
  "axum",
  "base64 0.23.1",
  "chacha20poly1305",
  "chrono",
  "common",
+ "content",
  "events",
  "hmac 0.13.0",
  "learning",
@@ -2767,6 +2841,7 @@ dependencies = [
  "serde_json",
  "sha2 0.11.1",
  "sqlx",
+ "teaching",
  "test-support",
  "thiserror 2.0.21",
  "tokio",
@@ -3661,6 +3736,7 @@ dependencies = [
  "access",
  "anyhow",
  "api-types",
+ "assessment",
  "auth",
  "axum",
  "axum-extra",
@@ -3669,9 +3745,11 @@ dependencies = [
  "chrono-tz",
  "clap",
  "common",
+ "content",
  "db",
  "events",
  "files",
+ "gradebook",
  "learning",
  "mail",
  "module-api",
@@ -3682,6 +3760,7 @@ dependencies = [
  "serde_json",
  "sha2 0.11.1",
  "sqlx",
+ "teaching",
  "test-support",
  "thiserror 2.0.21",
  "tokio",
@@ -4111,6 +4190,28 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 3.0.9",
+]
+
+[[package]]
+name = "teaching"
+version = "0.6.1"
+dependencies = [
+ "access",
+ "api-types",
+ "auth",
+ "axum",
+ "chrono",
+ "common",
+ "events",
+ "org",
+ "serde_json",
+ "sqlx",
+ "test-support",
+ "thiserror 2.0.21",
+ "tokio",
+ "utoipa",
+ "utoipa-axum",
+ "uuid",
 ]
 
 [[package]]
@@ -4698,16 +4799,20 @@ name = "vumlo-module-ai-agent"
 version = "0.6.1"
 dependencies = [
  "access",
+ "assessment",
  "auth",
  "axum",
  "chrono",
  "common",
+ "content",
+ "gradebook",
  "learning",
  "module-api",
  "org",
  "serde",
  "serde_json",
  "sqlx",
+ "teaching",
  "thiserror 2.0.21",
  "tokio",
  "tracing",

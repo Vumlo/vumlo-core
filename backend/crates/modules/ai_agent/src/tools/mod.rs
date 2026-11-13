@@ -18,9 +18,9 @@ use access::Actor;
 use auth::HashedPassword;
 use chrono::{DateTime, Utc};
 use common::{ApiError, PageParams};
-use learning::content::{EffectiveProfiles, ItemRules};
-use learning::gradebook::ColumnStatus;
-use learning::{content, gradebook, items};
+use content::{EffectiveProfiles, ItemRules};
+use gradebook::ColumnStatus;
+use learning::items;
 use module_api::Institution;
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
@@ -368,7 +368,7 @@ fn capped<T>(items: &[T], row: impl Fn(&T) -> Value) -> Value {
     Value::Array(rows)
 }
 
-fn course_row(card: &learning::teaching::CardCourse) -> Value {
+fn course_row(card: &teaching::CardCourse) -> Value {
     json!({"id": card.course.id, "title": card.course.title, "code": card.code})
 }
 

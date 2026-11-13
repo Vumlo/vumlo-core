@@ -34,6 +34,7 @@ git archive --format=tar "--prefix=$name/" HEAD -- "${allow[@]}" | tar -x -C "$w
 # --- what is left out of the directories above ----------------------------------------------------
 rm -rf \
     "$stage"/backend/crates/*/tests \
+    "$stage"/backend/crates/learning/*/tests \
     "$stage"/backend/crates/modules/*/tests \
     "$stage"/backend/crates/modules/dummy \
     "$stage"/backend/crates/test-support \
@@ -58,7 +59,8 @@ sed -i -e '/feature = "dummy"/d' -e '/vumlo_module_dummy/d' \
 # The test harness is a crate of its own and a dev-dependency of every crate that tests against a
 # database: its member line, its workspace dependency and each dev-dependency on it go.
 sed -i -e '/crates\/test-support/d' -e '/^test-support[ .=]/d' "$stage/backend/Cargo.toml" \
-    "$stage"/backend/crates/*/Cargo.toml "$stage"/backend/crates/modules/*/Cargo.toml
+    "$stage"/backend/crates/*/Cargo.toml "$stage"/backend/crates/learning/*/Cargo.toml \
+    "$stage"/backend/crates/modules/*/Cargo.toml
 # The offline query data of the module's own queries.
 { grep -rl 'dummy\.' "$stage/backend/.sqlx" || true; } | xargs -r rm -f
 

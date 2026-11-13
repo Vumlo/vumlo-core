@@ -27,17 +27,17 @@ use utoipa_scalar::{Scalar, Servable};
 
 use crate::health;
 use access::{self, ActorSource, PluginSource};
+use assessment::AssessmentState;
 use auth::{self, AuthState, SetupError};
 use common::{ApiError, problem_details};
+use content::{ContentState, EditorConfigError, EffectiveProfiles};
 use events::Handlers;
-use learning::assessment;
-use learning::content::{self, EditorConfigError, EffectiveProfiles};
-use learning::gradebook;
-use learning::teaching;
+use gradebook::GradebookState;
 use learning::{self, LearningState};
 use mail::{MailError, MailState, Mailer};
 use org::{self, OrgState};
 use plugins::PluginsState;
+use teaching::TeachingState;
 use vumlo_config::Settings;
 
 /// Shorter than the request timeout, so an unreachable database surfaces as 503, not 408.
@@ -62,6 +62,10 @@ pub struct AppState {
     pub mailer: Option<Arc<Mailer>>,
     pub mail_context: Option<mail::Context>,
     pub org: OrgState,
+    pub teaching: TeachingState,
+    pub content: ContentState,
+    pub assessment: AssessmentState,
+    pub gradebook: GradebookState,
     pub learning: LearningState,
     pub plugins: PluginsState,
     /// The optional modules compiled in, each after the ones it requires.
@@ -83,6 +87,30 @@ impl FromRef<AppState> for AuthState {
 impl FromRef<AppState> for OrgState {
     fn from_ref(state: &AppState) -> Self {
         state.org.clone()
+    }
+}
+
+impl FromRef<AppState> for TeachingState {
+    fn from_ref(state: &AppState) -> Self {
+        state.teaching.clone()
+    }
+}
+
+impl FromRef<AppState> for ContentState {
+    fn from_ref(state: &AppState) -> Self {
+        state.content.clone()
+    }
+}
+
+impl FromRef<AppState> for AssessmentState {
+    fn from_ref(state: &AppState) -> Self {
+        state.assessment.clone()
+    }
+}
+
+impl FromRef<AppState> for GradebookState {
+    fn from_ref(state: &AppState) -> Self {
+        state.gradebook.clone()
     }
 }
 
@@ -150,7 +178,7 @@ impl AppState {
     /// request.
     pub fn new(db: PgPool, config: Settings) -> Result<Self, StateError> {
         install_subscribers();
-        let editor = EffectiveProfiles::resolve(&config.editor)?;
+        let editor = Arc::new(EffectiveProfiles::resolve(&config.editor)?);
         let hashing = auth::HashGate::new(config.auth.max_concurrent_hashes);
         let mailer = config
             .mail
@@ -192,10 +220,20 @@ impl AppState {
                 db: db.clone(),
                 config: config.clone(),
             },
+            teaching: TeachingState { db: db.clone() },
+            content: ContentState {
+                db: db.clone(),
+                editor: editor.clone(),
+            },
+            assessment: AssessmentState { db: db.clone() },
+            gradebook: GradebookState {
+                db: db.clone(),
+                grading_scale: config.institution.grading_scale,
+            },
             learning: LearningState {
                 db: db.clone(),
                 config: config.clone(),
-                editor: Arc::new(editor),
+                editor,
                 files: storage,
                 max_file_bytes: config.files.max_size,
             },

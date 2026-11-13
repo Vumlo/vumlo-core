@@ -540,7 +540,7 @@ async fn a_quiz_submit_and_a_publish_for_one_student_take_the_locks_in_one_order
 
         learning::facts::sync(
             &mut holder,
-            learning::content::FactScope::Pair {
+            content::FactScope::Pair {
                 item_id: item,
                 student_id: w.student.id,
             },

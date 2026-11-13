@@ -1,6 +1,7 @@
 [workspace]
 resolver = "3"
-# `crates/modules/` only holds the optional modules; each of them is a member.
+# `crates/modules/` only holds the optional modules, `crates/learning/` the crates of the learning
+# domain (ADR-0093); each of them is a member.
 members = [
     "crates/access",
     "crates/api-types",
@@ -10,7 +11,7 @@ members = [
     "crates/db",
     "crates/events",
     "crates/files",
-    "crates/learning",
+    "crates/learning/*",
     "crates/mail",
     "crates/module-api",
     "crates/org",
@@ -67,18 +68,22 @@ uuid = { version = "1", features = ["v7", "serde"] }
 zxcvbn = "3"
 
 access = { path = "crates/access" }
+assessment = { path = "crates/learning/assessment" }
 api-types = { path = "crates/api-types" }
 auth = { path = "crates/auth" }
 common = { path = "crates/common" }
+content = { path = "crates/learning/content" }
 db = { path = "crates/db" }
 events = { path = "crates/events" }
 files = { path = "crates/files" }
-learning = { path = "crates/learning" }
+gradebook = { path = "crates/learning/gradebook" }
+learning = { path = "crates/learning/flows" }
 mail = { path = "crates/mail" }
 module-api = { path = "crates/module-api" }
 org = { path = "crates/org" }
 plugins = { path = "crates/plugins" }
 server = { path = "crates/server" }
+teaching = { path = "crates/learning/teaching" }
 test-support = { path = "crates/test-support" }
 vumlo-config = { path = "crates/config" }
 # The test-only module (feature `dummy` of server and vumlo-cli); never in a default build.
