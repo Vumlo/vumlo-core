@@ -30,6 +30,7 @@ struct Ctx {
     group: Uuid,
     subgroup: Uuid,
     term: Uuid,
+    unit: Uuid,
     owner: Uuid,
     /// A file the owner of the course uploaded and no item names: only the owner reads it.
     file: Uuid,
@@ -389,12 +390,23 @@ fn operations(c: &Ctx, other_user: Uuid) -> Vec<Call> {
             Some(json!({"name": "evil2"})),
         ),
         call("DELETE", format!("/terms/{}", c.term), None),
+        call(
+            "POST",
+            "/units".into(),
+            Some(json!({"name": "evil", "parent_id": c.unit})),
+        ),
+        call(
+            "PATCH",
+            format!("/units/{}", c.unit),
+            Some(json!({"name": "evil2"})),
+        ),
+        call("DELETE", format!("/units/{}", c.unit), None),
     ]
 }
 
 /// Whether a path belongs to the institution (admins only) and so is not a course resource.
 fn is_institutional(path: &str) -> bool {
-    ["/admin", "/groups", "/subgroups", "/terms"]
+    ["/admin", "/groups", "/subgroups", "/terms", "/units"]
         .iter()
         .any(|prefix| path.starts_with(prefix))
 }
@@ -466,6 +478,16 @@ async fn build(env: &Env, admin: &Account, owner: &Account, student: &Account, t
         )
         .await,
     );
+    let unit = id_of(
+        &env.ok(
+            "POST",
+            &admin.token,
+            "/units",
+            Some(json!({"name": format!("u-{tag}")})),
+            201,
+        )
+        .await,
+    );
     // Something to leak: an attempt, a draft on top of it and a grade.
     let draft = format!("/assignments/{assignment}/submission/draft");
     env.ok(
@@ -533,6 +555,7 @@ async fn build(env: &Env, admin: &Account, owner: &Account, student: &Account, t
         group,
         subgroup,
         term,
+        unit,
         owner: owner.id,
         file,
         announcement,
@@ -886,6 +909,7 @@ async fn the_list_of_operations_is_the_api() {
             "GET /editor/profiles",
             "GET /terms",
             "GET /terms/{id}",
+            "GET /units",
         ]
         .into_iter()
         .map(str::to_owned)
@@ -904,6 +928,7 @@ async fn the_list_of_operations_is_the_api() {
             group: any,
             subgroup: any,
             term: any,
+            unit: any,
             owner: any,
             file: any,
             announcement: any,

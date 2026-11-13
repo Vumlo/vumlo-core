@@ -1,0 +1,40 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT parent_id, name FROM org.units WHERE id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "parent_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "org.units",
+            "name": "parent_id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "org.units",
+            "name": "name"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      true,
+      false
+    ]
+  },
+  "hash": "b3d125ca283090d3c2fd1623f5381a628da95a855ca1be450f4ba1105b7c4ebf"
+}

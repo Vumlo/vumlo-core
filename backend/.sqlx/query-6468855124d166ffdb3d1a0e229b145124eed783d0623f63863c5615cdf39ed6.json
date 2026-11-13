@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "LOCK TABLE org.units IN SHARE ROW EXCLUSIVE MODE",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "6468855124d166ffdb3d1a0e229b145124eed783d0623f63863c5615cdf39ed6"
+}

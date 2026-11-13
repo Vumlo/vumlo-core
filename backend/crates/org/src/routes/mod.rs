@@ -5,6 +5,7 @@ mod groups;
 mod institution;
 mod subgroups;
 mod terms;
+mod units;
 
 use access::ActorSource;
 use api_types::{FieldError, GroupMember, Page, PageQuery};
@@ -59,6 +60,8 @@ where
             subgroups::add_subgroup_members
         ))
         .routes(routes!(subgroups::remove_subgroup_member))
+        .routes(routes!(units::create_unit, units::list_units))
+        .routes(routes!(units::update_unit, units::delete_unit))
 }
 
 impl From<OrgError> for ApiError {
@@ -76,6 +79,7 @@ impl From<OrgError> for ApiError {
                 Self::invalid_field("downloads", error.to_string())
             }
             OrgError::TermNotFound
+            | OrgError::UnitNotFound
             | OrgError::GroupNotFound
             | OrgError::SubgroupNotFound
             | OrgError::MemberNotFound => Self::NotFound,
@@ -84,6 +88,11 @@ impl From<OrgError> for ApiError {
             OrgError::SubgroupNameTaken => {
                 Self::Conflict("a subgroup with this name already exists in the group")
             }
+            OrgError::UnitNameTaken => {
+                Self::Conflict("a unit with this name already exists under the parent")
+            }
+            OrgError::UnitInUse => Self::Conflict("the unit has subunits or courses"),
+            OrgError::UnitCycle => Self::invalid_field("parent_id", error.to_string()),
             OrgError::TermInUse => Self::Conflict("a course uses this term"),
             OrgError::GroupInUse => Self::Conflict("a course uses this group"),
             OrgError::SubgroupInUse => Self::Conflict("a course uses this subgroup"),

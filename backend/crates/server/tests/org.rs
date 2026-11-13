@@ -1235,3 +1235,130 @@ async fn every_org_endpoint_is_in_the_openapi_document() {
     })
     .await;
 }
+
+// ---------------------------------------------------------------------------------------------
+// Units (ADR-0094)
+// ---------------------------------------------------------------------------------------------
+
+#[tokio::test]
+async fn units_are_a_tree_an_admin_edits_and_a_course_in_one_keeps_it() {
+    db_test(async |pool| {
+        let w = world(pool).await;
+        let unit = |name: &str, parent: Option<Uuid>| json!({"name": name, "parent_id": parent});
+
+        let faculty = w
+            .as_admin("POST", "/units", Some(unit("Science", None)))
+            .await;
+        assert_eq!(faculty.status, 201);
+        let faculty = common::id_of(&faculty.json());
+        let physics = w
+            .as_admin("POST", "/units", Some(unit("Physics", Some(faculty))))
+            .await;
+        assert_eq!(physics.status, 201);
+        let physics = common::id_of(&physics.json());
+
+        // The list is flat and gives an admin every ability.
+        let listed = w.as_admin("GET", "/units", None).await;
+        assert_eq!(listed.status, 200);
+        let items = listed.json()["items"].clone();
+        assert_eq!(items.as_array().unwrap().len(), 2);
+        assert_eq!(items[0]["name"], "Physics");
+        assert_eq!(items[0]["parent_id"], json!(faculty));
+        assert_eq!(items[0]["abilities"].as_array().unwrap().len(), 6);
+        assert_eq!(listed.json()["next_cursor"], Value::Null);
+
+        // Others see none, and cannot change the tree.
+        for token in [&w.teacher.token, &w.student.token] {
+            let seen = call(&w.http, "GET", "/units", Some(token), None).await;
+            assert_eq!(seen.json()["items"], json!([]));
+            let created = call(
+                &w.http,
+                "POST",
+                "/units",
+                Some(token),
+                Some(&unit("X", None)),
+            )
+            .await;
+            created.problem(403);
+            call(
+                &w.http,
+                "PATCH",
+                &format!("/units/{physics}"),
+                Some(token),
+                Some(&json!({"name": "X"})),
+            )
+            .await
+            .problem(404);
+        }
+        // Anonymous.
+        call(&w.http, "GET", "/units", None, None)
+            .await
+            .problem(401);
+
+        // A name is free under another parent, taken under the same one; a cycle is 422 on parent_id.
+        w.as_admin("POST", "/units", Some(unit("Physics", Some(faculty))))
+            .await
+            .problem(409);
+        let cycle = w
+            .as_admin(
+                "PATCH",
+                &format!("/units/{faculty}"),
+                Some(json!({"parent_id": physics})),
+            )
+            .await;
+        assert_eq!(fields(&cycle), ["parent_id"]);
+        w.as_admin("POST", "/units", Some(json!({"name": ""})))
+            .await
+            .problem(422);
+        let moved = w
+            .as_admin(
+                "PATCH",
+                &format!("/units/{physics}"),
+                Some(json!({"name": "Physics 2", "parent_id": null})),
+            )
+            .await;
+        assert_eq!(moved.status, 200);
+        assert_eq!(moved.json()["parent_id"], Value::Null);
+        assert_eq!(moved.json()["name"], "Physics 2");
+
+        // A course in a unit keeps it: 409, never a cascade. (Courses get their unit through
+        // `PUT /courses/{id}/unit`, a later step; here the row is set directly.)
+        let created = call(
+            &w.http,
+            "POST",
+            "/courses",
+            Some(&w.teacher.token),
+            Some(&json!({"title": "Mechanics"})),
+        )
+        .await;
+        let course = common::id_of(&created.json());
+        sqlx::query!(
+            "UPDATE teaching.courses SET unit_id = $2 WHERE id = $1",
+            course,
+            physics
+        )
+        .execute(&w.pool)
+        .await
+        .unwrap();
+        w.as_admin("DELETE", &format!("/units/{physics}"), None)
+            .await
+            .problem(409);
+        sqlx::query!(
+            "UPDATE teaching.courses SET unit_id = NULL WHERE id = $1",
+            course
+        )
+        .execute(&w.pool)
+        .await
+        .unwrap();
+        assert_eq!(
+            w.as_admin("DELETE", &format!("/units/{physics}"), None)
+                .await
+                .status,
+            204
+        );
+        w.as_admin("DELETE", &format!("/units/{physics}"), None)
+            .await
+            .problem(404);
+    })
+    .await;
+}

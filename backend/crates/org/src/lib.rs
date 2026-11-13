@@ -12,13 +12,13 @@ mod tests;
 
 pub use model::{
     DownloadUrl, Group, GroupMember, GroupOption, MemberLine, MemberProblem, ModelError, OrgName,
-    Subgroup, Term, TermDates, TermUpdate,
+    Subgroup, Term, TermDates, TermUpdate, Unit, UnitUpdate,
 };
 pub use routes::router;
 pub use service::{
-    OrgError, add_group_members, create_group, create_term, get_group, group_member_lines,
-    group_options, groups_of_user, list_groups, list_terms, record_mode, terms_newest_first,
-    view_institution_settings,
+    OrgError, add_group_members, create_group, create_term, create_unit, delete_unit, get_group,
+    group_member_lines, group_options, groups_of_user, list_groups, list_terms, list_units,
+    record_mode, terms_newest_first, unit_grant, update_unit, view_institution_settings,
 };
 pub use state::OrgState;
 #[cfg(feature = "testing")]

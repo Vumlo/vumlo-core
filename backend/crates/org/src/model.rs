@@ -134,6 +134,22 @@ pub struct Group {
     pub created_at: DateTime<Utc>,
 }
 
+/// A unit of the institution (a faculty, a department): a node of a tree (ADR-0094).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Unit {
+    pub id: Uuid,
+    pub parent_id: Option<Uuid>,
+    pub name: String,
+    pub created_at: DateTime<Utc>,
+}
+
+/// The fields of a unit update that were sent. `parent_id: Some(None)` moves the unit to the top.
+#[derive(Debug, Clone, Default)]
+pub struct UnitUpdate {
+    pub name: Option<OrgName>,
+    pub parent_id: Option<Option<Uuid>>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Subgroup {
     pub id: Uuid,

@@ -4,7 +4,7 @@ use chrono::NaiveDate;
 use sqlx::PgConnection;
 use uuid::Uuid;
 
-use super::model::{Group, GroupMember, MemberLine, Subgroup, Term};
+use super::model::{Group, GroupMember, MemberLine, Subgroup, Term, Unit};
 
 // ---------------------------------------------------------------------------------------------
 // Terms
@@ -172,6 +172,147 @@ pub async fn rename_group(
 /// Deletes the group; its subgroups and members go with it.
 pub async fn delete_group(conn: &mut PgConnection, id: Uuid) -> Result<u64, sqlx::Error> {
     let result = sqlx::query!("DELETE FROM org.groups WHERE id = $1", id)
+        .execute(conn)
+        .await?;
+    Ok(result.rows_affected())
+}
+
+// ---------------------------------------------------------------------------------------------
+// Units
+// ---------------------------------------------------------------------------------------------
+
+pub async fn insert_unit(
+    conn: &mut PgConnection,
+    id: Uuid,
+    parent_id: Option<Uuid>,
+    name: &str,
+) -> Result<Unit, sqlx::Error> {
+    sqlx::query_as!(
+        Unit,
+        "INSERT INTO org.units (id, parent_id, name) VALUES ($1, $2, $3)
+         RETURNING id, parent_id, name, created_at",
+        id,
+        parent_id,
+        name
+    )
+    .fetch_one(conn)
+    .await
+}
+
+pub async fn find_unit(conn: &mut PgConnection, id: Uuid) -> Result<Option<Unit>, sqlx::Error> {
+    sqlx::query_as!(
+        Unit,
+        "SELECT id, parent_id, name, created_at FROM org.units WHERE id = $1",
+        id
+    )
+    .fetch_optional(conn)
+    .await
+}
+
+/// Blocks every other writer of the tree until the transaction ends (it still lets readers in), so
+/// a move checks its new parent against a tree no one else is changing. Two concurrent moves
+/// could each look fine alone and close a cycle together.
+pub async fn lock_tree(conn: &mut PgConnection) -> Result<(), sqlx::Error> {
+    sqlx::query!("LOCK TABLE org.units IN SHARE ROW EXCLUSIVE MODE")
+        .execute(conn)
+        .await?;
+    Ok(())
+}
+
+/// Is `unit_id` the root itself or a unit below it?
+pub async fn in_subtree(
+    conn: &mut PgConnection,
+    root_id: Uuid,
+    unit_id: Uuid,
+) -> Result<bool, sqlx::Error> {
+    sqlx::query_scalar!(
+        r#"SELECT EXISTS (
+               SELECT 1 FROM org.unit_subtree WHERE root_id = $1 AND unit_id = $2
+           ) AS "found!""#,
+        root_id,
+        unit_id
+    )
+    .fetch_one(conn)
+    .await
+}
+
+/// The abilities (as text) of a person's grant on a unit, or `None` when they hold none there.
+pub async fn unit_abilities(
+    conn: &mut PgConnection,
+    user_id: Uuid,
+    unit_id: Uuid,
+) -> Result<Option<Vec<String>>, sqlx::Error> {
+    sqlx::query_scalar!(
+        r#"SELECT abilities AS "abilities!" FROM org.unit_grants WHERE user_id = $1 AND unit_id = $2"#,
+        user_id,
+        unit_id
+    )
+    .fetch_optional(conn)
+    .await
+}
+
+/// Every unit, by name.
+pub async fn list_units(conn: &mut PgConnection) -> Result<Vec<Unit>, sqlx::Error> {
+    sqlx::query_as!(
+        Unit,
+        "SELECT id, parent_id, name, created_at FROM org.units ORDER BY name, id"
+    )
+    .fetch_all(conn)
+    .await
+}
+
+/// The units a person's roles cover, with the abilities of the grant, by name.
+pub async fn list_units_of_user(
+    conn: &mut PgConnection,
+    user_id: Uuid,
+) -> Result<Vec<(Unit, Vec<String>)>, sqlx::Error> {
+    let rows = sqlx::query!(
+        r#"SELECT u.id, u.parent_id, u.name, u.created_at, g.abilities AS "abilities!"
+           FROM org.unit_grants g
+           JOIN org.units u ON u.id = g.unit_id
+           WHERE g.user_id = $1
+           ORDER BY u.name, u.id"#,
+        user_id
+    )
+    .fetch_all(conn)
+    .await?;
+    Ok(rows
+        .into_iter()
+        .map(|row| {
+            (
+                Unit {
+                    id: row.id,
+                    parent_id: row.parent_id,
+                    name: row.name,
+                    created_at: row.created_at,
+                },
+                row.abilities,
+            )
+        })
+        .collect())
+}
+
+pub async fn update_unit(
+    conn: &mut PgConnection,
+    id: Uuid,
+    parent_id: Option<Uuid>,
+    name: &str,
+) -> Result<Unit, sqlx::Error> {
+    sqlx::query_as!(
+        Unit,
+        "UPDATE org.units SET parent_id = $2, name = $3 WHERE id = $1
+         RETURNING id, parent_id, name, created_at",
+        id,
+        parent_id,
+        name
+    )
+    .fetch_one(conn)
+    .await
+}
+
+/// Deletes the unit; its role rows go with it. Subunits and courses refuse (no cascade).
+pub async fn delete_unit(conn: &mut PgConnection, id: Uuid) -> Result<u64, sqlx::Error> {
+    let result = sqlx::query!("DELETE FROM org.units WHERE id = $1", id)
         .execute(conn)
         .await?;
     Ok(result.rows_affected())
