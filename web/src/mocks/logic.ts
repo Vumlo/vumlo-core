@@ -3,8 +3,9 @@ import { MOCK_NOW } from "@/lib/clock";
 import { fromCents, sumPoints, toCents } from "@/lib/points";
 import type { FormConfig, QuizConfig, QuizQuestion } from "@/lib/api/gaps";
 import type { MyWorkItem, WorkStatus } from "@/lib/api/types";
-import type { ContentModule, ContentTree, ItemSummary, Module } from "@/lib/api/types";
-import { getDb, type DbCourse, type DbGrade, type DbItem, type DbMember, type DbSubmission, type DbUser } from "./db";
+import type { ContentModule, ContentTree, CourseCan, ItemSummary, Module } from "@/lib/api/types";
+import type { UnitAbility } from "@/lib/api/hooks/units";
+import { getDb, type DbCourse, type DbGrade, type DbItem, type DbMember, type DbSubmission, type DbUnit, type DbUser } from "./db";
 
 export const SESSION_KEY = "vumlo.mock.session";
 
@@ -59,10 +60,80 @@ export function memberOf(courseId: string, userId: string): DbMember | undefined
   return getDb().members.find((m) => m.course_id === courseId && m.user_id === userId);
 }
 
-export function isStaff(user: DbUser, course: DbCourse): boolean {
+// ---- units and grants (ADR-0094) ----
+
+let consoleMode = false;
+/** Called by the admin console's mock (`web-admin/src/mocks/start.ts`): there an admin holds every ability on every unit; in the app nobody does (ADR-0095). */
+export function runAsConsole() {
+  consoleMode = true;
+}
+
+const ALL_ABILITIES: UnitAbility[] = ["view_grades", "edit_content", "grade", "manage_roster", "manage_courses", "manage_units"];
+
+export function unitById(id: string): DbUnit {
+  const u = getDb().units.find((x) => x.id === id);
+  if (!u) throw notFound();
+  return u;
+}
+
+/** Is `id` the unit `ancestor` or below it? */
+export function unitInside(id: string, ancestor: string): boolean {
+  const parent = unitById(id).parent_id;
+  return id === ancestor || (parent !== null && unitInside(parent, ancestor));
+}
+
+/** What the user's roles on a unit and the units above it let them do, or null when no role covers it. A student holds none. */
+export function grantOn(user: DbUser, unitId: string): Set<UnitAbility> | null {
+  if (user.role === "student") return null;
+  if (user.role === "admin" && consoleMode) return new Set(ALL_ABILITIES);
+  const { unitRoles, unitAbilities } = getDb();
+  let held: Set<UnitAbility> | null = null;
+  for (let id: string | null = unitId; id; id = unitById(id).parent_id) {
+    const role = unitRoles[id]?.[user.id];
+    if (role) held = new Set([...(held ?? []), ...unitAbilities[role]]);
+  }
+  return held;
+}
+
+/** Only an administrator in the console (ADR-0095) manages a top-level unit. */
+export const isConsoleAdmin = (user: DbUser) => consoleMode && user.role === "admin";
+
+/** The unit a new course is created in: none, or one the user may put courses into (`manage_courses`), as the server checks it. */
+export function unitForNewCourse(user: DbUser, raw: unknown): string | null {
+  if (raw == null) return null;
+  const id = String(raw);
+  if (!getDb().units.some((u) => u.id === id)) throw problem(422, "Validation failed", undefined, [{ field: "unit_id", message: "no such unit" }]);
+  if (!grantOn(user, id)?.has("manage_courses")) throw forbidden();
+  return id;
+}
+
+/** The abilities the user's unit roles give them in a course: empty without a grant. */
+export function unitGrantOf(user: DbUser, courseId: string): Set<UnitAbility> {
+  const unit = courseById(courseId).unit_id;
+  return (unit && grantOn(user, unit)) || new Set();
+}
+
+/** Owner, enrolled teacher or assistant, or an administrator. */
+function onStaff(user: DbUser, course: DbCourse): boolean {
   if (user.role === "admin") return true;
   const m = memberOf(course.id, user.id);
   return !!m && (m.role === "teacher" || m.role === "assistant") && !m.left_on;
+}
+
+/** Staff of the course, or anyone a unit role covers it for (a viewer included; what they may change is `requireStaff`'s question). */
+export function isStaff(user: DbUser, course: DbCourse): boolean {
+  return onStaff(user, course) || (!!course.unit_id && grantOn(user, course.unit_id) !== null);
+}
+
+/** What the caller may do in the course, for the web app: staff everything, a unit grant what its abilities map to, anyone else nothing. */
+export function canOf(user: DbUser, course: DbCourse): CourseCan {
+  const staff = onStaff(user, course);
+  const g = unitGrantOf(user, course.id);
+  const can = staff
+    ? { view_grades: true, edit_content: true, grade: true, manage_roster: true, manage_course: true }
+    : { view_grades: g.has("view_grades"), edit_content: g.has("edit_content"), grade: g.has("grade"), manage_roster: g.has("manage_roster"), manage_course: g.has("manage_courses") };
+  // An archived course is read only: every write reads as false (`access::course_can`, ADR-0048). Restoring, deleting and handing it over are not in `can`.
+  return course.status === "archived" ? { ...can, edit_content: false, grade: false, manage_roster: false, manage_course: false } : can;
 }
 
 /** Students see a course only once it is published (or archived, read only) and only when on its roster. */
@@ -78,10 +149,14 @@ export function requireView(courseId: string, user = requireUser()) {
   return { course, user, staff: isStaff(user, course) };
 }
 
-export function requireStaff(courseId: string, user = requireUser()) {
+/**
+ * Staff of the course (and an admin) pass. Someone who reaches it through a unit passes only with `ability`, the one the server's
+ * action maps to (ADR-0094, spec 5). `null` is for what a unit never allows: deleting a course and handing it to another owner.
+ */
+export function requireStaff(courseId: string, ability: UnitAbility | null, user = requireUser()) {
   const course = courseById(courseId);
   if (!canView(user, course)) throw notFound();
-  if (!isStaff(user, course)) throw forbidden();
+  if (!onStaff(user, course) && !(ability && unitGrantOf(user, course.id).has(ability))) throw forbidden();
   return { course, user };
 }
 

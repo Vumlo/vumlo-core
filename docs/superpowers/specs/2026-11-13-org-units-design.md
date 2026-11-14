@@ -1,6 +1,6 @@
 # Org units and unit roles: design
 
-Status: backend built (PR A), web to come (PR B). ADR-0094. Delivery: one spec, two stacked PRs (backend, then web).
+Status: built (PR A, the backend, and PR B, the web, which came with ADR-0097). ADR-0094. Delivery: one spec, two stacked PRs (backend, then web).
 Where the build departs from the first design, the text below says what was built (section 13 lists the changes).
 
 ## 1. Intent
@@ -214,14 +214,18 @@ are regenerated. Beyond this table, `GET /courses/{id}` carries `can` (5b) and `
 
 ## 8. Web
 
-- **Admin → Units** (`web/src/app/(app)/admin/units`): the tree (create, rename, move, delete), the roles on a
-  selected unit (add by search, change, remove), and a "Unit roles" panel with one switch per ability for `manager`
-  and `viewer`, each with a one-line explanation. `view` is shown as always on.
+- **Admin → Units**: the tree (create, rename, move, delete), the roles on a selected unit (add by search, change,
+  remove), and a "Unit roles" panel with one switch per ability for `manager` and `viewer`, each with a one-line
+  explanation. `view` is shown as always on. Built in the admin console (`web-admin/`, ADR-0095), not in the people's
+  app: system-wide settings live there.
 - **Units** for non-admins (`/units`, shown in the navigation only when `GET /units` is non-empty): the same tree
   limited to what the person sees, each unit's courses, and the tree and role controls only where `manage_units`
-  allows (on children of the units they hold it on).
-- Course create and course settings: a unit picker when the person may place courses (admin, or `manage_courses`
-  somewhere).
+  allows. Built: a new subunit needs `manage_units` on the unit it goes under; renaming, moving or deleting a unit and
+  its roles need `manage_units` on its parent, so nobody changes the unit their own role sits on. The people's app has
+  no control for a new top-level unit (a unit with no parent is made in the console).
+- Course create and course settings: a unit picker when the person may place courses. It lists the units the person
+  holds `manage_courses` on (the `GET /units` items whose `abilities` include it); an admin places courses from the
+  console.
 - Course pages reached through a unit work as for staff, with controls shown by the course response's `can` (5b).
 - i18n strings in every catalogue the web app ships.
 
@@ -279,3 +283,10 @@ rule); response shapes beyond the fields named; page layout within the existing 
    an unknown or unseen `parent_id` in a unit request body is `422` on `parent_id`; a plugin launch token says `staff`
    only to whoever may read the submissions (`ViewSubmissions`), `student` to a course student, and is refused to anyone
    else; the counts to grade on the item facts need `ViewSubmissions`.
+
+Changes made while building the web (PR B):
+
+9. The admin page for units and the "Unit roles" panel are in the admin console (`web-admin/`, ADR-0095), not in the people's app (section 8).
+10. In the people's app, renaming, moving and deleting a unit and changing its roles need `manage_units` on the unit's parent, not on the unit itself (the first design said "on children of the units they hold it on", which is the same rule seen from above). The people's app has no control for a new top-level unit: an admin makes one in the console.
+11. An admin places courses from the console; the unit picker of the people's app lists the units the person holds `manage_courses` on.
+12. The course screens read the server's `can` (section 5b); the units hooks are in `web/src/lib/api/hooks/units.ts` and the shared components in `web/src/components/units/`; the e2e spec is `web/e2e/units.spec.ts`.

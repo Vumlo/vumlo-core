@@ -66,10 +66,11 @@ export function ItemFrame({ courseId, itemId, children, focus = false, keepOutli
 
 export function PreviewBanner({ courseId, itemId }: { courseId: string; itemId: string }) {
   const t = useT();
+  const { can } = useCourseAccess(courseId);
   return (
     <div role="status" className={`alert alert-info ${s.preview}`}>
       <span style={{ flex: "1 1 auto" }}>{t("preview.banner")}</span>
-      <Link href={editItemHref(courseId, itemId)} className="btn">{t("common.edit")}</Link>
+      {can.edit_content && <Link href={editItemHref(courseId, itemId)} className="btn">{t("common.edit")}</Link>}
     </div>
   );
 }

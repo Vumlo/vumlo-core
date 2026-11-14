@@ -10,9 +10,9 @@ import { useCourseId } from "@/lib/useRoute";
 export default function SettingsPage() {
   const courseId = useCourseId();
   const router = useRouter();
-  const { staff, loading } = useCourseAccess(courseId);
+  const { settings: allowed, loading } = useCourseAccess(courseId);
   useEffect(() => {
-    if (!loading && !staff) router.replace(courseHref(courseId));
-  }, [loading, staff, courseId, router]);
-  return staff ? <CourseSettings courseId={courseId} /> : null;
+    if (!loading && !allowed) router.replace(courseHref(courseId));
+  }, [loading, allowed, courseId, router]);
+  return allowed ? <CourseSettings courseId={courseId} /> : null;
 }

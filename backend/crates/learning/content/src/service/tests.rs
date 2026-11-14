@@ -110,11 +110,13 @@ async fn two_creates_racing_for_the_last_position_one_gets_409() {
 // first one commit. Nothing sleeps: the order is forced by the lock, not by timing.
 // -----------------------------------------------------------------------------------------
 
-use crate::model::{BuiltinType, MaxPoints};
+use crate::model::MaxPoints;
+use crate::tests::kind;
+use crate::types::{form, quiz, text};
 
 fn text(points: &str, is_bonus: bool) -> Assignment {
     Assignment {
-        assignment_type: BuiltinType::Text,
+        assignment_type: kind(text::ID),
         config: Map::new(),
         max_points: MaxPoints::parse(points).unwrap(),
         is_bonus,
@@ -245,6 +247,33 @@ async fn the_regular_assignments_of_a_course_may_add_up_to_more_than_a_hundred()
         course.patch(&mut tx, x, points("90")).await.unwrap();
         tx.commit().await.unwrap();
         assert_eq!(course.assignment(x).await.max_points.to_string(), "90.00");
+    })
+    .await;
+}
+
+/// ADR-0097: the stored type is read through the registry. A type no one installed (the module
+/// that brought it was removed) fails the read with an error naming it, never a panic or a guess.
+#[tokio::test]
+async fn a_stored_type_is_read_through_the_registry_and_an_unknown_one_fails_the_read() {
+    db_test(async |pool| {
+        let course = course(pool).await;
+        let id = course.committed("10", false).await;
+        assert_eq!(course.assignment(id).await.assignment_type, kind(text::ID));
+
+        sqlx::query!(
+            "UPDATE content.assignments SET type = 'gone_module' WHERE item_id = $1",
+            id
+        )
+        .execute(&course.pool)
+        .await
+        .unwrap();
+        let mut conn = course.pool.acquire().await.unwrap();
+        let error = repo::find_assignment(&mut conn, id).await.unwrap_err();
+        assert!(
+            matches!(error, sqlx::Error::ColumnDecode { .. }),
+            "{error:?}"
+        );
+        assert!(error.to_string().contains("gone_module"), "{error}");
     })
     .await;
 }
@@ -389,23 +418,14 @@ fn a_file_items_description_blocks_count_and_a_quiz_config_adds_its_images() {
             {"id": "a", "type": "image", "props": {"file_id": in_prompt.to_string()}}]}}]}));
     let text = body_of(json!({"v": 1, "blocks": []}));
     assert_eq!(
-        referenced_file_ids(
-            ItemKind::Assignment,
-            &text,
-            Some((BuiltinType::Quiz, &config))
-        )
-        .unwrap(),
+        referenced_file_ids(ItemKind::Assignment, &text, Some((kind(quiz::ID), &config))).unwrap(),
         [in_prompt]
     );
     // The other types hold no document in their config.
     assert!(
-        referenced_file_ids(
-            ItemKind::Assignment,
-            &text,
-            Some((BuiltinType::Form, &config))
-        )
-        .unwrap()
-        .is_empty()
+        referenced_file_ids(ItemKind::Assignment, &text, Some((kind(form::ID), &config)))
+            .unwrap()
+            .is_empty()
     );
 }
 
@@ -418,7 +438,7 @@ fn a_config_or_document_the_parser_cannot_read_is_an_error_not_no_files() {
         referenced_file_ids(
             ItemKind::Assignment,
             &text,
-            Some((BuiltinType::Quiz, &shapeless))
+            Some((kind(quiz::ID), &shapeless))
         )
         .is_err()
     );
@@ -429,7 +449,7 @@ fn a_config_or_document_the_parser_cannot_read_is_an_error_not_no_files() {
         referenced_file_ids(
             ItemKind::Assignment,
             &text,
-            Some((BuiltinType::Quiz, &bad_prompt))
+            Some((kind(quiz::ID), &bad_prompt))
         )
         .is_err()
     );

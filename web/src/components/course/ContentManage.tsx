@@ -60,7 +60,8 @@ function itemMeta(i: ItemSummary, m: ItemMeta | undefined): string {
   return `${typeLabel(a.type)}, ${pts}${when === translate("due.none") ? "" : `, ${when.charAt(0).toLowerCase()}${when.slice(1)}`}`;
 }
 
-export function ContentManage({ courseId }: { courseId: string }) {
+/** `canEdit` is the server's `can.edit_content`: without it (a unit viewer) the screen shows the course and changes nothing. */
+export function ContentManage({ courseId, canEdit }: { courseId: string; canEdit: boolean }) {
   const t = useT();
   const router = useRouter();
   const tree = useContentTree(courseId);
@@ -186,7 +187,7 @@ export function ContentManage({ courseId }: { courseId: string }) {
           <CourseHeader courseId={courseId} />
           <div className={s.layout}>
             <div className={s.main}>
-              <p className={s.hint}>{t("cm.toolbar")}</p>
+              {canEdit && <p className={s.hint}>{t("cm.toolbar")}</p>}
               {failure && <p role="alert" className="alert alert-danger" style={{ marginBottom: 16 }}>{failure}</p>}
               {!tree.data ? <p className="loading" role="status">{t("common.loading")}</p> : mods.length === 0 ? <p className="empty">{t("cm.empty")}</p> : (
                 <div className={s.sections}>
@@ -194,14 +195,14 @@ export function ContentManage({ courseId }: { courseId: string }) {
                     <section key={sec.id} aria-label={sec.title} className={s.section} data-draft={sec.status === "draft"} data-over={drag?.kind === "sec" && over === sec.id}
                       onDragOver={(e) => { if (drag?.kind === "sec") { e.preventDefault(); setOver(sec.id); } }} onDrop={(e) => { e.preventDefault(); setOver(null); void dropSection(sec.id); }}>
                       <div className={s.sHead}>
-                        <span title={t("cm.drag")} className={s.handle} draggable onDragStart={() => setDrag({ kind: "sec", id: sec.id, parent: "" })} onDragEnd={() => { setDrag(null); setOver(null); }}><Icon name="grip" size={16} strokeWidth={3} /></span>
+                        {canEdit && <span title={t("cm.drag")} className={s.handle} draggable onDragStart={() => setDrag({ kind: "sec", id: sec.id, parent: "" })} onDragEnd={() => { setDrag(null); setOver(null); }}><Icon name="grip" size={16} strokeWidth={3} /></span>}
                         <h2>{sec.title}</h2>
                         <span className={s.count}>{plural(sec.items.length, "item")}</span>
                         {sec.items.length > 0 && <span aria-hidden="true" className={s.ticks}>{sec.items.map((i) => <span key={i.id} data-s={tick(i)} />)}</span>}
                         {status(sec.status === "draft", false)}
                         {sec.access_rule && <span className="pill"><Icon name="lock" size={12} strokeWidth={2} /> {t("rule.has")}</span>}
-                        {sec.status === "draft" && <button type="button" className="btn btn-outline" style={{ minHeight: 36 }} onClick={() => open({ kind: "publish", sec })}>{t("cm.publishSection")}</button>}
-                        <span data-menu style={{ position: "relative" }}>
+                        {canEdit && sec.status === "draft" && <button type="button" className="btn btn-outline" style={{ minHeight: 36 }} onClick={() => open({ kind: "publish", sec })}>{t("cm.publishSection")}</button>}
+                        {canEdit && <span data-menu style={{ position: "relative" }}>
                           <button type="button" className="icon-btn" aria-label={t("people.moreFor", { name: sec.title })} aria-haspopup="menu" aria-expanded={menu === sec.id} onClick={() => setMenu(menu === sec.id ? null : sec.id)}><Icon name="more" size={18} strokeWidth={3.4} /></button>
                           {menu === sec.id && (
                             <div role="menu" className="popover" style={{ top: 42, right: 0 }}>
@@ -212,7 +213,7 @@ export function ContentManage({ courseId }: { courseId: string }) {
                               <button type="button" role="menuitem" className="menu-item" style={{ color: "var(--danger)" }} onClick={() => open({ kind: "delete-section", sec })}>{t("cm.deleteSection")}</button>
                             </div>
                           )}
-                        </span>
+                        </span>}
                       </div>
                       <div className={s.items}>
                         {sec.items.map((i) => {
@@ -221,7 +222,7 @@ export function ContentManage({ courseId }: { courseId: string }) {
                             <div key={i.id} className={s.item} data-kind={k} data-over={drag?.kind === "item" && over === i.id}
                               onDragOver={(e) => { if (drag?.kind === "item" && drag.parent === sec.id) { e.preventDefault(); e.stopPropagation(); setOver(i.id); } }}
                               onDrop={(e) => { e.preventDefault(); e.stopPropagation(); setOver(null); void dropItem(sec, i.id); }}>
-                              <span title={t("cm.drag")} className={s.handle} draggable onDragStart={(e) => { e.stopPropagation(); setDrag({ kind: "item", id: i.id, parent: sec.id }); }} onDragEnd={() => { setDrag(null); setOver(null); }}><Icon name="grip" size={16} strokeWidth={3} /></span>
+                              {canEdit && <span title={t("cm.drag")} className={s.handle} draggable onDragStart={(e) => { e.stopPropagation(); setDrag({ kind: "item", id: i.id, parent: sec.id }); }} onDragEnd={() => { setDrag(null); setOver(null); }}><Icon name="grip" size={16} strokeWidth={3} /></span>}
                               <ItemTile kind={k} />
                               <Link href={itemHref(courseId, i.id)} className={s.itemMain}>
                                 <span className={s.itemTitle} data-draft={i.status === "draft"}>{i.title}</span>
@@ -229,8 +230,8 @@ export function ContentManage({ courseId }: { courseId: string }) {
                               </Link>
                               {status(i.status === "draft", !!m[i.id]?.edited)}
                               {i.access_rule && <span className="pill"><Icon name="lock" size={12} strokeWidth={2} /> {t("rule.has")}</span>}
-                              <Link href={editItemHref(courseId, i.id)} className="btn btn-quiet" style={{ minHeight: 36 }}>{t("common.edit")}</Link>
-                              <span data-menu style={{ position: "relative" }}>
+                              {canEdit && <Link href={editItemHref(courseId, i.id)} className="btn btn-quiet" style={{ minHeight: 36 }}>{t("common.edit")}</Link>}
+                              {canEdit && <span data-menu style={{ position: "relative" }}>
                                 <button type="button" className="icon-btn" aria-label={t("people.moreFor", { name: i.title })} aria-haspopup="menu" aria-expanded={menu === i.id} onClick={() => setMenu(menu === i.id ? null : i.id)}><Icon name="more" size={18} strokeWidth={3.4} /></button>
                                 {menu === i.id && (
                                   <div role="menu" className="popover" style={{ top: 42, right: 0 }}>
@@ -241,17 +242,17 @@ export function ContentManage({ courseId }: { courseId: string }) {
                                     <button type="button" role="menuitem" className="menu-item" style={{ color: "var(--danger)" }} onClick={() => open({ kind: "delete-item", item: i })}>{t("cm.delete")}</button>
                                   </div>
                                 )}
-                              </span>
+                              </span>}
                             </div>
                           );
                         })}
                         {sec.items.length === 0 && <p className="muted" style={{ padding: "16px 20px", fontSize: 14 }}>{t("cm.noItems")}</p>}
                       </div>
-                      <div className={s.add}>
+                      {canEdit && <div className={s.add}>
                         <button type="button" className="btn" style={{ minHeight: 36 }} onClick={() => open({ kind: "new-item", sec, type: "lecture" })}><Icon name="plus" size={15} strokeWidth={2.2} />{t("row.lecture")}</button>
                         <button type="button" className="btn" style={{ minHeight: 36 }} onClick={() => open({ kind: "new-item", sec, type: "assignment" })}><Icon name="plus" size={15} strokeWidth={2.2} />{t("cm.assignment")}</button>
                         <button type="button" className="btn" style={{ minHeight: 36 }} onClick={() => open({ kind: "new-item", sec, type: "file" })}><Icon name="plus" size={15} strokeWidth={2.2} />{t("row.file")}</button>
-                      </div>
+                      </div>}
                     </section>
                   ))}
                 </div>
@@ -271,7 +272,7 @@ export function ContentManage({ courseId }: { courseId: string }) {
                   {edited > 0 && <li data-s="edited"><span>{t.plural("cm.edits", edited)}</span><span className="muted">{t("cm.legendEdited")}</span></li>}
                 </ul>
                 <div className={s.actions}>
-                  <button type="button" className="btn btn-primary btn-block" onClick={() => open({ kind: "section" })}><Icon name="plus" size={16} strokeWidth={2.2} />{t("cm.addSection")}</button>
+                  {canEdit && <button type="button" className="btn btn-primary btn-block" onClick={() => open({ kind: "section" })}><Icon name="plus" size={16} strokeWidth={2.2} />{t("cm.addSection")}</button>}
                   {firstPublished
                     ? <Link href={itemHref(courseId, firstPublished.id)} className="btn btn-outline btn-block">{t("cm.preview")}</Link>
                     : <button type="button" className="btn btn-outline btn-block" disabled>{t("cm.preview")}</button>}

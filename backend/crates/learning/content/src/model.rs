@@ -1,7 +1,5 @@
-use std::collections::BTreeSet;
 use std::fmt;
 
-use api_types::{Feature, ProfileName};
 use chrono::{DateTime, NaiveDate, Utc};
 use serde_json::{Map, Value};
 use sqlx::Postgres;
@@ -9,13 +7,10 @@ use sqlx::postgres::{PgTypeInfo, PgValueRef};
 use sqlx::types::Decimal;
 use uuid::Uuid;
 
-use super::document::{
-    DocumentErrors, EffectiveProfiles, FileRef, file_refs_of, validate_document_within,
-};
 use super::rules::Condition;
-use super::types::{AutoGrade, Claims, Stage, ValidContent, file, form, quiz};
 use crate::points;
 use access::{CourseAccess, Release};
+use activity::{ConfigError, Kind};
 use common::text_enum;
 
 const TITLE_MAX_LEN: usize = 200;
@@ -27,10 +22,18 @@ pub enum ModelError {
     Title,
     #[error("must be a number above 0 and at most 9999.99, with at most two decimals")]
     MaxPoints,
-    #[error("unknown assignment type; available: text, no_submission, quiz, form, file")]
-    AssignmentType,
+    #[error("unknown assignment type; available: {}", activity::available().join(", "))]
+    UnknownAssignmentType,
     #[error("{0}")]
     Config(String),
+}
+
+/// What a type refuses in a config, as the field error of the API. The one place the contract's
+/// error becomes this crate's.
+impl From<ConfigError> for ModelError {
+    fn from(error: ConfigError) -> Self {
+        Self::Config(error.to_string())
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -122,278 +125,6 @@ impl<'r> sqlx::Decode<'r, Postgres> for MaxPoints {
     fn decode(value: PgValueRef<'r>) -> Result<Self, sqlx::error::BoxDynError> {
         let decimal = <Decimal as sqlx::Decode<Postgres>>::decode(value)?;
         Ok(Self::from_decimal(decimal)?)
-    }
-}
-
-/// What an assignment type must provide (ADR-0008). It is the future plugin boundary, so it stays
-/// small: auto-grading joins it with its own task.
-pub trait AssignmentType {
-    /// `Ok` when `config` is a valid configuration for this type, as the institution's editor
-    /// profiles narrow what it may contain.
-    fn validate_config(
-        &self,
-        config: &Map<String, Value>,
-        profiles: &EffectiveProfiles,
-    ) -> Result<(), ModelError>;
-
-    /// What `max_points` must equal, for a type whose questions carry the points (ADR-0050).
-    fn points_total(&self, config: &Map<String, Value>) -> Option<Decimal>;
-
-    /// Removes from a config the facts the server adds when it reads one (ADR-0051 point 5).
-    fn strip_computed(&self, config: &mut Map<String, Value>);
-
-    /// Whether a student submits something for this type. Only such a type has the deadline
-    /// settings of [`SubmissionSettings`] (ADR-0035).
-    fn takes_submissions(&self) -> bool;
-
-    /// Checks the `content` of a draft or an attempt against the type, as narrowed by the
-    /// institution's configuration (`profiles`) and by the assignment's own `config` (ADR-0025,
-    /// ADR-0023). It is called only for a type that takes submissions.
-    fn validate_submission(
-        &self,
-        config: &Map<String, Value>,
-        content: &Value,
-        stage: Stage,
-        profiles: &EffectiveProfiles,
-    ) -> Result<ValidContent, DocumentErrors>;
-
-    /// The `config` as a student may read it: without the answer key (ADR-0023, ADR-0050).
-    fn student_config(&self, config: &Map<String, Value>) -> Map<String, Value>;
-
-    /// The part of `config` that is frozen once work has been submitted, or `None` when none is
-    /// (ADR-0023).
-    fn structure(&self, config: &Map<String, Value>) -> Option<Value>;
-
-    /// Scores a submitted attempt by itself; `None` for a type graded by hand (ADR-0050).
-    fn auto_grade(
-        &self,
-        config: &Map<String, Value>,
-        content: &Map<String, Value>,
-    ) -> Option<AutoGrade>;
-
-    /// What the content of an attempt claims from the rest of the course (ADR-0051).
-    fn claims(&self, config: &Map<String, Value>, content: &Map<String, Value>) -> Claims;
-}
-
-/// The types built into the server. The database column is plain text (ADR-0008).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum BuiltinType {
-    Text,
-    /// Nothing is submitted: oral answers, class work, paper tests (ADR-0023). Graded by hand.
-    NoSubmission,
-    /// Questions with an answer key, scored at submit (ADR-0050).
-    Quiz,
-    /// Fields the student fills in, graded by hand (ADR-0051).
-    Form,
-    /// Files the student uploads, graded by hand (ADR-0069).
-    File,
-}
-text_enum!(BuiltinType {
-    Text => "text",
-    NoSubmission => "no_submission",
-    Quiz => "quiz",
-    Form => "form",
-    File => "file",
-});
-
-impl BuiltinType {
-    /// An unknown or not-yet-built type is an error that does not repeat the input.
-    pub fn parse(raw: &str) -> Result<Self, ModelError> {
-        raw.parse().map_err(|_| ModelError::AssignmentType)
-    }
-
-    /// The files the documents of a `config` name (the questions of a quiz), each with its path in
-    /// the config. The other types hold no document in their config (ADR-0069).
-    pub fn config_file_refs(
-        &self,
-        config: &Map<String, Value>,
-    ) -> Result<Vec<FileRef>, ModelError> {
-        match self {
-            Self::Quiz => quiz::file_refs(config),
-            Self::Text | Self::NoSubmission | Self::Form | Self::File => Ok(Vec::new()),
-        }
-    }
-
-    /// Every file a stored `content` names, each with its path in the content: a text answer, the
-    /// long-text answers of a quiz, and the files and comment of a file hand-in. A form holds no
-    /// document (ADR-0069).
-    pub fn submission_file_refs(
-        &self,
-        content: &Map<String, Value>,
-    ) -> Result<Vec<FileRef>, DocumentErrors> {
-        match self {
-            Self::Text => file_refs_of(&Value::Object(content.clone())),
-            Self::Quiz => quiz::answer_file_refs(content),
-            Self::File => file::submission_file_refs(content),
-            Self::NoSubmission | Self::Form => Ok(Vec::new()),
-        }
-    }
-}
-
-/// The features a `text` assignment's `config.editor.features` allows, in the order given, or
-/// `None` when the config does not narrow the profile. Only `{"editor": {"features": [..]}}` is a
-/// valid config; the messages name the position of a mistake and never repeat what was sent.
-pub fn editor_features(config: &Map<String, Value>) -> Result<Option<Vec<Feature>>, ModelError> {
-    let invalid = |message: &str| Err(ModelError::Config(message.to_owned()));
-    if let Some(field) = config.keys().find(|key| *key != "editor") {
-        return Err(ModelError::Config(format!(
-            "unknown field `{field}`: the text type has only `editor`"
-        )));
-    }
-    let Some(editor) = config.get("editor") else {
-        return Ok(None);
-    };
-    let Some(editor) = editor.as_object() else {
-        return invalid("`editor` must be an object");
-    };
-    if editor.keys().any(|key| key != "features") {
-        return invalid("unknown field in `editor`: it has only `features`");
-    }
-    let Some(features) = editor.get("features") else {
-        return Ok(None);
-    };
-    let Some(features) = features.as_array() else {
-        return invalid("`editor.features` must be a list of feature names");
-    };
-    let mut chosen = Vec::with_capacity(features.len());
-    for (index, value) in features.iter().enumerate() {
-        let Some(feature) = value.as_str().and_then(Feature::from_name) else {
-            return Err(ModelError::Config(format!(
-                "`editor.features[{index}]` is not a feature (expected one of: {})",
-                Feature::ALL
-                    .iter()
-                    .map(|feature| feature.as_str())
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            )));
-        };
-        if chosen.contains(&feature) {
-            return Err(ModelError::Config(format!(
-                "`editor.features[{index}]` is listed twice"
-            )));
-        }
-        chosen.push(feature);
-    }
-    Ok(Some(chosen))
-}
-
-/// `config.editor.features` can only narrow the student profile (ADR-0025): a feature it lists
-/// that the effective profile, after the institution's configuration, does not have is refused.
-fn check_editor_features(
-    config: &Map<String, Value>,
-    profiles: &EffectiveProfiles,
-) -> Result<(), ModelError> {
-    let allowed = &profiles.profile(ProfileName::Student).features;
-    for (index, feature) in editor_features(config)?.into_iter().flatten().enumerate() {
-        if !allowed.contains(&feature) {
-            return Err(ModelError::Config(format!(
-                "`editor.features[{index}]` is not a feature of the student profile"
-            )));
-        }
-    }
-    Ok(())
-}
-
-impl AssignmentType for BuiltinType {
-    fn validate_config(
-        &self,
-        config: &Map<String, Value>,
-        profiles: &EffectiveProfiles,
-    ) -> Result<(), ModelError> {
-        match self {
-            // `text` can only narrow what the student's editor offers (ADR-0025).
-            Self::Text => check_editor_features(config, profiles),
-            // This type needs no settings; any field is a mistake.
-            Self::NoSubmission => match config.keys().next() {
-                None => Ok(()),
-                Some(field) => Err(ModelError::Config(format!(
-                    "unknown field `{field}`: the {} type has no settings",
-                    self.as_str()
-                ))),
-            },
-            Self::Quiz => quiz::validate_config(config, profiles),
-            Self::Form => form::validate_config(config),
-            Self::File => file::validate_config(config),
-        }
-    }
-
-    fn points_total(&self, config: &Map<String, Value>) -> Option<Decimal> {
-        match self {
-            Self::Quiz => quiz::points_total(config),
-            Self::Text | Self::NoSubmission | Self::Form | Self::File => None,
-        }
-    }
-
-    fn strip_computed(&self, config: &mut Map<String, Value>) {
-        if *self == Self::Form {
-            form::strip_computed(config);
-        }
-    }
-
-    fn takes_submissions(&self) -> bool {
-        match self {
-            Self::Text | Self::Quiz | Self::Form | Self::File => true,
-            Self::NoSubmission => false,
-        }
-    }
-
-    fn validate_submission(
-        &self,
-        config: &Map<String, Value>,
-        content: &Value,
-        stage: Stage,
-        profiles: &EffectiveProfiles,
-    ) -> Result<ValidContent, DocumentErrors> {
-        match self {
-            Self::Text => {
-                // A config that cannot be read narrows nothing further here: `validate_config`
-                // refused it when it was written.
-                let within: Option<BTreeSet<Feature>> = editor_features(config)
-                    .ok()
-                    .flatten()
-                    .map(|features| features.into_iter().collect());
-                validate_document_within(content, ProfileName::Student, profiles, within.as_ref())
-                    .map(ValidContent::from)
-            }
-            Self::NoSubmission => Err(DocumentErrors::one("", "this type takes no submissions")),
-            Self::Quiz => quiz::validate_submission(config, content, stage, profiles),
-            Self::Form => form::validate_submission(config, content, stage),
-            Self::File => file::validate_submission(config, content, stage, profiles),
-        }
-    }
-
-    fn student_config(&self, config: &Map<String, Value>) -> Map<String, Value> {
-        match self {
-            Self::Quiz => quiz::student_config(config),
-            Self::Text | Self::NoSubmission | Self::Form | Self::File => config.clone(),
-        }
-    }
-
-    fn structure(&self, config: &Map<String, Value>) -> Option<Value> {
-        match self {
-            Self::Quiz => quiz::structure(config),
-            Self::Form => form::structure(config),
-            Self::Text | Self::NoSubmission | Self::File => None,
-        }
-    }
-
-    fn auto_grade(
-        &self,
-        config: &Map<String, Value>,
-        content: &Map<String, Value>,
-    ) -> Option<AutoGrade> {
-        match self {
-            Self::Quiz => quiz::auto_grade(config, content),
-            Self::Text | Self::NoSubmission | Self::Form | Self::File => None,
-        }
-    }
-
-    fn claims(&self, config: &Map<String, Value>, content: &Map<String, Value>) -> Claims {
-        match self {
-            Self::Form => form::claims(config, content),
-            Self::File => file::claims(config, content),
-            Self::Text | Self::NoSubmission | Self::Quiz => Claims::default(),
-        }
     }
 }
 
@@ -576,7 +307,7 @@ impl SubmissionSettings {
 /// The assignment part of an item of kind `assignment`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Assignment {
-    pub assignment_type: BuiltinType,
+    pub assignment_type: Kind,
     pub config: Map<String, Value>,
     pub max_points: MaxPoints,
     pub is_bonus: bool,
@@ -588,7 +319,7 @@ pub struct Assignment {
 /// What the course tree shows of an assignment.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AssignmentSummary {
-    pub assignment_type: BuiltinType,
+    pub assignment_type: Kind,
     pub max_points: MaxPoints,
     pub is_bonus: bool,
     pub settings: SubmissionSettings,
@@ -599,7 +330,7 @@ pub struct AssignmentSummary {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct OpenedAssignment {
     pub course_id: Uuid,
-    pub assignment_type: BuiltinType,
+    pub assignment_type: Kind,
     pub access: CourseAccess,
     /// A rule keeps this student from working on it yet (ADR-0092). Never true for staff.
     pub locked: bool,
@@ -902,7 +633,7 @@ pub struct OpenAssignment {
     pub assignment_id: Uuid,
     pub course_id: Uuid,
     pub title: String,
-    pub assignment_type: BuiltinType,
+    pub assignment_type: Kind,
     pub due_at: Option<DateTime<Utc>>,
     pub class_on: Option<NaiveDate>,
     pub max_points: MaxPoints,

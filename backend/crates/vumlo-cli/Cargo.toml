@@ -17,12 +17,14 @@ ai_agent = ["dep:vumlo-module-ai-agent"]
 
 [dependencies]
 access.workspace = true
+activity.workspace = true
 anyhow.workspace = true
 api-types.workspace = true
 auth.workspace = true
 chrono.workspace = true
 clap.workspace = true
 common.workspace = true
+content.workspace = true
 db.workspace = true
 events.workspace = true
 image.workspace = true

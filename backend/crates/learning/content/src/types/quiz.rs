@@ -8,13 +8,16 @@ use serde_json::{Map, Value, json};
 use sqlx::types::Decimal;
 
 use super::{
-    AutoGrade, Problems, Stage, ValidContent, answer_path, answers_of, document_problem,
-    parse_number, shape_problem, valid_id,
-};
-use crate::document::{
-    DocumentErrors, EffectiveProfiles, FileRef, file_refs_under, validate_document,
+    Problems, answer_path, answers_of, config_error, document_problem, parse_number, shape_problem,
+    valid_id,
 };
 use crate::model::{MaxPoints, ModelError};
+use activity::{
+    ActivityType, AutoGrade, Capabilities, Claims, CompletionPolicy, ConfigError, DocumentErrors,
+    EffectiveProfiles, FileRef, Stage, ValidContent, file_refs_under, validate_document,
+};
+
+pub const ID: &str = "quiz";
 
 const MAX_QUESTIONS: usize = 100;
 const MAX_OPTIONS: usize = 10;
@@ -99,7 +102,7 @@ struct Question {
     accepted: Vec<String>,
 }
 
-struct Quiz {
+struct ParsedQuiz {
     questions: Vec<Question>,
     show_correct: bool,
 }
@@ -122,7 +125,7 @@ fn allowed_fields(kind: QuestionType) -> &'static [&'static str] {
 fn parse(
     config: &Map<String, Value>,
     profiles: Option<&EffectiveProfiles>,
-) -> Result<Quiz, ModelError> {
+) -> Result<ParsedQuiz, ModelError> {
     let bad = |message: String| ModelError::Config(message);
     let size = serde_json::to_vec(config).map_or(usize::MAX, |bytes| bytes.len());
     if size > MAX_CONFIG_BYTES {
@@ -289,7 +292,7 @@ fn parse(
         }
         questions.push(question);
     }
-    Ok(Quiz {
+    Ok(ParsedQuiz {
         questions,
         show_correct: raw.show_correct,
     })
@@ -637,6 +640,82 @@ pub fn result_questions(
         })
         .collect();
     Some(questions)
+}
+
+/// Questions with an answer key, scored at submit (ADR-0050).
+pub struct Quiz;
+
+impl ActivityType for Quiz {
+    fn id(&self) -> &'static str {
+        ID
+    }
+
+    fn capabilities(&self) -> Capabilities {
+        Capabilities {
+            submissions: true,
+            auto_graded: true,
+        }
+    }
+
+    fn completion(&self) -> CompletionPolicy {
+        CompletionPolicy::SubmittedOrGraded
+    }
+
+    fn validate_config(
+        &self,
+        config: &Map<String, Value>,
+        profiles: &EffectiveProfiles,
+    ) -> Result<(), ConfigError> {
+        validate_config(config, profiles).map_err(config_error)
+    }
+
+    fn points_total(&self, config: &Map<String, Value>) -> Option<Decimal> {
+        points_total(config)
+    }
+
+    fn strip_computed(&self, _config: &mut Map<String, Value>) {}
+
+    fn validate_submission(
+        &self,
+        config: &Map<String, Value>,
+        content: &Value,
+        stage: Stage,
+        profiles: &EffectiveProfiles,
+    ) -> Result<ValidContent, DocumentErrors> {
+        validate_submission(config, content, stage, profiles)
+    }
+
+    fn student_config(&self, config: &Map<String, Value>) -> Map<String, Value> {
+        student_config(config)
+    }
+
+    fn structure(&self, config: &Map<String, Value>) -> Option<Value> {
+        structure(config)
+    }
+
+    fn auto_grade(
+        &self,
+        config: &Map<String, Value>,
+        content: &Map<String, Value>,
+    ) -> Option<AutoGrade> {
+        auto_grade(config, content)
+    }
+
+    fn claims(&self, _config: &Map<String, Value>, _content: &Map<String, Value>) -> Claims {
+        Claims::default()
+    }
+
+    fn config_file_refs(&self, config: &Map<String, Value>) -> Result<Vec<FileRef>, ConfigError> {
+        file_refs(config).map_err(config_error)
+    }
+
+    fn submission_file_refs(
+        &self,
+        _config: &Map<String, Value>,
+        content: &Map<String, Value>,
+    ) -> Result<Vec<FileRef>, DocumentErrors> {
+        answer_file_refs(content)
+    }
 }
 
 #[cfg(test)]

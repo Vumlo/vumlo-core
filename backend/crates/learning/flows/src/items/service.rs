@@ -5,7 +5,7 @@ use crate::LearningError;
 use crate::files::{self, UsageOwner};
 use access::Actor;
 use assessment::{self, PublishedScore, QuizResult};
-use content::{self, AssignmentFacts, BuiltinType, Item, ItemPatch, ItemRules, NewItemInput};
+use content::{self, AssignmentFacts, Item, ItemPatch, ItemRules, NewItemInput};
 
 /// Deletes the module with its sub-modules and items. Drafts of students and empty grade rows go
 /// with it; it is refused when an assignment below has a grade or a submitted attempt.
@@ -107,7 +107,8 @@ pub async fn get(conn: &mut PgConnection, actor: &Actor, id: Uuid) -> Result<Ite
     let read = content::get_item(conn, actor, id).await?;
     let mut item = read.item;
     if let (Some(view), Some(assignment)) = (read.form, &item.assignment) {
-        let facts = assessment::form_facts(conn, id, BuiltinType::Form, &assignment.config).await?;
+        let kind = assignment.assignment_type;
+        let facts = assessment::form_facts(conn, id, kind, &assignment.config).await?;
         content::decorate_form(&mut item, view, &facts.answered, &facts.holders);
     }
     Ok(item)

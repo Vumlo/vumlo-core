@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE content.assignments SET type = 'gone_module' WHERE item_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "23cac3cdd08da6670ce74bcb8dc240daf261ed373f2f40d03fff81192e8af2d9"
+}

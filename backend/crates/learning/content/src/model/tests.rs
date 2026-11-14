@@ -1,4 +1,10 @@
+use activity::{ActivityType, EffectiveProfiles, RegistryError};
+use api_types::Feature;
+
 use super::*;
+use crate::types::builtin_types;
+use crate::types::no_submission::NoSubmission;
+use crate::types::text::{Text, editor_features};
 
 #[test]
 fn a_revision_knows_what_changed_since_the_item_was_published() {
@@ -111,25 +117,21 @@ fn max_points_display_has_exactly_two_decimals() {
 }
 
 #[test]
-fn the_type_enum_parses_the_five_builtin_types_and_nothing_else() {
-    for (text, kind) in [
-        ("text", BuiltinType::Text),
-        ("no_submission", BuiltinType::NoSubmission),
-        ("quiz", BuiltinType::Quiz),
-        ("form", BuiltinType::Form),
-        ("file", BuiltinType::File),
-    ] {
-        assert_eq!(BuiltinType::parse(text), Ok(kind));
-        assert_eq!(kind.as_str(), text);
+fn the_built_in_types_are_the_five_names_and_nothing_else() {
+    let types = builtin_types().unwrap();
+    for text in ["text", "no_submission", "quiz", "form", "file"] {
+        assert_eq!(types.get(text).unwrap().id(), text);
     }
     for bad in ["File", "", "Text", "Quiz", "No_Submission", "no-submission"] {
         assert_eq!(
-            BuiltinType::parse(bad),
-            Err(ModelError::AssignmentType),
+            types.get(bad),
+            Err(RegistryError::Unknown(bad.to_owned())),
             "{bad:?}"
         );
     }
-    let message = ModelError::AssignmentType.to_string();
+    // The message lists the installed types.
+    crate::tests::install_types();
+    let message = ModelError::UnknownAssignmentType.to_string();
     for name in ["text", "no_submission", "quiz", "form", "file"] {
         assert!(message.contains(name), "{message}");
     }
@@ -138,7 +140,7 @@ fn the_type_enum_parses_the_five_builtin_types_and_nothing_else() {
 #[test]
 fn the_text_and_no_submission_types_take_an_empty_config_only() {
     let profiles = EffectiveProfiles::unrestricted();
-    for assignment_type in [BuiltinType::Text, BuiltinType::NoSubmission] {
+    for assignment_type in [&Text as &dyn ActivityType, &NoSubmission] {
         let mut config = Map::new();
         assert_eq!(assignment_type.validate_config(&config, &profiles), Ok(()));
         config.insert("limit".to_owned(), Value::from(5));
@@ -147,7 +149,7 @@ fn the_text_and_no_submission_types_take_an_empty_config_only() {
             .unwrap_err();
         let message = error.to_string();
         assert!(message.contains("limit"), "{message}");
-        assert!(message.contains(assignment_type.as_str()), "{message}");
+        assert!(message.contains(assignment_type.id()), "{message}");
     }
 }
 
@@ -361,8 +363,8 @@ fn a_type_that_takes_no_submissions_refuses_every_value_but_accepts_null() {
         SubmissionSettings::default().resolve(&nulls, false),
         Ok(SubmissionSettings::default())
     );
-    assert!(BuiltinType::Text.takes_submissions());
-    assert!(!BuiltinType::NoSubmission.takes_submissions());
+    assert!(Text.capabilities().submissions);
+    assert!(!NoSubmission.capabilities().submissions);
 }
 
 fn features(config: Value) -> Result<Option<Vec<Feature>>, ModelError> {
@@ -415,24 +417,22 @@ fn the_editor_features_of_a_text_config_are_a_list_of_known_unique_names() {
     // The type validates through the same function.
     let config = serde_json::json!({"editor": {"features": ["blink"]}});
     assert!(
-        BuiltinType::Text
-            .validate_config(
-                config.as_object().unwrap(),
-                &EffectiveProfiles::unrestricted()
-            )
-            .is_err()
+        Text.validate_config(
+            config.as_object().unwrap(),
+            &EffectiveProfiles::unrestricted()
+        )
+        .is_err()
     );
     let config = serde_json::json!({"editor": {"features": ["code"]}});
     assert!(
-        BuiltinType::Text
-            .validate_config(
-                config.as_object().unwrap(),
-                &EffectiveProfiles::unrestricted()
-            )
-            .is_ok()
+        Text.validate_config(
+            config.as_object().unwrap(),
+            &EffectiveProfiles::unrestricted()
+        )
+        .is_ok()
     );
     assert!(
-        BuiltinType::NoSubmission
+        NoSubmission
             .validate_config(
                 config.as_object().unwrap(),
                 &EffectiveProfiles::unrestricted()

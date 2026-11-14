@@ -1,7 +1,7 @@
 import { expect, test, type ConsoleMessage, type Page } from "@playwright/test";
 import { accounts, courseRoutes, PASSWORD, publicRoutes, staticRoutes, store, type RoleName } from "./routes";
 
-const roles: RoleName[] = ["student", "teacher", "admin"];
+const roles: RoleName[] = ["student", "teacher", "admin", "dean", "viewer"];
 const themes = ["light", "dark"] as const;
 
 function watch(page: Page) {

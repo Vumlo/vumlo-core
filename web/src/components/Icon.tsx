@@ -50,6 +50,7 @@ export const paths = {
   focus: "M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5",
   focusExit: "M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5",
   info: "M12 3.5a8.5 8.5 0 1 0 0 17 8.5 8.5 0 0 0 0-17zM12 11v5.5M12 7.5v.01",
+  units: "M9.5 3.5h5v4h-5zM3.5 16.5h5v4h-5zM15.5 16.5h5v4h-5zM12 7.5V12M6 16.5V12h12v4.5",
   chat: "M5 4.5h14a1 1 0 0 1 1 1v9.5a1 1 0 0 1-1 1h-7l-4.5 3.5V16H5a1 1 0 0 1-1-1V5.5a1 1 0 0 1 1-1zM8.5 9h7M8.5 12h4.5",
 } as const;
 

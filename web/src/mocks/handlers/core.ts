@@ -8,9 +8,9 @@ import { isoToLocal, localToIso } from "@/lib/format";
 import type { CourseInfo, CoursePeople, Item, ServerItemMeta, TemplateSummary } from "@/lib/api/types";
 import { at, auditRow, getDb, institutionPublic, uid, type DbCourse, type DbItem } from "../db";
 import {
-  activeStudents, canView, checkDocument, contentTree, courseById, decimal, dueIn, fileSettings, flatItems, forbidden, formOf, fullName, gradeOf, hasUnpublishedChanges, isPublished,
+  activeStudents, canOf, canView, checkDocument, contentTree, courseById, decimal, dueIn, fileSettings, flatItems, forbidden, formOf, fullName, gradeOf, hasUnpublishedChanges, isPublished,
   isStaff, itemById, itemVisibleToStudent, memberOf, moduleOf, notFound, ownerOf, paged, problem, publicUser, quizOf, requireStaff, requireUser, requireView,
-  SESSION_KEY, sessionUser, studentConfig, submissionOf, teacherName, termEnded, termName, userById, workItem, workStatus,
+  SESSION_KEY, sessionUser, studentConfig, submissionOf, teacherName, termEnded, termName, unitForNewCourse, userById, workItem, workStatus,
 } from "../logic";
 import { PASSWORD } from "../seed";
 
@@ -49,10 +49,10 @@ function copyContent(fromId: string, toId: string) {
   }
 }
 
-function newCourse(title: string, ownerId: string, kind: "regular" | "template", termId: string | null = null): DbCourse {
+function newCourse(title: string, ownerId: string, kind: "regular" | "template", termId: string | null = null, unitId: string | null = null): DbCourse {
   const db = getDb();
   const c: DbCourse = {
-    id: uid(`course:new:${db.courses.length}:${title}`), kind, title, status: "draft", owner_id: ownerId, term_id: termId, created_at: MOCK_NOW.toISOString(),
+    id: uid(`course:new:${db.courses.length}:${title}`), kind, title, status: "draft", owner_id: ownerId, term_id: termId, unit_id: unitId, created_at: MOCK_NOW.toISOString(),
     code: "", description: "", settings_saved_at: null, template_updated_at: kind === "template" ? MOCK_NOW.toISOString() : undefined,
   };
   db.courses.push(c);
@@ -247,22 +247,27 @@ export const coreHandlers = [
     const u = requireUser();
     if (u.role === "student") throw forbidden();
     const tpl = courseById(String(params.id));
-    const b = (await request.json()) as { title?: string };
-    const c = newCourse((b.title ?? tpl.title).trim() || tpl.title, u.id, "regular");
+    const b = (await request.json()) as { title?: string; unit_id?: string | null };
+    const unitId = unitForNewCourse(u, b.unit_id);
+    const c = newCourse((b.title ?? tpl.title).trim() || tpl.title, u.id, "regular", null, unitId);
     copyContent(tpl.id, c.id);
     return HttpResponse.json(publicCourse(c), { status: 201 });
   }),
   http.post(`${A}/courses`, async ({ request }) => {
     const u = requireUser();
     if (u.role === "student") throw forbidden();
-    const b = (await request.json()) as { title?: string; term_id?: string | null };
+    const b = (await request.json()) as { title?: string; term_id?: string | null; unit_id?: string | null };
     const title = (b.title ?? "").trim();
     if (!title) throw problem(422, "Validation failed", undefined, [{ field: "title", message: "Give the course a title" }]);
-    return HttpResponse.json(publicCourse(newCourse(title, u.id, "regular", b.term_id ?? null)), { status: 201 });
+    const unitId = unitForNewCourse(u, b.unit_id);
+    return HttpResponse.json(publicCourse(newCourse(title, u.id, "regular", b.term_id ?? null, unitId)), { status: 201 });
   }),
-  http.get(`${A}/courses/:id`, ({ params }) => HttpResponse.json(publicCourse(requireView(String(params.id)).course))),
+  http.get(`${A}/courses/:id`, ({ params }) => {
+    const { course, user } = requireView(String(params.id));
+    return HttpResponse.json({ ...publicCourse(course), can: canOf(user, course) });
+  }),
   http.patch(`${A}/courses/:id`, async ({ request, params }) => {
-    const { course } = requireStaff(String(params.id));
+    const { course } = requireStaff(String(params.id), "manage_courses");
     const b = (await request.json()) as { title?: string; term_id?: string | null };
     if (b.title !== undefined) {
       if (!b.title.trim()) throw problem(422, "Validation failed", undefined, [{ field: "title", message: "Give the course a title" }]);
@@ -274,7 +279,7 @@ export const coreHandlers = [
   }),
   http.get(`${A}/courses/:id/info`, ({ params }) => HttpResponse.json(courseInfo(requireView(String(params.id)).course))),
   http.patch(`${A}/courses/:id/info`, async ({ request, params }) => {
-    const { course } = requireStaff(String(params.id));
+    const { course } = requireStaff(String(params.id), "manage_courses");
     const b = (await request.json()) as { code?: string; description?: string };
     if (b.code !== undefined) course.code = b.code.trim();
     if (b.description !== undefined) {
@@ -285,7 +290,7 @@ export const coreHandlers = [
     return HttpResponse.json(courseInfo(course));
   }),
   http.delete(`${A}/courses/:id`, ({ params }) => {
-    const { course } = requireStaff(String(params.id));
+    const { course } = requireStaff(String(params.id), null);
     const db = getDb();
     if (courseInfo(course).has_grades) throw problem(409, "Conflict", "This course already has grades, so it can’t be deleted. Archive it instead.");
     db.courses = db.courses.filter((c) => c.id !== course.id);
@@ -295,28 +300,28 @@ export const coreHandlers = [
     return new HttpResponse(null, { status: 204 });
   }),
   http.post(`${A}/courses/:id/publish`, ({ params }) => {
-    const { course } = requireStaff(String(params.id));
+    const { course } = requireStaff(String(params.id), "manage_courses");
     course.status = "published";
     return HttpResponse.json(publicCourse(course));
   }),
   http.post(`${A}/courses/:id/archive`, ({ params }) => {
-    const { course } = requireStaff(String(params.id));
+    const { course } = requireStaff(String(params.id), "manage_courses");
     course.status = "archived";
     return HttpResponse.json(publicCourse(course));
   }),
   http.post(`${A}/courses/:id/restore`, ({ params }) => {
-    const { course } = requireStaff(String(params.id));
+    const { course } = requireStaff(String(params.id), "manage_courses");
     course.status = "published";
     return HttpResponse.json(publicCourse(course));
   }),
   http.post(`${A}/courses/:id/template`, ({ params }) => {
-    const { course, user } = requireStaff(String(params.id));
+    const { course, user } = requireStaff(String(params.id), "edit_content");
     const tpl = newCourse(course.title, user.id, "template");
     copyContent(course.id, tpl.id);
     return HttpResponse.json(publicCourse(tpl), { status: 201 });
   }),
   http.put(`${A}/courses/:id/owner`, async ({ request, params }) => {
-    const { course, user } = requireStaff(String(params.id));
+    const { course, user } = requireStaff(String(params.id), null);
     if (course.owner_id !== user.id && user.role !== "admin") throw forbidden();
     const b = (await request.json()) as { user_id: string };
     const target = userById(b.user_id);
@@ -343,7 +348,7 @@ export const coreHandlers = [
     return paged(list.map(({ group_label: _g, left_on: _l, ...m }) => m), request);
   }),
   http.put(`${A}/courses/:id/members/:uid`, async ({ request, params }) => {
-    const { course } = requireStaff(String(params.id));
+    const { course } = requireStaff(String(params.id), "manage_roster");
     const b = (await request.json()) as { role: "teacher" | "assistant" | "student" };
     const db = getDb();
     const target = userById(String(params.uid));
@@ -357,7 +362,7 @@ export const coreHandlers = [
     return HttpResponse.json(pub);
   }),
   http.delete(`${A}/courses/:id/members/:uid`, ({ params }) => {
-    const { course } = requireStaff(String(params.id));
+    const { course } = requireStaff(String(params.id), "manage_roster");
     const m = memberOf(course.id, String(params.uid));
     if (!m) throw notFound();
     if (m.is_owner) throw problem(409, "Conflict", "The owner cannot be removed");
@@ -385,7 +390,7 @@ export const coreHandlers = [
     return HttpResponse.json({ people, groups } satisfies CoursePeople);
   }),
   http.get(`${A}/courses/:id/candidates`, ({ request, params }) => {
-    const { course } = requireStaff(String(params.id));
+    const { course } = requireStaff(String(params.id), "manage_roster");
     const q = (new URL(request.url).searchParams.get("q") ?? "").toLowerCase().trim();
     const items = getDb().users
       .filter((u) => u.status === "active" && !memberOf(course.id, u.id) && (!q || `${u.name} ${u.surname} ${u.email}`.toLowerCase().includes(q)))
@@ -394,11 +399,11 @@ export const coreHandlers = [
     return HttpResponse.json({ items });
   }),
   http.get(`${A}/courses/:id/groups`, ({ request, params }) => {
-    const { course } = requireStaff(String(params.id));
+    const { course } = requireStaff(String(params.id), "manage_roster");
     return paged(getDb().links.filter((l) => l.course_id === course.id).map(({ linked_on: _l, ...l }) => l), request);
   }),
   http.post(`${A}/courses/:id/groups`, async ({ request, params }) => {
-    const { course } = requireStaff(String(params.id));
+    const { course } = requireStaff(String(params.id), "manage_roster");
     const b = (await request.json()) as { group_id: string; subgroup_id?: string | null };
     const db = getDb();
     const existing = db.links.find((l) => l.course_id === course.id && l.group_id === b.group_id && (l.subgroup_id ?? null) === (b.subgroup_id ?? null));
@@ -413,7 +418,7 @@ export const coreHandlers = [
     return HttpResponse.json(pub, { status: 201 });
   }),
   http.delete(`${A}/courses/:id/groups/:link`, ({ params }) => {
-    const { course } = requireStaff(String(params.id));
+    const { course } = requireStaff(String(params.id), "manage_roster");
     const db = getDb();
     const link = db.links.find((l) => l.id === params.link && l.course_id === course.id);
     if (!link) throw notFound();
@@ -423,7 +428,7 @@ export const coreHandlers = [
     return new HttpResponse(null, { status: 204 });
   }),
   http.get(`${A}/courses/:id/group-options`, ({ request, params }) => {
-    requireStaff(String(params.id));
+    requireStaff(String(params.id), "manage_roster");
     const db = getDb();
     return paged(db.groups.map((g) => ({ id: g.id, name: g.name, subgroups: db.subgroups.filter((s) => s.group_id === g.id).map((s) => ({ id: s.id, name: s.name })) })), request);
   }),
@@ -459,7 +464,7 @@ export const coreHandlers = [
   }),
   http.patch(`${A}/items/:id`, async ({ request, params }) => {
     const item = itemById(String(params.id));
-    requireStaff(item.course_id);
+    requireStaff(item.course_id, "edit_content");
     const b = (await request.json()) as Record<string, unknown>;
     if (item.status === "published" && (b.body !== undefined || b.title !== undefined) && !item.unpublished_changes) {
       item.published_body = item.body;
@@ -495,7 +500,7 @@ export const coreHandlers = [
   }),
   http.delete(`${A}/items/:id`, ({ params }) => {
     const item = itemById(String(params.id));
-    requireStaff(item.course_id);
+    requireStaff(item.course_id, "edit_content");
     const db = getDb();
     if (db.grades.some((g) => g.assignment_id === item.id && (g.published_score !== null || g.draft_score !== null))) throw problem(409, "Conflict", "This assignment has grades, so it can’t be deleted");
     db.items = db.items.filter((i) => i !== item);
@@ -503,7 +508,7 @@ export const coreHandlers = [
   }),
   http.post(`${A}/items/:id/publish`, ({ params }) => {
     const item = itemById(String(params.id));
-    requireStaff(item.course_id);
+    requireStaff(item.course_id, "edit_content");
     needsFile(item);
     item.status = "published";
     item.last_published_at ??= MOCK_NOW.toISOString();
@@ -514,12 +519,12 @@ export const coreHandlers = [
   http.delete(`${A}/items/:id/completion`, () => new HttpResponse(null, { status: 204 })),
   http.get(`${A}/items/:id/revision`, ({ params }) => {
     const item = itemById(String(params.id));
-    requireStaff(item.course_id);
+    requireStaff(item.course_id, "edit_content");
     return HttpResponse.json({ has_unpublished_changes: item.unpublished_changes, last_published_at: item.last_published_at, size_bytes: JSON.stringify(item.body).length });
   }),
   http.post(`${A}/items/:id/revision/publish`, ({ params }) => {
     const item = itemById(String(params.id));
-    requireStaff(item.course_id);
+    requireStaff(item.course_id, "edit_content");
     needsFile(item);
     item.unpublished_changes = false;
     item.published_body = undefined;
@@ -528,7 +533,7 @@ export const coreHandlers = [
     return HttpResponse.json({ has_unpublished_changes: false, last_published_at: item.last_published_at, size_bytes: JSON.stringify(item.body).length });
   }),
   http.post(`${A}/courses/:id/modules`, async ({ request, params }) => {
-    const { course } = requireStaff(String(params.id));
+    const { course } = requireStaff(String(params.id), "edit_content");
     const b = (await request.json()) as { title?: string; parent_id?: string | null };
     const title = (b.title ?? "").trim();
     if (!title) throw problem(422, "Validation failed", undefined, [{ field: "title", message: "Give the section a title" }]);
@@ -539,7 +544,7 @@ export const coreHandlers = [
     return HttpResponse.json(m, { status: 201 });
   }),
   http.put(`${A}/courses/:id/modules/order`, async ({ request, params }) => {
-    const { course } = requireStaff(String(params.id));
+    const { course } = requireStaff(String(params.id), "edit_content");
     const b = (await request.json()) as { ids: string[]; parent_id?: string | null };
     b.ids.forEach((id, i) => { const m = getDb().modules.find((x) => x.id === id && x.course_id === course.id); if (m) m.position = i + 1; });
     return new HttpResponse(null, { status: 204 });
@@ -547,7 +552,7 @@ export const coreHandlers = [
   http.patch(`${A}/modules/:id`, async ({ request, params }) => {
     const m = getDb().modules.find((x) => x.id === params.id);
     if (!m) throw notFound();
-    requireStaff(m.course_id);
+    requireStaff(m.course_id, "edit_content");
     const b = (await request.json()) as { title?: string; publish_at?: string | null };
     if (b.title !== undefined) m.title = b.title.trim() || m.title;
     if ("publish_at" in b) m.publish_at = b.publish_at ?? null;
@@ -557,7 +562,7 @@ export const coreHandlers = [
     const db = getDb();
     const m = db.modules.find((x) => x.id === params.id);
     if (!m) throw notFound();
-    requireStaff(m.course_id);
+    requireStaff(m.course_id, "edit_content");
     const ids = new Set([m.id, ...db.modules.filter((x) => x.parent_id === m.id).map((x) => x.id)]);
     if (db.items.some((i) => ids.has(i.module_id) && db.grades.some((g) => g.assignment_id === i.id))) throw problem(409, "Conflict", "This section has graded work, so it can’t be deleted");
     db.items = db.items.filter((i) => !ids.has(i.module_id));
@@ -568,7 +573,7 @@ export const coreHandlers = [
     const db = getDb();
     const m = db.modules.find((x) => x.id === params.id);
     if (!m) throw notFound();
-    requireStaff(m.course_id);
+    requireStaff(m.course_id, "edit_content");
     const b = (await request.json()) as { cascade?: boolean };
     if (typeof b.cascade !== "boolean") throw problem(422, "Validation failed", undefined, [{ field: "cascade", message: "Choose whether to publish what is inside" }]);
     m.status = "published";
@@ -584,7 +589,7 @@ export const coreHandlers = [
     const db = getDb();
     const m = db.modules.find((x) => x.id === params.id);
     if (!m) throw notFound();
-    requireStaff(m.course_id);
+    requireStaff(m.course_id, "edit_content");
     const b = (await request.json()) as { kind: "text" | "assignment" | "file"; title: string; body?: unknown; assignment?: Record<string, unknown> };
     const title = (b.title ?? "").trim();
     if (!title) throw problem(422, "Validation failed", undefined, [{ field: "title", message: "Give it a title" }]);
@@ -610,7 +615,7 @@ export const coreHandlers = [
     const db = getDb();
     const m = db.modules.find((x) => x.id === params.id);
     if (!m) throw notFound();
-    requireStaff(m.course_id);
+    requireStaff(m.course_id, "edit_content");
     const b = (await request.json()) as { ids: string[] };
     b.ids.forEach((id, i) => { const it = db.items.find((x) => x.id === id && x.module_id === m.id); if (it) it.position = i + 1; });
     return new HttpResponse(null, { status: 204 });

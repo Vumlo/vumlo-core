@@ -3,6 +3,7 @@ import type { Attempt, Course, CourseGroupLink, Group, Item, Membership, Module,
 import type { MockMail } from "@/lib/api/gaps";
 import type { AdminInstitution, AuditKind, AuditRecord, Institution } from "@/lib/api/types";
 import type { Document } from "@/lib/api/types";
+import type { UnitAbility, UnitRole } from "@/lib/api/hooks/units";
 
 export type DbUser = User & { password: string; last_sign_in: string | null };
 export type DbCourse = Course & { code: string; description: string; settings_saved_at: string | null; template_updated_at?: string };
@@ -36,9 +37,14 @@ export type DbGrade = {
 export type DbHistory = { action: "save_draft" | "publish"; score: string | null; feedback: string | null; actor_id: string | null; at: string };
 export type DbGroupMember = { group_id: string; subgroup_id: string | null; user_id: string; since: string };
 export type DbLink = CourseGroupLink & { linked_on: string };
+export type DbUnit = { id: string; name: string; parent_id: string | null; created_at: string };
 
 export type Db = {
   users: DbUser[];
+  /** The org units (ADR-0094), the role each person holds on a unit, and the switches of each role (the same for every unit). */
+  units: DbUnit[];
+  unitRoles: Record<string, Record<string, UnitRole>>;
+  unitAbilities: Record<UnitRole, UnitAbility[]>;
   terms: Term[];
   groups: Group[];
   subgroups: Subgroup[];

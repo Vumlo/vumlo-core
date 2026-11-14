@@ -8,6 +8,7 @@ import { appName } from "@/lib/appName";
 import { clientConfig } from "@/lib/clientConfig";
 import { Icon } from "@/components/Icon";
 import { navFor } from "@/lib/nav";
+import { useUnits } from "@/lib/api/hooks/units";
 import { onSessionExpired } from "@/lib/api/client";
 import { invalidate, retryFailed } from "@/lib/query";
 import { fullName, useMe, type User } from "@/lib/session";
@@ -124,6 +125,7 @@ export function Shell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const me = useMe();
+  const units = useUnits();
   const t = useT();
   const mustChange = me.data?.must_change_password === true;
 
@@ -147,7 +149,7 @@ export function Shell({ children }: { children: ReactNode }) {
     return <div className="loading" role="status">{t("common.loading")}</div>;
   }
   const user = me.data;
-  const nav = navFor(user.role);
+  const nav = navFor(user.role, { units: (units.data?.length ?? 0) > 0 });
 
   function search(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();

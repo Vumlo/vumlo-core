@@ -3,8 +3,9 @@ use sqlx::types::Decimal;
 use uuid::Uuid;
 
 use super::layout::{GroupDef, Outcome, Settings, Setup};
+use activity::Kind;
 use common::text_enum;
-use content::{BuiltinType, ItemFacts, MaxPoints};
+use content::{ItemFacts, MaxPoints};
 use teaching::CardCourse;
 
 const FEEDBACK_MAX_LEN: usize = 4000;
@@ -383,7 +384,7 @@ pub struct WorkEntry {
     pub assignment_id: Uuid,
     pub course_id: Uuid,
     pub title: String,
-    pub assignment_type: BuiltinType,
+    pub assignment_type: Kind,
     pub due_at: Option<DateTime<Utc>>,
     pub class_on: Option<NaiveDate>,
     pub max_points: MaxPoints,

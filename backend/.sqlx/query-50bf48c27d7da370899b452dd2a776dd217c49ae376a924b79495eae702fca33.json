@@ -1,0 +1,77 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT f.item_id, f.submitted_at, f.published_score AS \"score: Decimal\", f.marked_at,\n                  a.type AS \"assignment_type?: activity::Kind\"\n           FROM content.facts f\n           JOIN content.items i ON i.id = f.item_id\n           LEFT JOIN content.assignments a ON a.item_id = f.item_id\n           WHERE i.course_id = $1 AND f.student_id = $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "item_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "content.facts",
+            "name": "item_id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "submitted_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "content.facts",
+            "name": "submitted_at"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "score: Decimal",
+        "type_info": "Numeric",
+        "origin": {
+          "Table": {
+            "table": "content.facts",
+            "name": "published_score"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "marked_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "content.facts",
+            "name": "marked_at"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "assignment_type?: activity::Kind",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "content.assignments",
+            "name": "type"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "50bf48c27d7da370899b452dd2a776dd217c49ae376a924b79495eae702fca33"
+}

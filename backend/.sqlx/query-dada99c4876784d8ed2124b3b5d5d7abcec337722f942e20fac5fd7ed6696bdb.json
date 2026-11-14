@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO content.assignments (item_id, type, config, max_points)\n         VALUES ($1, $2, $3, 10)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Jsonb"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "dada99c4876784d8ed2124b3b5d5d7abcec337722f942e20fac5fd7ed6696bdb"
+}

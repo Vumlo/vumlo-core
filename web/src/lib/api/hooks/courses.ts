@@ -4,7 +4,7 @@ import { api } from "../client";
 import { invalidate, useMutation, useQuery } from "../../query";
 import { localToIso } from "../../format";
 
-import type { Candidate, ContentTree, Course, CourseCard, CourseGroupLink, CourseInfo, CoursePeople, GroupOption, Item, ItemMetaMap, Membership, ServerItemMeta, TemplateSummary, Term } from "../types";
+import type { Candidate, ContentTree, Course, CourseCard, CourseDetail, CourseGroupLink, CourseInfo, CoursePeople, GroupOption, Item, ItemMetaMap, Membership, ServerItemMeta, TemplateSummary, Term } from "../types";
 import { itemFromWire } from "../sheetWire";
 import { fetchAll } from "./util";
 
@@ -13,7 +13,7 @@ export function useMyCourses() {
 }
 
 export function useCourse(id: string | null) {
-  return useQuery<Course>(id ? `/courses/${id}` : null, () => api.get<Course>(`/courses/${id}`));
+  return useQuery<CourseDetail>(id ? `/courses/${id}` : null, () => api.get<CourseDetail>(`/courses/${id}`));
 }
 
 /** The header of every course screen: code, term name, owner and counts (ADR-0048). */
@@ -93,16 +93,16 @@ export function useUpdateCourseInfo(courseId: string) {
 }
 
 export function useCreateCourse() {
-  return useMutation(async (title: string, term_id?: string | null) => {
-    const c = await api.post<Course>("/courses", { title, term_id: term_id ?? null });
+  return useMutation(async (title: string, term_id?: string | null, unitId?: string | null) => {
+    const c = await api.post<Course>("/courses", { title, term_id: term_id ?? null, ...(unitId ? { unit_id: unitId } : {}) });
     invalidate("/me/");
     return c;
   });
 }
 
 export function useCreateFromTemplate() {
-  return useMutation(async (templateId: string, title: string) => {
-    const c = await api.post<Course>(`/templates/${templateId}/courses`, { title });
+  return useMutation(async (templateId: string, title: string, unitId?: string | null) => {
+    const c = await api.post<Course>(`/templates/${templateId}/courses`, { title, ...(unitId ? { unit_id: unitId } : {}) });
     invalidate("/me/");
     return c;
   });

@@ -14,12 +14,13 @@ use uuid::Uuid;
 
 use crate::{LearningError, items};
 use access::{Actor, CourseRole};
+use activity::EffectiveProfiles;
 use auth::{self, Email, NewUser, PersonName};
 use common::PageParams;
 use common::Role;
 use content::{
-    self, Assignment, BuiltinType, ContentError, ContentTitle, EffectiveProfiles, ItemPatch,
-    ItemRules, MaxPoints, SubmissionSettings,
+    self, Assignment, ContentError, ContentTitle, ItemPatch, ItemRules, MaxPoints,
+    SubmissionSettings, text,
 };
 use gradebook::{
     Cell, GradeInput, GradebookError, Students, gradebook, publish_grades, save_grade,
@@ -105,7 +106,7 @@ async fn fixture_worth(pool: PgPool, points: &str) -> Fixture {
         ContentTitle::parse("A").unwrap(),
         None,
         Some(Assignment {
-            assignment_type: BuiltinType::Text,
+            assignment_type: crate::tests::kind(text::ID),
             config: Map::new(),
             max_points: MaxPoints::parse(points).unwrap(),
             is_bonus: false,

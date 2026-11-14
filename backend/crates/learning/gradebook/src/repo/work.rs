@@ -7,7 +7,7 @@ use sqlx::PgConnection;
 use uuid::Uuid;
 
 use crate::model::{Progress, StaffFacts, TodoCounts, WorkFacts, WorkStatus};
-use content::{AssignmentType, BuiltinType, NextDeadline};
+use content::NextDeadline;
 
 /// A student's standing on every assignment of the given courses (see [`WorkStatus::of`]). Only
 /// published grade columns are selected: nothing here can show a draft value (AGENTS section 6).
@@ -20,7 +20,7 @@ pub async fn student_work(
 ) -> Result<Vec<WorkFacts>, sqlx::Error> {
     let rows = sqlx::query!(
         r#"SELECT a.item_id AS "assignment_id!", i.course_id AS "course_id!",
-                  a.type AS "assignment_type!: BuiltinType",
+                  a.type AS "assignment_type!: activity::Kind",
                   COALESCE(a.due_at IS NOT NULL
                            AND CASE WHEN a.accept_late THEN a.late_until ELSE a.due_at END < $3,
                            false) AS "closed!",
@@ -51,7 +51,7 @@ pub async fn student_work(
             course_id: row.course_id,
             status: WorkStatus::of(
                 row.graded,
-                row.assignment_type.takes_submissions(),
+                row.assignment_type.capabilities().submissions,
                 row.attempts,
                 row.draft_saved_at.is_some(),
                 row.closed,
@@ -112,12 +112,13 @@ pub async fn staff_counts(
 }
 
 /// A student's numbers per course over the assignments that take submissions and that students can
-/// open now.
+/// open now. `submissionless` are the ids of the types that take no submissions.
 pub async fn student_progress(
     conn: &mut PgConnection,
     student_id: Uuid,
     course_ids: &[Uuid],
     now: DateTime<Utc>,
+    submissionless: &[String],
 ) -> Result<Vec<Progress>, sqlx::Error> {
     let rows = sqlx::query!(
         r#"WITH open AS (
@@ -131,7 +132,7 @@ pub async fn student_progress(
                JOIN content.module_list m ON m.id = i.module_id
                LEFT JOIN content.module_list p ON p.id = m.parent_id
                LEFT JOIN gradebook.grades g ON g.assignment_id = a.item_id AND g.student_id = $1
-               WHERE i.course_id = ANY($2) AND a.type <> 'no_submission'
+               WHERE i.course_id = ANY($2) AND a.type <> ALL($4)
                  AND i.status = 'published' AND (i.publish_at IS NULL OR i.publish_at <= $3)
                  AND m.status = 'published' AND (m.publish_at IS NULL OR m.publish_at <= $3)
                  AND (p.id IS NULL
@@ -142,7 +143,8 @@ pub async fn student_progress(
            FROM open GROUP BY course_id"#,
         student_id,
         course_ids,
-        now
+        now,
+        submissionless
     )
     .fetch_all(conn)
     .await?;
@@ -158,11 +160,13 @@ pub async fn student_progress(
 }
 
 /// The earliest upcoming deadline per course of work the student has not handed in.
+/// `submissionless` are the ids of the types that take no submissions.
 pub async fn student_next(
     conn: &mut PgConnection,
     student_id: Uuid,
     course_ids: &[Uuid],
     now: DateTime<Utc>,
+    submissionless: &[String],
 ) -> Result<Vec<NextDeadline>, sqlx::Error> {
     let rows = sqlx::query!(
         r#"SELECT DISTINCT ON (i.course_id) i.course_id AS "course_id!",
@@ -173,7 +177,7 @@ pub async fn student_next(
            JOIN content.module_list m ON m.id = i.module_id
            LEFT JOIN content.module_list p ON p.id = m.parent_id
            LEFT JOIN gradebook.grades g ON g.assignment_id = a.item_id AND g.student_id = $1
-           WHERE i.course_id = ANY($2) AND a.type <> 'no_submission' AND a.due_at >= $3
+           WHERE i.course_id = ANY($2) AND a.type <> ALL($4) AND a.due_at >= $3
              AND i.status = 'published' AND (i.publish_at IS NULL OR i.publish_at <= $3)
              AND m.status = 'published' AND (m.publish_at IS NULL OR m.publish_at <= $3)
              AND (p.id IS NULL
@@ -185,7 +189,8 @@ pub async fn student_next(
            ORDER BY i.course_id, a.due_at"#,
         student_id,
         course_ids,
-        now
+        now,
+        submissionless
     )
     .fetch_all(conn)
     .await?;
@@ -202,10 +207,11 @@ pub async fn student_next(
 
 /// What staff still have to do per course, over the current students: submitted work with no
 /// draft score, and draft grades that are not published. Reads the draft columns, so only a staff
-/// path may call it.
+/// path may call it. `auto_graded` are the ids of the types that score an attempt by themselves.
 pub async fn todo_counts(
     conn: &mut PgConnection,
     course_ids: &[Uuid],
+    auto_graded: &[String],
 ) -> Result<Vec<TodoCounts>, sqlx::Error> {
     let rows = sqlx::query!(
         r#"SELECT i.course_id AS "course_id!",
@@ -232,12 +238,13 @@ pub async fn todo_counts(
                   EXISTS (SELECT 1 FROM gradebook.grades g
                           JOIN content.assignment_list ga ON ga.item_id = g.assignment_id
                           JOIN content.item_list gi ON gi.id = g.assignment_id
-                          WHERE gi.course_id = i.course_id AND ga.type = 'quiz'
+                          WHERE gi.course_id = i.course_id AND ga.type = ANY($2)
                             AND (g.draft_score, g.draft_feedback)
                                 IS DISTINCT FROM (g.published_score, g.published_feedback))
                       AS "from_quizzes!"
            FROM (SELECT DISTINCT course_id FROM content.item_list WHERE course_id = ANY($1)) i"#,
-        course_ids
+        course_ids,
+        auto_graded
     )
     .fetch_all(conn)
     .await?;

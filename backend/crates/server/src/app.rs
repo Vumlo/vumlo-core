@@ -27,10 +27,11 @@ use utoipa_scalar::{Scalar, Servable};
 
 use crate::health;
 use access::{self, ActorSource, PluginSource};
+use activity::{EditorConfigError, EffectiveProfiles, InstallError};
 use assessment::AssessmentState;
 use auth::{self, AuthState, SetupError};
 use common::{ApiError, problem_details};
-use content::{ContentState, EditorConfigError, EffectiveProfiles};
+use content::ContentState;
 use events::Handlers;
 use gradebook::GradebookState;
 use learning::{self, LearningState};
@@ -163,22 +164,29 @@ pub enum StateError {
     Files(#[from] files::FilesError),
     #[error("the optional modules cannot be started: {0}")]
     Modules(#[from] module_api::OrderError),
+    #[error("the activity types cannot be installed: {0}")]
+    ActivityTypes(#[from] InstallError),
 }
 
-/// Installs the synchronous event subscribers of every layer (ADR-0093). The registry depends only
-/// on what is compiled in, so it is the same for every state this process builds (the tests build
-/// many), and a second call finds it installed: that is the only error `install` has.
-pub fn install_subscribers() {
+/// Installs the synchronous event subscribers of every layer (ADR-0093) and the activity types
+/// (ADR-0097). Both registries depend only on what is compiled in, so they are the same for every
+/// state this process builds (the tests build many), and a second call finds them installed: that
+/// is the only error tolerated. A set of types that cannot be built (two with one id) fails start.
+pub fn install_registries() -> Result<(), InstallError> {
     let _already_installed = events::install(learning::subscribers());
+    match activity::install(content::builtin_types()?) {
+        Ok(()) | Err(InstallError::AlreadyInstalled) => Ok(()),
+        Err(error) => Err(error),
+    }
 }
 
 impl AppState {
-    /// The composition root of the shared state. It installs the event subscribers and resolves
-    /// the editor configuration, so a configuration that does not fit the profiles in code fails
-    /// here, at startup, with an error that names the key and the value, and never at the first
-    /// request.
+    /// The composition root of the shared state. It installs the event subscribers and the activity
+    /// types and resolves the editor configuration, so a configuration that does not fit the
+    /// profiles in code fails here, at startup, with an error that names the key and the value, and
+    /// never at the first request.
     pub fn new(db: PgPool, config: Settings) -> Result<Self, StateError> {
-        install_subscribers();
+        install_registries()?;
         let editor = Arc::new(EffectiveProfiles::resolve(&config.editor)?);
         let hashing = auth::HashGate::new(config.auth.max_concurrent_hashes);
         let mailer = config

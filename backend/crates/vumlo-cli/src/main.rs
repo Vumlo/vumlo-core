@@ -429,9 +429,14 @@ enum AdminCommand {
 #[tokio::main]
 async fn main() -> ExitCode {
     // A command that changes data goes through the same services as the server, and what they emit
-    // runs the synchronous subscribers inside its transaction (ADR-0093). Same set as
-    // `server::app::install_subscribers`; each root names its modules itself.
+    // runs the synchronous subscribers inside its transaction (ADR-0093), and what they read needs
+    // the activity types (ADR-0097). Same sets as `server::app::install_registries`; each root
+    // names its modules itself.
     events::install(learning::subscribers()).expect("the registry is installed once, at start");
+    activity::install(
+        content::builtin_types().expect("the built-in activity types have unique ids"),
+    )
+    .expect("the activity types are installed once, at start");
     match run(Cli::parse()).await {
         Ok(true) => ExitCode::SUCCESS,
         Ok(false) => ExitCode::FAILURE,

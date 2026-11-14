@@ -24,11 +24,9 @@ use super::model::{
 use super::repo;
 use access::Actor;
 use access::{self, AccessError, Action};
+use activity::{AutoGrade, DocumentErrors, EffectiveProfiles, FileRef, Kind, Stage, distinct_ids};
 use common::{Page, PageParams};
-use content::{
-    self, Assignment, AssignmentType, AutoGrade, BuiltinType, DocumentErrors, EffectiveProfiles,
-    FileRef, OnDeadline, OpenError, OpenedAssignment, Stage, distinct_ids,
-};
+use content::{self, Assignment, OnDeadline, OpenError, OpenedAssignment, form, quiz};
 use events::{self, Event, EventsError};
 use teaching::TeachingError;
 
@@ -139,7 +137,7 @@ async fn open(
 /// A type that takes no submissions has nothing to save, read or list. The type cannot change, so
 /// the answer from the unlocked read is safe.
 fn require_submissions(opened: &OpenedAssignment) -> Result<(), AssessmentError> {
-    if opened.assignment_type.takes_submissions() {
+    if opened.assignment_type.capabilities().submissions {
         Ok(())
     } else {
         Err(AssessmentError::TakesNoSubmissions)
@@ -477,7 +475,7 @@ async fn begin_submit_for(
     when: When,
 ) -> Result<SubmitStart, AssessmentError> {
     let assignment = lock(conn, assignment_id).await?;
-    if !assignment.assignment_type.takes_submissions() {
+    if !assignment.assignment_type.capabilities().submissions {
         return Err(AssessmentError::TakesNoSubmissions);
     }
     let (submitted_at, is_late) = match when {
@@ -580,7 +578,7 @@ pub async fn finish_submit(
         },
     )
     .await?;
-    if assignment.assignment_type == BuiltinType::Quiz {
+    if assignment.assignment_type.id() == quiz::ID {
         events::emit(
             conn,
             Event::QuizAttemptSubmitted {
@@ -655,13 +653,13 @@ fn file_refs(
 ) -> Result<Vec<FileRef>, AssessmentError> {
     assignment
         .assignment_type
-        .submission_file_refs(body)
+        .submission_file_refs(&assignment.config, body)
         .map_err(AssessmentError::Document)
 }
 
 /// What the check of the files (`learning::files::check`, ADR-0069) said about `refs`, as the
-/// error of this write, or the ids to attach. For a `file` hand-in the name of each listed file
-/// must also be one the assignment takes.
+/// error of this write, or the ids to attach. The name of each file the content lists must also be
+/// one the type takes (a `file` hand-in; the other types list none and take any).
 ///
 /// Ownership is judged first, so a file of someone else and an unknown id give one message, and
 /// the extension rule never tells whether a foreign id exists.
@@ -693,22 +691,18 @@ fn judge_files(
     {
         return Err(unusable(&file.path));
     }
-    if assignment.assignment_type == BuiltinType::File {
-        let listed = assignment
-            .assignment_type
-            .claims(&assignment.config, body)
-            .files;
-        let mut names = BTreeMap::new();
-        for (index, &id) in listed.iter().enumerate() {
-            let name = verdict
-                .names
-                .get(&id)
-                .ok_or_else(|| unusable(&format!("files[{index}]")))?;
-            names.insert(id, name.clone());
-        }
-        content::check_file_names(&assignment.config, body, &names)
-            .map_err(AssessmentError::Document)?;
+    let kind = assignment.assignment_type;
+    let listed = kind.claims(&assignment.config, body).files;
+    let mut names = BTreeMap::new();
+    for (index, &id) in listed.iter().enumerate() {
+        let name = verdict
+            .names
+            .get(&id)
+            .ok_or_else(|| unusable(&format!("files[{index}]")))?;
+        names.insert(id, name.clone());
     }
+    kind.check_file_names(&assignment.config, body, &names)
+        .map_err(AssessmentError::Document)?;
     Ok(distinct_ids(refs))
 }
 
@@ -721,7 +715,7 @@ fn unusable(path: &str) -> AssessmentError {
 pub async fn form_facts(
     conn: &mut PgConnection,
     assignment_id: Uuid,
-    assignment_type: BuiltinType,
+    assignment_type: Kind,
     config: &Map<String, Value>,
 ) -> Result<FormFacts, AssessmentError> {
     let mut facts = FormFacts::default();
@@ -750,7 +744,7 @@ pub async fn begin_quiz_result(
 ) -> Result<QuizResultStart, AssessmentError> {
     let opened = open(conn, actor, assignment_id).await?;
     access::authorize(actor, Action::ViewOwnGrades(opened.access))?;
-    if opened.assignment_type != BuiltinType::Quiz {
+    if opened.assignment_type.id() != quiz::ID {
         return Err(AssessmentError::NothingToShow);
     }
     let assignment = lock(conn, assignment_id).await?;
@@ -799,7 +793,7 @@ pub async fn responses(
 ) -> Result<Responses, AssessmentError> {
     let opened = open(conn, actor, assignment_id).await?;
     access::authorize(actor, Action::ViewSubmissions(opened.access))?;
-    if opened.assignment_type != BuiltinType::Form {
+    if opened.assignment_type.id() != form::ID {
         return Err(AssessmentError::NothingToShow);
     }
     let students = repo::current_students(conn, opened.course_id).await?;

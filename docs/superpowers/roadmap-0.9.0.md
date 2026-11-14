@@ -1,6 +1,6 @@
 # Roadmap 0.9.0
 
-Status on 2026-11-13. Source: the architecture sketch of the finished core (`~/Downloads/lms-architecture-overview.md`), compared with the repository. The structural blockers to adding modules were the single big `learning` crate, with calls and reads that went in a circle, and the closed assignment-type enum `content::model::BuiltinType`.
+Status on 2026-11-14. Source: the architecture sketch of the finished core (`~/Downloads/lms-architecture-overview.md`), compared with the repository. The structural blockers to adding modules were the single big `learning` crate, with calls and reads that went in a circle, and the closed assignment-type enum `content::model::BuiltinType` (it was; ADR-0097 replaced it by the contract and registry in the `activity` crate).
 
 Every item below is done the same way: an ADR line (`docs/decisions/`), a spec (`docs/superpowers/specs/`), a plan (`docs/superpowers/plans/`, written with the `writing-plans` skill), then stacked PRs, with a stop for review after each PR.
 
@@ -8,13 +8,15 @@ Every item below is done the same way: an ADR line (`docs/decisions/`), a spec (
 
 | # | Item | State |
 |---|---|---|
-| 1 | Split `learning` into crates (ADR-0093) | Built. PR A #61, PR B #62, files-usage #63 merged; PR C #64 open |
-| 2 | Org units and contextual roles (ADR-0094) | PR A (backend) built on `feat/org-units`, awaiting review; PR B (web) not started. Spec: `docs/superpowers/specs/2026-11-13-org-units-design.md` |
-| 3 | Activity type contract, replacing `BuiltinType` | Not started |
+| 1 | Split `learning` into crates (ADR-0093) | Done. PR A #61, PR B #62, files-usage #63, PR C #64, all merged |
+| 2 | Org units and contextual roles (ADR-0094) | Done. PR A (backend) #65 and #66 merged; the web part (units page, unit picker, course screens driven by `can`) is built on `feat/units-web-activity-types`, together with item 3, awaiting review. Spec: `docs/superpowers/specs/2026-11-13-org-units-design.md` |
+| 3 | Activity type contract, replacing `BuiltinType` (ADR-0097) | Built on `feat/units-web-activity-types`, awaiting review: the `activity` crate, the registry, the five built-in types, capabilities in SQL, completion by the type's policy. The completion events stay in item 4. Spec: `docs/superpowers/specs/2026-11-14-activity-types-design.md` |
 | 4 | Progress: completion policies | Not started |
 | 5 | New modules: final grades, question bank, notifications, calendar, forums | Not started |
 | 6 | Interop: Moodle XML/GIFT, QTI, LTI 1.3, SCORM, H5P | Not started |
 | 7 | More setup choices for the admin when a Vumlo is created (installer and admin settings) | Not started; brainstorm after item 2 |
+
+Also done, outside the numbered items: the admin console as an app of its own (ADR-0095, #67 to #69), the installer's first-run setup (ADR-0096, design and plan #70) and release 0.7.0 (#71).
 
 ### 1. Split `learning` into crates (ADR-0093)
 
@@ -24,6 +26,8 @@ Five crates in `backend/crates/learning/`: `teaching < content < assessment < gr
 - PR B (#62): nothing goes up the order (flows, `begin_*` / `finish_*` pairs); migration `0054` with eleven read views.
 - Files-usage (#63): `learning::files::check` locks the file rows, and the writes that name files run `begin_*`, `check`, `finish_*` in one transaction.
 - PR C (#64): the physical move into five crates, with a state, error enum and router each.
+
+All four merged.
 
 ### 2. Org units and contextual roles (ADR-0094)
 
@@ -35,11 +39,13 @@ Design agreed earlier:
 - A view `org.unit_grants`, read by the layers above (it is a declared view).
 - `CourseAccess.unit_grant`: a unit role gives access to the courses of that unit and of the units below it.
 
-Spec and plan written; PR A (backend) is built: units, `manager`/`viewer` roles, abilities the admin switches, `org.unit_subtree` and `org.unit_grants`, `CourseAccess.unit_grant`, `audit_implicit`, `PUT /courses/{id}/unit`, `GET /units/{id}/courses`, `can` on `GET /courses/{id}`. `unit_id` on groups was left out (spec section 9). Next: PR B (the web pages).
+Done. PR A (backend, #65 and #66) built units, `manager`/`viewer` roles, abilities the admin switches, `org.unit_subtree` and `org.unit_grants`, `CourseAccess.unit_grant`, `audit_implicit`, `PUT /courses/{id}/unit`, `GET /units/{id}/courses`, `can` on `GET /courses/{id}`. `unit_id` on groups was left out (spec section 9). PR B (the web part, on `feat/units-web-activity-types`) added the hooks, the `/units` page and its navigation link, the unit picker on creating a course and in its settings, and course screens that read the server's `can`; the admin console keeps the system-wide settings (the abilities per role).
 
-### 3. Activity type contract
+### 3. Activity type contract (ADR-0097)
 
-Replaces the closed enum `content::model::BuiltinType` with a contract an activity type implements: its capabilities and its completion policy.
+Built on `feat/units-web-activity-types`, in one delivery with the web part of item 2. It replaced the closed enum `content::model::BuiltinType` with a contract an activity type implements (`ActivityType`: its id, its capabilities and its completion policy) and a registry that the composition root fills once. The crate is `backend/crates/learning/activity`; the five built-in types live in `content`. SQL asks capabilities instead of type names, and `content::repo::facts` decides completion by the type's policy.
+
+Not built, left to later items: the per-activity completion choice and the events `activity.completed` and `course.completed` (item 4); a type that comes from a module, which needs the edge `module-api -> activity` (items 5 and 6); telling the web app the capabilities (its per-type pages and `no_submission` filters stay).
 
 ### 4. Progress
 

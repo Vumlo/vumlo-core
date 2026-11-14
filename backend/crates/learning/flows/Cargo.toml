@@ -7,6 +7,7 @@ description = "The flows that need several of teaching, content, assessment and 
 
 [dependencies]
 access.workspace = true
+activity.workspace = true
 api-types.workspace = true
 assessment.workspace = true
 auth.workspace = true
@@ -31,6 +32,7 @@ vumlo-config.workspace = true
 
 [dev-dependencies]
 access = { workspace = true, features = ["testing"] }
+activity = { workspace = true, features = ["testing"] }
 assessment = { workspace = true, features = ["testing"] }
 auth = { workspace = true, features = ["testing"] }
 content = { workspace = true, features = ["testing"] }

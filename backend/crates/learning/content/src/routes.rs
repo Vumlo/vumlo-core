@@ -18,14 +18,14 @@ use utoipa_axum::routes;
 use uuid::Uuid;
 
 use super::model::{
-    self, AssignmentType, BuiltinType, ConditionInput, ConditionKind, ContentTitle, ItemKind,
-    ItemPatch, ItemStatus, MaxPoints, ModelError, ModulePatch, ModuleStatus, OnDeadline,
-    SettingsPatch, SubmissionSettings,
+    self, ConditionInput, ConditionKind, ContentTitle, ItemKind, ItemPatch, ItemStatus, MaxPoints,
+    ModelError, ModulePatch, ModuleStatus, OnDeadline, SettingsPatch, SubmissionSettings,
 };
 use super::rules::{Condition, Node};
 use super::service::{self, ContentError, NewItemInput};
 use crate::ContentState;
 use access::Actor;
+use activity::RegistryError;
 use common::{ApiError, ValidJson, ValidQuery};
 
 pub fn router<S>() -> OpenApiRouter<S>
@@ -56,7 +56,7 @@ impl From<ContentError> for ApiError {
                 let field = match model {
                     ModelError::Title => "title",
                     ModelError::MaxPoints => "max_points",
-                    ModelError::AssignmentType => "type",
+                    ModelError::UnknownAssignmentType => "type",
                     ModelError::Config(_) => "config",
                 };
                 Self::invalid_field(field, error.to_string())
@@ -236,7 +236,7 @@ fn domain_rule(rule: Option<api_types::AccessRule>) -> Vec<ConditionInput> {
 
 fn api_assignment(assignment: model::Assignment) -> api_types::Assignment {
     api_types::Assignment {
-        assignment_type: assignment.assignment_type.as_str().to_owned(),
+        assignment_type: assignment.assignment_type.id().to_owned(),
         config: assignment.config,
         max_points: assignment.max_points.to_string(),
         is_bonus: assignment.is_bonus,
@@ -258,7 +258,7 @@ fn api_on_deadline(on_deadline: OnDeadline) -> api_types::OnDeadline {
 
 fn api_assignment_summary(assignment: model::AssignmentSummary) -> api_types::AssignmentSummary {
     api_types::AssignmentSummary {
-        assignment_type: assignment.assignment_type.as_str().to_owned(),
+        assignment_type: assignment.assignment_type.id().to_owned(),
         max_points: assignment.max_points.to_string(),
         is_bonus: assignment.is_bonus,
         due_at: assignment.settings.due_at,
@@ -332,7 +332,15 @@ fn title(raw: &str) -> Result<ContentTitle, ContentError> {
 /// Parses the assignment object of a create request. Every bad field is reported at once, under
 /// its path in the request. The messages are fixed texts: they never repeat what was sent.
 fn domain_assignment(new: NewAssignment) -> Result<model::Assignment, ApiError> {
-    let assignment_type = BuiltinType::parse(&new.assignment_type);
+    // An unknown type is an error that does not repeat the input.
+    let assignment_type = match activity::get(&new.assignment_type) {
+        Ok(kind) => Ok(kind),
+        Err(RegistryError::Unknown(_)) => Err(ModelError::UnknownAssignmentType),
+        Err(error @ RegistryError::NotInstalled) => {
+            tracing::error!(%error, "content: the binary installed no activity types");
+            return Err(ApiError::Internal);
+        }
+    };
     let max_points = MaxPoints::parse(&new.max_points);
     // With an unknown type the settings cannot be judged; the type is the field to fix first.
     let settings = match &assignment_type {
@@ -344,13 +352,12 @@ fn domain_assignment(new: NewAssignment) -> Result<model::Assignment, ApiError> 
                 late_until: new.late_until.map(Some),
                 max_attempts: new.max_attempts.map(Some),
             },
-            assignment_type.takes_submissions(),
+            assignment_type.capabilities().submissions,
         ),
         Err(_) => Ok(SubmissionSettings::default()),
     };
     // A class day belongs to in-class work only (ADR-0049).
-    let class_on_misplaced =
-        matches!((&assignment_type, new.class_on), (Ok(kind), Some(_)) if kind.takes_submissions());
+    let class_on_misplaced = matches!((&assignment_type, new.class_on), (Ok(kind), Some(_)) if kind.capabilities().submissions);
     let settings = if class_on_misplaced {
         let mut problems = settings.err().unwrap_or_default();
         problems.push(model::SettingProblem {

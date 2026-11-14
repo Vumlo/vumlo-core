@@ -429,6 +429,120 @@ async fn two_transactions_for_one_pair_do_not_overwrite_each_other() {
     .await;
 }
 
+impl World {
+    /// A published assignment of the given type.
+    async fn made(&self, assignment: Value) -> Uuid {
+        let item = id_of(
+            &self
+                .env
+                .ok(
+                    "POST",
+                    &self.teacher.token,
+                    &format!("/modules/{}/items", self.module),
+                    Some(json!({"kind": "assignment", "title": "A", "assignment": assignment})),
+                    201,
+                )
+                .await,
+        );
+        self.go(
+            &self.teacher,
+            "POST",
+            &format!("/items/{item}/publish"),
+            None,
+            200,
+        )
+        .await;
+        item
+    }
+
+    /// Writes the student's row for the item as the sources would have it, with nothing else.
+    async fn row(&self, item: Uuid, submitted: bool, score: Option<&str>) {
+        let mut conn = self.env.pool.acquire().await.unwrap();
+        let fact = SourceFact {
+            item_id: item,
+            student_id: self.student.id,
+            submitted_at: submitted.then(Utc::now),
+            published_score: score.map(|score| score.parse().unwrap()),
+        };
+        replace_source_facts(&mut conn, &FactScope::All, &[fact])
+            .await
+            .unwrap();
+    }
+
+    /// Whether the course tells the student the item is done.
+    async fn is_done(&self, item: Uuid) -> bool {
+        let seen = self
+            .env
+            .ok(
+                "GET",
+                &self.student.token,
+                &format!("/items/{item}"),
+                None,
+                200,
+            )
+            .await;
+        seen["standing"]["done"] == json!(true)
+    }
+}
+
+#[tokio::test]
+async fn a_no_submission_assignment_is_done_only_when_its_score_is_published() {
+    db_test(async |pool| {
+        let w = world(pool).await;
+        let oral = w
+            .made(json!({"type": "no_submission", "max_points": "5"}))
+            .await;
+        assert!(!w.is_done(oral).await);
+
+        // A row that holds a submit and no score is not a grade.
+        w.row(oral, true, None).await;
+        assert!(!w.is_done(oral).await);
+
+        w.row(oral, true, Some("4")).await;
+        assert!(w.is_done(oral).await);
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn a_quiz_is_done_at_submit_before_grading() {
+    db_test(async |pool| {
+        let w = world(pool).await;
+        let option = |id: &str| json!({"id": id, "content": essay(id)});
+        let quiz = w
+            .made(json!({"type": "quiz", "max_points": "1", "config": {
+                "v": 1, "shuffle_questions": false, "show_correct": false,
+                "questions": [{"id": "q1", "type": "single_choice", "points": "1",
+                    "prompt": essay("which"), "options": [option("a"), option("b")],
+                    "correct": ["a"]}]}}))
+            .await;
+        assert!(!w.is_done(quiz).await);
+
+        w.row(quiz, true, None).await;
+
+        assert!(w.is_done(quiz).await);
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn a_text_assignment_is_done_at_submit_and_a_text_item_when_marked() {
+    db_test(async |pool| {
+        let w = world(pool).await;
+        let task = w.task().await;
+        let lecture = w.lecture().await;
+        assert!(!w.is_done(task).await && !w.is_done(lecture).await);
+
+        w.submit(task).await;
+        assert!(w.is_done(task).await);
+        assert!(!w.is_done(lecture).await);
+
+        w.mark(lecture).await;
+        assert!(w.is_done(lecture).await);
+    })
+    .await;
+}
+
 #[tokio::test]
 async fn a_source_fact_of_an_item_that_is_gone_is_skipped() {
     db_test(async |pool| {

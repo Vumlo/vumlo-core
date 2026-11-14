@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 import { NotFoundScreen } from "@/components/StateScreen";
+import { UnitSelect } from "@/components/units/UnitSelect";
 import { useCreateCourse, useCreateFromTemplate, useTemplates, useTerms } from "@/lib/api/hooks/courses";
 import { api } from "@/lib/api/client";
 import { invalidate } from "@/lib/query";
@@ -29,6 +30,7 @@ export function NewCourse() {
   const [title, setTitle] = useState("");
   const [code, setCode] = useState("");
   const [termId, setTermId] = useState("");
+  const [unitId, setUnitId] = useState("");
   const [description, setDescription] = useState("");
   const [saving, setSaving] = useState(false);
 
@@ -59,7 +61,7 @@ export function NewCourse() {
     e.preventDefault();
     setSaving(true);
     const name = title.trim();
-    const course = start === "template" && chosen ? await fromTemplate.run(chosen.course.id, name) : await create.run(name, termId || null);
+    const course = start === "template" && chosen ? await fromTemplate.run(chosen.course.id, name, unitId || null) : await create.run(name, termId || null, unitId || null);
     if (!course) {
       setSaving(false);
       return;
@@ -123,6 +125,7 @@ export function NewCourse() {
             {err("term_id") && <p className="field-error">{err("term_id")}</p>}
           </div>
         </div>
+        <UnitSelect id="nc-unit" value={unitId} onChange={setUnitId} error={err("unit_id")} />
         <div className="field">
           <label htmlFor="nc-desc">{t("newCourse.description")}</label>
           <textarea id="nc-desc" className="textarea" value={description} onChange={(e) => setDescription(e.target.value)} />

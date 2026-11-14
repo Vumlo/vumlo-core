@@ -6,13 +6,17 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use api_types::ProfileName;
 use serde_json::{Map, Value};
+use sqlx::types::Decimal;
 use uuid::Uuid;
 
-use super::{Claims, Problems, Stage, ValidContent};
-use crate::document::{
-    DocumentErrors, EffectiveProfiles, FileRef, file_refs_under, validate_document,
-};
+use super::{Problems, config_error};
 use crate::model::ModelError;
+use activity::{
+    ActivityType, AutoGrade, Capabilities, Claims, CompletionPolicy, ConfigError, DocumentErrors,
+    EffectiveProfiles, FileRef, Stage, ValidContent, file_refs_under, validate_document,
+};
+
+pub const ID: &str = "file";
 
 const DEFAULT_MAX_FILES: usize = 5;
 const MAX_FILES_LIMIT: usize = 20;
@@ -237,6 +241,87 @@ pub fn claims(_config: &Map<String, Value>, content: &Map<String, Value>) -> Cla
     Claims {
         files: file_ids(content),
         ..Claims::default()
+    }
+}
+
+/// Files the student uploads, graded by hand (ADR-0069).
+pub struct File;
+
+impl ActivityType for File {
+    fn id(&self) -> &'static str {
+        ID
+    }
+
+    fn capabilities(&self) -> Capabilities {
+        Capabilities {
+            submissions: true,
+            auto_graded: false,
+        }
+    }
+
+    fn completion(&self) -> CompletionPolicy {
+        CompletionPolicy::SubmittedOrGraded
+    }
+
+    fn validate_config(
+        &self,
+        config: &Map<String, Value>,
+        _profiles: &EffectiveProfiles,
+    ) -> Result<(), ConfigError> {
+        validate_config(config).map_err(config_error)
+    }
+
+    fn points_total(&self, _config: &Map<String, Value>) -> Option<Decimal> {
+        None
+    }
+
+    fn strip_computed(&self, _config: &mut Map<String, Value>) {}
+
+    fn validate_submission(
+        &self,
+        config: &Map<String, Value>,
+        content: &Value,
+        stage: Stage,
+        profiles: &EffectiveProfiles,
+    ) -> Result<ValidContent, DocumentErrors> {
+        validate_submission(config, content, stage, profiles)
+    }
+
+    fn student_config(&self, config: &Map<String, Value>) -> Map<String, Value> {
+        config.clone()
+    }
+
+    fn structure(&self, _config: &Map<String, Value>) -> Option<Value> {
+        None
+    }
+
+    fn auto_grade(
+        &self,
+        _config: &Map<String, Value>,
+        _content: &Map<String, Value>,
+    ) -> Option<AutoGrade> {
+        None
+    }
+
+    fn claims(&self, config: &Map<String, Value>, content: &Map<String, Value>) -> Claims {
+        claims(config, content)
+    }
+
+    fn submission_file_refs(
+        &self,
+        _config: &Map<String, Value>,
+        content: &Map<String, Value>,
+    ) -> Result<Vec<FileRef>, DocumentErrors> {
+        submission_file_refs(content)
+    }
+
+    fn check_file_names(
+        &self,
+        config: &Map<String, Value>,
+        content: &Map<String, Value>,
+        names: &BTreeMap<Uuid, String>,
+    ) -> Result<(), DocumentErrors> {
+        check_names(config, content, names)
     }
 }
 

@@ -62,7 +62,8 @@ pub async fn student_progress(
     course_ids: &[Uuid],
     now: DateTime<Utc>,
 ) -> Result<Vec<Progress>, GradebookError> {
-    Ok(repo::student_progress(conn, student_id, course_ids, now).await?)
+    let submissionless = activity::ids_where(|c| !c.submissions);
+    Ok(repo::student_progress(conn, student_id, course_ids, now, &submissionless).await?)
 }
 
 /// The earliest upcoming deadline per course of `course_ids` of work the student has not handed
@@ -73,7 +74,8 @@ pub async fn student_next(
     course_ids: &[Uuid],
     now: DateTime<Utc>,
 ) -> Result<Vec<NextDeadline>, GradebookError> {
-    Ok(repo::student_next(conn, student_id, course_ids, now).await?)
+    let submissionless = activity::ids_where(|c| !c.submissions);
+    Ok(repo::student_next(conn, student_id, course_ids, now, &submissionless).await?)
 }
 
 /// What staff still have to grade per course of `course_ids`. Reads drafts: the caller has
@@ -82,7 +84,7 @@ pub async fn todo_counts(
     conn: &mut PgConnection,
     course_ids: &[Uuid],
 ) -> Result<Vec<TodoCounts>, GradebookError> {
-    Ok(repo::todo_counts(conn, course_ids).await?)
+    Ok(repo::todo_counts(conn, course_ids, &activity::ids_where(|c| c.auto_graded)).await?)
 }
 
 /// Every assignment a student can open in their courses with their own standing on it, and the

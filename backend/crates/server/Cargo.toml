@@ -21,6 +21,7 @@ ai_agent = ["dep:vumlo-module-ai-agent"]
 
 [dependencies]
 access.workspace = true
+activity.workspace = true
 anyhow.workspace = true
 api-types.workspace = true
 assessment.workspace = true
@@ -57,6 +58,7 @@ vumlo-module-ai-agent = { workspace = true, optional = true }
 
 [dev-dependencies]
 access = { workspace = true, features = ["testing"] }
+activity = { workspace = true, features = ["testing"] }
 auth = { workspace = true, features = ["testing"] }
 base64.workspace = true
 chrono-tz.workspace = true

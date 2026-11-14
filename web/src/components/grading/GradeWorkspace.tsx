@@ -40,9 +40,10 @@ export function GradeWorkspace({ courseId, assignmentId, studentId }: { courseId
     return () => clearTimeout(timer);
   }, [notice]);
   const [leaving, setLeaving] = useState<{ href: string; replace: boolean } | null>(null);
-  const { staff, loading } = useCourseAccess(courseId);
-  const item = useItem(staff && assignmentId ? assignmentId : null);
-  const course = useCourse(staff ? courseId : null);
+  const { can, loading } = useCourseAccess(courseId);
+  // Anyone who may view grades reads the work; only `grade` changes anything (ADR-0094).
+  const item = useItem(can.view_grades && assignmentId ? assignmentId : null);
+  const course = useCourse(can.view_grades ? courseId : null);
   // An assignment graded by hand has no submissions, so the list of work waiting would always be empty.
   const filter = picked ?? (item.data?.assignment?.type === "no_submission" ? "all" : "grade");
   const open = item.data?.assignment ? assignmentId : null;
@@ -63,7 +64,7 @@ export function GradeWorkspace({ courseId, assignmentId, studentId }: { courseId
   }, [chosen]);
 
   if (loading) return <p className="loading" role="status">{t("common.loading")}</p>;
-  if (!staff || !assignmentId) return <NotFoundScreen />;
+  if (!can.view_grades || !assignmentId) return <NotFoundScreen />;
   if (item.error) return missing(item.error.status) ? <NotFoundScreen /> : <LoadFailed />;
   if (item.data && !item.data.assignment) return <NotFoundScreen />;
   if (book.error || subs.error) return <LoadFailed />;
@@ -148,12 +149,12 @@ export function GradeWorkspace({ courseId, assignmentId, studentId }: { courseId
           <Link href={courseHref(courseId, "grades")} className={s.link} onClick={back}>{t("gw.toGradebook")}</Link>
         </p>
       )}
-      <div className={s.body} data-rail={shown.length > 0}>
+      <div className={s.body} data-rail={shown.length > 0} data-panel={can.grade}>
         <StudentRail rows={shown} states={states} late={late} selected={chosen} onPick={pick} />
         <div role="region" aria-label={t("gw.submission")} className={s.pane} tabIndex={0}>
           {attempts.error ? <LoadFailed /> : !attempts.data ? <p className="loading" role="status">{t("common.loading")}</p> : <SubmissionView key={chosen} item={item.data} attempts={attempts.data} />}
         </div>
-        {row && col && (
+        {can.grade && row && col && (
           <GradePanel key={chosen} assignmentId={assignmentId} row={row} col={col} cell={row.cells.find((c) => c.assignment_id === assignmentId)} former={!!row.former} drafts={drafts} dirty={dirty} onSaved={saved} />
         )}
       </div>
