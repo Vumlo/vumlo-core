@@ -4,30 +4,10 @@ import { errorText } from "@/lib/api/client";
 import { useT } from "@/lib/i18n";
 import { useDeleteUnit, useUnits, type UnitSummary } from "@/lib/api/hooks/units";
 import { RoleAbilities } from "./RoleAbilities";
-import { MoveUnit, NewUnit, RenameUnit } from "./UnitDialogs";
-import { UnitRoles } from "./UnitRoles";
+import { MoveUnit, NewUnit, RenameUnit } from "@/components/units/UnitDialogs";
+import { UnitRoles } from "@/components/units/UnitRoles";
+import { rows } from "@/components/units/tree";
 import s from "./Admin.module.css";
-
-type Row = { unit: UnitSummary; level: number };
-
-/** The flat list as a tree: each unit under its parent, by name, with its depth. */
-function rows(all: UnitSummary[]): Row[] {
-  const known = new Set(all.map((u) => u.id));
-  const children = new Map<string | null, UnitSummary[]>();
-  for (const u of all) {
-    const parent = u.parent_id && known.has(u.parent_id) ? u.parent_id : null;
-    children.set(parent, [...(children.get(parent) ?? []), u]);
-  }
-  const out: Row[] = [];
-  const walk = (parent: string | null, level: number) => {
-    for (const unit of children.get(parent) ?? []) {
-      out.push({ unit, level });
-      walk(unit.id, level + 1);
-    }
-  };
-  walk(null, 1);
-  return out;
-}
 
 type Dialogs = "new-top" | "new-inside" | "rename" | "move" | "delete" | null;
 

@@ -1,3 +1,5 @@
+"use client";
+
 import { useState, type FormEvent } from "react";
 import { Dialog } from "@/components/Dialog";
 import { errorText } from "@/lib/api/client";
