@@ -453,6 +453,46 @@ fn activity_lists_only_plain_data_crates() {
     );
 }
 
+/// The names of the closed enum of assignment types and of its trait, which the registry replaced
+/// (ADR-0097). A type is asked through `activity::Kind`, never named in a match.
+const GONE_TYPE_NAMES: &[&str] = &["BuiltinType", "AssignmentType"];
+
+#[test]
+fn no_builtin_type_name_is_left() {
+    let crates = crates_dir();
+    let this_file = crates.join("server/tests/architecture.rs");
+    let mut files = BTreeSet::new();
+    rust_files(&crates, &mut files);
+    let mut found = Vec::new();
+    for file in files.into_iter().filter(|file| *file != this_file) {
+        let text = fs::read_to_string(&file).expect("a Rust file is UTF-8");
+        for (number, line) in text.lines().enumerate() {
+            let named = line
+                .split(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
+                .any(|word| GONE_TYPE_NAMES.contains(&word));
+            if named {
+                found.push(format!("{}:{}: {}", shown(&file), number + 1, line.trim()));
+            }
+        }
+    }
+    assert!(
+        found.is_empty(),
+        "assignment types come from the activity registry (ADR-0097):\n{}",
+        found.join("\n")
+    );
+}
+
+#[test]
+fn both_binaries_install_the_types() {
+    for binary in ["server/src/app.rs", "vumlo-cli/src/main.rs"] {
+        let text = fs::read_to_string(crates_dir().join(binary)).expect("a Rust file is UTF-8");
+        assert!(
+            text.contains("activity::install("),
+            "{binary} must install the activity types (ADR-0097)"
+        );
+    }
+}
+
 /// The second halves of the writes that name files. Each one raises the verdict of the check of
 /// the files, so it must run only after `learning::files::check` has locked and judged them.
 const FILE_FINISHES: &[&str] = &[

@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT i.course_id, a.type AS \"assignment_type: BuiltinType\",\n                  i.status = 'published' AS \"item_published!\", i.publish_at AS item_publish_at,\n                  m.status = 'published' AS \"module_published!\", m.publish_at AS module_publish_at,\n                  p.status = 'published' AS \"parent_published?\", p.publish_at AS parent_publish_at\n           FROM content.assignments a\n           JOIN content.items i ON i.id = a.item_id\n           JOIN content.modules m ON m.id = i.module_id\n           LEFT JOIN content.modules p ON p.id = m.parent_id\n           WHERE a.item_id = $1",
+  "query": "SELECT i.course_id, a.type AS \"assignment_type: activity::Kind\",\n                  i.status = 'published' AS \"item_published!\", i.publish_at AS item_publish_at,\n                  m.status = 'published' AS \"module_published!\", m.publish_at AS module_publish_at,\n                  p.status = 'published' AS \"parent_published?\", p.publish_at AS parent_publish_at\n           FROM content.assignments a\n           JOIN content.items i ON i.id = a.item_id\n           JOIN content.modules m ON m.id = i.module_id\n           LEFT JOIN content.modules p ON p.id = m.parent_id\n           WHERE a.item_id = $1",
   "describe": {
     "columns": [
       {
@@ -16,7 +16,7 @@
       },
       {
         "ordinal": 1,
-        "name": "assignment_type: BuiltinType",
+        "name": "assignment_type: activity::Kind",
         "type_info": "Text",
         "origin": {
           "Table": {
@@ -93,5 +93,5 @@
       true
     ]
   },
-  "hash": "913f86acbe7f9274804b1baa2f21db622eafe9c5fe5b0fe27ef566be1b71098f"
+  "hash": "bb1a3dc903e9900a102a0af9cde7225e09fa3189968e83298a36717a45e30d47"
 }

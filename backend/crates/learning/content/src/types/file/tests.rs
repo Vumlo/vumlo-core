@@ -1,7 +1,6 @@
 use serde_json::{Map, Value, json};
 
 use super::*;
-use crate::model::{AssignmentType, BuiltinType};
 
 fn obj(value: &Value) -> &Map<String, Value> {
     value.as_object().unwrap()
@@ -87,7 +86,7 @@ fn config_rejects_unknown_keys() {
 #[test]
 fn the_config_is_shown_to_a_student_unchanged() {
     let config = json!({"max_files": 3, "accept": [".pdf"]});
-    let file = BuiltinType::File;
+    let file = File;
     assert_eq!(
         Value::Object(file.student_config(obj(&config))),
         config,
@@ -101,7 +100,7 @@ fn the_config_is_shown_to_a_student_unchanged() {
         file.auto_grade(obj(&config), obj(&json!({"files": []})))
             .is_none()
     );
-    assert!(file.takes_submissions());
+    assert!(file.capabilities().submissions);
 }
 
 #[test]

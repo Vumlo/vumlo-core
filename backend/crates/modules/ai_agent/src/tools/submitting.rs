@@ -11,7 +11,7 @@ use std::collections::BTreeMap;
 use access::Actor;
 use chrono::Utc;
 use common::{ApiError, PageParams};
-use content::{BuiltinType, ItemRules};
+use content::{ItemRules, text};
 use learning::{items, submissions};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
@@ -120,7 +120,7 @@ impl Write {
         let is_text = item
             .assignment
             .as_ref()
-            .is_some_and(|a| a.assignment_type == BuiltinType::Text);
+            .is_some_and(|a| a.assignment_type.id() == text::ID);
         if !is_text {
             return Err(
                 "only text assignments can be answered here; the student does this one on its page"

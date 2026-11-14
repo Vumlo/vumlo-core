@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT i.course_id AS \"course_id!\", a.type AS \"kind!\" FROM content.item_list i\n           JOIN content.assignment_list a ON a.item_id = i.id\n           WHERE i.id = $1",
+  "query": "SELECT i.course_id AS \"course_id!\", a.type AS \"kind!: activity::Kind\"\n           FROM content.item_list i\n           JOIN content.assignment_list a ON a.item_id = i.id\n           WHERE i.id = $1",
   "describe": {
     "columns": [
       {
@@ -16,7 +16,7 @@
       },
       {
         "ordinal": 1,
-        "name": "kind!",
+        "name": "kind!: activity::Kind",
         "type_info": "Text",
         "origin": {
           "Table": {
@@ -36,5 +36,5 @@
       true
     ]
   },
-  "hash": "b41387a085dbf4c70ed036635c1725d3fcac03b568e1a933c44ec58e7ea9ee3b"
+  "hash": "21e9d7a534747d4be0b71d870365a12bee4112c0c5e4f9a5afec45ea55bf9cad"
 }

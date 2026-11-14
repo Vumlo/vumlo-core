@@ -14,7 +14,7 @@ use access::CourseRole;
 use activity::EffectiveProfiles;
 use auth::{self, Email, NewUser, PersonName};
 use common::Role;
-use content::{Assignment, BuiltinType, ContentTitle, ItemPatch, ItemRules, MaxPoints};
+use content::{Assignment, ContentTitle, ItemPatch, ItemRules, MaxPoints, text};
 use files::{Storage, Stored};
 use object_store::memory::InMemory;
 use teaching::{self, CourseTitle};
@@ -105,7 +105,7 @@ async fn fixture(pool: PgPool) -> Fixture {
         ContentTitle::parse("Essay").unwrap(),
         None,
         Some(Assignment {
-            assignment_type: BuiltinType::Text,
+            assignment_type: crate::tests::kind(text::ID),
             config: Map::new(),
             max_points: MaxPoints::parse("10").unwrap(),
             is_bonus: false,
@@ -935,7 +935,7 @@ async fn second_assignment(f: &Fixture) -> Uuid {
         ContentTitle::parse("Other").unwrap(),
         None,
         Some(Assignment {
-            assignment_type: BuiltinType::Text,
+            assignment_type: crate::tests::kind(text::ID),
             config: Map::new(),
             max_points: MaxPoints::parse("10").unwrap(),
             is_bonus: false,

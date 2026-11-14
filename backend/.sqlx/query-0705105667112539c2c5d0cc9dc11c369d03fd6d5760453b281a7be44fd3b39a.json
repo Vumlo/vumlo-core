@@ -1,11 +1,11 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT type AS \"assignment_type: BuiltinType\", config AS \"config: Body\",\n                  max_points AS \"max_points: MaxPoints\", is_bonus,\n                  due_at, on_deadline AS \"on_deadline: OnDeadline\", accept_late, late_until,\n                  max_attempts, class_on\n           FROM content.assignments WHERE item_id = $1",
+  "query": "INSERT INTO content.assignments\n               (item_id, type, config, max_points, is_bonus,\n                due_at, on_deadline, accept_late, late_until, max_attempts, class_on)\n           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)\n           RETURNING type AS \"assignment_type: activity::Kind\", config AS \"config: Body\",\n                     max_points AS \"max_points: MaxPoints\", is_bonus,\n                     due_at, on_deadline AS \"on_deadline: OnDeadline\", accept_late, late_until,\n                     max_attempts, class_on",
   "describe": {
     "columns": [
       {
         "ordinal": 0,
-        "name": "assignment_type: BuiltinType",
+        "name": "assignment_type: activity::Kind",
         "type_info": "Text",
         "origin": {
           "Table": {
@@ -116,7 +116,17 @@
     ],
     "parameters": {
       "Left": [
-        "Uuid"
+        "Uuid",
+        "Text",
+        "Jsonb",
+        "Numeric",
+        "Bool",
+        "Timestamptz",
+        "Text",
+        "Bool",
+        "Timestamptz",
+        "Int4",
+        "Date"
       ]
     },
     "nullable": [
@@ -132,5 +142,5 @@
       true
     ]
   },
-  "hash": "1058e3cbade3a860f001186cbdfcc80d29de46b5ed82ef1fa8de71d79fef91e1"
+  "hash": "0705105667112539c2c5d0cc9dc11c369d03fd6d5760453b281a7be44fd3b39a"
 }

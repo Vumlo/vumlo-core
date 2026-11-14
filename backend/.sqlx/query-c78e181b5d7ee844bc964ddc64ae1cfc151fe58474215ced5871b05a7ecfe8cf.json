@@ -1,11 +1,11 @@
 {
   "db_name": "PostgreSQL",
-  "query": "UPDATE content.assignments\n           SET config = COALESCE($2::jsonb, config),\n               max_points = COALESCE($3::numeric, max_points),\n               is_bonus = COALESCE($4::boolean, is_bonus),\n               due_at = CASE WHEN $5 THEN $6::timestamptz ELSE due_at END,\n               on_deadline = CASE WHEN $5 THEN $7::text ELSE on_deadline END,\n               accept_late = CASE WHEN $5 THEN $8::boolean ELSE accept_late END,\n               late_until = CASE WHEN $5 THEN $9::timestamptz ELSE late_until END,\n               max_attempts = CASE WHEN $5 THEN $10::integer ELSE max_attempts END,\n               class_on = CASE WHEN $11 THEN $12::date ELSE class_on END,\n               updated_at = now()\n           WHERE item_id = $1\n           RETURNING type AS \"assignment_type: BuiltinType\", config AS \"config: Body\",\n                     max_points AS \"max_points: MaxPoints\", is_bonus,\n                     due_at, on_deadline AS \"on_deadline: OnDeadline\", accept_late, late_until,\n                     max_attempts, class_on",
+  "query": "UPDATE content.assignments\n           SET config = COALESCE($2::jsonb, config),\n               max_points = COALESCE($3::numeric, max_points),\n               is_bonus = COALESCE($4::boolean, is_bonus),\n               due_at = CASE WHEN $5 THEN $6::timestamptz ELSE due_at END,\n               on_deadline = CASE WHEN $5 THEN $7::text ELSE on_deadline END,\n               accept_late = CASE WHEN $5 THEN $8::boolean ELSE accept_late END,\n               late_until = CASE WHEN $5 THEN $9::timestamptz ELSE late_until END,\n               max_attempts = CASE WHEN $5 THEN $10::integer ELSE max_attempts END,\n               class_on = CASE WHEN $11 THEN $12::date ELSE class_on END,\n               updated_at = now()\n           WHERE item_id = $1\n           RETURNING type AS \"assignment_type: activity::Kind\", config AS \"config: Body\",\n                     max_points AS \"max_points: MaxPoints\", is_bonus,\n                     due_at, on_deadline AS \"on_deadline: OnDeadline\", accept_late, late_until,\n                     max_attempts, class_on",
   "describe": {
     "columns": [
       {
         "ordinal": 0,
-        "name": "assignment_type: BuiltinType",
+        "name": "assignment_type: activity::Kind",
         "type_info": "Text",
         "origin": {
           "Table": {
@@ -143,5 +143,5 @@
       true
     ]
   },
-  "hash": "682543de2761fd390fccfe07efd6a380d965f92ceb91060204e66ff9b0078c8e"
+  "hash": "c78e181b5d7ee844bc964ddc64ae1cfc151fe58474215ced5871b05a7ecfe8cf"
 }

@@ -18,10 +18,8 @@ use super::model::{
     PluginList, PluginMember, PluginPage, PluginQuiz, PluginSubmission, PluginSubmissionRow,
 };
 use super::repo::{self, After, AssignmentRow};
-use content::{AssignmentType, BuiltinType};
-
-const FORM: &str = "form";
-const QUIZ: &str = "quiz";
+use activity::Kind;
+use content::{form, quiz};
 
 #[derive(Debug, thiserror::Error)]
 pub enum PluginReadError {
@@ -83,7 +81,7 @@ async fn reachable_assignment(
     caller: &PluginCaller,
     scope: Scope,
     assignment_id: Uuid,
-) -> Result<(Uuid, String), PluginReadError> {
+) -> Result<(Uuid, Kind), PluginReadError> {
     authorize_plugin(caller, scope)?;
     let (course_id, kind) = repo::assignment_header(conn, assignment_id)
         .await?
@@ -93,7 +91,7 @@ async fn reachable_assignment(
 }
 
 fn assignment_of(row: AssignmentRow) -> PluginAssignment {
-    let fields = (row.kind == FORM).then(|| match row.config.get("fields") {
+    let fields = (row.kind == form::ID).then(|| match row.config.get("fields") {
         Some(Value::Array(fields)) => fields.clone(),
         _ => Vec::new(),
     });
@@ -219,7 +217,7 @@ pub async fn form_answers(
         .await?
         .ok_or(PluginReadError::NotFound)?;
     authorize_plugin_course(caller, Scope::AssignmentsRead, row.course_id)?;
-    if row.assignment_type != FORM {
+    if row.assignment_type != form::ID {
         return Err(PluginReadError::NotFound);
     }
     let answers = match row.content.get("answers") {
@@ -330,7 +328,7 @@ pub async fn quiz(
     assignment_id: Uuid,
 ) -> Result<PluginQuiz, PluginReadError> {
     let (_, kind) = reachable_assignment(conn, caller, Scope::QuizzesRead, assignment_id).await?;
-    if kind != QUIZ {
+    if kind.id() != quiz::ID {
         return Err(PluginReadError::NotFound);
     }
     let row = repo::assignments(conn, None, Some(assignment_id), None, &After::from(None), 1)
@@ -341,7 +339,7 @@ pub async fn quiz(
         assignment_id: row.id,
         course_id: row.course_id,
         max_points: row.max_points,
-        config: BuiltinType::Quiz.student_config(&row.config),
+        config: kind.student_config(&row.config),
     })
 }
 
@@ -354,7 +352,7 @@ pub async fn attempts(
     page: PluginPage,
 ) -> Result<PluginList<PluginAttempt>, PluginReadError> {
     let (_, kind) = reachable_assignment(conn, caller, Scope::QuizzesRead, assignment_id).await?;
-    if kind != QUIZ {
+    if kind.id() != quiz::ID {
         return Err(PluginReadError::NotFound);
     }
     let rows = repo::attempts(

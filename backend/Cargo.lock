@@ -1576,6 +1576,7 @@ name = "gradebook"
 version = "0.7.0"
 dependencies = [
  "access",
+ "activity",
  "api-types",
  "axum",
  "chrono",
@@ -4772,6 +4773,7 @@ name = "vumlo-cli"
 version = "0.7.0"
 dependencies = [
  "access",
+ "activity",
  "anyhow",
  "api-types",
  "auth",
@@ -4779,6 +4781,7 @@ dependencies = [
  "chrono",
  "clap",
  "common",
+ "content",
  "db",
  "events",
  "image",

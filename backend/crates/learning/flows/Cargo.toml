@@ -32,6 +32,7 @@ vumlo-config.workspace = true
 
 [dev-dependencies]
 access = { workspace = true, features = ["testing"] }
+activity = { workspace = true, features = ["testing"] }
 assessment = { workspace = true, features = ["testing"] }
 auth = { workspace = true, features = ["testing"] }
 content = { workspace = true, features = ["testing"] }

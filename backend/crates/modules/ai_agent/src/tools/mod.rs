@@ -387,7 +387,7 @@ async fn my_work(
             "id": w.assignment_id,
             "course_id": w.course_id,
             "title": w.title,
-            "type": w.assignment_type.as_str(),
+            "type": w.assignment_type.id(),
             "due_at": w.due_at.map(|d| d.to_rfc3339()),
             "class_on": w.class_on.map(|d| d.to_string()),
             "max_points": w.max_points.to_string(),
@@ -508,12 +508,12 @@ async fn assignment_info(
     let Some(assignment) = &item.assignment else {
         return Err("that item is not an assignment".to_owned());
     };
-    let is_text = assignment.assignment_type == content::BuiltinType::Text;
+    let is_text = assignment.assignment_type.id() == content::text::ID;
     Ok(json!({
         "id": item.id,
         "course_id": item.course_id,
         "title": item.title,
-        "type": assignment.assignment_type.as_str(),
+        "type": assignment.assignment_type.id(),
         "max_points": assignment.max_points.to_string(),
         "due_at": assignment.settings.due_at.map(|d| d.to_rfc3339()),
         "instructions": is_text.then(|| text_of(&item.body).chars().take(6000).collect::<String>()),

@@ -31,6 +31,7 @@ vumlo-config.workspace = true
 
 [dev-dependencies]
 access = { workspace = true, features = ["testing"] }
+activity = { workspace = true, features = ["testing"] }
 auth = { workspace = true, features = ["testing"] }
 events = { workspace = true, features = ["testing"] }
 test-support.workspace = true

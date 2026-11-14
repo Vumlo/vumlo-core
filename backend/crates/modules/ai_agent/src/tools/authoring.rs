@@ -7,7 +7,7 @@ use std::collections::BTreeMap;
 
 use access::Actor;
 use common::ApiError;
-use content::{self, Assignment, BuiltinType, ContentTitle, ItemRules, MaxPoints, NewItemInput};
+use content::{self, Assignment, ContentTitle, ItemRules, MaxPoints, NewItemInput};
 use learning::items;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
@@ -336,7 +336,7 @@ impl Write {
                     .as_deref()
                     .filter(|t| !t.trim().is_empty())
                     .map(document);
-                let assignment = assignment(BuiltinType::Text, Map::new(), points);
+                let assignment = assignment(content::text::ID, Map::new(), points)?;
                 items::create_item(
                     conn,
                     actor,
@@ -361,10 +361,10 @@ impl Write {
                     .filter(|t| !t.trim().is_empty())
                     .map(document);
                 let assignment = assignment(
-                    BuiltinType::Quiz,
+                    content::quiz::ID,
                     config,
                     points(&total.to_string(), "questions")?,
-                );
+                )?;
                 items::create_item(
                     conn,
                     actor,
@@ -380,15 +380,24 @@ impl Write {
     }
 }
 
-fn assignment(kind: BuiltinType, config: Map<String, Value>, max_points: MaxPoints) -> Assignment {
-    Assignment {
-        assignment_type: kind,
+/// An assignment of the built-in type `id`.
+fn assignment(
+    id: &str,
+    config: Map<String, Value>,
+    max_points: MaxPoints,
+) -> Result<Assignment, ApiError> {
+    let assignment_type = activity::get(id).map_err(|error| {
+        tracing::error!(%error, "ai_agent: a built-in activity type is not installed");
+        ApiError::Internal
+    })?;
+    Ok(Assignment {
+        assignment_type,
         config,
         max_points,
         is_bonus: false,
         settings: Default::default(),
         class_on: None,
-    }
+    })
 }
 
 fn points(raw: &str, field: &str) -> Result<MaxPoints, ApiError> {

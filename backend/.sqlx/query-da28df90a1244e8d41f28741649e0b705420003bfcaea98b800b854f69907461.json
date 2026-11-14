@@ -1,11 +1,11 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT type AS \"assignment_type: BuiltinType\", config AS \"config: Body\",\n                  max_points AS \"max_points: MaxPoints\", is_bonus,\n                  due_at, on_deadline AS \"on_deadline: OnDeadline\", accept_late, late_until,\n                  max_attempts, class_on\n           FROM content.assignments WHERE item_id = $1\n           FOR SHARE",
+  "query": "SELECT type AS \"assignment_type: activity::Kind\", config AS \"config: Body\",\n                  max_points AS \"max_points: MaxPoints\", is_bonus,\n                  due_at, on_deadline AS \"on_deadline: OnDeadline\", accept_late, late_until,\n                  max_attempts, class_on\n           FROM content.assignments WHERE item_id = $1\n           FOR UPDATE",
   "describe": {
     "columns": [
       {
         "ordinal": 0,
-        "name": "assignment_type: BuiltinType",
+        "name": "assignment_type: activity::Kind",
         "type_info": "Text",
         "origin": {
           "Table": {
@@ -132,5 +132,5 @@
       true
     ]
   },
-  "hash": "dd723fa26ab19fa60977bead2b70dedac29b235d0244d85a7c4c8a9f751fb165"
+  "hash": "da28df90a1244e8d41f28741649e0b705420003bfcaea98b800b854f69907461"
 }

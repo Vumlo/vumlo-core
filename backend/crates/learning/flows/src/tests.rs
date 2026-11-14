@@ -10,10 +10,22 @@ use assessment::{AssessmentError, Attempt, Draft, DueDraft};
 use content::{Assignment, ContentTitle, Item, ItemRules, NewItemInput};
 
 /// `db_test` for the unit tests of this crate: what they emit needs the registry of subscribers
-/// installed, as the server does at start (ADR-0093).
+/// installed, as the server does at start (ADR-0093), and what they read the activity types
+/// (ADR-0097).
 pub(crate) async fn db_test(body: impl AsyncFnOnce(PgPool)) {
     events::testing::ensure_installed(crate::subscribers);
+    install_types();
     test_support::db_test(body).await;
+}
+
+fn install_types() {
+    activity::ensure_installed(|| content::builtin_types().unwrap());
+}
+
+/// The built-in type `id`, from the installed registry.
+pub(crate) fn kind(id: &str) -> activity::Kind {
+    install_types();
+    activity::get(id).unwrap()
 }
 
 /// The error of `assessment` in the error of a flow; any other error is a fault of the test.

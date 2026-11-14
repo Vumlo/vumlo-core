@@ -7,7 +7,7 @@ use sqlx::PgConnection;
 use uuid::Uuid;
 
 use crate::model::{Progress, StaffFacts, TodoCounts, WorkFacts, WorkStatus};
-use content::{AssignmentType, BuiltinType, NextDeadline};
+use content::NextDeadline;
 
 /// A student's standing on every assignment of the given courses (see [`WorkStatus::of`]). Only
 /// published grade columns are selected: nothing here can show a draft value (AGENTS section 6).
@@ -20,7 +20,7 @@ pub async fn student_work(
 ) -> Result<Vec<WorkFacts>, sqlx::Error> {
     let rows = sqlx::query!(
         r#"SELECT a.item_id AS "assignment_id!", i.course_id AS "course_id!",
-                  a.type AS "assignment_type!: BuiltinType",
+                  a.type AS "assignment_type!: activity::Kind",
                   COALESCE(a.due_at IS NOT NULL
                            AND CASE WHEN a.accept_late THEN a.late_until ELSE a.due_at END < $3,
                            false) AS "closed!",
@@ -51,7 +51,7 @@ pub async fn student_work(
             course_id: row.course_id,
             status: WorkStatus::of(
                 row.graded,
-                row.assignment_type.takes_submissions(),
+                row.assignment_type.capabilities().submissions,
                 row.attempts,
                 row.draft_saved_at.is_some(),
                 row.closed,

@@ -23,8 +23,8 @@ use assessment::{
 use auth::{self, Email, NewUser, PersonName};
 use common::{PageParams, Role};
 use content::{
-    Assignment, BuiltinType, ContentTitle, ItemPatch, ItemRules, MaxPoints, OnDeadline,
-    SettingsPatch, SubmissionSettings,
+    Assignment, ContentTitle, ItemPatch, ItemRules, MaxPoints, OnDeadline, SettingsPatch,
+    SubmissionSettings, text,
 };
 use teaching::{self, CourseTitle};
 use vumlo_config::GradingScale;
@@ -121,7 +121,7 @@ async fn fixture(pool: PgPool, settings: SubmissionSettings) -> Fixture {
         ContentTitle::parse("Essay").unwrap(),
         None,
         Some(Assignment {
-            assignment_type: BuiltinType::Text,
+            assignment_type: crate::tests::kind(text::ID),
             config: Map::new(),
             max_points: MaxPoints::parse("10").unwrap(),
             is_bonus: false,

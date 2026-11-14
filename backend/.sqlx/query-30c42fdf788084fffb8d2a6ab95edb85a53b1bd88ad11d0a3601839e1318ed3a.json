@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT i.id, i.module_id, i.course_id, i.position, i.kind AS \"kind: ItemKind\", i.title,\n                  i.body AS \"body: Body\", i.status AS \"status: ItemStatus\", i.publish_at,\n                  i.published_title, i.published_body AS \"published_body?: Body\",\n                  i.last_published_at,\n                  i.created_at, i.updated_at,\n                  m.status AS \"module_status: ModuleStatus\", m.publish_at AS module_publish_at,\n                  p.status AS \"parent_status?: ModuleStatus\", p.publish_at AS parent_publish_at,\n                  a.type AS \"assignment_type?: BuiltinType\", a.config AS \"assignment_config?: Body\",\n                  a.max_points AS \"assignment_max_points?: MaxPoints\",\n                  a.is_bonus AS \"assignment_is_bonus?\",\n                  a.class_on AS assignment_class_on,\n                  a.due_at AS assignment_due_at,\n                  a.on_deadline AS \"assignment_on_deadline?: OnDeadline\",\n                  a.accept_late AS assignment_accept_late,\n                  a.late_until AS assignment_late_until,\n                  a.max_attempts AS assignment_max_attempts\n           FROM content.items i\n           JOIN content.modules m ON m.id = i.module_id\n           LEFT JOIN content.modules p ON p.id = m.parent_id\n           LEFT JOIN content.assignments a ON a.item_id = i.id\n           WHERE i.id = $1",
+  "query": "SELECT i.id, i.module_id, i.course_id, i.position, i.kind AS \"kind: ItemKind\", i.title,\n                  i.body AS \"body: Body\", i.status AS \"status: ItemStatus\", i.publish_at,\n                  i.published_title, i.published_body AS \"published_body?: Body\",\n                  i.last_published_at,\n                  i.created_at, i.updated_at,\n                  m.status AS \"module_status: ModuleStatus\", m.publish_at AS module_publish_at,\n                  p.status AS \"parent_status?: ModuleStatus\", p.publish_at AS parent_publish_at,\n                  a.type AS \"assignment_type?: activity::Kind\", a.config AS \"assignment_config?: Body\",\n                  a.max_points AS \"assignment_max_points?: MaxPoints\",\n                  a.is_bonus AS \"assignment_is_bonus?\",\n                  a.class_on AS assignment_class_on,\n                  a.due_at AS assignment_due_at,\n                  a.on_deadline AS \"assignment_on_deadline?: OnDeadline\",\n                  a.accept_late AS assignment_accept_late,\n                  a.late_until AS assignment_late_until,\n                  a.max_attempts AS assignment_max_attempts\n           FROM content.items i\n           JOIN content.modules m ON m.id = i.module_id\n           LEFT JOIN content.modules p ON p.id = m.parent_id\n           LEFT JOIN content.assignments a ON a.item_id = i.id\n           WHERE i.id = $1",
   "describe": {
     "columns": [
       {
@@ -203,7 +203,7 @@
       },
       {
         "ordinal": 18,
-        "name": "assignment_type?: BuiltinType",
+        "name": "assignment_type?: activity::Kind",
         "type_info": "Text",
         "origin": {
           "Table": {
@@ -348,5 +348,5 @@
       true
     ]
   },
-  "hash": "94b0db6c4d5fd3250a57b83babb0b804bdd6d8579aa3a69d123eb719ed596aec"
+  "hash": "30c42fdf788084fffb8d2a6ab95edb85a53b1bd88ad11d0a3601839e1318ed3a"
 }

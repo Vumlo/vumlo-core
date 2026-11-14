@@ -136,7 +136,7 @@ async fn get_my_work(
                 assignment_id: entry.assignment_id,
                 course_id: entry.course_id,
                 title: entry.title,
-                assignment_type: entry.assignment_type.as_str().to_owned(),
+                assignment_type: entry.assignment_type.id().to_owned(),
                 due_at: entry.due_at,
                 class_on: entry.class_on.map(|day| day.to_string()),
                 max_points: entry.max_points.to_string(),
