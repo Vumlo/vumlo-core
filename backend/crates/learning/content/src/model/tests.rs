@@ -1,4 +1,7 @@
+use api_types::Feature;
+
 use super::*;
+use crate::types::text::editor_features;
 
 #[test]
 fn a_revision_knows_what_changed_since_the_item_was_published() {

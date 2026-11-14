@@ -17,7 +17,6 @@ pub use model::{
     HitKind, Item, ItemFacts, ItemKind, ItemPatch, ItemStatus, ItemSummary, MaxPoints, ModelError,
     Module, ModulePatch, ModuleStatus, NextDeadline, OnDeadline, OpenAssignment, OpenedAssignment,
     SettingProblem, SettingsPatch, SourceFact, Standing, SubmissionSettings, TemplateCounts, Unmet,
-    editor_features,
 };
 pub use points::parse_decimal;
 pub use repo::CopiedIds;
@@ -37,9 +36,12 @@ pub use service::{
 };
 pub use state::ContentState;
 pub use types::file::check_names as check_file_names;
+// The ids and the unit structs of the built-in types: `content::quiz::ID`, `content::text::Text`.
 pub use types::form::Holders;
 pub use types::quiz::ResultQuestion;
 pub use types::quiz::result_questions as quiz_result_questions;
+pub use types::text::editor_features;
+pub use types::{builtin_types, file, form, no_submission, quiz, text};
 // Seeds the references of an item for the tests of `learning::files`.
 #[cfg(feature = "testing")]
 pub use repo::replace_item_files;

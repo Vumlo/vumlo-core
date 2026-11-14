@@ -3,13 +3,24 @@
 
 pub mod file;
 pub mod form;
+pub mod no_submission;
 pub mod quiz;
+mod registry;
+pub mod text;
 
-use activity::{DocumentError, DocumentErrors, MAX_ERRORS};
+pub use registry::builtin_types;
+
+use activity::{ConfigError, DocumentError, DocumentErrors, MAX_ERRORS};
 use serde_json::{Map, Value};
 use sqlx::types::Decimal;
 
 use super::model::ModelError;
+
+/// What a type's own functions refuse, as the contract's error. Only `ModelError::Config` comes
+/// from a type; its text is the message, and any other variant maps by its text too.
+pub(super) fn config_error(error: ModelError) -> ConfigError {
+    ConfigError::new(error.to_string())
+}
 
 /// Ids of questions, fields and options: 1 to 64 characters of letters, digits, `_` and `-`.
 pub(super) fn valid_id(id: &str) -> bool {

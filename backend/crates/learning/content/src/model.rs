@@ -1,7 +1,5 @@
-use std::collections::BTreeSet;
 use std::fmt;
 
-use api_types::{Feature, ProfileName};
 use chrono::{DateTime, NaiveDate, Utc};
 use serde_json::{Map, Value};
 use sqlx::Postgres;
@@ -10,12 +8,11 @@ use sqlx::types::Decimal;
 use uuid::Uuid;
 
 use super::rules::Condition;
-use super::types::{file, form, quiz};
+use super::types::{file, form, no_submission, quiz, text};
 use crate::points;
 use access::{CourseAccess, Release};
 use activity::{
     AutoGrade, Claims, DocumentErrors, EffectiveProfiles, FileRef, Stage, ValidContent,
-    file_refs_of, validate_document_within,
 };
 use common::text_enum;
 
@@ -223,76 +220,12 @@ impl BuiltinType {
         content: &Map<String, Value>,
     ) -> Result<Vec<FileRef>, DocumentErrors> {
         match self {
-            Self::Text => file_refs_of(&Value::Object(content.clone())),
+            Self::Text => text::submission_file_refs(content),
             Self::Quiz => quiz::answer_file_refs(content),
             Self::File => file::submission_file_refs(content),
             Self::NoSubmission | Self::Form => Ok(Vec::new()),
         }
     }
-}
-
-/// The features a `text` assignment's `config.editor.features` allows, in the order given, or
-/// `None` when the config does not narrow the profile. Only `{"editor": {"features": [..]}}` is a
-/// valid config; the messages name the position of a mistake and never repeat what was sent.
-pub fn editor_features(config: &Map<String, Value>) -> Result<Option<Vec<Feature>>, ModelError> {
-    let invalid = |message: &str| Err(ModelError::Config(message.to_owned()));
-    if let Some(field) = config.keys().find(|key| *key != "editor") {
-        return Err(ModelError::Config(format!(
-            "unknown field `{field}`: the text type has only `editor`"
-        )));
-    }
-    let Some(editor) = config.get("editor") else {
-        return Ok(None);
-    };
-    let Some(editor) = editor.as_object() else {
-        return invalid("`editor` must be an object");
-    };
-    if editor.keys().any(|key| key != "features") {
-        return invalid("unknown field in `editor`: it has only `features`");
-    }
-    let Some(features) = editor.get("features") else {
-        return Ok(None);
-    };
-    let Some(features) = features.as_array() else {
-        return invalid("`editor.features` must be a list of feature names");
-    };
-    let mut chosen = Vec::with_capacity(features.len());
-    for (index, value) in features.iter().enumerate() {
-        let Some(feature) = value.as_str().and_then(Feature::from_name) else {
-            return Err(ModelError::Config(format!(
-                "`editor.features[{index}]` is not a feature (expected one of: {})",
-                Feature::ALL
-                    .iter()
-                    .map(|feature| feature.as_str())
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            )));
-        };
-        if chosen.contains(&feature) {
-            return Err(ModelError::Config(format!(
-                "`editor.features[{index}]` is listed twice"
-            )));
-        }
-        chosen.push(feature);
-    }
-    Ok(Some(chosen))
-}
-
-/// `config.editor.features` can only narrow the student profile (ADR-0025): a feature it lists
-/// that the effective profile, after the institution's configuration, does not have is refused.
-fn check_editor_features(
-    config: &Map<String, Value>,
-    profiles: &EffectiveProfiles,
-) -> Result<(), ModelError> {
-    let allowed = &profiles.profile(ProfileName::Student).features;
-    for (index, feature) in editor_features(config)?.into_iter().flatten().enumerate() {
-        if !allowed.contains(&feature) {
-            return Err(ModelError::Config(format!(
-                "`editor.features[{index}]` is not a feature of the student profile"
-            )));
-        }
-    }
-    Ok(())
 }
 
 impl AssignmentType for BuiltinType {
@@ -302,16 +235,8 @@ impl AssignmentType for BuiltinType {
         profiles: &EffectiveProfiles,
     ) -> Result<(), ModelError> {
         match self {
-            // `text` can only narrow what the student's editor offers (ADR-0025).
-            Self::Text => check_editor_features(config, profiles),
-            // This type needs no settings; any field is a mistake.
-            Self::NoSubmission => match config.keys().next() {
-                None => Ok(()),
-                Some(field) => Err(ModelError::Config(format!(
-                    "unknown field `{field}`: the {} type has no settings",
-                    self.as_str()
-                ))),
-            },
+            Self::Text => text::validate_config(config, profiles),
+            Self::NoSubmission => no_submission::validate_config(config),
             Self::Quiz => quiz::validate_config(config, profiles),
             Self::Form => form::validate_config(config),
             Self::File => file::validate_config(config),
@@ -346,17 +271,8 @@ impl AssignmentType for BuiltinType {
         profiles: &EffectiveProfiles,
     ) -> Result<ValidContent, DocumentErrors> {
         match self {
-            Self::Text => {
-                // A config that cannot be read narrows nothing further here: `validate_config`
-                // refused it when it was written.
-                let within: Option<BTreeSet<Feature>> = editor_features(config)
-                    .ok()
-                    .flatten()
-                    .map(|features| features.into_iter().collect());
-                validate_document_within(content, ProfileName::Student, profiles, within.as_ref())
-                    .map(ValidContent::from)
-            }
-            Self::NoSubmission => Err(DocumentErrors::one("", "this type takes no submissions")),
+            Self::Text => text::validate_submission(config, content, profiles),
+            Self::NoSubmission => no_submission::validate_submission(),
             Self::Quiz => quiz::validate_submission(config, content, stage, profiles),
             Self::Form => form::validate_submission(config, content, stage),
             Self::File => file::validate_submission(config, content, stage, profiles),

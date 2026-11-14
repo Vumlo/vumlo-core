@@ -9,9 +9,16 @@ use serde_json::{Map, Value, json};
 use sqlx::types::Decimal;
 use uuid::Uuid;
 
-use super::{Problems, answer_path, answers_of, parse_number, shape_problem, valid_id};
+use super::{
+    Problems, answer_path, answers_of, config_error, parse_number, shape_problem, valid_id,
+};
 use crate::model::ModelError;
-use activity::{Claims, DocumentErrors, Stage, ValidContent, valid_href};
+use activity::{
+    ActivityType, AutoGrade, Capabilities, Claims, CompletionPolicy, ConfigError, DocumentErrors,
+    EffectiveProfiles, Stage, ValidContent, valid_href,
+};
+
+pub const ID: &str = "form";
 
 const MAX_FIELDS: usize = 50;
 const MAX_OPTIONS: usize = 20;
@@ -550,6 +557,72 @@ pub fn decorate(
                 );
             }
         }
+    }
+}
+
+/// Fields the student fills in, graded by hand (ADR-0051).
+pub struct Form;
+
+impl ActivityType for Form {
+    fn id(&self) -> &'static str {
+        ID
+    }
+
+    fn capabilities(&self) -> Capabilities {
+        Capabilities {
+            submissions: true,
+            auto_graded: false,
+        }
+    }
+
+    fn completion(&self) -> CompletionPolicy {
+        CompletionPolicy::SubmittedOrGraded
+    }
+
+    fn validate_config(
+        &self,
+        config: &Map<String, Value>,
+        _profiles: &EffectiveProfiles,
+    ) -> Result<(), ConfigError> {
+        validate_config(config).map_err(config_error)
+    }
+
+    fn points_total(&self, _config: &Map<String, Value>) -> Option<Decimal> {
+        None
+    }
+
+    fn strip_computed(&self, config: &mut Map<String, Value>) {
+        strip_computed(config);
+    }
+
+    fn validate_submission(
+        &self,
+        config: &Map<String, Value>,
+        content: &Value,
+        stage: Stage,
+        _profiles: &EffectiveProfiles,
+    ) -> Result<ValidContent, DocumentErrors> {
+        validate_submission(config, content, stage)
+    }
+
+    fn student_config(&self, config: &Map<String, Value>) -> Map<String, Value> {
+        config.clone()
+    }
+
+    fn structure(&self, config: &Map<String, Value>) -> Option<Value> {
+        structure(config)
+    }
+
+    fn auto_grade(
+        &self,
+        _config: &Map<String, Value>,
+        _content: &Map<String, Value>,
+    ) -> Option<AutoGrade> {
+        None
+    }
+
+    fn claims(&self, config: &Map<String, Value>, content: &Map<String, Value>) -> Claims {
+        claims(config, content)
     }
 }
 
