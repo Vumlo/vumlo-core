@@ -6,7 +6,9 @@ import { useEffect, useState } from "react";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { Dialog } from "@/components/Dialog";
 import { Icon } from "@/components/Icon";
+import { UnitSelect } from "@/components/units/UnitSelect";
 import { useInstitution } from "@/lib/api/hooks/institution";
+import { useSetCourseUnit } from "@/lib/api/hooks/units";
 import { useArchiveCourse, useContentTree, useCourse, useCourseInfo, useCoursePeople, useDeleteCourse, useMakeTemplate, useTerms, useTransferOwner, useUnlinkGroup, useUpdateCourse, useUpdateCourseInfo } from "@/lib/api/hooks/courses";
 import { allItems, isAssignment, linkedGroupName, ownerName } from "@/lib/course";
 import { dayLabel, dayLong, initials, plural } from "@/lib/format";
@@ -30,6 +32,7 @@ export function CourseSettings({ courseId }: { courseId: string }) {
   const tree = useContentTree(courseId);
   const updateCourse = useUpdateCourse(courseId);
   const updateInfo = useUpdateCourseInfo(courseId);
+  const setUnit = useSetCourseUnit(courseId);
   const unlink = useUnlinkGroup(courseId);
   const transfer = useTransferOwner(courseId);
   const makeTemplate = useMakeTemplate(courseId);
@@ -40,6 +43,7 @@ export function CourseSettings({ courseId }: { courseId: string }) {
   const [code, setCode] = useState<string | null>(null);
   const [termId, setTermId] = useState<string | null>(null);
   const [desc, setDesc] = useState<string | null>(null);
+  const [unitId, setUnitId] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   const [dialog, setDialog] = useState<null | "group" | "owner" | "archive" | "delete" | "template">(null);
   const [newOwner, setNewOwner] = useState("");
@@ -64,7 +68,9 @@ export function CourseSettings({ courseId }: { courseId: string }) {
   const tCode = code ?? i.code;
   const tTerm = termId ?? c.term_id ?? "";
   const tDesc = desc ?? i.description;
-  const dirty = title !== null || code !== null || termId !== null || desc !== null;
+  const tUnit = unitId ?? c.unit_id ?? "";
+  const unitChanged = unitId !== null && unitId !== (c.unit_id ?? "");
+  const dirty = title !== null || code !== null || termId !== null || desc !== null || unitChanged;
   const fieldError = (f: string) => (updateCourse.error ?? updateInfo.error)?.errors.find((x) => x.field === f)?.message;
   const items = tree.data ? allItems(tree.data) : [];
   const groups = people.data?.groups ?? [];
@@ -76,7 +82,9 @@ export function CourseSettings({ courseId }: { courseId: string }) {
     setSaved(false);
     const a = title !== null || termId !== null ? await updateCourse.run({ ...(title !== null ? { title } : {}), ...(termId !== null ? { term_id: termId || null } : {}) }) : true;
     const b = code !== null || desc !== null ? await updateInfo.run({ ...(code !== null ? { code } : {}), ...(desc !== null ? { description: desc } : {}) }) : true;
-    if (a && b) { setTitle(null); setCode(null); setTermId(null); setDesc(null); setSaved(true); }
+    // Moving a course can take it out of the person's sight (a dean loses a course that leaves their unit), so it goes last.
+    const u = a && b && unitChanged ? !!(await setUnit.run(unitId || null)) : true;
+    if (a && b && u) { setTitle(null); setCode(null); setTermId(null); setDesc(null); setUnitId(null); setSaved(true); }
   }
   const close = () => setDialog(null);
 
@@ -107,6 +115,7 @@ export function CourseSettings({ courseId }: { courseId: string }) {
                   </select>
                 </div>
               </div>
+              {c.can.manage_course && <UnitSelect id="f-unit" value={tUnit} onChange={setUnitId} current={c.unit_id} error={setUnit.error?.errors.find((x) => x.field === "unit_id")?.message ?? setUnit.error?.detail} />}
               <div className="field">
                 <label htmlFor="f-desc">{t("cs.shortDesc")}</label>
                 <textarea id="f-desc" className="textarea" rows={3} value={tDesc} onChange={(e) => setDesc(e.target.value)} aria-invalid={!!fieldError("description")} />
@@ -115,7 +124,7 @@ export function CourseSettings({ courseId }: { courseId: string }) {
               </div>
             </div>
             <div className="row" style={{ gap: 16, marginTop: 20, flexWrap: "wrap" }}>
-              <button type="button" className="btn btn-primary" disabled={!dirty || updateCourse.pending || updateInfo.pending} onClick={save}>{t("cs.save")}</button>
+              <button type="button" className="btn btn-primary" disabled={!dirty || updateCourse.pending || updateInfo.pending || setUnit.pending} onClick={save}>{t("cs.save")}</button>
               <span role="status" className="muted" style={{ fontSize: 14 }}>{saved ? t("cs.saved") : t("cs.lastSaved", { day: dayLabel(i.updated_at) })}</span>
             </div>
           </section>
