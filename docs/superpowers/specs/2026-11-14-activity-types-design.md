@@ -1,7 +1,8 @@
 # Activity types: the contract
 
-Status: design, not built. ADR-0097. Delivery: one PR together with the web part of org units (ADR-0094, PR B); the
-plan is `docs/superpowers/plans/2026-11-14-units-web-and-activity-types.md`. Roadmap item 3.
+Status: built (ADR-0097), in one PR together with the web part of org units (ADR-0094, PR B); the plan is
+`docs/superpowers/plans/2026-11-14-units-web-and-activity-types.md`. Roadmap item 3. Where the build departs from the
+first design, the text below says what was designed; the last section lists the departures.
 
 ## 1. Intent
 
@@ -31,8 +32,11 @@ an item counts as done for anyone.
 
 A new crate `backend/crates/learning/activity`. It owns no schema and depends on no layer of ours, so it sits beside the
 chain, at the bottom of the learning crates: `content`, `assessment`, `gradebook` and `learning` may use it, `teaching`
-does not need to. `server/tests/architecture.rs` lists it as a crate without a schema, and its manifest may name only
-`api-types`, `vumlo-config`, `serde_json`, `sqlx`, `thiserror` and `uuid`. `CLAUDE.md` section 4 gets a line for it.
+does not need to. `server/tests/architecture.rs` lists it as a crate without a schema, with layer 7, the same number as
+`teaching` (it has no schema, and every crate that uses it, `content` and above, is higher). Its manifest lists
+`api-types`, `vumlo-config`, `serde_json`, `sqlx`, `thiserror` and `uuid`; the test accepts those and `serde` and
+`chrono` too (`ACTIVITY_DEPENDENCIES`), and fails on any other crate. A `testing` feature serves other crates' tests.
+`CLAUDE.md` section 4 has a line for it.
 
 It holds:
 
@@ -148,3 +152,19 @@ events.
 - Install-time registry in a small crate (the user).
 - The document model moves into `activity`, because the contract names it: one crate instead of two.
 - Capabilities are two booleans. `claims`, `structure` and the file hooks are methods, because they have a body per type.
+
+## 10. Departures from the first design
+
+Changes made while building; the sections above keep the first text.
+
+1. `ModelError::AssignmentType` is `ModelError::UnknownAssignmentType`, and its message lists `activity::available()`.
+2. The ids that other crates need are exported as `content::quiz::ID`, `content::form::ID` and `content::text::ID` (small modules re-exporting the constant of the type); `no_submission` and `file` have no export, since no other crate names them.
+3. `Types::with` returns `Result<Types, InstallError>`, because it refuses a bad or repeated id; `content::builtin_types()` returns a `Result` for the same reason. `InstallError` is `AlreadyInstalled`, `DuplicateId(id)` or `BadId(id)`.
+4. `get` fails with `RegistryError`, which is `NotInstalled` or `Unknown(id)` (there is no separate `UnknownType`).
+5. `available()` and `ids_where()` return an empty list when nothing is installed, not an error: `get` is the call that tells a process which forgot to install. `ids_where` returns owned `Vec<String>`, ready to bind as a `text[]`.
+6. The file hooks have these signatures: `config_file_refs(&self, config) -> Result<Vec<FileRef>, ConfigError>`, `submission_file_refs(&self, config, content) -> Result<Vec<FileRef>, DocumentErrors>`, and `check_file_names(&self, config, content, &BTreeMap<Uuid, String>) -> Result<(), DocumentErrors>`. They return `FileRef` (a file id with its path in the document), not bare ids, and the caller resolves the names, because the type is pure.
+7. The manifest of `activity` lists six crates and the architecture test also allows `serde` and `chrono` (section 2); the layer number in `architecture.rs` is 7, the same as `teaching`.
+
+What stayed as designed: the tables of sections 5 and 6, the five built-ins and their capabilities and policies, `Kind` as a `Copy` handle decoded through the registry, the CHECKs of migrations 0017 and 0026, and no change to any API shape.
+
+`BuiltinType` and `AssignmentType` appear in this spec only to describe what was replaced.
