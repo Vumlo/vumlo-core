@@ -5,6 +5,7 @@
 mod contract;
 mod document;
 mod model;
+mod registry;
 
 pub use contract::{AutoGrade, Claims, Stage, ValidContent};
 pub use document::{
@@ -13,6 +14,9 @@ pub use document::{
     validate_document, validate_document_within,
 };
 pub use model::{ActivityType, Capabilities, CompletionPolicy, ConfigError, Progress};
+#[cfg(feature = "testing")]
+pub use registry::ensure_installed;
+pub use registry::{InstallError, Kind, RegistryError, Types, available, get, ids_where, install};
 
 #[cfg(test)]
 mod tests;
