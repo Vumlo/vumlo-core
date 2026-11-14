@@ -1,7 +1,10 @@
-import { api } from "@/lib/api/client";
-import { fetchAll } from "@/lib/api/hooks/util";
-import type { components } from "@/lib/api/schema";
-import { invalidate, useMutation, useQuery } from "@/lib/query";
+"use client";
+
+import { api } from "../client";
+import { invalidate, useMutation, useQuery } from "../../query";
+import type { components } from "../schema";
+import type { Course } from "../types";
+import { fetchAll } from "./util";
 
 type S = components["schemas"];
 export type UnitSummary = S["UnitSummary"];
@@ -14,6 +17,22 @@ export type Candidate = S["Candidate"];
 /** Every unit, flat and by name; the tree is built from `parent_id` (ADR-0094). */
 export function useUnits() {
   return useQuery<UnitSummary[]>("/units", () => fetchAll<UnitSummary>("/units"));
+}
+
+/** The courses that sit in the unit itself (ADR-0094). */
+export function useUnitCourses(id: string | null) {
+  const path = `/units/${id}/courses`;
+  return useQuery<Course[]>(id ? path : null, () => fetchAll<Course>(path));
+}
+
+/** Puts the course into a unit, moves it, or takes it out with `null`. */
+export function useSetCourseUnit(courseId: string) {
+  return useMutation(async (unitId: string | null) => {
+    const c = await api.put<Course>(`/courses/${courseId}/unit`, { unit_id: unitId });
+    invalidate("/courses");
+    invalidate("/units");
+    return c;
+  });
 }
 
 export function useCreateUnit() {

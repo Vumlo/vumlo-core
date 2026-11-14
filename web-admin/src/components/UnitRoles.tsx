@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { errorText } from "@/lib/api/client";
 import { useT } from "@/lib/i18n";
-import { useRemoveUnitRole, useSetUnitRole, useUnitCandidates, useUnitRoles, type UnitRole, type UnitSummary } from "@console/hooks/units";
+import { useRemoveUnitRole, useSetUnitRole, useUnitCandidates, useUnitRoles, type UnitRole, type UnitSummary } from "@/lib/api/hooks/units";
 import s from "./Admin.module.css";
 
 /** Who holds a role on a unit: it covers the unit and every unit below it (ADR-0094). */

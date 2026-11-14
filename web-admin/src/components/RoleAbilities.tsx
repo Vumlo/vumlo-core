@@ -2,7 +2,7 @@ import { useState } from "react";
 import { errorText } from "@/lib/api/client";
 import { useT } from "@/lib/i18n";
 import type { MessageKey } from "@/lib/i18n/core";
-import { useRoleAbilities, useSetRoleAbilities, type UnitAbility, type UnitRole } from "@console/hooks/units";
+import { useRoleAbilities, useSetRoleAbilities, type UnitAbility, type UnitRole } from "@/lib/api/hooks/units";
 import s from "./Admin.module.css";
 
 const ABILITIES: [UnitAbility, MessageKey][] = [

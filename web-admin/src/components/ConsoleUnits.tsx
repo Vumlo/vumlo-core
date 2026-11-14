@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { errorText } from "@/lib/api/client";
 import { useT } from "@/lib/i18n";
-import { useDeleteUnit, useUnits, type UnitSummary } from "@console/hooks/units";
+import { useDeleteUnit, useUnits, type UnitSummary } from "@/lib/api/hooks/units";
 import { RoleAbilities } from "./RoleAbilities";
 import { MoveUnit, NewUnit, RenameUnit } from "./UnitDialogs";
 import { UnitRoles } from "./UnitRoles";

@@ -7,7 +7,9 @@ export type User = S["User"];
 export type FileRef = S["FileRefDto"];
 export type Role = S["Role"];
 export type Course = S["Course"];
-export type CourseRole = S["CourseRole"];
+/** `GET /courses/{id}`: the course and what the caller may do in it. */
+export type CourseDetail = S["CourseDetail"];
+export type CourseRole =S["CourseRole"];
 export type Term = S["Term"];
 export type ItemRevision = S["ItemRevision"];
 export type GradeHistoryEntry = S["GradeHistoryEntry"];

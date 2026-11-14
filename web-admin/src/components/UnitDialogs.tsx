@@ -2,7 +2,7 @@ import { useState, type FormEvent } from "react";
 import { Dialog } from "@/components/Dialog";
 import { errorText } from "@/lib/api/client";
 import { useT } from "@/lib/i18n";
-import { useCreateUnit, useUpdateUnit, type UnitSummary } from "@console/hooks/units";
+import { useCreateUnit, useUpdateUnit, type UnitSummary } from "@/lib/api/hooks/units";
 
 /** The form of one change to a unit: a name, and where it sits. */
 function UnitForm({ title, submit, name: first, parent: firstParent, parents, withParent, withName, pending, error, onSubmit, onClose }: {
