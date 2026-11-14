@@ -105,6 +105,11 @@ test("a viewer sees grades and no edit control", async ({ page }) => {
   await tab(page, "Gradebook").click();
   await expect(page.getByRole("columnheader", { name: /^Total/ })).toBeVisible();
   await expect(page.getByRole("link", { name: "Download Excel" })).toBeVisible();
+  // Grading and the structure need `grade`: a viewer has no mode switch, no structure save and no publishing.
+  await expect(page.getByRole("group", { name: "Gradebook mode" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Structure", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Save settings" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /Publish .*draft/i })).toHaveCount(0);
 
   // A course of the faculty itself opens the same way.
   await openUnits(page);
@@ -132,6 +137,12 @@ test("a dean manages the units below theirs", async ({ page }) => {
   await expect(page.getByRole("button", { name: "New top-level unit" })).toHaveCount(0);
   await unit(page, "Computer Science").click();
   const dialog = page.getByRole("dialog");
+  const roles = page.getByRole("region", { name: /People with a role on/ });
+
+  // The unit the dean's role sits on is changed from above: they add below it and change nothing of it.
+  await expect(page.getByRole("button", { name: "New unit inside", exact: true })).toBeVisible();
+  for (const name of ["Rename", "Move", "Delete"]) await expect(page.getByRole("button", { name, exact: true })).toHaveCount(0);
+  await expect(roles).toHaveCount(0);
 
   await page.getByRole("button", { name: "New unit inside", exact: true }).click();
   await dialog.getByLabel("Name").fill("Databases Lab");
@@ -139,6 +150,8 @@ test("a dean manages the units below theirs", async ({ page }) => {
   await expect(unit(page, "Databases Lab")).toHaveAttribute("aria-level", "2");
 
   await unit(page, "Databases Lab").click();
+  for (const name of ["Rename", "Move", "Delete"]) await expect(page.getByRole("button", { name, exact: true })).toBeVisible();
+  await expect(roles).toBeVisible();
   await page.getByRole("button", { name: "Rename", exact: true }).click();
   await dialog.getByLabel("Name").fill("Data Lab");
   await dialog.getByRole("button", { name: "Save" }).click();

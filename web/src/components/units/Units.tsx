@@ -32,7 +32,7 @@ function DeleteUnit({ unit, onClose, onDeleted }: { unit: UnitSummary; onClose: 
   );
 }
 
-/** The units a person holds a role on, and the courses in them; with `manage_units` also the subunits and roles (ADR-0094). */
+/** The units a person holds a role on, and the courses in them; with `manage_units` also new subunits, and on a unit below one they manage its name, place and roles (ADR-0094). */
 export function Units() {
   const t = useT();
   const units = useUnits();
@@ -43,6 +43,9 @@ export function Units() {
   const unit = all?.find((u) => u.id === selected) ?? null;
   const courses = useUnitCourses(unit?.id ?? null);
   const manage = unit?.abilities.includes("manage_units") ?? false;
+  // Renaming, moving, deleting and the roles of a unit need `manage_units` on its parent: nobody changes the unit their own role sits on.
+  // A parent the person does not see (a top-level unit is the console's) gives none of it.
+  const manageFromAbove = !!unit?.parent_id && (all?.find((u) => u.id === unit.parent_id)?.abilities.includes("manage_units") ?? false);
   // The server refuses a move outside the units the person manages.
   const targets = useMemo(() => (all ?? []).filter((u) => u.abilities.includes("manage_units")), [all]);
   const close = () => setDialog(null);
@@ -77,12 +80,12 @@ export function Units() {
         <div className="stack" style={{ flex: "999 1 420px", minWidth: 0, gap: 20 }}>
           {unit ? (
             <>
-              {manage && (
+              {(manage || manageFromAbove) && (
                 <div className="row" style={{ flexWrap: "wrap", gap: 8 }}>
-                  <button type="button" className="btn" onClick={() => setDialog("new")}>{t("un.newInside")}</button>
-                  <button type="button" className="btn" onClick={() => setDialog("rename")}>{t("un.rename")}</button>
-                  <button type="button" className="btn" onClick={() => setDialog("move")}>{t("un.move")}</button>
-                  <button type="button" className="btn btn-danger" onClick={() => setDialog("delete")}>{t("un.delete")}</button>
+                  {manage && <button type="button" className="btn" onClick={() => setDialog("new")}>{t("un.newInside")}</button>}
+                  {manageFromAbove && <button type="button" className="btn" onClick={() => setDialog("rename")}>{t("un.rename")}</button>}
+                  {manageFromAbove && <button type="button" className="btn" onClick={() => setDialog("move")}>{t("un.move")}</button>}
+                  {manageFromAbove && <button type="button" className="btn btn-danger" onClick={() => setDialog("delete")}>{t("un.delete")}</button>}
                 </div>
               )}
               <section aria-label={t("un.courses", { name: unit.name })} className={`card ${s.section}`}>
@@ -97,7 +100,7 @@ export function Units() {
                   </ul>
                 )}
               </section>
-              {manage && <UnitRoles key={unit.id} unit={unit} />}
+              {manageFromAbove && <UnitRoles key={unit.id} unit={unit} />}
             </>
           ) : (
             <p className="muted">{t("un.pickCourses")}</p>

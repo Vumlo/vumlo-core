@@ -14,6 +14,7 @@ import { allItems } from "@/lib/course";
 import { dayLabel, dueLabel, initials, plural } from "@/lib/format";
 import { cellState, matchesStatus, type StatusFilter } from "@/lib/grading";
 import { CourseHeader } from "./CourseHeader";
+import { useCourseAccess } from "./useCourseAccess";
 import { GradebookStructure } from "./GradebookStructure";
 import { wholePoints } from "@/lib/points";
 import { useT } from "@/lib/i18n";
@@ -23,6 +24,7 @@ import { gradeHref, itemHref } from "@/lib/routes";
 export function Gradebook({ courseId }: { courseId: string }) {
   const t = useT();
   const router = useRouter();
+  const { can } = useCourseAccess(courseId);
   const book = useGradebook(courseId);
   const tree = useContentTree(courseId);
   const people = useCoursePeople(courseId);
@@ -77,17 +79,20 @@ export function Gradebook({ courseId }: { courseId: string }) {
     <div className="container">
       <CourseHeader courseId={courseId} />
       <div className={s.bar}>
-        <div className={s.modes} role="group" aria-label={t("gs.modes")}>
-          <button type="button" aria-pressed={mode === "grade"} onClick={() => setMode("grade")}>{t("gs.modeGrade")}</button>
-          <button type="button" aria-pressed={mode === "structure"} onClick={() => setMode("structure")}>{t("gs.modeStructure")}</button>
-        </div>
+        {/* The structure and grading are `grade` (ADR-0094): someone who may only view grades sees the gradebook and nothing to change. */}
+        {can.grade && (
+          <div className={s.modes} role="group" aria-label={t("gs.modes")}>
+            <button type="button" aria-pressed={mode === "grade"} onClick={() => setMode("grade")}>{t("gs.modeGrade")}</button>
+            <button type="button" aria-pressed={mode === "structure"} onClick={() => setMode("structure")}>{t("gs.modeStructure")}</button>
+          </div>
+        )}
         {/* The desktop app has no command for a file the server builds; the web app downloads it. */}
         {!isDesktop() && (
           <a className="btn" href={`/api/v1/courses/${encodeURIComponent(courseId)}/gradebook/export.xlsx`} download>
             <Icon name="download" size={16} strokeWidth={2} />{t("gs.export")}
           </a>
         )}
-        {mode === "grade" && layout && (layout.setup.unsorted > 0 || !layout.setup.reaches_target) && (
+        {can.grade && mode === "grade" && layout && (layout.setup.unsorted > 0 || !layout.setup.reaches_target) && (
           <span className={s.setup} role="status">
             {layout.setup.unsorted > 0 && t("gs.unsorted", { n: layout.setup.unsorted })}
             {!layout.setup.reaches_target && t("gs.reachShort", { possible: wholePoints(layout.setup.possible), target: wholePoints(layout.setup.target) })}
@@ -95,7 +100,7 @@ export function Gradebook({ courseId }: { courseId: string }) {
           </span>
         )}
       </div>
-      {mode === "structure" ? <GradebookStructure courseId={courseId} /> : <>
+      {can.grade && mode === "structure" ? <GradebookStructure courseId={courseId} /> : <>
       <div className={s.bar}>
         <label className="search" style={{ flex: "0 1 260px", background: "var(--surface)" }}>
           <Icon name="search" size={16} />
@@ -123,9 +128,11 @@ export function Gradebook({ courseId }: { courseId: string }) {
           <span><span className={s.draft}>22.50</span> {t("gb.legendDraft")}</span>
           <span><span className={s.dot} /> {t("gb.legendSub")}</span>
         </div>
-        <button type="button" className="btn btn-primary" disabled={draftCount === 0 || publishAll.pending} onClick={() => setAsking(true)}>
-          {t("gb.publishDrafts", { n: plural(draftCount, "draft") })}
-        </button>
+        {can.grade && (
+          <button type="button" className="btn btn-primary" disabled={draftCount === 0 || publishAll.pending} onClick={() => setAsking(true)}>
+            {t("gb.publishDrafts", { n: plural(draftCount, "draft") })}
+          </button>
+        )}
       </div>
       {publishAll.error && <p role="alert" className="alert alert-danger" style={{ marginBottom: 12 }}>{errorText(publishAll.error)}</p>}
       {asking && (
