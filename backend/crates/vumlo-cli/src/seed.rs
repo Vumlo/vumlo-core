@@ -259,8 +259,9 @@ pub async fn demo(options: &Options, args: SeedDemo) -> anyhow::Result<()> {
     }
     sqlx::query!(
         "INSERT INTO content.assignments (item_id, type, config, max_points)
-         VALUES ($1, 'quiz', $2, 10)",
+         VALUES ($1, $2, $3, 10)",
         quiz,
+        content::quiz::ID,
         quiz_config()
     )
     .execute(&mut *tx)

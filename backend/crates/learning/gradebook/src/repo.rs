@@ -86,15 +86,17 @@ pub async fn to_grade(
     .await
 }
 
-/// Assignments with draft grades of current students that are not published.
+/// Assignments with draft grades of current students that are not published. `auto_graded` are
+/// the ids of the types that score an attempt by themselves.
 pub async fn unpublished_grades(
     conn: &mut PgConnection,
     course_ids: &[Uuid],
+    auto_graded: &[String],
 ) -> Result<Vec<UnpublishedRow>, sqlx::Error> {
     sqlx::query_as!(
         UnpublishedRow,
         r#"SELECT g.assignment_id, i.title AS "assignment_title!", i.course_id AS "course_id!",
-                  count(*) AS "draft_count!", (a.type = 'quiz') AS "auto_scored!"
+                  count(*) AS "draft_count!", (a.type = ANY($2)) AS "auto_scored!"
            FROM gradebook.grades g
            JOIN content.item_list i ON i.id = g.assignment_id
            JOIN content.assignment_list a ON a.item_id = i.id
@@ -105,7 +107,8 @@ pub async fn unpublished_grades(
                  IS DISTINCT FROM (g.published_score, g.published_feedback)
            GROUP BY g.assignment_id, i.title, i.course_id, a.type
            ORDER BY i.course_id, i.title, g.assignment_id"#,
-        course_ids
+        course_ids,
+        auto_graded
     )
     .fetch_all(conn)
     .await

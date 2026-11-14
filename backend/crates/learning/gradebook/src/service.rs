@@ -310,7 +310,8 @@ pub async fn teaching_overview(
     let ids: Vec<Uuid> = courses.iter().map(|card| card.course.id).collect();
     Ok(TeachingOverview {
         to_grade: repo::to_grade(conn, &ids).await?,
-        unpublished: repo::unpublished_grades(conn, &ids).await?,
+        unpublished: repo::unpublished_grades(conn, &ids, &activity::ids_where(|c| c.auto_graded))
+            .await?,
         deadlines: repo::deadlines(conn, &ids, now).await?,
         unpublished_content: repo::unpublished_content(conn, &ids).await?,
         courses,
