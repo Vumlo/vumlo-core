@@ -1510,26 +1510,43 @@ pub async fn replace_rule(
     Ok(())
 }
 
-/// What the student has done in the course, from the facts `content` keeps (ADR-0093): an item
-/// with a row is done, whether the student marked it, an attempt was submitted or a score was
-/// published, and the published scores are the ones the rows hold.
+/// What the student has done in the course, from the facts `content` keeps (ADR-0093). An
+/// assignment is done when its type's completion policy is met by the row (ADR-0097), any other
+/// item when the student marked it; the published scores are the ones the rows hold.
 pub async fn facts(
     conn: &mut PgConnection,
     course_id: Uuid,
     student_id: Uuid,
 ) -> Result<Facts, sqlx::Error> {
     let rows = sqlx::query!(
-        r#"SELECT f.item_id, f.published_score AS "score: Decimal"
+        r#"SELECT f.item_id, f.submitted_at, f.published_score AS "score: Decimal", f.marked_at,
+                  a.type AS "assignment_type?: activity::Kind"
            FROM content.facts f
            JOIN content.items i ON i.id = f.item_id
+           LEFT JOIN content.assignments a ON a.item_id = f.item_id
            WHERE i.course_id = $1 AND f.student_id = $2"#,
         course_id,
         student_id
     )
     .fetch_all(conn)
     .await?;
+    let done_items = rows
+        .iter()
+        .filter(|row| {
+            let progress = activity::Progress {
+                submitted: row.submitted_at.is_some(),
+                graded: row.score.is_some(),
+                marked: row.marked_at.is_some(),
+            };
+            match &row.assignment_type {
+                Some(kind) => kind.completion().is_met(progress),
+                None => progress.marked,
+            }
+        })
+        .map(|row| row.item_id)
+        .collect();
     Ok(Facts {
-        done_items: rows.iter().map(|row| row.item_id).collect(),
+        done_items,
         scores: rows
             .into_iter()
             .filter_map(|row| row.score.map(|score| (row.item_id, score)))
