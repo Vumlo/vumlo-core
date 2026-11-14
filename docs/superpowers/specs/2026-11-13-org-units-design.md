@@ -1,6 +1,6 @@
 # Org units and unit roles: design
 
-Status: backend built (PR A), web to come (PR B). ADR-0094. Delivery: one spec, two stacked PRs (backend, then web).
+Status: backend built (PR A), web in progress (PR B, together with ADR-0097). ADR-0094. Delivery: one spec, two stacked PRs (backend, then web).
 Where the build departs from the first design, the text below says what was built (section 13 lists the changes).
 
 ## 1. Intent
@@ -220,8 +220,8 @@ are regenerated. Beyond this table, `GET /courses/{id}` carries `can` (5b) and `
 - **Units** for non-admins (`/units`, shown in the navigation only when `GET /units` is non-empty): the same tree
   limited to what the person sees, each unit's courses, and the tree and role controls only where `manage_units`
   allows (on children of the units they hold it on).
-- Course create and course settings: a unit picker when the person may place courses (admin, or `manage_courses`
-  somewhere).
+- Course create and course settings: a unit picker when the person may place courses (some `GET /units` item
+  holds `manage_courses`; an admin places courses from the console).
 - Course pages reached through a unit work as for staff, with controls shown by the course response's `can` (5b).
 - i18n strings in every catalogue the web app ships.
 
