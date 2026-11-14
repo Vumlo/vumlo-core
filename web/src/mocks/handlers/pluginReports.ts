@@ -115,18 +115,18 @@ export const pluginReportHandlers = [
     const id = String(params.id);
     const sub = getDb().submissions.find((s) => s.attempts.some((a) => a.id === id));
     if (!sub) throw notFound();
-    requireStaff(itemById(sub.assignment_id).course_id);
+    requireStaff(itemById(sub.assignment_id).course_id, "view_grades");
     return HttpResponse.json({ items: forSubmission() });
   }),
   http.get(`${A}/assignments/:id/plugin-reports`, ({ params }) => {
     const item = itemById(String(params.id));
     if (!item.assignment) throw notFound();
-    requireStaff(item.course_id);
+    requireStaff(item.course_id, "view_grades");
     return HttpResponse.json({ items: forAssignment() });
   }),
   http.get(`${A}/courses/:id/plugin-reports`, ({ params }) => {
     const course = courseById(String(params.id));
-    requireStaff(course.id);
+    requireStaff(course.id, "view_grades");
     return HttpResponse.json({ items: forCourse(course.id) });
   }),
   // What the link of the course report leads to: a file the browser downloads with the session.

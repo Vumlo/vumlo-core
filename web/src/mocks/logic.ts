@@ -69,8 +69,6 @@ export function runAsConsole() {
 }
 
 const ALL_ABILITIES: UnitAbility[] = ["view_grades", "edit_content", "grade", "manage_roster", "manage_courses", "manage_units"];
-/** The abilities that change something in a course. */
-const WRITES: UnitAbility[] = ["edit_content", "grade", "manage_roster", "manage_courses"];
 
 export function unitById(id: string): DbUnit {
   const u = getDb().units.find((x) => x.id === id);
@@ -136,17 +134,13 @@ export function requireView(courseId: string, user = requireUser()) {
 }
 
 /**
- * Staff of the course pass. Someone who reaches it through a unit passes with `ability`, or without one when any ability that
- * changes something is held, so a viewer reads the gradebook and writes nothing.
- * ponytail: one ability for a whole handler; the server asks per action. Per-handler abilities when a test needs the difference.
+ * Staff of the course (and an admin) pass. Someone who reaches it through a unit passes only with `ability`, the one the server's
+ * action maps to (ADR-0094, spec 5). `null` is for what a unit never allows: deleting a course and handing it to another owner.
  */
-export function requireStaff(courseId: string, user = requireUser(), ability?: UnitAbility) {
+export function requireStaff(courseId: string, ability: UnitAbility | null, user = requireUser()) {
   const course = courseById(courseId);
   if (!canView(user, course)) throw notFound();
-  if (!onStaff(user, course)) {
-    const g = unitGrantOf(user, course.id);
-    if (!(ability ? g.has(ability) : WRITES.some((a) => g.has(a)))) throw forbidden();
-  }
+  if (!onStaff(user, course) && !(ability && unitGrantOf(user, course.id).has(ability))) throw forbidden();
   return { course, user };
 }
 

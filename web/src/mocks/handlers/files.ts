@@ -19,7 +19,7 @@ export const fileHandlers = [
     if ((kind !== "item" && kind !== "assignment") || !id) throw problem(422, "Unprocessable", undefined, [{ field: "for", message: "for must be item:{id} or assignment:{id}" }]);
     const item = itemById(id);
     const course = courseById(item.course_id);
-    if (kind === "item") requireStaff(course.id, user);
+    if (kind === "item") requireStaff(course.id, "edit_content", user);
     else if (!item.assignment || !canView(user, course)) throw notFound();
     // Nothing is stored for work that can no longer be handed in.
     if (kind === "assignment" && dueIn(item).closed) throw problem(409, "Conflict", "This assignment is closed");

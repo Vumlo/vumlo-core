@@ -5,6 +5,7 @@ import { fromCents, toCents } from "@/lib/points";
 import type { AnswerMap } from "@/lib/api/gaps";
 import type { MyWork, SearchHit, TeachingOverview } from "@/lib/api/types";
 import { answersFromWire, answersToWire } from "@/lib/api/sheetWire";
+import type { UnitAbility } from "@/lib/api/hooks/units";
 import { getDb, uid, type DbItem, type DbSubmission } from "../db";
 import {
   activeStudents, autoScore, canView, checkDocument, checkFileContent, courseById, decimal, dueIn, flatItems, forbidden, formOf, fullName, gradeOf, hasUnpublishedChanges, isPublished, isStaff,
@@ -78,9 +79,9 @@ function uiContent(item: MockItem, content: unknown): unknown {
   return { answers: answersFromWire(a.type, a.config, content) };
 }
 
-function staffAssignment(id: string) {
+function staffAssignment(id: string, ability: UnitAbility) {
   const item = assignmentFor(id);
-  const { course, user } = requireStaff(item.course_id);
+  const { course, user } = requireStaff(item.course_id, ability);
   return { item, course, user };
 }
 
@@ -288,7 +289,7 @@ export const workHandlers = [
 
   // ---- staff: submissions and grades ----
   http.get(`${A}/assignments/:id/submissions`, ({ request, params }) => {
-    const { item, course } = staffAssignment(String(params.id));
+    const { item, course } = staffAssignment(String(params.id), "view_grades");
     const db = getDb();
     const rows = db.members.filter((m) => m.course_id === course.id && m.role === "student" && (!m.left_on || (submissionOf(item.id, m.user_id)?.attempts.length ?? 0) > 0)).map((m) => {
       const u = userById(m.user_id);
@@ -301,11 +302,11 @@ export const workHandlers = [
     return paged(rows, request);
   }),
   http.get(`${A}/assignments/:id/submissions/:sid`, ({ request, params }) => {
-    const { item } = staffAssignment(String(params.id));
+    const { item } = staffAssignment(String(params.id), "view_grades");
     return paged((submissionOf(item.id, String(params.sid))?.attempts ?? []).map((a) => ({ ...a, content: wireContent(item, a.content) })), request);
   }),
   http.put(`${A}/assignments/:id/grades/:sid`, async ({ request, params }) => {
-    const { item, course, user } = staffAssignment(String(params.id));
+    const { item, course, user } = staffAssignment(String(params.id), "grade");
     const m = memberOf(course.id, String(params.sid));
     if (!m || m.role !== "student") throw notFound();
     if (m.left_on) throw problem(409, "Conflict", "This student left the course; their grades are locked");
@@ -324,7 +325,7 @@ export const workHandlers = [
     });
   }),
   http.post(`${A}/assignments/:id/grades/publish`, async ({ request, params }) => {
-    const { item, course, user } = staffAssignment(String(params.id));
+    const { item, course, user } = staffAssignment(String(params.id), "grade");
     const b = (await request.json()) as { students: "all" | string[] };
     const ids = new Set(b.students === "all" ? activeStudents(course.id).map((m) => m.user_id) : b.students);
     const published: string[] = [];
@@ -338,7 +339,7 @@ export const workHandlers = [
     return HttpResponse.json({ published });
   }),
   http.get(`${A}/assignments/:id/grades/:sid/history`, ({ params }) => {
-    const { item } = staffAssignment(String(params.id));
+    const { item } = staffAssignment(String(params.id), "view_grades");
     const rows = gradeOf(item.id, String(params.sid))?.history ?? [];
     const items = rows.map((h, n) => {
       const a = h.actor_id ? userById(h.actor_id) : null;
@@ -347,7 +348,7 @@ export const workHandlers = [
     return HttpResponse.json({ items, next_cursor: null });
   }),
   http.get(`${A}/courses/:id/gradebook`, ({ request, params }) => {
-    const { course } = requireStaff(String(params.id), undefined, "view_grades");
+    const { course } = requireStaff(String(params.id), "view_grades");
     const db = getDb();
     const items = gradedItems(course, true);
     const columns = items.map((i) => ({ assignment_id: i.id, title: i.title, max_points: i.assignment!.max_points, is_bonus: i.assignment!.is_bonus, status: i.status, group: topModule(i) }));
@@ -370,7 +371,7 @@ export const workHandlers = [
     return HttpResponse.json({ columns, items: rows.slice(start, start + limit), layout: { settings, groups, possible, setup }, next_cursor: start + limit < rows.length ? String(start + limit) : null });
   }),
   http.get(`${A}/courses/:id/gradebook/structure`, ({ params }) => {
-    const { course } = requireStaff(String(params.id), undefined, "view_grades");
+    const { course } = requireStaff(String(params.id), "view_grades");
     const items = gradedItems(course, true);
     const { settings, groups, possible, setup } = mockLayout(course, items);
     const columns = items.map((i) => ({ assignment_id: i.id, title: i.title, max_points: i.assignment!.max_points, is_bonus: i.assignment!.is_bonus, status: i.status, group: topModule(i) }));
@@ -378,22 +379,22 @@ export const workHandlers = [
   }),
   // Not a real workbook: the mock only has to answer the download link.
   http.get(`${A}/courses/:id/gradebook/export.xlsx`, ({ params }) => {
-    requireStaff(String(params.id), undefined, "view_grades");
+    requireStaff(String(params.id), "view_grades");
     return new HttpResponse(new Uint8Array([0x50, 0x4b]), { headers: { "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "Content-Disposition": 'attachment; filename="gradebook.xlsx"' } });
   }),
   // The target and the pass mark are kept; the layout stays "as the course" in the mock, and group rules and placement are not kept.
   http.put(`${A}/courses/:id/gradebook/settings`, async ({ request, params }) => {
-    const { course } = requireStaff(String(params.id));
+    const { course } = requireStaff(String(params.id), "grade");
     const b = (await request.json()) as { target: string; pass_mark?: string | null };
     mockSettings.set(course.id, { target: decimal(b.target, "target"), pass_mark: b.pass_mark ? decimal(b.pass_mark, "pass_mark") : null });
     return HttpResponse.json(settingsOf(course.id));
   }),
-  http.post(`${A}/courses/:id/gradebook/groups`, ({ params }) => { requireStaff(String(params.id)); return HttpResponse.json({ key: uid("group") }, { status: 201 }); }),
-  http.put(`${A}/courses/:id/gradebook/groups/:key`, ({ params }) => { requireStaff(String(params.id)); return new HttpResponse(null, { status: 204 }); }),
-  http.delete(`${A}/courses/:id/gradebook/groups/:key`, ({ params }) => { requireStaff(String(params.id)); return new HttpResponse(null, { status: 204 }); }),
-  http.put(`${A}/courses/:id/gradebook/placement`, ({ params }) => { requireStaff(String(params.id)); return new HttpResponse(null, { status: 204 }); }),
+  http.post(`${A}/courses/:id/gradebook/groups`, ({ params }) => { requireStaff(String(params.id), "grade"); return HttpResponse.json({ key: uid("group") }, { status: 201 }); }),
+  http.put(`${A}/courses/:id/gradebook/groups/:key`, ({ params }) => { requireStaff(String(params.id), "grade"); return new HttpResponse(null, { status: 204 }); }),
+  http.delete(`${A}/courses/:id/gradebook/groups/:key`, ({ params }) => { requireStaff(String(params.id), "grade"); return new HttpResponse(null, { status: 204 }); }),
+  http.put(`${A}/courses/:id/gradebook/placement`, ({ params }) => { requireStaff(String(params.id), "grade"); return new HttpResponse(null, { status: 204 }); }),
   http.get(`${A}/assignments/:id/responses`, ({ params }) => {
-    const { item, course } = staffAssignment(String(params.id));
+    const { item, course } = staffAssignment(String(params.id), "view_grades");
     if (item.assignment!.type !== "form") throw notFound();
     const students = activeStudents(course.id);
     const rows = students.flatMap((m) => {
