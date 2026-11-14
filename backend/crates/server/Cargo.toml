@@ -21,8 +21,8 @@ ai_agent = ["dep:vumlo-module-ai-agent"]
 
 [dependencies]
 access.workspace = true
-anyhow.workspace = true
 activity.workspace = true
+anyhow.workspace = true
 api-types.workspace = true
 assessment.workspace = true
 auth.workspace = true
