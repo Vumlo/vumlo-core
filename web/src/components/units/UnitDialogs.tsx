@@ -7,13 +7,15 @@ import { useT } from "@/lib/i18n";
 import { useCreateUnit, useUpdateUnit, type UnitSummary } from "@/lib/api/hooks/units";
 
 /** The form of one change to a unit: a name, and where it sits. */
-function UnitForm({ title, submit, name: first, parent: firstParent, parents, withParent, withName, pending, error, onSubmit, onClose }: {
+function UnitForm({ title, submit, name: first, parent: firstParent, parents, withParent, canTop = true, withName, pending, error, onSubmit, onClose }: {
   title: string;
   submit: string;
   name: string;
   parent: string | null;
   parents: UnitSummary[];
   withParent: boolean;
+  /** False where the server refuses a unit at the top (outside the console): no such option. */
+  canTop?: boolean;
   withName: boolean;
   pending: boolean;
   error: string | undefined;
@@ -22,7 +24,8 @@ function UnitForm({ title, submit, name: first, parent: firstParent, parents, wi
 }) {
   const t = useT();
   const [name, setName] = useState(first);
-  const [parent, setParent] = useState(firstParent ?? "");
+  // Without a top level option the select shows its first entry, so the state starts there too.
+  const [parent, setParent] = useState(canTop || parents.some((u) => u.id === firstParent) ? (firstParent ?? "") : (parents[0]?.id ?? ""));
   function send(e: FormEvent) {
     e.preventDefault();
     onSubmit(name, parent || null);
@@ -34,7 +37,7 @@ function UnitForm({ title, submit, name: first, parent: firstParent, parents, wi
       actions={
         <>
           <button type="button" className="btn" onClick={onClose}>{t("common.cancel")}</button>
-          <button type="submit" form="unit-form" className="btn btn-primary" disabled={pending || (withName && name.trim() === "")}>{submit}</button>
+          <button type="submit" form="unit-form" className="btn btn-primary" disabled={pending || (withName && name.trim() === "") || (withParent && !canTop && parent === "")}>{submit}</button>
         </>
       }
     >
@@ -49,7 +52,7 @@ function UnitForm({ title, submit, name: first, parent: firstParent, parents, wi
           <div className="field">
             <label htmlFor="unit-parent">{t("un.parent")}</label>
             <select id="unit-parent" className="input" value={parent} onChange={(e) => setParent(e.target.value)}>
-              <option value="">{t("un.top")}</option>
+              {canTop && <option value="">{t("un.top")}</option>}
               {parents.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
             </select>
           </div>
@@ -101,8 +104,8 @@ export function RenameUnit({ unit, onClose }: { unit: UnitSummary; onClose: () =
   );
 }
 
-/** Where a unit may go: anywhere but under itself or below. */
-export function MoveUnit({ unit, all, onClose }: { unit: UnitSummary; all: UnitSummary[]; onClose: () => void }) {
+/** Where a unit may go: anywhere in `all` but under itself or below; `canTop` false removes the top level. */
+export function MoveUnit({ unit, all, canTop = true, onClose }: { unit: UnitSummary; all: UnitSummary[]; canTop?: boolean; onClose: () => void }) {
   const t = useT();
   const update = useUpdateUnit(unit.id);
   const below = new Set<string>([unit.id]);
@@ -119,6 +122,7 @@ export function MoveUnit({ unit, all, onClose }: { unit: UnitSummary; all: UnitS
       parent={unit.parent_id ?? null}
       parents={all.filter((u) => !below.has(u.id))}
       withParent
+      canTop={canTop}
       withName={false}
       pending={update.pending}
       error={errorText(update.error)}
