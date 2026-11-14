@@ -18,12 +18,13 @@ export function ItemEditor({ courseId, itemId }: { courseId: string; itemId: str
   const router = useRouter();
   const t = useT();
   const item = useItem(itemId);
-  const { staff, loading } = useCourseAccess(courseId);
+  const { can, loading } = useCourseAccess(courseId);
+  const allowed = can.edit_content;
   useEffect(() => {
-    if (!loading && !staff) router.replace(itemHref(courseId, itemId));
-  }, [loading, staff, courseId, itemId, router]);
+    if (!loading && !allowed) router.replace(itemHref(courseId, itemId));
+  }, [loading, allowed, courseId, itemId, router]);
   if (item.error) return item.error.status === 404 || item.error.status === 403 ? <NotFoundScreen /> : <LoadFailed title={item.error.title} />;
-  if (!item.data || loading || !staff) return <p className="loading" role="status">{t("common.loading")}</p>;
+  if (!item.data || loading || !allowed) return <p className="loading" role="status">{t("common.loading")}</p>;
   const it = item.data;
   if (it.kind === "text") return <LectureEditor key={it.id} item={it} courseId={courseId} />;
   if (it.kind === "file") return <FileItemEditor key={it.id} item={it} courseId={courseId} />;

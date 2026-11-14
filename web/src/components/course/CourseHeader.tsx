@@ -20,23 +20,17 @@ export function CourseHeader({ courseId, subtitle }: { courseId: string; subtitl
   const pathname = usePathname();
   const course = useCourse(courseId);
   const info = useCourseInfo(courseId);
-  const { staff } = useCourseAccess(courseId);
+  const { can, staff } = useCourseAccess(courseId);
   const publish = usePublishCourse(courseId);
   const [asking, setAsking] = useState(false);
-  // A draft course is invisible to students, whoever is on its roster (ADR-0019): say so, where it can be fixed.
+  // A draft course is invisible to students, whoever is on its roster (ADR-0019): say so, and offer the fix to whoever may make it.
   const draft = staff && course.data?.status === "draft";
-  const tabs: Tab[] = staff
-    ? [
-        { id: "content", label: t("course.content"), href: courseHref(courseId) },
-        { id: "grades", label: t("course.gradebook"), href: courseHref(courseId, "grades") },
-        { id: "people", label: t("course.people"), href: courseHref(courseId, "people") },
-        { id: "settings", label: t("course.settings"), href: courseHref(courseId, "settings") },
-      ]
-    : [
-        { id: "content", label: t("course.content"), href: courseHref(courseId) },
-        { id: "grades", label: t("course.myGrades"), href: courseHref(courseId, "grades") },
-        { id: "people", label: t("course.people"), href: courseHref(courseId, "people") },
-      ];
+  const tabs: Tab[] = [
+    { id: "content", label: t("course.content"), href: courseHref(courseId) },
+    { id: "grades", label: t(can.view_grades ? "course.gradebook" : "course.myGrades"), href: courseHref(courseId, "grades") },
+    { id: "people", label: t("course.people"), href: courseHref(courseId, "people") },
+    ...(can.manage_course ? [{ id: "settings", label: t("course.settings"), href: courseHref(courseId, "settings") }] : []),
+  ];
   const current = pathname.startsWith("/course/grades") ? "grades" : pathname.startsWith("/course/people") ? "people" : pathname.startsWith("/course/settings") ? "settings" : "content";
   const i = info.data;
   const defaultSub = !i
@@ -60,7 +54,7 @@ export function CourseHeader({ courseId, subtitle }: { courseId: string; subtitl
       {draft && (
         <div role="status" className="alert alert-info" style={{ margin: "12px 0", flexWrap: "wrap", alignItems: "center" }}>
           <span style={{ flex: "1 1 320px" }}>{t("course.draftNote")}</span>
-          <button type="button" className="btn btn-primary" onClick={() => { publish.reset(); setAsking(true); }}>{t("course.publish")}</button>
+          {can.manage_course && <button type="button" className="btn btn-primary" onClick={() => { publish.reset(); setAsking(true); }}>{t("course.publish")}</button>}
         </div>
       )}
       {asking && (

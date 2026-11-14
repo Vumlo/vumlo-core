@@ -121,7 +121,7 @@ export function People({ courseId }: { courseId: string }) {
 function PeopleBody({ courseId }: { courseId: string }) {
   const t = useT();
   const me = useMe();
-  const { staff } = useCourseAccess(courseId);
+  const { can, staff } = useCourseAccess(courseId);
   const people = useCoursePeople(courseId);
   const remove = useRemoveMember(courseId);
   const unlink = useUnlinkGroup(courseId);
@@ -149,7 +149,7 @@ function PeopleBody({ courseId }: { courseId: string }) {
           <input type="search" aria-label={t("people.find")} placeholder={t("people.find")} value={q} onChange={(e) => setQ(e.target.value)} />
         </label>
         <span className="muted" style={{ flex: "1 1 auto", fontSize: 14 }}>{people.data ? count : ""}</span>
-        {staff && (
+        {can.manage_roster && (
           <>
             <button type="button" className="btn btn-outline" onClick={() => setDialog("group")}>{t("people.linkGroup")}</button>
             <button type="button" className="btn btn-primary" onClick={() => setDialog("add")}>{t("people.add")}</button>
@@ -171,7 +171,7 @@ function PeopleBody({ courseId }: { courseId: string }) {
                     {p.email && <a href={`mailto:${p.email}`} className={s.mail}>{p.email}</a>}
                   </span>
                   <span className={s.role}>{roleLabel(p)}</span>
-                  {staff && !p.is_owner && (
+                  {can.manage_roster && !p.is_owner && (
                     <span data-menu style={{ position: "relative" }}>
                       <button type="button" className="icon-btn" style={{ width: 36, height: 36 }} aria-label={t("people.moreFor", { name: `${p.name} ${p.surname}` })} aria-haspopup="menu" aria-expanded={menu === p.user_id} onClick={() => setMenu(menu === p.user_id ? null : p.user_id)}>
                         <Icon name="more" size={18} strokeWidth={3.4} />
@@ -203,7 +203,7 @@ function PeopleBody({ courseId }: { courseId: string }) {
                       <span style={{ display: "block", fontWeight: 600 }}>{linkedGroupName(g)}</span>
                       <span className="muted" style={{ display: "block", fontSize: 13 }}>{plural(g.student_count, "student")}, {t("people.linkedOn", { day: dayLong(g.linked_at) })}</span>
                     </span>
-                    <button type="button" className="btn btn-quiet" style={{ color: "var(--danger)", minHeight: 36, fontSize: 13 }} onClick={() => setAsk({ kind: "unlink", id: g.link_id, name: linkedGroupName(g) })}>{t("people.unlink")}</button>
+                    {can.manage_roster && <button type="button" className="btn btn-quiet" style={{ color: "var(--danger)", minHeight: 36, fontSize: 13 }} onClick={() => setAsk({ kind: "unlink", id: g.link_id, name: linkedGroupName(g) })}>{t("people.unlink")}</button>}
                   </div>
                 ))}
                 {people.data.groups.length === 0 && <p className="muted" style={{ fontSize: 14 }}>{t("people.noGroup")}</p>}
@@ -245,7 +245,7 @@ function PeopleBody({ courseId }: { courseId: string }) {
                         <span role="cell" className={s.c3}>{p.source === "group" ? t("people.group2", { name: p.group ?? "" }) : t("people.direct")}</span>
                         <span role="cell" className={s.c4}>
                           {p.source === "direct" ? (
-                            <button type="button" className="btn btn-quiet" style={{ color: "var(--danger)", minHeight: 34, fontSize: 13 }} onClick={() => setAsk({ kind: "remove", id: p.user_id, name: `${p.name} ${p.surname}` })}>{t("people.remove")}</button>
+                            can.manage_roster && <button type="button" className="btn btn-quiet" style={{ color: "var(--danger)", minHeight: 34, fontSize: 13 }} onClick={() => setAsk({ kind: "remove", id: p.user_id, name: `${p.name} ${p.surname}` })}>{t("people.remove")}</button>
                           ) : <span title={t("people.viaGroupHint")} className="muted" style={{ fontSize: 13 }}>{t("people.viaGroup")}</span>}
                         </span>
                       </div>

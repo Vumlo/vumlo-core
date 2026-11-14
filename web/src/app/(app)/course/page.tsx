@@ -8,7 +8,8 @@ import { useCourseId } from "@/lib/useRoute";
 
 export default function CoursePage() {
   const courseId = useCourseId();
-  const { staff, loading } = useCourseAccess(courseId);
+  const { can, staff, loading } = useCourseAccess(courseId);
   if (loading) return <p className="loading" role="status">{translate("common.loading")}</p>;
-  return staff ? <ContentManage courseId={courseId} /> : <StudentContent courseId={courseId} />;
+  // Anyone with an ability sees the course as its teachers do; what they may change follows `edit_content`.
+  return staff ? <ContentManage courseId={courseId} canEdit={can.edit_content} /> :<StudentContent courseId={courseId} />;
 }

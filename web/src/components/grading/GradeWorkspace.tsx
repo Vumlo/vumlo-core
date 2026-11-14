@@ -40,9 +40,9 @@ export function GradeWorkspace({ courseId, assignmentId, studentId }: { courseId
     return () => clearTimeout(timer);
   }, [notice]);
   const [leaving, setLeaving] = useState<{ href: string; replace: boolean } | null>(null);
-  const { staff, loading } = useCourseAccess(courseId);
-  const item = useItem(staff && assignmentId ? assignmentId : null);
-  const course = useCourse(staff ? courseId : null);
+  const { can, loading } = useCourseAccess(courseId);
+  const item = useItem(can.grade && assignmentId ? assignmentId : null);
+  const course = useCourse(can.grade ? courseId : null);
   // An assignment graded by hand has no submissions, so the list of work waiting would always be empty.
   const filter = picked ?? (item.data?.assignment?.type === "no_submission" ? "all" : "grade");
   const open = item.data?.assignment ? assignmentId : null;
@@ -63,7 +63,7 @@ export function GradeWorkspace({ courseId, assignmentId, studentId }: { courseId
   }, [chosen]);
 
   if (loading) return <p className="loading" role="status">{t("common.loading")}</p>;
-  if (!staff || !assignmentId) return <NotFoundScreen />;
+  if (!can.grade || !assignmentId) return <NotFoundScreen />;
   if (item.error) return missing(item.error.status) ? <NotFoundScreen /> : <LoadFailed />;
   if (item.data && !item.data.assignment) return <NotFoundScreen />;
   if (book.error || subs.error) return <LoadFailed />;
