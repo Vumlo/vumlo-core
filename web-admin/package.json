@@ -1,7 +1,7 @@
 {
   "name": "vumlo-web-admin",
   "private": true,
-  "version": "0.7.0",
+  "version": "0.7.5",
   "type": "module",
   "scripts": {
     "dev": "node ../web/scripts/brand.mjs --optional && vite",

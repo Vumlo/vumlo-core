@@ -10,6 +10,31 @@ must do, in order, besides getting the new release. See [RELEASING.md](RELEASING
 
 ## [Unreleased]
 
+## [0.7.5] - 2026-11-14
+
+### Upgrade notes
+
+- Nothing to do besides getting the release: no new migrations, no `config_version` change, no new configuration keys.
+
+### Added
+
+- **Units in the people's app** (ADR-0094, second part). People who hold a unit role get a **Units** page (`/units`,
+  in the navigation when `GET /units` is not empty) with each unit's courses and, where `manage_units` allows, subunits,
+  rename, move, delete and roles. A course is placed in a unit when it is created and in its settings, from the units the
+  person holds `manage_courses` on. Course screens follow the server's `can` instead of the role.
+- **Activity types are a contract and a registry** (ADR-0097). The kind of an assignment is no longer a closed enum: the
+  crate `activity` holds the `ActivityType` contract (capabilities, completion policy) and the registry the server and
+  `vumlo-cli` fill at start. The five built-in types (`text`, `no_submission`, `file`, `form`, `quiz`) behave as before.
+
+### Changed
+
+- An item is done by its type's completion policy (`SubmittedOrGraded` or `Graded`); the answer is the same as before for
+  every built-in type. The gradebook's work lists ask the types' capabilities, not their names.
+
+### Fixed
+
+- Settings of an archived course, grade cells for viewers and the unit picker follow what the server allows.
+
 ## [0.7.0] - 2026-11-14
 
 ### Upgrade notes
@@ -375,7 +400,8 @@ There is nothing to upgrade from; follow [docs/install.md](docs/install.md).
 - Any optional module, and an end-user CLI (ADR-0055).
 - Published container images: the images are built on your server from the archive.
 
-[Unreleased]: https://github.com/Vumlo/vumlo-core/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/Vumlo/vumlo-core/compare/v0.7.5...HEAD
+[0.7.5]: https://github.com/Vumlo/vumlo-core/compare/v0.7.0...v0.7.5
 [0.7.0]: https://github.com/Vumlo/vumlo-core/compare/v0.6.1...v0.7.0
 [0.6.1]: https://github.com/Vumlo/vumlo-core/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/Vumlo/vumlo-core/compare/v0.5.0...v0.6.0
