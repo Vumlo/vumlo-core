@@ -1,6 +1,6 @@
 import { http, HttpResponse } from "msw";
 import { getDb, type DbUnit, type DbUser } from "../db";
-import { canView, courseById, forbidden, grantOn, isStaff, notFound, paged, problem, requireAdmin, requireUser, unitById, unitInside } from "../logic";
+import { canView, courseById, forbidden, grantOn, isConsoleAdmin, isStaff, notFound, paged, problem, requireAdmin, requireUser, unitById, unitInside } from "../logic";
 import type { UnitAbility, UnitRole } from "@/lib/api/hooks/units";
 import { publicCourse } from "./core";
 
@@ -24,6 +24,21 @@ const seen = (user: DbUser, unitId: string) => {
   if (!grant) throw notFound();
   return grant;
 };
+/** The unit, for a caller who sees it. */
+const visible = (user: DbUser, unitId: string) => {
+  seen(user, unitId);
+  return unitById(unitId);
+};
+/** 403 without `manage_units` on `parent`; a top-level unit (no parent) is the console's alone. */
+const mustManageIn = (user: DbUser, parent: string | null) => {
+  if (!(parent === null ? isConsoleAdmin(user) : grantOn(user, parent)?.has("manage_units"))) throw forbidden();
+};
+/** A parent named by a request body: one that does not exist or the caller does not see is a bad field. */
+const parentField = (user: DbUser, id: string) => {
+  if (!getDb().units.some((u) => u.id === id) || !grantOn(user, id)) throw problem(422, "Validation failed", undefined, [{ field: "parent_id", message: "there is no such unit" }]);
+};
+/** A unit's roles are changed from above: `manage_units` on its parent (spec 5; nobody changes the roles of the unit their own role sits on). */
+const managedFromAbove = (user: DbUser, unitId: string) => mustManageIn(user, visible(user, unitId).parent_id);
 
 export const unitHandlers = [
   http.get(`${A}/units`, () => {
@@ -59,60 +74,68 @@ export const unitHandlers = [
     return HttpResponse.json(publicCourse(course));
   }),
   http.post(`${A}/units`, async ({ request }) => {
-    requireAdmin();
+    const user = requireUser();
     const { units } = getDb();
     const b = (await request.json()) as { name?: string; parent_id?: string | null };
     const name = cleanName(b.name);
     const parent = b.parent_id ?? null;
-    if (parent) unitById(parent);
+    if (parent) parentField(user, parent);
+    mustManageIn(user, parent);
     if (taken(name, parent)) throw conflict("a unit with this name already exists here");
     const created: DbUnit = { id: `unit-${units.length + 1}-${name.toLowerCase().replace(/\W+/g, "-")}`, name, parent_id: parent, created_at: "2026-11-13T08:00:00Z" };
     units.push(created);
     return HttpResponse.json(created, { status: 201 });
   }),
   http.patch(`${A}/units/:id`, async ({ params, request }) => {
-    requireAdmin();
-    const u = unitById(String(params.id));
+    const user = requireUser();
+    const u = visible(user, String(params.id));
+    mustManageIn(user, u.parent_id);
     const b = (await request.json()) as { name?: string | null; parent_id?: string | null };
     const name = b.name != null ? cleanName(b.name) : u.name;
     const parent = "parent_id" in b ? (b.parent_id ?? null) : u.parent_id;
-    if (parent && unitInside(parent, u.id)) throw problem(422, "Validation failed", undefined, [{ field: "parent_id", message: "a unit cannot move under itself or below" }]);
+    if (parent !== u.parent_id) {
+      if (parent) {
+        parentField(user, parent);
+        if (unitInside(parent, u.id)) throw problem(422, "Validation failed", undefined, [{ field: "parent_id", message: "a unit cannot move under itself or below" }]);
+      }
+      mustManageIn(user, parent);
+    }
     if (taken(name, parent, u.id)) throw conflict("a unit with this name already exists here");
     u.name = name;
     u.parent_id = parent;
     return HttpResponse.json(u);
   }),
   http.delete(`${A}/units/:id`, ({ params }) => {
-    requireAdmin();
+    const user = requireUser();
     const { units, courses, unitRoles } = getDb();
-    const u = unitById(String(params.id));
+    const u = visible(user, String(params.id));
+    mustManageIn(user, u.parent_id);
     if (units.some((x) => x.parent_id === u.id) || courses.some((c) => c.unit_id === u.id)) throw conflict("the unit still has units or courses inside it");
     units.splice(units.indexOf(u), 1);
     delete unitRoles[u.id];
     return new HttpResponse(null, { status: 204 });
   }),
   http.get(`${A}/units/:id/roles`, ({ params }) => {
-    requireAdmin();
-    const held = getDb().unitRoles[unitById(String(params.id)).id] ?? {};
+    const held = getDb().unitRoles[visible(requireUser(), String(params.id)).id] ?? {};
     const items = Object.entries(held).map(([user_id, role]) => ({ user_id, role, name: person(user_id).name, surname: person(user_id).surname, email: person(user_id).email }));
     return HttpResponse.json({ items, next_cursor: null });
   }),
   http.put(`${A}/units/:id/roles/:userId`, async ({ params, request }) => {
-    requireAdmin();
-    const id = unitById(String(params.id)).id;
+    managedFromAbove(requireUser(), String(params.id));
+    const id = String(params.id);
     const b = (await request.json()) as { role: UnitRole };
     (getDb().unitRoles[id] ??= {})[String(params.userId)] = b.role;
     return new HttpResponse(null, { status: 204 });
   }),
   http.delete(`${A}/units/:id/roles/:userId`, ({ params }) => {
-    requireAdmin();
-    const held = getDb().unitRoles[unitById(String(params.id)).id] ?? {};
+    managedFromAbove(requireUser(), String(params.id));
+    const held = getDb().unitRoles[String(params.id)] ?? {};
     delete held[String(params.userId)];
     return new HttpResponse(null, { status: 204 });
   }),
   http.get(`${A}/units/:id/candidates`, ({ params, request }) => {
-    requireAdmin();
-    const held = getDb().unitRoles[unitById(String(params.id)).id] ?? {};
+    managedFromAbove(requireUser(), String(params.id));
+    const held = getDb().unitRoles[String(params.id)] ?? {};
     const q = (new URL(request.url).searchParams.get("q") ?? "").trim().toLowerCase();
     const items = getDb().users
       .filter((u) => u.status === "active" && (u.role === "teacher" || u.role === "admin") && !(u.id in held))

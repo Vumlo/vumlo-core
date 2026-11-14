@@ -95,6 +95,18 @@ export function grantOn(user: DbUser, unitId: string): Set<UnitAbility> | null {
   return held;
 }
 
+/** Only an administrator in the console (ADR-0095) manages a top-level unit. */
+export const isConsoleAdmin = (user: DbUser) => consoleMode && user.role === "admin";
+
+/** The unit a new course is created in: none, or one the user may put courses into (`manage_courses`), as the server checks it. */
+export function unitForNewCourse(user: DbUser, raw: unknown): string | null {
+  if (raw == null) return null;
+  const id = String(raw);
+  if (!getDb().units.some((u) => u.id === id)) throw problem(422, "Validation failed", undefined, [{ field: "unit_id", message: "no such unit" }]);
+  if (!grantOn(user, id)?.has("manage_courses")) throw forbidden();
+  return id;
+}
+
 /** The abilities the user's unit roles give them in a course: empty without a grant. */
 export function unitGrantOf(user: DbUser, courseId: string): Set<UnitAbility> {
   const unit = courseById(courseId).unit_id;

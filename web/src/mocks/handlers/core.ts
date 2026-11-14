@@ -10,7 +10,7 @@ import { at, auditRow, getDb, institutionPublic, uid, type DbCourse, type DbItem
 import {
   activeStudents, canOf, canView, checkDocument, contentTree, courseById, decimal, dueIn, fileSettings, flatItems, forbidden, formOf, fullName, gradeOf, hasUnpublishedChanges, isPublished,
   isStaff, itemById, itemVisibleToStudent, memberOf, moduleOf, notFound, ownerOf, paged, problem, publicUser, quizOf, requireStaff, requireUser, requireView,
-  SESSION_KEY, sessionUser, studentConfig, submissionOf, teacherName, termEnded, termName, userById, workItem, workStatus,
+  SESSION_KEY, sessionUser, studentConfig, submissionOf, teacherName, termEnded, termName, unitForNewCourse, userById, workItem, workStatus,
 } from "../logic";
 import { PASSWORD } from "../seed";
 
@@ -49,10 +49,10 @@ function copyContent(fromId: string, toId: string) {
   }
 }
 
-function newCourse(title: string, ownerId: string, kind: "regular" | "template", termId: string | null = null): DbCourse {
+function newCourse(title: string, ownerId: string, kind: "regular" | "template", termId: string | null = null, unitId: string | null = null): DbCourse {
   const db = getDb();
   const c: DbCourse = {
-    id: uid(`course:new:${db.courses.length}:${title}`), kind, title, status: "draft", owner_id: ownerId, term_id: termId, created_at: MOCK_NOW.toISOString(),
+    id: uid(`course:new:${db.courses.length}:${title}`), kind, title, status: "draft", owner_id: ownerId, term_id: termId, unit_id: unitId, created_at: MOCK_NOW.toISOString(),
     code: "", description: "", settings_saved_at: null, template_updated_at: kind === "template" ? MOCK_NOW.toISOString() : undefined,
   };
   db.courses.push(c);
@@ -247,18 +247,20 @@ export const coreHandlers = [
     const u = requireUser();
     if (u.role === "student") throw forbidden();
     const tpl = courseById(String(params.id));
-    const b = (await request.json()) as { title?: string };
-    const c = newCourse((b.title ?? tpl.title).trim() || tpl.title, u.id, "regular");
+    const b = (await request.json()) as { title?: string; unit_id?: string | null };
+    const unitId = unitForNewCourse(u, b.unit_id);
+    const c = newCourse((b.title ?? tpl.title).trim() || tpl.title, u.id, "regular", null, unitId);
     copyContent(tpl.id, c.id);
     return HttpResponse.json(publicCourse(c), { status: 201 });
   }),
   http.post(`${A}/courses`, async ({ request }) => {
     const u = requireUser();
     if (u.role === "student") throw forbidden();
-    const b = (await request.json()) as { title?: string; term_id?: string | null };
+    const b = (await request.json()) as { title?: string; term_id?: string | null; unit_id?: string | null };
     const title = (b.title ?? "").trim();
     if (!title) throw problem(422, "Validation failed", undefined, [{ field: "title", message: "Give the course a title" }]);
-    return HttpResponse.json(publicCourse(newCourse(title, u.id, "regular", b.term_id ?? null)), { status: 201 });
+    const unitId = unitForNewCourse(u, b.unit_id);
+    return HttpResponse.json(publicCourse(newCourse(title, u.id, "regular", b.term_id ?? null, unitId)), { status: 201 });
   }),
   http.get(`${A}/courses/:id`, ({ params }) => {
     const { course, user } = requireView(String(params.id));

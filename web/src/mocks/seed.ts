@@ -486,7 +486,7 @@ export function createSeed(): Db {
   ];
   const unitRoles: Db["unitRoles"] = { "unit-cs": { [lin]: "manager" }, "unit-science": { [kravets]: "viewer" } };
   const unitAbilities: Db["unitAbilities"] = {
-    manager: ["view_grades", "edit_content", "grade", "manage_roster", "manage_courses"],
+    manager: ["view_grades", "manage_roster", "manage_courses", "manage_units"],
     viewer: ["view_grades"],
   };
   courses.find((c) => c.id === cs215)!.unit_id = "unit-cs";
