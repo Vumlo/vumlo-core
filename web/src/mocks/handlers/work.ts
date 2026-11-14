@@ -347,7 +347,7 @@ export const workHandlers = [
     return HttpResponse.json({ items, next_cursor: null });
   }),
   http.get(`${A}/courses/:id/gradebook`, ({ request, params }) => {
-    const { course } = requireStaff(String(params.id));
+    const { course } = requireStaff(String(params.id), undefined, "view_grades");
     const db = getDb();
     const items = gradedItems(course, true);
     const columns = items.map((i) => ({ assignment_id: i.id, title: i.title, max_points: i.assignment!.max_points, is_bonus: i.assignment!.is_bonus, status: i.status, group: topModule(i) }));
@@ -370,7 +370,7 @@ export const workHandlers = [
     return HttpResponse.json({ columns, items: rows.slice(start, start + limit), layout: { settings, groups, possible, setup }, next_cursor: start + limit < rows.length ? String(start + limit) : null });
   }),
   http.get(`${A}/courses/:id/gradebook/structure`, ({ params }) => {
-    const { course } = requireStaff(String(params.id));
+    const { course } = requireStaff(String(params.id), undefined, "view_grades");
     const items = gradedItems(course, true);
     const { settings, groups, possible, setup } = mockLayout(course, items);
     const columns = items.map((i) => ({ assignment_id: i.id, title: i.title, max_points: i.assignment!.max_points, is_bonus: i.assignment!.is_bonus, status: i.status, group: topModule(i) }));
@@ -378,7 +378,7 @@ export const workHandlers = [
   }),
   // Not a real workbook: the mock only has to answer the download link.
   http.get(`${A}/courses/:id/gradebook/export.xlsx`, ({ params }) => {
-    requireStaff(String(params.id));
+    requireStaff(String(params.id), undefined, "view_grades");
     return new HttpResponse(new Uint8Array([0x50, 0x4b]), { headers: { "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "Content-Disposition": 'attachment; filename="gradebook.xlsx"' } });
   }),
   // The target and the pass mark are kept; the layout stays "as the course" in the mock, and group rules and placement are not kept.

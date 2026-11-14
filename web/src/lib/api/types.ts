@@ -9,6 +9,7 @@ export type Role = S["Role"];
 export type Course = S["Course"];
 /** `GET /courses/{id}`: the course and what the caller may do in it. */
 export type CourseDetail = S["CourseDetail"];
+export type CourseCan = S["CourseCan"];
 export type CourseRole = S["CourseRole"];
 export type Term = S["Term"];
 export type ItemRevision = S["ItemRevision"];

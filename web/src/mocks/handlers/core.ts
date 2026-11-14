@@ -8,7 +8,7 @@ import { isoToLocal, localToIso } from "@/lib/format";
 import type { CourseInfo, CoursePeople, Item, ServerItemMeta, TemplateSummary } from "@/lib/api/types";
 import { at, auditRow, getDb, institutionPublic, uid, type DbCourse, type DbItem } from "../db";
 import {
-  activeStudents, canView, checkDocument, contentTree, courseById, decimal, dueIn, fileSettings, flatItems, forbidden, formOf, fullName, gradeOf, hasUnpublishedChanges, isPublished,
+  activeStudents, canOf, canView, checkDocument, contentTree, courseById, decimal, dueIn, fileSettings, flatItems, forbidden, formOf, fullName, gradeOf, hasUnpublishedChanges, isPublished,
   isStaff, itemById, itemVisibleToStudent, memberOf, moduleOf, notFound, ownerOf, paged, problem, publicUser, quizOf, requireStaff, requireUser, requireView,
   SESSION_KEY, sessionUser, studentConfig, submissionOf, teacherName, termEnded, termName, userById, workItem, workStatus,
 } from "../logic";
@@ -260,7 +260,10 @@ export const coreHandlers = [
     if (!title) throw problem(422, "Validation failed", undefined, [{ field: "title", message: "Give the course a title" }]);
     return HttpResponse.json(publicCourse(newCourse(title, u.id, "regular", b.term_id ?? null)), { status: 201 });
   }),
-  http.get(`${A}/courses/:id`, ({ params }) => HttpResponse.json(publicCourse(requireView(String(params.id)).course))),
+  http.get(`${A}/courses/:id`, ({ params }) => {
+    const { course, user } = requireView(String(params.id));
+    return HttpResponse.json({ ...publicCourse(course), can: canOf(user, course) });
+  }),
   http.patch(`${A}/courses/:id`, async ({ request, params }) => {
     const { course } = requireStaff(String(params.id));
     const b = (await request.json()) as { title?: string; term_id?: string | null };

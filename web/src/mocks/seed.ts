@@ -83,7 +83,7 @@ export function createSeed(): Db {
     const id = uid(`course:${key}`);
     courses.push({
       id, kind: "regular", title, status: "published", owner_id: owner, term_id: term, created_at: at("2026-08-20 10:00"),
-      code, description: "", settings_saved_at: null, ...extra,
+      code, description: "", settings_saved_at: null, unit_id: null, ...extra,
     });
     members.push({ course_id: id, user_id: owner, role: "teacher", is_owner: true, source: "direct", group_label: null, left_on: null });
     return id;
@@ -477,8 +477,23 @@ export function createSeed(): Db {
     ],
   };
 
+  // ---- org units (ADR-0094): a faculty with a department inside it, and another faculty ----
+  // Grace Lin (the dean) manages Computer Science and teaches nothing in it; Hanna Kravets views the whole Faculty of Science.
+  const units = [
+    { id: "unit-science", name: "Faculty of Science", parent_id: null, created_at: at("2026-09-01 11:00") },
+    { id: "unit-cs", name: "Computer Science", parent_id: "unit-science", created_at: at("2026-09-01 11:05") },
+    { id: "unit-arts", name: "Faculty of Arts", parent_id: null, created_at: at("2026-09-01 11:10") },
+  ];
+  const unitRoles: Db["unitRoles"] = { "unit-cs": { [lin]: "manager" }, "unit-science": { [kravets]: "viewer" } };
+  const unitAbilities: Db["unitAbilities"] = {
+    manager: ["view_grades", "edit_content", "grade", "manage_roster", "manage_courses"],
+    viewer: ["view_grades"],
+  };
+  courses.find((c) => c.id === cs215)!.unit_id = "unit-cs";
+  courses.find((c) => c.id === math112)!.unit_id = "unit-science";
+
   return {
-    users, terms, groups, subgroups, groupMembers, courses, members, links, modules, items, submissions, grades, sessions, audit, institution,
+    users, units, unitRoles, unitAbilities, terms, groups, subgroups, groupMembers, courses, members, links, modules, items, submissions, grades, sessions, audit, institution,
     mail: [], signups: [], resets: [], formResponses: {}, quizResults, files, fileMax: 52428800,
   };
 }
