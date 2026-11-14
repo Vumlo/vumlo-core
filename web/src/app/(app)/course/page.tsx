@@ -11,5 +11,5 @@ export default function CoursePage() {
   const { can, staff, loading } = useCourseAccess(courseId);
   if (loading) return <p className="loading" role="status">{translate("common.loading")}</p>;
   // Anyone with an ability sees the course as its teachers do; what they may change follows `edit_content`.
-  return staff ? <ContentManage courseId={courseId} canEdit={can.edit_content} /> :<StudentContent courseId={courseId} />;
+  return staff ? <ContentManage courseId={courseId} canEdit={can.edit_content} /> : <StudentContent courseId={courseId} />;
 }

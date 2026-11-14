@@ -20,7 +20,7 @@ export function CourseHeader({ courseId, subtitle }: { courseId: string; subtitl
   const pathname = usePathname();
   const course = useCourse(courseId);
   const info = useCourseInfo(courseId);
-  const { can, staff } = useCourseAccess(courseId);
+  const { can, staff, settings } = useCourseAccess(courseId);
   const publish = usePublishCourse(courseId);
   const [asking, setAsking] = useState(false);
   // A draft course is invisible to students, whoever is on its roster (ADR-0019): say so, and offer the fix to whoever may make it.
@@ -29,7 +29,7 @@ export function CourseHeader({ courseId, subtitle }: { courseId: string; subtitl
     { id: "content", label: t("course.content"), href: courseHref(courseId) },
     { id: "grades", label: t(can.view_grades ? "course.gradebook" : "course.myGrades"), href: courseHref(courseId, "grades") },
     { id: "people", label: t("course.people"), href: courseHref(courseId, "people") },
-    ...(can.manage_course ? [{ id: "settings", label: t("course.settings"), href: courseHref(courseId, "settings") }] : []),
+    ...(settings ? [{ id: "settings", label: t("course.settings"), href: courseHref(courseId, "settings") }] : []),
   ];
   const current = pathname.startsWith("/course/grades") ? "grades" : pathname.startsWith("/course/people") ? "people" : pathname.startsWith("/course/settings") ? "settings" : "content";
   const i = info.data;

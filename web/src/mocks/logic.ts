@@ -127,9 +127,13 @@ export function isStaff(user: DbUser, course: DbCourse): boolean {
 
 /** What the caller may do in the course, for the web app: staff everything, a unit grant what its abilities map to, anyone else nothing. */
 export function canOf(user: DbUser, course: DbCourse): CourseCan {
-  if (onStaff(user, course)) return { view_grades: true, edit_content: true, grade: true, manage_roster: true, manage_course: true };
+  const staff = onStaff(user, course);
   const g = unitGrantOf(user, course.id);
-  return { view_grades: g.has("view_grades"), edit_content: g.has("edit_content"), grade: g.has("grade"), manage_roster: g.has("manage_roster"), manage_course: g.has("manage_courses") };
+  const can = staff
+    ? { view_grades: true, edit_content: true, grade: true, manage_roster: true, manage_course: true }
+    : { view_grades: g.has("view_grades"), edit_content: g.has("edit_content"), grade: g.has("grade"), manage_roster: g.has("manage_roster"), manage_course: g.has("manage_courses") };
+  // An archived course is read only: every write reads as false (`access::course_can`, ADR-0048). Restoring, deleting and handing it over are not in `can`.
+  return course.status === "archived" ? { ...can, edit_content: false, grade: false, manage_roster: false, manage_course: false } : can;
 }
 
 /** Students see a course only once it is published (or archived, read only) and only when on its roster. */

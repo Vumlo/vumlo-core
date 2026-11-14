@@ -16,12 +16,22 @@ export function UnitSelect({ id, value, onChange, current, error }: { id: string
   const placeable = rows(all).filter((r) => r.unit.abilities.includes("manage_courses"));
   const away = current && !placeable.some((r) => r.unit.id === current) ? current : null;
   if (placeable.length === 0 && !away) return null;
+  // Taking a course out of a unit, or moving it, needs `manage_courses` on the unit it leaves (ADR-0094): where the person has none, the unit is shown and nothing else is offered.
+  if (away) {
+    return (
+      <div className="field">
+        <label htmlFor={id}>{t("un.unit")}</label>
+        <select id={id} className="select" value={away} disabled>
+          <option value={away}>{all.find((u) => u.id === away)?.name ?? t("un.elsewhere")}</option>
+        </select>
+      </div>
+    );
+  }
   return (
     <div className="field">
       <label htmlFor={id}>{t("un.unit")}</label>
       <select id={id} className="select" value={value} onChange={(e) => onChange(e.target.value)} aria-invalid={!!error}>
         <option value="">{t("un.noUnit")}</option>
-        {away && <option value={away} disabled>{all.find((u) => u.id === away)?.name ?? t("un.elsewhere")}</option>}
         {placeable.map((r) => <option key={r.unit.id} value={r.unit.id}>{"  ".repeat(r.level - 1)}{r.unit.name}</option>)}
       </select>
       {error && <p className="field-error">{error}</p>}

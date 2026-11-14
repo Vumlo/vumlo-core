@@ -10,6 +10,7 @@ export const TEMP_PASSWORD = "temporary password";
 /**
  * The people the suite and `pnpm dev:mock` sign in as. The seed creates them with these names.
  * The dean manages the unit Computer Science and teaches nothing in it; the viewer views the Faculty of Science (ADR-0094).
+ * `kowalska` teaches Databases, which sits in Computer Science, and holds no unit role.
  */
 export const accounts = {
   student: `maya.okafor@${DOMAIN}`,
@@ -17,4 +18,5 @@ export const accounts = {
   admin: `marta.kovalska@${DOMAIN}`,
   dean: `grace.lin@${DOMAIN}`,
   viewer: `hanna.kravets@${DOMAIN}`,
+  kowalska: `marta.kowalska@${DOMAIN}`,
 } as const;

@@ -19,7 +19,7 @@ export function useUnits() {
   return useQuery<UnitSummary[]>("/units", () => fetchAll<UnitSummary>("/units"));
 }
 
-/** The courses that sit in the unit itself (ADR-0094). */
+/** The courses of a unit and of every unit below it (ADR-0094). */
 export function useUnitCourses(id: string | null) {
   const path = `/units/${id}/courses`;
   return useQuery<Course[]>(id ? path : null, () => fetchAll<Course>(path));

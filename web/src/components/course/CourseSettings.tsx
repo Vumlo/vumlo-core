@@ -13,6 +13,7 @@ import { useArchiveCourse, useContentTree, useCourse, useCourseInfo, useCoursePe
 import { allItems, isAssignment, linkedGroupName, ownerName } from "@/lib/course";
 import { dayLabel, dayLong, initials, plural } from "@/lib/format";
 import { CourseHeader } from "./CourseHeader";
+import { useCourseAccess } from "./useCourseAccess";
 import { LinkGroup } from "./People";
 import { useT } from "@/lib/i18n";
 import type { MessageKey } from "@/lib/i18n/core";
@@ -25,6 +26,8 @@ export function CourseSettings({ courseId }: { courseId: string }) {
   const t = useT();
   const router = useRouter();
   const course = useCourse(courseId);
+  // Each section follows its own ability; an archived course keeps the root actions (restore, delete, hand over) for owner, teachers and admins.
+  const { can, manageRoot } = useCourseAccess(courseId);
   const info = useCourseInfo(courseId);
   const terms = useTerms();
   const institution = useInstitution();
@@ -102,29 +105,29 @@ export function CourseSettings({ courseId }: { courseId: string }) {
             <div className={s.fields}>
               <div className="field">
                 <label htmlFor="f-title">{t("newCourse.name")}</label>
-                <input id="f-title" className="input" value={tTitle} onChange={(e) => setTitle(e.target.value)} aria-invalid={!!fieldError("title")} />
+                <input id="f-title" className="input" value={tTitle} disabled={!can.manage_course} onChange={(e) => setTitle(e.target.value)} aria-invalid={!!fieldError("title")} />
                 {fieldError("title") && <p className="hint" style={{ color: "var(--danger)" }}>{fieldError("title")}</p>}
               </div>
               <div className={s.two}>
-                <div className="field"><label htmlFor="f-code">{t("cs.code")}</label><input id="f-code" className="input" value={tCode} onChange={(e) => setCode(e.target.value)} /></div>
+                <div className="field"><label htmlFor="f-code">{t("cs.code")}</label><input id="f-code" className="input" value={tCode} disabled={!can.manage_course} onChange={(e) => setCode(e.target.value)} /></div>
                 <div className="field">
                   <label htmlFor="f-term">{t("newCourse.term")}</label>
-                  <select id="f-term" className="select" value={tTerm} onChange={(e) => setTermId(e.target.value)}>
+                  <select id="f-term" className="select" value={tTerm} disabled={!can.manage_course} onChange={(e) => setTermId(e.target.value)}>
                     <option value="">{t("courses.noTerm")}</option>
                     {(terms.data ?? []).map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
                   </select>
                 </div>
               </div>
-              {c.can.manage_course && <UnitSelect id="f-unit" value={tUnit} onChange={setUnitId} current={c.unit_id} error={setUnit.error?.errors.find((x) => x.field === "unit_id")?.message ?? setUnit.error?.detail} />}
+              {can.manage_course && <UnitSelect id="f-unit" value={tUnit} onChange={setUnitId} current={c.unit_id} error={setUnit.error?.errors.find((x) => x.field === "unit_id")?.message ?? setUnit.error?.detail} />}
               <div className="field">
                 <label htmlFor="f-desc">{t("cs.shortDesc")}</label>
-                <textarea id="f-desc" className="textarea" rows={3} value={tDesc} onChange={(e) => setDesc(e.target.value)} aria-invalid={!!fieldError("description")} />
+                <textarea id="f-desc" className="textarea" rows={3} value={tDesc} disabled={!can.manage_course} onChange={(e) => setDesc(e.target.value)} aria-invalid={!!fieldError("description")} />
                 <p className="hint" style={{ color: tDesc.length > 300 ? "var(--danger)" : undefined }}>{t("cs.chars", { n: tDesc.length })}</p>
                 {fieldError("description") && <p className="hint" style={{ color: "var(--danger)" }}>{fieldError("description")}</p>}
               </div>
             </div>
             <div className="row" style={{ gap: 16, marginTop: 20, flexWrap: "wrap" }}>
-              <button type="button" className="btn btn-primary" disabled={!dirty || updateCourse.pending || updateInfo.pending || setUnit.pending} onClick={save}>{t("cs.save")}</button>
+              {can.manage_course && <button type="button" className="btn btn-primary" disabled={!dirty || updateCourse.pending || updateInfo.pending || setUnit.pending} onClick={save}>{t("cs.save")}</button>}
               <span role="status" className="muted" style={{ fontSize: 14 }}>{saved ? t("cs.saved") : t("cs.lastSaved", { day: dayLabel(i.updated_at) })}</span>
             </div>
           </section>
@@ -143,13 +146,13 @@ export function CourseSettings({ courseId }: { courseId: string }) {
           <section id="groups" aria-labelledby="groups-h" className={s.section}>
             <div className="row" style={{ justifyContent: "space-between", alignItems: "flex-start", gap: 16, flexWrap: "wrap" }}>
               <div><h2 id="groups-h">{t("cs.groups")}</h2><p className={s.lead}>{t("cs.groupsLead")}</p></div>
-              <button type="button" className="btn btn-outline" onClick={() => setDialog("group")}><Icon name="plus" size={15} strokeWidth={2.2} />{t("people.linkGroup")}</button>
+              {can.manage_roster && <button type="button" className="btn btn-outline" onClick={() => setDialog("group")}><Icon name="plus" size={15} strokeWidth={2.2} />{t("people.linkGroup")}</button>}
             </div>
             <ul className={s.list}>
               {groups.map((g) => (
                 <li key={g.link_id} className={s.li}>
                   <span className="grow"><span style={{ display: "block", fontWeight: 500 }}>{linkedGroupName(g)}</span><span className="muted" style={{ display: "block", fontSize: 13 }}>{plural(g.student_count, "student")}, {t("people.linkedOn", { day: dayLong(g.linked_at) })}</span></span>
-                  <button type="button" className="btn btn-quiet" style={{ color: "var(--danger)" }} onClick={() => setUnlinking({ id: g.link_id, name: linkedGroupName(g) })}>{t("people.unlink")}</button>
+                  {can.manage_roster && <button type="button" className="btn btn-quiet" style={{ color: "var(--danger)" }} onClick={() => setUnlinking({ id: g.link_id, name: linkedGroupName(g) })}>{t("people.unlink")}</button>}
                 </li>
               ))}
               {groups.length === 0 && <li className="muted" style={{ fontSize: 14 }}>{t("people.noGroup")}</li>}
@@ -163,7 +166,7 @@ export function CourseSettings({ courseId }: { courseId: string }) {
               <div className={s.owner}>
                 <span aria-hidden="true" className={s.avatar}>{initials(owner.name, owner.surname)}</span>
                 <span className="grow"><span style={{ display: "block", fontWeight: 500 }}>{ownerName(i)}</span><span className="muted" style={{ display: "block", fontSize: 13 }}>{t("cs.ownerSince", { day: dayLong(c.created_at) })}</span></span>
-                <button type="button" className="btn btn-outline" onClick={() => { setNewOwner(""); transfer.reset(); setDialog("owner"); }}>{t("cs.transfer")}</button>
+                {manageRoot && <button type="button" className="btn btn-outline" onClick={() => { setNewOwner(""); transfer.reset(); setDialog("owner"); }}>{t("cs.transfer")}</button>}
               </div>
             )}
             <p className="muted" style={{ fontSize: 14 }}>{t("cs.transferNote")}</p>
@@ -182,20 +185,24 @@ export function CourseSettings({ courseId }: { courseId: string }) {
 
           <section id="archive" aria-labelledby="archive-h" className={`card ${s.section} ${s.zone}`}>
             <h2 id="archive-h" style={{ marginBottom: 12 }}>{t("cs.archive")}</h2>
-            <div className={s.danger}>
-              <div style={{ flex: "1 1 320px" }}>
-                <p style={{ fontWeight: 500 }}>{archived ? t("cs.restoreThis") : t("cs.archiveThis")}</p>
-                <p className="muted" style={{ fontSize: 14 }}>{archived ? t("cs.restoreLead") : t("cs.archiveLead")}</p>
+            {(can.manage_course || manageRoot) && (
+              <div className={s.danger}>
+                <div style={{ flex: "1 1 320px" }}>
+                  <p style={{ fontWeight: 500 }}>{archived ? t("cs.restoreThis") : t("cs.archiveThis")}</p>
+                  <p className="muted" style={{ fontSize: 14 }}>{archived ? t("cs.restoreLead") : t("cs.archiveLead")}</p>
+                </div>
+                <button type="button" className="btn btn-outline" onClick={() => (archived ? void archive.run(false) : setDialog("archive"))}>{archived ? t("cs.restore") : t("cs.archiveBtn")}</button>
               </div>
-              <button type="button" className="btn btn-outline" onClick={() => (archived ? void archive.run(false) : setDialog("archive"))}>{archived ? t("cs.restore") : t("cs.archiveBtn")}</button>
-            </div>
-            <div className={s.danger}>
-              <div style={{ flex: "1 1 320px" }}>
-                <p style={{ fontWeight: 500 }}>{t("cs.deleteThis")}</p>
-                <p id="del-why" className="muted" style={{ fontSize: 14 }}>{i.has_grades ? t("cs.hasGrades") : t("cs.deleteLead")}</p>
+            )}
+            {manageRoot && (
+              <div className={s.danger}>
+                <div style={{ flex: "1 1 320px" }}>
+                  <p style={{ fontWeight: 500 }}>{t("cs.deleteThis")}</p>
+                  <p id="del-why" className="muted" style={{ fontSize: 14 }}>{i.has_grades ? t("cs.hasGrades") : t("cs.deleteLead")}</p>
+                </div>
+                <button type="button" className="btn btn-danger" disabled={i.has_grades} aria-describedby="del-why" onClick={() => { del.reset(); setDialog("delete"); }}>{t("cs.deleteBtn")}</button>
               </div>
-              <button type="button" className="btn btn-danger" disabled={i.has_grades} aria-describedby="del-why" onClick={() => { del.reset(); setDialog("delete"); }}>{t("cs.deleteBtn")}</button>
-            </div>
+            )}
           </section>
         </div>
       </div>

@@ -11,6 +11,7 @@
 .student:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
 .course { margin-left: var(--space-3); font-size: 14px; font-weight: 400; }
 .body { flex: 1 1 0; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: var(--space-5); padding-bottom: var(--space-4); }
+.body[data-panel="false"] { grid-template-columns: minmax(0, 1fr); }
 .stepper { display: inline-flex; align-items: center; gap: var(--space-3); }
 .step { gap: var(--space-2); max-width: 220px; padding-inline: var(--space-3); }
 .step:disabled { opacity: 0.5; cursor: not-allowed; }
@@ -60,6 +61,8 @@
 @media (min-width: 1100px) {
   .body { grid-template-columns: 208px minmax(0, 1fr) 320px; }
   .body[data-rail="false"] { grid-template-columns: minmax(0, 1fr) 320px; }
+  .body[data-panel="false"] { grid-template-columns: 208px minmax(0, 1fr); }
+  .body[data-panel="false"][data-rail="false"] { grid-template-columns: minmax(0, 1fr); }
   .rail { display: flex; }
 }
 .pane { min-width: 0; overflow: auto; padding-bottom: var(--space-8); }

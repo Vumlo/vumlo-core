@@ -10,8 +10,7 @@ import { useCourseId } from "@/lib/useRoute";
 export default function SettingsPage() {
   const courseId = useCourseId();
   const router = useRouter();
-  const { can, loading } = useCourseAccess(courseId);
-  const allowed = can.manage_course;
+  const { settings: allowed, loading } = useCourseAccess(courseId);
   useEffect(() => {
     if (!loading && !allowed) router.replace(courseHref(courseId));
   }, [loading, allowed, courseId, router]);

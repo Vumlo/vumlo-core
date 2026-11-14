@@ -45,7 +45,7 @@ It holds:
 - The rich-text document model (`document/`: `EffectiveProfiles`, `DocumentErrors`, `ValidDocument`, the editor
   profiles). Moved from `content` unchanged. The contract's signature names `EffectiveProfiles` and `DocumentErrors`, and
   a type that comes from elsewhere must be able to write the same documents. `content` does not re-export them: the
-  eleven callers outside `content` (`flows`, `server`, `ai_agent`) import from `activity` (no compatibility layer,
+  eleven callers outside `content` (`flows`, `server`, `ai_agent`, `assessment`, `gradebook`) import from `activity` (no compatibility layer,
   CLAUDE.md section 13).
 - The registry and `Kind`.
 
