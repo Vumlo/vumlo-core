@@ -7,7 +7,7 @@ import { accounts as seeded, PASSWORD as seededPassword } from "../src/mocks/ide
 /** Pages anyone can open without signing in. */
 export const publicRoutes = ["/login", "/register", "/forgot-password", "/reset-password", "/verify-email", "/download"];
 
-export type RoleName = "student" | "teacher" | "admin";
+export type RoleName = "student" | "teacher" | "admin" | "dean" | "viewer";
 
 export const PASSWORD = process.env.E2E_PASSWORD ?? seededPassword;
 
@@ -15,6 +15,9 @@ export const accounts: Record<RoleName, string> = {
   student: process.env.E2E_STUDENT ?? seeded.student,
   teacher: process.env.E2E_TEACHER ?? seeded.teacher,
   admin: process.env.E2E_ADMIN ?? seeded.admin,
+  // A manager of Computer Science and a viewer of the Faculty of Science (ADR-0094); a run against another server names them.
+  dean: process.env.E2E_DEAN ?? seeded.dean,
+  viewer: process.env.E2E_VIEWER ?? seeded.viewer,
 };
 
 /** Screens that do not depend on ids. */
@@ -22,6 +25,9 @@ export const staticRoutes: Record<RoleName, string[]> = {
   student: ["/", "/courses", "/calendar", "/grades", "/profile", "/search?q=merge", "/search", "/no-such-page"],
   teacher: ["/", "/courses", "/courses/new", "/calendar", "/grading", "/profile", "/search?q=merge", "/no-such-page"],
   admin: ["/", "/courses", "/courses/new", "/calendar", "/profile", "/search?q=merge", "/no-such-page"],
+  // They teach nothing: their courses are the units' (`/units`); a viewer cannot create one.
+  dean: ["/", "/units", "/courses", "/courses/new", "/calendar", "/profile", "/search?q=merge", "/no-such-page"],
+  viewer: ["/", "/units", "/courses", "/calendar", "/profile", "/search?q=merge", "/no-such-page"],
 };
 
 /**
