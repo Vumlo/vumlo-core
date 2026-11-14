@@ -11,11 +11,10 @@ use super::*;
 use crate::files::sweep;
 use crate::items;
 use access::CourseRole;
+use activity::EffectiveProfiles;
 use auth::{self, Email, NewUser, PersonName};
 use common::Role;
-use content::{
-    Assignment, BuiltinType, ContentTitle, EffectiveProfiles, ItemPatch, ItemRules, MaxPoints,
-};
+use content::{Assignment, BuiltinType, ContentTitle, ItemPatch, ItemRules, MaxPoints};
 use files::{Storage, Stored};
 use object_store::memory::InMemory;
 use teaching::{self, CourseTitle};
@@ -468,10 +467,10 @@ async fn any_referencing_row_that_grants_access_is_enough() {
     .await;
 }
 
-fn plain(ids: &[Uuid]) -> Vec<content::FileRef> {
+fn plain(ids: &[Uuid]) -> Vec<activity::FileRef> {
     ids.iter()
         .enumerate()
-        .map(|(index, &id)| content::FileRef {
+        .map(|(index, &id)| activity::FileRef {
             id,
             path: format!("body.blocks[{index}]"),
             image: false,
@@ -484,7 +483,7 @@ async fn verdict(
     f: &Fixture,
     actor: &Actor,
     owner: UsageOwner,
-    refs: &[content::FileRef],
+    refs: &[activity::FileRef],
 ) -> files::FileVerdict {
     let mut conn = f.pool.acquire().await.unwrap();
     check(&mut conn, actor.user_id(), &owner, refs)
@@ -631,10 +630,10 @@ async fn check_names_a_non_image_and_returns_every_name() {
         let text = file(&f.pool, &f.owner).await; // "a.txt", text/plain
         let image = file_named(&f.pool, &f.owner, "p.png", "image/png").await;
         let unknown = Uuid::now_v7();
-        let refs = |ids: &[(Uuid, bool)]| -> Vec<content::FileRef> {
+        let refs = |ids: &[(Uuid, bool)]| -> Vec<activity::FileRef> {
             ids.iter()
                 .enumerate()
-                .map(|(index, &(id, image))| content::FileRef {
+                .map(|(index, &(id, image))| activity::FileRef {
                     id,
                     path: format!("body.blocks[{index}]"),
                     image,

@@ -15,6 +15,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "activity"
+version = "0.7.0"
+dependencies = [
+ "api-types",
+ "serde_json",
+ "sqlx",
+ "thiserror 2.0.21",
+ "uuid",
+ "vumlo-config",
+]
+
+[[package]]
 name = "adler2"
 version = "2.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -145,6 +157,7 @@ name = "assessment"
 version = "0.7.0"
 dependencies = [
  "access",
+ "activity",
  "api-types",
  "axum",
  "chrono",
@@ -701,6 +714,7 @@ name = "content"
 version = "0.7.0"
 dependencies = [
  "access",
+ "activity",
  "api-types",
  "auth",
  "axum",
@@ -2193,6 +2207,7 @@ name = "learning"
 version = "0.7.0"
 dependencies = [
  "access",
+ "activity",
  "api-types",
  "assessment",
  "auth",
@@ -3736,6 +3751,7 @@ name = "server"
 version = "0.7.0"
 dependencies = [
  "access",
+ "activity",
  "anyhow",
  "api-types",
  "assessment",
@@ -4802,6 +4818,7 @@ name = "vumlo-module-ai-agent"
 version = "0.7.0"
 dependencies = [
  "access",
+ "activity",
  "assessment",
  "auth",
  "axum",

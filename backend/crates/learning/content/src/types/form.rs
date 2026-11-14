@@ -9,12 +9,9 @@ use serde_json::{Map, Value, json};
 use sqlx::types::Decimal;
 use uuid::Uuid;
 
-use super::{
-    Claims, Problems, Stage, ValidContent, answer_path, answers_of, parse_number, shape_problem,
-    valid_id,
-};
-use crate::document::{DocumentErrors, valid_href};
+use super::{Problems, answer_path, answers_of, parse_number, shape_problem, valid_id};
 use crate::model::ModelError;
+use activity::{Claims, DocumentErrors, Stage, ValidContent, valid_href};
 
 const MAX_FIELDS: usize = 50;
 const MAX_OPTIONS: usize = 20;

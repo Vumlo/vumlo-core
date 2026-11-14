@@ -1,0 +1,17 @@
+[package]
+name = "activity"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+description = "The contract of an activity type and the block document model its signature names (ADR-0097)."
+
+[dependencies]
+api-types.workspace = true
+serde_json.workspace = true
+sqlx.workspace = true
+thiserror.workspace = true
+uuid.workspace = true
+vumlo-config.workspace = true
+
+[lints]
+workspace = true

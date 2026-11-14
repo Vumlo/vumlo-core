@@ -15,10 +15,11 @@ use std::collections::BTreeMap;
 use std::sync::OnceLock;
 
 use access::Actor;
+use activity::EffectiveProfiles;
 use auth::HashedPassword;
 use chrono::{DateTime, Utc};
 use common::{ApiError, PageParams};
-use content::{EffectiveProfiles, ItemRules};
+use content::ItemRules;
 use gradebook::ColumnStatus;
 use learning::items;
 use module_api::Institution;

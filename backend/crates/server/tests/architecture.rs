@@ -13,6 +13,8 @@
 //!   above them, in any dependency table: Cargo refuses most such edges as a cycle, but not all
 //!   (`assessment` could list `gradebook`). Only the flows in `learning` complete a write that
 //!   names files (ADR-0093).
+//! - `activity` (the contract of an activity type) lists no crate of ours below or above it but
+//!   `api-types` and `vumlo-config` (ADR-0097).
 //! - `Actor::role` is read only by `access`; `auth::apply_user_update` is called only by `learning`.
 //! - The `testing` feature of a crate is switched on only from `[dev-dependencies]`.
 
@@ -79,6 +81,15 @@ const UNITS: &[Unit] = &[
         name: "teaching",
         dir: "learning/teaching/src",
         schema: Some("teaching"),
+        layer: 7,
+    },
+    // The contract of an activity type and the document model its signature names (ADR-0097).
+    // No schema; it sits beside the chain, so it shares the number of `teaching`, which is below
+    // every crate that uses it (content and above).
+    Unit {
+        name: "activity",
+        dir: "learning/activity/src",
+        schema: None,
         layer: 7,
     },
     Unit {
@@ -409,6 +420,36 @@ fn the_four_crates_list_nothing_above_them() {
         "a crate of the learning domain lists one above it (teaching < content < assessment < \
          gradebook < learning); the call belongs in a flow in `learning` (ADR-0093):\n{}",
         found.join("\n")
+    );
+}
+
+/// What the manifest of `activity` may list, in any dependency table. It is the contract every
+/// activity type is written against, so it names no crate of ours but the two that hold plain
+/// data types (ADR-0097).
+const ACTIVITY_DEPENDENCIES: &[&str] = &[
+    "api-types",
+    "vumlo-config",
+    "serde",
+    "serde_json",
+    "sqlx",
+    "thiserror",
+    "uuid",
+    "chrono",
+];
+
+#[test]
+fn activity_lists_only_plain_data_crates() {
+    let manifest = crates_dir()
+        .join("learning")
+        .join("activity")
+        .join("Cargo.toml");
+    let found: Vec<String> = dependencies_of(&manifest)
+        .into_iter()
+        .filter(|name| !ACTIVITY_DEPENDENCIES.contains(&name.as_str()))
+        .collect();
+    assert!(
+        found.is_empty(),
+        "activity lists crates outside {ACTIVITY_DEPENDENCIES:?} (ADR-0097): {found:?}"
     );
 }
 

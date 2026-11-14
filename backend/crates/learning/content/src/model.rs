@@ -9,13 +9,14 @@ use sqlx::postgres::{PgTypeInfo, PgValueRef};
 use sqlx::types::Decimal;
 use uuid::Uuid;
 
-use super::document::{
-    DocumentErrors, EffectiveProfiles, FileRef, file_refs_of, validate_document_within,
-};
 use super::rules::Condition;
-use super::types::{AutoGrade, Claims, Stage, ValidContent, file, form, quiz};
+use super::types::{file, form, quiz};
 use crate::points;
 use access::{CourseAccess, Release};
+use activity::{
+    AutoGrade, Claims, DocumentErrors, EffectiveProfiles, FileRef, Stage, ValidContent,
+    file_refs_of, validate_document_within,
+};
 use common::text_enum;
 
 const TITLE_MAX_LEN: usize = 200;

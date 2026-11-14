@@ -11,6 +11,7 @@ testing = []
 
 [dependencies]
 access.workspace = true
+activity.workspace = true
 api-types.workspace = true
 axum.workspace = true
 chrono.workspace = true

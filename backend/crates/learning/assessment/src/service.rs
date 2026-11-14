@@ -24,10 +24,10 @@ use super::model::{
 use super::repo;
 use access::Actor;
 use access::{self, AccessError, Action};
+use activity::{AutoGrade, DocumentErrors, EffectiveProfiles, FileRef, Stage, distinct_ids};
 use common::{Page, PageParams};
 use content::{
-    self, Assignment, AssignmentType, AutoGrade, BuiltinType, DocumentErrors, EffectiveProfiles,
-    FileRef, OnDeadline, OpenError, OpenedAssignment, Stage, distinct_ids,
+    self, Assignment, AssignmentType, BuiltinType, OnDeadline, OpenError, OpenedAssignment,
 };
 use events::{self, Event, EventsError};
 use teaching::TeachingError;

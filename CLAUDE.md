@@ -32,6 +32,9 @@ Each layer is a crate, and a crate depends only on the ones below it. Cargo enfo
       -> common     Role, ApiError, pagination, text_enum!
 
 `db` (migrations, the installation record, the CLI's audit row) is a crate beside the chain.
+`activity` (`backend/crates/learning/activity`) is another one: the contract of an activity type and the block
+document model its signature names (ADR-0097). It has no schema and depends on nothing of ours but `api-types` and
+`vumlo-config` (`architecture.rs` checks the manifest); `content` and the crates above it use it.
 `test-support` is the test database harness and a dev-dependency only. `teaching`, `content`, `assessment`,
 `gradebook` and `learning` (the flows, in `backend/crates/learning/flows`) are the crates in
 `backend/crates/learning/`; each has its own state, error enum and router, and `server` builds the states.

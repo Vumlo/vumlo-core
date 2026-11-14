@@ -11,7 +11,7 @@ use api_types::{Block, Document, DocumentLimits, Feature, FieldError, ProfileNam
 use serde_json::{Map, Value};
 use uuid::Uuid;
 
-pub(crate) use parse::valid_href;
+pub use parse::valid_href;
 pub use profile::{EditorConfigError, EffectiveProfiles};
 pub use text::plain_text;
 
@@ -78,7 +78,7 @@ impl DocumentErrors {
             .collect()
     }
 
-    pub(crate) fn of(errors: Vec<DocumentError>) -> Self {
+    pub fn of(errors: Vec<DocumentError>) -> Self {
         Self(errors)
     }
 

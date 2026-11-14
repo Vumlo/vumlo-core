@@ -14,10 +14,6 @@ use sqlx::PgConnection;
 use sqlx::types::Decimal;
 use uuid::Uuid;
 
-use super::document::{
-    DocumentErrors, EffectiveProfiles, FileRef, ValidDocument, distinct_ids, file_refs_under,
-    plain_text, validate_document,
-};
 use super::model::{
     Access, Assignment, AssignmentType, BuiltinType, ContentModule, ContentSubModule, ContentTitle,
     DraftItem, FactScope, Hit, HitKind, Item, ItemFacts, ItemKind, ItemPatch, ItemStatus,
@@ -32,6 +28,10 @@ use super::types::form::{self, Holders};
 use ::files::FileVerdict;
 use access::Actor;
 use access::{self, AccessError, Action, CourseAccess, CourseStatus, Release};
+use activity::{
+    DocumentErrors, EffectiveProfiles, FileRef, ValidDocument, distinct_ids, file_refs_under,
+    plain_text, validate_document,
+};
 use events::{self, AuditEntry, Event, EventsError};
 use teaching::{self, TeachingError};
 use vumlo_config::GradingScale;

@@ -8,11 +8,12 @@ use api_types::ProfileName;
 use serde_json::{Map, Value};
 use uuid::Uuid;
 
-use super::{Claims, Problems, Stage, ValidContent};
-use crate::document::{
-    DocumentErrors, EffectiveProfiles, FileRef, file_refs_under, validate_document,
-};
+use super::Problems;
 use crate::model::ModelError;
+use activity::{
+    Claims, DocumentErrors, EffectiveProfiles, FileRef, Stage, ValidContent, file_refs_under,
+    validate_document,
+};
 
 const DEFAULT_MAX_FILES: usize = 5;
 const MAX_FILES_LIMIT: usize = 20;

@@ -27,10 +27,11 @@ use utoipa_scalar::{Scalar, Servable};
 
 use crate::health;
 use access::{self, ActorSource, PluginSource};
+use activity::{EditorConfigError, EffectiveProfiles};
 use assessment::AssessmentState;
 use auth::{self, AuthState, SetupError};
 use common::{ApiError, problem_details};
-use content::{ContentState, EditorConfigError, EffectiveProfiles};
+use content::ContentState;
 use events::Handlers;
 use gradebook::GradebookState;
 use learning::{self, LearningState};

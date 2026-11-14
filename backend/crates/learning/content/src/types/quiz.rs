@@ -8,13 +8,13 @@ use serde_json::{Map, Value, json};
 use sqlx::types::Decimal;
 
 use super::{
-    AutoGrade, Problems, Stage, ValidContent, answer_path, answers_of, document_problem,
-    parse_number, shape_problem, valid_id,
-};
-use crate::document::{
-    DocumentErrors, EffectiveProfiles, FileRef, file_refs_under, validate_document,
+    Problems, answer_path, answers_of, document_problem, parse_number, shape_problem, valid_id,
 };
 use crate::model::{MaxPoints, ModelError};
+use activity::{
+    AutoGrade, DocumentErrors, EffectiveProfiles, FileRef, Stage, ValidContent, file_refs_under,
+    validate_document,
+};
 
 const MAX_QUESTIONS: usize = 100;
 const MAX_OPTIONS: usize = 10;

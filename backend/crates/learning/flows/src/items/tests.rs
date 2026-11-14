@@ -14,12 +14,13 @@ use uuid::Uuid;
 
 use crate::{LearningError, items};
 use access::{Actor, CourseRole};
+use activity::EffectiveProfiles;
 use auth::{self, Email, NewUser, PersonName};
 use common::PageParams;
 use common::Role;
 use content::{
-    self, Assignment, BuiltinType, ContentError, ContentTitle, EffectiveProfiles, ItemPatch,
-    ItemRules, MaxPoints, SubmissionSettings,
+    self, Assignment, BuiltinType, ContentError, ContentTitle, ItemPatch, ItemRules, MaxPoints,
+    SubmissionSettings,
 };
 use gradebook::{
     Cell, GradeInput, GradebookError, Students, gradebook, publish_grades, save_grade,

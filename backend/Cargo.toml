@@ -68,6 +68,7 @@ uuid = { version = "1", features = ["v7", "serde"] }
 zxcvbn = "3"
 
 access = { path = "crates/access" }
+activity = { path = "crates/learning/activity" }
 assessment = { path = "crates/learning/assessment" }
 api-types = { path = "crates/api-types" }
 auth = { path = "crates/auth" }

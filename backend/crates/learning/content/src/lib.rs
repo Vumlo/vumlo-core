@@ -1,7 +1,6 @@
 //! The course content tree: modules, one level of sub-modules, `text` items and assignments
 //! (ADR-0020, ADR-0021).
 
-mod document;
 mod model;
 mod points;
 mod repo;
@@ -12,10 +11,6 @@ mod standing;
 mod state;
 mod types;
 
-pub use document::{
-    DocumentError, DocumentErrors, EditorConfigError, EffectiveProfiles, FileRef, distinct_ids,
-    limits, plain_text, validate_document, validate_document_within,
-};
 pub use model::{
     Access, Assignment, AssignmentSummary, AssignmentType, BuiltinType, ConditionInput,
     ConditionKind, ContentModule, ContentSubModule, ContentTitle, DraftItem, FactScope, Hit,
@@ -45,7 +40,6 @@ pub use types::file::check_names as check_file_names;
 pub use types::form::Holders;
 pub use types::quiz::ResultQuestion;
 pub use types::quiz::result_questions as quiz_result_questions;
-pub use types::{AutoGrade, Claims, Stage, ValidContent};
 // Seeds the references of an item for the tests of `learning::files`.
 #[cfg(feature = "testing")]
 pub use repo::replace_item_files;

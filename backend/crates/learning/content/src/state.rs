@@ -1,8 +1,7 @@
 use std::sync::Arc;
 
+use activity::EffectiveProfiles;
 use sqlx::PgPool;
-
-use crate::EffectiveProfiles;
 
 /// What the handlers of `content` need from the application.
 #[derive(Clone)]

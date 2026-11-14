@@ -14,8 +14,9 @@ use uuid::Uuid;
 use super::model::{ItemReference, Owner, UsageOwner};
 use super::repo;
 use access::{AccessError, Actor};
+use activity::{FileRef, distinct_ids};
 use assessment::{self, AssessmentError};
-use content::{self, ContentError, FileRef, distinct_ids};
+use content::{self, ContentError};
 
 #[derive(Debug, thiserror::Error)]
 pub enum FileError {
