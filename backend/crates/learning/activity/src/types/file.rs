@@ -9,9 +9,8 @@ use serde_json::{Map, Value};
 use sqlx::types::Decimal;
 use uuid::Uuid;
 
-use super::{Problems, config_error};
-use crate::model::ModelError;
-use activity::{
+use super::Problems;
+use crate::{
     ActivityType, AutoGrade, Capabilities, Claims, CompletionPolicy, ConfigError, DocumentErrors,
     EffectiveProfiles, FileRef, Stage, ValidContent, file_refs_under, validate_document,
 };
@@ -28,8 +27,8 @@ struct Settings {
     accept: Vec<String>,
 }
 
-fn invalid(message: String) -> Result<Settings, ModelError> {
-    Err(ModelError::Config(message))
+fn invalid(message: String) -> Result<Settings, ConfigError> {
+    Err(ConfigError::new(message))
 }
 
 /// An entry of `accept`: a dot and 1 to 16 lowercase letters or digits.
@@ -42,7 +41,7 @@ fn valid_extension(entry: &str) -> bool {
     })
 }
 
-fn parse(config: &Map<String, Value>) -> Result<Settings, ModelError> {
+fn parse(config: &Map<String, Value>) -> Result<Settings, ConfigError> {
     if let Some(field) = config
         .keys()
         .find(|key| !matches!(key.as_str(), "max_files" | "accept"))
@@ -89,7 +88,7 @@ fn parse(config: &Map<String, Value>) -> Result<Settings, ModelError> {
     Ok(Settings { max_files, accept })
 }
 
-pub fn validate_config(config: &Map<String, Value>) -> Result<(), ModelError> {
+pub fn validate_config(config: &Map<String, Value>) -> Result<(), ConfigError> {
     parse(config).map(|_| ())
 }
 
@@ -268,7 +267,7 @@ impl ActivityType for File {
         config: &Map<String, Value>,
         _profiles: &EffectiveProfiles,
     ) -> Result<(), ConfigError> {
-        validate_config(config).map_err(config_error)
+        validate_config(config)
     }
 
     fn points_total(&self, _config: &Map<String, Value>) -> Option<Decimal> {

@@ -1,6 +1,6 @@
 //! The five types built into the server, as an activity registry (ADR-0097).
 
-use activity::{InstallError, Types};
+use crate::{InstallError, Types};
 
 use super::file::File;
 use super::form::Form;

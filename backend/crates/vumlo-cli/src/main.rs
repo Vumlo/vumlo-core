@@ -434,7 +434,7 @@ async fn main() -> ExitCode {
     // names its modules itself.
     events::install(learning::subscribers()).expect("the registry is installed once, at start");
     activity::install(
-        content::builtin_types().expect("the built-in activity types have unique ids"),
+        activity::types::builtin_types().expect("the built-in activity types have unique ids"),
     )
     .expect("the activity types are installed once, at start");
     match run(Cli::parse()).await {

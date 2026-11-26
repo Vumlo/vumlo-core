@@ -8,7 +8,6 @@ mod rules;
 mod service;
 mod standing;
 mod state;
-mod types;
 
 pub use model::{
     Access, Assignment, AssignmentSummary, ConditionInput, ConditionKind, ContentModule,
@@ -33,22 +32,6 @@ pub use service::{
     template_counts, unmark_done, update_module,
 };
 pub use state::ContentState;
-pub use types::builtin_types;
-pub use types::form::Holders;
-pub use types::quiz::ResultQuestion;
-pub use types::quiz::result_questions as quiz_result_questions;
-
-// The ids of the built-in types whose own features other crates serve: the result of a quiz, the
-// answers of a form, the text an agent writes (ADR-0097). Everything else asks the `Kind`.
-pub mod form {
-    pub use crate::types::form::ID;
-}
-pub mod quiz {
-    pub use crate::types::quiz::ID;
-}
-pub mod text {
-    pub use crate::types::text::ID;
-}
 // Seeds the references of an item for the tests of `learning::files`.
 #[cfg(feature = "testing")]
 pub use repo::replace_item_files;

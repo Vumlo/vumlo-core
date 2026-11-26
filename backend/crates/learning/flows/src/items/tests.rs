@@ -16,11 +16,12 @@ use crate::{LearningError, items};
 use access::{Actor, CourseRole};
 use activity::EffectiveProfiles;
 use activity::MaxPoints;
+use activity::types::text;
 use auth::{self, Email, NewUser, PersonName};
 use common::PageParams;
 use common::Role;
 use content::{
-    self, Assignment, ContentError, ContentTitle, ItemPatch, ItemRules, SubmissionSettings, text,
+    self, Assignment, ContentError, ContentTitle, ItemPatch, ItemRules, SubmissionSettings,
 };
 use gradebook::{
     Cell, GradeInput, GradebookError, Students, gradebook, publish_grades, save_grade,

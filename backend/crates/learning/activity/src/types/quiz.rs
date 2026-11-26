@@ -8,14 +8,11 @@ use serde_json::{Map, Value, json};
 use sqlx::types::Decimal;
 
 use super::{
-    Problems, answer_path, answers_of, config_error, document_problem, parse_number, shape_problem,
-    valid_id,
+    Problems, answer_path, answers_of, document_problem, parse_number, shape_problem, valid_id,
 };
-use crate::model::ModelError;
-use activity::MaxPoints;
-use activity::{
+use crate::{
     ActivityType, AutoGrade, Capabilities, Claims, CompletionPolicy, ConfigError, DocumentErrors,
-    EffectiveProfiles, FileRef, Stage, ValidContent, file_refs_under, validate_document,
+    EffectiveProfiles, FileRef, MaxPoints, Stage, ValidContent, file_refs_under, validate_document,
 };
 
 pub const ID: &str = "quiz";
@@ -126,8 +123,8 @@ fn allowed_fields(kind: QuestionType) -> &'static [&'static str] {
 fn parse(
     config: &Map<String, Value>,
     profiles: Option<&EffectiveProfiles>,
-) -> Result<ParsedQuiz, ModelError> {
-    let bad = |message: String| ModelError::Config(message);
+) -> Result<ParsedQuiz, ConfigError> {
+    let bad = |message: String| ConfigError::new(message);
     let size = serde_json::to_vec(config).map_or(usize::MAX, |bytes| bytes.len());
     if size > MAX_CONFIG_BYTES {
         return Err(bad("the quiz config is larger than 2 MiB".to_owned()));
@@ -302,11 +299,11 @@ fn parse(
 /// The files the documents of a quiz config name (the prompts, the explanations and the options),
 /// each with its path in the config. The documents are read by the validator's parser, and a
 /// config or document that cannot be read is an error, never "no files" (ADR-0069).
-pub fn file_refs(config: &Map<String, Value>) -> Result<Vec<FileRef>, ModelError> {
+pub fn file_refs(config: &Map<String, Value>) -> Result<Vec<FileRef>, ConfigError> {
     let raw: RawConfig = serde_json::from_value(Value::Object(config.clone()))
         .map_err(|error| shape_problem("quiz", &error))?;
     let mut refs = Vec::new();
-    let mut add = |path: String, document: &Value| -> Result<(), ModelError> {
+    let mut add = |path: String, document: &Value| -> Result<(), ConfigError> {
         let found =
             file_refs_under(&path, document).map_err(|errors| document_problem(&path, &errors))?;
         refs.extend(found);
@@ -345,7 +342,7 @@ pub fn answer_file_refs(content: &Map<String, Value>) -> Result<Vec<FileRef>, Do
 pub fn validate_config(
     config: &Map<String, Value>,
     profiles: &EffectiveProfiles,
-) -> Result<(), ModelError> {
+) -> Result<(), ConfigError> {
     parse(config, Some(profiles)).map(|_| ())
 }
 
@@ -667,7 +664,7 @@ impl ActivityType for Quiz {
         config: &Map<String, Value>,
         profiles: &EffectiveProfiles,
     ) -> Result<(), ConfigError> {
-        validate_config(config, profiles).map_err(config_error)
+        validate_config(config, profiles)
     }
 
     fn points_total(&self, config: &Map<String, Value>) -> Option<Decimal> {
@@ -707,7 +704,7 @@ impl ActivityType for Quiz {
     }
 
     fn config_file_refs(&self, config: &Map<String, Value>) -> Result<Vec<FileRef>, ConfigError> {
-        file_refs(config).map_err(config_error)
+        file_refs(config)
     }
 
     fn submission_file_refs(

@@ -111,8 +111,8 @@ async fn two_creates_racing_for_the_last_position_one_gets_409() {
 // -----------------------------------------------------------------------------------------
 
 use crate::tests::kind;
-use crate::types::{form, quiz, text};
 use activity::MaxPoints;
+use activity::types::{form, quiz, text};
 
 fn text(points: &str, is_bonus: bool) -> Assignment {
     Assignment {

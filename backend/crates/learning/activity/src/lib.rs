@@ -7,6 +7,7 @@ mod document;
 mod model;
 mod points;
 mod registry;
+pub mod types;
 
 pub use contract::{AutoGrade, Claims, Stage, ValidContent};
 pub use document::{
