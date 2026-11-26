@@ -26,6 +26,10 @@ must do, in order, besides getting the new release. See [RELEASING.md](RELEASING
   `file` or `assignment`). To create a file item send `"type": "shared_file"` instead of `"kind": "file"`; `kind` is
   ignored in a request, and a request with no `type` and no `assignment` is a lecture. The web app and the desktop app
   of this release already do this; an older web build against this server cannot open lectures and files.
+- **`assignment.type` is gone from a response.** `Assignment` and `AssignmentSummary` no longer repeat the type of the
+  item: read `item.type`. A request that creates an assignment still sends `assignment.type`.
+- The Buddy of an administrator in the student app has the teacher's tools; the tools for people and the organisation
+  need the console (ADR-0095), where the Buddy has no launcher yet.
 - Plugins and the API of items are what changes for an installation; the API of the people does not.
 
 ### Changed
