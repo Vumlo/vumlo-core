@@ -1,7 +1,7 @@
 //! The `form` type (ADR-0051): the config, the answers, the claims on the course and the facts
 //! added to the config when it is read.
 
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeSet, HashSet};
 
 use chrono::NaiveDate;
 use serde::Deserialize;
@@ -11,8 +11,8 @@ use uuid::Uuid;
 
 use super::{Problems, answer_path, answers_of, parse_number, shape_problem, valid_id};
 use crate::{
-    ActivityType, AutoGrading, Claims, CompletionPolicy, ConfigError, DocumentErrors,
-    EffectiveProfiles, Graded, Stage, Submissions, ValidContent, valid_href,
+    ActivityType, AutoGrading, Claims, ClassFacts, CompletionPolicy, ConfigError, DocumentErrors,
+    EffectiveProfiles, Graded, Holders, Stage, Submissions, ValidContent, Viewer, valid_href,
 };
 
 pub const ID: &str = "form";
@@ -498,9 +498,6 @@ pub fn claims(config: &Map<String, Value>, content: &Map<String, Value>) -> Clai
     claims
 }
 
-/// The holder of an exclusive option: the student and the name to show staff.
-pub type Holders = HashMap<(String, String), (Uuid, String)>;
-
 /// Adds to a config the facts of ADR-0051 point 5: whether a field has answers (staff), and for
 /// each option of an exclusive field whether another student holds it and, for staff, who.
 pub fn decorate(
@@ -594,6 +591,20 @@ impl Graded for Form {
     fn structure(&self, config: &Map<String, Value>) -> Option<Value> {
         structure(config)
     }
+
+    fn reads_class_facts(&self) -> bool {
+        true
+    }
+
+    fn annotate_config(&self, config: &mut Map<String, Value>, facts: &ClassFacts, viewer: Viewer) {
+        decorate(
+            config,
+            &facts.answered,
+            &facts.holders,
+            viewer.staff,
+            viewer.user,
+        );
+    }
 }
 
 impl Submissions for Form {
@@ -613,6 +624,10 @@ impl Submissions for Form {
 
     fn auto_grading(&self) -> Option<&dyn AutoGrading> {
         None
+    }
+
+    fn lists_responses(&self) -> bool {
+        true
     }
 }
 

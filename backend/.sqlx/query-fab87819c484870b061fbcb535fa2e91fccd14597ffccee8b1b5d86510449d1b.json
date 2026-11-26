@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT pg_advisory_xact_lock(hashtextextended('form:' || $1::text, 0))",
+  "query": "SELECT pg_advisory_xact_lock(hashtextextended('claims:' || $1::text, 0))",
   "describe": {
     "columns": [
       {
@@ -19,5 +19,5 @@
       null
     ]
   },
-  "hash": "3ef563182a0940cd292e6d302fdcaa149b5fe77a58fdc12b46a8e02a93a79aca"
+  "hash": "fab87819c484870b061fbcb535fa2e91fccd14597ffccee8b1b5d86510449d1b"
 }

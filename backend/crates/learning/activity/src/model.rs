@@ -10,7 +10,10 @@ use serde_json::{Map, Value};
 use sqlx::types::Decimal;
 use uuid::Uuid;
 
-use crate::{AutoGrade, Claims, DocumentErrors, EffectiveProfiles, FileRef, Stage, ValidContent};
+use crate::{
+    AutoGrade, Claims, ClassFacts, DocumentErrors, EffectiveProfiles, FileRef, ReviewQuestion,
+    Stage, ValidContent, Viewer,
+};
 
 /// A configuration the type refuses. The text is fixed and never repeats what was sent.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -130,6 +133,23 @@ pub trait Graded: Send + Sync {
     fn config_file_refs(&self, _config: &Map<String, Value>) -> Result<Vec<FileRef>, ConfigError> {
         Ok(Vec::new())
     }
+
+    /// Whether [`annotate_config`](Graded::annotate_config) wants the facts of the class, so that
+    /// the reader of the item is only asked for them when the type uses them. Default: no.
+    fn reads_class_facts(&self) -> bool {
+        false
+    }
+
+    /// Adds to `config`, as it is read, what the class has done with it (ADR-0051 point 5): which
+    /// fields have answers (staff) and who holds each exclusive option (staff by name, a student
+    /// only that it is taken). Default: nothing.
+    fn annotate_config(
+        &self,
+        _config: &mut Map<String, Value>,
+        _facts: &ClassFacts,
+        _viewer: Viewer,
+    ) {
+    }
 }
 
 /// A graded activity a student hands something in for.
@@ -152,6 +172,18 @@ pub trait Submissions: Send + Sync {
     /// submissions answers, and one that implements [`AutoGrading`] returns `Some(self)`.
     fn auto_grading(&self) -> Option<&dyn AutoGrading>;
 
+    /// The review tier: what a student sees of their own attempt once the grade is published, or
+    /// `None` for a type that shows no such result. Default: none.
+    fn reviewing(&self) -> Option<&dyn Reviewing> {
+        None
+    }
+
+    /// Whether staff may list the latest attempt of every current student, and who has none
+    /// (ADR-0051 point 7). Default: no.
+    fn lists_responses(&self) -> bool {
+        false
+    }
+
     /// Every file a stored `content` names, each with its path in the content. A type that holds
     /// no document in its content names none (ADR-0069).
     fn submission_file_refs(
@@ -172,6 +204,19 @@ pub trait Submissions: Send + Sync {
     ) -> Result<(), DocumentErrors> {
         Ok(())
     }
+}
+
+/// A type that shows a student the questions of their own attempt with the server's scores
+/// (ADR-0050 point 8).
+pub trait Reviewing: Send + Sync {
+    /// The questions of the review: the student's answers, the stored scores and, when the type
+    /// shows them, the correct answers and explanations. `None` when the config cannot be read.
+    fn review(
+        &self,
+        config: &Map<String, Value>,
+        content: &Map<String, Value>,
+        auto_scores: &Map<String, Value>,
+    ) -> Option<Vec<ReviewQuestion>>;
 }
 
 /// A type that scores a submitted attempt by itself (ADR-0050).

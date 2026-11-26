@@ -2,8 +2,8 @@ use std::collections::BTreeMap;
 
 use crate::types::{file, form, no_submission, quiz, text};
 use crate::{
-    ActivityType, Capabilities, CompletionPolicy, DocumentErrors, EffectiveProfiles, Graded, Stage,
-    Submissions, ValidContent,
+    ActivityType, Capabilities, ClassFacts, CompletionPolicy, DocumentErrors, EffectiveProfiles,
+    Graded, Stage, Submissions, ValidContent, Viewer,
 };
 use serde_json::{Map, Value, json};
 use uuid::Uuid;
@@ -67,6 +67,56 @@ fn built_in_table() {
         assert_eq!(kind.capabilities(), capabilities, "{id}");
         assert_eq!(kind.completion(), completion, "{id}");
     }
+}
+
+/// The optional hooks: which of the five types reads the facts of the class, lists responses and
+/// reviews an attempt. A change is a visible edit here.
+#[test]
+fn the_hooks_a_type_has() {
+    let types = builtin_types().unwrap();
+    // (id, reads class facts, lists responses, reviews)
+    let table = [
+        (text::ID, false, false, false),
+        (no_submission::ID, false, false, false),
+        (quiz::ID, false, false, true),
+        (form::ID, true, true, false),
+        (file::ID, false, false, false),
+    ];
+    for (id, reads, lists, reviews) in table {
+        let graded = types.get(id).unwrap().graded().expect("graded");
+        assert_eq!(graded.reads_class_facts(), reads, "{id} reads class facts");
+        let submissions = graded.submissions();
+        let lists_responses = submissions.is_some_and(|tier| tier.lists_responses());
+        assert_eq!(lists_responses, lists, "{id} lists responses");
+        let reviewing = submissions.is_some_and(|tier| tier.reviewing().is_some());
+        assert_eq!(reviewing, reviews, "{id} reviews");
+    }
+}
+
+#[test]
+fn a_type_without_the_hook_leaves_the_config_as_it_was() {
+    let config = json!({"v": 1, "fields": [{"id": "f", "rules": {"exclusive": true}}]});
+    let facts = ClassFacts::default();
+    let viewer = Viewer {
+        staff: true,
+        user: Uuid::now_v7(),
+    };
+    for ty in [
+        &text::Text as &dyn ActivityType,
+        &no_submission::NoSubmission,
+        &quiz::Quiz,
+        &file::File,
+    ] {
+        let mut shown = obj(&config).clone();
+        ty.graded()
+            .expect("graded")
+            .annotate_config(&mut shown, &facts, viewer);
+        assert_eq!(Value::Object(shown), config, "{}", ty.id());
+    }
+    // A form annotates it: staff are told whether the field has answers.
+    let mut shown = obj(&config).clone();
+    form::Form.annotate_config(&mut shown, &facts, viewer);
+    assert_ne!(Value::Object(shown), config);
 }
 
 // The tests below ask each type through the contract; the rules themselves are tested in the

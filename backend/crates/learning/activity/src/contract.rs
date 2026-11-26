@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 use serde_json::{Map, Value};
 use sqlx::types::Decimal;
@@ -82,4 +82,36 @@ impl Claims {
     pub fn is_empty(&self) -> bool {
         self.people.is_empty() && self.exclusive.is_empty() && self.files.is_empty()
     }
+}
+
+/// Who reads an activity: staff see more of what the class did with it than a student does.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Viewer {
+    pub staff: bool,
+    pub user: uuid::Uuid,
+}
+
+/// The holder of an exclusive option: the student and the name to show staff.
+pub type Holders = HashMap<(String, String), (uuid::Uuid, String)>;
+
+/// What the class has done with the config of an activity, for the type to show beside it
+/// (ADR-0051 point 5): the answers' keys that have a value in a latest attempt, and who holds
+/// each exclusive option. `assessment` computes it for any type from `claims()`.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ClassFacts {
+    /// Ids of the fields that have an answer in a latest attempt.
+    pub answered: HashSet<String>,
+    pub holders: Holders,
+}
+
+/// One question of a review as the student sees it (ADR-0050 point 8).
+#[derive(Debug, Clone, PartialEq)]
+pub struct ReviewQuestion {
+    pub id: String,
+    pub points: Decimal,
+    pub got: Option<Decimal>,
+    pub answer: Option<Value>,
+    /// The answer key, only when the type shows it.
+    pub correct: Option<Value>,
+    pub explanation: Option<Value>,
 }

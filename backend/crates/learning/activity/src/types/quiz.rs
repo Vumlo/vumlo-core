@@ -12,8 +12,8 @@ use super::{
 };
 use crate::{
     ActivityType, AutoGrade, AutoGrading, Claims, CompletionPolicy, ConfigError, DocumentErrors,
-    EffectiveProfiles, FileRef, Graded, MaxPoints, Stage, Submissions, ValidContent,
-    file_refs_under, validate_document,
+    EffectiveProfiles, FileRef, Graded, MaxPoints, ReviewQuestion, Reviewing, Stage, Submissions,
+    ValidContent, file_refs_under, validate_document,
 };
 
 pub const ID: &str = "quiz";
@@ -584,25 +584,13 @@ pub fn auto_grade(config: &Map<String, Value>, content: &Map<String, Value>) -> 
     })
 }
 
-/// One question of a result as the student sees it (ADR-0050 point 8).
-#[derive(Debug, Clone, PartialEq)]
-pub struct ResultQuestion {
-    pub id: String,
-    pub points: Decimal,
-    pub got: Option<Decimal>,
-    pub answer: Option<Value>,
-    /// The answer key, only when the quiz shows it.
-    pub correct: Option<Value>,
-    pub explanation: Option<Value>,
-}
-
 /// The questions of a result: the student's answers, the stored scores and, when the quiz shows
 /// them, the correct answers and explanations.
 pub fn result_questions(
     config: &Map<String, Value>,
     content: &Map<String, Value>,
     auto_scores: &Map<String, Value>,
-) -> Option<Vec<ResultQuestion>> {
+) -> Option<Vec<ReviewQuestion>> {
     let quiz = parse(config, None).ok()?;
     let answers = content.get("answers").and_then(Value::as_object);
     let raw_questions = config.get("questions").and_then(Value::as_array)?;
@@ -621,7 +609,7 @@ pub fn result_questions(
                 QuestionType::ShortText => raw.get("accepted").cloned(),
                 QuestionType::LongText => None,
             });
-            ResultQuestion {
+            ReviewQuestion {
                 id: question.id.clone(),
                 points: question.points,
                 got: auto_scores
@@ -707,12 +695,27 @@ impl Submissions for Quiz {
         Some(self)
     }
 
+    fn reviewing(&self) -> Option<&dyn Reviewing> {
+        Some(self)
+    }
+
     fn submission_file_refs(
         &self,
         _config: &Map<String, Value>,
         content: &Map<String, Value>,
     ) -> Result<Vec<FileRef>, DocumentErrors> {
         answer_file_refs(content)
+    }
+}
+
+impl Reviewing for Quiz {
+    fn review(
+        &self,
+        config: &Map<String, Value>,
+        content: &Map<String, Value>,
+        auto_scores: &Map<String, Value>,
+    ) -> Option<Vec<ReviewQuestion>> {
+        result_questions(config, content, auto_scores)
     }
 }
 

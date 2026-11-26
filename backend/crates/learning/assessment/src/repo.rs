@@ -370,11 +370,11 @@ pub async fn students_among(
     .await
 }
 
-/// Takes the lock that serializes the submits of one form until the transaction ends
-/// (ADR-0051 point 4).
-pub async fn lock_form(conn: &mut PgConnection, assignment_id: Uuid) -> Result<(), sqlx::Error> {
+/// Takes the lock that serializes the submits of one assignment whose claims exclude each other,
+/// until the transaction ends (ADR-0051 point 4).
+pub async fn lock_claims(conn: &mut PgConnection, assignment_id: Uuid) -> Result<(), sqlx::Error> {
     sqlx::query!(
-        "SELECT pg_advisory_xact_lock(hashtextextended('form:' || $1::text, 0))",
+        "SELECT pg_advisory_xact_lock(hashtextextended('claims:' || $1::text, 0))",
         assignment_id.to_string()
     )
     .execute(conn)
