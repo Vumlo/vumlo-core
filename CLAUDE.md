@@ -32,7 +32,8 @@ Each layer is a crate, and a crate depends only on the ones below it. Cargo enfo
       -> common     Role, ApiError, pagination, text_enum!
 
 `db` (migrations, the installation record, the CLI's audit row) is a crate beside the chain.
-`activity` (`backend/crates/learning/activity`) is another one: the contract of an activity type, the five built-in
+`activity` (`backend/crates/learning/activity`) is another one: the contract of an activity type, in the tiers
+`ActivityType`, `Graded`, `Submissions` and `AutoGrading` (a type implements the tiers it has), the five built-in
 types written against it (`text`, `no_submission`, `file`, `form`, `quiz`) and the block document model its signature
 names (ADR-0097, ADR-0098). It has no schema and depends on nothing of ours but `api-types` and
 `vumlo-config` (`architecture.rs` checks the manifest); `content` and the crates above it use it.
