@@ -18,16 +18,15 @@ use sqlx::PgConnection;
 use uuid::Uuid;
 
 use super::model::{
-    Attempt, AutoTotal, Draft, DueDraft, FormFacts, MySubmission, PublishedScore, QuizResult,
-    QuizResultStart, Responses, StudentSubmission, Window,
+    Attempt, AttemptResult, AutoTotal, Draft, DueDraft, MySubmission, PublishedScore, Responses,
+    ResultStart, StudentSubmission, Window,
 };
 use super::repo;
 use access::Actor;
 use access::{self, AccessError, Action};
-use activity::types::{form, quiz};
 use activity::{
-    AutoGrade, DocumentErrors, EffectiveProfiles, FileRef, GradedKind, Stage, Submissions,
-    distinct_ids,
+    AutoGrade, ClassFacts, DocumentErrors, EffectiveProfiles, FileRef, GradedKind, Reviewing,
+    Stage, Submissions, distinct_ids,
 };
 use common::{Page, PageParams};
 use content::{self, Assignment, OnDeadline, OpenError, OpenedAssignment};
@@ -148,6 +147,11 @@ fn require_submissions(opened: &OpenedAssignment) -> Result<(), AssessmentError>
 fn submissions(kind: GradedKind) -> Result<&'static dyn Submissions, AssessmentError> {
     kind.submissions()
         .ok_or(AssessmentError::TakesNoSubmissions)
+}
+
+/// The review tier of an assignment's type, if it has one.
+fn reviewing(kind: GradedKind) -> Option<&'static dyn Reviewing> {
+    kind.submissions().and_then(Submissions::reviewing)
 }
 
 /// An assignment that a rule keeps closed takes no work yet: no draft, no submit, no upload
@@ -580,10 +584,13 @@ pub async fn finish_submit(
         },
     )
     .await?;
-    if assignment.assignment_type.id() == quiz::ID {
+    if submissions(assignment.assignment_type)?
+        .auto_grading()
+        .is_some()
+    {
         events::emit(
             conn,
-            Event::QuizAttemptSubmitted {
+            Event::AttemptAutograded {
                 assignment_id,
                 student_id,
                 course_id,
@@ -629,7 +636,7 @@ async fn check_claims(
         }
     }
     if !claims.exclusive.is_empty() {
-        repo::lock_form(conn, assignment_id).await?;
+        repo::lock_claims(conn, assignment_id).await?;
         for other in repo::latest_contents(conn, assignment_id).await? {
             if other.student.user_id == student_id {
                 continue;
@@ -709,16 +716,17 @@ fn unusable(path: &str) -> AssessmentError {
     AssessmentError::Document(DocumentErrors::one(path, "is not a file you can use here"))
 }
 
-/// The facts a form's config shows besides what was configured: which fields have answers and who
-/// holds each exclusive option (ADR-0051 point 5). The caller has authorized the read.
-pub async fn form_facts(
+/// What the class has done with the config of an assignment: which fields have answers and who
+/// holds each exclusive option (ADR-0051 point 5). A type that reads them shows them beside its
+/// config (`Graded::annotate_config`). The caller has authorized the read.
+pub async fn class_facts(
     conn: &mut PgConnection,
     assignment_id: Uuid,
     assignment_type: GradedKind,
     config: &Map<String, Value>,
-) -> Result<FormFacts, AssessmentError> {
+) -> Result<ClassFacts, AssessmentError> {
     let tier = submissions(assignment_type)?;
-    let mut facts = FormFacts::default();
+    let mut facts = ClassFacts::default();
     for latest in repo::latest_contents(conn, assignment_id).await? {
         if let Some(answers) = latest.content.get("answers").and_then(Value::as_object) {
             facts.answered.extend(answers.keys().cloned());
@@ -733,37 +741,38 @@ pub async fn form_facts(
     Ok(facts)
 }
 
-/// First half of the result of a quiz: authorizes the caller as a student who may see their
+/// First half of the result of an attempt: authorizes the caller as a student who may see their
 /// grades, and locks the assignment so that the config does not change under the result. The
 /// flow (`learning::items::result`) then reads the published grade of the caller from the
-/// gradebook and calls [`finish_quiz_result`] (ADR-0050 point 8).
-pub async fn begin_quiz_result(
+/// gradebook and calls [`finish_result`] (ADR-0050 point 8). A type that does not review its
+/// attempts has nothing to show.
+pub async fn begin_result(
     conn: &mut PgConnection,
     actor: &Actor,
     assignment_id: Uuid,
-) -> Result<QuizResultStart, AssessmentError> {
+) -> Result<ResultStart, AssessmentError> {
     let opened = open(conn, actor, assignment_id).await?;
     access::authorize(actor, Action::ViewOwnGrades(opened.access))?;
-    if opened.assignment_type.id() != quiz::ID {
+    if reviewing(opened.assignment_type).is_none() {
         return Err(AssessmentError::NothingToShow);
     }
     let assignment = lock(conn, assignment_id).await?;
-    Ok(QuizResultStart {
+    Ok(ResultStart {
         assignment_id,
         assignment,
     })
 }
 
-/// The caller's result of a quiz: their latest attempt, the server's score of each question and the
-/// published grade. Only once a score is published; before that there is nothing to show
+/// The caller's result of an attempt: their latest attempt, the server's score of each question
+/// and the published grade. Only once a score is published; before that there is nothing to show
 /// (ADR-0050 point 8). `published` is what the gradebook published for the caller, if anything.
-pub async fn finish_quiz_result(
+pub async fn finish_result(
     conn: &mut PgConnection,
     actor: &Actor,
-    start: QuizResultStart,
+    start: ResultStart,
     published: Option<PublishedScore>,
-) -> Result<QuizResult, AssessmentError> {
-    let QuizResultStart {
+) -> Result<AttemptResult, AssessmentError> {
+    let ResultStart {
         assignment_id,
         assignment,
     } = start;
@@ -772,9 +781,11 @@ pub async fn finish_quiz_result(
     let (attempt, scores) = repo::latest_with_scores(conn, assignment_id, actor.user_id())
         .await?
         .ok_or(AssessmentError::NothingToShow)?;
-    let questions = quiz::result_questions(&assignment.config, &attempt.content, &scores)
+    let questions = reviewing(assignment.assignment_type)
+        .ok_or(AssessmentError::NothingToShow)?
+        .review(&assignment.config, &attempt.content, &scores)
         .ok_or(AssessmentError::NothingToShow)?;
-    Ok(QuizResult {
+    Ok(AttemptResult {
         score,
         max_points: assignment.max_points.value(),
         published_at: published.published_at,
@@ -793,7 +804,7 @@ pub async fn responses(
 ) -> Result<Responses, AssessmentError> {
     let opened = open(conn, actor, assignment_id).await?;
     access::authorize(actor, Action::ViewSubmissions(opened.access))?;
-    if opened.assignment_type.id() != form::ID {
+    if !submissions(opened.assignment_type)?.lists_responses() {
         return Err(AssessmentError::NothingToShow);
     }
     let students = repo::current_students(conn, opened.course_id).await?;

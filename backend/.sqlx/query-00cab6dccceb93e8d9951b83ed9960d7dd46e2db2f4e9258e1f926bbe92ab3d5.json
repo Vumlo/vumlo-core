@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT count(*) AS \"n!\" FROM events.outbox\n               WHERE type IN ('submission.submitted', 'quiz.attempt_submitted', 'grade.published')",
+  "query": "SELECT count(*) AS \"n!\" FROM events.outbox\n               WHERE type IN ('submission.submitted', 'attempt.autograded', 'grade.published')",
   "describe": {
     "columns": [
       {
@@ -17,5 +17,5 @@
       null
     ]
   },
-  "hash": "d4d272d69edcb859a5bb98b9837835824641413d9797f2a4932bd69c8c6f1378"
+  "hash": "00cab6dccceb93e8d9951b83ed9960d7dd46e2db2f4e9258e1f926bbe92ab3d5"
 }

@@ -505,7 +505,7 @@ async fn a_quiz_is_graded_when_it_is_submitted_at_the_deadline() {
         .await
         .unwrap();
         assert_eq!(score, "1.00");
-        assert_eq!(w.events("quiz.attempt_submitted").await, 1);
+        assert_eq!(w.events("attempt.autograded").await, 1);
     })
     .await;
 }

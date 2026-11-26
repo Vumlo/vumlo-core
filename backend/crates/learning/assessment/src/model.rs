@@ -1,12 +1,9 @@
-use std::collections::HashSet;
-
 use chrono::{DateTime, Utc};
 use serde_json::{Map, Value};
 use sqlx::types::Decimal;
 use uuid::Uuid;
 
-use activity::types::form::Holders;
-use activity::types::quiz::ResultQuestion;
+use activity::ReviewQuestion;
 use common::Page;
 use content::SubmissionSettings;
 
@@ -74,14 +71,6 @@ pub struct Responses {
     pub rows: Vec<LatestContent>,
 }
 
-/// What a form's config shows besides what was configured (ADR-0051 point 5).
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct FormFacts {
-    /// Ids of the fields that have an answer in a latest attempt.
-    pub answered: HashSet<String>,
-    pub holders: Holders,
-}
-
 /// What the gradebook published for the caller on a quiz: the part of a quiz result that is not
 /// `assessment`'s to know.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -91,24 +80,24 @@ pub struct PublishedScore {
     pub published_at: DateTime<Utc>,
 }
 
-/// A quiz that the caller may see the result of, with its assignment locked: the state between
-/// [`begin_quiz_result`](super::begin_quiz_result) and
-/// [`finish_quiz_result`](super::finish_quiz_result).
+/// An assignment whose type reviews attempts and that the caller may see the result of, with the
+/// assignment locked: the state between [`begin_result`](super::begin_result) and
+/// [`finish_result`](super::finish_result).
 #[derive(Debug)]
-pub struct QuizResultStart {
+pub struct ResultStart {
     pub(super) assignment_id: Uuid,
     pub(super) assignment: content::Assignment,
 }
 
-/// A quiz result as the service builds it (ADR-0050 point 8).
+/// The result of an attempt as the service builds it (ADR-0050 point 8).
 #[derive(Debug, Clone, PartialEq)]
-pub struct QuizResult {
+pub struct AttemptResult {
     pub score: Decimal,
     pub max_points: Decimal,
     pub published_at: DateTime<Utc>,
     pub feedback: Option<String>,
     pub attempt: i32,
-    pub questions: Vec<ResultQuestion>,
+    pub questions: Vec<ReviewQuestion>,
 }
 
 /// A student's own work: the draft, if any, and a page of attempts, newest first.

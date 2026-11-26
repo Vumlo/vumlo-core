@@ -91,7 +91,7 @@ impl World {
     /// A plugin that asked for every scope and was granted `scopes` and `courses`.
     async fn install(&self, id: &str, scopes: &[Scope], courses: CourseScope) -> Installed {
         let manifest = parse_manifest(
-            json!({"id": id, "version": "1", "api": "1",
+            json!({"id": id, "version": "1", "api": "2",
                    "scopes": Scope::ALL.map(Scope::as_str)})
             .to_string()
             .as_bytes(),
@@ -254,11 +254,10 @@ async fn every_read_needs_its_scope_before_it_looks_for_anything() {
             "/assignments".to_owned(),
             format!("/assignments/{any}"),
             format!("/submissions/{any}"),
-            format!("/submissions/{any}/fields"),
+            format!("/submissions/{any}/answers"),
             format!("/assignments/{any}/submissions"),
             format!("/courses/{any}/members"),
             "/grades".to_owned(),
-            format!("/assignments/{any}/quiz"),
             format!("/assignments/{any}/attempts"),
             format!("/users/contact?ids={any}"),
         ] {
@@ -292,13 +291,12 @@ async fn an_id_that_is_not_there_is_404_for_a_plugin_that_reaches_every_course()
         for path in [
             format!("/assignments/{any}"),
             format!("/submissions/{any}"),
-            format!("/submissions/{any}/fields"),
+            format!("/submissions/{any}/answers"),
             format!("/assignments/{any}/submissions"),
             format!("/courses/{any}/members"),
             format!("/grades?course_id={any}"),
             format!("/grades?assignment_id={any}"),
             format!("/assignments?course_id={any}"),
-            format!("/assignments/{any}/quiz"),
             format!("/assignments/{any}/attempts"),
         ] {
             w.get(&all, &path).await.problem(404);
@@ -376,7 +374,7 @@ async fn assignments_are_read_as_a_student_sees_them_and_page_by_their_last_chan
         let _draft = w.item(w.module, "text", json!({}), "10", false).await;
         w.text(w.other_module).await;
 
-        // The draft is not listed; the others are, with their kind, points and (for a form) fields.
+        // The draft is not listed; the others are, with their kind, points and (for a form) config.
         let list = items(
             &w.get(&all, &format!("/assignments?course_id={}", w.course))
                 .await,
@@ -385,14 +383,14 @@ async fn assignments_are_read_as_a_student_sees_them_and_page_by_their_last_chan
         let form_row = list.iter().find(|a| a["id"] == json!(form)).unwrap();
         assert_eq!(form_row["kind"], "form");
         assert_eq!(form_row["max_points"], "5.00");
-        assert_eq!(form_row["fields"][0]["id"], "name");
-        assert_eq!(form_row["fields"][0]["label"], "Team name");
+        assert_eq!(form_row["config"]["fields"][0]["id"], "name");
+        assert_eq!(form_row["config"]["fields"][0]["label"], "Team name");
         let text_row = list.iter().find(|a| a["id"] == json!(first)).unwrap();
-        assert!(text_row["fields"].is_null());
+        assert!(text_row["config"].is_null());
         assert_eq!(text_row["course_id"], json!(w.course));
         // The same row by id.
         let one = w.get(&all, &format!("/assignments/{form}")).await.json();
-        assert_eq!(one["fields"], form_row["fields"]);
+        assert_eq!(one["config"], form_row["config"]);
 
         // Paging: one at a time, the cursor is opaque, and the pages add up to the whole list.
         let mut seen = Vec::new();
@@ -458,7 +456,7 @@ async fn the_values_of_a_form_are_read_by_field_and_only_for_a_form() {
             .await;
         let essay = w.submit_text(&w.s1, text, "words").await;
 
-        let answers = w.get(&all, &format!("/submissions/{filled}/fields")).await;
+        let answers = w.get(&all, &format!("/submissions/{filled}/answers")).await;
         assert_eq!(
             answers.status,
             200,
@@ -470,7 +468,7 @@ async fn the_values_of_a_form_are_read_by_field_and_only_for_a_form() {
         assert_eq!(body["student_id"], json!(w.s1.id));
         assert_eq!(body["assignment_id"], json!(form));
         // An essay has no fields.
-        w.get(&all, &format!("/submissions/{essay}/fields"))
+        w.get(&all, &format!("/submissions/{essay}/answers"))
             .await
             .problem(404);
         // A draft over the submitted attempt is no attempt.
@@ -488,7 +486,7 @@ async fn the_values_of_a_form_are_read_by_field_and_only_for_a_form() {
                 .fetch_one(&w.env.pool)
                 .await
                 .unwrap();
-        w.get(&all, &format!("/submissions/{draft}/fields"))
+        w.get(&all, &format!("/submissions/{draft}/answers"))
             .await
             .problem(404);
         w.get(&all, &format!("/submissions/{draft}"))
@@ -687,7 +685,7 @@ async fn a_quiz_is_read_without_its_key_and_its_attempts_with_their_scores() {
         w.submit_answers(&w.s2, quiz, json!({"q1": ["a"], "q2": "1"}))
             .await;
 
-        let response = w.get(&all, &format!("/assignments/{quiz}/quiz")).await;
+        let response = w.get(&all, &format!("/assignments/{quiz}")).await;
         assert_eq!(
             response.status,
             200,
@@ -708,10 +706,9 @@ async fn a_quiz_is_read_without_its_key_and_its_attempts_with_their_scores() {
         assert_eq!(body["config"]["questions"][0]["id"], "q1");
         assert_eq!(body["config"]["questions"][0]["options"][0]["id"], "a");
         assert_eq!(body["course_id"], json!(w.course));
-        // Not a quiz: not here.
-        w.get(&all, &format!("/assignments/{text}/quiz"))
-            .await
-            .problem(404);
+        // A type that exposes no config shows none, and one that scores no attempts has none to list.
+        let essay = w.get(&all, &format!("/assignments/{text}")).await.json();
+        assert!(essay["config"].is_null());
         w.get(&all, &format!("/assignments/{text}/attempts"))
             .await
             .problem(404);
@@ -816,7 +813,7 @@ async fn a_page_is_launched_only_for_an_assignment_in_a_course_the_plugin_reache
         let a = w.text(w.module).await;
         let b = w.text(w.other_module).await;
         let manifest = parse_manifest(
-            json!({"id": "paged", "version": "1", "api": "1", "ui": [
+            json!({"id": "paged", "version": "1", "api": "2", "ui": [
                 {"slot": "assignment.tab", "title": "Page", "path": "/ui"}]})
             .to_string()
             .as_bytes(),

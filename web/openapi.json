@@ -5375,6 +5375,13 @@
             "items": {
               "description": "An assignment as a student can see it: open, with its published title.",
               "properties": {
+                "config": {
+                  "description": "The part of the config the assignment's type exposes to a plugin: the fields of a form\n(`id`, `type`, `label`, `help`, `required`, `options`, `rules`) and the questions of a quiz\nwithout the answer key. Absent for a type that exposes none.",
+                  "type": [
+                    "object",
+                    "null"
+                  ]
+                },
                 "course_id": {
                   "format": "uuid",
                   "type": "string"
@@ -5383,16 +5390,6 @@
                   "format": "date-time",
                   "type": [
                     "string",
-                    "null"
-                  ]
-                },
-                "fields": {
-                  "description": "The fields of a `form` (`id`, `type`, `label`, `help`, `required`, `options`, `rules`); absent\nfor the other types.",
-                  "items": {
-                    "type": "object"
-                  },
-                  "type": [
-                    "array",
                     "null"
                   ]
                 },
@@ -5446,7 +5443,7 @@
         "properties": {
           "items": {
             "items": {
-              "description": "A submitted attempt at a quiz.",
+              "description": "A submitted attempt at an assignment that its type scores by itself.",
               "properties": {
                 "attempt": {
                   "format": "int32",
@@ -6143,9 +6140,48 @@
         ],
         "type": "object"
       },
+      "PluginAnswers": {
+        "description": "The values a student gave in an attempt of a type that shares them (a form), by field id.",
+        "properties": {
+          "answers": {
+            "type": "object"
+          },
+          "assignment_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "course_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "student_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "submission_id": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "submission_id",
+          "course_id",
+          "assignment_id",
+          "student_id",
+          "answers"
+        ],
+        "type": "object"
+      },
       "PluginAssignment": {
         "description": "An assignment as a student can see it: open, with its published title.",
         "properties": {
+          "config": {
+            "description": "The part of the config the assignment's type exposes to a plugin: the fields of a form\n(`id`, `type`, `label`, `help`, `required`, `options`, `rules`) and the questions of a quiz\nwithout the answer key. Absent for a type that exposes none.",
+            "type": [
+              "object",
+              "null"
+            ]
+          },
           "course_id": {
             "format": "uuid",
             "type": "string"
@@ -6154,16 +6190,6 @@
             "format": "date-time",
             "type": [
               "string",
-              "null"
-            ]
-          },
-          "fields": {
-            "description": "The fields of a `form` (`id`, `type`, `label`, `help`, `required`, `options`, `rules`); absent\nfor the other types.",
-            "items": {
-              "type": "object"
-            },
-            "type": [
-              "array",
               "null"
             ]
           },
@@ -6199,7 +6225,7 @@
         "type": "object"
       },
       "PluginAttempt": {
-        "description": "A submitted attempt at a quiz.",
+        "description": "A submitted attempt at an assignment that its type scores by itself.",
         "properties": {
           "attempt": {
             "format": "int32",
@@ -6291,38 +6317,6 @@
         ],
         "type": "object"
       },
-      "PluginFormAnswers": {
-        "description": "The values a student gave in a `form`, by field id.",
-        "properties": {
-          "answers": {
-            "type": "object"
-          },
-          "assignment_id": {
-            "format": "uuid",
-            "type": "string"
-          },
-          "course_id": {
-            "format": "uuid",
-            "type": "string"
-          },
-          "student_id": {
-            "format": "uuid",
-            "type": "string"
-          },
-          "submission_id": {
-            "format": "uuid",
-            "type": "string"
-          }
-        },
-        "required": [
-          "submission_id",
-          "course_id",
-          "assignment_id",
-          "student_id",
-          "answers"
-        ],
-        "type": "object"
-      },
       "PluginGrade": {
         "description": "A published grade. A draft is never here.",
         "properties": {
@@ -6396,32 +6390,6 @@
           "surname",
           "role",
           "source"
-        ],
-        "type": "object"
-      },
-      "PluginQuiz": {
-        "description": "The questions of a quiz as a student sees them: no `correct`, `answer`, `tolerance`,\n`accepted`, `explanation`, `partial_credit` or `grading_notes`.",
-        "properties": {
-          "assignment_id": {
-            "format": "uuid",
-            "type": "string"
-          },
-          "config": {
-            "type": "object"
-          },
-          "course_id": {
-            "format": "uuid",
-            "type": "string"
-          },
-          "max_points": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "assignment_id",
-          "course_id",
-          "max_points",
-          "config"
         ],
         "type": "object"
       },
@@ -8686,7 +8654,7 @@
       "name": ""
     },
     "title": "Vumlo API",
-    "version": "0.6.1"
+    "version": "0.7.5"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -19449,7 +19417,7 @@
         "operationId": "list_attempts",
         "parameters": [
           {
-            "description": "A quiz",
+            "description": "An assignment whose type scores attempts by itself",
             "in": "path",
             "name": "id",
             "required": true,
@@ -19517,7 +19485,7 @@
                 }
               }
             },
-            "description": "The plugin was not granted `quizzes:read`, or not the course"
+            "description": "The plugin was not granted `attempts:read`, or not the course"
           },
           "404": {
             "content": {
@@ -19527,7 +19495,7 @@
                 }
               }
             },
-            "description": "No such quiz"
+            "description": "No such assignment, or its type scores no attempts"
           },
           "422": {
             "content": {
@@ -19545,75 +19513,7 @@
             "plugin": []
           }
         ],
-        "summary": "The submitted attempts at a quiz with their score per question, by the time they were\nsubmitted; `updated_since` is that time. The scope `quizzes:read`.",
-        "tags": [
-          "plugin-api"
-        ]
-      }
-    },
-    "/api/v1/plugin-api/assignments/{id}/quiz": {
-      "get": {
-        "operationId": "get_quiz",
-        "parameters": [
-          {
-            "description": "A quiz",
-            "in": "path",
-            "name": "id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PluginQuiz"
-                }
-              }
-            },
-            "description": "The questions"
-          },
-          "401": {
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            },
-            "description": "No token, or one that is unknown or disabled"
-          },
-          "403": {
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            },
-            "description": "The plugin was not granted `quizzes:read`, or not the course"
-          },
-          "404": {
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            },
-            "description": "No such quiz"
-          }
-        },
-        "security": [
-          {
-            "plugin": []
-          }
-        ],
-        "summary": "The questions of a quiz without its answer key. The scope `quizzes:read`.",
+        "summary": "The submitted attempts at an assignment that its type scores by itself, with their score per\nquestion, by the time they were submitted; `updated_since` is that time. The scope\n`attempts:read`.",
         "tags": [
           "plugin-api"
         ]
@@ -20516,9 +20416,9 @@
         ]
       }
     },
-    "/api/v1/plugin-api/submissions/{id}/fields": {
+    "/api/v1/plugin-api/submissions/{id}/answers": {
       "get": {
-        "operationId": "get_form_answers",
+        "operationId": "get_answers",
         "parameters": [
           {
             "description": "The `submission_id` of an event",
@@ -20536,7 +20436,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/PluginFormAnswers"
+                  "$ref": "#/components/schemas/PluginAnswers"
                 }
               }
             },
@@ -20570,7 +20470,7 @@
                 }
               }
             },
-            "description": "No such submitted attempt, or not at a form"
+            "description": "No such submitted attempt, or its type shares no values"
           }
         },
         "security": [
@@ -20578,7 +20478,7 @@
             "plugin": []
           }
         ],
-        "summary": "The values a student gave in a submitted `form`, by field id. The scope `assignments:read`.",
+        "summary": "The values a student gave in a submitted attempt of a type that shares them (a form), by field\nid. The scope `assignments:read`.",
         "tags": [
           "plugin-api"
         ]

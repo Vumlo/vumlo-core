@@ -4,11 +4,10 @@
 
 use access::{PluginCaller, PluginSource};
 use api_types::{
-    Announcement, MAX_CONTACT_IDS, Page, PluginAnnouncementsQuery, PluginAssignment,
+    Announcement, MAX_CONTACT_IDS, Page, PluginAnnouncementsQuery, PluginAnswers, PluginAssignment,
     PluginAssignmentsQuery, PluginAttempt, PluginContact, PluginContactQuery, PluginContacts,
-    PluginDeletedQuery, PluginDeletion, PluginFormAnswers, PluginGrade, PluginGradesQuery,
-    PluginListQuery, PluginMember, PluginMembersQuery, PluginQuiz, PluginSubmission,
-    PluginSubmissionItem, ProblemDetails,
+    PluginDeletedQuery, PluginDeletion, PluginGrade, PluginGradesQuery, PluginListQuery,
+    PluginMember, PluginMembersQuery, PluginSubmission, PluginSubmissionItem, ProblemDetails,
 };
 use axum::Json;
 use axum::extract::{FromRef, Path, State};
@@ -34,12 +33,11 @@ where
         .routes(routes!(list_assignments))
         .routes(routes!(deleted_assignments))
         .routes(routes!(get_assignment))
-        .routes(routes!(get_form_answers))
+        .routes(routes!(get_answers))
         .routes(routes!(get_submission))
         .routes(routes!(list_submissions))
         .routes(routes!(list_members))
         .routes(routes!(list_grades))
-        .routes(routes!(get_quiz))
         .routes(routes!(list_attempts))
         .routes(routes!(get_contacts))
 }
@@ -100,7 +98,7 @@ async fn list_assignments(
         title: a.title,
         due_at: a.due_at,
         max_points: a.max_points,
-        fields: a.fields,
+        config: a.config,
         updated_at: a.updated_at,
     }))
 }
@@ -136,36 +134,37 @@ async fn get_assignment(
         title: a.title,
         due_at: a.due_at,
         max_points: a.max_points,
-        fields: a.fields,
+        config: a.config,
         updated_at: a.updated_at,
     })
 }
 
-/// The values a student gave in a submitted `form`, by field id. The scope `assignments:read`.
+/// The values a student gave in a submitted attempt of a type that shares them (a form), by field
+/// id. The scope `assignments:read`.
 #[utoipa::path(
     get,
-    path = "/plugin-api/submissions/{id}/fields",
+    path = "/plugin-api/submissions/{id}/answers",
     tag = "plugin-api",
     security(("plugin" = [])),
     params(("id" = Uuid, Path, description = "The `submission_id` of an event")),
     responses(
-        (status = 200, description = "The values", body = PluginFormAnswers),
+        (status = 200, description = "The values", body = PluginAnswers),
         (status = 401, description = "No token, or one that is unknown or disabled",
             body = ProblemDetails, content_type = "application/problem+json"),
         (status = 403, description = "The plugin was not granted `assignments:read`, or not the course",
             body = ProblemDetails, content_type = "application/problem+json"),
-        (status = 404, description = "No such submitted attempt, or not at a form", body = ProblemDetails,
+        (status = 404, description = "No such submitted attempt, or its type shares no values", body = ProblemDetails,
             content_type = "application/problem+json"),
     )
 )]
-async fn get_form_answers(
+async fn get_answers(
     caller: PluginCaller,
     State(state): State<PluginsState>,
     Path(id): Path<Uuid>,
-) -> Reply<PluginFormAnswers> {
+) -> Reply<PluginAnswers> {
     let mut conn = state.db.acquire().await.map_err(db)?;
-    let a = plugin_read::form_answers(&mut conn, &caller, id).await?;
-    reply(PluginFormAnswers {
+    let a = plugin_read::answers(&mut conn, &caller, id).await?;
+    reply(PluginAnswers {
         submission_id: a.submission_id,
         course_id: a.course_id,
         assignment_id: a.assignment_id,
@@ -345,53 +344,22 @@ async fn list_grades(
     }))
 }
 
-/// The questions of a quiz without its answer key. The scope `quizzes:read`.
-#[utoipa::path(
-    get,
-    path = "/plugin-api/assignments/{id}/quiz",
-    tag = "plugin-api",
-    security(("plugin" = [])),
-    params(("id" = Uuid, Path, description = "A quiz")),
-    responses(
-        (status = 200, description = "The questions", body = PluginQuiz),
-        (status = 401, description = "No token, or one that is unknown or disabled",
-            body = ProblemDetails, content_type = "application/problem+json"),
-        (status = 403, description = "The plugin was not granted `quizzes:read`, or not the course",
-            body = ProblemDetails, content_type = "application/problem+json"),
-        (status = 404, description = "No such quiz", body = ProblemDetails,
-            content_type = "application/problem+json"),
-    )
-)]
-async fn get_quiz(
-    caller: PluginCaller,
-    State(state): State<PluginsState>,
-    Path(id): Path<Uuid>,
-) -> Reply<PluginQuiz> {
-    let mut conn = state.db.acquire().await.map_err(db)?;
-    let quiz = plugin_read::quiz(&mut conn, &caller, id).await?;
-    reply(PluginQuiz {
-        assignment_id: quiz.assignment_id,
-        course_id: quiz.course_id,
-        max_points: quiz.max_points,
-        config: quiz.config,
-    })
-}
-
-/// The submitted attempts at a quiz with their score per question, by the time they were
-/// submitted; `updated_since` is that time. The scope `quizzes:read`.
+/// The submitted attempts at an assignment that its type scores by itself, with their score per
+/// question, by the time they were submitted; `updated_since` is that time. The scope
+/// `attempts:read`.
 #[utoipa::path(
     get,
     path = "/plugin-api/assignments/{id}/attempts",
     tag = "plugin-api",
     security(("plugin" = [])),
-    params(("id" = Uuid, Path, description = "A quiz"), PluginListQuery),
+    params(("id" = Uuid, Path, description = "An assignment whose type scores attempts by itself"), PluginListQuery),
     responses(
         (status = 200, description = "A page of attempts", body = Page<PluginAttempt>),
         (status = 401, description = "No token, or one that is unknown or disabled",
             body = ProblemDetails, content_type = "application/problem+json"),
-        (status = 403, description = "The plugin was not granted `quizzes:read`, or not the course",
+        (status = 403, description = "The plugin was not granted `attempts:read`, or not the course",
             body = ProblemDetails, content_type = "application/problem+json"),
-        (status = 404, description = "No such quiz", body = ProblemDetails,
+        (status = 404, description = "No such assignment, or its type scores no attempts", body = ProblemDetails,
             content_type = "application/problem+json"),
         (status = 422, description = "A cursor or a time that is not valid", body = ProblemDetails,
             content_type = "application/problem+json"),

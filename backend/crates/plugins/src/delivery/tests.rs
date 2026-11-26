@@ -75,7 +75,7 @@ fn deliverer() -> Deliverer {
 /// Installs `hello` at `base` and owes it one `submission.submitted` event.
 async fn owed(pool: &PgPool, base: &str) -> (Installed, OutboxEvent) {
     let manifest = parse_manifest(
-        json!({"id": "hello", "version": "1", "api": "1", "subscribes": ["submission.submitted"]})
+        json!({"id": "hello", "version": "1", "api": "2", "subscribes": ["submission.submitted"]})
             .to_string()
             .as_bytes(),
     )

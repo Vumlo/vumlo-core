@@ -13,7 +13,7 @@ fn key() -> SecretKey {
 
 fn manifest(id: &str, scopes: &[&str], subscribes: &[&str]) -> PluginManifest {
     let value = json!({
-        "id": id, "version": "1.0.0", "api": "1",
+        "id": id, "version": "1.0.0", "api": "2",
         "scopes": scopes, "subscribes": subscribes,
     });
     parse_manifest(value.to_string().as_bytes()).unwrap()
@@ -89,6 +89,19 @@ fn a_base_url_is_https_or_http_on_this_machine_or_a_container_and_carries_nothin
     ] {
         assert!(check_base_url(bad).is_err(), "{bad}");
     }
+}
+
+#[tokio::test]
+async fn an_install_records_the_protocol_the_core_speaks() {
+    db_test(async |pool| {
+        install_hello(&pool, &[Scope::SubmissionsRead]).await;
+        let stored: String = sqlx::query_scalar("SELECT api FROM plugins.plugin_installs")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(stored, crate::model::API_VERSION);
+    })
+    .await;
 }
 
 #[tokio::test]
@@ -393,7 +406,7 @@ async fn list_counts_what_is_pending_and_what_is_dead() {
 
 fn configurable(id: &str) -> PluginManifest {
     let value = json!({
-        "id": id, "version": "1.0.0", "api": "1",
+        "id": id, "version": "1.0.0", "api": "2",
         "scopes": ["settings:read"], "subscribes": ["plugin.settings.changed"],
         "settings": {
             "unit": {"type": "string", "enum": ["words", "characters"], "default": "words"},

@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE plugins.plugin_installs\n         SET version = $2, subscribes = $3, requested_scopes = $4, scopes = $5, ui_slots = $6,\n             routes = $7, settings = $8, api = $9, updated_at = now()\n         WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "TextArray",
+        "TextArray",
+        "TextArray",
+        "Jsonb",
+        "Jsonb",
+        "Jsonb",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "0022b7ce90ebd0edf78605349b08ad7a48dbf60e6b4f4c60e9fe0ec1ee56de00"
+}

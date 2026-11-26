@@ -31,7 +31,7 @@ impl From<Option<Cursor>> for After {
 pub struct AssignmentRow {
     pub id: Uuid,
     pub course_id: Uuid,
-    pub kind: String,
+    pub kind: activity::GradedKind,
     pub title: String,
     pub due_at: Option<DateTime<Utc>>,
     pub max_points: String,
@@ -69,7 +69,7 @@ pub async fn assignments(
     limit: i64,
 ) -> Result<Vec<AssignmentRow>, sqlx::Error> {
     let rows = sqlx::query!(
-        r#"SELECT id AS "id!", course_id AS "course_id!", kind AS "kind!", title AS "title!",
+        r#"SELECT id AS "id!", course_id AS "course_id!", kind AS "kind!: activity::GradedKind", title AS "title!",
                   due_at, max_points AS "max_points!", config AS "config!: Json<Map<String, Value>>",
                   updated AS "updated_at!"
            FROM (
@@ -121,7 +121,7 @@ pub struct SubmittedRow {
     pub id: Uuid,
     pub course_id: Uuid,
     pub assignment_id: Uuid,
-    pub assignment_type: String,
+    pub assignment_type: activity::GradedKind,
     pub student_id: Uuid,
     pub attempt: i32,
     pub content: Map<String, Value>,
@@ -135,7 +135,7 @@ pub async fn submitted(
 ) -> Result<Option<SubmittedRow>, sqlx::Error> {
     let row = sqlx::query!(
         r#"SELECT s.id AS "id!", i.course_id AS "course_id!", s.assignment_id AS "assignment_id!",
-                  a.type AS "assignment_type!", s.student_id AS "student_id!",
+                  a.type AS "assignment_type!: activity::GradedKind", s.student_id AS "student_id!",
                   s.attempt AS "attempt!", s.content AS "content!: Json<Map<String, Value>>",
                   s.submitted_at AS "submitted_at!"
            FROM assessment.submitted_attempts s

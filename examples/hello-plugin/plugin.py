@@ -63,7 +63,7 @@ from urllib.parse import parse_qs, urlsplit
 MANIFEST = {
     "id": "hello",
     "version": "1.0.0",
-    "api": "1",
+    "api": "2",
     "subscribes": ["submission.submitted", "plugin.settings.changed"],
     "scopes": ["submissions:read", "reports:write", "settings:read", "assignments:read"],
     "ui": [{"slot": "assignment.tab", "title": "Words", "path": "/ui/words"}],

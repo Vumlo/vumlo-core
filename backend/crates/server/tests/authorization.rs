@@ -881,11 +881,10 @@ async fn the_list_of_operations_is_the_api() {
             "GET /plugin-api/assignments/deleted",
             "GET /plugin-api/assignments/{id}",
             "GET /plugin-api/assignments/{id}/attempts",
-            "GET /plugin-api/assignments/{id}/quiz",
             "GET /plugin-api/assignments/{id}/submissions",
             "GET /plugin-api/courses/{id}/members",
             "GET /plugin-api/grades",
-            "GET /plugin-api/submissions/{id}/fields",
+            "GET /plugin-api/submissions/{id}/answers",
             "GET /plugin-api/users/contact",
             "POST /plugin-api/mail",
             // The opt-out and opt-in links of a mail take a signed token and no session: the

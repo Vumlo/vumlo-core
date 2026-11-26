@@ -22,7 +22,7 @@ const ALL_EVENTS: [&str; 9] = [
     "assignment.updated",
     "assignment.deadline_changed",
     "enrollment.changed",
-    "quiz.attempt_submitted",
+    "attempt.autograded",
     "announcement.published",
 ];
 
@@ -78,7 +78,7 @@ impl World {
     /// A plugin that subscribed to every event.
     async fn plugin(&self, id: &str, subscribes: &[&str], courses: CourseScope) -> Installed {
         let manifest = parse_manifest(
-            json!({"id": id, "version": "1", "api": "1", "subscribes": subscribes,
+            json!({"id": id, "version": "1", "api": "2", "subscribes": subscribes,
                    "scopes": Scope::ALL.map(Scope::as_str)})
             .to_string()
             .as_bytes(),
@@ -413,8 +413,8 @@ async fn a_quiz_attempt_is_announced_with_its_submission_and_an_essay_is_not_a_q
             .await;
         let events = w.owed("p").await;
         let kinds: Vec<_> = events.iter().map(|e| e.0.as_str()).collect();
-        assert_eq!(kinds, ["submission.submitted", "quiz.attempt_submitted"]);
-        let attempt = &data(&events, "quiz.attempt_submitted")[0];
+        assert_eq!(kinds, ["submission.submitted", "attempt.autograded"]);
+        let attempt = &data(&events, "attempt.autograded")[0];
         assert_eq!(attempt["assignment_id"], json!(quiz));
         assert_eq!(attempt["student_id"], json!(w.student.id));
         assert_eq!(attempt["course_id"], json!(w.course));
@@ -872,7 +872,7 @@ async fn a_plugin_reads_the_announcements_of_the_courses_it_reaches() {
             .await;
         let none = {
             let manifest = parse_manifest(
-                json!({"id": "bare", "version": "1", "api": "1", "scopes": ["announcements:read"]})
+                json!({"id": "bare", "version": "1", "api": "2", "scopes": ["announcements:read"]})
                     .to_string()
                     .as_bytes(),
             )
@@ -935,7 +935,7 @@ async fn a_plugin_reads_the_announcements_of_the_courses_it_reaches() {
         // Without the scope: 403, whoever it asks for.
         let denied = {
             let manifest = parse_manifest(
-                json!({"id": "other", "version": "1", "api": "1", "scopes": ["grades:read"]})
+                json!({"id": "other", "version": "1", "api": "2", "scopes": ["grades:read"]})
                     .to_string()
                     .as_bytes(),
             )

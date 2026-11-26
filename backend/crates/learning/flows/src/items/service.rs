@@ -4,7 +4,7 @@ use uuid::Uuid;
 use crate::LearningError;
 use crate::files::{self, UsageOwner};
 use access::Actor;
-use assessment::{self, PublishedScore, QuizResult};
+use assessment::{self, AttemptResult, PublishedScore};
 use content::{self, AssignmentFacts, Item, ItemPatch, ItemRules, NewItemInput};
 
 /// Deletes the module with its sub-modules and items. Drafts of students and empty grade rows go
@@ -101,28 +101,30 @@ pub async fn update_item(
     Ok(content::finish_update_item(conn, actor, update, facts, &verdict).await?)
 }
 
-/// An item as the actor may read it. A form that is open to the reader also shows which of its
-/// fields have answers and who holds each exclusive option (ADR-0051 point 5).
+/// An item as the actor may read it. An assignment whose type shows the facts of the class (a
+/// form: which of its fields have answers and who holds each exclusive option, ADR-0051 point 5)
+/// and that is open to the reader also carries them.
 pub async fn get(conn: &mut PgConnection, actor: &Actor, id: Uuid) -> Result<Item, LearningError> {
     let read = content::get_item(conn, actor, id).await?;
     let mut item = read.item;
-    if let (Some(view), Some(assignment)) = (read.form, &item.assignment) {
+    if let (Some(viewer), Some(assignment)) = (read.viewer, &item.assignment) {
         let kind = assignment.assignment_type;
-        let facts = assessment::form_facts(conn, id, kind, &assignment.config).await?;
-        content::decorate_form(&mut item, view, &facts.answered, &facts.holders);
+        let facts = assessment::class_facts(conn, id, kind, &assignment.config).await?;
+        content::annotate_item(&mut item, viewer, &facts);
     }
     Ok(item)
 }
 
-/// The caller's result of a quiz: their latest attempt, the server's score of each question and the
-/// published grade. Only once a score is published (ADR-0050 point 8). `assessment` authorizes and
-/// locks the assignment, the gradebook says what was published, `assessment` builds the result.
+/// The caller's result of an attempt: their latest attempt, the server's score of each question
+/// and the published grade. Only once a score is published (ADR-0050 point 8). `assessment`
+/// authorizes and locks the assignment, the gradebook says what was published, `assessment`
+/// builds the result.
 pub async fn result(
     conn: &mut PgConnection,
     actor: &Actor,
     assignment_id: Uuid,
-) -> Result<QuizResult, LearningError> {
-    let start = assessment::begin_quiz_result(conn, actor, assignment_id).await?;
+) -> Result<AttemptResult, LearningError> {
+    let start = assessment::begin_result(conn, actor, assignment_id).await?;
     let published = gradebook::published_grade(conn, assignment_id, actor.user_id())
         .await?
         .map(|grade| PublishedScore {
@@ -130,5 +132,5 @@ pub async fn result(
             feedback: grade.feedback,
             published_at: grade.published_at,
         });
-    Ok(assessment::finish_quiz_result(conn, actor, start, published).await?)
+    Ok(assessment::finish_result(conn, actor, start, published).await?)
 }

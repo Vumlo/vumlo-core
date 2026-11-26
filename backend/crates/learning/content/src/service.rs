@@ -28,10 +28,9 @@ use super::standing;
 use ::files::FileVerdict;
 use access::Actor;
 use access::{self, AccessError, Action, CourseAccess, CourseStatus, Release};
-use activity::types::form::{self, Holders};
 use activity::{
-    ConfigError, DocumentErrors, EffectiveProfiles, FileRef, GradedKind, ValidDocument,
-    distinct_ids, file_refs_under, plain_text, validate_document,
+    ClassFacts, ConfigError, DocumentErrors, EffectiveProfiles, FileRef, GradedKind, ValidDocument,
+    Viewer, distinct_ids, file_refs_under, plain_text, validate_document,
 };
 use events::{self, AuditEntry, Event, EventsError};
 use teaching::{self, TeachingError};
@@ -1233,46 +1232,30 @@ pub fn editor_profiles<'a>(
     Ok(profiles)
 }
 
-/// An item as the actor reads it, and what is left to add when it is a form.
+/// An item as the actor reads it, and what is left to add when its type shows the class's facts.
 pub struct ItemRead {
     pub item: Item,
-    /// Set for a form that is open to the reader: its config still wants the facts that only
-    /// `assessment` knows (see [`decorate_form`]).
-    pub form: Option<FormView>,
+    /// Set for an assignment whose type reads the facts of the class and that is open to the
+    /// reader: its config still wants what only `assessment` knows (see [`annotate_item`]).
+    pub viewer: Option<Viewer>,
 }
 
-/// Who reads a form.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct FormView {
-    pub staff: bool,
-    pub viewer: Uuid,
-}
-
-/// Adds to the config of a form the facts of ADR-0051 point 5 that `assessment` supplies: which
-/// fields have answers and who holds each exclusive option (staff see who, a student only that it
-/// is taken).
-pub fn decorate_form(
-    item: &mut Item,
-    view: FormView,
-    answered: &HashSet<String>,
-    holders: &Holders,
-) {
+/// Adds to the config of an assignment what the class has done with it (ADR-0051 point 5),
+/// through the type's own hook: for a form, which fields have answers and who holds each
+/// exclusive option (staff see who, a student only that it is taken).
+pub fn annotate_item(item: &mut Item, viewer: Viewer, facts: &ClassFacts) {
     if let Some(assignment) = &mut item.assignment {
-        form::decorate(
-            &mut assignment.config,
-            answered,
-            holders,
-            view.staff,
-            view.viewer,
-        );
+        assignment
+            .assignment_type
+            .annotate_config(&mut assignment.config, facts, viewer);
     }
 }
 
 /// An item as the actor may read it: staff get the working copy and the rule that locks it, a
 /// student the published title and body (ADR-0049) and where they stand on it. An item that a rule
 /// still keeps closed to the student is its title only (ADR-0092). A form comes back with the
-/// reader in `form`: the flow (`learning::items::get`) asks `assessment` for its facts and
-/// [`decorate_form`] adds them.
+/// reader in `viewer` when its type shows the facts of the class: the flow (`learning::items::get`)
+/// asks `assessment` for them and [`annotate_item`] adds them.
 pub async fn get_item(
     conn: &mut PgConnection,
     actor: &Actor,
@@ -1299,23 +1282,23 @@ pub async fn get_item(
         if let Some(assignment) = &mut item.assignment {
             assignment.config = Map::new();
         }
-        return Ok(ItemRead { item, form: None });
+        return Ok(ItemRead { item, viewer: None });
     }
-    let mut form = None;
+    let mut viewer = None;
     if let Some(assignment) = &mut item.assignment {
         let kind = assignment.assignment_type;
         // A student never receives the answer key (ADR-0023, ADR-0050 point 6).
         if !staff {
             assignment.config = kind.student_config(&assignment.config);
         }
-        if kind.id() == form::ID {
-            form = Some(FormView {
+        if kind.reads_class_facts() {
+            viewer = Some(Viewer {
                 staff,
-                viewer: actor.user_id(),
+                user: actor.user_id(),
             });
         }
     }
-    Ok(ItemRead { item, form })
+    Ok(ItemRead { item, viewer })
 }
 
 /// Whether a published item has changes students do not see, and since when they read what they

@@ -220,17 +220,18 @@ pub struct PluginAssignment {
     pub due_at: Option<DateTime<Utc>>,
     /// A decimal number as text.
     pub max_points: String,
-    /// The fields of a `form` (`id`, `type`, `label`, `help`, `required`, `options`, `rules`); absent
-    /// for the other types.
-    #[schema(value_type = Option<Vec<Object>>)]
-    pub fields: Option<Vec<Value>>,
+    /// The part of the config the assignment's type exposes to a plugin: the fields of a form
+    /// (`id`, `type`, `label`, `help`, `required`, `options`, `rules`) and the questions of a quiz
+    /// without the answer key. Absent for a type that exposes none.
+    #[schema(value_type = Option<Object>)]
+    pub config: Option<Map<String, Value>>,
     /// When the assignment, its title or its settings last changed.
     pub updated_at: DateTime<Utc>,
 }
 
-/// The values a student gave in a `form`, by field id.
+/// The values a student gave in an attempt of a type that shares them (a form), by field id.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
-pub struct PluginFormAnswers {
+pub struct PluginAnswers {
     pub submission_id: Uuid,
     pub course_id: Uuid,
     pub assignment_id: Uuid,
@@ -275,18 +276,7 @@ pub struct PluginGrade {
     pub published_at: DateTime<Utc>,
 }
 
-/// The questions of a quiz as a student sees them: no `correct`, `answer`, `tolerance`,
-/// `accepted`, `explanation`, `partial_credit` or `grading_notes`.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
-pub struct PluginQuiz {
-    pub assignment_id: Uuid,
-    pub course_id: Uuid,
-    pub max_points: String,
-    #[schema(value_type = Object)]
-    pub config: Map<String, Value>,
-}
-
-/// A submitted attempt at a quiz.
+/// A submitted attempt at an assignment that its type scores by itself.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
 pub struct PluginAttempt {
     pub id: Uuid,

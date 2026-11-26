@@ -9,7 +9,9 @@ mod points;
 mod registry;
 pub mod types;
 
-pub use contract::{AutoGrade, Claims, Stage, ValidContent};
+pub use contract::{
+    AutoGrade, Claims, ClassFacts, Holders, ReviewQuestion, Stage, ValidContent, Viewer,
+};
 pub use document::{
     DocumentError, DocumentErrors, EditorConfigError, EffectiveProfiles, FileRef, MAX_ERRORS,
     ValidDocument, distinct_ids, file_refs_of, file_refs_under, limits, plain_text, valid_href,
@@ -17,7 +19,7 @@ pub use document::{
 };
 pub use model::{
     ActivityType, AutoGrading, Capabilities, CompletionPolicy, ConfigError, Graded, Progress,
-    Submissions,
+    Reviewing, Submissions,
 };
 pub use points::{MaxPoints, PointsError, parse_decimal};
 #[cfg(feature = "testing")]

@@ -247,7 +247,7 @@ impl World {
 }
 
 fn echo_manifest() -> Value {
-    json!({"id": "rec", "version": "1", "api": "1", "routes": [
+    json!({"id": "rec", "version": "1", "api": "2", "routes": [
         {"method": "GET", "path": "/r/{course_id}", "roles": ["admin", "teacher", "student"],
          "course_roles": ["teacher", "assistant", "student"]},
         {"method": "POST", "path": "/r/note", "roles": ["admin", "teacher", "student"]},
@@ -814,7 +814,7 @@ async fn a_call_with_a_session_cookie_is_checked_for_where_it_came_from_like_any
 // ---------------------------------------------------------------------------------------------
 
 fn public_manifest() -> Value {
-    json!({"id": "pub", "version": "1", "api": "1", "routes": [
+    json!({"id": "pub", "version": "1", "api": "2", "routes": [
         {"method": "GET", "path": "/feed/{name}", "auth": "none"},
         {"method": "GET", "path": "/other", "auth": "none"},
         {"method": "GET", "path": "/private", "roles": ["admin", "teacher", "student"]},
