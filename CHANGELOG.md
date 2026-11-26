@@ -37,6 +37,11 @@ must do, in order, besides getting the new release. See [RELEASING.md](RELEASING
 - A lecture and a shared file are activity types (`lecture`, `shared_file`) beside the five assignment types. What was
   special-cased by item kind in `content` (the body of a file item, the reading time, who may mark an item done, the file
   that must exist before a publish) is a hook of the type, and a type that is completed by marking has the policy `Marked`.
+- **A module can add activity types** (`Module::activity_types`), registered only while the module is enabled. Switching a
+  module off no longer makes its items unreadable: they stay in the database and the API sends them as `unavailable: true`
+  with an empty body (and an empty config for an assignment); search finds them by title only, and nothing can be
+  written to them until the module is enabled again. `vumlo-cli doctor` has a new check, `activity types`, that warns
+  with the ids and counts of such items. The web app shows a notice page and a badge.
 - A deadline or a class day on a type that takes no submissions is refused by the service only; the database no longer
   has the two CHECKs that named `no_submission`.
 

@@ -83,6 +83,12 @@ pub trait ActivityType: Send + Sync {
     /// a type that implements [`Graded`] returns `Some(self)`.
     fn graded(&self) -> Option<&dyn Graded>;
 
+    /// `false` only for the stand-in of a stored type nobody registered (a module that is off):
+    /// the item is listed as unavailable and its body is never shown (ADR-0098).
+    fn available(&self) -> bool {
+        true
+    }
+
     /// The body an item of this type starts with (ADR-0098). Default: an empty document.
     fn default_body(&self) -> Map<String, Value> {
         ValidDocument::empty().as_body().clone()

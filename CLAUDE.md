@@ -36,7 +36,10 @@ Each layer is a crate, and a crate depends only on the ones below it. Cargo enfo
 `ActivityType`, `Graded`, `Submissions` and `AutoGrading` (a type implements the tiers it has), the five built-in
 types written against it (`text`, `no_submission`, `file`, `form`, `quiz`) and the block document model its signature
 names (ADR-0097, ADR-0098). It has no schema and depends on nothing of ours but `api-types` and
-`vumlo-config` (`architecture.rs` checks the manifest); `content` and the crates above it use it.
+`vumlo-config` (`architecture.rs` checks the manifest); `content` and the crates above it use it. Only `activity`,
+the modules, the CLI and tests name a built-in type; everything else asks the registry or a hook of the contract. A
+module adds types through `Module::activity_types`, and a stored type nobody registered is read as unavailable, not
+as an error.
 `test-support` is the test database harness and a dev-dependency only. `teaching`, `content`, `assessment`,
 `gradebook` and `learning` (the flows, in `backend/crates/learning/flows`) are the crates in
 `backend/crates/learning/`; each has its own state, error enum and router, and `server` builds the states.

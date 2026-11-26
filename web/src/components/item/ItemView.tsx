@@ -11,6 +11,7 @@ import { FilePage } from "./FilePage";
 import { FormPage } from "./FormPage";
 import { LecturePage } from "./LecturePage";
 import { LockedPage } from "./LockedPage";
+import { UnavailablePage } from "./UnavailablePage";
 import { NoSubmissionPage } from "./NoSubmissionPage";
 import { QuizPage } from "./QuizPage";
 
@@ -24,6 +25,7 @@ export function ItemView({ courseId, itemId }: { courseId: string; itemId: strin
   const it = item.data;
   // The server sends a locked item as its title only; staff are never locked (ADR-0092).
   if (!staff && isLocked(it)) return <LockedPage item={it} courseId={courseId} />;
+  if (it.unavailable) return <UnavailablePage item={it} courseId={courseId} />;
   if (it.type === "lecture") return <LecturePage item={it} courseId={courseId} staff={staff} />;
   if (it.type === "shared_file") return <FilePage item={it} courseId={courseId} staff={staff} />;
   switch (it.assignment?.type) {

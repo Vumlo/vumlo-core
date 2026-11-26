@@ -132,6 +132,49 @@ fn unknown_and_not_installed_are_errors() {
 }
 
 #[test]
+fn a_stored_id_nobody_registered_is_a_stand_in_and_a_registered_one_is_itself() {
+    let types = both();
+    // `get` refuses an unknown id (a creator must), `stored` does not (a reader must not fail).
+    let missing = types.stored("gone_module");
+    assert_eq!(missing.id(), "gone_module");
+    assert!(missing.is_missing());
+    assert!(
+        missing.graded().is_none(),
+        "an item of it had no points we know of"
+    );
+    assert_eq!(missing.completion(), CompletionPolicy::Graded);
+    assert_eq!(missing, types.stored("gone_module"));
+    // A registered id is the registered type, not a stand-in.
+    let real = types.stored("zeta");
+    assert!(!real.is_missing());
+    assert_eq!(real, types.get("zeta").unwrap());
+}
+
+#[test]
+fn the_stand_in_of_an_assignment_keeps_its_points_and_refuses_everything_else() {
+    let types = both();
+    let graded = types.stored_graded("gone_module").unwrap();
+    assert_eq!(graded.id(), "gone_module");
+    assert!(graded.kind().is_missing());
+    assert!(graded.submissions().is_none(), "nobody hands in work to it");
+    let profiles = EffectiveProfiles::unrestricted();
+    assert!(graded.validate_config(&Map::new(), &profiles).is_err());
+    assert!(
+        graded
+            .kind()
+            .validate_body(&Value::Object(Map::new()), &profiles)
+            .is_err()
+    );
+    assert_eq!(graded.kind().body_file_refs(&Map::new()), Ok(Vec::new()));
+    // A registered type that has no points is still refused as a graded one: that row is wrong.
+    let with_plain = Types::new().with(&PLAIN).unwrap();
+    assert!(matches!(
+        with_plain.stored_graded("plain"),
+        Err(RegistryError::NotGraded(id)) if id == "plain"
+    ));
+}
+
+#[test]
 fn duplicate_and_malformed_ids_are_refused() {
     assert!(matches!(
         both().with(&ZETA),

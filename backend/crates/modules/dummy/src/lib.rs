@@ -68,6 +68,27 @@ static MIGRATOR: LazyLock<Migrator> =
 
 struct Dummy;
 
+/// The id of the activity type of this module: a note a student marks done, with no points.
+pub const NOTE_TYPE: &str = "dummy_note";
+
+/// The smallest activity type a module can add (ADR-0098): the defaults of the contract, so its
+/// body is a block document, and a student marks it done.
+struct Note;
+
+impl activity::ActivityType for Note {
+    fn id(&self) -> &'static str {
+        NOTE_TYPE
+    }
+
+    fn completion(&self) -> activity::CompletionPolicy {
+        activity::CompletionPolicy::Marked
+    }
+
+    fn graded(&self) -> Option<&dyn activity::Graded> {
+        None
+    }
+}
+
 /// The module, for the one list in `server` and the one in `vumlo-cli`.
 pub fn module() -> &'static dyn Module {
     &Dummy
@@ -80,6 +101,10 @@ impl Module for Dummy {
 
     fn migrations(&self) -> Option<&'static Migrator> {
         Some(&MIGRATOR)
+    }
+
+    fn activity_types(&self) -> Vec<&'static dyn activity::ActivityType> {
+        vec![&Note]
     }
 
     fn register(&self, cx: &mut Registrar) {

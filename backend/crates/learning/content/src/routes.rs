@@ -258,9 +258,18 @@ fn api_assignment_summary(assignment: model::AssignmentSummary) -> api_types::As
 }
 
 /// An item as the API shows it; the flows above `content` that answer with one use it too.
-pub fn api_item(item: model::Item) -> Item {
+pub fn api_item(mut item: model::Item) -> Item {
     let (access_rule, standing) = api_access(item.access);
+    // The body and the config of a type nobody registered are never shown (ADR-0098).
+    let unavailable = item.item_type.is_missing();
+    if unavailable {
+        item.body.clear();
+        if let Some(assignment) = &mut item.assignment {
+            assignment.config.clear();
+        }
+    }
     Item {
+        unavailable,
         id: item.id,
         module_id: item.module_id,
         course_id: item.course_id,
@@ -282,6 +291,7 @@ pub fn api_item(item: model::Item) -> Item {
 fn api_summary(item: model::ItemSummary) -> ItemSummary {
     let (access_rule, standing) = api_access(item.access);
     ItemSummary {
+        unavailable: item.item_type.is_missing(),
         id: item.id,
         kind: api_kind(item.kind),
         item_type: item.item_type.id().to_owned(),
@@ -628,7 +638,7 @@ pub fn new_item(request: CreateItemRequest) -> Result<NewItemInput, ApiError> {
     let id = request
         .item_type
         .as_deref()
-        .unwrap_or(activity::types::lecture::ID);
+        .unwrap_or(activity::DEFAULT_RESOURCE);
     let item_type = match activity::get(id) {
         Ok(kind) => kind,
         Err(RegistryError::NotInstalled) => {

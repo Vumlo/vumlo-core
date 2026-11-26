@@ -112,7 +112,9 @@ export function StudentContent({ courseId }: { courseId: string }) {
                                       <span className={s.rowTitle}>{i.title}</span>
                                       <span className={s.rowMeta}>{kindOf(i) === "file" ? t("row.file") : t("row.lecture")}{m[i.id]?.read_minutes ? `, ${t("row.readMinutes", { n: m[i.id]!.read_minutes! })}` : ""}</span>
                                     </span>
-                                    {isLocked(i)
+                                    {i.unavailable
+                                      ? <StatusPill tone="plain"><Icon name="lock" size={13} strokeWidth={2} /> {t("unavailable.badge")}</StatusPill>
+                                      : isLocked(i)
                                       ? <StatusPill tone="plain"><Icon name="lock" size={13} strokeWidth={2} /> {t("locked.badge")}</StatusPill>
                                       : isDone(i)
                                       ? <StatusPill tone="ok"><Icon name="check" size={13} strokeWidth={2.4} /> {t("done.marked")}</StatusPill>

@@ -1355,6 +1355,13 @@ pub async fn template_counts(
     Ok(repo::template_counts(conn, course_ids).await?)
 }
 
+/// The activity types the items are stored with, and how many items each has: what `doctor`
+/// compares with the registry. No actor: it reads no content, only counts, and only the CLI
+/// asks (ADR-0098).
+pub async fn stored_types(conn: &mut PgConnection) -> Result<Vec<(String, i64)>, ContentError> {
+    Ok(repo::stored_types(conn).await?)
+}
+
 /// The draft items inside published modules of `course_ids`, newest change first. The caller has
 /// authorized: it passes the courses the actor works in as staff.
 pub async fn draft_items(
@@ -1503,8 +1510,13 @@ pub async fn search(
             if locked.contains(&item.id) && !item.title_match {
                 continue;
             }
+            // The same for an item of a type nobody registered: its body is never shown.
+            let unavailable = item.item_type.is_missing();
+            if unavailable && !item.title_match {
+                continue;
+            }
             let mut words = Vec::new();
-            if !locked.contains(&item.id) {
+            if !locked.contains(&item.id) && !unavailable {
                 flat_text(&Value::Object(item.body.0), &mut words);
             }
             hits.push((

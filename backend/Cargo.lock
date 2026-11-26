@@ -2404,6 +2404,7 @@ name = "module-api"
 version = "0.7.5"
 dependencies = [
  "access",
+ "activity",
  "anyhow",
  "axum",
  "clap",
@@ -4851,6 +4852,7 @@ name = "vumlo-module-dummy"
 version = "0.7.5"
 dependencies = [
  "access",
+ "activity",
  "anyhow",
  "axum",
  "clap",

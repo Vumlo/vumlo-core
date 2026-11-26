@@ -258,10 +258,11 @@ async fn the_regular_assignments_of_a_course_may_add_up_to_more_than_a_hundred()
     .await;
 }
 
-/// ADR-0097: the stored type is read through the registry. A type no one installed (the module
-/// that brought it was removed) fails the read with an error naming it, never a panic or a guess.
+/// ADR-0097, ADR-0098: the stored type is read through the registry. A type no one installed (the
+/// module that brought it was switched off or removed) reads as the unavailable stand-in that
+/// keeps its id, so the rows around it stay readable; it is never a panic or a guess.
 #[tokio::test]
-async fn a_stored_type_is_read_through_the_registry_and_an_unknown_one_fails_the_read() {
+async fn a_stored_type_is_read_through_the_registry_and_an_unknown_one_reads_as_unavailable() {
     db_test(async |pool| {
         let course = course(pool).await;
         let id = course.committed("10", false).await;
@@ -275,12 +276,17 @@ async fn a_stored_type_is_read_through_the_registry_and_an_unknown_one_fails_the
         .await
         .unwrap();
         let mut conn = course.pool.acquire().await.unwrap();
-        let error = repo::find_assignment(&mut conn, id).await.unwrap_err();
-        assert!(
-            matches!(error, sqlx::Error::ColumnDecode { .. }),
-            "{error:?}"
+        let read = repo::find_assignment(&mut conn, id)
+            .await
+            .unwrap()
+            .expect("the row is still there");
+        assert_eq!(read.assignment_type.id(), "gone_module");
+        assert!(read.assignment_type.kind().is_missing());
+        assert_eq!(
+            read.max_points.to_string(),
+            "10.00",
+            "its points are still known"
         );
-        assert!(error.to_string().contains("gone_module"), "{error}");
     })
     .await;
 }

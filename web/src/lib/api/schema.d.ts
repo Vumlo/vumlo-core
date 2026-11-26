@@ -4362,6 +4362,12 @@ export interface components {
              *     of its assignment (`text`, `no_submission`, `quiz`, `form`, `file`).
              */
             type: string;
+            /**
+             * @description `true` when the module that provides the type of this item is not enabled (ADR-0098). The
+             *     body is then empty (and so is the assignment's `config`), nothing can be written to the
+             *     item, and the client shows it as unavailable. Absent when `false`.
+             */
+            unavailable?: boolean;
             /** Format: date-time */
             updated_at: string;
         };
@@ -4451,6 +4457,8 @@ export interface components {
             title: string;
             /** @description The id of the activity type of the item (ADR-0098). */
             type: string;
+            /** @description `true` when the module that provides the type is not enabled. Absent when `false`. */
+            unavailable?: boolean;
         };
         /**
          * @description The interface language an institution starts in (ADR-0043).

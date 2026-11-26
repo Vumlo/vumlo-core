@@ -4,6 +4,7 @@
 
 mod contract;
 mod document;
+mod missing;
 mod model;
 mod points;
 mod registry;
@@ -26,8 +27,11 @@ pub use points::{MaxPoints, PointsError, parse_decimal};
 pub use registry::ensure_installed;
 pub use registry::{
     GradedKind, InstallError, Kind, RegistryError, Types, available, get, get_graded, ids_where,
-    install,
+    install, stored, stored_graded,
 };
+
+/// The type a request that names none gets for a new item without points (a lecture).
+pub const DEFAULT_RESOURCE: &str = types::lecture::ID;
 
 #[cfg(test)]
 mod tests;

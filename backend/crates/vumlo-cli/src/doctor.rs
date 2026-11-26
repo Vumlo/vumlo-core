@@ -63,11 +63,19 @@ pub async fn run(options: &Options, as_json: bool) -> anyhow::Result<bool> {
             checks.push(versions(&l.settings, health.as_ref()));
             checks.push(module_sets(health.as_ref()));
             checks.extend(modules(&l.settings, pool.as_ref()).await);
+            checks.push(activity_types(&l.settings, pool.as_ref()).await);
             checks.push(plugins(&l.settings, pool.as_ref()).await);
             checks.push(web_build(&l.settings));
         }
         None => {
-            for name in ["versions", "module sets", "modules", "plugins", "web build"] {
+            for name in [
+                "versions",
+                "module sets",
+                "modules",
+                "activity types",
+                "plugins",
+                "web build",
+            ] {
                 checks.push(skip(name, "needs a valid configuration"));
             }
         }
@@ -217,6 +225,51 @@ async fn database(settings: &Settings, checks: &mut Vec<Check>) -> Option<PgPool
             ));
             None
         }
+    }
+}
+
+/// Items whose activity type this server does not register: a module that was switched off or
+/// left out of the build. They stay stored and read as unavailable (ADR-0098); a warning, not a
+/// failure, because that is a choice, and it names the types so the choice is a known one.
+async fn activity_types(settings: &Settings, pool: Option<&PgPool>) -> Check {
+    let Some(pool) = pool else {
+        return skip("activity types", "needs the database");
+    };
+    let registered = match runtime::activity_types(settings) {
+        Ok(types) => types.available(),
+        Err(e) => return Check::new("activity types", Fail, e.to_string()),
+    };
+    let stored = match pool.acquire().await {
+        Ok(mut conn) => content::stored_types(&mut conn).await,
+        Err(_) => return skip("activity types", "needs the database"),
+    };
+    let Ok(stored) = stored else {
+        return Check::new(
+            "activity types",
+            Fail,
+            "cannot read the items; run `vumlo-cli db migrate`",
+        );
+    };
+    let missing: Vec<String> = stored
+        .iter()
+        .filter(|(id, _)| !registered.contains(&id.as_str()))
+        .map(|(id, items)| format!("{id} ({items} item(s))"))
+        .collect();
+    if missing.is_empty() {
+        Check::new(
+            "activity types",
+            Pass,
+            format!("{} registered, every item has one", registered.len()),
+        )
+    } else {
+        Check::new(
+            "activity types",
+            Warn,
+            format!(
+                "items of a type no enabled module provides, shown as unavailable: {}",
+                missing.join(", ")
+            ),
+        )
     }
 }
 

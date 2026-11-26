@@ -182,6 +182,14 @@ made the `file`/`text` special cases in `content` unnecessary: `default_body`, `
 `content.assignments.type` is gone, and the two CHECKs on `no_submission` with it; a test through the API
 (`only_a_type_without_submissions_has_a_class_day`) pins the class day rule that the CHECK held.
 
+**As built in stage 5** (`docs/superpowers/plans/2026-11-26-activity-stage-5-modules.md`). Not `Registrar::activity_type`
+but `Module::activity_types()`: a module's types are `'static` values that need no state, and the registry must be
+installed before `AppState` and its `Registrar` exist, so they are collected from the enabled compiled-in modules first
+(`server::modules::activity_types`, `vumlo-cli`'s `runtime::activity_types`); `module-api` lists `activity` for it. `Kind::Missing`
+is a stand-in value, not an enum variant: `Kind` and `GradedKind` decode a stored id through `stored` / `stored_graded`,
+and `get` stays strict so a creator refuses an unknown id. The API says it with `unavailable` on `Item` and
+`ItemSummary`. The rule of section 9 is one test (`no_builtin_type_id_is_named_outside_activity_modules_the_cli_and_tests`).
+
 ## 6. Data model
 
 One migration, written with the services stopped (section 10).

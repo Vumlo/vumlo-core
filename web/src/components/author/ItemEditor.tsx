@@ -11,6 +11,7 @@ import { FileItemEditor } from "./FileItemEditor";
 import { FormBuilder } from "./FormBuilder";
 import { LectureEditor } from "./LectureEditor";
 import { QuizBuilder } from "./QuizBuilder";
+import { UnavailablePage } from "@/components/item/UnavailablePage";
 import { itemHref } from "@/lib/routes";
 
 /** The editor for an item: its kind and assignment type pick the screen. Only the teaching team gets here. */
@@ -26,6 +27,7 @@ export function ItemEditor({ courseId, itemId }: { courseId: string; itemId: str
   if (item.error) return item.error.status === 404 || item.error.status === 403 ? <NotFoundScreen /> : <LoadFailed title={item.error.title} />;
   if (!item.data || loading || !allowed) return <p className="loading" role="status">{t("common.loading")}</p>;
   const it = item.data;
+  if (it.unavailable) return <UnavailablePage item={it} courseId={courseId} />;
   if (it.type === "lecture") return <LectureEditor key={it.id} item={it} courseId={courseId} />;
   if (it.type === "shared_file") return <FileItemEditor key={it.id} item={it} courseId={courseId} />;
   switch (it.assignment?.type) {
