@@ -13,8 +13,9 @@
 //!   above them, in any dependency table: Cargo refuses most such edges as a cycle, but not all
 //!   (`assessment` could list `gradebook`). Only the flows in `learning` complete a write that
 //!   names files (ADR-0093).
-//! - `activity` (the contract of an activity type) lists no crate of ours below or above it but
-//!   `api-types` and `vumlo-config` (ADR-0097).
+//! - `activity` (the contract of an activity type and the built-in types written against it)
+//!   lists no crate of ours below or above it but `api-types` and `vumlo-config` (ADR-0097,
+//!   ADR-0098).
 //! - `Actor::role` is read only by `access`; `auth::apply_user_update` is called only by `learning`.
 //! - The `testing` feature of a crate is switched on only from `[dev-dependencies]`.
 
@@ -83,9 +84,9 @@ const UNITS: &[Unit] = &[
         schema: Some("teaching"),
         layer: 7,
     },
-    // The contract of an activity type and the document model its signature names (ADR-0097).
-    // No schema; it sits beside the chain, so it shares the number of `teaching`, which is below
-    // every crate that uses it (content and above).
+    // The contract of an activity type, the document model its signature names and the built-in
+    // types (ADR-0097, ADR-0098). No schema; it sits beside the chain, so it shares the number of
+    // `teaching`, which is below every crate that uses it (content and above).
     Unit {
         name: "activity",
         dir: "learning/activity/src",
@@ -424,8 +425,8 @@ fn the_four_crates_list_nothing_above_them() {
 }
 
 /// What the manifest of `activity` may list, in any dependency table. It is the contract every
-/// activity type is written against, so it names no crate of ours but the two that hold plain
-/// data types (ADR-0097).
+/// activity type is written against, and it holds the built-in types, so it names no crate of
+/// ours but the two that hold plain data types (ADR-0097, ADR-0098).
 const ACTIVITY_DEPENDENCIES: &[&str] = &[
     "api-types",
     "vumlo-config",

@@ -5,8 +5,10 @@ use serde_json::{Map, Value};
 use sqlx::types::Decimal;
 use uuid::Uuid;
 
+use activity::types::form::Holders;
+use activity::types::quiz::ResultQuestion;
 use common::Page;
-use content::{Holders, ResultQuestion, SubmissionSettings};
+use content::SubmissionSettings;
 
 /// The unsubmitted document of a student for an assignment (ADR-0011). Only its owner reads it.
 #[derive(Debug, Clone, PartialEq, Eq)]

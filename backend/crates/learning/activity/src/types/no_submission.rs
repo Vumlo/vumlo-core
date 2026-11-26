@@ -4,9 +4,7 @@
 use serde_json::{Map, Value};
 use sqlx::types::Decimal;
 
-use super::config_error;
-use crate::model::ModelError;
-use activity::{
+use crate::{
     ActivityType, AutoGrade, Capabilities, Claims, CompletionPolicy, ConfigError, DocumentErrors,
     EffectiveProfiles, Stage, ValidContent,
 };
@@ -14,10 +12,10 @@ use activity::{
 pub const ID: &str = "no_submission";
 
 /// This type needs no settings; any field is a mistake.
-pub fn validate_config(config: &Map<String, Value>) -> Result<(), ModelError> {
+pub fn validate_config(config: &Map<String, Value>) -> Result<(), ConfigError> {
     match config.keys().next() {
         None => Ok(()),
-        Some(field) => Err(ModelError::Config(format!(
+        Some(field) => Err(ConfigError::new(format!(
             "unknown field `{field}`: the {ID} type has no settings"
         ))),
     }
@@ -51,7 +49,7 @@ impl ActivityType for NoSubmission {
         config: &Map<String, Value>,
         _profiles: &EffectiveProfiles,
     ) -> Result<(), ConfigError> {
-        validate_config(config).map_err(config_error)
+        validate_config(config)
     }
 
     fn points_total(&self, _config: &Map<String, Value>) -> Option<Decimal> {

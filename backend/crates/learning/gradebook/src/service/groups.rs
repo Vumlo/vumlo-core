@@ -326,7 +326,7 @@ fn problem(field: &'static str, message: &str) -> GradebookError {
 /// Points for a target or a cap: a decimal string with at most two decimals, above zero for a
 /// target and a cap, and below what the column holds.
 fn parse_points(raw: &str, field: &'static str) -> Result<Decimal, GradebookError> {
-    content::parse_decimal(raw)
+    activity::parse_decimal(raw)
         .filter(|value| *value <= Decimal::from(POINTS_MAX))
         .ok_or_else(|| {
             problem(

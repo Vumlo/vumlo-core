@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 
-use activity::{
+use crate::types::{file, form, no_submission, quiz, text};
+use crate::{
     ActivityType, Capabilities, CompletionPolicy, DocumentErrors, EffectiveProfiles, Stage,
     ValidContent,
 };
@@ -8,7 +9,6 @@ use serde_json::{Map, Value, json};
 use uuid::Uuid;
 
 use super::builtin_types;
-use crate::types::{file, form, no_submission, quiz, text};
 
 fn obj(value: &Value) -> &Map<String, Value> {
     value.as_object().unwrap()
@@ -221,5 +221,24 @@ fn only_a_file_type_checks_names() {
         &form::Form,
     ] {
         assert_eq!(ty.check_file_names(&body, &body, &names), Ok(()));
+    }
+}
+
+#[test]
+fn the_text_and_no_submission_types_take_an_empty_config_only() {
+    let profiles = EffectiveProfiles::unrestricted();
+    for assignment_type in [
+        &text::Text as &dyn ActivityType,
+        &no_submission::NoSubmission,
+    ] {
+        let mut config = Map::new();
+        assert_eq!(assignment_type.validate_config(&config, &profiles), Ok(()));
+        config.insert("limit".to_owned(), Value::from(5));
+        let error = assignment_type
+            .validate_config(&config, &profiles)
+            .unwrap_err();
+        let message = error.to_string();
+        assert!(message.contains("limit"), "{message}");
+        assert!(message.contains(assignment_type.id()), "{message}");
     }
 }

@@ -10,17 +10,9 @@ pub mod text;
 
 pub use registry::builtin_types;
 
-use activity::{ConfigError, DocumentError, DocumentErrors, MAX_ERRORS};
+use crate::{ConfigError, DocumentError, DocumentErrors, MAX_ERRORS};
 use serde_json::{Map, Value};
 use sqlx::types::Decimal;
-
-use super::model::ModelError;
-
-/// What a type's own functions refuse, as the contract's error. Only `ModelError::Config` comes
-/// from a type; its text is the message, and any other variant maps by its text too.
-pub(super) fn config_error(error: ModelError) -> ConfigError {
-    ConfigError::new(error.to_string())
-}
 
 /// Ids of questions, fields and options: 1 to 64 characters of letters, digits, `_` and `-`.
 pub(super) fn valid_id(id: &str) -> bool {
@@ -52,7 +44,7 @@ pub(super) fn parse_number(raw: &str) -> Option<Decimal> {
 }
 
 /// The first problem of a nested document as a config error naming where it is.
-pub(super) fn document_problem(path: &str, errors: &DocumentErrors) -> ModelError {
+pub(super) fn document_problem(path: &str, errors: &DocumentErrors) -> ConfigError {
     let detail = errors.iter().next().map_or_else(
         || "is not a valid document".to_owned(),
         |error| {
@@ -63,16 +55,16 @@ pub(super) fn document_problem(path: &str, errors: &DocumentErrors) -> ModelErro
             }
         },
     );
-    ModelError::Config(format!("`{path}` {detail}"))
+    ConfigError::new(format!("`{path}` {detail}"))
 }
 
 /// A serde failure as a config error. The message may quote a short piece of what was sent; it is
 /// cut so that it cannot repeat a large value.
-pub(super) fn shape_problem(what: &str, error: &serde_json::Error) -> ModelError {
+pub(super) fn shape_problem(what: &str, error: &serde_json::Error) -> ConfigError {
     let text = error.to_string();
     let text = text.split(" at line ").next().unwrap_or(&text);
     let cut: String = text.chars().take(160).collect();
-    ModelError::Config(format!("the {what} config has the wrong shape: {cut}"))
+    ConfigError::new(format!("the {what} config has the wrong shape: {cut}"))
 }
 
 /// Collects answer problems, at most [`MAX_ERRORS`].

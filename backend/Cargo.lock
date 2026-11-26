@@ -19,6 +19,8 @@ name = "activity"
 version = "0.7.5"
 dependencies = [
  "api-types",
+ "chrono",
+ "serde",
  "serde_json",
  "sqlx",
  "thiserror 2.0.21",
@@ -722,7 +724,6 @@ dependencies = [
  "common",
  "events",
  "files",
- "serde",
  "serde_json",
  "sqlx",
  "teaching",

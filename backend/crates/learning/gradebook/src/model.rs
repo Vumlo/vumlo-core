@@ -3,9 +3,9 @@ use sqlx::types::Decimal;
 use uuid::Uuid;
 
 use super::layout::{GroupDef, Outcome, Settings, Setup};
-use activity::Kind;
+use activity::{Kind, MaxPoints};
 use common::text_enum;
-use content::{ItemFacts, MaxPoints};
+use content::ItemFacts;
 use teaching::CardCourse;
 
 const FEEDBACK_MAX_LEN: usize = 4000;
@@ -116,7 +116,7 @@ pub struct Score(Decimal);
 impl Score {
     /// `max` is the `max_points` of the assignment, read from its locked row.
     pub fn parse(raw: &str, max: Decimal) -> Result<Self, ModelError> {
-        content::parse_decimal(raw)
+        activity::parse_decimal(raw)
             .filter(|value| *value <= max)
             .map(Self)
             .ok_or(ModelError::Score { max })

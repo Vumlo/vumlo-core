@@ -14,19 +14,21 @@ use sqlx::PgConnection;
 use sqlx::types::Decimal;
 use uuid::Uuid;
 
+use activity::MaxPoints;
+
 use super::model::{
     Access, Assignment, ContentModule, ContentSubModule, ContentTitle, DraftItem, FactScope, Hit,
-    HitKind, Item, ItemFacts, ItemKind, ItemPatch, ItemStatus, ItemSummary, MaxPoints, ModelError,
-    Module, ModulePatch, NextDeadline, OnDeadline, OpenAssignment, OpenedAssignment, Revision,
+    HitKind, Item, ItemFacts, ItemKind, ItemPatch, ItemStatus, ItemSummary, ModelError, Module,
+    ModulePatch, NextDeadline, OnDeadline, OpenAssignment, OpenedAssignment, Revision,
     SettingProblem, SettingsPatch, SourceFact, Standing, SubmissionSettings, TemplateCounts,
 };
 use super::repo::{self, CopiedIds, ItemRow, ModuleRow};
 use super::rules::Node;
 use super::standing;
-use super::types::form::{self, Holders};
 use ::files::FileVerdict;
 use access::Actor;
 use access::{self, AccessError, Action, CourseAccess, CourseStatus, Release};
+use activity::types::form::{self, Holders};
 use activity::{
     ConfigError, DocumentErrors, EffectiveProfiles, FileRef, Kind, ValidDocument, distinct_ids,
     file_refs_under, plain_text, validate_document,

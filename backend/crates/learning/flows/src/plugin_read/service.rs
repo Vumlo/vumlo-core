@@ -19,7 +19,7 @@ use super::model::{
 };
 use super::repo::{self, After, AssignmentRow};
 use activity::Kind;
-use content::{form, quiz};
+use activity::types::{form, quiz};
 
 #[derive(Debug, thiserror::Error)]
 pub enum PluginReadError {

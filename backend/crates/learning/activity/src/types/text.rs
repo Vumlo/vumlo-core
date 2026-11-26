@@ -7,9 +7,7 @@ use api_types::{Feature, ProfileName};
 use serde_json::{Map, Value};
 use sqlx::types::Decimal;
 
-use super::config_error;
-use crate::model::ModelError;
-use activity::{
+use crate::{
     ActivityType, AutoGrade, Capabilities, Claims, CompletionPolicy, ConfigError, DocumentErrors,
     EffectiveProfiles, FileRef, Stage, ValidContent, file_refs_of, validate_document_within,
 };
@@ -19,10 +17,10 @@ pub const ID: &str = "text";
 /// The features a `text` assignment's `config.editor.features` allows, in the order given, or
 /// `None` when the config does not narrow the profile. Only `{"editor": {"features": [..]}}` is a
 /// valid config; the messages name the position of a mistake and never repeat what was sent.
-pub fn editor_features(config: &Map<String, Value>) -> Result<Option<Vec<Feature>>, ModelError> {
-    let invalid = |message: &str| Err(ModelError::Config(message.to_owned()));
+pub fn editor_features(config: &Map<String, Value>) -> Result<Option<Vec<Feature>>, ConfigError> {
+    let invalid = |message: &str| Err(ConfigError::new(message));
     if let Some(field) = config.keys().find(|key| *key != "editor") {
-        return Err(ModelError::Config(format!(
+        return Err(ConfigError::new(format!(
             "unknown field `{field}`: the text type has only `editor`"
         )));
     }
@@ -44,7 +42,7 @@ pub fn editor_features(config: &Map<String, Value>) -> Result<Option<Vec<Feature
     let mut chosen = Vec::with_capacity(features.len());
     for (index, value) in features.iter().enumerate() {
         let Some(feature) = value.as_str().and_then(Feature::from_name) else {
-            return Err(ModelError::Config(format!(
+            return Err(ConfigError::new(format!(
                 "`editor.features[{index}]` is not a feature (expected one of: {})",
                 Feature::ALL
                     .iter()
@@ -54,7 +52,7 @@ pub fn editor_features(config: &Map<String, Value>) -> Result<Option<Vec<Feature
             )));
         };
         if chosen.contains(&feature) {
-            return Err(ModelError::Config(format!(
+            return Err(ConfigError::new(format!(
                 "`editor.features[{index}]` is listed twice"
             )));
         }
@@ -68,11 +66,11 @@ pub fn editor_features(config: &Map<String, Value>) -> Result<Option<Vec<Feature
 pub fn validate_config(
     config: &Map<String, Value>,
     profiles: &EffectiveProfiles,
-) -> Result<(), ModelError> {
+) -> Result<(), ConfigError> {
     let allowed = &profiles.profile(ProfileName::Student).features;
     for (index, feature) in editor_features(config)?.into_iter().flatten().enumerate() {
         if !allowed.contains(&feature) {
-            return Err(ModelError::Config(format!(
+            return Err(ConfigError::new(format!(
                 "`editor.features[{index}]` is not a feature of the student profile"
             )));
         }
@@ -124,7 +122,7 @@ impl ActivityType for Text {
         config: &Map<String, Value>,
         profiles: &EffectiveProfiles,
     ) -> Result<(), ConfigError> {
-        validate_config(config, profiles).map_err(config_error)
+        validate_config(config, profiles)
     }
 
     fn points_total(&self, _config: &Map<String, Value>) -> Option<Decimal> {
@@ -171,3 +169,6 @@ impl ActivityType for Text {
         submission_file_refs(content)
     }
 }
+
+#[cfg(test)]
+mod tests;

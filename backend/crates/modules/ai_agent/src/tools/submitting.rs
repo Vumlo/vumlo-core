@@ -9,9 +9,10 @@
 use std::collections::BTreeMap;
 
 use access::Actor;
+use activity::types::text;
 use chrono::Utc;
 use common::{ApiError, PageParams};
-use content::{ItemRules, text};
+use content::ItemRules;
 use learning::{items, submissions};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};

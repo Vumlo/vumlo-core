@@ -174,7 +174,7 @@ pub enum StateError {
 /// is the only error tolerated. A set of types that cannot be built (two with one id) fails start.
 pub fn install_registries() -> Result<(), InstallError> {
     let _already_installed = events::install(learning::subscribers());
-    match activity::install(content::builtin_types()?) {
+    match activity::install(activity::types::builtin_types()?) {
         Ok(()) | Err(InstallError::AlreadyInstalled) => Ok(()),
         Err(error) => Err(error),
     }

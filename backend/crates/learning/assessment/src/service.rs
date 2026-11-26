@@ -24,9 +24,10 @@ use super::model::{
 use super::repo;
 use access::Actor;
 use access::{self, AccessError, Action};
+use activity::types::{form, quiz};
 use activity::{AutoGrade, DocumentErrors, EffectiveProfiles, FileRef, Kind, Stage, distinct_ids};
 use common::{Page, PageParams};
-use content::{self, Assignment, OnDeadline, OpenError, OpenedAssignment, form, quiz};
+use content::{self, Assignment, OnDeadline, OpenError, OpenedAssignment};
 use events::{self, Event, EventsError};
 use teaching::TeachingError;
 
@@ -772,7 +773,7 @@ pub async fn finish_quiz_result(
     let (attempt, scores) = repo::latest_with_scores(conn, assignment_id, actor.user_id())
         .await?
         .ok_or(AssessmentError::NothingToShow)?;
-    let questions = content::quiz_result_questions(&assignment.config, &attempt.content, &scores)
+    let questions = quiz::result_questions(&assignment.config, &attempt.content, &scores)
         .ok_or(AssessmentError::NothingToShow)?;
     Ok(QuizResult {
         score,

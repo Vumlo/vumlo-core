@@ -11,7 +11,7 @@ pub(crate) async fn db_test(body: impl AsyncFnOnce(PgPool)) {
 }
 
 pub(crate) fn install_types() {
-    activity::ensure_installed(|| crate::builtin_types().unwrap());
+    activity::ensure_installed(|| activity::types::builtin_types().unwrap());
 }
 
 /// The built-in type `id`, from the installed registry.

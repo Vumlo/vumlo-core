@@ -508,7 +508,7 @@ async fn assignment_info(
     let Some(assignment) = &item.assignment else {
         return Err("that item is not an assignment".to_owned());
     };
-    let is_text = assignment.assignment_type.id() == content::text::ID;
+    let is_text = assignment.assignment_type.id() == activity::types::text::ID;
     Ok(json!({
         "id": item.id,
         "course_id": item.course_id,

@@ -1,10 +1,9 @@
-use activity::{ActivityType, EffectiveProfiles, RegistryError};
-use api_types::Feature;
+use activity::types::builtin_types;
+use activity::types::no_submission::NoSubmission;
+use activity::types::text::Text;
+use activity::{ActivityType, RegistryError};
 
 use super::*;
-use crate::types::builtin_types;
-use crate::types::no_submission::NoSubmission;
-use crate::types::text::{Text, editor_features};
 
 #[test]
 fn a_revision_knows_what_changed_since_the_item_was_published() {
@@ -71,52 +70,6 @@ fn enums_round_trip() {
 }
 
 #[test]
-fn max_points_accepts_decimal_strings_up_to_two_decimals() {
-    for ok in ["20", "7.5", "20.00", "0.01", "9999.99", "9999", "0012"] {
-        assert!(MaxPoints::parse(ok).is_ok(), "{ok}");
-    }
-}
-
-#[test]
-fn max_points_rejects_everything_else() {
-    for bad in [
-        "0",
-        "0.00",
-        "-1",
-        "10000",
-        "9999.991",
-        "10000.00",
-        "1.005",
-        "abc",
-        "",
-        ".5",
-        "5.",
-        "+5",
-        "1e2",
-        " 5",
-        "5 ",
-        "1,5",
-        "1.2.3",
-        "99999999999999999999",
-    ] {
-        assert_eq!(MaxPoints::parse(bad), Err(ModelError::MaxPoints), "{bad:?}");
-    }
-}
-
-#[test]
-fn max_points_display_has_exactly_two_decimals() {
-    for (raw, shown) in [
-        ("20", "20.00"),
-        ("7.5", "7.50"),
-        ("20.00", "20.00"),
-        ("0.01", "0.01"),
-        ("9999.99", "9999.99"),
-    ] {
-        assert_eq!(MaxPoints::parse(raw).unwrap().to_string(), shown);
-    }
-}
-
-#[test]
 fn the_built_in_types_are_the_five_names_and_nothing_else() {
     let types = builtin_types().unwrap();
     for text in ["text", "no_submission", "quiz", "form", "file"] {
@@ -134,22 +87,6 @@ fn the_built_in_types_are_the_five_names_and_nothing_else() {
     let message = ModelError::UnknownAssignmentType.to_string();
     for name in ["text", "no_submission", "quiz", "form", "file"] {
         assert!(message.contains(name), "{message}");
-    }
-}
-
-#[test]
-fn the_text_and_no_submission_types_take_an_empty_config_only() {
-    let profiles = EffectiveProfiles::unrestricted();
-    for assignment_type in [&Text as &dyn ActivityType, &NoSubmission] {
-        let mut config = Map::new();
-        assert_eq!(assignment_type.validate_config(&config, &profiles), Ok(()));
-        config.insert("limit".to_owned(), Value::from(5));
-        let error = assignment_type
-            .validate_config(&config, &profiles)
-            .unwrap_err();
-        let message = error.to_string();
-        assert!(message.contains("limit"), "{message}");
-        assert!(message.contains(assignment_type.id()), "{message}");
     }
 }
 
@@ -365,80 +302,6 @@ fn a_type_that_takes_no_submissions_refuses_every_value_but_accepts_null() {
     );
     assert!(Text.capabilities().submissions);
     assert!(!NoSubmission.capabilities().submissions);
-}
-
-fn features(config: Value) -> Result<Option<Vec<Feature>>, ModelError> {
-    editor_features(config.as_object().unwrap())
-}
-
-#[test]
-fn the_editor_features_of_a_text_config_are_a_list_of_known_unique_names() {
-    assert_eq!(features(serde_json::json!({})), Ok(None));
-    assert_eq!(features(serde_json::json!({"editor": {}})), Ok(None));
-    assert_eq!(
-        features(serde_json::json!({"editor": {"features": ["code", "headings"]}})),
-        Ok(Some(vec![Feature::Code, Feature::Headings]))
-    );
-    assert_eq!(
-        features(serde_json::json!({"editor": {"features": []}})),
-        Ok(Some(vec![]))
-    );
-    for (what, config) in [
-        ("another key", serde_json::json!({"limit": 1})),
-        ("editor not an object", serde_json::json!({"editor": []})),
-        (
-            "another editor key",
-            serde_json::json!({"editor": {"a": 1}}),
-        ),
-        (
-            "features not a list",
-            serde_json::json!({"editor": {"features": "code"}}),
-        ),
-        (
-            "unknown feature",
-            serde_json::json!({"editor": {"features": ["code", "blink"]}}),
-        ),
-        (
-            "not a string",
-            serde_json::json!({"editor": {"features": [1]}}),
-        ),
-        (
-            "twice",
-            serde_json::json!({"editor": {"features": ["code", "code"]}}),
-        ),
-    ] {
-        let error = features(config).expect_err(what);
-        assert!(!error.to_string().contains("blink"), "{what}: {error}");
-    }
-    let message = features(serde_json::json!({"editor": {"features": ["code", "blink"]}}))
-        .unwrap_err()
-        .to_string();
-    assert!(message.contains("features[1]"), "{message}");
-    // The type validates through the same function.
-    let config = serde_json::json!({"editor": {"features": ["blink"]}});
-    assert!(
-        Text.validate_config(
-            config.as_object().unwrap(),
-            &EffectiveProfiles::unrestricted()
-        )
-        .is_err()
-    );
-    let config = serde_json::json!({"editor": {"features": ["code"]}});
-    assert!(
-        Text.validate_config(
-            config.as_object().unwrap(),
-            &EffectiveProfiles::unrestricted()
-        )
-        .is_ok()
-    );
-    assert!(
-        NoSubmission
-            .validate_config(
-                config.as_object().unwrap(),
-                &EffectiveProfiles::unrestricted()
-            )
-            .is_err()
-    );
 }
 
 #[test]

@@ -9,11 +9,8 @@ use serde_json::{Map, Value, json};
 use sqlx::types::Decimal;
 use uuid::Uuid;
 
-use super::{
-    Problems, answer_path, answers_of, config_error, parse_number, shape_problem, valid_id,
-};
-use crate::model::ModelError;
-use activity::{
+use super::{Problems, answer_path, answers_of, parse_number, shape_problem, valid_id};
+use crate::{
     ActivityType, AutoGrade, Capabilities, Claims, CompletionPolicy, ConfigError, DocumentErrors,
     EffectiveProfiles, Stage, ValidContent, valid_href,
 };
@@ -116,7 +113,7 @@ fn rule_int(
     key: &str,
     range: std::ops::RangeInclusive<i64>,
     path: &str,
-) -> Result<Option<i64>, ModelError> {
+) -> Result<Option<i64>, ConfigError> {
     let Some(value) = rules.get(key) else {
         return Ok(None);
     };
@@ -125,7 +122,7 @@ fn rule_int(
         .filter(|n| range.contains(n))
         .map(Some)
         .ok_or_else(|| {
-            ModelError::Config(format!(
+            ConfigError::new(format!(
                 "`{path}.rules.{key}` must be a whole number from {} to {}",
                 range.start(),
                 range.end()
@@ -133,11 +130,11 @@ fn rule_int(
         })
 }
 
-fn rule_bool(rules: &Map<String, Value>, key: &str, path: &str) -> Result<bool, ModelError> {
+fn rule_bool(rules: &Map<String, Value>, key: &str, path: &str) -> Result<bool, ConfigError> {
     match rules.get(key) {
         None => Ok(false),
         Some(Value::Bool(value)) => Ok(*value),
-        Some(_) => Err(ModelError::Config(format!(
+        Some(_) => Err(ConfigError::new(format!(
             "`{path}.rules.{key}` must be true or false"
         ))),
     }
@@ -147,20 +144,20 @@ fn rule_decimal(
     rules: &Map<String, Value>,
     key: &str,
     path: &str,
-) -> Result<Option<Decimal>, ModelError> {
+) -> Result<Option<Decimal>, ConfigError> {
     match rules.get(key) {
         None => Ok(None),
         Some(Value::String(text)) => parse_number(text)
             .map(Some)
-            .ok_or_else(|| ModelError::Config(format!("`{path}.rules.{key}` must be a number"))),
-        Some(_) => Err(ModelError::Config(format!(
+            .ok_or_else(|| ConfigError::new(format!("`{path}.rules.{key}` must be a number"))),
+        Some(_) => Err(ConfigError::new(format!(
             "`{path}.rules.{key}` must be a number in quotes"
         ))),
     }
 }
 
-fn parse(config: &Map<String, Value>) -> Result<Vec<Field>, ModelError> {
-    let bad = |message: String| ModelError::Config(message);
+fn parse(config: &Map<String, Value>) -> Result<Vec<Field>, ConfigError> {
+    let bad = |message: String| ConfigError::new(message);
     let raw: RawConfig = serde_json::from_value(Value::Object(config.clone()))
         .map_err(|error| shape_problem("form", &error))?;
     if raw.v != 1 {
@@ -284,7 +281,7 @@ fn parse(config: &Map<String, Value>) -> Result<Vec<Field>, ModelError> {
 }
 
 /// Checks a form config (ADR-0051 points 1 and 2).
-pub fn validate_config(config: &Map<String, Value>) -> Result<(), ModelError> {
+pub fn validate_config(config: &Map<String, Value>) -> Result<(), ConfigError> {
     parse(config).map(|_| ())
 }
 
@@ -584,7 +581,7 @@ impl ActivityType for Form {
         config: &Map<String, Value>,
         _profiles: &EffectiveProfiles,
     ) -> Result<(), ConfigError> {
-        validate_config(config).map_err(config_error)
+        validate_config(config)
     }
 
     fn points_total(&self, _config: &Map<String, Value>) -> Option<Decimal> {

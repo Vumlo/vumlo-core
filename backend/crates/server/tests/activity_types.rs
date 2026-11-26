@@ -90,7 +90,7 @@ static IN_PERSON_TYPE: InPerson = InPerson;
 /// an installed registry, so this one wins as long as it runs before the first server starts.
 fn install_types() {
     activity::ensure_installed(|| {
-        content::builtin_types()
+        activity::types::builtin_types()
             .and_then(|types: Types| types.with(&IN_PERSON_TYPE))
             .expect("the built-in types and in_person")
     });

@@ -8,10 +8,12 @@ use uuid::Uuid;
 
 use sqlx::types::Decimal;
 
+use activity::MaxPoints;
+
 use super::model::{
     Access, Assignment, AssignmentSummary, DraftItem, FactScope, Item, ItemKind, ItemStatus,
-    ItemSummary, MaxPoints, Module, ModuleStatus, NextDeadline, OnDeadline, OpenAssignment,
-    PublishedSlot, SourceFact, SubmissionSettings, TemplateCounts,
+    ItemSummary, Module, ModuleStatus, NextDeadline, OnDeadline, OpenAssignment, PublishedSlot,
+    SourceFact, SubmissionSettings, TemplateCounts,
 };
 use super::rules::{Condition, Facts, Node, Rules};
 use access::Release;

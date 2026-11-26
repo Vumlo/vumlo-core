@@ -6,8 +6,9 @@
 use std::collections::BTreeMap;
 
 use access::Actor;
+use activity::MaxPoints;
 use common::ApiError;
-use content::{self, Assignment, ContentTitle, ItemRules, MaxPoints, NewItemInput};
+use content::{self, Assignment, ContentTitle, ItemRules, NewItemInput};
 use learning::items;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
@@ -336,7 +337,7 @@ impl Write {
                     .as_deref()
                     .filter(|t| !t.trim().is_empty())
                     .map(document);
-                let assignment = assignment(content::text::ID, Map::new(), points)?;
+                let assignment = assignment(activity::types::text::ID, Map::new(), points)?;
                 items::create_item(
                     conn,
                     actor,
@@ -361,7 +362,7 @@ impl Write {
                     .filter(|t| !t.trim().is_empty())
                     .map(document);
                 let assignment = assignment(
-                    content::quiz::ID,
+                    activity::types::quiz::ID,
                     config,
                     points(&total.to_string(), "questions")?,
                 )?;
