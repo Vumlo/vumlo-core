@@ -43,7 +43,7 @@ function AssignmentRow({ courseId, item, meta }: { courseId: string; item: ItemS
       <ItemTile kind="assignment" />
       <span className={s.rowMain}>
         <span className={s.rowTitle}>{item.title}</span>
-        <span className={s.rowMeta}>{typeLabel(a.type)}, {a.max_points === "0.00" ? t("row.notGraded") : t("row.points", { points: wholePoints(a.max_points) })}</span>
+        <span className={s.rowMeta}>{typeLabel(item.type)}, {a.max_points === "0.00" ? t("row.notGraded") : t("row.points", { points: wholePoints(a.max_points) })}</span>
       </span>
       <span className={s.due}>
         <span className={s.dueMain}>{dueShort(a.due_at ?? null, meta?.class_on, today)}</span>
@@ -72,7 +72,7 @@ export function StudentContent({ courseId }: { courseId: string }) {
     .sort((a, b) => a.assignment!.due_at!.localeCompare(b.assignment!.due_at!))[0];
   const upMeta = upcoming ? m[upcoming.id] : undefined;
   const latest = (grades.data?.items ?? []).slice().sort((a, b) => b.published_at.localeCompare(a.published_at))[0];
-  const open = items.filter((i) => isAssignment(i) && !["graded"].includes(m[i.id]?.status ?? "") && i.assignment?.type !== "no_submission").length;
+  const open = items.filter((i) => isAssignment(i) && !["graded"].includes(m[i.id]?.status ?? "") && i.type !== "no_submission").length;
 
   return (
     <div className="container">

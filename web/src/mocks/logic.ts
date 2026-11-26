@@ -252,7 +252,7 @@ export function dueIn(item: DbItem): { open: boolean; closed: boolean } {
 export function workStatus(item: DbItem, studentId: string): WorkStatus {
   const sub = submissionOf(item.id, studentId);
   if (isPublished(gradeOf(item.id, studentId))) return "graded";
-  if (item.assignment?.type === "no_submission") return "in_class";
+  if (item.type === "no_submission") return "in_class";
   if (sub && sub.attempts.length > 0) return "submitted";
   if (sub?.draft) return "draft";
   return dueIn(item).closed ? "missed" : "not_started";
@@ -263,7 +263,7 @@ export function workItem(item: DbItem, studentId: string): MyWorkItem {
   const pub = isPublished(g);
   const a = item.assignment!;
   return {
-    assignment_id: item.id, course_id: item.course_id, title: item.title, type: a.type,
+    assignment_id: item.id, course_id: item.course_id, title: item.title, type: item.type,
     due_at: a.due_at ?? null, class_on: item.class_on ?? null, max_points: a.max_points, status: workStatus(item, studentId),
     score: pub ? (g!.published_score ?? null) : null, published_at: pub ? g!.published_at : null,
     draft_saved_at: submissionOf(item.id, studentId)?.draft?.updated_at ?? null,
@@ -282,7 +282,7 @@ export const formOf = (item: DbItem) => item.assignment?.config as unknown as Fo
 /** Students never receive the answer key (ADR-0023). */
 export function studentConfig(item: DbItem): Record<string, unknown> {
   const a = item.assignment!;
-  if (a.type === "quiz") {
+  if (item.type === "quiz") {
     const q = quizOf(item);
     return {
       ...q,

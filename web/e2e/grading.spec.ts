@@ -39,7 +39,7 @@ test("a quiz or form attempt is drawn as questions", async ({ page }) => {
     const tree = await j(`/courses/${id}/content`);
     const items = tree.modules.flatMap((m: { items: { id: string; kind: string }[]; submodules: { items: { id: string; kind: string }[] }[] }) => [...m.items, ...m.submodules.flatMap((s) => s.items)]);
     for (const it of items.filter((i: { kind: string }) => i.kind === "assignment")) {
-      const type = (await j(`/items/${it.id}`)).assignment?.type;
+      const type = (await j(`/items/${it.id}`)).type;
       if (type !== "quiz" && type !== "form") continue;
       const sub = (await j(`/assignments/${it.id}/submissions`)).items.find((s: { status: string }) => s.status === "submitted");
       if (sub) return { item: it.id as string, student: sub.student_id as string };

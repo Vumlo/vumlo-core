@@ -67,16 +67,16 @@ type MockItem = ReturnType<typeof assignmentFor>;
 /** The content of a quiz or form submission as the server stores it, from what the mock keeps. */
 function wireContent(item: MockItem, content: unknown): unknown {
   const a = item.assignment!;
-  if (a.type !== "quiz" && a.type !== "form") return content;
+  if (item.type !== "quiz" && item.type !== "form") return content;
   const answers = (content as { answers?: AnswerMap } | null)?.answers ?? {};
-  return { answers: answersToWire(a.type, a.config, answers) };
+  return { answers: answersToWire(item.type, a.config, answers) };
 }
 
 /** What the mock keeps of the content a client sent. */
 function uiContent(item: MockItem, content: unknown): unknown {
   const a = item.assignment!;
-  if (a.type !== "quiz" && a.type !== "form") return content;
-  return { answers: answersFromWire(a.type, a.config, content) };
+  if (item.type !== "quiz" && item.type !== "form") return content;
+  return { answers: answersFromWire(item.type, a.config, content) };
 }
 
 function staffAssignment(id: string, ability: UnitAbility) {
@@ -96,7 +96,7 @@ export function toGradeList(courseIds: string[]) {
   for (const cid of courseIds) {
     const c = courseById(cid);
     const info = courseInfo(c);
-    for (const item of db.items.filter((i) => i.course_id === cid && i.assignment && i.assignment.type !== "no_submission" && toCents(i.assignment.max_points) > 0)) {
+    for (const item of db.items.filter((i) => i.course_id === cid && i.assignment && i.type !== "no_submission" && toCents(i.assignment.max_points) > 0)) {
       for (const m of activeStudents(cid)) {
         const sub = submissionOf(item.id, m.user_id);
         const g = gradeOf(item.id, m.user_id);
@@ -181,7 +181,7 @@ export const workHandlers = [
     const { user, item, staff } = viewAssignment(String(params.id));
     if (staff) throw forbidden();
     const a = item.assignment!;
-    if (a.type === "no_submission") throw problem(409, "Conflict", "Nothing to submit here");
+    if (item.type === "no_submission") throw problem(409, "Conflict", "Nothing to submit here");
     if (dueIn(item).closed) throw problem(409, "Conflict", "This assignment is closed");
     const sub = submissionOf(item.id, user.id);
     if (a.max_attempts != null && (sub?.attempts.length ?? 0) >= a.max_attempts) throw problem(409, "Conflict", "You have used all attempts");
@@ -191,12 +191,12 @@ export const workHandlers = [
     if (!s) { s = { assignment_id: item.id, student_id: user.id, draft: null, attempts: [] }; db.submissions.push(s); }
     const place = { profile: "student", userId: user.id, assignmentId: item.id } as const;
     // A file hand-in judges its comment in checkFileContent.
-    if (a.type === "quiz" || a.type === "form") {
+    if (item.type === "quiz" || item.type === "form") {
       for (const [id, value] of Object.entries((b.content as { answers?: Record<string, unknown> } | undefined)?.answers ?? {})) checkDocument(value, place, `content.answers.${id}`);
-    } else if (a.type !== "file") {
+    } else if (item.type !== "file") {
       checkDocument(b.content, place, "content");
     }
-    const content = a.type === "file" ? checkFileContent(item, user.id, b.content, false) : uiContent(item, b.content);
+    const content = item.type === "file" ? checkFileContent(item, user.id, b.content, false) : uiContent(item, b.content);
     s.draft = { content, updated_at: MOCK_NOW.toISOString() };
     return HttpResponse.json({ ...s.draft, content: wireContent(item, s.draft.content) });
   }),
@@ -214,8 +214,8 @@ export const workHandlers = [
     const a = item.assignment!;
     if (dueIn(item).closed) throw problem(409, "Conflict", "This assignment is closed");
     if (a.max_attempts != null && s.attempts.length >= a.max_attempts) throw problem(409, "Conflict", "You have used all attempts");
-    if (a.type === "file") checkFileContent(item, user.id, s.draft.content, true);
-    if (a.type === "form") {
+    if (item.type === "file") checkFileContent(item, user.id, s.draft.content, true);
+    if (item.type === "form") {
       const answers = (s.draft.content as { answers?: Record<string, string | string[]> }).answers ?? {};
       const missing = formOf(item).fields.filter((f) => f.required && (!answers[f.id] || (Array.isArray(answers[f.id]) && (answers[f.id] as string[]).length === 0)));
       if (missing.length) throw problem(422, "Validation failed", undefined, missing.map((f) => ({ field: `content.answers.${f.id}`, message: "is required" })));
@@ -223,7 +223,7 @@ export const workHandlers = [
     const attempt = { id: uid(`attempt:${item.id}:${user.id}:${s.attempts.length + 1}:${Date.now()}`), attempt: s.attempts.length + 1, content: s.draft.content, submitted_at: MOCK_NOW.toISOString(), is_late: !!a.due_at && new Date(a.due_at) < MOCK_NOW };
     s.attempts.unshift(attempt);
     s.draft = null;
-    if (a.type === "quiz") {
+    if (item.type === "quiz") {
       const q = quizOf(item);
       const hasLong = q.questions.some((x) => x.type === "long");
       if (!hasLong) {
@@ -395,7 +395,7 @@ export const workHandlers = [
   http.put(`${A}/courses/:id/gradebook/placement`, ({ params }) => { requireStaff(String(params.id), "grade"); return new HttpResponse(null, { status: 204 }); }),
   http.get(`${A}/assignments/:id/responses`, ({ params }) => {
     const { item, course } = staffAssignment(String(params.id), "view_grades");
-    if (item.assignment!.type !== "form") throw notFound();
+    if (item.type !== "form") throw notFound();
     const students = activeStudents(course.id);
     const rows = students.flatMap((m) => {
       const a = submissionOf(item.id, m.user_id)?.attempts[0];
@@ -424,7 +424,7 @@ export const workHandlers = [
         if (item.assignment) {
           const students = activeStudents(c.id);
           const draftCount = students.filter((s) => { const g = gradeOf(item.id, s.user_id); return !!g && hasUnpublishedChanges(g); }).length;
-          if (draftCount) unpublished.push({ assignment_id: item.id, assignment_title: item.title, course_id: c.id, course_code: info.code, course_title: c.title, draft_count: draftCount, auto_scored: item.assignment.type === "quiz" });
+          if (draftCount) unpublished.push({ assignment_id: item.id, assignment_title: item.title, course_id: c.id, course_code: info.code, course_title: c.title, draft_count: draftCount, auto_scored: item.type === "quiz" });
           const due = item.assignment.due_at;
           if (due && new Date(due) >= MOCK_NOW) {
             deadlines.push({

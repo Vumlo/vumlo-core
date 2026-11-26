@@ -2357,7 +2357,7 @@ async fn a_file_assignment_takes_max_files_and_accept() {
 
         let config = json!({"max_files": 3, "accept": [".pdf", ".docx"]});
         let made = created(&post(&w.http, &w.owner.token, &path, request(config.clone())).await);
-        assert_eq!(made["assignment"]["type"], "file");
+        assert_eq!(made["type"], "file");
         assert_eq!(made["assignment"]["config"], config);
         let defaults = created(&post(&w.http, &w.owner.token, &path, request(json!({}))).await);
         assert_eq!(defaults["assignment"]["config"], json!({}));
@@ -2406,14 +2406,14 @@ async fn a_no_submission_assignment_is_created_like_a_text_one() {
         assert_eq!(oral["status"], "draft");
         assert_eq!(
             oral["assignment"],
-            json!({"type": "no_submission", "config": {}, "max_points": "12.00", "is_bonus": false, "due_at": null, "on_deadline": null, "accept_late": null, "late_until": null, "max_attempts": null, "class_on": null})
+            json!({"config": {}, "max_points": "12.00", "is_bonus": false, "due_at": null, "on_deadline": null, "accept_late": null, "late_until": null, "max_attempts": null, "class_on": null})
         );
         let fetched = item_json(&w, id_of(&oral)).await;
         assert_eq!(fetched["assignment"], oral["assignment"]);
         let seen = tree(&w, &w.owner.token).await;
         assert_eq!(
             top(&seen, "M")["items"][0]["assignment"],
-            json!({"type": "no_submission", "max_points": "12.00", "is_bonus": false, "due_at": null, "on_deadline": null, "accept_late": null, "late_until": null, "max_attempts": null})
+            json!({"max_points": "12.00", "is_bonus": false, "due_at": null, "on_deadline": null, "accept_late": null, "late_until": null, "max_attempts": null})
         );
 
         // An empty config is the type's config; any field is a mistake on `config`, and the value is
@@ -2449,7 +2449,7 @@ async fn a_no_submission_assignment_is_created_like_a_text_one() {
         let response = patch_item(&w, id, json!({"config": {"limit": 1}})).await;
         assert_eq!(error_fields(&response), ["config"]);
         let patched = ok(&patch_item(&w, id, json!({"max_points": "8.5", "config": {}})).await);
-        assert_eq!(patched["assignment"]["type"], "no_submission");
+        assert_eq!(patched["type"], "no_submission");
         assert_eq!(patched["assignment"]["max_points"], "8.50");
     })
     .await;
@@ -2551,7 +2551,7 @@ async fn students_see_a_no_submission_item_under_the_ordinary_publication_rules(
 
         publish_item(&w, oral).await;
         let seen = ok(&get(&w.http, &w.student.token, &format!("/items/{oral}")).await);
-        assert_eq!(seen["assignment"]["type"], "no_submission");
+        assert_eq!(seen["type"], "no_submission");
         let listed = tree(&w, &w.student.token).await;
         assert_eq!(titles(&top(&listed, "M")["items"]), ["Oral"]);
     })
@@ -2631,7 +2631,7 @@ async fn an_assignment_carries_its_part_and_a_text_item_none() {
         assert_eq!(essay["kind"], "assignment");
         assert_eq!(essay["status"], "draft");
         assert_eq!(essay["body"], doc(json!([paragraph("i", "Write")])));
-        let expected = json!({"type": "text", "config": {}, "max_points": "20.00", "is_bonus": false, "due_at": null, "on_deadline": null, "accept_late": null, "late_until": null, "max_attempts": null, "class_on": null});
+        let expected = json!({"config": {}, "max_points": "20.00", "is_bonus": false, "due_at": null, "on_deadline": null, "accept_late": null, "late_until": null, "max_attempts": null, "class_on": null});
         assert_eq!(essay["assignment"], expected);
 
         let fetched = item_json(&w, id_of(&essay)).await;
@@ -2643,7 +2643,7 @@ async fn an_assignment_carries_its_part_and_a_text_item_none() {
         assert!(items[0].get("assignment").is_none(), "a text item has none");
         assert_eq!(
             items[1]["assignment"],
-            json!({"type": "text", "max_points": "20.00", "is_bonus": false, "due_at": null, "on_deadline": null, "accept_late": null, "late_until": null, "max_attempts": null}),
+            json!({"max_points": "20.00", "is_bonus": false, "due_at": null, "on_deadline": null, "accept_late": null, "late_until": null, "max_attempts": null}),
             "the tree shows no config"
         );
         // Publishing keeps the part.
@@ -2670,7 +2670,7 @@ async fn patch_changes_assignment_fields_and_refuses_them_for_a_text_item() {
         assert_eq!(patched["title"], "Renamed");
         assert_eq!(
             patched["assignment"],
-            json!({"type": "text", "config": {}, "max_points": "7.50", "is_bonus": true, "due_at": null, "on_deadline": null, "accept_late": null, "late_until": null, "max_attempts": null, "class_on": null})
+            json!({"config": {}, "max_points": "7.50", "is_bonus": true, "due_at": null, "on_deadline": null, "accept_late": null, "late_until": null, "max_attempts": null, "class_on": null})
         );
         // A title-only patch leaves the assignment alone.
         let renamed = ok(&patch_item(&w, essay, json!({"title": "Again"})).await);
@@ -2701,7 +2701,7 @@ async fn type_and_kind_cannot_change_and_are_ignored_by_patch() {
 
         let patched = ok(&patch_item(&w, essay, json!({"type": "form", "kind": "text"})).await);
         assert_eq!(patched["kind"], "assignment");
-        assert_eq!(patched["assignment"]["type"], "text");
+        assert_eq!(patched["type"], "text");
         let patched =
             ok(&patch_item(&w, text, json!({"kind": "assignment", "type": "text"})).await);
         assert_eq!(
@@ -2720,7 +2720,7 @@ async fn students_reach_an_assignment_only_once_it_is_released_on_every_level() 
     db_test(async |pool| {
         let w = world(pool).await;
         let cases = build_cases_of(&w, true).await;
-        let part = json!({"type": "text", "config": {}, "max_points": "5.00", "is_bonus": false, "due_at": null, "on_deadline": null, "accept_late": null, "late_until": null, "max_attempts": null, "class_on": null});
+        let part = json!({"config": {}, "max_points": "5.00", "is_bonus": false, "due_at": null, "on_deadline": null, "accept_late": null, "late_until": null, "max_attempts": null, "class_on": null});
 
         for (why, item) in &cases.hidden {
             let response = get(&w.http, &w.student.token, &format!("/items/{item}")).await;
@@ -2736,7 +2736,7 @@ async fn students_reach_an_assignment_only_once_it_is_released_on_every_level() 
         assert_eq!(titles(&seen["modules"]), ["B", "C", "E", "F", "G"]);
         let g = top(&seen, "G");
         assert_eq!(titles(&g["items"]), ["G-direct"]);
-        let summary = json!({"type": "text", "max_points": "5.00", "is_bonus": false, "due_at": null, "on_deadline": null, "accept_late": null, "late_until": null, "max_attempts": null});
+        let summary = json!({"max_points": "5.00", "is_bonus": false, "due_at": null, "on_deadline": null, "accept_late": null, "late_until": null, "max_attempts": null});
         assert_eq!(g["items"][0]["assignment"], summary);
         assert_eq!(g["submodules"][0]["items"][0]["assignment"], summary);
         let raw = seen.to_string();

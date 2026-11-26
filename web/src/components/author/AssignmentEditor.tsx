@@ -40,7 +40,7 @@ export function AssignmentEditor({ item, courseId }: { item: Item; courseId: str
       <div className={s.shell}>
         <div className={s.canvas}>
           <div className={s.sheet}>
-            <p className="muted" style={{ fontSize: 14, marginBottom: 12 }}><strong style={{ color: "var(--asg-text)" }}>{t("cm.assignment")}</strong> {typeLabel(item.assignment!.type)}</p>
+            <p className="muted" style={{ fontSize: 14, marginBottom: 12 }}><strong style={{ color: "var(--asg-text)" }}>{t("cm.assignment")}</strong> {typeLabel(item.type)}</p>
             <label htmlFor="title" className="sr-only">{t("cm.title")}</label>
             <input id="title" className={s.titleInput} value={title} onChange={(e) => setTitle(e.target.value)} />
             <h2 style={{ fontSize: 16, fontWeight: 600, margin: "20px 0 8px" }}>{t("item.instructions")}</h2>

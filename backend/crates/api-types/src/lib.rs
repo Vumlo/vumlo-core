@@ -608,9 +608,6 @@ pub struct Module {
 /// The assignment part of an item of kind `assignment` (ADR-0021).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct Assignment {
-    /// The assignment type: `text`, `no_submission`, `quiz`, `form` or `file`. It cannot change.
-    #[serde(rename = "type")]
-    pub assignment_type: String,
     /// Settings of the type; an empty object for `no_submission`, the editor narrowing for `text`,
     /// the questions for a `quiz` (ADR-0050), the fields for a `form` (ADR-0051) and
     /// `{max_files?, accept?}` for a `file` (ADR-0069). A student
@@ -641,8 +638,6 @@ pub struct Assignment {
 /// What the course tree shows of an assignment: everything but `config`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct AssignmentSummary {
-    #[serde(rename = "type")]
-    pub assignment_type: String,
     /// A decimal string with exactly two decimals, e.g. `"20.00"`.
     pub max_points: String,
     pub is_bonus: bool,

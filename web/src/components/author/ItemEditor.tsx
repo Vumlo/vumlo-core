@@ -30,7 +30,7 @@ export function ItemEditor({ courseId, itemId }: { courseId: string; itemId: str
   if (it.unavailable) return <UnavailablePage item={it} courseId={courseId} />;
   if (it.type === "lecture") return <LectureEditor key={it.id} item={it} courseId={courseId} />;
   if (it.type === "shared_file") return <FileItemEditor key={it.id} item={it} courseId={courseId} />;
-  switch (it.assignment?.type) {
+  switch (it.type) {
     case "quiz": return <QuizBuilder key={it.id} item={it} courseId={courseId} />;
     case "form": return <FormBuilder key={it.id} item={it} courseId={courseId} />;
     default: return <AssignmentEditor key={it.id} item={it} courseId={courseId} />;

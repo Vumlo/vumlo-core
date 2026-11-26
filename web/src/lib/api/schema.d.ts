@@ -3295,8 +3295,6 @@ export interface components {
             /** @description A decimal string with exactly two decimals, e.g. `"20.00"`. */
             max_points: string;
             on_deadline?: components["schemas"]["OnDeadline"] | null;
-            /** @description The assignment type: `text`, `no_submission`, `quiz`, `form` or `file`. It cannot change. */
-            type: string;
         };
         /** @description What the course tree shows of an assignment: everything but `config`. */
         AssignmentSummary: {
@@ -3311,7 +3309,6 @@ export interface components {
             /** @description A decimal string with exactly two decimals, e.g. `"20.00"`. */
             max_points: string;
             on_deadline?: components["schemas"]["OnDeadline"] | null;
-            type: string;
         };
         /** @description One submitted attempt. Attempts are numbered from 1 per student and assignment and never change. */
         Attempt: {

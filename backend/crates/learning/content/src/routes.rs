@@ -224,7 +224,6 @@ fn domain_rule(rule: Option<api_types::AccessRule>) -> Vec<ConditionInput> {
 
 fn api_assignment(assignment: model::Assignment) -> api_types::Assignment {
     api_types::Assignment {
-        assignment_type: assignment.assignment_type.id().to_owned(),
         config: assignment.config,
         max_points: assignment.max_points.to_string(),
         is_bonus: assignment.is_bonus,
@@ -246,7 +245,6 @@ fn api_on_deadline(on_deadline: OnDeadline) -> api_types::OnDeadline {
 
 fn api_assignment_summary(assignment: model::AssignmentSummary) -> api_types::AssignmentSummary {
     api_types::AssignmentSummary {
-        assignment_type: assignment.assignment_type.id().to_owned(),
         max_points: assignment.max_points.to_string(),
         is_bonus: assignment.is_bonus,
         due_at: assignment.settings.due_at,
