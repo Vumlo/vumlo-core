@@ -110,9 +110,9 @@ async fn two_creates_racing_for_the_last_position_one_gets_409() {
 // first one commit. Nothing sleeps: the order is forced by the lock, not by timing.
 // -----------------------------------------------------------------------------------------
 
-use crate::model::MaxPoints;
 use crate::tests::kind;
 use crate::types::{form, quiz, text};
+use activity::MaxPoints;
 
 fn text(points: &str, is_bonus: bool) -> Assignment {
     Assignment {

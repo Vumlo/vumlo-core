@@ -18,7 +18,6 @@ use super::model::{
 use super::repo;
 use super::rules::{self, Condition, Node, Rules, Structure};
 use super::service::ContentError;
-use crate::points;
 
 /// The most conditions one rule has.
 const MAX_CONDITIONS: usize = 10;
@@ -226,7 +225,7 @@ async fn check(
 
 /// A number of points above 0, with at most two decimals, that the assignment can give.
 fn parse_points(raw: &str, worth: Decimal) -> Result<Decimal, &'static str> {
-    match points::parse_decimal(raw) {
+    match activity::parse_decimal(raw) {
         Some(points) if points > Decimal::ZERO && points.scale() <= 2 && points <= worth => {
             Ok(points)
         }

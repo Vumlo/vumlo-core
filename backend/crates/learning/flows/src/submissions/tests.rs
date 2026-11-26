@@ -16,6 +16,7 @@ use uuid::Uuid;
 use crate::{LearningError, items};
 use access::{Actor, CourseRole};
 use activity::EffectiveProfiles;
+use activity::MaxPoints;
 use assessment::{
     AssessmentError, Attempt, Draft, discard_draft, has_submitted_in_course, list_submissions,
     student_attempts,
@@ -23,8 +24,8 @@ use assessment::{
 use auth::{self, Email, NewUser, PersonName};
 use common::{PageParams, Role};
 use content::{
-    Assignment, ContentTitle, ItemPatch, ItemRules, MaxPoints, OnDeadline, SettingsPatch,
-    SubmissionSettings, text,
+    Assignment, ContentTitle, ItemPatch, ItemRules, OnDeadline, SettingsPatch, SubmissionSettings,
+    text,
 };
 use teaching::{self, CourseTitle};
 use vumlo_config::GradingScale;

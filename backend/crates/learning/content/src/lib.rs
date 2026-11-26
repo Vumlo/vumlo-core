@@ -2,7 +2,6 @@
 //! (ADR-0020, ADR-0021).
 
 mod model;
-mod points;
 mod repo;
 mod routes;
 mod rules;
@@ -14,11 +13,10 @@ mod types;
 pub use model::{
     Access, Assignment, AssignmentSummary, ConditionInput, ConditionKind, ContentModule,
     ContentSubModule, ContentTitle, DraftItem, FactScope, Hit, HitKind, Item, ItemFacts, ItemKind,
-    ItemPatch, ItemStatus, ItemSummary, MaxPoints, ModelError, Module, ModulePatch, ModuleStatus,
+    ItemPatch, ItemStatus, ItemSummary, ModelError, Module, ModulePatch, ModuleStatus,
     NextDeadline, OnDeadline, OpenAssignment, OpenedAssignment, SettingProblem, SettingsPatch,
     SourceFact, Standing, SubmissionSettings, TemplateCounts, Unmet,
 };
-pub use points::parse_decimal;
 pub use repo::CopiedIds;
 pub use routes::{api_item, item_patch, new_item, router, under_assignment};
 pub use rules::{Condition, Node};

@@ -1,16 +1,11 @@
-use std::fmt;
-
 use chrono::{DateTime, NaiveDate, Utc};
 use serde_json::{Map, Value};
-use sqlx::Postgres;
-use sqlx::postgres::{PgTypeInfo, PgValueRef};
 use sqlx::types::Decimal;
 use uuid::Uuid;
 
 use super::rules::Condition;
-use crate::points;
 use access::{CourseAccess, Release};
-use activity::{ConfigError, Kind};
+use activity::{ConfigError, Kind, MaxPoints, PointsError};
 use common::text_enum;
 
 const TITLE_MAX_LEN: usize = 200;
@@ -33,6 +28,13 @@ pub enum ModelError {
 impl From<ConfigError> for ModelError {
     fn from(error: ConfigError) -> Self {
         Self::Config(error.to_string())
+    }
+}
+
+/// What `activity::MaxPoints` refuses, as the field error of the API.
+impl From<PointsError> for ModelError {
+    fn from(_: PointsError) -> Self {
+        Self::MaxPoints
     }
 }
 
@@ -76,57 +78,6 @@ pub enum ItemKind {
     File,
 }
 text_enum!(ItemKind { Text => "text", Assignment => "assignment", File => "file" });
-
-/// The most points one assignment can be worth (`numeric(6,2)`, ADR-0021).
-const MAX_POINTS_LIMIT: Decimal = Decimal::from_parts(999_999, 0, 0, false, 2);
-
-/// What an assignment is worth: above 0, at most 9999.99, at most two decimals. It knows nothing
-/// of the grading scale (ADR-0022); the service applies that.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct MaxPoints(Decimal);
-
-impl MaxPoints {
-    /// Accepts digits with an optional fraction of one or two digits: "20", "7.5", "20.00".
-    pub fn parse(raw: &str) -> Result<Self, ModelError> {
-        let value = points::parse_decimal(raw).ok_or(ModelError::MaxPoints)?;
-        Self::from_decimal(value)
-    }
-
-    fn from_decimal(value: Decimal) -> Result<Self, ModelError> {
-        if value > Decimal::ZERO && value <= MAX_POINTS_LIMIT && value.scale() <= 2 {
-            Ok(Self(value))
-        } else {
-            Err(ModelError::MaxPoints)
-        }
-    }
-
-    pub fn value(self) -> Decimal {
-        self.0
-    }
-}
-
-impl fmt::Display for MaxPoints {
-    /// Always two decimals: "20.00".
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{:.2}", self.0)
-    }
-}
-
-impl sqlx::Type<Postgres> for MaxPoints {
-    fn type_info() -> PgTypeInfo {
-        <Decimal as sqlx::Type<Postgres>>::type_info()
-    }
-    fn compatible(ty: &PgTypeInfo) -> bool {
-        <Decimal as sqlx::Type<Postgres>>::compatible(ty)
-    }
-}
-
-impl<'r> sqlx::Decode<'r, Postgres> for MaxPoints {
-    fn decode(value: PgValueRef<'r>) -> Result<Self, sqlx::error::BoxDynError> {
-        let decimal = <Decimal as sqlx::Decode<Postgres>>::decode(value)?;
-        Ok(Self::from_decimal(decimal)?)
-    }
-}
 
 /// What happens to a draft at `due_at` (ADR-0011). `AutoSubmit` is carried out by the scheduler
 /// (`learning::schedule`, ADR-0091).

@@ -11,7 +11,8 @@ use super::{
     Problems, answer_path, answers_of, config_error, document_problem, parse_number, shape_problem,
     valid_id,
 };
-use crate::model::{MaxPoints, ModelError};
+use crate::model::ModelError;
+use activity::MaxPoints;
 use activity::{
     ActivityType, AutoGrade, Capabilities, Claims, CompletionPolicy, ConfigError, DocumentErrors,
     EffectiveProfiles, FileRef, Stage, ValidContent, file_refs_under, validate_document,

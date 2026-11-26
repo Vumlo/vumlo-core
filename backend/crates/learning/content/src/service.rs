@@ -14,10 +14,12 @@ use sqlx::PgConnection;
 use sqlx::types::Decimal;
 use uuid::Uuid;
 
+use activity::MaxPoints;
+
 use super::model::{
     Access, Assignment, ContentModule, ContentSubModule, ContentTitle, DraftItem, FactScope, Hit,
-    HitKind, Item, ItemFacts, ItemKind, ItemPatch, ItemStatus, ItemSummary, MaxPoints, ModelError,
-    Module, ModulePatch, NextDeadline, OnDeadline, OpenAssignment, OpenedAssignment, Revision,
+    HitKind, Item, ItemFacts, ItemKind, ItemPatch, ItemStatus, ItemSummary, ModelError, Module,
+    ModulePatch, NextDeadline, OnDeadline, OpenAssignment, OpenedAssignment, Revision,
     SettingProblem, SettingsPatch, SourceFact, Standing, SubmissionSettings, TemplateCounts,
 };
 use super::repo::{self, CopiedIds, ItemRow, ModuleRow};

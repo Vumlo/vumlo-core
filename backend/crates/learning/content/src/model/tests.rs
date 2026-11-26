@@ -71,52 +71,6 @@ fn enums_round_trip() {
 }
 
 #[test]
-fn max_points_accepts_decimal_strings_up_to_two_decimals() {
-    for ok in ["20", "7.5", "20.00", "0.01", "9999.99", "9999", "0012"] {
-        assert!(MaxPoints::parse(ok).is_ok(), "{ok}");
-    }
-}
-
-#[test]
-fn max_points_rejects_everything_else() {
-    for bad in [
-        "0",
-        "0.00",
-        "-1",
-        "10000",
-        "9999.991",
-        "10000.00",
-        "1.005",
-        "abc",
-        "",
-        ".5",
-        "5.",
-        "+5",
-        "1e2",
-        " 5",
-        "5 ",
-        "1,5",
-        "1.2.3",
-        "99999999999999999999",
-    ] {
-        assert_eq!(MaxPoints::parse(bad), Err(ModelError::MaxPoints), "{bad:?}");
-    }
-}
-
-#[test]
-fn max_points_display_has_exactly_two_decimals() {
-    for (raw, shown) in [
-        ("20", "20.00"),
-        ("7.5", "7.50"),
-        ("20.00", "20.00"),
-        ("0.01", "0.01"),
-        ("9999.99", "9999.99"),
-    ] {
-        assert_eq!(MaxPoints::parse(raw).unwrap().to_string(), shown);
-    }
-}
-
-#[test]
 fn the_built_in_types_are_the_five_names_and_nothing_else() {
     let types = builtin_types().unwrap();
     for text in ["text", "no_submission", "quiz", "form", "file"] {

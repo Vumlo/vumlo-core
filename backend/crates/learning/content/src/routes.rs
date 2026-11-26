@@ -17,9 +17,11 @@ use utoipa_axum::router::OpenApiRouter;
 use utoipa_axum::routes;
 use uuid::Uuid;
 
+use activity::MaxPoints;
+
 use super::model::{
-    self, ConditionInput, ConditionKind, ContentTitle, ItemKind, ItemPatch, ItemStatus, MaxPoints,
-    ModelError, ModulePatch, ModuleStatus, OnDeadline, SettingsPatch, SubmissionSettings,
+    self, ConditionInput, ConditionKind, ContentTitle, ItemKind, ItemPatch, ItemStatus, ModelError,
+    ModulePatch, ModuleStatus, OnDeadline, SettingsPatch, SubmissionSettings,
 };
 use super::rules::{Condition, Node};
 use super::service::{self, ContentError, NewItemInput};
@@ -341,7 +343,7 @@ fn domain_assignment(new: NewAssignment) -> Result<model::Assignment, ApiError> 
             return Err(ApiError::Internal);
         }
     };
-    let max_points = MaxPoints::parse(&new.max_points);
+    let max_points = MaxPoints::parse(&new.max_points).map_err(ModelError::from);
     // With an unknown type the settings cannot be judged; the type is the field to fix first.
     let settings = match &assignment_type {
         Ok(assignment_type) => SubmissionSettings::default().resolve(
@@ -704,7 +706,7 @@ pub fn item_patch(request: UpdateItemRequest) -> Result<ItemPatch, ApiError> {
         max_points: request
             .max_points
             .as_deref()
-            .map(MaxPoints::parse)
+            .map(|raw| MaxPoints::parse(raw).map_err(ModelError::from))
             .transpose()
             .map_err(ContentError::from)?,
         is_bonus: request.is_bonus,
