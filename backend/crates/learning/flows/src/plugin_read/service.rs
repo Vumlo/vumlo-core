@@ -18,7 +18,7 @@ use super::model::{
     PluginList, PluginMember, PluginPage, PluginQuiz, PluginSubmission, PluginSubmissionRow,
 };
 use super::repo::{self, After, AssignmentRow};
-use activity::Kind;
+use activity::GradedKind;
 use activity::types::{form, quiz};
 
 #[derive(Debug, thiserror::Error)]
@@ -81,7 +81,7 @@ async fn reachable_assignment(
     caller: &PluginCaller,
     scope: Scope,
     assignment_id: Uuid,
-) -> Result<(Uuid, Kind), PluginReadError> {
+) -> Result<(Uuid, GradedKind), PluginReadError> {
     authorize_plugin(caller, scope)?;
     let (course_id, kind) = repo::assignment_header(conn, assignment_id)
         .await?

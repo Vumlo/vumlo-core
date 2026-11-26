@@ -43,9 +43,9 @@ pub struct AssignmentRow {
 pub async fn assignment_header(
     conn: &mut PgConnection,
     assignment_id: Uuid,
-) -> Result<Option<(Uuid, activity::Kind)>, sqlx::Error> {
+) -> Result<Option<(Uuid, activity::GradedKind)>, sqlx::Error> {
     let row = sqlx::query!(
-        r#"SELECT i.course_id AS "course_id!", a.type AS "kind!: activity::Kind"
+        r#"SELECT i.course_id AS "course_id!", a.type AS "kind!: activity::GradedKind"
            FROM content.item_list i
            JOIN content.assignment_list a ON a.item_id = i.id
            WHERE i.id = $1"#,

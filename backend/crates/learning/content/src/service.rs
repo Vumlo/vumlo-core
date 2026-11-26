@@ -30,8 +30,8 @@ use access::Actor;
 use access::{self, AccessError, Action, CourseAccess, CourseStatus, Release};
 use activity::types::form::{self, Holders};
 use activity::{
-    ConfigError, DocumentErrors, EffectiveProfiles, FileRef, Kind, ValidDocument, distinct_ids,
-    file_refs_under, plain_text, validate_document,
+    ConfigError, DocumentErrors, EffectiveProfiles, FileRef, GradedKind, ValidDocument,
+    distinct_ids, file_refs_under, plain_text, validate_document,
 };
 use events::{self, AuditEntry, Event, EventsError};
 use teaching::{self, TeachingError};
@@ -918,7 +918,7 @@ fn file_id_of(body: &Map<String, Value>) -> Option<Uuid> {
 fn item_file_refs(
     kind: ItemKind,
     body: &Map<String, Value>,
-    config: Option<(Kind, &Map<String, Value>)>,
+    config: Option<(GradedKind, &Map<String, Value>)>,
     config_field: &str,
 ) -> Result<Vec<FileRef>, ContentError> {
     let stored = |errors: DocumentErrors| {
@@ -963,7 +963,7 @@ fn item_file_refs(
 fn referenced_file_ids(
     kind: ItemKind,
     body: &Map<String, Value>,
-    config: Option<(Kind, &Map<String, Value>)>,
+    config: Option<(GradedKind, &Map<String, Value>)>,
 ) -> Result<Vec<Uuid>, ContentError> {
     Ok(distinct_ids(&item_file_refs(kind, body, config, "config")?))
 }
@@ -1004,7 +1004,7 @@ fn judge_files(refs: &[FileRef], verdict: &FileVerdict) -> Result<(), ContentErr
 async fn type_and_config(
     conn: &mut PgConnection,
     item: &Item,
-) -> Result<Option<(Kind, Map<String, Value>)>, ContentError> {
+) -> Result<Option<(GradedKind, Map<String, Value>)>, ContentError> {
     if item.kind != ItemKind::Assignment {
         return Ok(None);
     }
@@ -1716,7 +1716,7 @@ pub async fn lock_assignment_shared(
 
 /// A type whose questions carry the points needs `max_points` to be their sum (ADR-0050 point 1).
 fn check_points_total(
-    kind: Kind,
+    kind: GradedKind,
     config: &serde_json::Map<String, Value>,
     max_points: MaxPoints,
 ) -> Result<(), ContentError> {

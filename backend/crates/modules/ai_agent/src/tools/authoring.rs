@@ -387,7 +387,7 @@ fn assignment(
     config: Map<String, Value>,
     max_points: MaxPoints,
 ) -> Result<Assignment, ApiError> {
-    let assignment_type = activity::get(id).map_err(|error| {
+    let assignment_type = activity::get_graded(id).map_err(|error| {
         tracing::error!(%error, "ai_agent: a built-in activity type is not installed");
         ApiError::Internal
     })?;

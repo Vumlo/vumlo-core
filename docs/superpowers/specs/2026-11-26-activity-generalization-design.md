@@ -120,6 +120,16 @@ policies of the graded types are unchanged. `content/src/repo.rs:1516-1555` stop
 every item is done by `kind.completion().is_met(progress)`, and `mark_done` is allowed when the policy is `Marked`
 (`content/src/service.rs:2236-2262` refuses assignments today). The result for every existing row is the same.
 
+**As built in stage 2** (`docs/superpowers/plans/2026-11-26-activity-stage-2-tiers.md`). Three departures from the
+sketch above. (1) Four hooks of `Graded` have a neutral default (`points_total`, `strip_computed`, `student_config`,
+`structure`), as `config_file_refs` and the two file hooks of `Submissions` already had, so a type writes only what it
+has; `validate_config`, `submissions`, `validate_submission`, `claims` and `auto_grading` stay required. (2) The type of
+an assignment is `activity::GradedKind`, a `Kind` known to be graded, instead of an `Option` read at every call site: the
+rows of `content.assignments` hold graded types only, the decode refuses any other, and `Deref` gives the graded tier.
+`Kind::graded()` and `get_graded` are the way in. (3) `auto_grade` keeps its `Option<AutoGrade>`: a quiz whose config
+cannot be read is left to a teacher. `CompletionPolicy::Marked` and the body hooks of `ActivityType` come with the two new
+types in stage 4.
+
 ## 4. Lecture and shared file as types
 
 | Type | Replaces | Body | Tiers | Completion |

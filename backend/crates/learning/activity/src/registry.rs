@@ -12,7 +12,7 @@ use sqlx::error::BoxDynError;
 use sqlx::postgres::{PgArgumentBuffer, PgTypeInfo, PgValueRef};
 use sqlx::{Decode, Encode, Postgres, Type};
 
-use crate::{ActivityType, Capabilities};
+use crate::{ActivityType, Capabilities, CompletionPolicy, Graded, Submissions};
 
 /// Why a set of types could not be built or installed.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -32,6 +32,8 @@ pub enum RegistryError {
     NotInstalled,
     #[error("unknown activity type `{0}`")]
     Unknown(String),
+    #[error("the activity type `{0}` is not graded")]
+    NotGraded(String),
 }
 
 /// One activity type of the installed registry. Equality and `Debug` go by its id.
@@ -41,6 +43,92 @@ pub struct Kind(&'static dyn ActivityType);
 impl Kind {
     pub fn id(&self) -> &'static str {
         self.0.id()
+    }
+
+    /// This type as a graded one, or `None` when it has no points.
+    pub fn graded(self) -> Option<GradedKind> {
+        self.0
+            .graded()
+            .map(|graded| GradedKind { kind: self, graded })
+    }
+}
+
+/// An activity type that is known to be graded: the kind of an assignment. The rows of
+/// `content.assignments` hold graded types only, so their type is this, and a call site reads the
+/// graded tier through `Deref` without an `unwrap`. Equality and `Debug` go by its id.
+#[derive(Clone, Copy)]
+pub struct GradedKind {
+    kind: Kind,
+    graded: &'static dyn Graded,
+}
+
+impl GradedKind {
+    pub fn id(&self) -> &'static str {
+        self.kind.id()
+    }
+
+    /// The type as any activity, for what every activity has.
+    pub fn kind(&self) -> Kind {
+        self.kind
+    }
+
+    /// The submission tier, or `None` for a type nobody hands anything in for.
+    pub fn submissions(&self) -> Option<&'static dyn Submissions> {
+        self.graded.submissions()
+    }
+
+    pub fn completion(&self) -> CompletionPolicy {
+        self.kind.completion()
+    }
+
+    pub fn capabilities(&self) -> Capabilities {
+        self.kind.capabilities()
+    }
+}
+
+impl Deref for GradedKind {
+    type Target = dyn Graded;
+
+    fn deref(&self) -> &Self::Target {
+        self.graded
+    }
+}
+
+impl PartialEq for GradedKind {
+    fn eq(&self, other: &Self) -> bool {
+        self.id() == other.id()
+    }
+}
+
+impl Eq for GradedKind {}
+
+impl fmt::Debug for GradedKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_tuple("GradedKind").field(&self.id()).finish()
+    }
+}
+
+impl Type<Postgres> for GradedKind {
+    fn type_info() -> PgTypeInfo {
+        <str as Type<Postgres>>::type_info()
+    }
+
+    fn compatible(ty: &PgTypeInfo) -> bool {
+        <str as Type<Postgres>>::compatible(ty)
+    }
+}
+
+/// Reads the id like [`Kind`], and refuses a registered type that is not graded.
+impl<'r> Decode<'r, Postgres> for GradedKind {
+    fn decode(value: PgValueRef<'r>) -> Result<Self, BoxDynError> {
+        let id = <&str as Decode<Postgres>>::decode(value)?;
+        get_graded(id).map_err(Into::into)
+    }
+}
+
+impl Encode<'_, Postgres> for GradedKind {
+    fn encode_by_ref(&self, buf: &mut PgArgumentBuffer) -> Result<IsNull, BoxDynError> {
+        <&str as Encode<Postgres>>::encode_by_ref(&self.id(), buf)
     }
 }
 
@@ -129,6 +217,13 @@ impl Types {
             .ok_or_else(|| RegistryError::Unknown(id.to_owned()))
     }
 
+    /// The type of an id, when it is graded.
+    pub fn get_graded(&self, id: &str) -> Result<GradedKind, RegistryError> {
+        self.get(id)?
+            .graded()
+            .ok_or_else(|| RegistryError::NotGraded(id.to_owned()))
+    }
+
     /// Every id, sorted.
     pub fn available(&self) -> Vec<&'static str> {
         self.0.keys().copied().collect()
@@ -158,6 +253,14 @@ pub fn install(types: Types) -> Result<(), InstallError> {
 /// The type of an id in the installed registry.
 pub fn get(id: &str) -> Result<Kind, RegistryError> {
     REGISTRY.get().ok_or(RegistryError::NotInstalled)?.get(id)
+}
+
+/// The graded type of an id in the installed registry: the kind of an assignment.
+pub fn get_graded(id: &str) -> Result<GradedKind, RegistryError> {
+    REGISTRY
+        .get()
+        .ok_or(RegistryError::NotInstalled)?
+        .get_graded(id)
 }
 
 /// Every installed id, sorted. Empty, not an error, when no registry is installed: `get` is the

@@ -25,7 +25,10 @@ use super::repo;
 use access::Actor;
 use access::{self, AccessError, Action};
 use activity::types::{form, quiz};
-use activity::{AutoGrade, DocumentErrors, EffectiveProfiles, FileRef, Kind, Stage, distinct_ids};
+use activity::{
+    AutoGrade, DocumentErrors, EffectiveProfiles, FileRef, GradedKind, Stage, Submissions,
+    distinct_ids,
+};
 use common::{Page, PageParams};
 use content::{self, Assignment, OnDeadline, OpenError, OpenedAssignment};
 use events::{self, Event, EventsError};
@@ -138,11 +141,13 @@ async fn open(
 /// A type that takes no submissions has nothing to save, read or list. The type cannot change, so
 /// the answer from the unlocked read is safe.
 fn require_submissions(opened: &OpenedAssignment) -> Result<(), AssessmentError> {
-    if opened.assignment_type.capabilities().submissions {
-        Ok(())
-    } else {
-        Err(AssessmentError::TakesNoSubmissions)
-    }
+    submissions(opened.assignment_type).map(|_| ())
+}
+
+/// The submission tier of an assignment's type. A type that has none takes no submissions.
+fn submissions(kind: GradedKind) -> Result<&'static dyn Submissions, AssessmentError> {
+    kind.submissions()
+        .ok_or(AssessmentError::TakesNoSubmissions)
 }
 
 /// An assignment that a rule keeps closed takes no work yet: no draft, no submit, no upload
@@ -234,8 +239,7 @@ pub async fn begin_save_draft(
     require_unlocked(&opened)?;
     let assignment = lock(conn, assignment_id).await?;
     open_window(&assignment, now)?;
-    let valid = assignment
-        .assignment_type
+    let valid = submissions(assignment.assignment_type)?
         .validate_submission(&assignment.config, content, Stage::Draft, profiles)
         .map_err(AssessmentError::Document)?;
     // The row is locked, so the id the files are checked against is the one the write keeps.
@@ -476,9 +480,7 @@ async fn begin_submit_for(
     when: When,
 ) -> Result<SubmitStart, AssessmentError> {
     let assignment = lock(conn, assignment_id).await?;
-    if !assignment.assignment_type.capabilities().submissions {
-        return Err(AssessmentError::TakesNoSubmissions);
-    }
+    let tier = submissions(assignment.assignment_type)?;
     let (submitted_at, is_late) = match when {
         When::Student(now) => (now, open_window(&assignment, now)?),
         // Judged on the row as it is under the lock: a teacher may have moved the deadline or
@@ -496,8 +498,7 @@ async fn begin_submit_for(
     let last = repo::last_attempt_number(conn, assignment_id, student_id).await?;
     within_attempts(&assignment, last)?;
     // The draft is judged again against the profile and the features as they are now.
-    let valid = assignment
-        .assignment_type
+    let valid = tier
         .validate_submission(
             &assignment.config,
             &Value::Object(draft.content),
@@ -553,9 +554,9 @@ pub async fn finish_submit(
         files: refs,
     } = start;
     let ids = judge_files(&assignment, &body, &refs, files)?;
-    let auto = assignment
-        .assignment_type
-        .auto_grade(&assignment.config, &body);
+    let auto = submissions(assignment.assignment_type)?
+        .auto_grading()
+        .and_then(|grading| grading.auto_grade(&assignment.config, &body));
     let scores = auto.as_ref().map(AutoGrade::scores_json);
     let total = auto.filter(|auto| auto.complete).map(|auto| auto.total);
     let attempt = repo::submit_draft(
@@ -605,7 +606,8 @@ async fn check_claims(
     student_id: Uuid,
     body: &Map<String, Value>,
 ) -> Result<(), AssessmentError> {
-    let claims = assignment.assignment_type.claims(&assignment.config, body);
+    let tier = submissions(assignment.assignment_type)?;
+    let claims = tier.claims(&assignment.config, body);
     if claims.is_empty() {
         return Ok(());
     }
@@ -632,10 +634,7 @@ async fn check_claims(
             if other.student.user_id == student_id {
                 continue;
             }
-            let held = assignment
-                .assignment_type
-                .claims(&assignment.config, &other.content)
-                .exclusive;
+            let held = tier.claims(&assignment.config, &other.content).exclusive;
             if claims.exclusive.iter().any(|claim| held.contains(claim)) {
                 return Err(AssessmentError::OptionTaken);
             }
@@ -652,8 +651,7 @@ fn file_refs(
     assignment: &Assignment,
     body: &Map<String, Value>,
 ) -> Result<Vec<FileRef>, AssessmentError> {
-    assignment
-        .assignment_type
+    submissions(assignment.assignment_type)?
         .submission_file_refs(&assignment.config, body)
         .map_err(AssessmentError::Document)
 }
@@ -692,8 +690,8 @@ fn judge_files(
     {
         return Err(unusable(&file.path));
     }
-    let kind = assignment.assignment_type;
-    let listed = kind.claims(&assignment.config, body).files;
+    let tier = submissions(assignment.assignment_type)?;
+    let listed = tier.claims(&assignment.config, body).files;
     let mut names = BTreeMap::new();
     for (index, &id) in listed.iter().enumerate() {
         let name = verdict
@@ -702,7 +700,7 @@ fn judge_files(
             .ok_or_else(|| unusable(&format!("files[{index}]")))?;
         names.insert(id, name.clone());
     }
-    kind.check_file_names(&assignment.config, body, &names)
+    tier.check_file_names(&assignment.config, body, &names)
         .map_err(AssessmentError::Document)?;
     Ok(distinct_ids(refs))
 }
@@ -716,16 +714,17 @@ fn unusable(path: &str) -> AssessmentError {
 pub async fn form_facts(
     conn: &mut PgConnection,
     assignment_id: Uuid,
-    assignment_type: Kind,
+    assignment_type: GradedKind,
     config: &Map<String, Value>,
 ) -> Result<FormFacts, AssessmentError> {
+    let tier = submissions(assignment_type)?;
     let mut facts = FormFacts::default();
     for latest in repo::latest_contents(conn, assignment_id).await? {
         if let Some(answers) = latest.content.get("answers").and_then(Value::as_object) {
             facts.answered.extend(answers.keys().cloned());
         }
         let name = format!("{} {}", latest.student.name, latest.student.surname);
-        for (field, option) in assignment_type.claims(config, &latest.content).exclusive {
+        for (field, option) in tier.claims(config, &latest.content).exclusive {
             facts
                 .holders
                 .insert((field, option), (latest.student.user_id, name.clone()));

@@ -15,11 +15,17 @@ pub use document::{
     ValidDocument, distinct_ids, file_refs_of, file_refs_under, limits, plain_text, valid_href,
     validate_document, validate_document_within,
 };
-pub use model::{ActivityType, Capabilities, CompletionPolicy, ConfigError, Progress};
+pub use model::{
+    ActivityType, AutoGrading, Capabilities, CompletionPolicy, ConfigError, Graded, Progress,
+    Submissions,
+};
 pub use points::{MaxPoints, PointsError, parse_decimal};
 #[cfg(feature = "testing")]
 pub use registry::ensure_installed;
-pub use registry::{InstallError, Kind, RegistryError, Types, available, get, ids_where, install};
+pub use registry::{
+    GradedKind, InstallError, Kind, RegistryError, Types, available, get, get_graded, ids_where,
+    install,
+};
 
 #[cfg(test)]
 mod tests;

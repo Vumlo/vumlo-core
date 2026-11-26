@@ -96,10 +96,7 @@ fn the_config_is_shown_to_a_student_unchanged() {
     file.strip_computed(&mut stripped);
     assert_eq!(Value::Object(stripped), config);
     assert_eq!(file.points_total(obj(&config)), None);
-    assert!(
-        file.auto_grade(obj(&config), obj(&json!({"files": []})))
-            .is_none()
-    );
+    assert!(file.auto_grading().is_none(), "a hand-in is graded by hand");
     assert!(file.capabilities().submissions);
 }
 

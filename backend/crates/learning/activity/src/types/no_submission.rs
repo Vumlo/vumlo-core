@@ -2,12 +2,8 @@
 //! submitted and it is graded by hand. Pure code: no database, no HTTP.
 
 use serde_json::{Map, Value};
-use sqlx::types::Decimal;
 
-use crate::{
-    ActivityType, AutoGrade, Capabilities, Claims, CompletionPolicy, ConfigError, DocumentErrors,
-    EffectiveProfiles, Stage, ValidContent,
-};
+use crate::{ActivityType, CompletionPolicy, ConfigError, EffectiveProfiles, Graded, Submissions};
 
 pub const ID: &str = "no_submission";
 
@@ -21,11 +17,6 @@ pub fn validate_config(config: &Map<String, Value>) -> Result<(), ConfigError> {
     }
 }
 
-/// There is nothing to check: this type takes no submissions.
-pub fn validate_submission() -> Result<ValidContent, DocumentErrors> {
-    Err(DocumentErrors::one("", "this type takes no submissions"))
-}
-
 pub struct NoSubmission;
 
 impl ActivityType for NoSubmission {
@@ -33,17 +24,16 @@ impl ActivityType for NoSubmission {
         ID
     }
 
-    fn capabilities(&self) -> Capabilities {
-        Capabilities {
-            submissions: false,
-            auto_graded: false,
-        }
-    }
-
     fn completion(&self) -> CompletionPolicy {
         CompletionPolicy::Graded
     }
 
+    fn graded(&self) -> Option<&dyn Graded> {
+        Some(self)
+    }
+}
+
+impl Graded for NoSubmission {
     fn validate_config(
         &self,
         config: &Map<String, Value>,
@@ -52,39 +42,7 @@ impl ActivityType for NoSubmission {
         validate_config(config)
     }
 
-    fn points_total(&self, _config: &Map<String, Value>) -> Option<Decimal> {
+    fn submissions(&self) -> Option<&dyn Submissions> {
         None
-    }
-
-    fn strip_computed(&self, _config: &mut Map<String, Value>) {}
-
-    fn validate_submission(
-        &self,
-        _config: &Map<String, Value>,
-        _content: &Value,
-        _stage: Stage,
-        _profiles: &EffectiveProfiles,
-    ) -> Result<ValidContent, DocumentErrors> {
-        validate_submission()
-    }
-
-    fn student_config(&self, config: &Map<String, Value>) -> Map<String, Value> {
-        config.clone()
-    }
-
-    fn structure(&self, _config: &Map<String, Value>) -> Option<Value> {
-        None
-    }
-
-    fn auto_grade(
-        &self,
-        _config: &Map<String, Value>,
-        _content: &Map<String, Value>,
-    ) -> Option<AutoGrade> {
-        None
-    }
-
-    fn claims(&self, _config: &Map<String, Value>, _content: &Map<String, Value>) -> Claims {
-        Claims::default()
     }
 }
