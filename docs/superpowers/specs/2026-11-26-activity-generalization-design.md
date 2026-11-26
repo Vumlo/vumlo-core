@@ -171,6 +171,17 @@ pinned to `'1'` by a CHECK and written as a literal, so migration `0057` relaxes
 write `plugins::API_VERSION`; and the renamed scope and event are also renamed in what is already stored (the installs, the
 deliveries, the outbox).
 
+**As built in stage 4** (`docs/superpowers/plans/2026-11-26-activity-stage-4-resources.md`). The API change is smaller
+than section 7 says, on purpose. `Item.kind` and `ItemSummary.kind` stay and become the structural pair `resource` or
+`assignment`; `type` is added beside them (the id of the activity type). Nothing breaks that did not have to: a client that
+reads `kind: "assignment"` and `assignment.type` still works. `CreateItemRequest.kind` is replaced by `type` (a resource
+type, `lecture` by default; with an `assignment` object the type is the object's and `type` must be absent). Removing
+`Assignment.type`, which now duplicates `Item.type`, is a follow-up. In the code, `ActivityType` gained the hooks that
+made the `file`/`text` special cases in `content` unnecessary: `default_body`, `validate_body`, `body_file_refs`,
+`check_publishable` and `reading_minutes`; the completion policy `Marked` says that the student marks the item done.
+`content.assignments.type` is gone, and the two CHECKs on `no_submission` with it; a test through the API
+(`only_a_type_without_submissions_has_a_class_day`) pins the class day rule that the CHECK held.
+
 ## 6. Data model
 
 One migration, written with the services stopped (section 10).
