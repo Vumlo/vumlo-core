@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "UPDATE content.items\n           SET status = 'published', published_title = title, published_body = body,\n               last_published_at = now(), updated_at = now()\n           WHERE id = $1 AND status = 'draft'\n           RETURNING id, module_id, course_id, position, kind AS \"kind: ItemKind\", title,\n                     body AS \"body: Body\", status AS \"status: ItemStatus\", publish_at,\n                     published_title, published_body AS \"published_body?: Body\",\n                     last_published_at, created_at, updated_at",
+  "query": "UPDATE content.items\n           SET title = COALESCE($2::text, title),\n               body = COALESCE($3::jsonb, body),\n               publish_at = CASE WHEN $4 THEN $5::timestamptz ELSE publish_at END,\n               updated_at = now()\n           WHERE id = $1\n           RETURNING id, module_id, course_id, position, kind AS \"kind: ItemKind\",\n                     type AS \"item_type: activity::Kind\", title,\n                     body AS \"body: Body\", status AS \"status: ItemStatus\", publish_at,\n                     published_title, published_body AS \"published_body?: Body\",\n                     last_published_at, created_at, updated_at",
   "describe": {
     "columns": [
       {
@@ -60,6 +60,17 @@
       },
       {
         "ordinal": 5,
+        "name": "item_type: activity::Kind",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "content.items",
+            "name": "type"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
         "name": "title",
         "type_info": "Text",
         "origin": {
@@ -70,7 +81,7 @@
         }
       },
       {
-        "ordinal": 6,
+        "ordinal": 7,
         "name": "body: Body",
         "type_info": "Jsonb",
         "origin": {
@@ -81,7 +92,7 @@
         }
       },
       {
-        "ordinal": 7,
+        "ordinal": 8,
         "name": "status: ItemStatus",
         "type_info": "Text",
         "origin": {
@@ -92,7 +103,7 @@
         }
       },
       {
-        "ordinal": 8,
+        "ordinal": 9,
         "name": "publish_at",
         "type_info": "Timestamptz",
         "origin": {
@@ -103,7 +114,7 @@
         }
       },
       {
-        "ordinal": 9,
+        "ordinal": 10,
         "name": "published_title",
         "type_info": "Text",
         "origin": {
@@ -114,7 +125,7 @@
         }
       },
       {
-        "ordinal": 10,
+        "ordinal": 11,
         "name": "published_body?: Body",
         "type_info": "Jsonb",
         "origin": {
@@ -125,7 +136,7 @@
         }
       },
       {
-        "ordinal": 11,
+        "ordinal": 12,
         "name": "last_published_at",
         "type_info": "Timestamptz",
         "origin": {
@@ -136,7 +147,7 @@
         }
       },
       {
-        "ordinal": 12,
+        "ordinal": 13,
         "name": "created_at",
         "type_info": "Timestamptz",
         "origin": {
@@ -147,7 +158,7 @@
         }
       },
       {
-        "ordinal": 13,
+        "ordinal": 14,
         "name": "updated_at",
         "type_info": "Timestamptz",
         "origin": {
@@ -160,10 +171,15 @@
     ],
     "parameters": {
       "Left": [
-        "Uuid"
+        "Uuid",
+        "Text",
+        "Jsonb",
+        "Bool",
+        "Timestamptz"
       ]
     },
     "nullable": [
+      false,
       false,
       false,
       false,
@@ -180,5 +196,5 @@
       false
     ]
   },
-  "hash": "567e5ae5831f617b3fdc2f73cd49b47a95b70b05c08ccf35ef0d3cf53e6f7914"
+  "hash": "356a815512e136627eab7554ea3d97dc74d20a23ed4cdf236c909688f7a15b68"
 }

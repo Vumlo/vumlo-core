@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT c AS \"course_id!\",\n                  (SELECT count(*) FROM content.modules WHERE course_id = c) AS \"sections!\",\n                  (SELECT count(*) FROM content.items\n                    WHERE course_id = c AND kind = 'text') AS \"lectures!\",\n                  (SELECT count(*) FROM content.items\n                    WHERE course_id = c AND kind = 'assignment') AS \"assignments!\"\n           FROM unnest($1::uuid[]) AS c",
+  "query": "SELECT c AS \"course_id!\",\n                  (SELECT count(*) FROM content.modules WHERE course_id = c) AS \"sections!\",\n                  (SELECT count(*) FROM content.items\n                    WHERE course_id = c AND kind = 'resource') AS \"lectures!\",\n                  (SELECT count(*) FROM content.items\n                    WHERE course_id = c AND kind = 'assignment') AS \"assignments!\"\n           FROM unnest($1::uuid[]) AS c",
   "describe": {
     "columns": [
       {
@@ -40,5 +40,5 @@
       null
     ]
   },
-  "hash": "fce6d21ea473437180d8399c6f6c10d68dd2ebf51cb87feac3b89d195519adc8"
+  "hash": "60274cc24cf0de1b296ac7abebf5f3c04ec768aaea94af8b24fe47a4240f7e57"
 }

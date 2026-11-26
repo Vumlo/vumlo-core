@@ -225,11 +225,12 @@ pub async fn demo(options: &Options, args: SeedDemo) -> anyhow::Result<()> {
 
     let text = Uuid::now_v7();
     let quiz = Uuid::now_v7();
-    for (id, position, kind, title, body) in [
+    for (id, position, kind, item_type, title, body) in [
         (
             text,
             1,
-            "text",
+            "resource",
+            activity::types::lecture::ID,
             "Welcome",
             doc("Welcome to the demo course. Start with the quiz."),
         ),
@@ -237,20 +238,22 @@ pub async fn demo(options: &Options, args: SeedDemo) -> anyhow::Result<()> {
             quiz,
             2,
             "assignment",
+            activity::types::quiz::ID,
             "Warm-up quiz",
             doc("Ten points, two questions."),
         ),
     ] {
         sqlx::query!(
             "INSERT INTO content.items
-                 (id, module_id, course_id, position, kind, title, body, status,
+                 (id, module_id, course_id, position, kind, type, title, body, status,
                   published_title, published_body, last_published_at)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, 'published', $6, $7, now())",
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'published', $7, $8, now())",
             id,
             module,
             course,
             position,
             kind,
+            item_type,
             title,
             body
         )
@@ -258,10 +261,9 @@ pub async fn demo(options: &Options, args: SeedDemo) -> anyhow::Result<()> {
         .await?;
     }
     sqlx::query!(
-        "INSERT INTO content.assignments (item_id, type, config, max_points)
-         VALUES ($1, $2, $3, 10)",
+        "INSERT INTO content.assignments (item_id, config, max_points)
+         VALUES ($1, $2, 10)",
         quiz,
-        activity::types::quiz::ID,
         quiz_config()
     )
     .execute(&mut *tx)

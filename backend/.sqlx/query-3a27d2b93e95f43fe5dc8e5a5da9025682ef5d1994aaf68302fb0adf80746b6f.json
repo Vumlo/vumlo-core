@@ -1,22 +1,22 @@
 {
   "db_name": "PostgreSQL",
-  "query": "INSERT INTO content.assignments\n               (item_id, type, config, max_points, is_bonus,\n                due_at, on_deadline, accept_late, late_until, max_attempts, class_on)\n           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)\n           RETURNING type AS \"assignment_type: activity::GradedKind\", config AS \"config: Body\",\n                     max_points AS \"max_points: MaxPoints\", is_bonus,\n                     due_at, on_deadline AS \"on_deadline: OnDeadline\", accept_late, late_until,\n                     max_attempts, class_on",
+  "query": "WITH updated AS (\n               UPDATE content.assignments\n               SET config = COALESCE($2::jsonb, config),\n                   max_points = COALESCE($3::numeric, max_points),\n                   is_bonus = COALESCE($4::boolean, is_bonus),\n                   due_at = CASE WHEN $5 THEN $6::timestamptz ELSE due_at END,\n                   on_deadline = CASE WHEN $5 THEN $7::text ELSE on_deadline END,\n                   accept_late = CASE WHEN $5 THEN $8::boolean ELSE accept_late END,\n                   late_until = CASE WHEN $5 THEN $9::timestamptz ELSE late_until END,\n                   max_attempts = CASE WHEN $5 THEN $10::integer ELSE max_attempts END,\n                   class_on = CASE WHEN $11 THEN $12::date ELSE class_on END,\n                   updated_at = now()\n               WHERE item_id = $1\n               RETURNING *)\n           SELECT i.type AS \"assignment_type!: activity::GradedKind\", a.config AS \"config!: Body\",\n                  a.max_points AS \"max_points!: MaxPoints\", a.is_bonus AS \"is_bonus!\",\n                  a.due_at, a.on_deadline AS \"on_deadline: OnDeadline\", a.accept_late,\n                  a.late_until, a.max_attempts, a.class_on\n           FROM updated a\n           JOIN content.items i ON i.id = a.item_id",
   "describe": {
     "columns": [
       {
         "ordinal": 0,
-        "name": "assignment_type: activity::GradedKind",
+        "name": "assignment_type!: activity::GradedKind",
         "type_info": "Text",
         "origin": {
           "Table": {
-            "table": "content.assignments",
+            "table": "content.items",
             "name": "type"
           }
         }
       },
       {
         "ordinal": 1,
-        "name": "config: Body",
+        "name": "config!: Body",
         "type_info": "Jsonb",
         "origin": {
           "Table": {
@@ -27,7 +27,7 @@
       },
       {
         "ordinal": 2,
-        "name": "max_points: MaxPoints",
+        "name": "max_points!: MaxPoints",
         "type_info": "Numeric",
         "origin": {
           "Table": {
@@ -38,7 +38,7 @@
       },
       {
         "ordinal": 3,
-        "name": "is_bonus",
+        "name": "is_bonus!",
         "type_info": "Bool",
         "origin": {
           "Table": {
@@ -117,15 +117,16 @@
     "parameters": {
       "Left": [
         "Uuid",
-        "Text",
         "Jsonb",
         "Numeric",
+        "Bool",
         "Bool",
         "Timestamptz",
         "Text",
         "Bool",
         "Timestamptz",
         "Int4",
+        "Bool",
         "Date"
       ]
     },
@@ -142,5 +143,5 @@
       true
     ]
   },
-  "hash": "892e0835e53c7d03599e4f3c3babeb5867ffb797d9259e4d75178dc6e5a82380"
+  "hash": "3a27d2b93e95f43fe5dc8e5a5da9025682ef5d1994aaf68302fb0adf80746b6f"
 }

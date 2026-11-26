@@ -32,7 +32,14 @@ async fn create_item(
     body: Option<Value>,
     assignment: Option<Assignment>,
 ) -> Result<Item, ContentError> {
-    let input = NewItemInput::document(title, body, assignment);
+    let input = match assignment {
+        Some(assignment) => NewItemInput::assignment(title, body, assignment),
+        None => NewItemInput::resource(
+            title,
+            crate::tests::item_type(activity::types::lecture::ID),
+            body,
+        ),
+    };
     let creation = begin_create_item(conn, actor, rules, module_id, input).await?;
     finish_create_item(conn, actor, creation, &FileVerdict::default()).await
 }
@@ -261,7 +268,7 @@ async fn a_stored_type_is_read_through_the_registry_and_an_unknown_one_fails_the
         assert_eq!(course.assignment(id).await.assignment_type, kind(text::ID));
 
         sqlx::query!(
-            "UPDATE content.assignments SET type = 'gone_module' WHERE item_id = $1",
+            "UPDATE content.items SET type = 'gone_module' WHERE id = $1",
             id
         )
         .execute(&course.pool)
@@ -347,6 +354,18 @@ async fn item_files_are_replaced_per_copy_and_go_with_the_item_and_its_module() 
     .await;
 }
 
+fn lecture() -> Kind {
+    crate::tests::item_type(activity::types::lecture::ID)
+}
+
+fn shared_file() -> Kind {
+    crate::tests::item_type(activity::types::shared_file::ID)
+}
+
+fn text_type() -> Kind {
+    crate::tests::item_type(text::ID)
+}
+
 fn body_of(value: Value) -> Map<String, Value> {
     match value {
         Value::Object(map) => map,
@@ -359,7 +378,7 @@ fn a_file_item_references_the_file_its_body_names() {
     let file = Uuid::now_v7();
     let body = body_of(json!({"file_id": file.to_string(), "description": {"v": 1, "blocks": []}}));
     assert_eq!(
-        referenced_file_ids(ItemKind::File, &body, None).unwrap(),
+        referenced_file_ids(shared_file(), &body, None).unwrap(),
         [file]
     );
 }
@@ -374,7 +393,7 @@ fn a_file_item_without_a_usable_file_id_references_nothing() {
         json!({"file_id": null}),
     ] {
         assert_eq!(
-            referenced_file_ids(ItemKind::File, &body_of(body.clone()), None).unwrap(),
+            referenced_file_ids(shared_file(), &body_of(body.clone()), None).unwrap(),
             Vec::<Uuid>::new(),
             "{body}"
         );
@@ -389,15 +408,15 @@ fn text_and_assignment_bodies_reference_the_files_their_blocks_name() {
         {"id": "b", "type": "file", "props": {"file_id": file.to_string()}},
         {"id": "c", "type": "image", "props": {"file_id": image.to_string()}},
     ]}));
-    for kind in [ItemKind::Text, ItemKind::Assignment] {
+    for item_type in [lecture(), text_type()] {
         assert_eq!(
-            referenced_file_ids(kind, &body, None).unwrap(),
+            referenced_file_ids(item_type, &body, None).unwrap(),
             [image, file]
         );
     }
     // A body that is not a document is an error, never "no files".
     let stray = body_of(json!({"file_id": Uuid::now_v7().to_string()}));
-    assert!(referenced_file_ids(ItemKind::Text, &stray, None).is_err());
+    assert!(referenced_file_ids(lecture(), &stray, None).is_err());
 }
 
 #[test]
@@ -408,7 +427,7 @@ fn a_file_items_description_blocks_count_and_a_quiz_config_adds_its_images() {
         {"id": "a", "type": "image", "props": {"file_id": described.to_string()}}]}}),
     );
     assert_eq!(
-        referenced_file_ids(ItemKind::File, &body, None).unwrap(),
+        referenced_file_ids(shared_file(), &body, None).unwrap(),
         [own, described]
     );
 
@@ -418,12 +437,12 @@ fn a_file_items_description_blocks_count_and_a_quiz_config_adds_its_images() {
             {"id": "a", "type": "image", "props": {"file_id": in_prompt.to_string()}}]}}]}));
     let text = body_of(json!({"v": 1, "blocks": []}));
     assert_eq!(
-        referenced_file_ids(ItemKind::Assignment, &text, Some((kind(quiz::ID), &config))).unwrap(),
+        referenced_file_ids(text_type(), &text, Some((kind(quiz::ID), &config))).unwrap(),
         [in_prompt]
     );
     // The other types hold no document in their config.
     assert!(
-        referenced_file_ids(ItemKind::Assignment, &text, Some((kind(form::ID), &config)))
+        referenced_file_ids(text_type(), &text, Some((kind(form::ID), &config)))
             .unwrap()
             .is_empty()
     );
@@ -434,28 +453,14 @@ fn a_config_or_document_the_parser_cannot_read_is_an_error_not_no_files() {
     let text = body_of(json!({"v": 1, "blocks": []}));
     // A quiz config of the wrong shape.
     let shapeless = body_of(json!({"questions": "none"}));
-    assert!(
-        referenced_file_ids(
-            ItemKind::Assignment,
-            &text,
-            Some((kind(quiz::ID), &shapeless))
-        )
-        .is_err()
-    );
+    assert!(referenced_file_ids(text_type(), &text, Some((kind(quiz::ID), &shapeless))).is_err());
     // A prompt that is not a document.
     let bad_prompt = body_of(json!({"v": 1, "questions": [{
         "id": "q1", "type": "long_text", "points": "1", "prompt": {"blocks": 3}}]}));
-    assert!(
-        referenced_file_ids(
-            ItemKind::Assignment,
-            &text,
-            Some((kind(quiz::ID), &bad_prompt))
-        )
-        .is_err()
-    );
+    assert!(referenced_file_ids(text_type(), &text, Some((kind(quiz::ID), &bad_prompt))).is_err());
     // A file item whose description is not a document.
     let body = body_of(json!({"description": {"v": 2}}));
-    assert!(referenced_file_ids(ItemKind::File, &body, None).is_err());
+    assert!(referenced_file_ids(shared_file(), &body, None).is_err());
 }
 
 #[tokio::test]

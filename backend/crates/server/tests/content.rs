@@ -269,7 +269,8 @@ async fn modules_sub_modules_and_text_items_form_an_ordered_tree() {
             json!(slides)
         );
         assert!(lectures_node["items"][0].get("body").is_none());
-        assert_eq!(lectures_node["items"][0]["kind"], "text");
+        assert_eq!(lectures_node["items"][0]["kind"], "resource");
+        assert_eq!(lectures_node["items"][0]["type"], "lecture");
         assert_eq!(top(&tree, "Practice")["id"], json!(practice));
         assert_eq!(top(&tree, "Practice")["submodules"], json!([]));
     })
@@ -378,7 +379,10 @@ async fn text_bodies_are_block_documents_stored_as_given() {
             empty_doc(),
             "an omitted body is the empty document"
         );
-        assert_eq!(plain["kind"], "text");
+        assert_eq!(
+            (plain["kind"].as_str(), plain["type"].as_str()),
+            (Some("resource"), Some("lecture"))
+        );
         assert_eq!(plain["status"], "draft");
 
         let body = doc(json!([
@@ -466,12 +470,11 @@ async fn titles_and_kinds_are_validated() {
             &w.http,
             &w.owner.token,
             &items,
-            json!({"kind": "assignment", "title": "T"}),
+            json!({"type": "text", "title": "T"}),
         )
         .await
         .problem(422);
-        // `kind` is optional since the file kind (ADR-0024): without it the item is a text item
-        // (see `kind_absent_is_still_inferred_for_old_clients`).
+        // Without a `type` the item is a lecture (see `a_request_without_a_type_is_a_lecture`).
         created(&post(&w.http, &w.owner.token, &items, json!({"title": "T"})).await);
         patch(
             &w.http,
@@ -2561,15 +2564,15 @@ async fn the_old_lesson_kind_is_an_unknown_kind() {
         let w = world(pool).await;
         let m = module(&w, "M", None).await;
 
-        // Like any unknown value, it is a bare 422 (ADR-0024 records the break of ADR-0012).
-        post(
+        // `lesson` was renamed `text` by migration 7 and is a lecture now: no type has that id.
+        let response = post(
             &w.http,
             &w.owner.token,
             &format!("/modules/{m}/items"),
-            json!({"kind": "lesson", "title": "T"}),
+            json!({"type": "lesson", "title": "T"}),
         )
-        .await
-        .problem(422);
+        .await;
+        assert_eq!(error_fields(&response), ["type"]);
         let tree = tree(&w, &w.owner.token).await;
         assert_eq!(top(&tree, "M")["items"], json!([]), "nothing was created");
     })
@@ -2587,13 +2590,13 @@ async fn the_assignment_object_goes_with_the_assignment_kind_only() {
             &w.http,
             &w.owner.token,
             &path,
-            json!({"kind": "text", "title": "T", "assignment": {"type": "text", "max_points": "5"}}),
+            json!({"type": "lecture", "title": "T", "assignment": {"type": "text", "max_points": "5"}}),
         )
         .await;
-        assert_eq!(error_fields(&text_with), ["assignment"]);
+        assert_eq!(error_fields(&text_with), ["type"]);
         for body in [
-            json!({"kind": "assignment", "title": "T"}),
-            json!({"kind": "assignment", "title": "T", "assignment": null}),
+            json!({"type": "text", "title": "T"}),
+            json!({"type": "text", "title": "T", "assignment": null}),
         ] {
             let response = post(&w.http, &w.owner.token, &path, body).await;
             assert_eq!(error_fields(&response), ["assignment"]);
@@ -2701,7 +2704,10 @@ async fn type_and_kind_cannot_change_and_are_ignored_by_patch() {
         assert_eq!(patched["assignment"]["type"], "text");
         let patched =
             ok(&patch_item(&w, text, json!({"kind": "assignment", "type": "text"})).await);
-        assert_eq!(patched["kind"], "text");
+        assert_eq!(
+            (patched["kind"].as_str(), patched["type"].as_str()),
+            (Some("resource"), Some("lecture"))
+        );
         assert!(patched.get("assignment").is_none());
     })
     .await;
@@ -2925,8 +2931,8 @@ async fn the_assignment_schemas_are_in_the_openapi_document() {
         assert!(schemas["ItemSummary"]["properties"]["assignment"].is_object());
         assert_eq!(
             schemas["ItemKind"]["enum"],
-            json!(["text", "assignment", "file"]),
-            "`lesson` is no longer an item kind (ADR-0024)"
+            json!(["resource", "assignment"]),
+            "an item is a resource or an assignment, its type is another field (ADR-0098)"
         );
     })
     .await;
@@ -3930,6 +3936,25 @@ async fn write_settings(pool: &PgPool, id: Uuid, state: Settings5) -> Option<Str
     }
 }
 
+/// The rules about which type may carry a deadline, attempts or a class day are the service's, read
+/// from the capabilities of the type (ADR-0098): the database knows no type.
+#[tokio::test]
+async fn only_a_type_without_submissions_has_a_class_day() {
+    db_test(async |pool| {
+        let w = world(pool).await;
+        let m = module(&w, "M", None).await;
+        let text = id_of(&created(&create_with(&w, m, "text", json!({})).await));
+        let response = patch_item(&w, text, json!({"class_on": "2030-05-01"})).await;
+        assert_eq!(error_fields(&response), ["class_on"]);
+        let oral = id_of(&created(
+            &create_with(&w, m, "no_submission", json!({})).await,
+        ));
+        let patched = ok(&patch_item(&w, oral, json!({"class_on": "2030-05-01"})).await);
+        assert_eq!(patched["assignment"]["class_on"], "2030-05-01");
+    })
+    .await;
+}
+
 /// The database repeats the rules of the settings, so a writer that skips the service is stopped.
 #[tokio::test]
 async fn the_database_refuses_settings_that_break_the_rules() {
@@ -3937,14 +3962,11 @@ async fn the_database_refuses_settings_that_break_the_rules() {
         let w = world(pool.clone()).await;
         let m = module(&w, "M", None).await;
         let text = id_of(&created(&create_with(&w, m, "text", json!({})).await));
-        let oral = id_of(&created(
-            &create_with(&w, m, "no_submission", json!({})).await,
-        ));
 
         let due = Some("2030-05-01T10:00:00Z");
         let later = Some("2030-05-02T10:00:00Z");
         let keep = Some("keep_draft");
-        let refused: [(&str, Uuid, Settings5, &str); 10] = [
+        let refused: [(&str, Uuid, Settings5, &str); 8] = [
             (
                 "due_at alone",
                 text,
@@ -3993,18 +4015,6 @@ async fn the_database_refuses_settings_that_break_the_rules() {
                 (None, None, None, None, Some(0)),
                 "assignments_max_attempts_check",
             ),
-            (
-                "a deadline on no_submission",
-                oral,
-                (due, keep, Some(true), None, None),
-                "assignments_no_submission_settings",
-            ),
-            (
-                "attempts on no_submission",
-                oral,
-                (None, None, None, None, Some(2)),
-                "assignments_no_submission_settings",
-            ),
         ];
         for (what, id, state, expected) in refused {
             assert_eq!(
@@ -4016,10 +4026,6 @@ async fn the_database_refuses_settings_that_break_the_rules() {
         // The refused statements changed nothing.
         assert_eq!(
             item_json(&w, text).await["assignment"]["due_at"],
-            Value::Null
-        );
-        assert_eq!(
-            item_json(&w, oral).await["assignment"]["max_attempts"],
             Value::Null
         );
         // What is allowed goes through.
@@ -4047,7 +4053,7 @@ async fn file_item(w: &World, module: Uuid, title: &str) -> Uuid {
         &w.http,
         &w.owner.token,
         &format!("/modules/{module}/items"),
-        json!({"kind": "file", "title": title}),
+        json!({"type": "shared_file", "title": title}),
     )
     .await;
     id_of(&created(&response))
@@ -4126,11 +4132,12 @@ async fn teacher_creates_a_file_item_with_an_uploaded_file() {
                 &w.http,
                 &w.owner.token,
                 &format!("/modules/{module}/items"),
-                json!({"kind": "file", "title": "Syllabus"}),
+                json!({"type": "shared_file", "title": "Syllabus"}),
             )
             .await,
         );
-        assert_eq!(created_item["kind"], "file");
+        assert_eq!(created_item["kind"], "resource");
+        assert_eq!(created_item["type"], "shared_file");
         assert_eq!(created_item["status"], "draft");
         assert_eq!(created_item["body"], json!({}), "no file yet");
         let item = id_of(&created_item);
@@ -4151,7 +4158,7 @@ async fn teacher_creates_a_file_item_with_an_uploaded_file() {
         assert_eq!(file_status(&w, &w.owner.token, file).await, 200);
 
         let tree = tree(&w, &w.owner.token).await;
-        assert_eq!(top(&tree, "Files")["items"][0]["kind"], "file");
+        assert_eq!(top(&tree, "Files")["items"][0]["type"], "shared_file");
         // A file item carries no assignment part.
         assert!(updated.get("assignment").is_none());
     })
@@ -4181,7 +4188,7 @@ async fn file_item_with_someone_elses_file_is_422() {
                 &w.http,
                 &w.stranger.token,
                 &format!("/modules/{their_module}/items"),
-                json!({"kind": "file", "title": "Theirs"}),
+                json!({"type": "shared_file", "title": "Theirs"}),
             )
             .await,
         ));
@@ -4213,7 +4220,7 @@ async fn file_item_with_someone_elses_file_is_422() {
             &w.http,
             &w.owner.token,
             &format!("/modules/{module}/items"),
-            json!({"kind": "file", "title": "X", "body": {"file_id": held}}),
+            json!({"type": "shared_file", "title": "X", "body": {"file_id": held}}),
         )
         .await;
         assert_eq!(error_fields(&response), ["body.file_id"]);
@@ -4370,13 +4377,16 @@ async fn replacing_the_file_removes_the_old_reference() {
 }
 
 #[tokio::test]
-async fn kind_absent_is_still_inferred_for_old_clients() {
+async fn a_request_without_a_type_is_a_lecture() {
     db_test(async |pool| {
         let w = world(pool).await;
         let module = module(&w, "M", None).await;
         let path = format!("/modules/{module}/items");
         let text = created(&post(&w.http, &w.owner.token, &path, json!({"title": "T"})).await);
-        assert_eq!(text["kind"], "text");
+        assert_eq!(
+            (text["kind"].as_str(), text["type"].as_str()),
+            (Some("resource"), Some("lecture"))
+        );
         let assignment = created(
             &post(
                 &w.http,
@@ -4387,21 +4397,25 @@ async fn kind_absent_is_still_inferred_for_old_clients() {
             .await,
         );
         assert_eq!(assignment["kind"], "assignment");
-        // An explicit kind still has to agree with the payload.
+        assert_eq!(
+            assignment["type"], "text",
+            "the type of an assignment is its own"
+        );
+        // An explicit type still has to agree with the payload.
         let file_with_assignment = post(
             &w.http,
             &w.owner.token,
             &path,
-            json!({"kind": "file", "title": "F",
+            json!({"type": "shared_file", "title": "F",
                    "assignment": {"type": "text", "max_points": "10"}}),
         )
         .await;
-        assert_eq!(error_fields(&file_with_assignment), ["assignment"]);
+        assert_eq!(error_fields(&file_with_assignment), ["type"]);
         let assignment_without = post(
             &w.http,
             &w.owner.token,
             &path,
-            json!({"kind": "assignment", "title": "A"}),
+            json!({"type": "quiz", "title": "A"}),
         )
         .await;
         assert_eq!(error_fields(&assignment_without), ["assignment"]);

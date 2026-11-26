@@ -86,6 +86,13 @@ pub(crate) async fn create_item(
     body: Option<serde_json::Value>,
     assignment: Option<Assignment>,
 ) -> Result<Item, LearningError> {
-    let input = NewItemInput::document(title, body, assignment);
+    let input = match assignment {
+        Some(assignment) => NewItemInput::assignment(title, body, assignment),
+        None => NewItemInput::resource(
+            title,
+            activity::get(activity::types::lecture::ID).unwrap(),
+            body,
+        ),
+    };
     items::create_item(conn, actor, rules, module_id, input).await
 }

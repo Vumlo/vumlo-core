@@ -688,10 +688,10 @@ async fn an_item_naming_a_file_of_another_owner_is_refused_with_its_field_path()
         // The student's upload: the teacher may not name it, and nothing is written.
         let theirs = file(&f.pool, &f.student).await;
         let mut conn = f.pool.acquire().await.unwrap();
-        let input = content::NewItemInput::document(
+        let input = content::NewItemInput::resource(
             ContentTitle::parse("New").unwrap(),
+            activity::get(activity::types::lecture::ID).unwrap(),
             Some(body_naming("file", theirs)),
-            None,
         );
 
         let created = items::create_item(&mut conn, &f.owner, rules(), f.module, input).await;
@@ -741,10 +741,10 @@ async fn a_verdict_that_does_not_cover_the_files_refuses_them() {
             &f.owner,
             rules(),
             f.module,
-            content::NewItemInput::document(
+            content::NewItemInput::resource(
                 ContentTitle::parse("New").unwrap(),
+                activity::get(activity::types::lecture::ID).unwrap(),
                 Some(body_naming("file", id)),
-                None,
             ),
         )
         .await

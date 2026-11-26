@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT i.course_id, a.type AS \"assignment_type: activity::GradedKind\",\n                  i.status = 'published' AS \"item_published!\", i.publish_at AS item_publish_at,\n                  m.status = 'published' AS \"module_published!\", m.publish_at AS module_publish_at,\n                  p.status = 'published' AS \"parent_published?\", p.publish_at AS parent_publish_at\n           FROM content.assignments a\n           JOIN content.items i ON i.id = a.item_id\n           JOIN content.modules m ON m.id = i.module_id\n           LEFT JOIN content.modules p ON p.id = m.parent_id\n           WHERE a.item_id = $1",
+  "query": "SELECT i.course_id, i.type AS \"assignment_type: activity::GradedKind\",\n                  i.status = 'published' AS \"item_published!\", i.publish_at AS item_publish_at,\n                  m.status = 'published' AS \"module_published!\", m.publish_at AS module_publish_at,\n                  p.status = 'published' AS \"parent_published?\", p.publish_at AS parent_publish_at\n           FROM content.assignments a\n           JOIN content.items i ON i.id = a.item_id\n           JOIN content.modules m ON m.id = i.module_id\n           LEFT JOIN content.modules p ON p.id = m.parent_id\n           WHERE a.item_id = $1",
   "describe": {
     "columns": [
       {
@@ -20,7 +20,7 @@
         "type_info": "Text",
         "origin": {
           "Table": {
-            "table": "content.assignments",
+            "table": "content.items",
             "name": "type"
           }
         }
@@ -93,5 +93,5 @@
       true
     ]
   },
-  "hash": "ceba4f4dd285ab67ddb4997570aeff3a205aef6d95801eb83abbb90c44fa6644"
+  "hash": "a6b42534510296743cbc571a9543dd0dfec796062f755850d3b03c916091a01a"
 }

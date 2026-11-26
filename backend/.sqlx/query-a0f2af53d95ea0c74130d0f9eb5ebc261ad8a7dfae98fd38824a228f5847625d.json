@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "UPDATE content.assignments\n           SET config = COALESCE($2::jsonb, config),\n               max_points = COALESCE($3::numeric, max_points),\n               is_bonus = COALESCE($4::boolean, is_bonus),\n               due_at = CASE WHEN $5 THEN $6::timestamptz ELSE due_at END,\n               on_deadline = CASE WHEN $5 THEN $7::text ELSE on_deadline END,\n               accept_late = CASE WHEN $5 THEN $8::boolean ELSE accept_late END,\n               late_until = CASE WHEN $5 THEN $9::timestamptz ELSE late_until END,\n               max_attempts = CASE WHEN $5 THEN $10::integer ELSE max_attempts END,\n               class_on = CASE WHEN $11 THEN $12::date ELSE class_on END,\n               updated_at = now()\n           WHERE item_id = $1\n           RETURNING type AS \"assignment_type: activity::GradedKind\", config AS \"config: Body\",\n                     max_points AS \"max_points: MaxPoints\", is_bonus,\n                     due_at, on_deadline AS \"on_deadline: OnDeadline\", accept_late, late_until,\n                     max_attempts, class_on",
+  "query": "SELECT i.type AS \"assignment_type: activity::GradedKind\", a.config AS \"config: Body\",\n                  a.max_points AS \"max_points: MaxPoints\", a.is_bonus,\n                  a.due_at, a.on_deadline AS \"on_deadline: OnDeadline\", a.accept_late,\n                  a.late_until, a.max_attempts, a.class_on\n           FROM content.assignments a\n           JOIN content.items i ON i.id = a.item_id\n           WHERE a.item_id = $1\n           FOR UPDATE OF a",
   "describe": {
     "columns": [
       {
@@ -9,7 +9,7 @@
         "type_info": "Text",
         "origin": {
           "Table": {
-            "table": "content.assignments",
+            "table": "content.items",
             "name": "type"
           }
         }
@@ -116,18 +116,7 @@
     ],
     "parameters": {
       "Left": [
-        "Uuid",
-        "Jsonb",
-        "Numeric",
-        "Bool",
-        "Bool",
-        "Timestamptz",
-        "Text",
-        "Bool",
-        "Timestamptz",
-        "Int4",
-        "Bool",
-        "Date"
+        "Uuid"
       ]
     },
     "nullable": [
@@ -143,5 +132,5 @@
       true
     ]
   },
-  "hash": "852927a7ff76501734bd598da155eaeea5d8c5fb50413370fea5f82082d0f846"
+  "hash": "a0f2af53d95ea0c74130d0f9eb5ebc261ad8a7dfae98fd38824a228f5847625d"
 }

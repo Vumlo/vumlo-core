@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT f.item_id, f.submitted_at, f.published_score AS \"score: Decimal\", f.marked_at,\n                  a.type AS \"assignment_type?: activity::GradedKind\"\n           FROM content.facts f\n           JOIN content.items i ON i.id = f.item_id\n           LEFT JOIN content.assignments a ON a.item_id = f.item_id\n           WHERE i.course_id = $1 AND f.student_id = $2",
+  "query": "SELECT f.item_id, f.submitted_at, f.published_score AS \"score: Decimal\", f.marked_at,\n                  i.type AS \"item_type: activity::Kind\"\n           FROM content.facts f\n           JOIN content.items i ON i.id = f.item_id\n           WHERE i.course_id = $1 AND f.student_id = $2",
   "describe": {
     "columns": [
       {
@@ -49,11 +49,11 @@
       },
       {
         "ordinal": 4,
-        "name": "assignment_type?: activity::GradedKind",
+        "name": "item_type: activity::Kind",
         "type_info": "Text",
         "origin": {
           "Table": {
-            "table": "content.assignments",
+            "table": "content.items",
             "name": "type"
           }
         }
@@ -70,8 +70,8 @@
       true,
       true,
       true,
-      true
+      false
     ]
   },
-  "hash": "4cb9c0ae296b32eaaf6aa08c7e0711134255d29f4b2b3a4e1330de16100ede7b"
+  "hash": "4db38a5b5b112315037d8c3529727820625a5a2ebae0b236006a7b62823a897f"
 }

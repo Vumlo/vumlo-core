@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO content.items (id, module_id, course_id, position, kind, type, title, status,\n                                        published_title, published_body, last_published_at)\n             VALUES ($1, $2, $3, 1, 'resource', 'lecture', 'Lecture', 'published', 'Lecture',\n                     '{\"v\": 1, \"blocks\": [], \"attachments\": []}', now())",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "0005497ee370233be27f0c73d5b03cf8eb7c871eb7fc5e7c875a2b2c6902eb48"
+}

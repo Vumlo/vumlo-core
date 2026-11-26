@@ -3764,8 +3764,13 @@ export interface components {
         CreateItemRequest: {
             assignment?: components["schemas"]["NewAssignment"] | null;
             body?: components["schemas"]["Document"] | null;
-            kind?: components["schemas"]["ItemKind"] | null;
             title: string;
+            /**
+             * @description The type of a resource: `lecture` (the default) or `shared_file`, or any other registered
+             *     type that has no points. Not allowed with an `assignment` object: the item is then of the
+             *     type of that assignment.
+             */
+            type?: string | null;
         };
         CreateModuleRequest: {
             /**
@@ -4332,8 +4337,8 @@ export interface components {
             access_rule?: components["schemas"]["AccessRule"] | null;
             assignment?: components["schemas"]["Assignment"] | null;
             /**
-             * @description A block document (ADR-0025) for a `text` item and an assignment, `{file_id?, description?}`
-             *     for a `file` item. The server returns the stored body as is.
+             * @description A block document (ADR-0025) for a lecture and an assignment, `{file_id?, description?}`
+             *     for a shared file. The server returns the stored body as is.
              */
             body: components["schemas"]["Document"];
             /** Format: uuid */
@@ -4352,11 +4357,16 @@ export interface components {
             standing?: components["schemas"]["Standing"] | null;
             status: components["schemas"]["ContentStatus"];
             title: string;
+            /**
+             * @description The id of the activity type of the item (ADR-0098): `lecture`, `shared_file`, or the type
+             *     of its assignment (`text`, `no_submission`, `quiz`, `form`, `file`).
+             */
+            type: string;
             /** Format: date-time */
             updated_at: string;
         };
         /** @enum {string} */
-        ItemKind: "text" | "assignment" | "file";
+        ItemKind: "resource" | "assignment";
         /**
          * @description The facts of one item that the course tree does not carry. Only the facts that apply to the
          *     item and to the caller are present.
@@ -4439,6 +4449,8 @@ export interface components {
             standing?: components["schemas"]["Standing"] | null;
             status: components["schemas"]["ContentStatus"];
             title: string;
+            /** @description The id of the activity type of the item (ADR-0098). */
+            type: string;
         };
         /**
          * @description The interface language an institution starts in (ADR-0043).

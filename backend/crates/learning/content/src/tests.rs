@@ -14,7 +14,13 @@ pub(crate) fn install_types() {
     activity::ensure_installed(|| activity::types::builtin_types().unwrap());
 }
 
-/// The built-in type `id`, from the installed registry.
+/// The built-in type `id` of any tier, from the installed registry.
+pub(crate) fn item_type(id: &str) -> activity::Kind {
+    install_types();
+    activity::get(id).unwrap()
+}
+
+/// The built-in graded type `id`, from the installed registry.
 pub(crate) fn kind(id: &str) -> activity::GradedKind {
     install_types();
     activity::get_graded(id).unwrap()

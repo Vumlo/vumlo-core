@@ -5,7 +5,7 @@ use uuid::Uuid;
 
 use super::rules::Condition;
 use access::{CourseAccess, Release};
-use activity::{ConfigError, GradedKind, MaxPoints, PointsError};
+use activity::{ConfigError, GradedKind, Kind, MaxPoints, PointsError};
 use common::text_enum;
 
 const TITLE_MAX_LEN: usize = 200;
@@ -71,13 +71,14 @@ pub enum ItemStatus {
 }
 text_enum!(ItemStatus { Draft => "draft", Published => "published" });
 
+/// What an item is in structure: a `resource` has no points, an `assignment` has a row in
+/// `content.assignments`. What it is in content is its activity type (ADR-0098).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ItemKind {
-    Text,
+    Resource,
     Assignment,
-    File,
 }
-text_enum!(ItemKind { Text => "text", Assignment => "assignment", File => "file" });
+text_enum!(ItemKind { Resource => "resource", Assignment => "assignment" });
 
 /// What happens to a draft at `due_at` (ADR-0011). `AutoSubmit` is carried out by the scheduler
 /// (`learning::schedule`, ADR-0091).
@@ -401,6 +402,8 @@ pub struct Item {
     pub course_id: Uuid,
     pub position: i32,
     pub kind: ItemKind,
+    /// The activity type of the item: `lecture`, `shared_file`, or the type of its assignment.
+    pub item_type: Kind,
     pub title: String,
     pub body: Map<String, Value>,
     pub status: ItemStatus,
@@ -453,6 +456,7 @@ impl Item {
 pub struct ItemSummary {
     pub id: Uuid,
     pub kind: ItemKind,
+    pub item_type: Kind,
     pub title: String,
     pub status: ItemStatus,
     pub publish_at: Option<DateTime<Utc>>,

@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT m.title AS module, m.status AS module_status, m.parent_id IS NOT NULL AS \"is_sub!\",\n                      m.publish_at IS NULL AS \"no_publish_at!\",\n                      i.title AS \"item?\", i.status AS \"item_status?\", i.kind AS \"kind?\",\n                      a.type AS \"type?\", a.max_points AS \"max_points?\", a.is_bonus AS \"is_bonus?\",\n                      a.max_attempts AS \"max_attempts?\", a.due_at AS \"due_at?\", a.on_deadline AS \"on_deadline?\"\n               FROM content.modules m\n               LEFT JOIN content.items i ON i.module_id = m.id\n               LEFT JOIN content.assignments a ON a.item_id = i.id\n               WHERE m.course_id = $1 ORDER BY m.parent_id NULLS FIRST, i.position",
+  "query": "SELECT m.title AS module, m.status AS module_status, m.parent_id IS NOT NULL AS \"is_sub!\",\n                      m.publish_at IS NULL AS \"no_publish_at!\",\n                      i.title AS \"item?\", i.status AS \"item_status?\", i.kind AS \"kind?\",\n                      i.type AS \"type?\", a.max_points AS \"max_points?\", a.is_bonus AS \"is_bonus?\",\n                      a.max_attempts AS \"max_attempts?\", a.due_at AS \"due_at?\", a.on_deadline AS \"on_deadline?\"\n               FROM content.modules m\n               LEFT JOIN content.items i ON i.module_id = m.id\n               LEFT JOIN content.assignments a ON a.item_id = i.id\n               WHERE m.course_id = $1 ORDER BY m.parent_id NULLS FIRST, i.position",
   "describe": {
     "columns": [
       {
@@ -76,7 +76,7 @@
         "type_info": "Text",
         "origin": {
           "Table": {
-            "table": "content.assignments",
+            "table": "content.items",
             "name": "type"
           }
         }
@@ -158,5 +158,5 @@
       true
     ]
   },
-  "hash": "dcba0fedc7fad156a00c0b03b76c18b603e8917aeb352d6645a47775e34614c1"
+  "hash": "32915f166b63a1cfa0ac8b27ab7d7a398a51a546bed16e8436e154c6a3b5fa1c"
 }

@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT i.id, i.module_id, i.course_id, i.position, i.kind AS \"kind: ItemKind\", i.title,\n                  i.body AS \"body: Body\", i.status AS \"status: ItemStatus\", i.publish_at,\n                  i.published_title, i.published_body AS \"published_body?: Body\",\n                  i.last_published_at,\n                  i.created_at, i.updated_at,\n                  m.status AS \"module_status: ModuleStatus\", m.publish_at AS module_publish_at,\n                  p.status AS \"parent_status?: ModuleStatus\", p.publish_at AS parent_publish_at,\n                  a.type AS \"assignment_type?: activity::GradedKind\", a.config AS \"assignment_config?: Body\",\n                  a.max_points AS \"assignment_max_points?: MaxPoints\",\n                  a.is_bonus AS \"assignment_is_bonus?\",\n                  a.class_on AS assignment_class_on,\n                  a.due_at AS assignment_due_at,\n                  a.on_deadline AS \"assignment_on_deadline?: OnDeadline\",\n                  a.accept_late AS assignment_accept_late,\n                  a.late_until AS assignment_late_until,\n                  a.max_attempts AS assignment_max_attempts\n           FROM content.items i\n           JOIN content.modules m ON m.id = i.module_id\n           LEFT JOIN content.modules p ON p.id = m.parent_id\n           LEFT JOIN content.assignments a ON a.item_id = i.id\n           WHERE i.id = $1",
+  "query": "SELECT i.id, i.module_id, i.course_id, i.position, i.kind AS \"kind: ItemKind\",\n                  i.type AS \"item_type: activity::Kind\", i.title,\n                  i.body AS \"body: Body\", i.status AS \"status: ItemStatus\", i.publish_at,\n                  i.published_title, i.published_body AS \"published_body?: Body\",\n                  i.last_published_at,\n                  i.created_at, i.updated_at,\n                  m.status AS \"module_status: ModuleStatus\", m.publish_at AS module_publish_at,\n                  p.status AS \"parent_status?: ModuleStatus\", p.publish_at AS parent_publish_at,\n                  CASE WHEN a.item_id IS NOT NULL THEN i.type END\n                      AS \"assignment_type?: activity::GradedKind\",\n                  a.config AS \"assignment_config?: Body\",\n                  a.max_points AS \"assignment_max_points?: MaxPoints\",\n                  a.is_bonus AS \"assignment_is_bonus?\",\n                  a.class_on AS assignment_class_on,\n                  a.due_at AS assignment_due_at,\n                  a.on_deadline AS \"assignment_on_deadline?: OnDeadline\",\n                  a.accept_late AS assignment_accept_late,\n                  a.late_until AS assignment_late_until,\n                  a.max_attempts AS assignment_max_attempts\n           FROM content.items i\n           JOIN content.modules m ON m.id = i.module_id\n           LEFT JOIN content.modules p ON p.id = m.parent_id\n           LEFT JOIN content.assignments a ON a.item_id = i.id\n           WHERE i.id = $1",
   "describe": {
     "columns": [
       {
@@ -60,6 +60,17 @@
       },
       {
         "ordinal": 5,
+        "name": "item_type: activity::Kind",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "content.items",
+            "name": "type"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
         "name": "title",
         "type_info": "Text",
         "origin": {
@@ -70,7 +81,7 @@
         }
       },
       {
-        "ordinal": 6,
+        "ordinal": 7,
         "name": "body: Body",
         "type_info": "Jsonb",
         "origin": {
@@ -81,7 +92,7 @@
         }
       },
       {
-        "ordinal": 7,
+        "ordinal": 8,
         "name": "status: ItemStatus",
         "type_info": "Text",
         "origin": {
@@ -92,7 +103,7 @@
         }
       },
       {
-        "ordinal": 8,
+        "ordinal": 9,
         "name": "publish_at",
         "type_info": "Timestamptz",
         "origin": {
@@ -103,7 +114,7 @@
         }
       },
       {
-        "ordinal": 9,
+        "ordinal": 10,
         "name": "published_title",
         "type_info": "Text",
         "origin": {
@@ -114,7 +125,7 @@
         }
       },
       {
-        "ordinal": 10,
+        "ordinal": 11,
         "name": "published_body?: Body",
         "type_info": "Jsonb",
         "origin": {
@@ -125,7 +136,7 @@
         }
       },
       {
-        "ordinal": 11,
+        "ordinal": 12,
         "name": "last_published_at",
         "type_info": "Timestamptz",
         "origin": {
@@ -136,7 +147,7 @@
         }
       },
       {
-        "ordinal": 12,
+        "ordinal": 13,
         "name": "created_at",
         "type_info": "Timestamptz",
         "origin": {
@@ -147,7 +158,7 @@
         }
       },
       {
-        "ordinal": 13,
+        "ordinal": 14,
         "name": "updated_at",
         "type_info": "Timestamptz",
         "origin": {
@@ -158,7 +169,7 @@
         }
       },
       {
-        "ordinal": 14,
+        "ordinal": 15,
         "name": "module_status: ModuleStatus",
         "type_info": "Text",
         "origin": {
@@ -169,7 +180,7 @@
         }
       },
       {
-        "ordinal": 15,
+        "ordinal": 16,
         "name": "module_publish_at",
         "type_info": "Timestamptz",
         "origin": {
@@ -180,7 +191,7 @@
         }
       },
       {
-        "ordinal": 16,
+        "ordinal": 17,
         "name": "parent_status?: ModuleStatus",
         "type_info": "Text",
         "origin": {
@@ -191,7 +202,7 @@
         }
       },
       {
-        "ordinal": 17,
+        "ordinal": 18,
         "name": "parent_publish_at",
         "type_info": "Timestamptz",
         "origin": {
@@ -202,18 +213,13 @@
         }
       },
       {
-        "ordinal": 18,
+        "ordinal": 19,
         "name": "assignment_type?: activity::GradedKind",
         "type_info": "Text",
-        "origin": {
-          "Table": {
-            "table": "content.assignments",
-            "name": "type"
-          }
-        }
+        "origin": "Expression"
       },
       {
-        "ordinal": 19,
+        "ordinal": 20,
         "name": "assignment_config?: Body",
         "type_info": "Jsonb",
         "origin": {
@@ -224,7 +230,7 @@
         }
       },
       {
-        "ordinal": 20,
+        "ordinal": 21,
         "name": "assignment_max_points?: MaxPoints",
         "type_info": "Numeric",
         "origin": {
@@ -235,7 +241,7 @@
         }
       },
       {
-        "ordinal": 21,
+        "ordinal": 22,
         "name": "assignment_is_bonus?",
         "type_info": "Bool",
         "origin": {
@@ -246,7 +252,7 @@
         }
       },
       {
-        "ordinal": 22,
+        "ordinal": 23,
         "name": "assignment_class_on",
         "type_info": "Date",
         "origin": {
@@ -257,7 +263,7 @@
         }
       },
       {
-        "ordinal": 23,
+        "ordinal": 24,
         "name": "assignment_due_at",
         "type_info": "Timestamptz",
         "origin": {
@@ -268,7 +274,7 @@
         }
       },
       {
-        "ordinal": 24,
+        "ordinal": 25,
         "name": "assignment_on_deadline?: OnDeadline",
         "type_info": "Text",
         "origin": {
@@ -279,7 +285,7 @@
         }
       },
       {
-        "ordinal": 25,
+        "ordinal": 26,
         "name": "assignment_accept_late",
         "type_info": "Bool",
         "origin": {
@@ -290,7 +296,7 @@
         }
       },
       {
-        "ordinal": 26,
+        "ordinal": 27,
         "name": "assignment_late_until",
         "type_info": "Timestamptz",
         "origin": {
@@ -301,7 +307,7 @@
         }
       },
       {
-        "ordinal": 27,
+        "ordinal": 28,
         "name": "assignment_max_attempts",
         "type_info": "Int4",
         "origin": {
@@ -326,6 +332,7 @@
       false,
       false,
       false,
+      false,
       true,
       true,
       true,
@@ -336,7 +343,7 @@
       true,
       true,
       true,
-      true,
+      null,
       true,
       true,
       true,
@@ -348,5 +355,5 @@
       true
     ]
   },
-  "hash": "103bbdaf84f197bfd005e2ad764ca331108cd23923404bb7b609c0d511b9acf8"
+  "hash": "ccf0ec3113bb125f70315f37e2da1d185f027e24d1f730b1e3371f1b5db6bd62"
 }

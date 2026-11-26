@@ -320,7 +320,12 @@ impl Write {
                     actor,
                     rules,
                     *module_id,
-                    NewItemInput::document(name(title)?, Some(document(text)), None),
+                    NewItemInput::resource(
+                        name(title)?,
+                        activity::get(activity::types::lecture::ID)
+                            .map_err(|_| ApiError::Internal)?,
+                        Some(document(text)),
+                    ),
                 )
                 .await
                 .map_err(ApiError::from)?;
@@ -343,7 +348,7 @@ impl Write {
                     actor,
                     rules,
                     *module_id,
-                    NewItemInput::document(name(title)?, body, Some(assignment)),
+                    NewItemInput::assignment(name(title)?, body, assignment),
                 )
                 .await
                 .map_err(ApiError::from)?;
@@ -371,7 +376,7 @@ impl Write {
                     actor,
                     rules,
                     *module_id,
-                    NewItemInput::document(name(title)?, body, Some(assignment)),
+                    NewItemInput::assignment(name(title)?, body, assignment),
                 )
                 .await
                 .map_err(ApiError::from)?;

@@ -1068,7 +1068,7 @@ async fn a_module_a_page_and_an_assignment_are_created_as_drafts_one_confirm_at_
         }))).await;
         assert_eq!(page["proposals"][0]["facts"]["module"], "M");
         assert_eq!(c.confirm(&c.teacher, page["proposals"][0]["id"].as_str().unwrap()).await, 200);
-        assert_eq!(c.items_named("Reading notes").await[0].1, "text");
+        assert_eq!(c.items_named("Reading notes").await[0].1, "resource");
 
         let essay = c.propose(tool("create_assignment", json!({
             "course_id": c.course, "module_id": c.module, "title": "Essay", "max_points": 10,

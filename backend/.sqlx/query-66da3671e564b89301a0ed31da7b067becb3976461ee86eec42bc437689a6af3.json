@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT a.item_id AS assignment_id, i.course_id, i.published_title AS \"title!\",\n                  a.type AS \"assignment_type: activity::GradedKind\", a.due_at, a.class_on,\n                  a.max_points AS \"max_points: MaxPoints\"\n           FROM content.assignments a\n           JOIN content.items i ON i.id = a.item_id\n           JOIN content.modules m ON m.id = i.module_id\n           LEFT JOIN content.modules p ON p.id = m.parent_id\n           WHERE i.course_id = ANY($1)\n             AND i.status = 'published' AND (i.publish_at IS NULL OR i.publish_at <= $2)\n             AND m.status = 'published' AND (m.publish_at IS NULL OR m.publish_at <= $2)\n             AND (p.id IS NULL\n                  OR (p.status = 'published' AND (p.publish_at IS NULL OR p.publish_at <= $2)))\n           ORDER BY i.course_id, a.due_at NULLS LAST, i.id",
+  "query": "SELECT a.item_id AS assignment_id, i.course_id, i.published_title AS \"title!\",\n                  i.type AS \"assignment_type: activity::GradedKind\", a.due_at, a.class_on,\n                  a.max_points AS \"max_points: MaxPoints\"\n           FROM content.assignments a\n           JOIN content.items i ON i.id = a.item_id\n           JOIN content.modules m ON m.id = i.module_id\n           LEFT JOIN content.modules p ON p.id = m.parent_id\n           WHERE i.course_id = ANY($1)\n             AND i.status = 'published' AND (i.publish_at IS NULL OR i.publish_at <= $2)\n             AND m.status = 'published' AND (m.publish_at IS NULL OR m.publish_at <= $2)\n             AND (p.id IS NULL\n                  OR (p.status = 'published' AND (p.publish_at IS NULL OR p.publish_at <= $2)))\n           ORDER BY i.course_id, a.due_at NULLS LAST, i.id",
   "describe": {
     "columns": [
       {
@@ -42,7 +42,7 @@
         "type_info": "Text",
         "origin": {
           "Table": {
-            "table": "content.assignments",
+            "table": "content.items",
             "name": "type"
           }
         }
@@ -97,5 +97,5 @@
       false
     ]
   },
-  "hash": "13e77de128e1f45e219e6a3b61160feff0b5a5fe51b79f2e7ef57990a71b0a89"
+  "hash": "66da3671e564b89301a0ed31da7b067becb3976461ee86eec42bc437689a6af3"
 }

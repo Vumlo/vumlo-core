@@ -1,22 +1,22 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT type AS \"assignment_type: activity::GradedKind\", config AS \"config: Body\",\n                  max_points AS \"max_points: MaxPoints\", is_bonus,\n                  due_at, on_deadline AS \"on_deadline: OnDeadline\", accept_late, late_until,\n                  max_attempts, class_on\n           FROM content.assignments WHERE item_id = $1",
+  "query": "WITH inserted AS (\n               INSERT INTO content.assignments\n                   (item_id, config, max_points, is_bonus,\n                    due_at, on_deadline, accept_late, late_until, max_attempts, class_on)\n               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)\n               RETURNING *)\n           SELECT i.type AS \"assignment_type!: activity::GradedKind\", a.config AS \"config!: Body\",\n                  a.max_points AS \"max_points!: MaxPoints\", a.is_bonus AS \"is_bonus!\",\n                  a.due_at, a.on_deadline AS \"on_deadline: OnDeadline\", a.accept_late,\n                  a.late_until, a.max_attempts, a.class_on\n           FROM inserted a\n           JOIN content.items i ON i.id = a.item_id",
   "describe": {
     "columns": [
       {
         "ordinal": 0,
-        "name": "assignment_type: activity::GradedKind",
+        "name": "assignment_type!: activity::GradedKind",
         "type_info": "Text",
         "origin": {
           "Table": {
-            "table": "content.assignments",
+            "table": "content.items",
             "name": "type"
           }
         }
       },
       {
         "ordinal": 1,
-        "name": "config: Body",
+        "name": "config!: Body",
         "type_info": "Jsonb",
         "origin": {
           "Table": {
@@ -27,7 +27,7 @@
       },
       {
         "ordinal": 2,
-        "name": "max_points: MaxPoints",
+        "name": "max_points!: MaxPoints",
         "type_info": "Numeric",
         "origin": {
           "Table": {
@@ -38,7 +38,7 @@
       },
       {
         "ordinal": 3,
-        "name": "is_bonus",
+        "name": "is_bonus!",
         "type_info": "Bool",
         "origin": {
           "Table": {
@@ -116,7 +116,16 @@
     ],
     "parameters": {
       "Left": [
-        "Uuid"
+        "Uuid",
+        "Jsonb",
+        "Numeric",
+        "Bool",
+        "Timestamptz",
+        "Text",
+        "Bool",
+        "Timestamptz",
+        "Int4",
+        "Date"
       ]
     },
     "nullable": [
@@ -132,5 +141,5 @@
       true
     ]
   },
-  "hash": "3f899d122574657e1044bf83981d5d8d38722943033d90738bd934f2fae6228a"
+  "hash": "715291dc76737d3ad0fa7dd81a6bdb7147b963ccf49d2e2cd91e041a2efd513a"
 }
