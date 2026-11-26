@@ -16,8 +16,8 @@ export function AssignmentSettings({ item, courseId, pointsLocked }: { item: Ite
   const a = item.assignment!;
   const meta = useItemMeta(courseId);
   const update = useUpdateItem(courseId);
-  const noSubmission = a.type === "no_submission";
-  const isFile = a.type === "file";
+  const noSubmission = item.type === "no_submission";
+  const isFile = item.type === "file";
   const [points, setPoints] = useState(a.max_points);
   const [hasDue, setHasDue] = useState(!!a.due_at);
   const [due, setDue] = useState(a.due_at ? isoToLocal(a.due_at) : "");

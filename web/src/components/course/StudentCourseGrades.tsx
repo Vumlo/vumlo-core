@@ -27,7 +27,7 @@ export function StudentCourseGrades({ courseId }: { courseId: string }) {
   const total = summary.data;
   const m = meta.data?.items ?? {};
   const g = grades.data?.items ?? [];
-  const asg = tree.data ? tree.data.modules.flatMap((x) => [...x.submodules.flatMap((y) => y.items), ...x.items]).filter((i) => isAssignment(i) && i.assignment!.type !== "no_submission" && i.assignment!.max_points !== "0.00") : [];
+  const asg = tree.data ? tree.data.modules.flatMap((x) => [...x.submodules.flatMap((y) => y.items), ...x.items]).filter((i) => isAssignment(i) && i.type !== "no_submission" && i.assignment!.max_points !== "0.00") : [];
   const gradedIds = new Set(g.map((x) => x.assignment_id));
   const open = asg.filter((i) => !gradedIds.has(i.id));
   const today = now();

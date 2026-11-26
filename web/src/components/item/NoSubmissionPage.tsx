@@ -43,7 +43,7 @@ export function NoSubmissionPage({ item, courseId, staff }: { item: Item; course
           <div className={s.kind}>
             <span aria-hidden="true" className={s.kindIcon} data-kind="assignment"><Icon name="assignment" size={15} strokeWidth={2} /></span>
             <span className={s.kindLabel} data-kind="assignment">{t("cm.assignment")}</span>
-            <span className="muted" style={{ fontSize: 14 }}>{typeLabel(a.type)}</span>
+            <span className="muted" style={{ fontSize: 14 }}>{typeLabel(item.type)}</span>
           </div>
           <h1 className={s.title}>{item.title}</h1>
           <DueBar due={null} open points={a.max_points} sentence={sentence} pill={grade ? { label: t("status.graded"), tone: "ok" } : { label: t("status.nothingToSubmit"), tone: "strong" }}>

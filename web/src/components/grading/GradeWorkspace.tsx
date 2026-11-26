@@ -45,7 +45,7 @@ export function GradeWorkspace({ courseId, assignmentId, studentId }: { courseId
   const item = useItem(can.view_grades && assignmentId ? assignmentId : null);
   const course = useCourse(can.view_grades ? courseId : null);
   // An assignment graded by hand has no submissions, so the list of work waiting would always be empty.
-  const filter = picked ?? (item.data?.assignment?.type === "no_submission" ? "all" : "grade");
+  const filter = picked ?? (item.data?.type === "no_submission" ? "all" : "grade");
   const open = item.data?.assignment ? assignmentId : null;
   const book = useGradebook(open ? courseId : null);
   const subs = useSubmissions(open);

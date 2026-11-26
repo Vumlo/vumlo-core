@@ -48,7 +48,7 @@ export function SubmissionView({ item, attempts }: { item: Item; attempts: Attem
 function Body({ item, attempt }: { item: Item; attempt: Attempt }) {
   const t = useT();
   const a = item.assignment;
-  const type = a?.type;
+  const type = item.type;
   if (type === "file") return <FilePreview key={attempt.id} content={attempt.content} title={item.title} />;
   if (!a || (type !== "quiz" && type !== "form")) {
     return isDoc(attempt.content) ? <div className={`card ${s.work}`}><BlockRenderer doc={attempt.content} size={15} /></div> : null;

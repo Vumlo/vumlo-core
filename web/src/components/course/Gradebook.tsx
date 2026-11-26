@@ -68,7 +68,7 @@ export function Gradebook({ courseId }: { courseId: string }) {
     const rowsFor = (book.data?.items ?? []).filter((r) => !r.former);
     const toGrade = rowsFor.filter((r) => state(r, col).st === "grade").length;
     const drafts = rowsFor.filter((r) => state(r, col).st === "draft").length;
-    if (item?.assignment?.type === "no_submission") return { text: t("gb.byHand"), tone: "muted" };
+    if (item?.type === "no_submission") return { text: t("gb.byHand"), tone: "muted" };
     if (toGrade || drafts) return { text: [toGrade ? t("gb.toGradeN", { n: toGrade }) : "", drafts ? plural(drafts, "draft") : ""].filter(Boolean).join(", "), tone: "accent" };
     if (due && new Date(due) >= now() && submitted === 0) return { text: t("gb.dueNone", { day: dayLabel(due) }), tone: "muted" };
     if (due && new Date(due) < now()) return { text: t("gb.closedAll", { day: dayLabel(due) }), tone: "muted" };

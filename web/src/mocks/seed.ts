@@ -168,7 +168,7 @@ export function createSeed(): Db {
       kind: "assignment",
       type,
       assignment: {
-        type, config: o.config ?? {}, max_points: o.points, is_bonus: false,
+        config: o.config ?? {}, max_points: o.points, is_bonus: false,
         due_at: due ? at(due) : null,
         on_deadline: due ? (o.autoSubmit === false ? "keep_draft" : "auto_submit") : null,
         accept_late: due ? (o.late ?? false) : null,

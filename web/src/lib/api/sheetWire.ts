@@ -122,9 +122,9 @@ export function configToWire(type: string, config: Json): Json {
 }
 
 /** An item as the screens read it: the `config` of a quiz or a form in the screens' shape. */
-export function itemFromWire<T extends { assignment?: { type: string; config: Json } | null }>(item: T): T {
+export function itemFromWire<T extends { type: string; assignment?: { config: Json } | null }>(item: T): T {
   const a = item.assignment;
-  return a ? { ...item, assignment: { ...a, config: configFromWire(a.type, a.config) } } : item;
+  return a ? { ...item, assignment: { ...a, config: configFromWire(item.type, a.config) } } : item;
 }
 
 /** The server's answers for a quiz or form (lists of ids, a document for a long text). */

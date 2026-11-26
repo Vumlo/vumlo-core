@@ -57,7 +57,7 @@ function itemMeta(i: ItemSummary, m: ItemMeta | undefined): string {
   const a = i.assignment!;
   const when = dueShort(a.due_at ?? null, m?.class_on, now());
   const pts = a.max_points === "0.00" ? translate("row.notGraded") : translate("row.points", { points: wholePoints(a.max_points) });
-  return `${typeLabel(a.type)}, ${pts}${when === translate("due.none") ? "" : `, ${when.charAt(0).toLowerCase()}${when.slice(1)}`}`;
+  return `${typeLabel(i.type)}, ${pts}${when === translate("due.none") ? "" : `, ${when.charAt(0).toLowerCase()}${when.slice(1)}`}`;
 }
 
 /** `canEdit` is the server's `can.edit_content`: without it (a unit viewer) the screen shows the course and changes nothing. */

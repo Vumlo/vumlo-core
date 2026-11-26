@@ -172,7 +172,6 @@ fn a_text_item_serializes_without_an_assignment_key() {
     );
 
     let assignment = serde_json::to_value(item(Some(Assignment {
-        assignment_type: "text".into(),
         config: Map::new(),
         max_points: "20.00".into(),
         is_bonus: false,
@@ -187,7 +186,7 @@ fn a_text_item_serializes_without_an_assignment_key() {
     assert_eq!(
         assignment["assignment"],
         json!({
-            "type": "text", "config": {}, "max_points": "20.00", "is_bonus": false,
+            "config": {}, "max_points": "20.00", "is_bonus": false,
             "due_at": null, "on_deadline": null, "accept_late": null, "late_until": null,
             "max_attempts": null, "class_on": null
         })

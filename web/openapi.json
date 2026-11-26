@@ -550,14 +550,9 @@
                 "type": "null"
               }
             ]
-          },
-          "type": {
-            "description": "The assignment type: `text`, `no_submission`, `quiz`, `form` or `file`. It cannot change.",
-            "type": "string"
           }
         },
         "required": [
-          "type",
           "config",
           "max_points",
           "is_bonus"
@@ -610,13 +605,9 @@
                 "type": "null"
               }
             ]
-          },
-          "type": {
-            "type": "string"
           }
         },
         "required": [
-          "type",
           "max_points",
           "is_bonus"
         ],

@@ -85,7 +85,7 @@ function itemFor(item: DbItem, staff: boolean): Item {
     if (published_title) out.title = published_title;
   }
   if (out.assignment) {
-    const type = out.assignment.type;
+    const type = out.type;
     const ui = staff ? out.assignment.config : studentConfig(item);
     const wire = configToWire(type, ui) as { fields?: { options?: Record<string, unknown>[]; has_answers?: boolean; rules?: { exclusive?: boolean } }[] };
     // The facts the server adds to a form when it reads it (ADR-0051 point 5).
@@ -115,7 +115,7 @@ function cards(userId: string): CourseCard[] {
       student_count: activeStudents(c.id).length, assistant_count: db.members.filter((x) => x.course_id === c.id && x.role === "assistant").length,
     } as const;
     if (!staff) {
-      const asg = flatItems(c, false).filter((i) => i.assignment && i.assignment.type !== "no_submission");
+      const asg = flatItems(c, false).filter((i) => i.assignment && i.type !== "no_submission");
       const statuses = asg.map((i) => workStatus(i, userId));
       const upcoming = asg
         .filter((i) => i.assignment!.due_at && new Date(i.assignment!.due_at) >= MOCK_NOW && ["not_started", "draft"].includes(workStatus(i, userId)))
@@ -136,7 +136,7 @@ function cards(userId: string): CourseCard[] {
         const sub = submissionOf(i.id, s.user_id);
         const g = gradeOf(i.id, s.user_id);
         if (sub && sub.attempts.length > 0 && toCents(i.assignment!.max_points) > 0 && (!g || g.draft_score === null)) toGrade++;
-        if (g && hasUnpublishedChanges(g)) { drafts++; if (i.assignment!.type === "quiz") draftNote = i.title; }
+        if (g && hasUnpublishedChanges(g)) { drafts++; if (i.type === "quiz") draftNote = i.title; }
       }
     }
     if (toGrade) todo.push({ kind: "to_grade", count: toGrade });
@@ -483,8 +483,8 @@ export const coreHandlers = [
     if (item.assignment) {
       const a = item.assignment;
       if (b.config) {
-        if (a.type === "file") fileSettings(b.config as Record<string, unknown>);
-        a.config = configFromWire(a.type, b.config as Record<string, unknown>);
+        if (item.type === "file") fileSettings(b.config as Record<string, unknown>);
+        a.config = configFromWire(item.type, b.config as Record<string, unknown>);
       }
       if (b.max_points !== undefined) a.max_points = decimal(b.max_points, "max_points");
       if ("due_at" in b) { a.due_at = (b.due_at as string | null) ?? null; if (!a.due_at) { a.on_deadline = null; a.accept_late = null; a.late_until = null; } }
@@ -603,7 +603,7 @@ export const coreHandlers = [
       created_at: MOCK_NOW.toISOString(), updated_at: MOCK_NOW.toISOString(), last_published_at: null, unpublished_changes: false,
       ...(a ? {
         assignment: {
-          type: String(a?.type ?? "text"), config: configFromWire(String(a?.type ?? "text"), (a?.config as Record<string, unknown>) ?? {}), max_points: decimal(a?.max_points ?? "10", "max_points"), is_bonus: false,
+          config: configFromWire(String(a?.type ?? "text"), (a?.config as Record<string, unknown>) ?? {}), max_points: decimal(a?.max_points ?? "10", "max_points"), is_bonus: false,
           due_at: (a?.due_at as string | null) ?? null, on_deadline: (a?.on_deadline as "keep_draft" | "auto_submit" | null) ?? null,
           accept_late: (a?.accept_late as boolean | null) ?? null, late_until: null, max_attempts: a?.max_attempts === undefined ? 1 : (a.max_attempts as number | null),
         },

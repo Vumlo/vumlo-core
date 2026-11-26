@@ -28,7 +28,7 @@ export function ItemView({ courseId, itemId }: { courseId: string; itemId: strin
   if (it.unavailable) return <UnavailablePage item={it} courseId={courseId} />;
   if (it.type === "lecture") return <LecturePage item={it} courseId={courseId} staff={staff} />;
   if (it.type === "shared_file") return <FilePage item={it} courseId={courseId} staff={staff} />;
-  switch (it.assignment?.type) {
+  switch (it.type) {
     case "no_submission": return <NoSubmissionPage item={it} courseId={courseId} staff={staff} />;
     case "quiz": return <QuizPage item={it} courseId={courseId} staff={staff} />;
     case "form": return <FormPage item={it} courseId={courseId} staff={staff} />;
