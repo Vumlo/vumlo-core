@@ -6,13 +6,14 @@
 
 use std::collections::BTreeMap;
 
+use api_types::ProfileName;
 use serde_json::{Map, Value};
 use sqlx::types::Decimal;
 use uuid::Uuid;
 
 use crate::{
     AutoGrade, Claims, ClassFacts, DocumentErrors, EffectiveProfiles, FileRef, ReviewQuestion,
-    Stage, ValidContent, Viewer,
+    Stage, ValidContent, ValidDocument, Viewer, file_refs_under, validate_document,
 };
 
 /// A configuration the type refuses. The text is fixed and never repeats what was sent.
@@ -44,8 +45,7 @@ pub struct Capabilities {
 pub struct Progress {
     pub submitted: bool,
     pub graded: bool,
-    /// The student marked it done by hand. No policy uses it: marking is the item's rule, not a
-    /// type's.
+    /// The student marked it done by hand. Only the policy `Marked` reads it.
     pub marked: bool,
 }
 
@@ -56,6 +56,8 @@ pub enum CompletionPolicy {
     SubmittedOrGraded,
     /// Only a grade completes it.
     Graded,
+    /// The student marks it done by hand: a lecture, a shared file (ADR-0092).
+    Marked,
 }
 
 impl CompletionPolicy {
@@ -63,6 +65,7 @@ impl CompletionPolicy {
         match self {
             Self::SubmittedOrGraded => progress.submitted || progress.graded,
             Self::Graded => progress.graded,
+            Self::Marked => progress.marked,
         }
     }
 }
@@ -79,6 +82,40 @@ pub trait ActivityType: Send + Sync {
     /// The graded tier, or `None` for an activity that has no points. Every type answers, and
     /// a type that implements [`Graded`] returns `Some(self)`.
     fn graded(&self) -> Option<&dyn Graded>;
+
+    /// The body an item of this type starts with (ADR-0098). Default: an empty document.
+    fn default_body(&self) -> Map<String, Value> {
+        ValidDocument::empty().as_body().clone()
+    }
+
+    /// Checks the `body` an item of this type is written with and returns the one to store, as
+    /// the institution's editor profiles narrow it. Errors name paths inside the body. Default:
+    /// a block document of the profile `full`, which is also what the instructions of an
+    /// assignment are.
+    fn validate_body(
+        &self,
+        body: &Value,
+        profiles: &EffectiveProfiles,
+    ) -> Result<Map<String, Value>, DocumentErrors> {
+        validate_document(body, ProfileName::Full, profiles).map(|valid| valid.as_body().clone())
+    }
+
+    /// The files a stored `body` names, each with its path (`body...`) (ADR-0069). The documents
+    /// are read with the validator's parser: one it cannot read is an error, never "no files".
+    /// Default: the images and files of a block document.
+    fn body_file_refs(&self, body: &Map<String, Value>) -> Result<Vec<FileRef>, DocumentErrors> {
+        file_refs_under("body", &Value::Object(body.clone()))
+    }
+
+    /// Whether an item of this type may be published with this `body`. Default: always.
+    fn check_publishable(&self, _body: &Map<String, Value>) -> Result<(), ConfigError> {
+        Ok(())
+    }
+
+    /// The minutes the `body` takes to read, for a type that has a text to read. Default: none.
+    fn reading_minutes(&self, _body: &Map<String, Value>) -> Option<u32> {
+        None
+    }
 
     /// What the type can do, derived from its tiers.
     fn capabilities(&self) -> Capabilities {
