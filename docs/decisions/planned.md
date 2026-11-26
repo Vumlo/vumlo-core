@@ -8,9 +8,6 @@ and "Open questions" parts of `ARCHITECTURE.md` and has no ADR yet; each one nee
   native mobile clients, the module `vpl`, release binaries, down migrations.
   Third-party plugins and authenticated module routes were added later by 0066; the module `ai_agent` by 0070 (in progress).
 
-## Accepted, not built
-- ADR-0098 — Activities are one concept in one crate. Every item of a course module is an activity of a registered type: a lecture and a shared file become types (`lecture`, `shared_file`) beside the five assignment types, `content.items` gets `type` and its `kind` only says graded or not (`resource` or `assignment`), and the five built-in types move from `content` into the crate `activity`, whose contract becomes tiers (`ActivityType`, `Graded`, `Submissions`, `AutoGrading`). The features a type owns (the quiz result, the form responses and their "taken" overlay, the plugin reads) are hooks of the contract, so no crate outside `activity` compares a type id (a module, the CLI and tests may name a built-in); the plugin names that say `quiz` become type-neutral (`attempts:read`, `attempt.autograded`, plugin `api = "2"`). A module registers a type through `Registrar`, and a stored type nobody registered reads as `Kind::Missing`. Five stages: move, tiers, hooks, activities with the migration, modules. Spec: `docs/superpowers/specs/2026-11-26-activity-generalization-design.md`.
-
 ## No ADR yet
 - Final and term grades: where they live, periods, computation, rounding (direction in 0031: teacher enters, system suggests).
 - What `institution.mode` should change beyond the default grading scale: terminology, dashboards.

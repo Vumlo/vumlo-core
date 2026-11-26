@@ -54,15 +54,17 @@ activity/src/
     contract.rs, model.rs   the traits and the data their signatures name        (today)
     registry.rs             install, get, ids_where, Kind                         (today)
     document/               the rich-text model                                   (today)
-    points.rs               Points: the decimal rules of a point value            (from content)
+    points.rs               MaxPoints, PointsError, parse_decimal: the rules of a point value   (from content)
     types/                  lecture, shared_file, text, no_submission, file, form, quiz   (from content, two new)
 ```
 
 `content` keeps the structure: modules, the item rows and their revisions, access conditions, `content.facts`,
 scheduling. `builtin_types()` and the type files leave it. `activity` stays a crate with no schema, beside the chain, at
 layer 7 (`server/tests/architecture.rs:86`). Its manifest rule (ADR-0097) is unchanged; the types add `chrono`, which
-the test already accepts. The types return `ConfigError` instead of `ModelError`, and `MaxPoints::parse`
-(`types/quiz.rs:153`) becomes `activity::Points`; `content` uses it for the points of an assignment.
+the test already accepts. The types return `ConfigError` instead of `ModelError`, and `MaxPoints`
+(`types/quiz.rs:153`) moves into `activity` under its own name, with a new `PointsError` of the same text; `content`
+uses it for the points of an assignment and maps the error to `ModelError::MaxPoints`. (A rename to `Points` was
+dropped: it touches about 25 call sites and rewrites 8 `.sqlx` queries, and a move needs neither.)
 
 A type does no I/O. Anything it needs from the database (the files a document names, the claims of other students) is
 passed in, as `check_file_names` already does (`types/file.rs:127`).
@@ -222,7 +224,7 @@ Stages follow the repository's habit: one plan, one PR, a stop for review.
 
 | # | Stage | Visible change |
 |---|---|---|
-| 1 | **Move.** The five types, `Points` and the helpers go from `content` to `activity/src/types/`; `ConfigError` replaces `ModelError`; the exports `content::{quiz,form,text}::ID` become `activity::types::..::ID` | none |
+| 1 | **Move.** The five types, `MaxPoints` and the helpers go from `content` to `activity/src/types/`; `ConfigError` replaces `ModelError`; the exports `content::{quiz,form,text}::ID` become `activity::types::..::ID` | none |
 | 2 | **Tiers.** The contract becomes `ActivityType` / `Graded` / `Submissions` / `AutoGrading`; the stubs of `no_submission` disappear; `Capabilities` is derived; call sites read `kind.graded()` | none |
 | 3 | **Hooks.** `review`, `responses`, `Held` and `student_config`, `plugin_config`, `plugin_answers` replace the type comparisons in `assessment`, `content`, `flows`, `plugins`; the event and scope renames of section 7 | plugin protocol `api = "2"` |
 | 4 | **Activities.** `lecture` and `shared_file`, the body hooks, `CompletionPolicy::Marked`, the migration of section 6, `Item.type`, the web and mock changes, regenerated OpenAPI | `Item.kind` becomes `Item.type`; template counts |
