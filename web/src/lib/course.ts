@@ -40,7 +40,7 @@ export function unmetText(unmet: UnmetCondition): string {
 export type Section = (ContentModule | ContentSubModule) & { depth: 0 | 1 };
 
 export const isAssignment = (i: ItemSummary) => i.kind === "assignment";
-export const kindOf = (i: Pick<ItemSummary, "kind">): "lecture" | "assignment" | "file" => (i.kind === "assignment" ? "assignment" : i.kind === "file" ? "file" : "lecture");
+export const kindOf = (i: Pick<ItemSummary, "kind" | "type">): "lecture" | "assignment" | "file" => (i.kind === "assignment" ? "assignment" : i.type === "shared_file" ? "file" : "lecture");
 
 /** The sections of a tree in reading order; sub-modules come first inside their module (ADR-0020). */
 export function sections(tree: ContentTree): Section[] {

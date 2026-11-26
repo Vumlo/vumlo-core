@@ -26,8 +26,8 @@ export function ItemEditor({ courseId, itemId }: { courseId: string; itemId: str
   if (item.error) return item.error.status === 404 || item.error.status === 403 ? <NotFoundScreen /> : <LoadFailed title={item.error.title} />;
   if (!item.data || loading || !allowed) return <p className="loading" role="status">{t("common.loading")}</p>;
   const it = item.data;
-  if (it.kind === "text") return <LectureEditor key={it.id} item={it} courseId={courseId} />;
-  if (it.kind === "file") return <FileItemEditor key={it.id} item={it} courseId={courseId} />;
+  if (it.type === "lecture") return <LectureEditor key={it.id} item={it} courseId={courseId} />;
+  if (it.type === "shared_file") return <FileItemEditor key={it.id} item={it} courseId={courseId} />;
   switch (it.assignment?.type) {
     case "quiz": return <QuizBuilder key={it.id} item={it} courseId={courseId} />;
     case "form": return <FormBuilder key={it.id} item={it} courseId={courseId} />;

@@ -24,8 +24,8 @@ export function ItemView({ courseId, itemId }: { courseId: string; itemId: strin
   const it = item.data;
   // The server sends a locked item as its title only; staff are never locked (ADR-0092).
   if (!staff && isLocked(it)) return <LockedPage item={it} courseId={courseId} />;
-  if (it.kind === "text") return <LecturePage item={it} courseId={courseId} staff={staff} />;
-  if (it.kind === "file") return <FilePage item={it} courseId={courseId} staff={staff} />;
+  if (it.type === "lecture") return <LecturePage item={it} courseId={courseId} staff={staff} />;
+  if (it.type === "shared_file") return <FilePage item={it} courseId={courseId} staff={staff} />;
   switch (it.assignment?.type) {
     case "no_submission": return <NoSubmissionPage item={it} courseId={courseId} staff={staff} />;
     case "quiz": return <QuizPage item={it} courseId={courseId} staff={staff} />;

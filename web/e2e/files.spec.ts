@@ -253,7 +253,7 @@ test("teacher_adds_a_pdf_as_lesson_material", async ({ page }) => {
   const sent = watchUploads(page);
   const patches = watchBodies(page, "PATCH", /\/items\/[^/]+$/);
   await newFileItem(page, "Lab handout");
-  expect(created).toEqual([expect.objectContaining({ kind: "file", title: "Lab handout" })]);
+  expect(created).toEqual([expect.objectContaining({ type: "shared_file", title: "Lab handout" })]);
   // A file item cannot be published before it has a file; the page says so and does not offer the click.
   const publish = page.getByRole("button", { name: "Publish", exact: true });
   await expect(publish).toBeDisabled();

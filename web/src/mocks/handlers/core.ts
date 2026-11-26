@@ -74,7 +74,7 @@ function checkFileBody(body: unknown) {
 
 /** A file item cannot be published, or have a revision published, while its working body names no file. */
 function needsFile(item: DbItem) {
-  if (item.kind === "file" && !(item.body as { file_id?: string }).file_id) throw problem(409, "Conflict", "a file item needs a file before it is published");
+  if (item.type === "shared_file" && !(item.body as { file_id?: string }).file_id) throw problem(409, "Conflict", "a file item needs a file before it is published");
 }
 
 function itemFor(item: DbItem, staff: boolean): Item {
@@ -239,7 +239,7 @@ export const coreHandlers = [
     const items: TemplateSummary[] = db.courses.filter((c) => c.kind === "template" && c.owner_id === u.id).map((c) => {
       const mods = db.modules.filter((m) => m.course_id === c.id);
       const its = db.items.filter((i) => i.course_id === c.id);
-      return { course: publicCourse(c), sections: mods.length, lectures: its.filter((i) => i.kind === "text").length, assignments: its.filter((i) => i.kind === "assignment").length, updated_at: c.template_updated_at ?? c.created_at };
+      return { course: publicCourse(c), sections: mods.length, lectures: its.filter((i) => i.type === "lecture" || i.type === "shared_file").length, assignments: its.filter((i) => i.kind === "assignment").length, updated_at: c.template_updated_at ?? c.created_at };
     });
     return HttpResponse.json({ items, next_cursor: null });
   }),
@@ -476,7 +476,7 @@ export const coreHandlers = [
       item.title = b.title.trim();
     }
     if (b.body) {
-      if (item.kind === "file") checkFileBody(b.body);
+      if (item.type === "shared_file") checkFileBody(b.body);
       else checkDocument(b.body, { profile: "full" }, "body");
       item.body = b.body as Item["body"];
     }
@@ -590,17 +590,18 @@ export const coreHandlers = [
     const m = db.modules.find((x) => x.id === params.id);
     if (!m) throw notFound();
     requireStaff(m.course_id, "edit_content");
-    const b = (await request.json()) as { kind: "text" | "assignment" | "file"; title: string; body?: unknown; assignment?: Record<string, unknown> };
+    const b = (await request.json()) as { type?: "lecture" | "shared_file"; title: string; body?: unknown; assignment?: Record<string, unknown> };
     const title = (b.title ?? "").trim();
     if (!title) throw problem(422, "Validation failed", undefined, [{ field: "title", message: "Give it a title" }]);
     const id = uid(`item:new:${db.items.length}:${title}`);
     const sibs = db.items.filter((i) => i.module_id === m.id);
     const a = b.assignment;
-    if (b.kind === "assignment" && a?.type === "file") fileSettings((a.config as Record<string, unknown>) ?? {});
+    if (a && a.type === "file") fileSettings((a.config as Record<string, unknown>) ?? {});
+    const itemType = a ? String(a.type ?? "text") : (b.type ?? "lecture");
     const item: DbItem = {
-      id, module_id: m.id, course_id: m.course_id, position: sibs.length + 1, kind: b.kind, title, body: (b.body ?? (b.kind === "file" ? {} : { v: 1, blocks: [] })) as Item["body"], status: "draft", publish_at: null,
+      id, module_id: m.id, course_id: m.course_id, position: sibs.length + 1, kind: a ? "assignment" : "resource", type: itemType, title, body: (b.body ?? (itemType === "shared_file" ? {} : { v: 1, blocks: [] })) as Item["body"], status: "draft", publish_at: null,
       created_at: MOCK_NOW.toISOString(), updated_at: MOCK_NOW.toISOString(), last_published_at: null, unpublished_changes: false,
-      ...(b.kind === "assignment" ? {
+      ...(a ? {
         assignment: {
           type: String(a?.type ?? "text"), config: configFromWire(String(a?.type ?? "text"), (a?.config as Record<string, unknown>) ?? {}), max_points: decimal(a?.max_points ?? "10", "max_points"), is_bonus: false,
           due_at: (a?.due_at as string | null) ?? null, on_deadline: (a?.on_deadline as "keep_draft" | "auto_submit" | null) ?? null,

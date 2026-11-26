@@ -197,7 +197,7 @@ export function itemVisibleToStudent(item: DbItem, course: DbCourse): boolean {
 }
 
 export const summary = (i: DbItem): ItemSummary => ({
-  id: i.id, kind: i.kind, title: i.title, status: i.status, publish_at: i.publish_at, position: i.position,
+  id: i.id, kind: i.kind, type: i.type, title: i.title, status: i.status, publish_at: i.publish_at, position: i.position,
   ...(i.assignment ? { assignment: stripConfig(i.assignment) } : {}),
 });
 
