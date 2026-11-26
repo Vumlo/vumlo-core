@@ -574,10 +574,11 @@ pub enum ContentStatus {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum ItemKind {
-    Text,
+    /// An item with no points: a lecture, a shared file. Its type says which (`Item.type`).
+    Resource,
+    /// An item with points, a deadline and a gradebook column; its type is the type of the
+    /// assignment.
     Assignment,
-    /// One uploaded file with an optional description (ADR-0024).
-    File,
 }
 
 /// A top-level module or a sub-module (ADR-0020).
@@ -662,14 +663,18 @@ pub struct Item {
     pub course_id: Uuid,
     pub position: i32,
     pub kind: ItemKind,
+    /// The id of the activity type of the item (ADR-0098): `lecture`, `shared_file`, or the type
+    /// of its assignment (`text`, `no_submission`, `quiz`, `form`, `file`).
+    #[serde(rename = "type")]
+    pub item_type: String,
     pub title: String,
-    /// A block document (ADR-0025) for a `text` item and an assignment, `{file_id?, description?}`
-    /// for a `file` item. The server returns the stored body as is.
+    /// A block document (ADR-0025) for a lecture and an assignment, `{file_id?, description?}`
+    /// for a shared file. The server returns the stored body as is.
     #[schema(value_type = Document)]
     pub body: Map<String, Value>,
     pub status: ContentStatus,
     pub publish_at: Option<DateTime<Utc>>,
-    /// Present for items of kind `assignment`, absent for `text` items.
+    /// Present for items of kind `assignment`, absent for a resource.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub assignment: Option<Assignment>,
     pub created_at: DateTime<Utc>,
@@ -688,11 +693,14 @@ pub struct Item {
 pub struct ItemSummary {
     pub id: Uuid,
     pub kind: ItemKind,
+    /// The id of the activity type of the item (ADR-0098).
+    #[serde(rename = "type")]
+    pub item_type: String,
     pub title: String,
     pub status: ContentStatus,
     pub publish_at: Option<DateTime<Utc>>,
     pub position: i32,
-    /// Present for items of kind `assignment`, absent for `text` items.
+    /// Present for items of kind `assignment`, absent for a resource.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub assignment: Option<AssignmentSummary>,
     /// Staff only (ADR-0092): the rule that locks the item. Absent when it has none.
@@ -851,22 +859,23 @@ pub struct NewAssignment {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Validate, ToSchema)]
 pub struct CreateItemRequest {
-    /// `text`, `assignment` or `file`. Omit it to get `assignment` when an `assignment` object is
-    /// sent and `text` otherwise.
-    #[serde(default)]
+    /// The type of a resource: `lecture` (the default) or `shared_file`, or any other registered
+    /// type that has no points. Not allowed with an `assignment` object: the item is then of the
+    /// type of that assignment.
+    #[serde(default, rename = "type")]
     #[garde(skip)]
-    pub kind: Option<ItemKind>,
+    pub item_type: Option<String>,
     #[garde(length(chars, min = 1, max = 200))]
     pub title: String,
     /// A block document (ADR-0025). Defaults to the empty document. For an assignment it is the
-    /// description. For a `file` item it is `{file_id?, description?}` and defaults to `{}`: the file
-    /// is uploaded (`POST /files?for=item:{id}`) once the item exists and named with
+    /// description. For a shared file it is `{file_id?, description?}` and defaults to `{}`: the
+    /// file is uploaded (`POST /files?for=item:{id}`) once the item exists and named with
     /// `PATCH /items/{id}`. It is read as a JSON value so that a rejection can name the path.
     #[serde(default)]
     #[schema(value_type = Option<Document>)]
     #[garde(skip)]
     pub body: Option<Value>,
-    /// Required for `kind: assignment`, not allowed for the other kinds.
+    /// Required for a type that has points, not allowed for a resource.
     #[serde(default)]
     #[garde(skip)]
     pub assignment: Option<NewAssignment>,

@@ -38,7 +38,7 @@ export function LecturePage({ item, courseId, staff }: { item: Item; courseId: s
 
   const items = tree.data ? allItems(tree.data) : [];
   const at = items.findIndex((i) => i.id === item.id);
-  const prevLecture = items.slice(0, Math.max(0, at)).reverse().find((i) => i.kind === "text");
+  const prevLecture = items.slice(0, Math.max(0, at)).reverse().find((i) => i.type === "lecture");
   const next = at >= 0 ? items[at + 1] : undefined;
 
   return (

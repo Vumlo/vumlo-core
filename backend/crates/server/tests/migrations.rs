@@ -212,8 +212,8 @@ async fn insert_item_row(
     body: serde_json::Value,
 ) -> Result<(), sqlx::Error> {
     sqlx::query!(
-        "INSERT INTO content.items (id, module_id, course_id, position, kind, title, body)
-         VALUES ($1, $2, $3, $4, 'text', 'Text', $5)",
+        "INSERT INTO content.items (id, module_id, course_id, position, kind, type, title, body)
+         VALUES ($1, $2, $3, $4, 'resource', 'lecture', 'Text', $5)",
         uuid::Uuid::now_v7(),
         module_id,
         course_id,
@@ -420,6 +420,33 @@ async fn insert_item_of_kind(
     Ok(id)
 }
 
+/// An item of the schema as it is now (ADR-0098): `kind` is `resource` or `assignment`, `item_type`
+/// the id of its activity type. The tests that stop at an older migration use
+/// [`insert_item_of_kind`], which names no type.
+async fn insert_typed_item(
+    pool: &PgPool,
+    module_id: uuid::Uuid,
+    course_id: uuid::Uuid,
+    position: i32,
+    kind: &str,
+    item_type: &str,
+) -> Result<uuid::Uuid, sqlx::Error> {
+    let id = uuid::Uuid::now_v7();
+    sqlx::query!(
+        "INSERT INTO content.items (id, module_id, course_id, position, kind, type, title)
+         VALUES ($1, $2, $3, $4, $5, $6, 'Item')",
+        id,
+        module_id,
+        course_id,
+        position,
+        kind,
+        item_type
+    )
+    .execute(pool)
+    .await?;
+    Ok(id)
+}
+
 /// `max_points` is passed as text so each test can name the exact literal PostgreSQL parses.
 async fn insert_assignment_row(
     pool: &PgPool,
@@ -428,8 +455,8 @@ async fn insert_assignment_row(
     config: serde_json::Value,
 ) -> Result<(), sqlx::Error> {
     sqlx::query!(
-        "INSERT INTO content.assignments (item_id, type, config, max_points)
-         VALUES ($1, 'text', $2, $3::text::numeric)",
+        "INSERT INTO content.assignments (item_id, config, max_points)
+         VALUES ($1, $2, $3::text::numeric)",
         item_id,
         config,
         max_points
@@ -444,35 +471,40 @@ async fn assignment_fixture(pool: &PgPool) -> (uuid::Uuid, uuid::Uuid) {
     let owner = owner(pool, "t@x.edu").await;
     let course = insert_course(pool, owner).await;
     let module = insert_module_row(pool, course, None, 1).await.unwrap();
-    let assignment = insert_item_of_kind(pool, module, course, 1, "assignment")
+    let assignment = insert_typed_item(pool, module, course, 1, "assignment", "text")
         .await
         .unwrap();
-    let text = insert_item_of_kind(pool, module, course, 2, "text")
+    let text = insert_typed_item(pool, module, course, 2, "resource", "lecture")
         .await
         .unwrap();
     (assignment, text)
 }
 
 #[tokio::test]
-async fn item_kind_accepts_assignment_and_rejects_anything_else() {
+async fn item_kind_accepts_resource_and_assignment_and_rejects_anything_else() {
     db_test(async |pool| {
         let owner = owner(&pool, "t@x.edu").await;
         let course = insert_course(&pool, owner).await;
         let module = insert_module_row(&pool, course, None, 1).await.unwrap();
 
-        insert_item_of_kind(&pool, module, course, 1, "assignment")
+        insert_typed_item(&pool, module, course, 1, "assignment", "text")
             .await
             .unwrap();
-        insert_item_of_kind(&pool, module, course, 2, "text")
+        insert_typed_item(&pool, module, course, 2, "resource", "lecture")
             .await
             .unwrap();
-        for (position, kind) in [(3, "quiz"), (4, "lesson")] {
+        // The old kinds are types now, and a type id has the shape of an id.
+        for (position, kind) in [(3, "text"), (4, "file"), (5, "quiz"), (6, "lesson")] {
             assert_eq!(
-                sqlstate(insert_item_of_kind(&pool, module, course, position, kind).await),
+                sqlstate(insert_typed_item(&pool, module, course, position, kind, "lecture").await),
                 "23514",
                 "{kind}"
             );
         }
+        assert_eq!(
+            sqlstate(insert_typed_item(&pool, module, course, 7, "resource", "Not An Id").await),
+            "23514"
+        );
     })
     .await;
 }
@@ -516,7 +548,7 @@ async fn an_item_with_an_assignment_row_cannot_change_kind() {
             .unwrap();
 
         let change = sqlx::query!(
-            "UPDATE content.items SET kind = 'text' WHERE id = $1",
+            "UPDATE content.items SET kind = 'resource' WHERE id = $1",
             assignment
         )
         .execute(&pool)
@@ -608,7 +640,7 @@ async fn deleting_a_module_removes_its_assignment_rows() {
         let owner = owner(&pool, "t@x.edu").await;
         let course = insert_course(&pool, owner).await;
         let module = insert_module_row(&pool, course, None, 1).await.unwrap();
-        let item = insert_item_of_kind(&pool, module, course, 1, "assignment")
+        let item = insert_typed_item(&pool, module, course, 1, "assignment", "text")
             .await
             .unwrap();
         insert_assignment_row(&pool, item, "5", serde_json::json!({}))
@@ -626,6 +658,13 @@ async fn deleting_a_module_removes_its_assignment_rows() {
         assert_eq!(rows, 0);
     })
     .await;
+}
+
+async fn item_type(pool: &PgPool, id: uuid::Uuid) -> String {
+    sqlx::query_scalar!("SELECT type FROM content.items WHERE id = $1", id)
+        .fetch_one(pool)
+        .await
+        .unwrap()
 }
 
 async fn item_kind(pool: &PgPool, id: uuid::Uuid) -> String {
@@ -691,9 +730,15 @@ async fn migration_7_turns_lesson_items_into_text_items() {
         let assignment = insert_item_of_kind(&pool, module, course, 2, "assignment")
             .await
             .unwrap();
-        insert_assignment_row(&pool, assignment, "5", serde_json::json!({}))
-            .await
-            .unwrap();
+        // A runtime query: the row names its type, a column that migration 58 moves to the item.
+        sqlx::query(
+            "INSERT INTO content.assignments (item_id, type, config, max_points)
+             VALUES ($1, 'text', '{}', 5)",
+        )
+        .bind(assignment)
+        .execute(&pool)
+        .await
+        .unwrap();
         assert_eq!(
             sqlstate(insert_item_of_kind(&pool, module, course, 3, "text").await),
             "23514",
@@ -702,19 +747,22 @@ async fn migration_7_turns_lesson_items_into_text_items() {
 
         db::MIGRATOR.run(&pool).await.unwrap();
 
-        assert_eq!(item_kind(&pool, lesson).await, "text");
+        // Migration 7 made it a `text` item, migration 58 a resource of the type `lecture`.
+        assert_eq!(item_kind(&pool, lesson).await, "resource");
+        assert_eq!(item_type(&pool, lesson).await, "lecture");
         assert_eq!(item_kind(&pool, assignment).await, "assignment");
+        assert_eq!(item_type(&pool, assignment).await, "text");
         let rows = sqlx::query_scalar!(r#"SELECT count(*) AS "n!" FROM content.assignments"#)
             .fetch_one(&pool)
             .await
             .unwrap();
         assert_eq!(rows, 1, "the assignment row survived");
         assert_eq!(
-            sqlstate(insert_item_of_kind(&pool, module, course, 3, "lesson").await),
+            sqlstate(insert_typed_item(&pool, module, course, 3, "lesson", "lecture").await),
             "23514",
             "the new CHECK refuses the old kind"
         );
-        insert_item_of_kind(&pool, module, course, 3, "text")
+        insert_typed_item(&pool, module, course, 3, "resource", "lecture")
             .await
             .unwrap();
         db::ensure_migrated(&pool).await.unwrap();
@@ -777,7 +825,7 @@ async fn migration_8_turns_empty_object_bodies_into_the_empty_document() {
             serde_json::json!({"a": 1}),
             "only the empty object is converted"
         );
-        let later = insert_item_of_kind(&pool, module, course, 3, "text")
+        let later = insert_typed_item(&pool, module, course, 3, "resource", "lecture")
             .await
             .unwrap();
         assert_eq!(item_body(&pool, later).await, document);
@@ -2014,12 +2062,12 @@ async fn migration_26_gives_published_items_a_published_copy_and_leaves_drafts_w
 }
 
 #[tokio::test]
-async fn a_published_item_needs_its_published_copy_and_only_in_class_work_has_a_class_day() {
+async fn a_published_item_needs_its_published_copy() {
     db_test(async |pool| {
         let teacher = owner(&pool, "t@x.edu").await;
         let course = insert_course(&pool, teacher).await;
         let module = insert_module_row(&pool, course, None, 1).await.unwrap();
-        let item = insert_item_of_kind(&pool, module, course, 1, "assignment")
+        let item = insert_typed_item(&pool, module, course, 1, "assignment", "text")
             .await
             .unwrap();
 
@@ -2044,25 +2092,6 @@ async fn a_published_item_needs_its_published_copy_and_only_in_class_work_has_a_
         insert_assignment_row(&pool, item, "10", serde_json::json!({}))
             .await
             .unwrap();
-        let on_text = sqlx::query!(
-            "UPDATE content.assignments SET class_on = '2026-10-29' WHERE item_id = $1",
-            item
-        )
-        .execute(&pool)
-        .await;
-        assert_eq!(
-            sqlstate(on_text),
-            "23514",
-            "a text assignment has no class day"
-        );
-        sqlx::query!(
-            "UPDATE content.assignments SET type = 'no_submission', class_on = '2026-10-29'
-             WHERE item_id = $1",
-            item
-        )
-        .execute(&pool)
-        .await
-        .unwrap();
     })
     .await;
 }

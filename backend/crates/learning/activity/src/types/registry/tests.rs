@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use crate::types::{file, form, no_submission, quiz, text};
+use crate::types::{file, form, lecture, no_submission, quiz, shared_file, text};
 use crate::{
     ActivityType, Capabilities, ClassFacts, CompletionPolicy, DocumentErrors, EffectiveProfiles,
     Graded, Stage, Submissions, ValidContent, Viewer,
@@ -32,9 +32,27 @@ fn built_in_table() {
     let types = builtin_types().unwrap();
     let mut ids = types.available();
     ids.sort_unstable();
-    assert_eq!(ids, ["file", "form", "no_submission", "quiz", "text"]);
+    assert_eq!(
+        ids,
+        [
+            "file",
+            "form",
+            "lecture",
+            "no_submission",
+            "quiz",
+            "shared_file",
+            "text"
+        ]
+    );
 
+    let no_points = Capabilities {
+        graded: false,
+        submissions: false,
+        auto_graded: false,
+    };
     let table = [
+        (lecture::ID, no_points, CompletionPolicy::Marked),
+        (shared_file::ID, no_points, CompletionPolicy::Marked),
         (
             text::ID,
             caps(true, false),

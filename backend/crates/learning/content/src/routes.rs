@@ -70,11 +70,6 @@ impl From<ContentError> for ApiError {
             ContentError::NotAnAssignment { field } => {
                 Self::invalid_field(field, error.to_string())
             }
-            ContentError::FileBody { ref field, message } => Self::invalid_field(field, message),
-            ContentError::FileDescription(errors) => Self::Unprocessable {
-                detail: "the request has invalid fields".to_owned(),
-                errors: errors.into_field_errors("body.description"),
-            },
             ContentError::FileUnusable { id, field } => {
                 Self::invalid_field(&field, format!("the file {id} cannot be used here"))
             }
@@ -140,17 +135,8 @@ fn api_item_status(status: ItemStatus) -> ContentStatus {
 
 fn api_kind(kind: ItemKind) -> api_types::ItemKind {
     match kind {
-        ItemKind::Text => api_types::ItemKind::Text,
+        ItemKind::Resource => api_types::ItemKind::Resource,
         ItemKind::Assignment => api_types::ItemKind::Assignment,
-        ItemKind::File => api_types::ItemKind::File,
-    }
-}
-
-fn domain_kind(kind: api_types::ItemKind) -> ItemKind {
-    match kind {
-        api_types::ItemKind::Text => ItemKind::Text,
-        api_types::ItemKind::Assignment => ItemKind::Assignment,
-        api_types::ItemKind::File => ItemKind::File,
     }
 }
 
@@ -280,6 +266,7 @@ pub fn api_item(item: model::Item) -> Item {
         course_id: item.course_id,
         position: item.position,
         kind: api_kind(item.kind),
+        item_type: item.item_type.id().to_owned(),
         title: item.title,
         body: item.body,
         status: api_item_status(item.status),
@@ -297,6 +284,7 @@ fn api_summary(item: model::ItemSummary) -> ItemSummary {
     ItemSummary {
         id: item.id,
         kind: api_kind(item.kind),
+        item_type: item.item_type.id().to_owned(),
         title: item.title,
         status: api_item_status(item.status),
         publish_at: item.publish_at,
@@ -419,8 +407,6 @@ pub fn under_assignment(error: ContentError) -> ApiError {
     if matches!(
         error,
         ContentError::Document(_)
-            | ContentError::FileBody { .. }
-            | ContentError::FileDescription(_)
             | ContentError::FileUnusable { .. }
             | ContentError::NotAnImage { .. }
     ) {
@@ -623,43 +609,43 @@ async fn publish_module(
     Ok(Json(api_module(module)))
 }
 
-/// What a request to create an item asks for, in the domain's terms. `kind` is optional in the
-/// request: without it the item is an assignment when an `assignment` object is sent and a `text`
-/// item otherwise.
+/// What a request to create an item asks for, in the domain's terms. With an `assignment` object
+/// the item is an assignment of that object's type and `type` must be absent. Without it the item
+/// is a resource of `type` (`lecture` when it is omitted), and `type` must name a registered type
+/// that has no points.
 pub fn new_item(request: CreateItemRequest) -> Result<NewItemInput, ApiError> {
     let title = title(&request.title)?;
-    let kind = request.kind.map_or_else(
-        || {
-            if request.assignment.is_some() {
-                ItemKind::Assignment
-            } else {
-                ItemKind::Text
-            }
-        },
-        domain_kind,
-    );
-    let assignment = match (kind, request.assignment) {
-        (ItemKind::Text | ItemKind::File, None) => None,
-        (ItemKind::Text | ItemKind::File, Some(_)) => {
+    if let Some(new) = request.assignment {
+        if request.item_type.is_some() {
             return Err(ApiError::invalid_field(
-                "assignment",
-                "only an item of kind `assignment` has this field",
+                "type",
+                "not allowed with an `assignment` object: the type is `assignment.type`",
             ));
         }
-        (ItemKind::Assignment, None) => {
-            return Err(ApiError::invalid_field(
-                "assignment",
-                "an item of kind `assignment` needs an assignment object",
-            ));
+        let assignment = domain_assignment(new)?;
+        return Ok(NewItemInput::assignment(title, request.body, assignment));
+    }
+    let id = request
+        .item_type
+        .as_deref()
+        .unwrap_or(activity::types::lecture::ID);
+    let item_type = match activity::get(id) {
+        Ok(kind) => kind,
+        Err(RegistryError::NotInstalled) => {
+            tracing::error!("content: the binary installed no activity types");
+            return Err(ApiError::Internal);
         }
-        (ItemKind::Assignment, Some(new)) => Some(domain_assignment(new)?),
+        Err(RegistryError::Unknown(_) | RegistryError::NotGraded(_)) => {
+            return Err(ApiError::invalid_field("type", "unknown activity type"));
+        }
     };
-    Ok(NewItemInput {
-        title,
-        kind,
-        body: request.body,
-        assignment,
-    })
+    if item_type.graded().is_some() {
+        return Err(ApiError::invalid_field(
+            "assignment",
+            "a type that has points needs an assignment object",
+        ));
+    }
+    Ok(NewItemInput::resource(title, item_type, request.body))
 }
 
 /// Sets the order of the items of a module. `ids` must be exactly the current items, each once.

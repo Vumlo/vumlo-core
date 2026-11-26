@@ -6,9 +6,8 @@ import { configToWire, itemFromWire } from "../sheetWire";
 import type { AccessRule, Document, EditorProfiles, Item, ItemRevision, Module } from "../types";
 
 export type NewItem =
-  | { kind: "text"; title: string; body?: Document }
-  | { kind: "file"; title: string }
-  | { kind: "assignment"; title: string; body?: Document; assignment: { type: string; max_points: string; config?: Record<string, unknown>; due_at?: string | null; on_deadline?: string | null; accept_late?: boolean | null; max_attempts?: number | null } };
+  | { type: "lecture" | "shared_file"; title: string; body?: Document }
+  | { title: string; body?: Document; assignment: { type: string; max_points: string; config?: Record<string, unknown>; due_at?: string | null; on_deadline?: string | null; accept_late?: boolean | null; max_attempts?: number | null } };
 
 export type ItemPatch = Partial<{
   title: string;
@@ -87,7 +86,7 @@ export function usePublishModule(courseId: string) {
 
 export function useCreateItem(courseId: string) {
   return useMutation(async (moduleId: string, item: NewItem) => {
-    const wire = item.kind === "assignment" && item.assignment.config ? { ...item, assignment: { ...item.assignment, config: configToWire(item.assignment.type, item.assignment.config) } } : item;
+    const wire = "assignment" in item && item.assignment.config ? { ...item, assignment: { ...item.assignment, config: configToWire(item.assignment.type, item.assignment.config) } } : item;
     const i = await api.post<Item>(`/modules/${moduleId}/items`, wire);
     touched(courseId);
     return itemFromWire(i);

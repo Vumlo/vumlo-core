@@ -158,9 +158,9 @@ async fn the_view_of_items_leaves_out_the_text_and_says_when_a_published_item_wa
         .await
         .unwrap();
         sqlx::query!(
-            "INSERT INTO content.items (id, module_id, course_id, position, kind, title, status,
+            "INSERT INTO content.items (id, module_id, course_id, position, kind, type, title, status,
                                         published_title, published_body, last_published_at)
-             VALUES ($1, $2, $3, 1, 'text', 'Lecture', 'published', 'Lecture',
+             VALUES ($1, $2, $3, 1, 'resource', 'lecture', 'Lecture', 'published', 'Lecture',
                      '{\"v\": 1, \"blocks\": [], \"attachments\": []}', now())",
             item,
             module,

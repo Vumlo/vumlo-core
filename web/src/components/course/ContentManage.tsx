@@ -123,10 +123,10 @@ export function ContentManage({ courseId, canEdit }: { courseId: string; canEdit
     if (titleBlank) { setTried(true); document.getElementById("item-title")?.focus(); return; }
     if (dlg.type === "assignment" && pointsBad) { document.getElementById("item-points")?.focus(); return; }
     const made = await createItem.run(dlg.sec.id, dlg.type === "lecture"
-      ? { kind: "text", title: text }
+      ? { type: "lecture", title: text }
       : dlg.type === "file"
-      ? { kind: "file", title: text }
-      : { kind: "assignment", title: text, assignment: { type, max_points: points || "10", config: starterConfig(type, points || "10") } });
+      ? { type: "shared_file", title: text }
+      : { title: text, assignment: { type, max_points: points || "10", config: starterConfig(type, points || "10") } });
     if (made) { close(); router.push(editItemHref(courseId, made.id)); }
   }
 

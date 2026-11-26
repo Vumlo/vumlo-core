@@ -24,7 +24,7 @@ fn cascade_is_required() {
 fn a_body_is_read_as_a_json_value_and_null_is_absent() {
     // What a body may contain is decided by the document validator, which reports a path.
     for body in [json!([1]), json!("text"), json!({"a": 1})] {
-        let create = json!({"kind": "text", "title": "t", "body": body});
+        let create = json!({"title": "t", "body": body});
         let create: CreateItemRequest = serde_json::from_value(create).unwrap();
         assert_eq!(create.body, Some(body.clone()));
         let update: UpdateItemRequest = serde_json::from_value(json!({"body": body})).unwrap();
@@ -32,16 +32,26 @@ fn a_body_is_read_as_a_json_value_and_null_is_absent() {
     }
     let absent: UpdateItemRequest = serde_json::from_value(json!({"body": null})).unwrap();
     assert_eq!(absent.body, None);
-    let omitted: CreateItemRequest =
-        serde_json::from_value(json!({"kind": "text", "title": "t"})).unwrap();
+    let omitted: CreateItemRequest = serde_json::from_value(json!({"title": "t"})).unwrap();
     assert_eq!(omitted.body, None);
 }
 
 #[test]
-fn the_item_kinds_are_text_and_assignment() {
-    assert_eq!(serde_json::to_value(ItemKind::Text).unwrap(), json!("text"));
-    let old = json!({"kind": "lesson", "title": "t"});
-    assert!(serde_json::from_value::<CreateItemRequest>(old).is_err());
+fn the_item_kinds_are_resource_and_assignment() {
+    assert_eq!(
+        serde_json::to_value(ItemKind::Resource).unwrap(),
+        json!("resource")
+    );
+    assert_eq!(
+        serde_json::to_value(ItemKind::Assignment).unwrap(),
+        json!("assignment")
+    );
+    // The type of a resource is named in the request, as `type`.
+    let shared: CreateItemRequest =
+        serde_json::from_value(json!({"type": "shared_file", "title": "t"})).unwrap();
+    assert_eq!(shared.item_type.as_deref(), Some("shared_file"));
+    let plain: CreateItemRequest = serde_json::from_value(json!({"title": "t"})).unwrap();
+    assert_eq!(plain.item_type, None);
 }
 
 #[test]
@@ -141,7 +151,8 @@ fn a_text_item_serializes_without_an_assignment_key() {
         module_id: Uuid::nil(),
         course_id: Uuid::nil(),
         position: 1,
-        kind: ItemKind::Text,
+        kind: ItemKind::Resource,
+        item_type: "lecture".into(),
         title: "t".into(),
         body: Map::new(),
         status: ContentStatus::Draft,
@@ -225,7 +236,8 @@ fn a_new_assignment_has_no_settings_unless_sent() {
 fn a_tree_summary_without_an_assignment_has_no_key() {
     let summary = ItemSummary {
         id: Uuid::nil(),
-        kind: ItemKind::Text,
+        kind: ItemKind::Resource,
+        item_type: "lecture".into(),
         title: "t".into(),
         status: ContentStatus::Draft,
         publish_at: None,

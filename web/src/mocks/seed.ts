@@ -148,7 +148,7 @@ export function createSeed(): Db {
     return next;
   };
   const baseItem = (courseId: string, moduleId: string, key: string, title: string, body: Document, status: "draft" | "published"): Item => ({
-    id: uid(`item:${key}`), module_id: moduleId, course_id: courseId, position: pos(moduleId), kind: "text", title,
+    id: uid(`item:${key}`), module_id: moduleId, course_id: courseId, position: pos(moduleId), kind: "resource", type: "lecture", title,
     body: body as unknown as Item["body"], status, publish_at: null, created_at: at("2026-08-26 10:00"), updated_at: at("2026-10-12 10:00"),
   });
   const lecture = (courseId: string, moduleId: string, key: string, title: string, body: Document, status: "draft" | "published" = "published", extra: Partial<DbItem> = {}) => {
@@ -166,6 +166,7 @@ export function createSeed(): Db {
     const it: DbItem = {
       ...baseItem(courseId, moduleId, key, title, o.body ?? doc(para("Instructions are in the course.")), o.status ?? "published"),
       kind: "assignment",
+      type,
       assignment: {
         type, config: o.config ?? {}, max_points: o.points, is_bonus: false,
         due_at: due ? at(due) : null,
@@ -291,7 +292,7 @@ export function createSeed(): Db {
   const syllabusId = uid("file:seed:syllabus");
   files.set(syllabusId, { name: "syllabus.pdf", mime: "application/pdf", bytes: syllabus.buffer.slice(syllabus.byteOffset, syllabus.byteOffset + syllabus.byteLength) as ArrayBuffer });
   const fileItem: DbItem = {
-    ...baseItem(cs201, mProject, "syllabus", "Course syllabus", doc(), "published"), kind: "file",
+    ...baseItem(cs201, mProject, "syllabus", "Course syllabus", doc(), "published"), type: "shared_file",
     body: { file_id: syllabusId, description: doc(para("Read this before the first lab.")) } as unknown as Item["body"],
     last_published_at: at("2026-10-12 10:00"), unpublished_changes: false,
   };

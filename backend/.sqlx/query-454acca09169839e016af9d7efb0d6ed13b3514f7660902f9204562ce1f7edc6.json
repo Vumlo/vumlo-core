@@ -1,0 +1,136 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT i.type AS \"assignment_type: activity::GradedKind\", a.config AS \"config: Body\",\n                  a.max_points AS \"max_points: MaxPoints\", a.is_bonus,\n                  a.due_at, a.on_deadline AS \"on_deadline: OnDeadline\", a.accept_late,\n                  a.late_until, a.max_attempts, a.class_on\n           FROM content.assignments a\n           JOIN content.items i ON i.id = a.item_id\n           WHERE a.item_id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "assignment_type: activity::GradedKind",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "content.items",
+            "name": "type"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "config: Body",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "content.assignments",
+            "name": "config"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "max_points: MaxPoints",
+        "type_info": "Numeric",
+        "origin": {
+          "Table": {
+            "table": "content.assignments",
+            "name": "max_points"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "is_bonus",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "content.assignments",
+            "name": "is_bonus"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "due_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "content.assignments",
+            "name": "due_at"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "on_deadline: OnDeadline",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "content.assignments",
+            "name": "on_deadline"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "accept_late",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "content.assignments",
+            "name": "accept_late"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "late_until",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "content.assignments",
+            "name": "late_until"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "max_attempts",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "content.assignments",
+            "name": "max_attempts"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "class_on",
+        "type_info": "Date",
+        "origin": {
+          "Table": {
+            "table": "content.assignments",
+            "name": "class_on"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "454acca09169839e016af9d7efb0d6ed13b3514f7660902f9204562ce1f7edc6"
+}

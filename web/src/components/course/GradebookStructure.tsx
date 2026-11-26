@@ -282,7 +282,7 @@ function AddColumn({ courseId }: { courseId: string }) {
           onSubmit={async (e) => {
             e.preventDefault();
             if (!ok || !target) return;
-            if (await create.run(target, { kind: "assignment", title: title.trim(), assignment: { type: "no_submission", max_points: normalizePoints(points.trim()) } })) setTitle("");
+            if (await create.run(target, { title: title.trim(), assignment: { type: "no_submission", max_points: normalizePoints(points.trim()) } })) setTitle("");
           }}
         >
           <div className="field">

@@ -12,7 +12,8 @@ fn a_revision_knows_what_changed_since_the_item_was_published() {
         module_id: Uuid::nil(),
         course_id: Uuid::nil(),
         position: 1,
-        kind: ItemKind::Text,
+        kind: ItemKind::Resource,
+        item_type: crate::tests::item_type(activity::types::lecture::ID),
         title: "Lecture".to_owned(),
         body: Map::new(),
         status: ItemStatus::Draft,
@@ -63,10 +64,12 @@ fn enums_round_trip() {
     for status in [ItemStatus::Draft, ItemStatus::Published] {
         assert_eq!(status.as_str().parse::<ItemStatus>(), Ok(status));
     }
-    assert_eq!("text".parse::<ItemKind>(), Ok(ItemKind::Text));
-    assert!("lesson".parse::<ItemKind>().is_err());
+    assert_eq!("resource".parse::<ItemKind>(), Ok(ItemKind::Resource));
     assert_eq!("assignment".parse::<ItemKind>(), Ok(ItemKind::Assignment));
-    assert!("quiz".parse::<ItemKind>().is_err());
+    // The old kinds are types now.
+    for old in ["text", "file", "lesson", "quiz"] {
+        assert!(old.parse::<ItemKind>().is_err(), "{old}");
+    }
 }
 
 #[test]

@@ -2031,7 +2031,7 @@
             "oneOf": [
               {
                 "$ref": "#/components/schemas/NewAssignment",
-                "description": "Required for `kind: assignment`, not allowed for the other kinds."
+                "description": "Required for a type that has points, not allowed for a resource."
               },
               {
                 "type": "null"
@@ -2042,18 +2042,7 @@
             "oneOf": [
               {
                 "$ref": "#/components/schemas/Document",
-                "description": "A block document (ADR-0025). Defaults to the empty document. For an assignment it is the\ndescription. For a `file` item it is `{file_id?, description?}` and defaults to `{}`: the file\nis uploaded (`POST /files?for=item:{id}`) once the item exists and named with\n`PATCH /items/{id}`. It is read as a JSON value so that a rejection can name the path."
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "kind": {
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/ItemKind",
-                "description": "`text`, `assignment` or `file`. Omit it to get `assignment` when an `assignment` object is\nsent and `text` otherwise."
+                "description": "A block document (ADR-0025). Defaults to the empty document. For an assignment it is the\ndescription. For a shared file it is `{file_id?, description?}` and defaults to `{}`: the\nfile is uploaded (`POST /files?for=item:{id}`) once the item exists and named with\n`PATCH /items/{id}`. It is read as a JSON value so that a rejection can name the path."
               },
               {
                 "type": "null"
@@ -2062,6 +2051,13 @@
           },
           "title": {
             "type": "string"
+          },
+          "type": {
+            "description": "The type of a resource: `lecture` (the default) or `shared_file`, or any other registered\ntype that has no points. Not allowed with an `assignment` object: the item is then of the\ntype of that assignment.",
+            "type": [
+              "string",
+              "null"
+            ]
           }
         },
         "required": [
@@ -3625,7 +3621,7 @@
             "oneOf": [
               {
                 "$ref": "#/components/schemas/Assignment",
-                "description": "Present for items of kind `assignment`, absent for `text` items."
+                "description": "Present for items of kind `assignment`, absent for a resource."
               },
               {
                 "type": "null"
@@ -3634,7 +3630,7 @@
           },
           "body": {
             "$ref": "#/components/schemas/Document",
-            "description": "A block document (ADR-0025) for a `text` item and an assignment, `{file_id?, description?}`\nfor a `file` item. The server returns the stored body as is."
+            "description": "A block document (ADR-0025) for a lecture and an assignment, `{file_id?, description?}`\nfor a shared file. The server returns the stored body as is."
           },
           "course_id": {
             "format": "uuid",
@@ -3683,6 +3679,10 @@
           "title": {
             "type": "string"
           },
+          "type": {
+            "description": "The id of the activity type of the item (ADR-0098): `lecture`, `shared_file`, or the type\nof its assignment (`text`, `no_submission`, `quiz`, `form`, `file`).",
+            "type": "string"
+          },
           "updated_at": {
             "format": "date-time",
             "type": "string"
@@ -3694,6 +3694,7 @@
           "course_id",
           "position",
           "kind",
+          "type",
           "title",
           "body",
           "status",
@@ -3704,9 +3705,8 @@
       },
       "ItemKind": {
         "enum": [
-          "text",
-          "assignment",
-          "file"
+          "resource",
+          "assignment"
         ],
         "type": "string"
       },
@@ -3879,7 +3879,7 @@
             "oneOf": [
               {
                 "$ref": "#/components/schemas/AssignmentSummary",
-                "description": "Present for items of kind `assignment`, absent for `text` items."
+                "description": "Present for items of kind `assignment`, absent for a resource."
               },
               {
                 "type": "null"
@@ -3920,11 +3920,16 @@
           },
           "title": {
             "type": "string"
+          },
+          "type": {
+            "description": "The id of the activity type of the item (ADR-0098).",
+            "type": "string"
           }
         },
         "required": [
           "id",
           "kind",
+          "type",
           "title",
           "status",
           "position"

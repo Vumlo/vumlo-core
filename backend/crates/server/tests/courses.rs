@@ -789,7 +789,7 @@ async fn a_template_is_a_draft_copy_of_the_tree_without_dates_people_or_results(
             r#"SELECT m.title AS module, m.status AS module_status, m.parent_id IS NOT NULL AS "is_sub!",
                       m.publish_at IS NULL AS "no_publish_at!",
                       i.title AS "item?", i.status AS "item_status?", i.kind AS "kind?",
-                      a.type AS "type?", a.max_points AS "max_points?", a.is_bonus AS "is_bonus?",
+                      i.type AS "type?", a.max_points AS "max_points?", a.is_bonus AS "is_bonus?",
                       a.max_attempts AS "max_attempts?", a.due_at AS "due_at?", a.on_deadline AS "on_deadline?"
                FROM content.modules m
                LEFT JOIN content.items i ON i.module_id = m.id

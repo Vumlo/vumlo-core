@@ -1,11 +1,14 @@
-//! The assignment types whose submissions are not one block document: `quiz` (ADR-0050),
-//! `form` (ADR-0051) and `file` (ADR-0069). Pure code: no database, no HTTP.
+//! The types built into the server: the assignment types `text`, `no_submission`, `quiz`
+//! (ADR-0050), `form` (ADR-0051) and `file` (ADR-0069), and the two without points, `lecture` and
+//! `shared_file` (ADR-0098). Pure code: no database, no HTTP.
 
 pub mod file;
 pub mod form;
+pub mod lecture;
 pub mod no_submission;
 pub mod quiz;
 mod registry;
+pub mod shared_file;
 pub mod text;
 
 pub use registry::builtin_types;

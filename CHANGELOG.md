@@ -19,8 +19,14 @@ must do, in order, besides getting the new release. See [RELEASING.md](RELEASING
   `assignments:read`); `GET /plugin-api/submissions/{id}/fields` is `/answers`; `fields` on an assignment is `config`
   (the fields of a form are in `config.fields`). Migration `0057` renames the scope and the event in the plugins that
   are already installed, in the queues, and leaves their `api` as it was. Run `db migrate`.
-- Plugins are the only thing that changes for an installation; the web app, the desktop app and the API of the people
-  do not.
+- **Items have a type** (ADR-0098). Migration `0058` adds `content.items.type` (a lecture is `lecture`, a file item is
+  `shared_file`, an assignment keeps the type it had), moves the type off `content.assignments`, and makes `items.kind`
+  `resource` or `assignment`. Run `db migrate`; stop the services while it runs, it rewrites two views.
+- **API of items.** `Item` and `ItemSummary` carry `type`; `kind` is now `resource` or `assignment` (it was `text`,
+  `file` or `assignment`). To create a file item send `"type": "shared_file"` instead of `"kind": "file"`; `kind` is
+  ignored in a request, and a request with no `type` and no `assignment` is a lecture. The web app and the desktop app
+  of this release already do this; an older web build against this server cannot open lectures and files.
+- Plugins and the API of items are what changes for an installation; the API of the people does not.
 
 ### Changed
 
@@ -28,6 +34,11 @@ must do, in order, besides getting the new release. See [RELEASING.md](RELEASING
   `Submissions`, `AutoGrading`). The quiz result, the form responses, the form's "taken" overlay and the plugin reads are
   hooks of that contract, and no crate outside `activity` compares a type id. The submits of a form are serialized by an
   advisory lock named `claims:<id>` instead of `form:<id>`.
+- A lecture and a shared file are activity types (`lecture`, `shared_file`) beside the five assignment types. What was
+  special-cased by item kind in `content` (the body of a file item, the reading time, who may mark an item done, the file
+  that must exist before a publish) is a hook of the type, and a type that is completed by marking has the policy `Marked`.
+- A deadline or a class day on a type that takes no submissions is refused by the service only; the database no longer
+  has the two CHECKs that named `no_submission`.
 
 ## [0.7.5] - 2026-11-14
 
