@@ -1,11 +1,11 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT type AS \"assignment_type: activity::Kind\", config AS \"config: Body\",\n                  max_points AS \"max_points: MaxPoints\", is_bonus,\n                  due_at, on_deadline AS \"on_deadline: OnDeadline\", accept_late, late_until,\n                  max_attempts, class_on\n           FROM content.assignments WHERE item_id = $1\n           FOR UPDATE",
+  "query": "UPDATE content.assignments\n           SET config = COALESCE($2::jsonb, config),\n               max_points = COALESCE($3::numeric, max_points),\n               is_bonus = COALESCE($4::boolean, is_bonus),\n               due_at = CASE WHEN $5 THEN $6::timestamptz ELSE due_at END,\n               on_deadline = CASE WHEN $5 THEN $7::text ELSE on_deadline END,\n               accept_late = CASE WHEN $5 THEN $8::boolean ELSE accept_late END,\n               late_until = CASE WHEN $5 THEN $9::timestamptz ELSE late_until END,\n               max_attempts = CASE WHEN $5 THEN $10::integer ELSE max_attempts END,\n               class_on = CASE WHEN $11 THEN $12::date ELSE class_on END,\n               updated_at = now()\n           WHERE item_id = $1\n           RETURNING type AS \"assignment_type: activity::GradedKind\", config AS \"config: Body\",\n                     max_points AS \"max_points: MaxPoints\", is_bonus,\n                     due_at, on_deadline AS \"on_deadline: OnDeadline\", accept_late, late_until,\n                     max_attempts, class_on",
   "describe": {
     "columns": [
       {
         "ordinal": 0,
-        "name": "assignment_type: activity::Kind",
+        "name": "assignment_type: activity::GradedKind",
         "type_info": "Text",
         "origin": {
           "Table": {
@@ -116,7 +116,18 @@
     ],
     "parameters": {
       "Left": [
-        "Uuid"
+        "Uuid",
+        "Jsonb",
+        "Numeric",
+        "Bool",
+        "Bool",
+        "Timestamptz",
+        "Text",
+        "Bool",
+        "Timestamptz",
+        "Int4",
+        "Bool",
+        "Date"
       ]
     },
     "nullable": [
@@ -132,5 +143,5 @@
       true
     ]
   },
-  "hash": "da28df90a1244e8d41f28741649e0b705420003bfcaea98b800b854f69907461"
+  "hash": "852927a7ff76501734bd598da155eaeea5d8c5fb50413370fea5f82082d0f846"
 }

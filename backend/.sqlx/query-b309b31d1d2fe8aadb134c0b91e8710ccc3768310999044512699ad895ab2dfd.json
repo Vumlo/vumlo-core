@@ -1,11 +1,11 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT type AS \"assignment_type: activity::Kind\", config AS \"config: Body\",\n                  max_points AS \"max_points: MaxPoints\", is_bonus,\n                  due_at, on_deadline AS \"on_deadline: OnDeadline\", accept_late, late_until,\n                  max_attempts, class_on\n           FROM content.assignments WHERE item_id = $1",
+  "query": "SELECT type AS \"assignment_type: activity::GradedKind\", config AS \"config: Body\",\n                  max_points AS \"max_points: MaxPoints\", is_bonus,\n                  due_at, on_deadline AS \"on_deadline: OnDeadline\", accept_late, late_until,\n                  max_attempts, class_on\n           FROM content.assignments WHERE item_id = $1\n           FOR UPDATE",
   "describe": {
     "columns": [
       {
         "ordinal": 0,
-        "name": "assignment_type: activity::Kind",
+        "name": "assignment_type: activity::GradedKind",
         "type_info": "Text",
         "origin": {
           "Table": {
@@ -132,5 +132,5 @@
       true
     ]
   },
-  "hash": "dd3c22f28a0aa93625c3944648411150107f023a3e234f2a4068239431293374"
+  "hash": "b309b31d1d2fe8aadb134c0b91e8710ccc3768310999044512699ad895ab2dfd"
 }

@@ -335,9 +335,11 @@ fn title(raw: &str) -> Result<ContentTitle, ContentError> {
 /// its path in the request. The messages are fixed texts: they never repeat what was sent.
 fn domain_assignment(new: NewAssignment) -> Result<model::Assignment, ApiError> {
     // An unknown type is an error that does not repeat the input.
-    let assignment_type = match activity::get(&new.assignment_type) {
+    let assignment_type = match activity::get_graded(&new.assignment_type) {
         Ok(kind) => Ok(kind),
-        Err(RegistryError::Unknown(_)) => Err(ModelError::UnknownAssignmentType),
+        Err(RegistryError::Unknown(_) | RegistryError::NotGraded(_)) => {
+            Err(ModelError::UnknownAssignmentType)
+        }
         Err(error @ RegistryError::NotInstalled) => {
             tracing::error!(%error, "content: the binary installed no activity types");
             return Err(ApiError::Internal);

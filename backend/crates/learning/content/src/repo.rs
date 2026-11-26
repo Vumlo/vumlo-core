@@ -127,7 +127,7 @@ impl From<RawItem> for Item {
 
 /// The columns of `content.assignments` as a LEFT JOIN returns them: all `None` for a `text` item.
 struct JoinedAssignment {
-    assignment_type: Option<activity::Kind>,
+    assignment_type: Option<activity::GradedKind>,
     config: Option<Body>,
     max_points: Option<MaxPoints>,
     is_bonus: Option<bool>,
@@ -438,7 +438,7 @@ pub async fn find_item(conn: &mut PgConnection, id: Uuid) -> Result<Option<ItemR
                   i.created_at, i.updated_at,
                   m.status AS "module_status: ModuleStatus", m.publish_at AS module_publish_at,
                   p.status AS "parent_status?: ModuleStatus", p.publish_at AS parent_publish_at,
-                  a.type AS "assignment_type?: activity::Kind", a.config AS "assignment_config?: Body",
+                  a.type AS "assignment_type?: activity::GradedKind", a.config AS "assignment_config?: Body",
                   a.max_points AS "assignment_max_points?: MaxPoints",
                   a.is_bonus AS "assignment_is_bonus?",
                   a.class_on AS assignment_class_on,
@@ -672,7 +672,7 @@ pub async fn tree(
                       AS "item_title?",
                   i.status AS "item_status?: ItemStatus", i.publish_at AS item_publish_at,
                   i.position AS "item_position?",
-                  a.type AS "assignment_type?: activity::Kind",
+                  a.type AS "assignment_type?: activity::GradedKind",
                   a.max_points AS "assignment_max_points?: MaxPoints",
                   a.is_bonus AS "assignment_is_bonus?",
                   a.due_at AS assignment_due_at,
@@ -754,7 +754,7 @@ pub async fn tree(
 /// autosave) must not load a document they do not use.
 pub struct AssignmentContext {
     pub course_id: Uuid,
-    pub assignment_type: activity::Kind,
+    pub assignment_type: activity::GradedKind,
     pub item: Release,
     /// The module the item is in.
     pub module: Release,
@@ -767,7 +767,7 @@ pub async fn find_assignment_context(
     assignment_id: Uuid,
 ) -> Result<Option<AssignmentContext>, sqlx::Error> {
     let row = sqlx::query!(
-        r#"SELECT i.course_id, a.type AS "assignment_type: activity::Kind",
+        r#"SELECT i.course_id, a.type AS "assignment_type: activity::GradedKind",
                   i.status = 'published' AS "item_published!", i.publish_at AS item_publish_at,
                   m.status = 'published' AS "module_published!", m.publish_at AS module_publish_at,
                   p.status = 'published' AS "parent_published?", p.publish_at AS parent_publish_at
@@ -799,7 +799,7 @@ pub async fn find_assignment_context(
 }
 
 struct RawAssignment {
-    assignment_type: activity::Kind,
+    assignment_type: activity::GradedKind,
     config: Body,
     max_points: MaxPoints,
     is_bonus: bool,
@@ -843,7 +843,7 @@ pub async fn insert_assignment(
                (item_id, type, config, max_points, is_bonus,
                 due_at, on_deadline, accept_late, late_until, max_attempts, class_on)
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-           RETURNING type AS "assignment_type: activity::Kind", config AS "config: Body",
+           RETURNING type AS "assignment_type: activity::GradedKind", config AS "config: Body",
                      max_points AS "max_points: MaxPoints", is_bonus,
                      due_at, on_deadline AS "on_deadline: OnDeadline", accept_late, late_until,
                      max_attempts, class_on"#,
@@ -870,7 +870,7 @@ pub async fn find_assignment(
 ) -> Result<Option<Assignment>, sqlx::Error> {
     let raw = sqlx::query_as!(
         RawAssignment,
-        r#"SELECT type AS "assignment_type: activity::Kind", config AS "config: Body",
+        r#"SELECT type AS "assignment_type: activity::GradedKind", config AS "config: Body",
                   max_points AS "max_points: MaxPoints", is_bonus,
                   due_at, on_deadline AS "on_deadline: OnDeadline", accept_late, late_until,
                   max_attempts, class_on
@@ -893,7 +893,7 @@ pub async fn lock_assignment(
 ) -> Result<Option<Assignment>, sqlx::Error> {
     let raw = sqlx::query_as!(
         RawAssignment,
-        r#"SELECT type AS "assignment_type: activity::Kind", config AS "config: Body",
+        r#"SELECT type AS "assignment_type: activity::GradedKind", config AS "config: Body",
                   max_points AS "max_points: MaxPoints", is_bonus,
                   due_at, on_deadline AS "on_deadline: OnDeadline", accept_late, late_until,
                   max_attempts, class_on
@@ -915,7 +915,7 @@ pub async fn lock_assignment_shared(
 ) -> Result<Option<Assignment>, sqlx::Error> {
     let raw = sqlx::query_as!(
         RawAssignment,
-        r#"SELECT type AS "assignment_type: activity::Kind", config AS "config: Body",
+        r#"SELECT type AS "assignment_type: activity::GradedKind", config AS "config: Body",
                   max_points AS "max_points: MaxPoints", is_bonus,
                   due_at, on_deadline AS "on_deadline: OnDeadline", accept_late, late_until,
                   max_attempts, class_on
@@ -1118,7 +1118,7 @@ pub async fn update_assignment(
                class_on = CASE WHEN $11 THEN $12::date ELSE class_on END,
                updated_at = now()
            WHERE item_id = $1
-           RETURNING type AS "assignment_type: activity::Kind", config AS "config: Body",
+           RETURNING type AS "assignment_type: activity::GradedKind", config AS "config: Body",
                      max_points AS "max_points: MaxPoints", is_bonus,
                      due_at, on_deadline AS "on_deadline: OnDeadline", accept_late, late_until,
                      max_attempts, class_on"#,
@@ -1266,7 +1266,7 @@ pub async fn open_assignments(
     sqlx::query_as!(
         OpenAssignment,
         r#"SELECT a.item_id AS assignment_id, i.course_id, i.published_title AS "title!",
-                  a.type AS "assignment_type: activity::Kind", a.due_at, a.class_on,
+                  a.type AS "assignment_type: activity::GradedKind", a.due_at, a.class_on,
                   a.max_points AS "max_points: MaxPoints"
            FROM content.assignments a
            JOIN content.items i ON i.id = a.item_id
@@ -1522,7 +1522,7 @@ pub async fn facts(
 ) -> Result<Facts, sqlx::Error> {
     let rows = sqlx::query!(
         r#"SELECT f.item_id, f.submitted_at, f.published_score AS "score: Decimal", f.marked_at,
-                  a.type AS "assignment_type?: activity::Kind"
+                  a.type AS "assignment_type?: activity::GradedKind"
            FROM content.facts f
            JOIN content.items i ON i.id = f.item_id
            LEFT JOIN content.assignments a ON a.item_id = f.item_id

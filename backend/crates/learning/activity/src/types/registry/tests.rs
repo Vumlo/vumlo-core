@@ -2,8 +2,8 @@ use std::collections::BTreeMap;
 
 use crate::types::{file, form, no_submission, quiz, text};
 use crate::{
-    ActivityType, Capabilities, CompletionPolicy, DocumentErrors, EffectiveProfiles, Stage,
-    ValidContent,
+    ActivityType, Capabilities, CompletionPolicy, DocumentErrors, EffectiveProfiles, Graded, Stage,
+    Submissions, ValidContent,
 };
 use serde_json::{Map, Value, json};
 use uuid::Uuid;
@@ -18,8 +18,10 @@ fn profiles() -> EffectiveProfiles {
     EffectiveProfiles::unrestricted()
 }
 
+/// The capabilities of a graded built-in type: every one of the five is an assignment.
 fn caps(submissions: bool, auto_graded: bool) -> Capabilities {
     Capabilities {
+        graded: true,
         submissions,
         auto_graded,
     }
@@ -76,7 +78,11 @@ fn submit(
     content: &Value,
     stage: Stage,
 ) -> Result<ValidContent, DocumentErrors> {
-    ty.validate_submission(obj(config), content, stage, &profiles())
+    // A type with no submission tier takes none: what the services answer with is the same refusal.
+    let Some(tier) = ty.graded().and_then(|graded| graded.submissions()) else {
+        return Err(DocumentErrors::one("", "this type takes no submissions"));
+    };
+    tier.validate_submission(obj(config), content, stage, &profiles())
 }
 
 fn doc(words: &str) -> Value {
@@ -220,7 +226,10 @@ fn only_a_file_type_checks_names() {
         &quiz::Quiz,
         &form::Form,
     ] {
-        assert_eq!(ty.check_file_names(&body, &body, &names), Ok(()));
+        // `no_submission` has no submission tier, so there is no name to check.
+        if let Some(tier) = ty.graded().and_then(|graded| graded.submissions()) {
+            assert_eq!(tier.check_file_names(&body, &body, &names), Ok(()));
+        }
     }
 }
 
@@ -232,11 +241,10 @@ fn the_text_and_no_submission_types_take_an_empty_config_only() {
         &no_submission::NoSubmission,
     ] {
         let mut config = Map::new();
-        assert_eq!(assignment_type.validate_config(&config, &profiles), Ok(()));
+        let graded = assignment_type.graded().expect("both are graded");
+        assert_eq!(graded.validate_config(&config, &profiles), Ok(()));
         config.insert("limit".to_owned(), Value::from(5));
-        let error = assignment_type
-            .validate_config(&config, &profiles)
-            .unwrap_err();
+        let error = graded.validate_config(&config, &profiles).unwrap_err();
         let message = error.to_string();
         assert!(message.contains("limit"), "{message}");
         assert!(message.contains(assignment_type.id()), "{message}");

@@ -11,8 +11,8 @@ use uuid::Uuid;
 
 use super::{Problems, answer_path, answers_of, parse_number, shape_problem, valid_id};
 use crate::{
-    ActivityType, AutoGrade, Capabilities, Claims, CompletionPolicy, ConfigError, DocumentErrors,
-    EffectiveProfiles, Stage, ValidContent, valid_href,
+    ActivityType, AutoGrading, Claims, CompletionPolicy, ConfigError, DocumentErrors,
+    EffectiveProfiles, Graded, Stage, Submissions, ValidContent, valid_href,
 };
 
 pub const ID: &str = "form";
@@ -565,17 +565,16 @@ impl ActivityType for Form {
         ID
     }
 
-    fn capabilities(&self) -> Capabilities {
-        Capabilities {
-            submissions: true,
-            auto_graded: false,
-        }
-    }
-
     fn completion(&self) -> CompletionPolicy {
         CompletionPolicy::SubmittedOrGraded
     }
 
+    fn graded(&self) -> Option<&dyn Graded> {
+        Some(self)
+    }
+}
+
+impl Graded for Form {
     fn validate_config(
         &self,
         config: &Map<String, Value>,
@@ -584,14 +583,20 @@ impl ActivityType for Form {
         validate_config(config)
     }
 
-    fn points_total(&self, _config: &Map<String, Value>) -> Option<Decimal> {
-        None
+    fn submissions(&self) -> Option<&dyn Submissions> {
+        Some(self)
     }
 
     fn strip_computed(&self, config: &mut Map<String, Value>) {
         strip_computed(config);
     }
 
+    fn structure(&self, config: &Map<String, Value>) -> Option<Value> {
+        structure(config)
+    }
+}
+
+impl Submissions for Form {
     fn validate_submission(
         &self,
         config: &Map<String, Value>,
@@ -602,24 +607,12 @@ impl ActivityType for Form {
         validate_submission(config, content, stage)
     }
 
-    fn student_config(&self, config: &Map<String, Value>) -> Map<String, Value> {
-        config.clone()
-    }
-
-    fn structure(&self, config: &Map<String, Value>) -> Option<Value> {
-        structure(config)
-    }
-
-    fn auto_grade(
-        &self,
-        _config: &Map<String, Value>,
-        _content: &Map<String, Value>,
-    ) -> Option<AutoGrade> {
-        None
-    }
-
     fn claims(&self, config: &Map<String, Value>, content: &Map<String, Value>) -> Claims {
         claims(config, content)
+    }
+
+    fn auto_grading(&self) -> Option<&dyn AutoGrading> {
+        None
     }
 }
 

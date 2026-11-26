@@ -6,12 +6,10 @@ mod common;
 
 use ::common::Role;
 use activity::{
-    ActivityType, AutoGrade, Capabilities, Claims, CompletionPolicy, ConfigError, DocumentErrors,
-    EffectiveProfiles, Stage, Types, ValidContent,
+    ActivityType, CompletionPolicy, ConfigError, EffectiveProfiles, Graded, Submissions, Types,
 };
 use common::{Account, Env, db_test, essay, id_of};
 use serde_json::{Map, Value, json};
-use sqlx::types::Decimal;
 use uuid::Uuid;
 
 /// A type that takes no submissions and settings, like `no_submission`, under another name: a
@@ -25,17 +23,16 @@ impl ActivityType for InPerson {
         IN_PERSON
     }
 
-    fn capabilities(&self) -> Capabilities {
-        Capabilities {
-            submissions: false,
-            auto_graded: false,
-        }
-    }
-
     fn completion(&self) -> CompletionPolicy {
         CompletionPolicy::Graded
     }
 
+    fn graded(&self) -> Option<&dyn Graded> {
+        Some(self)
+    }
+}
+
+impl Graded for InPerson {
     fn validate_config(
         &self,
         config: &Map<String, Value>,
@@ -47,40 +44,8 @@ impl ActivityType for InPerson {
         }
     }
 
-    fn points_total(&self, _config: &Map<String, Value>) -> Option<Decimal> {
+    fn submissions(&self) -> Option<&dyn Submissions> {
         None
-    }
-
-    fn strip_computed(&self, _config: &mut Map<String, Value>) {}
-
-    fn validate_submission(
-        &self,
-        _config: &Map<String, Value>,
-        _content: &Value,
-        _stage: Stage,
-        _profiles: &EffectiveProfiles,
-    ) -> Result<ValidContent, DocumentErrors> {
-        Err(DocumentErrors::one("", "this type takes no submissions"))
-    }
-
-    fn student_config(&self, config: &Map<String, Value>) -> Map<String, Value> {
-        config.clone()
-    }
-
-    fn structure(&self, _config: &Map<String, Value>) -> Option<Value> {
-        None
-    }
-
-    fn auto_grade(
-        &self,
-        _config: &Map<String, Value>,
-        _content: &Map<String, Value>,
-    ) -> Option<AutoGrade> {
-        None
-    }
-
-    fn claims(&self, _config: &Map<String, Value>, _content: &Map<String, Value>) -> Claims {
-        Claims::default()
     }
 }
 

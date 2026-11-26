@@ -5,7 +5,7 @@ use uuid::Uuid;
 
 use super::rules::Condition;
 use access::{CourseAccess, Release};
-use activity::{ConfigError, Kind, MaxPoints, PointsError};
+use activity::{ConfigError, GradedKind, MaxPoints, PointsError};
 use common::text_enum;
 
 const TITLE_MAX_LEN: usize = 200;
@@ -17,7 +17,7 @@ pub enum ModelError {
     Title,
     #[error("must be a number above 0 and at most 9999.99, with at most two decimals")]
     MaxPoints,
-    #[error("unknown assignment type; available: {}", activity::available().join(", "))]
+    #[error("unknown assignment type; available: {}", activity::ids_where(|c| c.graded).join(", "))]
     UnknownAssignmentType,
     #[error("{0}")]
     Config(String),
@@ -258,7 +258,7 @@ impl SubmissionSettings {
 /// The assignment part of an item of kind `assignment`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Assignment {
-    pub assignment_type: Kind,
+    pub assignment_type: GradedKind,
     pub config: Map<String, Value>,
     pub max_points: MaxPoints,
     pub is_bonus: bool,
@@ -270,7 +270,7 @@ pub struct Assignment {
 /// What the course tree shows of an assignment.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AssignmentSummary {
-    pub assignment_type: Kind,
+    pub assignment_type: GradedKind,
     pub max_points: MaxPoints,
     pub is_bonus: bool,
     pub settings: SubmissionSettings,
@@ -281,7 +281,7 @@ pub struct AssignmentSummary {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct OpenedAssignment {
     pub course_id: Uuid,
-    pub assignment_type: Kind,
+    pub assignment_type: GradedKind,
     pub access: CourseAccess,
     /// A rule keeps this student from working on it yet (ADR-0092). Never true for staff.
     pub locked: bool,
@@ -584,7 +584,7 @@ pub struct OpenAssignment {
     pub assignment_id: Uuid,
     pub course_id: Uuid,
     pub title: String,
-    pub assignment_type: Kind,
+    pub assignment_type: GradedKind,
     pub due_at: Option<DateTime<Utc>>,
     pub class_on: Option<NaiveDate>,
     pub max_points: MaxPoints,

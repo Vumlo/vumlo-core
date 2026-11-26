@@ -3,7 +3,7 @@ use serde_json::Value;
 
 use super::*;
 use crate::types::no_submission::NoSubmission;
-use crate::{ActivityType, EffectiveProfiles};
+use crate::{EffectiveProfiles, Graded};
 
 fn features(config: Value) -> Result<Option<Vec<Feature>>, ConfigError> {
     editor_features(config.as_object().unwrap())

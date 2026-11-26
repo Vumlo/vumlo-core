@@ -5,11 +5,11 @@ use std::collections::BTreeSet;
 
 use api_types::{Feature, ProfileName};
 use serde_json::{Map, Value};
-use sqlx::types::Decimal;
 
 use crate::{
-    ActivityType, AutoGrade, Capabilities, Claims, CompletionPolicy, ConfigError, DocumentErrors,
-    EffectiveProfiles, FileRef, Stage, ValidContent, file_refs_of, validate_document_within,
+    ActivityType, AutoGrading, Claims, CompletionPolicy, ConfigError, DocumentErrors,
+    EffectiveProfiles, FileRef, Graded, Stage, Submissions, ValidContent, file_refs_of,
+    validate_document_within,
 };
 
 pub const ID: &str = "text";
@@ -106,17 +106,16 @@ impl ActivityType for Text {
         ID
     }
 
-    fn capabilities(&self) -> Capabilities {
-        Capabilities {
-            submissions: true,
-            auto_graded: false,
-        }
-    }
-
     fn completion(&self) -> CompletionPolicy {
         CompletionPolicy::SubmittedOrGraded
     }
 
+    fn graded(&self) -> Option<&dyn Graded> {
+        Some(self)
+    }
+}
+
+impl Graded for Text {
     fn validate_config(
         &self,
         config: &Map<String, Value>,
@@ -125,12 +124,12 @@ impl ActivityType for Text {
         validate_config(config, profiles)
     }
 
-    fn points_total(&self, _config: &Map<String, Value>) -> Option<Decimal> {
-        None
+    fn submissions(&self) -> Option<&dyn Submissions> {
+        Some(self)
     }
+}
 
-    fn strip_computed(&self, _config: &mut Map<String, Value>) {}
-
+impl Submissions for Text {
     fn validate_submission(
         &self,
         config: &Map<String, Value>,
@@ -141,24 +140,12 @@ impl ActivityType for Text {
         validate_submission(config, content, profiles)
     }
 
-    fn student_config(&self, config: &Map<String, Value>) -> Map<String, Value> {
-        config.clone()
-    }
-
-    fn structure(&self, _config: &Map<String, Value>) -> Option<Value> {
-        None
-    }
-
-    fn auto_grade(
-        &self,
-        _config: &Map<String, Value>,
-        _content: &Map<String, Value>,
-    ) -> Option<AutoGrade> {
-        None
-    }
-
     fn claims(&self, _config: &Map<String, Value>, _content: &Map<String, Value>) -> Claims {
         Claims::default()
+    }
+
+    fn auto_grading(&self) -> Option<&dyn AutoGrading> {
+        None
     }
 
     fn submission_file_refs(

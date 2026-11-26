@@ -11,8 +11,9 @@ use super::{
     Problems, answer_path, answers_of, document_problem, parse_number, shape_problem, valid_id,
 };
 use crate::{
-    ActivityType, AutoGrade, Capabilities, Claims, CompletionPolicy, ConfigError, DocumentErrors,
-    EffectiveProfiles, FileRef, MaxPoints, Stage, ValidContent, file_refs_under, validate_document,
+    ActivityType, AutoGrade, AutoGrading, Claims, CompletionPolicy, ConfigError, DocumentErrors,
+    EffectiveProfiles, FileRef, Graded, MaxPoints, Stage, Submissions, ValidContent,
+    file_refs_under, validate_document,
 };
 
 pub const ID: &str = "quiz";
@@ -648,17 +649,16 @@ impl ActivityType for Quiz {
         ID
     }
 
-    fn capabilities(&self) -> Capabilities {
-        Capabilities {
-            submissions: true,
-            auto_graded: true,
-        }
-    }
-
     fn completion(&self) -> CompletionPolicy {
         CompletionPolicy::SubmittedOrGraded
     }
 
+    fn graded(&self) -> Option<&dyn Graded> {
+        Some(self)
+    }
+}
+
+impl Graded for Quiz {
     fn validate_config(
         &self,
         config: &Map<String, Value>,
@@ -667,20 +667,12 @@ impl ActivityType for Quiz {
         validate_config(config, profiles)
     }
 
-    fn points_total(&self, config: &Map<String, Value>) -> Option<Decimal> {
-        points_total(config)
+    fn submissions(&self) -> Option<&dyn Submissions> {
+        Some(self)
     }
 
-    fn strip_computed(&self, _config: &mut Map<String, Value>) {}
-
-    fn validate_submission(
-        &self,
-        config: &Map<String, Value>,
-        content: &Value,
-        stage: Stage,
-        profiles: &EffectiveProfiles,
-    ) -> Result<ValidContent, DocumentErrors> {
-        validate_submission(config, content, stage, profiles)
+    fn points_total(&self, config: &Map<String, Value>) -> Option<Decimal> {
+        points_total(config)
     }
 
     fn student_config(&self, config: &Map<String, Value>) -> Map<String, Value> {
@@ -691,20 +683,28 @@ impl ActivityType for Quiz {
         structure(config)
     }
 
-    fn auto_grade(
+    fn config_file_refs(&self, config: &Map<String, Value>) -> Result<Vec<FileRef>, ConfigError> {
+        file_refs(config)
+    }
+}
+
+impl Submissions for Quiz {
+    fn validate_submission(
         &self,
         config: &Map<String, Value>,
-        content: &Map<String, Value>,
-    ) -> Option<AutoGrade> {
-        auto_grade(config, content)
+        content: &Value,
+        stage: Stage,
+        profiles: &EffectiveProfiles,
+    ) -> Result<ValidContent, DocumentErrors> {
+        validate_submission(config, content, stage, profiles)
     }
 
     fn claims(&self, _config: &Map<String, Value>, _content: &Map<String, Value>) -> Claims {
         Claims::default()
     }
 
-    fn config_file_refs(&self, config: &Map<String, Value>) -> Result<Vec<FileRef>, ConfigError> {
-        file_refs(config)
+    fn auto_grading(&self) -> Option<&dyn AutoGrading> {
+        Some(self)
     }
 
     fn submission_file_refs(
@@ -713,6 +713,16 @@ impl ActivityType for Quiz {
         content: &Map<String, Value>,
     ) -> Result<Vec<FileRef>, DocumentErrors> {
         answer_file_refs(content)
+    }
+}
+
+impl AutoGrading for Quiz {
+    fn auto_grade(
+        &self,
+        config: &Map<String, Value>,
+        content: &Map<String, Value>,
+    ) -> Option<AutoGrade> {
+        auto_grade(config, content)
     }
 }
 

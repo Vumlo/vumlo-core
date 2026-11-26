@@ -15,7 +15,7 @@ pub(crate) fn install_types() {
 }
 
 /// The built-in type `id`, from the installed registry.
-pub(crate) fn kind(id: &str) -> activity::Kind {
+pub(crate) fn kind(id: &str) -> activity::GradedKind {
     install_types();
-    activity::get(id).unwrap()
+    activity::get_graded(id).unwrap()
 }

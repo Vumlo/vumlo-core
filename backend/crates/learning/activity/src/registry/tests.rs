@@ -2,14 +2,15 @@
 //! free functions share one process-wide registry, installed once with both dummy types.
 
 use serde_json::{Map, Value};
-use sqlx::types::Decimal;
 
 use super::*;
 use crate::{
-    AutoGrade, Capabilities, Claims, CompletionPolicy, ConfigError, DocumentErrors,
-    EffectiveProfiles, Stage, ValidContent,
+    AutoGrade, AutoGrading, Capabilities, Claims, CompletionPolicy, ConfigError, DocumentErrors,
+    EffectiveProfiles, Graded, Stage, Submissions, ValidContent,
 };
 
+/// A type whose tiers are the ones its `capabilities` field says: a tier that is switched off
+/// answers `None`, as a real type that does not implement it would.
 struct Dummy {
     id: &'static str,
     capabilities: Capabilities,
@@ -20,14 +21,16 @@ impl ActivityType for Dummy {
         self.id
     }
 
-    fn capabilities(&self) -> Capabilities {
-        self.capabilities
-    }
-
     fn completion(&self) -> CompletionPolicy {
         CompletionPolicy::Graded
     }
 
+    fn graded(&self) -> Option<&dyn Graded> {
+        self.capabilities.graded.then_some(self as &dyn Graded)
+    }
+}
+
+impl Graded for Dummy {
     fn validate_config(
         &self,
         _config: &Map<String, Value>,
@@ -36,12 +39,14 @@ impl ActivityType for Dummy {
         Ok(())
     }
 
-    fn points_total(&self, _config: &Map<String, Value>) -> Option<Decimal> {
-        None
+    fn submissions(&self) -> Option<&dyn Submissions> {
+        self.capabilities
+            .submissions
+            .then_some(self as &dyn Submissions)
     }
+}
 
-    fn strip_computed(&self, _config: &mut Map<String, Value>) {}
-
+impl Submissions for Dummy {
     fn validate_submission(
         &self,
         _config: &Map<String, Value>,
@@ -52,14 +57,18 @@ impl ActivityType for Dummy {
         Ok(ValidContent::new(Map::new(), true))
     }
 
-    fn student_config(&self, config: &Map<String, Value>) -> Map<String, Value> {
-        config.clone()
+    fn claims(&self, _config: &Map<String, Value>, _content: &Map<String, Value>) -> Claims {
+        Claims::default()
     }
 
-    fn structure(&self, _config: &Map<String, Value>) -> Option<Value> {
-        None
+    fn auto_grading(&self) -> Option<&dyn AutoGrading> {
+        self.capabilities
+            .auto_graded
+            .then_some(self as &dyn AutoGrading)
     }
+}
 
+impl AutoGrading for Dummy {
     fn auto_grade(
         &self,
         _config: &Map<String, Value>,
@@ -67,25 +76,33 @@ impl ActivityType for Dummy {
     ) -> Option<AutoGrade> {
         None
     }
-
-    fn claims(&self, _config: &Map<String, Value>, _content: &Map<String, Value>) -> Claims {
-        Claims::default()
-    }
 }
 
 /// Submits and is graded by itself.
 static ZETA: Dummy = Dummy {
     id: "zeta",
     capabilities: Capabilities {
+        graded: true,
         submissions: true,
         auto_graded: true,
     },
 };
 
-/// Takes no submission.
+/// Is graded and takes no submission.
 static ALPHA: Dummy = Dummy {
     id: "alpha_1",
     capabilities: Capabilities {
+        graded: true,
+        submissions: false,
+        auto_graded: false,
+    },
+};
+
+/// Has no points at all.
+static PLAIN: Dummy = Dummy {
+    id: "plain",
+    capabilities: Capabilities {
+        graded: false,
         submissions: false,
         auto_graded: false,
     },
@@ -179,6 +196,48 @@ fn kind_is_stored_as_text() {
         <Kind as sqlx::Type<sqlx::Postgres>>::type_info(),
         <str as sqlx::Type<sqlx::Postgres>>::type_info()
     );
+    assert_eq!(
+        <GradedKind as sqlx::Type<sqlx::Postgres>>::type_info(),
+        <str as sqlx::Type<sqlx::Postgres>>::type_info()
+    );
+}
+
+fn three() -> Types {
+    both().with(&PLAIN).expect("a third distinct id")
+}
+
+#[test]
+fn the_capabilities_are_derived_from_the_tiers_a_type_returns() {
+    let types = three();
+    for dummy in [&ZETA, &ALPHA, &PLAIN] {
+        let derived = types.get(dummy.id).expect("registered").capabilities();
+        assert_eq!(derived, dummy.capabilities, "{}", dummy.id);
+    }
+    assert_eq!(types.ids_where(|c| c.graded), ["alpha_1", "zeta"]);
+    assert_eq!(types.ids_where(|c| !c.graded), ["plain"]);
+}
+
+#[test]
+fn only_a_graded_type_is_a_graded_kind() {
+    let types = three();
+    let alpha = types.get_graded("alpha_1").expect("graded");
+    assert_eq!(alpha.id(), "alpha_1");
+    assert_eq!(alpha.kind(), types.get("alpha_1").expect("registered"));
+    assert_eq!(format!("{alpha:?}"), "GradedKind(\"alpha_1\")");
+    assert!(alpha.submissions().is_none());
+    let zeta = types.get_graded("zeta").expect("graded");
+    assert!(zeta.submissions().is_some());
+    assert_eq!(zeta.capabilities(), ZETA.capabilities);
+    assert_eq!(zeta.completion(), CompletionPolicy::Graded);
+    assert!(matches!(
+        types.get_graded("plain"),
+        Err(RegistryError::NotGraded(id)) if id == "plain"
+    ));
+    assert!(matches!(
+        types.get_graded("nope"),
+        Err(RegistryError::Unknown(id)) if id == "nope"
+    ));
+    assert!(types.get("plain").expect("registered").graded().is_none());
 }
 
 /// Without `testing` nothing installs a registry in this test binary, so it is the one place to

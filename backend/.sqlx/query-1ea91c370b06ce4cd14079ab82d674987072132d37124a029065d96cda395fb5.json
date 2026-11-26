@@ -1,11 +1,11 @@
 {
   "db_name": "PostgreSQL",
-  "query": "UPDATE content.assignments\n           SET config = COALESCE($2::jsonb, config),\n               max_points = COALESCE($3::numeric, max_points),\n               is_bonus = COALESCE($4::boolean, is_bonus),\n               due_at = CASE WHEN $5 THEN $6::timestamptz ELSE due_at END,\n               on_deadline = CASE WHEN $5 THEN $7::text ELSE on_deadline END,\n               accept_late = CASE WHEN $5 THEN $8::boolean ELSE accept_late END,\n               late_until = CASE WHEN $5 THEN $9::timestamptz ELSE late_until END,\n               max_attempts = CASE WHEN $5 THEN $10::integer ELSE max_attempts END,\n               class_on = CASE WHEN $11 THEN $12::date ELSE class_on END,\n               updated_at = now()\n           WHERE item_id = $1\n           RETURNING type AS \"assignment_type: activity::Kind\", config AS \"config: Body\",\n                     max_points AS \"max_points: MaxPoints\", is_bonus,\n                     due_at, on_deadline AS \"on_deadline: OnDeadline\", accept_late, late_until,\n                     max_attempts, class_on",
+  "query": "SELECT type AS \"assignment_type: activity::GradedKind\", config AS \"config: Body\",\n                  max_points AS \"max_points: MaxPoints\", is_bonus,\n                  due_at, on_deadline AS \"on_deadline: OnDeadline\", accept_late, late_until,\n                  max_attempts, class_on\n           FROM content.assignments WHERE item_id = $1\n           FOR SHARE",
   "describe": {
     "columns": [
       {
         "ordinal": 0,
-        "name": "assignment_type: activity::Kind",
+        "name": "assignment_type: activity::GradedKind",
         "type_info": "Text",
         "origin": {
           "Table": {
@@ -116,18 +116,7 @@
     ],
     "parameters": {
       "Left": [
-        "Uuid",
-        "Jsonb",
-        "Numeric",
-        "Bool",
-        "Bool",
-        "Timestamptz",
-        "Text",
-        "Bool",
-        "Timestamptz",
-        "Int4",
-        "Bool",
-        "Date"
+        "Uuid"
       ]
     },
     "nullable": [
@@ -143,5 +132,5 @@
       true
     ]
   },
-  "hash": "c78e181b5d7ee844bc964ddc64ae1cfc151fe58474215ced5871b05a7ecfe8cf"
+  "hash": "1ea91c370b06ce4cd14079ab82d674987072132d37124a029065d96cda395fb5"
 }
