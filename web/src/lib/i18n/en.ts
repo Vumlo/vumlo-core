@@ -1652,6 +1652,9 @@ export const en = {
   "buddy.p.resetNote": "The password is shown here once you confirm. Neither the Buddy nor the chat ever has it.",
   "buddy.p.password": "Temporary password for {person}",
   // access rules and completion (ADR-0092)
+  "unavailable.badge": "Unavailable",
+  "unavailable.title": "This is not available",
+  "unavailable.lead": "It was made with a module that is switched off. It comes back when an administrator enables the module again; nothing is lost.",
   "locked.badge": "Locked",
   "locked.title": "This is locked for now",
   "locked.lead": "It opens when you have done the following:",
