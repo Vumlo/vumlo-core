@@ -2,7 +2,7 @@
 //! private to `access`, so the persona is found by asking `access` which of the module's
 //! permissions the actor holds (ADR-0070). It decides the tools and the system prompt.
 
-use access::Actor;
+use access::{Action, Actor};
 use chrono::{DateTime, Utc};
 use common::ApiError;
 use module_api::ModuleState;
@@ -81,11 +81,18 @@ impl Persona {
     /// does not exist for that user.
     pub fn of(state: &ModuleState, actor: &Actor) -> Result<Self, ApiError> {
         let config = Config::new(&state.settings);
-        Self::ALL
+        let persona = Self::ALL
             .into_iter()
             .filter(|p| config.allows(*p))
             .find(|p| state.authorize(actor, p.permission()).is_ok())
-            .ok_or(ApiError::NotFound)
+            .ok_or(ApiError::NotFound)?;
+        // Administration needs the console (ADR-0095), and the Buddy lives in the student app: an
+        // administrator there may work in courses but not administer, so the Buddy offers what the
+        // session can do and never a tool the core would refuse.
+        if persona == Self::Admin && access::authorize(actor, Action::ManageUsers).is_err() {
+            return Ok(Self::Teacher);
+        }
+        Ok(persona)
     }
 
     pub fn system_prompt(self, now: DateTime<Utc>, context: &PageContext) -> String {

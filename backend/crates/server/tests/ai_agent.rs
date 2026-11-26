@@ -1011,7 +1011,7 @@ async fn a_quiz_is_proposed_with_its_answer_key_visible_and_created_only_as_a_dr
             .env
             .ok("GET", &c.teacher.token, &format!("/items/{id}"), None, 200)
             .await;
-        assert_eq!(item["assignment"]["type"], "quiz", "{item}");
+        assert_eq!(item["type"], "quiz", "{item}");
         assert_eq!(item["assignment"]["max_points"], "5.00");
         assert_eq!(
             item["assignment"]["config"]["questions"][0]["correct"],
@@ -1540,6 +1540,46 @@ async fn an_admin_finds_people_and_groups_and_only_an_admin_is_offered_those_too
                 .contains(&n.as_str())),
                 "{offered:?}"
             );
+        }
+    })
+    .await;
+}
+
+/// Administration needs the console (ADR-0095) and the Buddy lives in the student app: an admin's
+/// app session is offered the teacher's tools, not the ones the core would refuse.
+#[tokio::test]
+async fn an_admin_in_the_student_app_is_offered_what_that_session_may_do_and_no_administration() {
+    db_test(async |pool| {
+        let c = class(pool).await;
+        let in_app = c.env.app_user("app-admin@x.edu", Role::Admin).await;
+        let in_console = c.env.user("console-admin@x.edu", Role::Admin).await;
+        let admin_tools = [
+            "find_people",
+            "org_overview",
+            "create_term",
+            "create_group",
+            "add_group_members",
+            "reset_password",
+        ];
+        for (who, administers) in [(&in_app, false), (&in_console, true)] {
+            c.fake
+                .script
+                .lock()
+                .unwrap()
+                .extend(answers(vec![text("ok")]));
+            assert_eq!(send(&c.env, who, "hello").await.status, 200);
+            let offered = tool_names(&c.fake.seen().pop().unwrap());
+            assert!(
+                offered.contains(&"teaching_overview".to_owned()),
+                "{offered:?}"
+            );
+            for name in admin_tools {
+                assert_eq!(
+                    offered.contains(&name.to_owned()),
+                    administers,
+                    "{name} for administers={administers}: {offered:?}"
+                );
+            }
         }
     })
     .await;

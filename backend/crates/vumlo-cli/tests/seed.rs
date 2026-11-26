@@ -230,7 +230,7 @@ async fn the_demo_data_works_through_the_real_server() {
             .await
             .unwrap();
         let quiz: uuid::Uuid =
-            sqlx::query_scalar("SELECT item_id FROM content.assignments WHERE type = 'quiz'")
+            sqlx::query_scalar("SELECT id FROM content.items WHERE type = 'quiz'")
                 .fetch_one(&pool)
                 .await
                 .unwrap();
