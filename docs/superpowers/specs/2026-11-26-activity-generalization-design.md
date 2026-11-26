@@ -160,6 +160,17 @@ A future `link` or `lesson` is one more file in `types/` (or in a module): an id
 `exclusive` and `people` stay in `Claims`; the advisory lock named `form:<id>` (`assessment/repo.rs:373-378`) becomes
 `claims:<id>`.
 
+**As built in stage 3** (`docs/superpowers/plans/2026-11-26-activity-stage-3-hooks.md`). Reading the code made two of
+the data hooks above simpler. The responses are already generic rows, so the hook is the bool `lists_responses`, not a
+`responses` method; the overlay is `Graded::annotate_config` over `ClassFacts` (which `assessment` computes for any type
+from `claims()`), with `reads_class_facts` telling `content` when to ask; the review is a tier,
+`Submissions::reviewing` with `Reviewing::review`. The plugin reads are `Graded::plugin_config` (what `assignments:read`
+shows as `config`) and `Submissions::plugin_answers`. The API of the web app is unchanged (`QuizResult` and its route keep
+their names; they change with `Item.type` in stage 4). Two things the spec did not foresee: `plugin_installs.api` was
+pinned to `'1'` by a CHECK and written as a literal, so migration `0057` relaxes it and the install and the upgrade now
+write `plugins::API_VERSION`; and the renamed scope and event are also renamed in what is already stored (the installs, the
+deliveries, the outbox).
+
 ## 6. Data model
 
 One migration, written with the services stopped (section 10).

@@ -10,6 +10,25 @@ must do, in order, besides getting the new release. See [RELEASING.md](RELEASING
 
 ## [Unreleased]
 
+### Upgrade notes
+
+- **The plugin protocol is `api = "2"`** (ADR-0098). It names no assignment type any more, so a plugin written for
+  `api = "1"` is refused at install and at upgrade until its manifest says `"api": "2"` and it follows the renames:
+  the scope `quizzes:read` is `attempts:read`; the event `quiz.attempt_submitted` is `attempt.autograded`;
+  `GET /plugin-api/assignments/{id}/quiz` is gone (the questions of a quiz are the `config` of the assignment under
+  `assignments:read`); `GET /plugin-api/submissions/{id}/fields` is `/answers`; `fields` on an assignment is `config`
+  (the fields of a form are in `config.fields`). Migration `0057` renames the scope and the event in the plugins that
+  are already installed, in the queues, and leaves their `api` as it was. Run `db migrate`.
+- Plugins are the only thing that changes for an installation; the web app, the desktop app and the API of the people
+  do not.
+
+### Changed
+
+- The built-in activity types live in the crate `activity`, behind a contract in tiers (`ActivityType`, `Graded`,
+  `Submissions`, `AutoGrading`). The quiz result, the form responses, the form's "taken" overlay and the plugin reads are
+  hooks of that contract, and no crate outside `activity` compares a type id. The submits of a form are serialized by an
+  advisory lock named `claims:<id>` instead of `form:<id>`.
+
 ## [0.7.5] - 2026-11-14
 
 ### Upgrade notes
