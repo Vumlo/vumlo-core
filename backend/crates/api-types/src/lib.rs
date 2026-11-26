@@ -667,6 +667,11 @@ pub struct Item {
     /// of its assignment (`text`, `no_submission`, `quiz`, `form`, `file`).
     #[serde(rename = "type")]
     pub item_type: String,
+    /// `true` when the module that provides the type of this item is not enabled (ADR-0098). The
+    /// body is then empty (and so is the assignment's `config`), nothing can be written to the
+    /// item, and the client shows it as unavailable. Absent when `false`.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub unavailable: bool,
     pub title: String,
     /// A block document (ADR-0025) for a lecture and an assignment, `{file_id?, description?}`
     /// for a shared file. The server returns the stored body as is.
@@ -696,6 +701,9 @@ pub struct ItemSummary {
     /// The id of the activity type of the item (ADR-0098).
     #[serde(rename = "type")]
     pub item_type: String,
+    /// `true` when the module that provides the type is not enabled. Absent when `false`.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub unavailable: bool,
     pub title: String,
     pub status: ContentStatus,
     pub publish_at: Option<DateTime<Utc>>,

@@ -41,6 +41,21 @@ pub fn migrators() -> Vec<(&'static str, &'static Migrator)> {
         .collect()
 }
 
+/// The activity types a server with this configuration registers: the built-in ones and those of
+/// the compiled-in modules that are enabled (the same rule as `server::modules::activity_types`).
+pub fn activity_types(settings: &Settings) -> Result<activity::Types, activity::InstallError> {
+    let mut types = activity::types::builtin_types()?;
+    for module in compiled()
+        .into_iter()
+        .filter(|module| settings.module_state.is_enabled(module.manifest().id))
+    {
+        for activity_type in module.activity_types() {
+            types = types.with(activity_type)?;
+        }
+    }
+    Ok(types)
+}
+
 /// The configuration, read strictly: whatever the file, the environment and the flags say, it
 /// must be valid for this binary.
 pub fn load(options: &Options) -> anyhow::Result<Loaded> {

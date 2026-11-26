@@ -153,6 +153,7 @@ fn a_text_item_serializes_without_an_assignment_key() {
         position: 1,
         kind: ItemKind::Resource,
         item_type: "lecture".into(),
+        unavailable: false,
         title: "t".into(),
         body: Map::new(),
         status: ContentStatus::Draft,
@@ -165,6 +166,10 @@ fn a_text_item_serializes_without_an_assignment_key() {
     };
     let text = serde_json::to_value(item(None)).unwrap();
     assert!(text.get("assignment").is_none());
+    assert!(
+        text.get("unavailable").is_none(),
+        "the flag is sent only when it is true"
+    );
 
     let assignment = serde_json::to_value(item(Some(Assignment {
         assignment_type: "text".into(),
@@ -238,6 +243,7 @@ fn a_tree_summary_without_an_assignment_has_no_key() {
         id: Uuid::nil(),
         kind: ItemKind::Resource,
         item_type: "lecture".into(),
+        unavailable: false,
         title: "t".into(),
         status: ContentStatus::Draft,
         publish_at: None,

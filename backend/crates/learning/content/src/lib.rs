@@ -29,7 +29,7 @@ pub use service::{
     lock_course_assignments, lock_facts, mark_done, may_read_item_files, next_deadlines,
     open_assignment, open_assignments, publish_item, publish_module, publish_revision,
     reorder_items, reorder_modules, replace_source_facts, search, sees_drafts, set_due_at,
-    template_counts, unmark_done, update_module,
+    stored_types, template_counts, unmark_done, update_module,
 };
 pub use state::ContentState;
 // Seeds the references of an item for the tests of `learning::files`.

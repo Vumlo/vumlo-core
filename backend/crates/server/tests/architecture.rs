@@ -483,6 +483,64 @@ fn no_builtin_type_name_is_left() {
     );
 }
 
+/// The ids of the built-in activity types. Only the crate that holds them, the optional modules
+/// (which may build on a built-in), the CLI (its seed and its checks name what they create) and
+/// tests may name one; everything else asks the registry (ADR-0098).
+const BUILTIN_TYPE_IDS: &[&str] = &["quiz", "form", "no_submission", "lecture", "shared_file"];
+/// The module paths of the two built-in types whose ids are common words (`text`, `file`): a
+/// string literal of those is not told from any other text, a path is.
+const BUILTIN_TYPE_PATHS: &[&str] = &[
+    "types::text",
+    "types::file",
+    "types::quiz",
+    "types::form",
+    "types::no_submission",
+    "types::lecture",
+    "types::shared_file",
+];
+
+fn is_test_file(file: &Path) -> bool {
+    file.components().any(|part| part.as_os_str() == "tests")
+        || file
+            .file_name()
+            .and_then(|name| name.to_str())
+            .is_some_and(|name| name == "tests.rs" || name.ends_with("_tests.rs"))
+}
+
+#[test]
+fn no_builtin_type_id_is_named_outside_activity_modules_the_cli_and_tests() {
+    let crates = crates_dir();
+    let mut files = BTreeSet::new();
+    rust_files(&crates, &mut files);
+    let mut found = Vec::new();
+    for file in files {
+        let relative = file.strip_prefix(&crates).expect("under crates");
+        let free = relative.starts_with("learning/activity")
+            || relative.starts_with("modules")
+            || relative.starts_with("vumlo-cli")
+            || is_test_file(&file);
+        if free {
+            continue;
+        }
+        let text = fs::read_to_string(&file).expect("a Rust file is UTF-8");
+        for (number, line) in text.lines().enumerate() {
+            let named = BUILTIN_TYPE_PATHS.iter().any(|path| line.contains(path))
+                || BUILTIN_TYPE_IDS
+                    .iter()
+                    .any(|id| line.contains(&format!("\"{id}\"")));
+            if named {
+                found.push(format!("{}:{}: {}", shown(&file), number + 1, line.trim()));
+            }
+        }
+    }
+    assert!(
+        found.is_empty(),
+        "a built-in activity type is named outside `activity`, the modules, the CLI and tests; \
+         ask the registry or a hook of the contract instead (ADR-0098):\n{}",
+        found.join("\n")
+    );
+}
+
 #[test]
 fn both_binaries_install_the_types() {
     for binary in ["server/src/app.rs", "vumlo-cli/src/main.rs"] {

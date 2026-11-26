@@ -35,7 +35,7 @@ struct Package {
 /// Packages that may depend on a module crate, each only through an optional dependency.
 const COMPOSITION_ROOTS: &[&str] = &["server", "vumlo-cli"];
 /// What `module-api` may depend on among the crates of this workspace.
-const MODULE_API_DEPS: &[&str] = &["common", "access", "events", "vumlo-config"];
+const MODULE_API_DEPS: &[&str] = &["common", "access", "activity", "events", "vumlo-config"];
 /// Crates a module must not depend on, other than in its tests.
 const MODULE_FORBIDDEN: &[&str] = &["server", "vumlo-cli", "plugins"];
 const MODULE_API_USERS: &[&str] = &["server", "vumlo-cli", "plugins"];

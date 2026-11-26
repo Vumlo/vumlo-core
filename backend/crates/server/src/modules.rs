@@ -7,7 +7,7 @@ use std::sync::Arc;
 use events::Handlers;
 use module_api::{Institution, Module, ModuleState, OrderError, Registered, Registrar, init_order};
 use sqlx::migrate::Migrator;
-use vumlo_config::ModuleSpec;
+use vumlo_config::{ModuleSpec, Settings};
 
 use crate::app::AppState;
 
@@ -19,6 +19,22 @@ pub fn compiled() -> Vec<&'static dyn Module> {
         #[cfg(feature = "ai_agent")]
         vumlo_module_ai_agent::module(),
     ]
+}
+
+/// The activity types of this process: the built-in ones and those of the modules that are
+/// compiled in and enabled (ADR-0098). A module that is off adds none, so its items read as
+/// unavailable until it is switched on again. Two types with one id fail the start.
+pub fn activity_types(settings: &Settings) -> Result<activity::Types, activity::InstallError> {
+    let mut types = activity::types::builtin_types()?;
+    for module in compiled()
+        .into_iter()
+        .filter(|module| settings.module_state.is_enabled(module.manifest().id))
+    {
+        for activity_type in module.activity_types() {
+            types = types.with(activity_type)?;
+        }
+    }
+    Ok(types)
 }
 
 /// The modules compiled in, each after the ones it requires.

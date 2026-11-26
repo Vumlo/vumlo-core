@@ -12,6 +12,7 @@ use sqlx::error::BoxDynError;
 use sqlx::postgres::{PgArgumentBuffer, PgTypeInfo, PgValueRef};
 use sqlx::{Decode, Encode, Postgres, Type};
 
+use crate::missing::Missing;
 use crate::{ActivityType, Capabilities, CompletionPolicy, Graded, Submissions};
 
 /// Why a set of types could not be built or installed.
@@ -50,6 +51,11 @@ impl Kind {
         self.0
             .graded()
             .map(|graded| GradedKind { kind: self, graded })
+    }
+
+    /// Whether this is the stand-in of a stored type nobody registered (ADR-0098, D4).
+    pub fn is_missing(self) -> bool {
+        !self.0.available()
     }
 }
 
@@ -118,11 +124,12 @@ impl Type<Postgres> for GradedKind {
     }
 }
 
-/// Reads the id like [`Kind`], and refuses a registered type that is not graded.
+/// Reads the id like [`Kind`]: an id nobody registered is the stand-in [`Missing`] (so the rows
+/// around it stay readable), and a registered type that is not graded is refused.
 impl<'r> Decode<'r, Postgres> for GradedKind {
     fn decode(value: PgValueRef<'r>) -> Result<Self, BoxDynError> {
         let id = <&str as Decode<Postgres>>::decode(value)?;
-        get_graded(id).map_err(Into::into)
+        stored_graded(id).map_err(Into::into)
     }
 }
 
@@ -164,12 +171,14 @@ impl Type<Postgres> for Kind {
     }
 }
 
-/// Reads the id and looks it up in the installed registry: a stored id this process does not know
-/// is an error naming it, not a panic.
+/// Reads a stored id and looks it up in the installed registry. One this process does not know
+/// (a module that is off) is the stand-in [`Missing`], not an error: a row of an unavailable type
+/// must not fail the read of everything around it (ADR-0098, D4). Only a process that installed
+/// no registry at all fails.
 impl<'r> Decode<'r, Postgres> for Kind {
     fn decode(value: PgValueRef<'r>) -> Result<Self, BoxDynError> {
         let id = <&str as Decode<Postgres>>::decode(value)?;
-        get(id).map_err(Into::into)
+        stored(id).map_err(Into::into)
     }
 }
 
@@ -224,6 +233,27 @@ impl Types {
             .ok_or_else(|| RegistryError::NotGraded(id.to_owned()))
     }
 
+    /// The type of a stored id: the registered one, or the stand-in for one nobody registered.
+    pub fn stored(&self, id: &str) -> Kind {
+        self.get(id)
+            .unwrap_or_else(|_| Kind(Missing::of(id, false)))
+    }
+
+    /// The graded type of a stored id: the registered one (which must be graded), or the stand-in
+    /// for one nobody registered.
+    pub fn stored_graded(&self, id: &str) -> Result<GradedKind, RegistryError> {
+        match self.get(id) {
+            Ok(_) => self.get_graded(id),
+            Err(_) => {
+                let missing = Missing::of(id, true);
+                Ok(GradedKind {
+                    kind: Kind(missing),
+                    graded: missing,
+                })
+            }
+        }
+    }
+
     /// Every id, sorted.
     pub fn available(&self) -> Vec<&'static str> {
         self.0.keys().copied().collect()
@@ -253,6 +283,23 @@ pub fn install(types: Types) -> Result<(), InstallError> {
 /// The type of an id in the installed registry.
 pub fn get(id: &str) -> Result<Kind, RegistryError> {
     REGISTRY.get().ok_or(RegistryError::NotInstalled)?.get(id)
+}
+
+/// The type of an id read from the database: the installed one, or the stand-in [`Missing`] for
+/// an id nobody registered. A creator that must refuse an unknown id uses [`get`].
+pub fn stored(id: &str) -> Result<Kind, RegistryError> {
+    Ok(REGISTRY
+        .get()
+        .ok_or(RegistryError::NotInstalled)?
+        .stored(id))
+}
+
+/// The graded type of an id read from the database, as [`stored`].
+pub fn stored_graded(id: &str) -> Result<GradedKind, RegistryError> {
+    REGISTRY
+        .get()
+        .ok_or(RegistryError::NotInstalled)?
+        .stored_graded(id)
 }
 
 /// The graded type of an id in the installed registry: the kind of an assignment.

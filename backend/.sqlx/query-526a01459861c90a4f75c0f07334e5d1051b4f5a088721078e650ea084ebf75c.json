@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT i.id, i.course_id, i.kind AS \"kind: ItemKind\",\n                  CASE WHEN $2 THEN i.title ELSE i.published_title END AS \"title!\",\n                  CASE WHEN $2 THEN i.body ELSE i.published_body END AS \"body!: Json<Map<String, Value>>\",\n                  i.status AS \"status: ItemStatus\", a.due_at,\n                  (CASE WHEN $2 THEN i.title ELSE i.published_title END) ILIKE $3 AS \"title_match!\"\n           FROM content.items i\n           JOIN content.modules m ON m.id = i.module_id\n           LEFT JOIN content.modules p ON p.id = m.parent_id\n           LEFT JOIN content.assignments a ON a.item_id = i.id\n           WHERE i.course_id = ANY($1)\n             AND ($2\n                  OR (i.status = 'published' AND (i.publish_at IS NULL OR i.publish_at <= $4)\n                      AND m.status = 'published' AND (m.publish_at IS NULL OR m.publish_at <= $4)\n                      AND (p.id IS NULL\n                           OR (p.status = 'published'\n                               AND (p.publish_at IS NULL OR p.publish_at <= $4)))))\n             AND ((CASE WHEN $2 THEN i.title ELSE i.published_title END) ILIKE $3\n                  OR jsonb_path_query_array(CASE WHEN $2 THEN i.body ELSE i.published_body END,\n                                            '$.**.text')::text ILIKE $3)\n           ORDER BY 8 DESC, i.updated_at DESC, i.id\n           LIMIT $5",
+  "query": "SELECT i.id, i.course_id, i.kind AS \"kind: ItemKind\",\n                  CASE WHEN $2 THEN i.title ELSE i.published_title END AS \"title!\",\n                  CASE WHEN $2 THEN i.body ELSE i.published_body END AS \"body!: Json<Map<String, Value>>\",\n                  i.status AS \"status: ItemStatus\", a.due_at,\n                  (CASE WHEN $2 THEN i.title ELSE i.published_title END) ILIKE $3 AS \"title_match!\",\n                  i.type AS \"item_type: activity::Kind\"\n           FROM content.items i\n           JOIN content.modules m ON m.id = i.module_id\n           LEFT JOIN content.modules p ON p.id = m.parent_id\n           LEFT JOIN content.assignments a ON a.item_id = i.id\n           WHERE i.course_id = ANY($1)\n             AND ($2\n                  OR (i.status = 'published' AND (i.publish_at IS NULL OR i.publish_at <= $4)\n                      AND m.status = 'published' AND (m.publish_at IS NULL OR m.publish_at <= $4)\n                      AND (p.id IS NULL\n                           OR (p.status = 'published'\n                               AND (p.publish_at IS NULL OR p.publish_at <= $4)))))\n             AND ((CASE WHEN $2 THEN i.title ELSE i.published_title END) ILIKE $3\n                  OR jsonb_path_query_array(CASE WHEN $2 THEN i.body ELSE i.published_body END,\n                                            '$.**.text')::text ILIKE $3)\n           ORDER BY 8 DESC, i.updated_at DESC, i.id\n           LIMIT $5",
   "describe": {
     "columns": [
       {
@@ -75,6 +75,17 @@
         "name": "title_match!",
         "type_info": "Bool",
         "origin": "Expression"
+      },
+      {
+        "ordinal": 8,
+        "name": "item_type: activity::Kind",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "content.items",
+            "name": "type"
+          }
+        }
       }
     ],
     "parameters": {
@@ -94,8 +105,9 @@
       null,
       false,
       true,
-      null
+      null,
+      false
     ]
   },
-  "hash": "412624b867e71d5d8fe5d1f463da0fe56cb0be60b4630acf3029f718299741c5"
+  "hash": "526a01459861c90a4f75c0f07334e5d1051b4f5a088721078e650ea084ebf75c"
 }

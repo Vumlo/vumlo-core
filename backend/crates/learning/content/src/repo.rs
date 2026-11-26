@@ -1212,6 +1212,16 @@ pub async fn resource_bodies(
         .collect())
 }
 
+/// The types the items of every course are stored with, and how many items each has.
+pub async fn stored_types(conn: &mut PgConnection) -> Result<Vec<(String, i64)>, sqlx::Error> {
+    let rows = sqlx::query!(
+        r#"SELECT type AS "id!", count(*) AS "items!" FROM content.items GROUP BY type ORDER BY type"#
+    )
+    .fetch_all(conn)
+    .await?;
+    Ok(rows.into_iter().map(|r| (r.id, r.items)).collect())
+}
+
 /// The class days of the course's in-class assignments.
 pub async fn class_days(
     conn: &mut PgConnection,
@@ -1253,6 +1263,7 @@ pub struct ItemHit {
     pub status: ItemStatus,
     pub due_at: Option<DateTime<Utc>>,
     pub title_match: bool,
+    pub item_type: Kind,
 }
 
 /// Items of the courses whose title or body text contains `pattern` (a `LIKE` pattern with the
@@ -1275,7 +1286,8 @@ pub async fn search_items(
                   CASE WHEN $2 THEN i.title ELSE i.published_title END AS "title!",
                   CASE WHEN $2 THEN i.body ELSE i.published_body END AS "body!: Json<Map<String, Value>>",
                   i.status AS "status: ItemStatus", a.due_at,
-                  (CASE WHEN $2 THEN i.title ELSE i.published_title END) ILIKE $3 AS "title_match!"
+                  (CASE WHEN $2 THEN i.title ELSE i.published_title END) ILIKE $3 AS "title_match!",
+                  i.type AS "item_type: activity::Kind"
            FROM content.items i
            JOIN content.modules m ON m.id = i.module_id
            LEFT JOIN content.modules p ON p.id = m.parent_id

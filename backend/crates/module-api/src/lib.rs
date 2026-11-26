@@ -67,6 +67,14 @@ pub trait Module: Send + Sync + 'static {
         None
     }
 
+    /// The activity types this module adds (ADR-0098). They are registered, with the built-in
+    /// ones, only when the module is enabled, before anything reads an item; the types are
+    /// `'static` values that depend on no state. Items of a module that is switched off stay in
+    /// the database and are listed as unavailable until it is enabled again.
+    fn activity_types(&self) -> Vec<&'static dyn activity::ActivityType> {
+        Vec::new()
+    }
+
     /// Adds the module's routes, event handlers and jobs. Called on every start of a process that
     /// needs them (the server for the routes, the worker for the jobs), so it builds values and
     /// does nothing else: no I/O, no spawning.

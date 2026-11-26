@@ -169,12 +169,13 @@ pub enum StateError {
 }
 
 /// Installs the synchronous event subscribers of every layer (ADR-0093) and the activity types
-/// (ADR-0097). Both registries depend only on what is compiled in, so they are the same for every
-/// state this process builds (the tests build many), and a second call finds them installed: that
-/// is the only error tolerated. A set of types that cannot be built (two with one id) fails start.
-pub fn install_registries() -> Result<(), InstallError> {
+/// (ADR-0097): the built-in ones and those of the enabled modules (ADR-0098). The registries are
+/// the same for every state this process builds (the tests build many), and a second call finds
+/// them installed: that is the only error tolerated. A set of types that cannot be built (two
+/// with one id) fails start.
+pub fn install_registries(config: &Settings) -> Result<(), InstallError> {
     let _already_installed = events::install(learning::subscribers());
-    match activity::install(activity::types::builtin_types()?) {
+    match activity::install(crate::modules::activity_types(config)?) {
         Ok(()) | Err(InstallError::AlreadyInstalled) => Ok(()),
         Err(error) => Err(error),
     }
@@ -186,7 +187,7 @@ impl AppState {
     /// profiles in code fails here, at startup, with an error that names the key and the value, and
     /// never at the first request.
     pub fn new(db: PgPool, config: Settings) -> Result<Self, StateError> {
-        install_registries()?;
+        install_registries(&config)?;
         let editor = Arc::new(EffectiveProfiles::resolve(&config.editor)?);
         let hashing = auth::HashGate::new(config.auth.max_concurrent_hashes);
         let mailer = config
