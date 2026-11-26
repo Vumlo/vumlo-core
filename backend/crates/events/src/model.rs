@@ -65,8 +65,9 @@ pub enum Event {
     /// Someone's place on the roster of a course may have changed: added, removed, a role changed,
     /// a group linked or unlinked, a member of a linked group added or removed (ADR-0075).
     EnrollmentChanged { course_id: Uuid, user_id: Uuid },
-    /// A student submitted an attempt at a quiz; sent with `submission.submitted` (ADR-0075).
-    QuizAttemptSubmitted {
+    /// A student submitted an attempt at an assignment whose type scores it by itself; sent with
+    /// `submission.submitted` (ADR-0075, ADR-0098).
+    AttemptAutograded {
         course_id: Uuid,
         assignment_id: Uuid,
         student_id: Uuid,
@@ -104,7 +105,7 @@ impl Event {
             Self::AssignmentUpdated { .. } => "assignment.updated",
             Self::AssignmentDeadlineChanged { .. } => "assignment.deadline_changed",
             Self::EnrollmentChanged { .. } => "enrollment.changed",
-            Self::QuizAttemptSubmitted { .. } => "quiz.attempt_submitted",
+            Self::AttemptAutograded { .. } => "attempt.autograded",
             Self::AnnouncementPublished { .. } => "announcement.published",
             Self::GroupMembersChanged { .. } => "group.members_changed",
             Self::GradePublicationChanged { .. } => "grade.publication_changed",
@@ -123,7 +124,7 @@ impl Event {
             | Self::AssignmentUpdated { .. }
             | Self::AssignmentDeadlineChanged { .. }
             | Self::EnrollmentChanged { .. }
-            | Self::QuizAttemptSubmitted { .. }
+            | Self::AttemptAutograded { .. }
             | Self::AnnouncementPublished { .. }
             | Self::GroupMembersChanged { .. }
             | Self::GradePublicationChanged { .. } => 1,
@@ -180,7 +181,7 @@ impl Event {
             Self::EnrollmentChanged { course_id, user_id } => {
                 serde_json::json!({ "course_id": course_id, "user_id": user_id })
             }
-            Self::QuizAttemptSubmitted {
+            Self::AttemptAutograded {
                 course_id,
                 assignment_id,
                 student_id,

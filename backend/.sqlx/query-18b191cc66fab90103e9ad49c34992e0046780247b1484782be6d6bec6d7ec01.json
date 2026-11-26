@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT id AS \"id!\", course_id AS \"course_id!\", kind AS \"kind!\", title AS \"title!\",\n                  due_at, max_points AS \"max_points!\", config AS \"config!: Json<Map<String, Value>>\",\n                  updated AS \"updated_at!\"\n           FROM (\n               SELECT i.id, i.course_id, a.type AS kind, i.published_title AS title, a.due_at,\n                      a.max_points::text AS max_points, a.config,\n                      GREATEST(i.updated_at, a.updated_at) AS updated\n               FROM content.item_list i\n               JOIN content.assignment_list a ON a.item_id = i.id\n               JOIN content.module_list m ON m.id = i.module_id\n               LEFT JOIN content.module_list p ON p.id = m.parent_id\n               JOIN teaching.course_list c ON c.id = i.course_id\n               WHERE i.status = 'published' AND (i.publish_at IS NULL OR i.publish_at <= now())\n                 AND m.status = 'published' AND (m.publish_at IS NULL OR m.publish_at <= now())\n                 AND (p.id IS NULL\n                      OR (p.status = 'published' AND (p.publish_at IS NULL OR p.publish_at <= now())))\n                 AND c.status <> 'draft'\n                 AND ($1::uuid[] IS NULL OR i.course_id = ANY($1))\n                 AND ($2::uuid IS NULL OR i.id = $2)\n           ) t\n           WHERE ($3::timestamptz IS NULL OR updated >= $3)\n             AND ($4::timestamptz IS NULL OR (updated, id) > ($4, $5))\n           ORDER BY updated, id\n           LIMIT $6",
+  "query": "SELECT id AS \"id!\", course_id AS \"course_id!\", kind AS \"kind!: activity::GradedKind\", title AS \"title!\",\n                  due_at, max_points AS \"max_points!\", config AS \"config!: Json<Map<String, Value>>\",\n                  updated AS \"updated_at!\"\n           FROM (\n               SELECT i.id, i.course_id, a.type AS kind, i.published_title AS title, a.due_at,\n                      a.max_points::text AS max_points, a.config,\n                      GREATEST(i.updated_at, a.updated_at) AS updated\n               FROM content.item_list i\n               JOIN content.assignment_list a ON a.item_id = i.id\n               JOIN content.module_list m ON m.id = i.module_id\n               LEFT JOIN content.module_list p ON p.id = m.parent_id\n               JOIN teaching.course_list c ON c.id = i.course_id\n               WHERE i.status = 'published' AND (i.publish_at IS NULL OR i.publish_at <= now())\n                 AND m.status = 'published' AND (m.publish_at IS NULL OR m.publish_at <= now())\n                 AND (p.id IS NULL\n                      OR (p.status = 'published' AND (p.publish_at IS NULL OR p.publish_at <= now())))\n                 AND c.status <> 'draft'\n                 AND ($1::uuid[] IS NULL OR i.course_id = ANY($1))\n                 AND ($2::uuid IS NULL OR i.id = $2)\n           ) t\n           WHERE ($3::timestamptz IS NULL OR updated >= $3)\n             AND ($4::timestamptz IS NULL OR (updated, id) > ($4, $5))\n           ORDER BY updated, id\n           LIMIT $6",
   "describe": {
     "columns": [
       {
@@ -27,7 +27,7 @@
       },
       {
         "ordinal": 2,
-        "name": "kind!",
+        "name": "kind!: activity::GradedKind",
         "type_info": "Text",
         "origin": {
           "Table": {
@@ -103,5 +103,5 @@
       null
     ]
   },
-  "hash": "e1fb771149a580459b9ab64529875d16da50a49ecbe27fbe8fa4ee408f9aadff"
+  "hash": "18b191cc66fab90103e9ad49c34992e0046780247b1484782be6d6bec6d7ec01"
 }

@@ -590,7 +590,7 @@ pub async fn finish_submit(
     {
         events::emit(
             conn,
-            Event::QuizAttemptSubmitted {
+            Event::AttemptAutograded {
                 assignment_id,
                 student_id,
                 course_id,

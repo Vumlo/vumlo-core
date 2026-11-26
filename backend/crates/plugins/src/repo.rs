@@ -7,7 +7,9 @@ use common::Role;
 use sqlx::PgConnection;
 use uuid::Uuid;
 
-use crate::model::{Install, InstallStatus, ReportSubject, RouteAuth, RouteSpec, UiSlot};
+use crate::model::{
+    API_VERSION, Install, InstallStatus, ReportSubject, RouteAuth, RouteSpec, UiSlot,
+};
 use crate::settings::SettingSpec;
 
 /// The columns of `plugin_installs`, as the database holds them.
@@ -168,7 +170,7 @@ pub async fn insert_install(
         "INSERT INTO plugins.plugin_installs
              (id, plugin_id, version, base_url, api, subscribes, requested_scopes, scopes,
               ui_slots, settings, token_hash, all_courses, routes)
-         VALUES ($1, $2, $3, $4, '1', $5, $6, $7, $8, $9, $10, $11, $12)",
+         VALUES ($1, $2, $3, $4, $13, $5, $6, $7, $8, $9, $10, $11, $12)",
         new.id,
         new.plugin_id,
         new.version,
@@ -180,7 +182,8 @@ pub async fn insert_install(
         serde_json::to_value(new.settings).unwrap_or_default(),
         new.token_hash,
         matches!(new.courses, CourseScope::All),
-        new.routes
+        new.routes,
+        API_VERSION
     )
     .execute(&mut *conn)
     .await?;
@@ -327,7 +330,7 @@ pub async fn update_manifest(
     sqlx::query!(
         "UPDATE plugins.plugin_installs
          SET version = $2, subscribes = $3, requested_scopes = $4, scopes = $5, ui_slots = $6,
-             routes = $7, settings = $8, updated_at = now()
+             routes = $7, settings = $8, api = $9, updated_at = now()
          WHERE id = $1",
         id,
         new.version,
@@ -336,7 +339,8 @@ pub async fn update_manifest(
         new.scopes,
         new.ui_slots,
         new.routes,
-        serde_json::to_value(new.settings).unwrap_or_default()
+        serde_json::to_value(new.settings).unwrap_or_default(),
+        API_VERSION
     )
     .execute(conn)
     .await?;

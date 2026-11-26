@@ -1035,7 +1035,7 @@ fn scopes_have_the_names_the_manifest_and_the_cli_use() {
         ("assignments:read", Scope::AssignmentsRead),
         ("roster:read", Scope::RosterRead),
         ("grades:read", Scope::GradesRead),
-        ("quizzes:read", Scope::QuizzesRead),
+        ("attempts:read", Scope::AttemptsRead),
         ("users:contact", Scope::UsersContact),
         ("announcements:read", Scope::AnnouncementsRead),
         ("mail:send", Scope::MailSend),

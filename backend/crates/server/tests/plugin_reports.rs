@@ -70,7 +70,7 @@ async fn world(pool: PgPool) -> World {
 impl World {
     async fn plugin(&self, id: &str, scopes: &[Scope], courses: CourseScope) -> Installed {
         let manifest = parse_manifest(
-            json!({"id": id, "version": "1", "api": "1", "scopes": Scope::ALL.map(Scope::as_str)})
+            json!({"id": id, "version": "1", "api": "2", "scopes": Scope::ALL.map(Scope::as_str)})
                 .to_string()
                 .as_bytes(),
         )

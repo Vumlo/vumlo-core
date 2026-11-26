@@ -16,7 +16,7 @@ const KEY: &str = "0123456789abcdef0123456789abcdef";
 /// A plugin that serves only its manifest, asking for `scopes`. Returns where it listens.
 async fn plugin(scopes: &[&str]) -> String {
     serve(json!({
-        "id": "hello", "version": "1.0.0", "api": "1",
+        "id": "hello", "version": "1.0.0", "api": "2",
         "subscribes": ["submission.submitted"], "scopes": scopes
     }))
     .await
@@ -455,7 +455,7 @@ async fn every_change_is_audited_and_a_command_that_changes_nothing_says_so() {
 
 async fn configurable() -> String {
     serve(json!({
-        "id": "hello", "version": "1.0.0", "api": "1",
+        "id": "hello", "version": "1.0.0", "api": "2",
         "subscribes": ["plugin.settings.changed"], "scopes": ["settings:read"],
         "settings": {
             "unit": {"type": "string", "enum": ["words", "characters"], "default": "words",
@@ -939,7 +939,7 @@ async fn serve_changing(manifest: Value) -> (String, std::sync::Arc<std::sync::M
 }
 
 fn version(n: u32, scopes: &[&str], subscribes: &[&str]) -> Value {
-    json!({"id": "hello", "version": format!("{n}.0.0"), "api": "1",
+    json!({"id": "hello", "version": format!("{n}.0.0"), "api": "2",
            "subscribes": subscribes, "scopes": scopes})
 }
 
@@ -1517,7 +1517,7 @@ async fn configure_of_a_plugin_with_only_course_settings_says_so_and_asks_nothin
         common::migrate_modules(&pool).await;
         let env = Env::new(&pool);
         let base = serve(json!({
-            "id": "hello", "version": "1.0.0", "api": "1",
+            "id": "hello", "version": "1.0.0", "api": "2",
             "subscribes": ["plugin.settings.changed"], "scopes": ["settings:read"],
             "settings": {"max_words": {"type": "number", "scope": "course"}}
         }))

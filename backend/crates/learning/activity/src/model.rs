@@ -134,6 +134,12 @@ pub trait Graded: Send + Sync {
         Ok(Vec::new())
     }
 
+    /// The part of `config` a plugin that may read assignments is shown (ADR-0074), or `None` for
+    /// a type that exposes none. It never holds an answer key. Default: none.
+    fn plugin_config(&self, _config: &Map<String, Value>) -> Option<Map<String, Value>> {
+        None
+    }
+
     /// Whether [`annotate_config`](Graded::annotate_config) wants the facts of the class, so that
     /// the reader of the item is only asked for them when the type uses them. Default: no.
     fn reads_class_facts(&self) -> bool {
@@ -182,6 +188,12 @@ pub trait Submissions: Send + Sync {
     /// (ADR-0051 point 7). Default: no.
     fn lists_responses(&self) -> bool {
         false
+    }
+
+    /// The values of a submitted `content` as a plugin that may read assignments is shown them
+    /// (ADR-0074), by field id, or `None` for a type that shares none. Default: none.
+    fn plugin_answers(&self, _content: &Map<String, Value>) -> Option<Map<String, Value>> {
+        None
     }
 
     /// Every file a stored `content` names, each with its path in the content. A type that holds

@@ -592,6 +592,10 @@ impl Graded for Form {
         structure(config)
     }
 
+    fn plugin_config(&self, config: &Map<String, Value>) -> Option<Map<String, Value>> {
+        Some(self.student_config(config))
+    }
+
     fn reads_class_facts(&self) -> bool {
         true
     }
@@ -628,6 +632,13 @@ impl Submissions for Form {
 
     fn lists_responses(&self) -> bool {
         true
+    }
+
+    fn plugin_answers(&self, content: &Map<String, Value>) -> Option<Map<String, Value>> {
+        Some(match content.get("answers") {
+            Some(Value::Object(answers)) => answers.clone(),
+            _ => Map::new(),
+        })
     }
 }
 

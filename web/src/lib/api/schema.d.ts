@@ -2449,27 +2449,11 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * The submitted attempts at a quiz with their score per question, by the time they were
-         *     submitted; `updated_since` is that time. The scope `quizzes:read`.
+         * The submitted attempts at an assignment that its type scores by itself, with their score per
+         *     question, by the time they were submitted; `updated_since` is that time. The scope
+         *     `attempts:read`.
          */
         get: operations["list_attempts"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/plugin-api/assignments/{id}/quiz": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** The questions of a quiz without its answer key. The scope `quizzes:read`. */
-        get: operations["get_quiz"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2650,15 +2634,18 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/plugin-api/submissions/{id}/fields": {
+    "/api/v1/plugin-api/submissions/{id}/answers": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /** The values a student gave in a submitted `form`, by field id. The scope `assignments:read`. */
-        get: operations["get_form_answers"];
+        /**
+         * The values a student gave in a submitted attempt of a type that shares them (a form), by field
+         *     id. The scope `assignments:read`.
+         */
+        get: operations["get_answers"];
         put?: never;
         post?: never;
         delete?: never;
@@ -4950,15 +4937,16 @@ export interface components {
         };
         Page_PluginAssignment: {
             items: {
+                /**
+                 * @description The part of the config the assignment's type exposes to a plugin: the fields of a form
+                 *     (`id`, `type`, `label`, `help`, `required`, `options`, `rules`) and the questions of a quiz
+                 *     without the answer key. Absent for a type that exposes none.
+                 */
+                config?: Record<string, never> | null;
                 /** Format: uuid */
                 course_id: string;
                 /** Format: date-time */
                 due_at?: string | null;
-                /**
-                 * @description The fields of a `form` (`id`, `type`, `label`, `help`, `required`, `options`, `rules`); absent
-                 *     for the other types.
-                 */
-                fields?: Record<string, never>[] | null;
                 /** Format: uuid */
                 id: string;
                 /** @description `text`, `no_submission`, `quiz`, `form` or `file`. */
@@ -5194,17 +5182,30 @@ export interface components {
             /** Format: uuid */
             user_id: string;
         };
+        /** @description The values a student gave in an attempt of a type that shares them (a form), by field id. */
+        PluginAnswers: {
+            answers: Record<string, never>;
+            /** Format: uuid */
+            assignment_id: string;
+            /** Format: uuid */
+            course_id: string;
+            /** Format: uuid */
+            student_id: string;
+            /** Format: uuid */
+            submission_id: string;
+        };
         /** @description An assignment as a student can see it: open, with its published title. */
         PluginAssignment: {
+            /**
+             * @description The part of the config the assignment's type exposes to a plugin: the fields of a form
+             *     (`id`, `type`, `label`, `help`, `required`, `options`, `rules`) and the questions of a quiz
+             *     without the answer key. Absent for a type that exposes none.
+             */
+            config?: Record<string, never> | null;
             /** Format: uuid */
             course_id: string;
             /** Format: date-time */
             due_at?: string | null;
-            /**
-             * @description The fields of a `form` (`id`, `type`, `label`, `help`, `required`, `options`, `rules`); absent
-             *     for the other types.
-             */
-            fields?: Record<string, never>[] | null;
             /** Format: uuid */
             id: string;
             /** @description `text`, `no_submission`, `quiz`, `form` or `file`. */
@@ -5218,7 +5219,7 @@ export interface components {
              */
             updated_at: string;
         };
-        /** @description A submitted attempt at a quiz. */
+        /** @description A submitted attempt at an assignment that its type scores by itself. */
         PluginAttempt: {
             /** Format: int32 */
             attempt: number;
@@ -5254,18 +5255,6 @@ export interface components {
             /** Format: uuid */
             id: string;
         };
-        /** @description The values a student gave in a `form`, by field id. */
-        PluginFormAnswers: {
-            answers: Record<string, never>;
-            /** Format: uuid */
-            assignment_id: string;
-            /** Format: uuid */
-            course_id: string;
-            /** Format: uuid */
-            student_id: string;
-            /** Format: uuid */
-            submission_id: string;
-        };
         /** @description A published grade. A draft is never here. */
         PluginGrade: {
             /** Format: uuid */
@@ -5293,18 +5282,6 @@ export interface components {
             surname: string;
             /** Format: uuid */
             user_id: string;
-        };
-        /**
-         * @description The questions of a quiz as a student sees them: no `correct`, `answer`, `tolerance`,
-         *     `accepted`, `explanation`, `partial_credit` or `grading_notes`.
-         */
-        PluginQuiz: {
-            /** Format: uuid */
-            assignment_id: string;
-            config: Record<string, never>;
-            /** Format: uuid */
-            course_id: string;
-            max_points: string;
         };
         /** @description A report of one plugin on a submitted attempt, an assignment or a course, for the staff who may see it. */
         PluginReport: {
@@ -13714,7 +13691,7 @@ export interface operations {
             };
             header?: never;
             path: {
-                /** @description A quiz */
+                /** @description An assignment whose type scores attempts by itself */
                 id: string;
             };
             cookie?: never;
@@ -13739,7 +13716,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["ProblemDetails"];
                 };
             };
-            /** @description The plugin was not granted `quizzes:read`, or not the course */
+            /** @description The plugin was not granted `attempts:read`, or not the course */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -13748,7 +13725,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["ProblemDetails"];
                 };
             };
-            /** @description No such quiz */
+            /** @description No such assignment, or its type scores no attempts */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -13759,56 +13736,6 @@ export interface operations {
             };
             /** @description A cursor or a time that is not valid */
             422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ProblemDetails"];
-                };
-            };
-        };
-    };
-    get_quiz: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description A quiz */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description The questions */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PluginQuiz"];
-                };
-            };
-            /** @description No token, or one that is unknown or disabled */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ProblemDetails"];
-                };
-            };
-            /** @description The plugin was not granted `quizzes:read`, or not the course */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ProblemDetails"];
-                };
-            };
-            /** @description No such quiz */
-            404: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -14440,7 +14367,7 @@ export interface operations {
             };
         };
     };
-    get_form_answers: {
+    get_answers: {
         parameters: {
             query?: never;
             header?: never;
@@ -14458,7 +14385,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["PluginFormAnswers"];
+                    "application/json": components["schemas"]["PluginAnswers"];
                 };
             };
             /** @description No token, or one that is unknown or disabled */
@@ -14479,7 +14406,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["ProblemDetails"];
                 };
             };
-            /** @description No such submitted attempt, or not at a form */
+            /** @description No such submitted attempt, or its type shares no values */
             404: {
                 headers: {
                     [name: string]: unknown;

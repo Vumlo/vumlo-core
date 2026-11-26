@@ -26,7 +26,7 @@ pub const SUBSCRIBABLE: [&str; 9] = [
     "assignment.updated",
     "assignment.deadline_changed",
     "enrollment.changed",
-    "quiz.attempt_submitted",
+    "attempt.autograded",
     "announcement.published",
 ];
 
@@ -68,8 +68,10 @@ pub fn is_report_key(key: &str) -> bool {
         && chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_' || c == '-')
 }
 
-/// The version of the plugin protocol this core speaks.
-pub const API_VERSION: &str = "1";
+/// The version of the plugin protocol this core speaks. `2` (ADR-0098) names no assignment type:
+/// the scope `attempts:read`, the event `attempt.autograded`, the `config` of an assignment and
+/// the routes `/submissions/{id}/answers` and `/assignments/{id}/attempts`.
+pub const API_VERSION: &str = "2";
 
 /// A page a plugin offers in one of the [`SLOTS`]. Stored with the install; used by the web app.
 #[derive(Debug, Clone, PartialEq, Eq)]

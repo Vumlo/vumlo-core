@@ -667,6 +667,10 @@ impl Graded for Quiz {
         student_config(config)
     }
 
+    fn plugin_config(&self, config: &Map<String, Value>) -> Option<Map<String, Value>> {
+        Some(student_config(config))
+    }
+
     fn structure(&self, config: &Map<String, Value>) -> Option<Value> {
         structure(config)
     }

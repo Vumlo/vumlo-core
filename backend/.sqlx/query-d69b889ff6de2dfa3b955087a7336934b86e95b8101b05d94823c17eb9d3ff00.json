@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT s.id AS \"id!\", i.course_id AS \"course_id!\", s.assignment_id AS \"assignment_id!\",\n                  a.type AS \"assignment_type!\", s.student_id AS \"student_id!\",\n                  s.attempt AS \"attempt!\", s.content AS \"content!: Json<Map<String, Value>>\",\n                  s.submitted_at AS \"submitted_at!\"\n           FROM assessment.submitted_attempts s\n           JOIN content.item_list i ON i.id = s.assignment_id\n           JOIN content.assignment_list a ON a.item_id = s.assignment_id\n           WHERE s.id = $1",
+  "query": "SELECT s.id AS \"id!\", i.course_id AS \"course_id!\", s.assignment_id AS \"assignment_id!\",\n                  a.type AS \"assignment_type!: activity::GradedKind\", s.student_id AS \"student_id!\",\n                  s.attempt AS \"attempt!\", s.content AS \"content!: Json<Map<String, Value>>\",\n                  s.submitted_at AS \"submitted_at!\"\n           FROM assessment.submitted_attempts s\n           JOIN content.item_list i ON i.id = s.assignment_id\n           JOIN content.assignment_list a ON a.item_id = s.assignment_id\n           WHERE s.id = $1",
   "describe": {
     "columns": [
       {
@@ -38,7 +38,7 @@
       },
       {
         "ordinal": 3,
-        "name": "assignment_type!",
+        "name": "assignment_type!: activity::GradedKind",
         "type_info": "Text",
         "origin": {
           "Table": {
@@ -108,5 +108,5 @@
       true
     ]
   },
-  "hash": "39941a8ce8b9443d7d44598af10dcf4bbd7be484c8d7672fdac38a0a76e4ddf6"
+  "hash": "d69b889ff6de2dfa3b955087a7336934b86e95b8101b05d94823c17eb9d3ff00"
 }

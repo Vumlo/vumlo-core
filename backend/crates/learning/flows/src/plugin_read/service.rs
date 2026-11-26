@@ -8,18 +8,16 @@ use access::{
 };
 use chrono::{DateTime, Utc};
 use common::ApiError;
-use serde_json::Value;
 use sqlx::PgConnection;
 use uuid::Uuid;
 
 use super::model::{
     Cursor, MailAudience, MailPerson, MailRecipients, MailTarget, PluginAnnouncement,
-    PluginAssignment, PluginAttempt, PluginContact, PluginDeletion, PluginFormAnswers, PluginGrade,
-    PluginList, PluginMember, PluginPage, PluginQuiz, PluginSubmission, PluginSubmissionRow,
+    PluginAnswers, PluginAssignment, PluginAttempt, PluginContact, PluginDeletion, PluginGrade,
+    PluginList, PluginMember, PluginPage, PluginSubmission, PluginSubmissionRow,
 };
 use super::repo::{self, After, AssignmentRow};
 use activity::GradedKind;
-use activity::types::{form, quiz};
 
 #[derive(Debug, thiserror::Error)]
 pub enum PluginReadError {
@@ -91,18 +89,14 @@ async fn reachable_assignment(
 }
 
 fn assignment_of(row: AssignmentRow) -> PluginAssignment {
-    let fields = (row.kind == form::ID).then(|| match row.config.get("fields") {
-        Some(Value::Array(fields)) => fields.clone(),
-        _ => Vec::new(),
-    });
     PluginAssignment {
         id: row.id,
         course_id: row.course_id,
-        kind: row.kind,
+        kind: row.kind.id().to_owned(),
         title: row.title,
         due_at: row.due_at,
         max_points: row.max_points,
-        fields,
+        config: row.kind.plugin_config(&row.config),
         updated_at: row.updated_at,
     }
 }
@@ -206,25 +200,24 @@ pub async fn reportable_course(
     course_must_exist(conn, course_id).await
 }
 
-/// The values of a submitted `form`, by field id. Any other type is `NotFound`.
-pub async fn form_answers(
+/// The values of a submitted attempt, by field id, for a type that shares them (a form). Any other
+/// type is `NotFound`.
+pub async fn answers(
     conn: &mut PgConnection,
     caller: &PluginCaller,
     submission_id: Uuid,
-) -> Result<PluginFormAnswers, PluginReadError> {
+) -> Result<PluginAnswers, PluginReadError> {
     authorize_plugin(caller, Scope::AssignmentsRead)?;
     let row = repo::submitted(conn, submission_id)
         .await?
         .ok_or(PluginReadError::NotFound)?;
     authorize_plugin_course(caller, Scope::AssignmentsRead, row.course_id)?;
-    if row.assignment_type != form::ID {
-        return Err(PluginReadError::NotFound);
-    }
-    let answers = match row.content.get("answers") {
-        Some(Value::Object(answers)) => answers.clone(),
-        _ => Default::default(),
-    };
-    Ok(PluginFormAnswers {
+    let answers = row
+        .assignment_type
+        .submissions()
+        .and_then(|tier| tier.plugin_answers(&row.content))
+        .ok_or(PluginReadError::NotFound)?;
+    Ok(PluginAnswers {
         submission_id: row.id,
         course_id: row.course_id,
         assignment_id: row.assignment_id,
@@ -321,29 +314,8 @@ pub async fn grades(
     }))
 }
 
-/// The questions of a quiz, without the answer key.
-pub async fn quiz(
-    conn: &mut PgConnection,
-    caller: &PluginCaller,
-    assignment_id: Uuid,
-) -> Result<PluginQuiz, PluginReadError> {
-    let (_, kind) = reachable_assignment(conn, caller, Scope::QuizzesRead, assignment_id).await?;
-    if kind.id() != quiz::ID {
-        return Err(PluginReadError::NotFound);
-    }
-    let row = repo::assignments(conn, None, Some(assignment_id), None, &After::from(None), 1)
-        .await?
-        .pop()
-        .ok_or(PluginReadError::NotFound)?;
-    Ok(PluginQuiz {
-        assignment_id: row.id,
-        course_id: row.course_id,
-        max_points: row.max_points,
-        config: kind.student_config(&row.config),
-    })
-}
-
-/// The submitted attempts at a quiz with their score per question.
+/// The submitted attempts at an assignment that its type scores by itself, with their score per
+/// question. Any other type is `NotFound`.
 pub async fn attempts(
     conn: &mut PgConnection,
     caller: &PluginCaller,
@@ -351,8 +323,8 @@ pub async fn attempts(
     since: Option<DateTime<Utc>>,
     page: PluginPage,
 ) -> Result<PluginList<PluginAttempt>, PluginReadError> {
-    let (_, kind) = reachable_assignment(conn, caller, Scope::QuizzesRead, assignment_id).await?;
-    if kind.id() != quiz::ID {
+    let (_, kind) = reachable_assignment(conn, caller, Scope::AttemptsRead, assignment_id).await?;
+    if !kind.capabilities().auto_graded {
         return Err(PluginReadError::NotFound);
     }
     let rows = repo::attempts(

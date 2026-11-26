@@ -1525,7 +1525,7 @@ async fn a_submit_emits_one_event_with_ids_only_and_a_draft_emits_none() {
         // submit wrote none of the work's.
         let total = sqlx::query_scalar!(
             r#"SELECT count(*) AS "n!" FROM events.outbox
-               WHERE type IN ('submission.submitted', 'quiz.attempt_submitted', 'grade.published')"#
+               WHERE type IN ('submission.submitted', 'attempt.autograded', 'grade.published')"#
         )
         .fetch_one(&w.pool)
         .await

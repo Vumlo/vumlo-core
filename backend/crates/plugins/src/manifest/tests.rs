@@ -17,7 +17,7 @@ fn hello() -> serde_json::Value {
     json!({
         "id": "hello",
         "version": "1.0.0",
-        "api": "1",
+        "api": "2",
         "subscribes": ["submission.submitted"],
         "scopes": ["submissions:read", "reports:write"],
         "ui": [{"slot": "assignment.tab", "title": "Words", "path": "/ui/words"}]
@@ -39,7 +39,7 @@ fn a_manifest_that_asks_for_what_is_allowed_is_read() {
 #[test]
 fn a_manifest_may_ask_for_nothing_and_may_say_more_than_the_core_reads() {
     let manifest =
-        parse(json!({"id": "quiet", "version": "2", "api": "1", "name": "Quiet one"})).unwrap();
+        parse(json!({"id": "quiet", "version": "2", "api": "2", "name": "Quiet one"})).unwrap();
     assert!(manifest.subscribes.is_empty() && manifest.scopes.is_empty() && manifest.ui.is_empty());
 }
 
@@ -77,8 +77,9 @@ fn an_unknown_scope_event_or_slot_stops_the_install_and_is_named() {
 #[test]
 fn the_protocol_version_and_the_id_are_checked() {
     let mut value = hello();
-    value["api"] = json!("2");
-    assert!(message(value).contains("api `2` is not supported"));
+    // The protocol of the first releases (ADR-0098 made `2` of it) is not spoken any more.
+    value["api"] = json!("1");
+    assert!(message(value).contains("api `1` is not supported"));
     for id in [
         "",
         "Hello",
@@ -91,7 +92,7 @@ fn the_protocol_version_and_the_id_are_checked() {
         value["id"] = json!(id);
         assert!(message(value).contains("id "), "{id}");
     }
-    assert!(parse(json!({"id": "a", "api": "1"})).is_err(), "no version");
+    assert!(parse(json!({"id": "a", "api": "2"})).is_err(), "no version");
     assert!(parse_manifest(b"not json").is_err());
 }
 

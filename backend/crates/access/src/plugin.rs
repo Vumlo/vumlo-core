@@ -20,15 +20,17 @@ pub enum Scope {
     ReportsWrite,
     /// Read the plugin's own settings, secrets included (ADR-0072).
     SettingsRead,
-    /// Read the assignments a student can see, with the field definitions of a form (ADR-0074).
+    /// Read the assignments a student can see, with the part of the config a type exposes (the
+    /// fields of a form, the questions of a quiz without the answer key) and the values of a
+    /// submitted attempt of a type that shares them (ADR-0074, ADR-0098).
     AssignmentsRead,
     /// Read who is in a course and in which role: ids and names, no contact data (ADR-0074).
     RosterRead,
     /// Read published grades, never a draft (ADR-0074).
     GradesRead,
-    /// Read the questions of a quiz without its answer key, and the attempts with their scores
-    /// (ADR-0074).
-    QuizzesRead,
+    /// Read the attempts at an assignment that its type scores by itself, with their scores
+    /// (ADR-0074, ADR-0098).
+    AttemptsRead,
     /// Read the email address of a member of a granted course (ADR-0074).
     UsersContact,
     /// Read the announcements of the courses it reaches (ADR-0076).
@@ -44,7 +46,7 @@ text_enum!(Scope {
     AssignmentsRead => "assignments:read",
     RosterRead => "roster:read",
     GradesRead => "grades:read",
-    QuizzesRead => "quizzes:read",
+    AttemptsRead => "attempts:read",
     UsersContact => "users:contact",
     AnnouncementsRead => "announcements:read",
     MailSend => "mail:send",
@@ -58,7 +60,7 @@ impl Scope {
         Scope::AssignmentsRead,
         Scope::RosterRead,
         Scope::GradesRead,
-        Scope::QuizzesRead,
+        Scope::AttemptsRead,
         Scope::UsersContact,
         Scope::AnnouncementsRead,
         Scope::MailSend,

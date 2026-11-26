@@ -20,7 +20,7 @@ fn key() -> SecretKey {
 
 async fn install_one(pool: &PgPool, id: &str, subscribes: &[&str]) {
     let manifest = parse_manifest(
-        json!({"id": id, "version": "1", "api": "1", "subscribes": subscribes, "scopes": ["submissions:read"]})
+        json!({"id": id, "version": "1", "api": "2", "subscribes": subscribes, "scopes": ["submissions:read"]})
             .to_string()
             .as_bytes(),
     )
@@ -107,7 +107,7 @@ fn the_events_a_plugin_may_subscribe_to_are_events_that_exist_and_hold_ids_only(
             "assignment.updated",
             "assignment.deadline_changed",
             "enrollment.changed",
-            "quiz.attempt_submitted",
+            "attempt.autograded",
             "announcement.published",
         ]
     );

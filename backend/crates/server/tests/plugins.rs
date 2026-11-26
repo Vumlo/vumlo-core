@@ -587,7 +587,7 @@ impl World {
     /// token and send it nothing.
     async fn install_without_a_process(&self, id: &str, granted: &[Scope]) -> Installed {
         let manifest = parse_manifest(
-            json!({"id": id, "version": "1", "api": "1", "scopes": ["submissions:read", "reports:write"]})
+            json!({"id": id, "version": "1", "api": "2", "scopes": ["submissions:read", "reports:write"]})
                 .to_string()
                 .as_bytes(),
         )
@@ -614,7 +614,7 @@ impl World {
     /// An install that offers a page in the tab of an assignment, with no process behind it.
     async fn install_with_a_page(&self, id: &str, base_url: &str) -> Installed {
         let manifest = parse_manifest(
-            json!({"id": id, "version": "1", "api": "1", "ui": [
+            json!({"id": id, "version": "1", "api": "2", "ui": [
                 {"slot": "assignment.tab", "title": format!("{id} tab"), "path": "/ui/page"}
             ]})
             .to_string()
@@ -1024,7 +1024,7 @@ impl World {
         granted: &[Scope],
     ) -> Installed {
         let manifest = parse_manifest(
-            json!({"id": id, "version": "1", "api": "1", "scopes": ["settings:read", "submissions:read"],
+            json!({"id": id, "version": "1", "api": "2", "scopes": ["settings:read", "submissions:read"],
                    "settings": settings})
             .to_string()
             .as_bytes(),

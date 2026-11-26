@@ -52,7 +52,7 @@ async fn world(pool: PgPool, settings: Settings) -> World {
 impl World {
     async fn install(&self, id: &str, scopes: &[Scope]) -> Installed {
         let manifest = parse_manifest(
-            json!({"id": id, "version": "1", "api": "1", "scopes": Scope::ALL.map(Scope::as_str)})
+            json!({"id": id, "version": "1", "api": "2", "scopes": Scope::ALL.map(Scope::as_str)})
                 .to_string()
                 .as_bytes(),
         )

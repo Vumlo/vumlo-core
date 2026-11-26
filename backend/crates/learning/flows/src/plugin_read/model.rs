@@ -97,13 +97,13 @@ impl<T> PluginList<T> {
 pub struct PluginAssignment {
     pub id: Uuid,
     pub course_id: Uuid,
-    /// The assignment type: `text`, `no_submission`, `quiz`, `form` or `file`.
+    /// The id of the assignment's type.
     pub kind: String,
     pub title: String,
     pub due_at: Option<DateTime<Utc>>,
     pub max_points: String,
-    /// The field definitions of a `form`; `None` for any other type.
-    pub fields: Option<Vec<Value>>,
+    /// The part of the config the type exposes to a plugin; `None` for a type that exposes none.
+    pub config: Option<Map<String, Value>>,
     /// When the assignment, its title or its settings last changed.
     pub updated_at: DateTime<Utc>,
 }
@@ -121,9 +121,9 @@ pub struct PluginSubmission {
     pub submitted_at: DateTime<Utc>,
 }
 
-/// The values a student gave in a `form`, by field id.
+/// The values a student gave in an attempt of a type that shares them, by field id.
 #[derive(Debug, Clone, PartialEq)]
-pub struct PluginFormAnswers {
+pub struct PluginAnswers {
     pub submission_id: Uuid,
     pub course_id: Uuid,
     pub assignment_id: Uuid,
@@ -166,16 +166,7 @@ pub struct PluginGrade {
     pub published_at: DateTime<Utc>,
 }
 
-/// The questions of a quiz without the answer key.
-#[derive(Debug, Clone, PartialEq)]
-pub struct PluginQuiz {
-    pub assignment_id: Uuid,
-    pub course_id: Uuid,
-    pub max_points: String,
-    pub config: Map<String, Value>,
-}
-
-/// A submitted attempt at a quiz with its score per question.
+/// A submitted attempt at an assignment that its type scores by itself, with its score per question.
 #[derive(Debug, Clone, PartialEq)]
 pub struct PluginAttempt {
     pub id: Uuid,

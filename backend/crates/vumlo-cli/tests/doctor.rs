@@ -78,7 +78,7 @@ async fn doctor_warns_about_plugins_that_are_sent_nothing_and_about_dead_letters
         ))
         .unwrap();
         let manifest = plugins::parse_manifest(
-            br#"{"id": "hello", "version": "1", "api": "1", "subscribes": ["submission.submitted"]}"#,
+            br#"{"id": "hello", "version": "1", "api": "2", "subscribes": ["submission.submitted"]}"#,
         )
         .unwrap();
         let mut conn = pool.acquire().await.unwrap();
@@ -129,7 +129,7 @@ async fn doctor_names_the_plugins_that_still_need_a_setting_and_how_to_set_it() 
         // `api_token` has no default and is the institution's; `max_words` has none either but is
         // per course, so it is not asked for here.
         let manifest = plugins::parse_manifest(
-            br#"{"id": "hello", "version": "1", "api": "1", "scopes": ["settings:read"],
+            br#"{"id": "hello", "version": "1", "api": "2", "scopes": ["settings:read"],
                  "subscribes": ["plugin.settings.changed"],
                  "settings": {"api_token": {"type": "string", "secret": true},
                               "max_words": {"type": "number", "scope": "course"}}}"#,

@@ -43,7 +43,7 @@ impl World {
     async fn install(&self, id: &str) {
         let manifest = parse_manifest(
             json!({
-                "id": id, "version": "1", "api": "1",
+                "id": id, "version": "1", "api": "2",
                 "scopes": ["settings:read", "submissions:read", "mail:send"],
                 "settings": {
                     "api_token": {"type": "string", "secret": true, "description": "The service token"},

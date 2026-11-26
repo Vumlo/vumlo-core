@@ -259,7 +259,7 @@ fn every_event_has_a_dotted_kind_and_a_payload_of_ids_only() {
             course_id: id(),
             user_id: id(),
         },
-        Event::QuizAttemptSubmitted {
+        Event::AttemptAutograded {
             course_id: id(),
             assignment_id: id(),
             student_id: id(),

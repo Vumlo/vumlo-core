@@ -15,7 +15,7 @@ fn key() -> SecretKey {
 
 fn v1() -> serde_json::Value {
     json!({
-        "id": "tool", "version": "1.0.0", "api": "1",
+        "id": "tool", "version": "1.0.0", "api": "2",
         "subscribes": ["submission.submitted", "grade.published"],
         "scopes": ["submissions:read", "reports:write", "settings:read"],
         "ui": [{"slot": "assignment.tab", "title": "Tool", "path": "/ui"}],
@@ -34,7 +34,7 @@ fn v1() -> serde_json::Value {
 /// one, tightens `limit`, forgets `old`, moves `per_course` to the institution, makes `unit` a secret.
 fn v2() -> serde_json::Value {
     json!({
-        "id": "tool", "version": "2.0.0", "api": "1",
+        "id": "tool", "version": "2.0.0", "api": "2",
         "subscribes": ["submission.submitted", "enrollment.changed"],
         "scopes": ["submissions:read", "settings:read", "grades:read"],
         "ui": [{"slot": "assignment.tab", "title": "Tool 2", "path": "/ui"}],
